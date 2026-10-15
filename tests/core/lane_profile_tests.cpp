@@ -727,7 +727,7 @@ TEST_CASE("BMS scratchless 10K colors follow rendered left-to-right lane geometr
         .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4,
         .supported_snap_denominators = {4}, .document_revision = 1,
         .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
-    const auto result = make_editor_field_scene(
+    const auto result = editor_field_scene_view_t::from(
         chart, std::get<editor_field_scene_index_t>(built), view, {.field_width_pixels = 640});
     REQUIRE(result);
     auto lanes = result.scene->lanes;
@@ -879,10 +879,10 @@ TEST_CASE("Visual scratch override changes geometry without changing skin layout
         .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4, .supported_snap_denominators = {4},
         .document_revision = 1, .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
     const auto& index = std::get<editor_field_scene_index_t>(built);
-    const auto left = make_editor_field_scene(chart, index, view,
-        {.field_width_pixels = 640, .scratch_on_right = {false, std::nullopt}});
-    const auto right = make_editor_field_scene(chart, index, view,
-        {.field_width_pixels = 640, .scratch_on_right = {true, std::nullopt}});
+    const auto left = editor_field_scene_view_t::from(
+        chart, index, view, {.field_width_pixels = 640, .scratch_on_right = {false, std::nullopt}});
+    const auto right = editor_field_scene_view_t::from(
+        chart, index, view, {.field_width_pixels = 640, .scratch_on_right = {true, std::nullopt}});
     require_bmson_condition(left);
     require_bmson_condition(right);
     const auto scratch = [](const auto& scene) {
@@ -927,7 +927,8 @@ TEST_CASE("BMSON DP without a gap keeps each left scratch in its own stage and p
     const editor_interaction_view_model_t view{.chart = chart.id, .active_lane = right_scratch,
         .cursor = {measure_id_t{1}, 0}, .active_snap_denominator = 4, .supported_snap_denominators = {4},
         .document_revision = 1, .pixels_per_standard_measure = 192, .viewport_height_pixels = 640};
-    const auto scene = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built), view,
+    const auto scene = editor_field_scene_view_t::from(
+        chart, std::get<editor_field_scene_index_t>(built), view,
         {.field_width_pixels = 640, .scratch_on_right = {false, false}});
     require_bmson_condition(scene);
     const auto& lanes = scene.scene->lanes;

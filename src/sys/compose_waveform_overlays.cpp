@@ -68,7 +68,7 @@ struct proposed_grid_context_t {
     const wormedit::timing_index_t& original;
     const wormedit::timing_index_t& proposed;
     const wormedit::editor_interaction_state_t& interaction;
-    const wormedit::editor_field_scene_t& source_scene;
+    const wormedit::editor_field_scene_view_t& source_scene;
     std::pair<std::uint64_t, std::uint64_t> rows;
 
     auto view() const -> WormUiComposeView& { return flattened.view.compose; }
@@ -389,7 +389,7 @@ void build_compose_proposed_grid_view(flattened_workspace_t& flattened,
     source_view.viewport_height_pixels = std::max(
         1.0, std::min(remaining_height,
                       static_cast<double>(rows->second - rows->first) * pixels_per_row + 32.0));
-    const auto composed = wormedit::make_editor_field_scene(
+    const auto composed = wormedit::editor_field_scene_view_t::from(
         chart, *cache.scene.index, source_view, cache.frame.preview_scene_request);
     if (!composed) {
         view.truncated = true;

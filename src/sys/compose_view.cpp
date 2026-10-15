@@ -1749,7 +1749,8 @@ auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double
     return std::span<const std::size_t>(cache.scene.static_projection_scratch).first(query.count);
 }
 
-auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_field_scene_t& scene,
+auto extract_scalar_grid(compose_scene_cache_t& cache,
+                         const wormedit::editor_field_scene_view_t& scene,
                          flattened_workspace_t& flattened, double shift) -> bool {
     const auto indices = scalar_projection_query(cache, 3, double(scene.visible_begin_row),
                                                  double(scene.visible_end_row));
@@ -1773,7 +1774,7 @@ auto extract_scalar_grid(compose_scene_cache_t& cache, const wormedit::editor_fi
     return true;
 }
 auto extract_scalar_objects(compose_scene_cache_t& cache,
-                            const wormedit::editor_field_scene_window_metadata_t& metadata,
+                            const wormedit::editor_field_scene_window_metadata_view_t& metadata,
                             flattened_workspace_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool {
@@ -1864,7 +1865,7 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
     cache.scene.static_projection_scanned = cache.scene.static_projection_extracted = 0;
     if (!reusable_scalar_source(cache, view))
         return false;
-    const auto metadata = wormedit::build_editor_field_scene_window_metadata_view(
+    const auto metadata = wormedit::editor_field_scene_window_metadata_view_t::from(
         input.scope.chart_scope.chart, *cache.scene.index, input.scope.interaction_view,
         cache.frame.preview_scene_request, cache.scene.scene_window);
     if (!metadata.projection)
@@ -2072,8 +2073,9 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         return true;
     }
     const auto prior_window_work=cache.scene.scene_window.rebuild_count+cache.scene.scene_window.reuse_count;
-    const auto composed = wormedit::make_editor_field_scene_reusing_window(chart, *cache.scene.index, interaction_view,
-                                                            cache.frame.preview_scene_request, cache.scene.scene_window);
+    const auto composed = wormedit::editor_field_scene_view_t::from(
+        chart, *cache.scene.index, interaction_view, cache.frame.preview_scene_request,
+        cache.scene.scene_window);
     frame_timing().restore(frame_scene_previous);
     if (!composed.scene || composed.has_errors()) {
         report_compose_diagnostic(flattened, projection_feedback_kind_t::field_scene,
@@ -2274,7 +2276,7 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         : session.anchor_error.c_str();
     session.ghosts.clear();
     if (!session.index) return;
-    const auto composed = wormedit::make_editor_field_scene(
+    const auto composed = wormedit::editor_field_scene_view_t::from(
         session.geometry, *session.index, input.scope.interaction_view,
         input.frame.cache.frame.preview_scene_request);
     if (!composed.scene) return;

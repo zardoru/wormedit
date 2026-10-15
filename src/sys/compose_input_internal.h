@@ -741,7 +741,7 @@ struct compose_input_context_t {
             return std::nullopt;
         auto request = environment.controls.cache.frame.preview_scene_request;
         request.include_virtual_bms_tail = true;
-        const auto composed = wormedit::make_editor_field_scene(
+        const auto composed = wormedit::editor_field_scene_view_t::from(
             chart, *environment.controls.cache.scene.index, view, request);
         if (!composed.scene || composed.has_errors())
             return std::nullopt;

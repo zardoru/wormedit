@@ -202,25 +202,6 @@ struct editor_field_bga_event_geometry_t {
     editor_field_rect_t bounds;
 };
 
-struct editor_field_scene_t {
-    [[nodiscard]] auto primitive_count() const noexcept -> std::size_t;
-    std::uint64_t visible_begin_row{};
-    std::uint64_t visible_end_row{};
-    std::vector<editor_field_layout_band_t> layout_bands;
-    std::vector<editor_field_lane_geometry_t> lanes;
-    // Frontends render these behind the field with the comparison-difference
-    // color (yellow in the default skin).
-    std::vector<editor_field_comparison_difference_geometry_t> comparison_differences;
-    std::vector<editor_field_grid_geometry_t> grid_lines;
-    std::vector<editor_field_hold_body_geometry_t> hold_bodies;
-    std::vector<editor_field_note_endpoint_geometry_t> note_endpoints;
-    std::vector<editor_field_bgm_lane_geometry_t> bgm_lanes;
-    std::vector<editor_field_bgm_event_geometry_t> bgm_events;
-    std::optional<editor_field_bga_lane_geometry_t> bga_lane;
-    std::vector<editor_field_bga_lane_geometry_t> bga_lanes;
-    std::vector<editor_field_bga_event_geometry_t> bga_events;
-    std::optional<editor_field_cursor_geometry_t> cursor;
-};
 
 struct editor_field_scene_request_t {
     double field_left_pixels{};
@@ -267,26 +248,75 @@ struct editor_field_scene_request_t {
 };
 
 struct editor_field_scene_window_t;
+struct editor_field_scene_view_result_t;
 
-using editor_field_scene_outcome_t = diagnosed_t<std::optional<editor_field_scene_t>>;
+struct editor_field_scene_view_t {
+    // Composes backend-neutral screen geometry from one immutable index. The
+    // result is safe to pass to Nuklear, ImGui, Clay, SDL GPU, or a test renderer;
+    // it contains no backend-owned types or pointers into the document.
+    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                   const editor_field_scene_index_t& index,
+                                   const editor_interaction_view_model_t& view,
+                                   const editor_field_scene_request_t& request = {})
+        -> editor_field_scene_view_result_t;
+    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    [[nodiscard]] static auto
+    from(const chart_document_t& chart, const editor_field_scene_index_t& index,
+         const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
+         editor_field_scene_window_t& window) -> editor_field_scene_view_result_t;
 
-struct editor_field_scene_result_t {
+    [[nodiscard]] auto primitive_count() const noexcept -> std::size_t;
+    std::uint64_t visible_begin_row{};
+    std::uint64_t visible_end_row{};
+    std::vector<editor_field_layout_band_t> layout_bands;
+    std::vector<editor_field_lane_geometry_t> lanes;
+    // Frontends render these behind the field with the comparison-difference
+    // color (yellow in the default skin).
+    std::vector<editor_field_comparison_difference_geometry_t> comparison_differences;
+    std::vector<editor_field_grid_geometry_t> grid_lines;
+    std::vector<editor_field_hold_body_geometry_t> hold_bodies;
+    std::vector<editor_field_note_endpoint_geometry_t> note_endpoints;
+    std::vector<editor_field_bgm_lane_geometry_t> bgm_lanes;
+    std::vector<editor_field_bgm_event_geometry_t> bgm_events;
+    std::optional<editor_field_bga_lane_geometry_t> bga_lane;
+    std::vector<editor_field_bga_lane_geometry_t> bga_lanes;
+    std::vector<editor_field_bga_event_geometry_t> bga_events;
+    std::optional<editor_field_cursor_geometry_t> cursor;
+};
+
+using editor_field_scene_view_outcome_t = diagnosed_t<std::optional<editor_field_scene_view_t>>;
+
+struct editor_field_scene_view_result_t {
     [[nodiscard]] static auto from(const chart_document_t& chart,
-        const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
-        const editor_field_scene_request_t& request = {}) -> editor_field_scene_outcome_t;
-    [[nodiscard]] static auto from(editor_field_scene_outcome_t&& outcome) -> editor_field_scene_result_t;
-    [[nodiscard]] auto into_outcome() && -> editor_field_scene_outcome_t;
-    [[nodiscard]] static auto from(const chart_document_t& chart,
-        const editor_field_scene_index_t& index, const editor_interaction_view_model_t& view,
-        const editor_field_scene_request_t& request, editor_field_scene_window_t& window)
-        -> editor_field_scene_outcome_t;
-    std::optional<editor_field_scene_t> scene;
+                                   const editor_field_scene_index_t& index,
+                                   const editor_interaction_view_model_t& view,
+                                   const editor_field_scene_request_t& request = {})
+        -> editor_field_scene_view_outcome_t;
+    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    [[nodiscard]] static auto from(editor_field_scene_view_outcome_t&& outcome)
+        -> editor_field_scene_view_result_t;
+    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    [[nodiscard]] auto into_outcome() && -> editor_field_scene_view_outcome_t;
+    [[nodiscard]] static auto
+    from(const chart_document_t& chart, const editor_field_scene_index_t& index,
+         const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
+         editor_field_scene_window_t& window) -> editor_field_scene_view_outcome_t;
+    std::optional<editor_field_scene_view_t> scene;
     diagnostic_list_t diagnostics;
 
     [[nodiscard]] auto has_errors() const -> bool;
     [[nodiscard]] explicit operator bool() const noexcept {
         return scene.has_value() && !has_errors();
     }
+
+  private:
+    [[nodiscard]] static auto compose_window(const chart_document_t& chart,
+                                             const editor_field_scene_index_t& index,
+                                             const editor_interaction_view_model_t& view,
+                                             const editor_field_scene_request_t& request,
+                                             const editor_field_scene_window_t& window)
+        -> editor_field_scene_view_outcome_t;
 };
 
 [[nodiscard]] auto build_editor_field_scene_index(const chart_document_t& chart,
@@ -294,19 +324,11 @@ struct editor_field_scene_result_t {
                                                   editor_field_scene_index_options_t options = {})
     -> std::variant<editor_field_scene_index_t, diagnostic_list_t>;
 
-// Composes backend-neutral screen geometry from one immutable index. The
-// result is safe to pass to Nuklear, ImGui, Clay, SDL GPU, or a test renderer;
-// it contains no backend-owned types or pointers into the document.
-[[nodiscard]] auto make_editor_field_scene(const chart_document_t& chart,
-                                           const editor_field_scene_index_t& index,
-                                           const editor_interaction_view_model_t& view,
-                                           const editor_field_scene_request_t& request = {})
-    -> editor_field_scene_result_t;
 
 // A revision-bound screen window. Transient edit previews use fresh composition.
 // Counters distinguish actual window rebuilds from scroll-only projections.
 struct editor_field_scene_window_t {
-    std::optional<editor_field_scene_t> scene;
+    std::optional<editor_field_scene_view_t> scene;
     editor_interaction_view_model_t view;
     editor_field_scene_request_t request;
     std::uint64_t canvas_rows{};
@@ -330,23 +352,34 @@ struct editor_field_scene_window_t {
                                                        const editor_field_scene_window_t& window)
     -> bool;
 
-struct editor_field_scene_window_metadata_t {
-    editor_field_scene_result_t projection;
-    double hold_clip_top{}, hold_clip_bottom{};
-};
-// Projects current layout/cursor and row/hold clipping bounds without copying
-// retained notes/holds/BGM objects. Unusable windows return an empty projection;
-// callers retain the existing full-composition fallback. This validates only
-// metadata primitives: consumers MUST enforce maximum_scene_primitives again
-// after extracting retained objects, using full composition on overflow.
-[[nodiscard]] auto build_editor_field_scene_window_metadata_view(
-    const chart_document_t& chart, const editor_field_scene_index_t& index,
-    const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
-    const editor_field_scene_window_t& window) -> editor_field_scene_window_metadata_t;
+struct editor_field_scene_window_metadata_view_t {
+    // Projects current layout/cursor and row/hold clipping bounds without copying
+    // retained notes/holds/BGM objects. Unusable windows return an empty projection;
+    // callers retain the existing full-composition fallback. This validates only
+    // metadata primitives: consumers MUST enforce maximum_scene_primitives again
+    // after extracting retained objects, using full composition on overflow.
 
-[[nodiscard]] auto make_editor_field_scene_reusing_window(
-    const chart_document_t& chart, const editor_field_scene_index_t& index,
-    const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
-    editor_field_scene_window_t& window) -> editor_field_scene_result_t;
+    [[nodiscard]] static auto
+    from(const chart_document_t& chart, const editor_field_scene_index_t& index,
+         const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
+         const editor_field_scene_window_t& window) -> editor_field_scene_window_metadata_view_t;
+
+    editor_field_scene_view_result_t projection;
+    double hold_clip_top{}, hold_clip_bottom{};
+
+  private:
+    friend struct editor_field_scene_view_result_t;
+    [[nodiscard]] static auto
+    compose(const chart_document_t& chart, const editor_field_scene_index_t& index,
+            const editor_interaction_view_model_t& view,
+            const editor_field_scene_request_t& request, const editor_field_scene_window_t& window)
+        -> editor_field_scene_window_metadata_view_t;
+};
+
+// Temporary: removed by T-634 after its interaction test caller migrates.
+inline constexpr auto make_editor_field_scene = static_cast<editor_field_scene_view_result_t (*)(
+    const chart_document_t&, const editor_field_scene_index_t&,
+    const editor_interaction_view_model_t&, const editor_field_scene_request_t&)>(
+    &editor_field_scene_view_t::from);
 
 } // namespace wormedit

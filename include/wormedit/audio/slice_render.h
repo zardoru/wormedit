@@ -47,6 +47,11 @@ enum class slice_render_status_t {
     write_error,
 };
 
+// Cuts the decoder's 44.1 kHz stereo output at `ranges` (output frames, as
+// returned by audio_slice_plan_t::from with sample_rate output_sample_rate) and
+// publishes one WAV per range. The source is never modified. Ranges must be
+// ascending, non-overlapping and inside the stream. A failed or cancelled run
+// removes every file it already published.
 struct rendered_audio_slices_t {
     [[nodiscard]] static auto from(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
                                    const slice_render_options_t& options)
@@ -55,27 +60,5 @@ struct rendered_audio_slices_t {
     auto operator==(const rendered_audio_slices_t&) const -> bool = default;
 };
 using slice_render_outcome_t = result_t<rendered_audio_slices_t, error_t<slice_render_status_t>>;
-
-struct slice_render_result_t {
-    [[nodiscard]] static auto from(slice_render_outcome_t&& outcome) -> slice_render_result_t;
-    slice_render_status_t status{slice_render_status_t::invalid_request};
-    // Every published file in order; empty unless status is completed.
-    std::vector<std::filesystem::path> files;
-    std::string error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == slice_render_status_t::completed;
-    }
-};
-
-// Cuts the decoder's 44.1 kHz stereo output at `ranges` (output frames, as
-// returned by audio_slice_plan_t::from with sample_rate output_sample_rate) and
-// publishes one WAV per range. The source is never modified. Ranges must be
-// ascending, non-overlapping and inside the stream. A failed or cancelled run
-// removes every file it already published.
-[[nodiscard]] auto render_audio_slices(decoder_t& decoder,
-                                       std::span<const audio_slice_range_t> ranges,
-                                       const slice_render_options_t& options)
-    -> slice_render_result_t;
 
 } // namespace wormedit::audio

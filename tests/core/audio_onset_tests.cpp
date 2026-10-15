@@ -58,11 +58,12 @@ TEST_CASE("waveform onset detector finds generated clicks deterministically",
     REQUIRE(analyzed.waveform.has_value());
     const auto request = request_for(analyzed.waveform->total_frames);
 
-    const auto first = detect_waveform_onsets(*analyzed.waveform, request);
-    const auto second = detect_waveform_onsets(*analyzed.waveform, request);
-    REQUIRE(first.status == onset_status_t::detected);
-    CHECK((first.frames == std::vector<std::uint64_t>{512, 1536}));
-    CHECK(second.frames == first.frames);
+    const auto first = waveform_onset_index_t::from(*analyzed.waveform, request);
+    const auto second = waveform_onset_index_t::from(*analyzed.waveform, request);
+    REQUIRE(first);
+    REQUIRE(second);
+    CHECK((first->frames == std::vector<std::uint64_t>{512, 1536}));
+    CHECK(second->frames == first->frames);
 }
 
 TEST_CASE("waveform onset detector returns no candidates for silence",
@@ -70,10 +71,10 @@ TEST_CASE("waveform onset detector returns no candidates for silence",
     const auto samples = make_click_track(1'024, {});
     const auto analyzed = analyze_pcm(samples, 64);
     REQUIRE(analyzed.waveform.has_value());
-    const auto result = detect_waveform_onsets(*analyzed.waveform, request_for(analyzed.waveform->total_frames));
+    const auto result = waveform_onset_index_t::from(*analyzed.waveform, request_for(analyzed.waveform->total_frames));
 
-    CHECK(result.status == onset_status_t::detected);
-    CHECK(result.frames.empty());
+    REQUIRE(result);
+    CHECK(result->frames.empty());
 }
 
 TEST_CASE("waveform onset detector sees a click in one stereo channel",
@@ -84,10 +85,10 @@ TEST_CASE("waveform onset detector sees a click in one stereo channel",
     REQUIRE(analyzed.waveform.has_value());
     auto request = request_for(analyzed.waveform->total_frames);
     request.minimum_separation_frames = 256;
-    const auto result = detect_waveform_onsets(*analyzed.waveform, request);
+    const auto result = waveform_onset_index_t::from(*analyzed.waveform, request);
 
-    REQUIRE(result.status == onset_status_t::detected);
-    CHECK((result.frames == std::vector<std::uint64_t>{512}));
+    REQUIRE(result);
+    CHECK((result->frames == std::vector<std::uint64_t>{512}));
 }
 
 TEST_CASE("waveform onset detector accepts a short source-tail window",
@@ -98,10 +99,10 @@ TEST_CASE("waveform onset detector accepts a short source-tail window",
     REQUIRE(analyzed.waveform.has_value());
     auto request = request_for(analyzed.waveform->total_frames);
     request.minimum_separation_frames = 256;
-    const auto result = detect_waveform_onsets(*analyzed.waveform, request);
+    const auto result = waveform_onset_index_t::from(*analyzed.waveform, request);
 
-    REQUIRE(result.status == onset_status_t::detected);
-    CHECK((result.frames == std::vector<std::uint64_t>{1'280}));
+    REQUIRE(result);
+    CHECK((result->frames == std::vector<std::uint64_t>{1'280}));
 }
 
 TEST_CASE("waveform onset detector honors source-zero windows in a subrange",
@@ -113,10 +114,10 @@ TEST_CASE("waveform onset detector honors source-zero windows in a subrange",
     auto request = request_for(1'280);
     request.begin_frame = 640;
     request.minimum_separation_frames = 256;
-    const auto result = detect_waveform_onsets(*analyzed.waveform, request);
+    const auto result = waveform_onset_index_t::from(*analyzed.waveform, request);
 
-    REQUIRE(result.status == onset_status_t::detected);
-    CHECK((result.frames == std::vector<std::uint64_t>{768}));
+    REQUIRE(result);
+    CHECK((result->frames == std::vector<std::uint64_t>{768}));
 }
 
 TEST_CASE("waveform onset detector discards earlier results on incomplete coverage",
@@ -128,10 +129,10 @@ TEST_CASE("waveform onset detector discards earlier results on incomplete covera
     auto waveform = *analyzed.waveform;
     waveform.key.end_frame = 1'024;
     waveform.bins.resize(16);
-    const auto result = detect_waveform_onsets(waveform, request_for(analyzed.waveform->total_frames));
+    const auto result = waveform_onset_index_t::from(waveform, request_for(analyzed.waveform->total_frames));
 
-    CHECK(result.status == onset_status_t::not_ready);
-    CHECK(result.frames.empty());
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == onset_status_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector requires cached context for its first baseline",
@@ -146,9 +147,9 @@ TEST_CASE("waveform onset detector requires cached context for its first baselin
     auto request = request_for(1'280);
     request.begin_frame = 512;
 
-    const auto result = detect_waveform_onsets(waveform, request);
-    CHECK(result.status == onset_status_t::not_ready);
-    CHECK(result.frames.empty());
+    const auto result = waveform_onset_index_t::from(waveform, request);
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == onset_status_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector rejects malformed RMS bins",
@@ -158,10 +159,10 @@ TEST_CASE("waveform onset detector rejects malformed RMS bins",
     REQUIRE(analyzed.waveform.has_value());
     auto waveform = *analyzed.waveform;
     waveform.bins[0].rms[0] = std::numeric_limits<float>::quiet_NaN();
-    const auto result = detect_waveform_onsets(waveform, request_for(analyzed.waveform->total_frames));
+    const auto result = waveform_onset_index_t::from(waveform, request_for(analyzed.waveform->total_frames));
 
-    CHECK(result.status == onset_status_t::invalid_waveform);
-    CHECK(result.frames.empty());
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == onset_status_t::invalid_waveform);
 }
 
 TEST_CASE("waveform onset detector rejects invalid requests and oversized base bins",
@@ -172,20 +173,20 @@ TEST_CASE("waveform onset detector rejects invalid requests and oversized base b
     const auto& waveform = *analyzed.waveform;
     auto invalid = request_for(analyzed.waveform->total_frames);
     invalid.window_frames = 0;
-    CHECK(detect_waveform_onsets(waveform, invalid).status == onset_status_t::invalid_request);
+    CHECK(waveform_onset_index_t::from(waveform, invalid).error() == onset_status_t::invalid_request);
 
     auto too_many = request_for(analyzed.waveform->total_frames);
     too_many.maximum_onsets = maximum_onset_frames + 1;
-    CHECK(detect_waveform_onsets(waveform, too_many).status == onset_status_t::invalid_request);
+    CHECK(waveform_onset_index_t::from(waveform, too_many).error() == onset_status_t::invalid_request);
 
     const auto coarse = analyze_pcm(samples, 512);
     REQUIRE(coarse.waveform.has_value());
-    CHECK(detect_waveform_onsets(*coarse.waveform, request_for(analyzed.waveform->total_frames)).status ==
+    CHECK(waveform_onset_index_t::from(*coarse.waveform, request_for(analyzed.waveform->total_frames)).error() ==
           onset_status_t::not_ready);
 
     auto unaligned = request_for(analyzed.waveform->total_frames);
     unaligned.window_frames = 257;
-    CHECK(detect_waveform_onsets(waveform, unaligned).status == onset_status_t::not_ready);
+    CHECK(waveform_onset_index_t::from(waveform, unaligned).error() == onset_status_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector reports output capacity overflow without partial frames",
@@ -196,10 +197,10 @@ TEST_CASE("waveform onset detector reports output capacity overflow without part
     REQUIRE(analyzed.waveform.has_value());
     auto request = request_for(analyzed.waveform->total_frames);
     request.maximum_onsets = 2;
-    const auto result = detect_waveform_onsets(*analyzed.waveform, request);
+    const auto result = waveform_onset_index_t::from(*analyzed.waveform, request);
 
-    CHECK(result.status == onset_status_t::capacity_exceeded);
-    CHECK(result.frames.empty());
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == onset_status_t::capacity_exceeded);
 }
 
 TEST_CASE("waveform onset detector checks complete coverage before the output cap", "[audio][onset]") {
@@ -211,9 +212,9 @@ TEST_CASE("waveform onset detector checks complete coverage before the output ca
     waveform.bins.resize(16);
     auto request = request_for(waveform.total_frames);
     request.maximum_onsets = 1;
-    const auto result = detect_waveform_onsets(waveform, request);
-    CHECK(result.status == onset_status_t::not_ready);
-    CHECK(result.frames.empty());
+    const auto result = waveform_onset_index_t::from(waveform, request);
+    REQUIRE_FALSE(result);
+    CHECK(result.error() == onset_status_t::not_ready);
 }
 
 TEST_CASE("canonical onset construction reports the legacy invalid request code",
@@ -222,8 +223,4 @@ TEST_CASE("canonical onset construction reports the legacy invalid request code"
     const auto detected = waveform_onset_index_t::from(waveform, {});
     REQUIRE_FALSE(detected.has_value());
     CHECK(detected.error() == onset_status_t::invalid_request);
-    const auto legacy = onset_result_t::from(waveform_onset_outcome_t{
-        std::unexpected(onset_status_t::not_ready)});
-    CHECK_FALSE(legacy);
-    CHECK(legacy.frames.empty());
 }

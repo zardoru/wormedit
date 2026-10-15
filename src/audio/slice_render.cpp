@@ -205,15 +205,4 @@ auto rendered_audio_slices_t::from(decoder_t& decoder, std::span<const audio_sli
     return rendered_audio_slices_t{.files = std::move(published)};
 }
 
-auto slice_render_result_t::from(slice_render_outcome_t&& outcome) -> slice_render_result_t {
-    if (outcome) return {.status = slice_render_status_t::completed,
-                          .files = std::move(outcome->files), .error = {}};
-    return {.status = outcome.error().code, .files = {}, .error = std::move(outcome.error().message)};
-}
-
-auto render_audio_slices(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
-                         const slice_render_options_t& options) -> slice_render_result_t {
-    return slice_render_result_t::from(rendered_audio_slices_t::from(decoder, ranges, options));
-}
-
 } // namespace wormedit::audio

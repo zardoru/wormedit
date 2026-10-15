@@ -132,13 +132,13 @@ auto render_staged(const song_document_t& song, const slice_span_render_input_t&
         auto opened = open_source(song, plan, span.asset, options, decoders);
         if (!opened) return opened;
         const std::array<audio_slice_range_t, 1> range{{{span.begin_frame, span.end_frame}}};
-        auto rendered = audio::render_audio_slices(*decoders.at(span.asset.value), range,
+        auto rendered = audio::rendered_audio_slices_t::from(*decoders.at(span.asset.value), range,
             {.directory = publication.staging, .base_name = "span" + std::to_string(index), .stop = options.stop, .progress = {},
              .maximum_slice_frames = options.maximum_span_frames,
              .encoding = options.preserve_float_samples ? audio::slice_wav_encoding_t::float32
                                                         : audio::slice_wav_encoding_t::pcm16});
-        if (!rendered) return std::unexpected(slice_span_render_payload_t::from("Cannot render asset " + std::to_string(span.asset.value) + ": " + rendered.error, span.asset));
-        staged.push_back(std::move(rendered.files.front()));
+        if (!rendered) return std::unexpected(slice_span_render_payload_t::from("Cannot render asset " + std::to_string(span.asset.value) + ": " + rendered.error().message, span.asset));
+        staged.push_back(std::move(rendered->files.front()));
     }
     return {};
 }

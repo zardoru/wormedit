@@ -66,10 +66,10 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
                   wormedit::local_position_t cursor) -> wormedit::local_position_t;
 
 void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
-                                wormedit::chart_paste_proposal_t& proposal);
+                                wormedit::chart_paste_outcome_t& proposal);
 
 auto paste_geometry(const wormedit::chart_document_t& source,
-                    const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t;
+                    const wormedit::chart_paste_report_t& report) -> wormedit::chart_document_t;
 
 auto known_mania_key_profile(std::string_view id) -> bool;
 

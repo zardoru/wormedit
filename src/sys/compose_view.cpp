@@ -144,22 +144,25 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
 
 // Pasted playable heads obey the same Warp rule as placed ones; fakes, mines and tails may land.
 void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
-                                wormedit::chart_paste_proposal_t& proposal) {
-    if (!proposal.is_valid() || chart.warps.empty()) return;
+                                wormedit::chart_paste_outcome_t& proposal) {
+    if (!proposal.value || chart.warps.empty()) return;
     const auto indexed = wormedit::build_measure_index(chart);
     const auto* index = std::get_if<wormedit::measure_index_t>(&indexed);
     if (!index) return;
-    for (const auto& object : proposal.objects) {
+    for (const auto& object : proposal.value->payload.report.objects) {
         const auto* note = std::get_if<wormedit::note_t>(&object);
         const auto row = note ? index->row_of(note->position) : std::nullopt;
         if (!row || !wormedit::is_head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
-        proposal.reject("Playable note heads cannot sit inside a warp.");
+        proposal.diagnostics.push_back(wormedit::chart_paste_diagnostic_t::from(
+            "Playable note heads cannot sit inside a warp.", proposal.value->stamp,
+            std::move(proposal.value->payload.report)));
+        proposal.value.reset();
         return;
     }
 }
 
 auto paste_geometry(const wormedit::chart_document_t& source,
-                    const wormedit::chart_paste_proposal_t& proposal) -> wormedit::chart_document_t {
+                    const wormedit::chart_paste_report_t& report) -> wormedit::chart_document_t {
     wormedit::chart_document_t chart;
     chart.id = source.id;
     chart.source_family = source.source_family;
@@ -171,7 +174,7 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     chart.active_branch_selection = source.active_branch_selection;
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
-    for (const auto& object : proposal.objects) {
+    for (const auto& object : report.objects) {
         // Ghost previews draw notes and BGM events; pasted timing objects have no ghost.
         std::visit([&chart](const auto& value) {
             using value_t = std::decay_t<decltype(value)>;
@@ -187,6 +190,21 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     }
     return chart;
 }
+void build_compose_paste_preview(application_command_state_t::paste_session_t& session,
+    const wormedit::song_document_t& document, const wormedit::chart_document_t& source,
+    wormedit::local_position_t anchor) {
+    session.anchor = anchor;
+    session.anchor_available = true;
+    session.proposal = wormedit::chart_paste_proposal_t::propose(document, source.id,
+        session.clipboard, anchor, document.revision);
+    block_paste_heads_in_warps(source, session.proposal);
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    const wormedit::chart_paste_report_t empty;
+    session.geometry = paste_geometry(source, preview.report ? *preview.report : empty);
+    const auto indexed = wormedit::build_editor_field_scene_index(session.geometry, document.revision);
+    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
+    session.index = index ? std::optional{*index} : std::nullopt;
+}
 } // namespace compose_projection_detail
 
 auto revise_compose_paste(application_command_state_t& application_state,
@@ -197,7 +215,8 @@ auto revise_compose_paste(application_command_state_t& application_state,
         if (failure) *failure = "The paste preview is stale.";
         return false;
     }
-    if (!session->proposal.stamp.is_current(document, chart,
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session->proposal);
+    if (!preview.stamp || !preview.stamp->is_current(document, chart,
             wormedit::document_identity_policy_t::revision_only)) {
         if (failure) *failure = wormedit::stale_action_message("Paste preview");
         session.reset();
@@ -210,15 +229,7 @@ auto revise_compose_paste(application_command_state_t& application_state,
         session.reset();
         return false;
     }
-    session->anchor = anchor;
-    session->anchor_available = true;
-    session->proposal = wormedit::propose_chart_paste(document, chart, session->clipboard,
-                                                    anchor, document.revision);
-    block_paste_heads_in_warps(*source, session->proposal);
-    session->geometry = paste_geometry(*source, session->proposal);
-    const auto indexed = wormedit::build_editor_field_scene_index(session->geometry, document.revision);
-    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
-    session->index = index ? std::optional{*index} : std::nullopt;
+    build_compose_paste_preview(*session, document, *source, anchor);
     return true;
 }
 
@@ -231,14 +242,18 @@ auto begin_compose_paste(application_command_state_t& application_state,
     }
     application_command_state_t::paste_session_t session;
     session.clipboard = *application_state.project.clipboard.chart_clipboard;
-    session.proposal.stamp = wormedit::chart_stamp_t::from(document, state.chart);
     application_state.project.compose_gesture.note_paint_mode_active = false;
     application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+    const auto* source = document.find_chart(state.chart);
+    if (!source) {
+        application_state.project.clipboard.paste_session.reset();
+        status = "The paste chart is unavailable.";
+        return false;
+    }
+    build_compose_paste_preview(session, document, *source, state.cursor);
     application_state.project.clipboard.paste_session = std::move(session);
-    const bool accepted = revise_compose_paste(application_state, document, state.chart, state.cursor);
-    status = accepted ? "Paste preview: click or Enter to commit; Escape to cancel."
-                      : "The paste chart is unavailable.";
-    return accepted;
+    status = "Paste preview: click or Enter to commit; Escape to cancel.";
+    return true;
 }
 
 auto apply_compose_paste(application_command_state_t& application_state,
@@ -251,7 +266,11 @@ auto apply_compose_paste(application_command_state_t& application_state,
         return false;
     auto& session = *application_state.project.clipboard.paste_session;
     if (!session.anchor_available) { status = session.anchor_error; return false; }
-    if (!session.proposal.is_valid()) { status = session.proposal.message(); return false; }
+    if (!session.proposal.value) {
+        const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+        status = preview.diagnostic ? preview.diagnostic->message : "";
+        return false;
+    }
     const auto applied = wormedit::paste_chart_clipboard(history, state.chart, session.clipboard,
                                                        session.anchor);
     if (!applied.applied) {
@@ -2220,7 +2239,9 @@ void append_paste_timing_ghosts(const compose_projection_context_t<wormedit::edi
                                  input.scope.interaction_view.viewport_scroll_pixels, height,
                                  input.scope.downscroll);
     };
-    for (const auto& object : session.proposal.objects) {
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    if (!preview.report) return;
+    for (const auto& object : preview.report->objects) {
         const auto lane = paste_timing_ghost_lane(object);
         if (!lane) continue;
         const auto [begin, end] = paste_timing_ghost_span(object);
@@ -2246,9 +2267,11 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
     auto& session = *application.project.clipboard.paste_session;
     auto& view = input.frame.view();
     view.paste_active = true;
-    view.paste_valid = session.anchor_available && session.proposal.is_valid();
-    view.paste_diagnostic = session.anchor_available ? session.proposal.message().data()
-                                                     : session.anchor_error.c_str();
+    const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
+    view.paste_valid = session.anchor_available && session.proposal.value.has_value();
+    view.paste_diagnostic = session.anchor_available
+        ? (preview.diagnostic ? preview.diagnostic->message.c_str() : "")
+        : session.anchor_error.c_str();
     session.ghosts.clear();
     if (!session.index) return;
     const auto composed = wormedit::make_editor_field_scene(

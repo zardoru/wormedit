@@ -2246,7 +2246,7 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     fixture.interaction->cursor.row = 240;
     expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history.document,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
-    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.is_valid()));
+    expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.value.has_value()));
     ++fixture.history.document.revision;
     expect_compose_test(!static_cast<bool>(apply_compose_paste(fixture.application, fixture.history,
                                      *fixture.interaction, status)));
@@ -2702,7 +2702,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     std::string status;
     expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
                                    *fixture.interaction, status));
-    const std::string collision{fixture.application.project.clipboard.paste_session->proposal.message()};
+    const std::string collision{fixture.application.project.clipboard.paste_session->proposal.diagnostics.front().message};
     expect_compose_test(!collision.empty());
     auto outside = paste_pointer_action(fixture, false);
     outside.compose_inputs[0].y_pixels = 10000;

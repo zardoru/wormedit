@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/interaction.h>
-#include <wormedit/core/result.h>
+#include <wormedit/core/proposal.h>
 
 #include <optional>
 #include <string>
@@ -71,36 +71,52 @@ struct chart_paste_stem_event_t {
     sound_channel_event_t event;
 };
 
-struct chart_paste_proposal_t {
-    chart_stamp_t stamp;
+// Rejected candidates retain only read-only geometry/counts for the ghost preview.
+struct chart_paste_report_t {
     std::vector<chart_clipboard_payload_t> objects;
-    // New retained BMSON events the stem points above are linked to.
-    std::vector<chart_paste_stem_event_t> stem_events;
     std::size_t missing_lane_count{};
-    diagnostic_list_t diagnostics;
+    auto operator==(const chart_paste_report_t&) const -> bool = default;
+};
 
-    [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return static_cast<bool>(stamp.chart) && !objects.empty() && diagnostics.empty();
-    }
-    [[nodiscard]] auto message() const noexcept -> std::string_view {
-        return diagnostics.empty() ? std::string_view{""} : std::string_view{diagnostics.front().message};
-    }
-    void reject(std::string message) & {
-        diagnostics.clear();
-        diagnostics.push_back(wormedit::error(diagnostic_code_t::collision, std::move(message)));
-    }
-    [[nodiscard]] auto reject(std::string message) && -> chart_paste_proposal_t {
-        this->reject(std::move(message));
-        return std::move(*this);
+struct chart_paste_diagnostic_t : diagnostic_t {
+    chart_stamp_t stamp;
+    chart_paste_report_t report;
+    auto operator==(const chart_paste_diagnostic_t&) const -> bool = default;
+
+    [[nodiscard]] static auto from(std::string message, chart_stamp_t stamp,
+                                   chart_paste_report_t report) -> chart_paste_diagnostic_t {
+        return {error(diagnostic_code_t::collision, std::move(message)), stamp, std::move(report)};
     }
 };
 
-[[nodiscard]] auto propose_chart_paste(const song_document_t& document, chart_id_t chart,
-                                       const chart_clipboard_t& clipboard, local_position_t anchor,
-                                       std::uint64_t expected_revision) -> chart_paste_proposal_t;
+struct chart_paste_proposal_t;
+using chart_paste_diagnostics_t = std::vector<chart_paste_diagnostic_t>;
+using chart_paste_outcome_t =
+    proposal_outcome_t<chart_paste_proposal_t, chart_stamp_t, chart_paste_diagnostics_t>;
+
+struct chart_paste_proposal_t {
+    [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
+        const chart_clipboard_t& clipboard, local_position_t anchor,
+        std::uint64_t expected_revision) -> chart_paste_outcome_t;
+    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
+        const chart_clipboard_t& clipboard, local_position_t anchor) const -> chart_paste_outcome_t;
+
+    chart_paste_report_t report;
+    // New retained BMSON events the stem points above are linked to.
+    std::vector<chart_paste_stem_event_t> stem_events;
+    auto operator==(const chart_paste_proposal_t&) const -> bool = default;
+};
+
+static_assert(staged_proposal<chart_paste_proposal_t,
+    std::tuple<const song_document_t&, chart_id_t, const chart_clipboard_t&, local_position_t, std::uint64_t>,
+    std::tuple<const chart_stamp_t&, const song_document_t&, const chart_clipboard_t&, local_position_t>,
+    chart_stamp_t, chart_paste_diagnostics_t>);
+
+using chart_paste_preview_view_t =
+    proposal_preview_view_t<chart_paste_proposal_t, chart_stamp_t, chart_paste_diagnostics_t>;
 
 // Consumes a revision-bound object batch and publishes it once.
-[[nodiscard]] auto apply_chart_paste(document_history_t& history, chart_paste_proposal_t&& proposal)
+[[nodiscard]] auto apply_chart_paste(document_history_t& history, proposal_t<chart_paste_proposal_t>&& proposal)
     -> document_command_result_t;
 
 [[nodiscard]] auto paste_chart_clipboard(document_history_t& history,

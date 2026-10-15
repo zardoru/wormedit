@@ -479,7 +479,7 @@ struct application_command_state_t {
         bool anchor_available{true};
         std::string anchor_error;
         std::optional<wormedit::local_position_t> pointer_cursor;
-        wormedit::chart_paste_proposal_t proposal;
+        wormedit::chart_paste_outcome_t proposal;
         wormedit::chart_document_t geometry;
         std::optional<wormedit::editor_field_scene_index_t> index;
         std::vector<WormUiComposePasteGhostView> ghosts;

@@ -71,10 +71,10 @@ auto make_history() -> document_history_t {
     }};
     const auto parsed =
         parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), std::move(options));
-    if (!parsed.song || parsed.has_errors()) {
+    if (!parsed.value.song || !parsed.ok()) {
         throw std::runtime_error("BMS branch command test fixture did not parse");
     }
-    return document_history_t::from(*parsed.song);
+    return document_history_t::from(*parsed.value.song);
 }
 
 auto make_empty_branch_history() -> document_history_t {
@@ -83,10 +83,10 @@ auto make_empty_branch_history() -> document_history_t {
     const auto parsed = parse_bms_bytes(
         std::as_bytes(std::span{empty_branch_source.data(), empty_branch_source.size()}),
         std::move(options));
-    if (!parsed.song || parsed.has_errors()) {
+    if (!parsed.value.song || !parsed.ok()) {
         throw std::runtime_error("empty BMS block fixture did not parse");
     }
-    return document_history_t::from(*parsed.song);
+    return document_history_t::from(*parsed.value.song);
 }
 
 auto find_node(const bms_control_node_t& root, bms_control_kind_t kind,
@@ -147,8 +147,8 @@ void check_created_block_projection(const document_history_t& history) {
 void check_created_block_serialization(const document_history_t& history) {
     const auto written = write_bms(history.document, {.chart = history.document.charts.front().id,
                                                        .preserve_unchanged_source = false});
-    REQUIRE(written.bytes.has_value());
-    CHECK(written.bytes->find("#RANDOM 3\n#IF 1\n#WAV03 replacement.wav") !=
+    REQUIRE(written.value.has_value());
+    CHECK(written.value->find("#RANDOM 3\n#IF 1\n#WAV03 replacement.wav") !=
           std::string::npos);
 }
 
@@ -458,10 +458,10 @@ auto parse_branch_fixture(std::string_view text, text_encoding_t encoding = text
     options.branch_choices = {{source_line_order(text, random_line), 1}};
     const auto parsed = parse_bms_bytes(
         std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
-    if (!parsed.song || parsed.has_errors()) {
+    if (!parsed.value.song || !parsed.ok()) {
         throw std::runtime_error("BMS branch edit fixture did not parse");
     }
-    return document_history_t::from(*parsed.song);
+    return document_history_t::from(*parsed.value.song);
 }
 
 auto edit_or_throw(document_history_t& history, std::string_view before, std::string after)
@@ -1087,9 +1087,9 @@ TEST_CASE("BMS branch selection maps nested controls across normalized source or
     };
     const auto parsed = parse_bms_bytes(
         std::as_bytes(std::span{nested_source.data(), nested_source.size()}), std::move(options));
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.has_errors());
-    auto history = document_history_t::from(*parsed.song);
+    REQUIRE(parsed.value.song.has_value());
+    REQUIRE(parsed.ok());
+    auto history = document_history_t::from(*parsed.value.song);
     const auto* random = find_node(chart_tree(history), bms_control_kind_t::random, "#RANDOM 2");
     const auto* switch_block =
         find_node(chart_tree(history), bms_control_kind_t::switch_block, "#SWITCH 2");
@@ -1173,8 +1173,8 @@ auto make_three_leaf_history(std::int64_t selected) -> document_history_t {
                                .selected_value = selected}};
     const auto parsed = parse_bms_bytes(
         std::as_bytes(std::span{three_leaf_source.data(), three_leaf_source.size()}), std::move(options));
-    if (!parsed.song || parsed.has_errors()) throw std::runtime_error("three-leaf fixture did not parse");
-    return document_history_t::from(*parsed.song);
+    if (!parsed.value.song || !parsed.ok()) throw std::runtime_error("three-leaf fixture did not parse");
+    return document_history_t::from(*parsed.value.song);
 }
 
 auto leaf_move_request(const document_history_t& history, std::string_view header,
@@ -1273,27 +1273,24 @@ TEST_CASE("BMS rematerialization failures retain the three diagnostic phases", "
     outcome.diagnostics.write.push_back({.message = "write"});
     outcome.diagnostics.parse.push_back({.message = "parse"});
     CHECK_FALSE(outcome.ok());
-    const auto legacy = bms_branch_selection_result_t::from(std::move(outcome));
-    CHECK_FALSE(static_cast<bool>(legacy));
-    CHECK(legacy.has_errors());
-    CHECK(legacy.write_diagnostics.front().message == "write");
-    CHECK(legacy.parse_diagnostics.front().message == "parse");
+    CHECK_FALSE(outcome.value.song.has_value());
+    CHECK(outcome.diagnostics.write.front().message == "write");
+    CHECK(outcome.diagnostics.parse.front().message == "parse");
 }
 
 TEST_CASE("BMS rematerialization retains its legacy song-presence rule", "[unit][bms][branch][results]") {
     bms_branch_selection_outcome_t outcome{};
     outcome.value.song.emplace();
     outcome.diagnostics.write.push_back({.message = "write"});
-    const auto legacy = bms_branch_selection_result_t::from(std::move(outcome));
-    CHECK(static_cast<bool>(legacy));
-    CHECK(legacy.has_errors());
-    CHECK(legacy.write_diagnostics.front().message == "write");
+    CHECK(outcome.value.song.has_value());
+    CHECK_FALSE(outcome.ok());
+    CHECK(outcome.diagnostics.write.front().message == "write");
 }
 
 TEST_CASE("BMS primary rematerialization selects a detached branch", "[unit][bms][branch][results]") {
     auto history = make_history();
     const auto before = retained_bms_bytes(history.document);
-    const auto outcome = bms_branch_selection_result_t::from(history.document, selected_branch(history, 2));
+    const auto outcome = rematerialize_bms_branch_selection(history.document, selected_branch(history, 2));
     REQUIRE(outcome.ok());
     REQUIRE(outcome.value.song.has_value());
     CHECK(first_note_resource_name(*outcome.value.song) == "inactive.wav");

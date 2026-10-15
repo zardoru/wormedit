@@ -544,14 +544,14 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song.has_value());
-    auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.song.has_value());
+    auto& chart = parsed.value.song->charts.front();
     const auto& hold = require_branch_hold(chart);
     const auto hold_id = hold.id;
     const auto old_lane = hold.lane;
     auto target = profile_with_new_lane_ids(chart, 40'000);
     const auto safe_mapping = rank_mapping(chart, target.layout);
-    auto safe_history = document_history_t::from(*parsed.song);
+    auto safe_history = document_history_t::from(*parsed.value.song);
     const auto safe_preview = propose_lane_migration(
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
     REQUIRE(safe_preview);
@@ -573,8 +573,8 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song.has_value());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.song.has_value());
+    const auto& chart = parsed.value.song->charts.front();
     const auto hold = std::ranges::find_if(chart.measures.front().notes, [](const auto& note) {
         return note.kind == note_kind_t::hold;
     });
@@ -593,7 +593,7 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
                                            &lane_migration_mapping_t::source_lane);
     REQUIRE(explicit_lane != mapping.end());
     explicit_lane->target_lane = destination->id;
-    CHECK(propose_lane_migration(*parsed.song, parsed.song->revision, chart.id, target, mapping)
+    CHECK(propose_lane_migration(*parsed.value.song, parsed.value.song->revision, chart.id, target, mapping)
               .issue == lane_migration_issue_t::unsupported_branch_identity);
 }
 

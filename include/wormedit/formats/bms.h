@@ -62,21 +62,10 @@ struct bms_parse_options_t {
 struct bms_parse_payload_t {
     std::optional<song_document_t> song{};
     encoding_provenance_t encoding{};
+    // Ambiguous/custom-required evidence retains candidates and raw channel order for UI review.
     std::optional<bms_profile_detection_result_t> lane_profile_detection{};
 };
 using bms_parse_outcome_t = diagnosed_t<bms_parse_payload_t, std::vector<bms_parse_diagnostic_t>>;
-struct bms_parse_result_t {
-    [[nodiscard]] static auto from(std::span<const std::byte> bytes, bms_parse_options_t options = {}) -> bms_parse_outcome_t;
-    [[nodiscard]] static auto from(bms_parse_outcome_t&& outcome) -> bms_parse_result_t;
-    std::optional<song_document_t> song;
-    encoding_provenance_t encoding;
-    // Present once channel/header evidence has been evaluated. Ambiguous and
-    // custom-required results retain candidates and exact raw channel order for UI review.
-    std::optional<bms_profile_detection_result_t> lane_profile_detection;
-    std::vector<bms_parse_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 enum class bms_branch_statement_edit_diagnostic_code_t {
     missing_chart,
@@ -181,6 +170,6 @@ struct bms_branch_statement_delete_t {
 // root-level semantics. Branch-local metadata, definitions, measure geometry, and
 // object payloads are projected when a RANDOM/SWITCH choice is explicitly supplied.
 [[nodiscard]] auto parse_bms_bytes(std::span<const std::byte> bytes,
-                                   bms_parse_options_t options = {}) -> bms_parse_result_t;
+                                   bms_parse_options_t options = {}) -> bms_parse_outcome_t;
 
 } // namespace wormedit

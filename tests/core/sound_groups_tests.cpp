@@ -117,14 +117,14 @@ auto grouped_bmson_outputs() -> std::pair<std::string, std::string> {
     const auto imported = parse_bmson_bytes(bytes);
     REQUIRE(imported.value);
     const auto before = write_bmson(*imported.value);
-    REQUIRE_FALSE(!before.ok());
+    REQUIRE(before.ok());
     REQUIRE(before.value);
     auto history = document_history_t::from(*imported.value);
     const auto state_before = sound_group_invariants(history.document);
     add_group_to_one_sample(history);
     REQUIRE(sound_group_invariants(history.document) == state_before);
     const auto after = write_bmson(history.document);
-    REQUIRE_FALSE(!after.ok());
+    REQUIRE(after.ok());
     REQUIRE(after.value);
     return {*before.value, *after.value};
 }
@@ -159,20 +159,20 @@ auto populated_group_roundtrip_is_stable() -> bool {
 auto grouped_bms_outputs() -> std::pair<std::string, std::string> {
     const auto bytes = read_fixture("bms/bgm-columns-per-measure.bms");
     const auto imported = parse_bms_bytes(bytes);
-    REQUIRE(imported.song);
+    REQUIRE(imported.value.song);
     const bms_write_options_t options{
         .lane_profile_id = "bme-7k-outside-scratch", .preserve_unchanged_source = false};
-    const auto before = write_bms(*imported.song, options);
-    REQUIRE_FALSE(before.has_errors());
-    REQUIRE(before.bytes);
-    auto history = document_history_t::from(*imported.song);
+    const auto before = write_bms(*imported.value.song, options);
+    REQUIRE(before.ok());
+    REQUIRE(before.value);
+    auto history = document_history_t::from(*imported.value.song);
     const auto state_before = sound_group_invariants(history.document);
     add_group_to_one_sample(history);
     REQUIRE(sound_group_invariants(history.document) == state_before);
     const auto after = write_bms(history.document, options);
-    REQUIRE_FALSE(after.has_errors());
-    REQUIRE(after.bytes);
-    return {*before.bytes, *after.bytes};
+    REQUIRE(after.ok());
+    REQUIRE(after.value);
+    return {*before.value, *after.value};
 }
 
 constexpr std::string_view default_bms_source =
@@ -182,18 +182,18 @@ auto default_bms_history() -> document_history_t {
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{default_bms_source.data(),
                                                                  default_bms_source.size()}),
                                         {.lane_profile_id = "bme-7k-outside-scratch"});
-    REQUIRE(parsed.song);
-    const auto original = write_bms(*parsed.song);
-    REQUIRE_FALSE(original.has_errors());
-    REQUIRE(original.bytes);
-    CHECK(*original.bytes == default_bms_source);
-    return document_history_t::from(*parsed.song);
+    REQUIRE(parsed.value.song);
+    const auto original = write_bms(*parsed.value.song);
+    REQUIRE(original.ok());
+    REQUIRE(original.value);
+    CHECK(*original.value == default_bms_source);
+    return document_history_t::from(*parsed.value.song);
 }
 
 auto default_export_matches(const document_history_t& history,
                             const std::optional<std::string>& expected) -> bool {
     const auto written = write_bms(history.document);
-    return !written.has_errors() && written.bytes == expected;
+    return written.ok() && written.value == expected;
 }
 
 auto bms_source_still_unchanged(const song_document_t& song) -> bool {
@@ -214,12 +214,12 @@ auto group_document_preserves_bms(document_history_t& history,
 auto default_bms_group_undo_redo() -> bool {
     auto history = default_bms_history();
     const auto before = write_bms(history.document);
-    REQUIRE(before.bytes);
-    CHECK(group_document_preserves_bms(history, before.bytes));
+    REQUIRE(before.value);
+    CHECK(group_document_preserves_bms(history, before.value));
     REQUIRE(undo_document_command(history));
-    CHECK(default_export_matches(history, before.bytes));
+    CHECK(default_export_matches(history, before.value));
     REQUIRE(redo_document_command(history));
-    CHECK(default_export_matches(history, before.bytes));
+    CHECK(default_export_matches(history, before.value));
     return true;
 }
 

@@ -396,8 +396,8 @@ TEST_CASE("BMS audio fallback finds a differently cased Ogg beside its chart",
     check_single_audio_asset(opened.value(), "audio/keysound-c4.ogg", "AuDiO\\KEYSOUND-C4.WAV");
     CHECK(opened.value().warnings.empty());
     const auto exported = wormedit::write_bms(*opened.value().document);
-    REQUIRE(exported.bytes);
-    CHECK(exported.bytes->find("#WAV01 AuDiO\\KEYSOUND-C4.WAV") != std::string::npos);
+    REQUIRE(exported.value);
+    CHECK(exported.value->find("#WAV01 AuDiO\\KEYSOUND-C4.WAV") != std::string::npos);
 }
 
 TEST_CASE("BMS audio fallback keeps an existing exact source",
@@ -502,8 +502,8 @@ TEST_CASE("BMS image resolver finds one alternate extension and keeps the author
     CHECK_FALSE(opened.value().document->resources[0].missing);
     check_bmson_condition(opened.value().document->resources[0].name == "cover.png");
     const auto exported = wormedit::write_bms(*opened.value().document);
-    require_bmson_condition(exported.bytes);
-    check_bmson_condition(exported.bytes->find("#BMP01 cover.png") != std::string::npos);
+    require_bmson_condition(exported.value);
+    check_bmson_condition(exported.value->find("#BMP01 cover.png") != std::string::npos);
 }
 
 TEST_CASE("BMS image resolver leaves ambiguous alternate extensions unresolved",
@@ -784,14 +784,14 @@ TEST_CASE("project opening keeps imported BMS lane profiles", "[project-open][de
     options.lane_profile_id = "bms-5k-outside-scratch-free-zone";
     const auto parsed = wormedit::parse_bms_bytes(
         std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song);
-    const auto saved = wormedit::write_native_project(*parsed.song);
+    REQUIRE(parsed.value.song);
+    const auto saved = wormedit::write_native_project(*parsed.value.song);
     REQUIRE(saved.value);
     temporary_project_file_t file{".wormedit"};
     file.write(*saved.value);
     const auto opened = wormedit::sys::open_project_file(file.path);
     require_opened_project(opened);
-    check_preserved_input_profile(parsed.song->charts.front().input_profile,
+    check_preserved_input_profile(parsed.value.song->charts.front().input_profile,
                                   opened.value().document->charts.front().input_profile);
 }
 
@@ -978,8 +978,8 @@ TEST_CASE("BMS video fallback preserves its declared basename for export",
     check_bmson_condition(opened.value().document->visual_assets.front().source_path == "movie.MP4");
     check_bmson_condition(opened.value().warnings.empty());
     const auto exported = wormedit::write_bms(*opened.value().document);
-    require_bmson_condition(exported.bytes);
-    check_bmson_condition(exported.bytes->find("#BMP01 movie.mpg") != std::string::npos);
+    require_bmson_condition(exported.value);
+    check_bmson_condition(exported.value->find("#BMP01 movie.mpg") != std::string::npos);
     std::ofstream(temporary.path / "movie.webm") << "other";
     const auto ambiguous = wormedit::sys::open_project_file(chart);
     require_opened_project(ambiguous);

@@ -257,14 +257,14 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
         !selected->input_profile.profile_id.empty())
         options.lane_profile_id = selected->input_profile.profile_id;
     const auto written = write_bms(song, options);
-    if (!written.bytes || written.has_errors()) {
+    if (!written.value || !written.ok()) {
         const auto error = std::ranges::find_if(written.diagnostics, [](const auto& diagnostic) {
             return diagnostic.severity == diagnostic_severity_t::error;
         });
         return {.error = error == written.diagnostics.end() ? "External preview export failed."
                                                            : error->message};
     }
-    const auto created = write_exclusive(result.preview_path, *written.bytes);
+    const auto created = write_exclusive(result.preview_path, *written.value);
     result.error = created ? std::string{} : created.error().error;
     if (!created && !created.error().created) return result;
     const auto identity = created ? std::optional{*created} : created.error().identity;

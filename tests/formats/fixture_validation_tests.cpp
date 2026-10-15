@@ -97,7 +97,7 @@ auto parse_positive_fixture(const std::filesystem::path& path) -> wormedit::song
         options.encoding_override = explicit_fixture_encoding(path);
         options.lane_profile_id = explicit_fixture_profile(path);
         auto parsed = wormedit::parse_bms_bytes(bytes, options);
-        return checked_fixture_document(std::move(parsed.song), parsed.diagnostics);
+        return checked_fixture_document(std::move(parsed.value.song), parsed.diagnostics);
     }
     if (path.filename().string().starts_with("legacy-negative-")) {
         wormedit::stepmania_parse_options_t options;

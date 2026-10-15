@@ -192,23 +192,23 @@ struct export_parity_result_t {
 auto bms_layer_export_matches() -> export_parity_result_t {
     const auto bytes = read_binary(fixture_path("bms", "bgm-columns-per-measure.bms"));
     auto imported = wormedit::parse_bms_bytes(bytes);
-    if (!imported.song) return {.diagnostic = "BMS fixture did not parse"};
-    if (!prepare_bgm_event(*imported.song, false))
+    if (!imported.value.song) return {.diagnostic = "BMS fixture did not parse"};
+    if (!prepare_bgm_event(*imported.value.song, false))
         return {.diagnostic = "BMS fixture has no usable BGM event"};
-    auto layered = *imported.song;
+    auto layered = *imported.value.song;
     if (!prepare_bgm_event(layered, true))
         return {.diagnostic = "Could not assign the BGM semantic layer"};
     const wormedit::bms_write_options_t normalized{
         .lane_profile_id = "bms-5k-outside-scratch",
         .output_encoding = wormedit::text_encoding_t::utf8};
-    const auto plain = wormedit::write_bms(*imported.song, normalized);
+    const auto plain = wormedit::write_bms(*imported.value.song, normalized);
     const auto tagged = wormedit::write_bms(layered, normalized);
-    if (!plain.bytes || !tagged.bytes) {
-        const auto& diagnostics = plain.bytes ? tagged.diagnostics : plain.diagnostics;
+    if (!plain.value || !tagged.value) {
+        const auto& diagnostics = plain.value ? tagged.diagnostics : plain.diagnostics;
         return {.diagnostic = diagnostics.empty() ? "BMS writer returned no output"
                                                    : diagnostics.front().message};
     }
-    return {.matches = *plain.bytes == *tagged.bytes};
+    return {.matches = *plain.value == *tagged.value};
 }
 
 auto bmson_layer_export_matches() -> export_parity_result_t {
@@ -273,8 +273,8 @@ auto legacy_schema3_bms_document() -> nlohmann::json {
                               "#BMP03 layer2.png\n#00004:01\n#00007:02\n#0000A:03\n";
     const auto imported = wormedit::parse_bms_bytes(
         std::as_bytes(std::span{source.data(), source.size()}));
-    if (!imported.song) return {};
-    const auto written = wormedit::write_native_project(*imported.song);
+    if (!imported.value.song) return {};
+    const auto written = wormedit::write_native_project(*imported.value.song);
     if (!written.value) return {};
     auto legacy = nlohmann::json::parse(*written.value);
     auto& events = legacy["document"]["charts"][0]["bga_events"];
@@ -431,8 +431,8 @@ auto bms_schema4_migration_keeps_unlinked_lanes() -> bool {
     const std::string source = "#TITLE lanes\n#BPM 120\n#WAV01 a.wav\n#00001:01\n";
     const auto imported = wormedit::parse_bms_bytes(
         std::as_bytes(std::span{source.data(), source.size()}));
-    if (!imported.song || imported.song->charts.empty()) return false;
-    const auto written = wormedit::write_native_project(*imported.song);
+    if (!imported.value.song || imported.value.song->charts.empty()) return false;
+    const auto written = wormedit::write_native_project(*imported.value.song);
     if (!written.value) return false;
     auto root = nlohmann::json::parse(*written.value);
     auto& chart = root["document"]["charts"][0];
@@ -440,7 +440,7 @@ auto bms_schema4_migration_keeps_unlinked_lanes() -> bool {
     root["document"]["schema_version"] = 4;
     const auto migrated = wormedit::parse_native_project(root.dump());
     if (!migrated.value) return false;
-    const auto& before = imported.song->charts.front().bgm_source_lanes;
+    const auto& before = imported.value.song->charts.front().bgm_source_lanes;
     const auto& after = migrated.value->charts.front().bgm_source_lanes;
     if (before.size() != after.size()) return false;
     for (std::size_t index = 0; index < before.size(); ++index)
@@ -829,17 +829,17 @@ TEST_CASE("native project retains BMS source bytes and complete control trees",
     wormedit::bms_parse_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     const auto imported = wormedit::parse_bms_bytes(source, options);
-    REQUIRE(imported.song.has_value());
-    REQUIRE(imported.song->charts.front().bms_control_tree.has_value());
+    REQUIRE(imported.value.song.has_value());
+    REQUIRE(imported.value.song->charts.front().bms_control_tree.has_value());
 
-    const auto written = wormedit::write_native_project(*imported.song);
+    const auto written = wormedit::write_native_project(*imported.value.song);
     REQUIRE(written.value.has_value());
     const auto reparsed = wormedit::parse_native_project(*written.value);
     REQUIRE(reparsed.value.has_value());
     const auto& chart = reparsed.value->charts.front();
     REQUIRE(chart.bms_control_tree.has_value());
     CHECK(chart.bms_control_tree->children.size() ==
-          imported.song->charts.front().bms_control_tree->children.size());
+          imported.value.song->charts.front().bms_control_tree->children.size());
     REQUIRE_FALSE(chart.metadata.format_groups.empty());
     REQUIRE(chart.metadata.format_groups.front().encoding.original_bytes != nullptr);
     CHECK(*chart.metadata.format_groups.front().encoding.original_bytes == source);
@@ -1348,8 +1348,8 @@ auto legacy_bgm_song() -> wormedit::song_document_t {
         reinterpret_cast<const std::byte*>(source.data()),
         reinterpret_cast<const std::byte*>(source.data()) + source.size());
     auto parsed = wormedit::parse_bms_bytes(bytes, {.lane_profile_id = "bme-7k-outside-scratch"});
-    REQUIRE(parsed.song.has_value());
-    auto song = std::move(*parsed.song);
+    REQUIRE(parsed.value.song.has_value());
+    auto song = std::move(*parsed.value.song);
     auto& chart = song.charts.front();
     REQUIRE(chart.bgm_source_lanes.size() == 2);
     chart.bgm_source_lanes[0].name = "BGM source #00001 (line 6)";

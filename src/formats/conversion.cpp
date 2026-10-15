@@ -636,7 +636,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
             *context.request.encoding != text_encoding_t::utf8)
             options.encoding_override = context.request.encoding;
         const auto parsed = parse_bms_bytes(byte_span(output.bytes), std::move(options));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value.song && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -824,7 +824,7 @@ void write_bms_outputs(conversion_context_t& context, const song_document_t& pre
                                  ? chart->lane_layouts.front().layout.profile_id
                                  : context.request.target_profile;
         append_conversion_output(context, prepared, chart_id, std::string(bms_extension(profile)),
-                                 written.bytes, chart);
+                                 written.value, chart);
     }
 }
 

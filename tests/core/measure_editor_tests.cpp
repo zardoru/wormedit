@@ -605,8 +605,8 @@ TEST_CASE("Measure split head invalid and limit boundaries leave history unchang
 TEST_CASE("Measure split supports imported BMS without moving exported later heads", "[core][measure-editor][measure-split]") {
     const std::string source = "#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(),source.size()}), {.lane_profile_id="bme-7k-outside-scratch"});
-    REQUIRE(parsed.song);
-    auto history = document_history_t::from(*parsed.song);
+    REQUIRE(parsed.value.song);
+    auto history = document_history_t::from(*parsed.value.song);
     const auto& chart = history.document.charts.front();
     const auto id = chart.id;
     const auto measure = chart.measures.front().id;
@@ -614,10 +614,10 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     REQUIRE(apply_measure_edit(history, split_measure_action_t{id, {measure, half}}).applied);
     const auto written = write_bms(history.document);
     for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    REQUIRE(written.bytes);
-    const auto reloaded = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(),written.bytes->size()}), {.lane_profile_id="bme-7k-outside-scratch"});
-    REQUIRE(reloaded.song);
-    const auto& after = reloaded.song->charts.front();
+    REQUIRE(written.value);
+    const auto reloaded = parse_bms_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}), {.lane_profile_id="bme-7k-outside-scratch"});
+    REQUIRE(reloaded.value.song);
+    const auto& after = reloaded.value.song->charts.front();
     const auto index = build_measure_index(after);
     check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
     check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
@@ -712,8 +712,8 @@ auto pause_conversion_boundaries() -> bool {
 auto pause_conversion_bms_round_trip(bool resize) -> bool {
     const std::string source_bytes = "#TITLE Convert\n#BPM 120\n#WAV01 kick.wav\n#00111:01\n#00211:01\n";
     auto imported = parse_bms_bytes(std::as_bytes(std::span{source_bytes.data(), source_bytes.size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
-    if (!imported.song) return false;
-    auto history = document_history_t::from(*imported.song);
+    if (!imported.value.song) return false;
+    auto history = document_history_t::from(*imported.value.song);
     const auto& source = history.document.charts.front();
     const auto id = source.id;
     const auto resolution = source.divisions_per_standard_measure;
@@ -728,16 +728,16 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     if (!result.applied) return false;
     const auto written = write_bms(history.document, {.branch_policy = bms_branch_policy_t::flatten_active});
     for (const auto& diagnostic : written.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    if (!written.bytes) return false;
-    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(), written.bytes->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
-    if (!parsed.song) return false;
-    const auto timing = build_timing_index(parsed.song->charts.front());
+    if (!written.value) return false;
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
+    if (!parsed.value.song) return false;
+    const auto timing = build_timing_index(parsed.value.song->charts.front());
     if (!timing) return false;
-    const auto built = build_measure_index(parsed.song->charts.front());
+    const auto built = build_measure_index(parsed.value.song->charts.front());
     const auto* measures = std::get_if<measure_index_t>(&built);
     if (!measures) return false;
     std::vector<signed_rational_t> times;
-    for (const auto& chunk : parsed.song->charts.front().measures)
+    for (const auto& chunk : parsed.value.song->charts.front().measures)
         for (const auto& note : chunk.notes) {
             const auto row = absolute_row(*measures, note.position);
             if (!row) return false;

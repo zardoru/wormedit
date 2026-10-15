@@ -214,9 +214,9 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
         "#PLAYER 1\n#TITLE IDs\n#WAV01 snd10.wav\n#WAV02 snd2.wav\n#00011:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
         {.lane_profile_id = "bme-7k-outside-scratch"});
-    if (!parsed.song || parsed.song->charts.empty() || parsed.song->charts.front().measures.empty() ||
-        parsed.song->charts.front().measures.front().notes.empty()) return std::nullopt;
-    auto history = document_history_t::from(*parsed.song);
+    if (!parsed.value.song || parsed.value.song->charts.empty() || parsed.value.song->charts.front().measures.empty() ||
+        parsed.value.song->charts.front().measures.front().notes.empty()) return std::nullopt;
+    auto history = document_history_t::from(*parsed.value.song);
     const auto& note = history.document.charts.front().measures.front().notes.front();
     if (!note.sound) return std::nullopt;
     const auto resource = *note.sound;
@@ -426,10 +426,10 @@ TEST_CASE("BMS export writes the natural renumbered resource IDs",
     const auto fixture = make_renumbered_bms_fixture();
     REQUIRE(fixture);
     const auto exported = write_bms(fixture->history.document);
-    REQUIRE(exported.bytes);
-    CHECK(exported.bytes->find("#WAV01 snd2.wav") != std::string::npos);
-    CHECK(exported.bytes->find("#WAV02 snd10.wav") != std::string::npos);
-    CHECK(exported.bytes->find("#00011:02") != std::string::npos);
+    REQUIRE(exported.value);
+    CHECK(exported.value->find("#WAV01 snd2.wav") != std::string::npos);
+    CHECK(exported.value->find("#WAV02 snd10.wav") != std::string::npos);
+    CHECK(exported.value->find("#00011:02") != std::string::npos);
 }
 
 TEST_CASE("BMS renumber rejects unknown and duplicate selections atomically",

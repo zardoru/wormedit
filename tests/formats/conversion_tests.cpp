@@ -45,7 +45,7 @@ auto stepmania_song() -> wormedit::song_document_t {
     const auto parsed = wormedit::parse_stepmania_bytes(
         read_binary(path), {.profile = wormedit::stepmania_profile_t::ssc});
     REQUIRE(parsed.value.has_value());
-    REQUIRE_FALSE(!parsed.ok());
+    REQUIRE(parsed.ok());
     return *parsed.value;
 }
 
@@ -420,17 +420,17 @@ TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
         wormedit::parse_bms_bytes(read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms" /
                                               "profiles" / "bms-5k-foot-pedal.bms"),
                                   {.file_extension = ".bms"});
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.song->audio_assets.empty());
-    const auto original = parsed.song->resources.front().name;
+    REQUIRE(parsed.value.song.has_value());
+    REQUIRE_FALSE(parsed.value.song->audio_assets.empty());
+    const auto original = parsed.value.song->resources.front().name;
     const wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bms,
         .target_profile = "bms-5k-outside-scratch-foot-pedal",
-        .chart = parsed.song->charts.front().id,
+        .chart = parsed.value.song->charts.front().id,
         .loss_policy = wormedit::loss_policy_t::warn,
         .staged_assets = {
-            {.asset = parsed.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
-    const auto converted = wormedit::convert_document(*parsed.song, request);
+            {.asset = parsed.value.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
+    const auto converted = wormedit::convert_document(*parsed.value.song, request);
     std::string diagnostics;
     for (const auto& diagnostic : converted.diagnostics)
         diagnostics += diagnostic.message + "\n";
@@ -439,7 +439,7 @@ TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
     REQUIRE(converted.outputs.size() == 1);
     INFO(converted.outputs.front().bytes.substr(0, 500));
     CHECK(converted.outputs.front().bytes.find("#WAV01 assets/5-lane.wav") != std::string::npos);
-    CHECK(parsed.song->resources.front().name == original);
+    CHECK(parsed.value.song->resources.front().name == original);
 }
 
 TEST_CASE("conversion rewrites an osu!mania music path from a staged asset",

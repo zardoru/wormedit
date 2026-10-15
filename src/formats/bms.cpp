@@ -1055,11 +1055,6 @@ struct bms_channel_materializer_t {
     }
 };
 
-auto has_errors(const std::vector<bms_parse_diagnostic_t>& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
 
 auto push_raw_statement(bms_control_node_t& root, const std::vector<std::size_t>& parent_path,
                         const source_line_t& line, const parsed_line_t& parsed,
@@ -1067,8 +1062,6 @@ auto push_raw_statement(bms_control_node_t& root, const std::vector<std::size_t>
     (void)append_node(root, parent_path,
                       make_node(line, parsed, bms_control_kind_t::raw_statement, allocator));
 }
-
-
 
 auto is_control_token(std::string_view token) -> bool {
     constexpr std::array<std::string_view, 13> tokens{
@@ -1089,8 +1082,6 @@ struct active_branch_walk_context_t {
 void visit_active_branch(const bms_control_node_t& node,
                         std::optional<std::int64_t> random_value, bool inside_active_branch,
                         bool* switch_stopped, active_branch_walk_context_t& context);
-
-
 
 auto selected_if_branch(const bms_control_node_t& group, std::int64_t random_value)
     -> const bms_control_node_t* {
@@ -1637,10 +1628,6 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
 }
 
 } // namespace
-
-auto bms_parse_result_t::has_errors() const -> bool {
-    return wormedit::has_errors(diagnostics);
-}
 
 auto is_bms_text_encoding_supported(text_encoding_t encoding) -> bool {
     if (encoding == text_encoding_t::ascii || encoding == text_encoding_t::utf8) {
@@ -2511,13 +2498,7 @@ void prepare_channel_materialization(
     }
 }
 
-auto bms_parse_result_t::from(bms_parse_outcome_t&& outcome) -> bms_parse_result_t {
-    return {.song = std::move(outcome.value.song), .encoding = std::move(outcome.value.encoding),
-        .lane_profile_detection = std::move(outcome.value.lane_profile_detection),
-        .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto bms_parse_result_t::from(std::span<const std::byte> bytes, bms_parse_options_t options)
+auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options)
     -> bms_parse_outcome_t {
     bms_parse_outcome_t result{};
     auto lines = prepare_bms_source_lines(bytes, options, result);
@@ -2670,10 +2651,6 @@ auto bms_parse_result_t::from(std::span<const std::byte> bytes, bms_parse_option
     song.charts.push_back(std::move(chart));
     result.value.song = std::move(song);
     return result;
-}
-
-auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t options) -> bms_parse_result_t {
-    return bms_parse_result_t::from(bms_parse_result_t::from(bytes, std::move(options)));
 }
 
 auto bms_branch_statement_edit_result_t::has_errors() const -> bool {
@@ -2856,8 +2833,6 @@ auto encode_replacement_line(const retained_source_t& source, const bms_control_
     encoded->append(ending);
     return std::move(*encoded);
 }
-
-
 
 struct insertion_target_scan_t {
     branch_id_t leaf_id;

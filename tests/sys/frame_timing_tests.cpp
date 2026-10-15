@@ -4308,8 +4308,8 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
         "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
     auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
         {.file_extension = ".bms"});
-    expect_compose_test(parsed.song.has_value());
-    compose_test_fixture_t fixture(std::move(*parsed.song));
+    expect_compose_test(parsed.value.song.has_value());
+    compose_test_fixture_t fixture(std::move(*parsed.value.song));
     fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
@@ -4337,8 +4337,8 @@ auto cursor_placement_song() -> song_document_t {
         "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
     auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
         {.file_extension = ".bms"});
-    expect_compose_test(parsed.song.has_value());
-    return std::move(*parsed.song);
+    expect_compose_test(parsed.value.song.has_value());
+    return std::move(*parsed.value.song);
 }
 
 auto cursor_placement_action(compose_test_fixture_t& fixture) -> WormUiWorkspaceAction {
@@ -4726,8 +4726,8 @@ TEST_CASE("Stopped BMS transport seek moves cursor and viewport without editing"
         "#00011:01\n#00012:01\n#00013:01\n#00014:01\n#00015:01\n#00016:01\n#04011:01\n";
     auto parsed = parse_bms_bytes(std::as_bytes(std::span(source.data(), source.size())),
         {.file_extension = ".bms"});
-    expect_compose_test(parsed.song.has_value());
-    compose_test_fixture_t fixture(std::move(*parsed.song));
+    expect_compose_test(parsed.value.song.has_value());
+    compose_test_fixture_t fixture(std::move(*parsed.value.song));
     fixture.binding.value->selected_chart = fixture.history.document.charts.front().id;
     fixture.project();
     const auto before = fixture.interaction->cursor;

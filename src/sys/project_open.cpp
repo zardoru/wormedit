@@ -376,7 +376,7 @@ void parse_selected_file(std::string_view extension, const std::string& source,
                        diagnostic.message.find("without a UTF-8 BOM is ambiguous") !=
                            std::string::npos;
             });
-        take_parsed_document(std::move(parsed.song), parsed.diagnostics, "BMS chart", result);
+        take_parsed_document(std::move(parsed.value.song), parsed.diagnostics, "BMS chart", result);
         if (result.document) {
             resolve_audio_assets(*result.document, result.asset_base, result.warnings);
             resolve_visual_assets(*result.document, result.asset_base, result.warnings);

@@ -102,13 +102,13 @@ TEST_CASE("Chart duplicate remaps retained BMS branches and timing projections",
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}),
         {.lane_profile_id = "bme-7k-outside-scratch",
          .branch_choices = {{.control_source_order = 1, .selected_value = 1}}});
-    require_chart(static_cast<bool>(parsed.song));
-    auto& parsed_chart = parsed.song->charts.front();
+    require_chart(static_cast<bool>(parsed.value.song));
+    auto& parsed_chart = parsed.value.song->charts.front();
     require_chart(!parsed_chart.measures.front().notes.empty() && !parsed_chart.active_branch_selection.empty());
     // Import retains branch ownership in source provenance; also exercise an
     // explicitly authored semantic branch reference in the document model.
     parsed_chart.measures.front().notes.front().branch = parsed_chart.active_branch_selection.front().branch;
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value.song);
     const auto result = apply_duplicate_chart_command(history, history.document.charts[0].id);
     require_chart(static_cast<bool>(result));
     expect_chart(static_cast<bool>(validate_document(history.document).empty()));

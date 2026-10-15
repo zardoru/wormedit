@@ -301,7 +301,7 @@ void check_native_conversion_pcm(bool off_period, bool bms = false) {
     const auto& bytes = converted.outputs.front().bytes;
     const auto raw = std::as_bytes(std::span{bytes.data(), bytes.size()});
     const auto extension = std::filesystem::path{converted.outputs.front().suggested_filename}.extension().string();
-    const auto reimported = bms ? parse_bms_bytes(raw, {.file_extension = extension, .lane_profile_id = request.target_profile}).song : parse_osu_mania_bytes(raw).value;
+    const auto reimported = bms ? parse_bms_bytes(raw, {.file_extension = extension, .lane_profile_id = request.target_profile}).value.song : parse_osu_mania_bytes(raw).value;
     require_span(reimported.has_value());
     require_span(authored_note_count(*reimported) == authored_note_count(song));
     check_pcm_tolerance(sliced_preview_pcm(song, fixture.directory),

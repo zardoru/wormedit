@@ -23,8 +23,8 @@ auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
     -> wormedit::song_document_t {
     if (!options.lane_profile_id) options.lane_profile_id = "bme-7k-outside-scratch";
     const auto parsed = wormedit::parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song);
-    return *parsed.song;
+    REQUIRE(parsed.value.song);
+    return *parsed.value.song;
 }
 auto simple_song() -> wormedit::song_document_t {
     return parse("#TITLE Preview\n#BPM 120\n#WAV01 sound file.wav\n#00111:01\n");

@@ -68,9 +68,9 @@ auto load_fixture(const std::filesystem::path& path) -> std::optional<wormedit::
                                   : extension == ".bme" ? "bme-7k-outside-scratch"
                                                         : "bms-5k-outside-scratch-free-zone";
         auto parsed = wormedit::parse_bms_bytes(bytes, options);
-        if (parsed.has_errors())
+        if (!parsed.ok())
             return std::nullopt;
-        return std::move(parsed.song);
+        return std::move(parsed.value.song);
     }
     if (path.filename().string().starts_with("legacy-negative-")) {
         wormedit::stepmania_parse_options_t options;
@@ -309,8 +309,8 @@ TEST_CASE("StepMania export reports a keysound path it cannot write as a loss",
     options.file_extension = ".bme";
     options.lane_profile_id = "bme-7k-outside-scratch";
     auto parsed = wormedit::parse_bms_bytes(std::as_bytes(std::span{bms.data(), bms.size()}), options);
-    REQUIRE(parsed.song.has_value());
-    const auto song = *parsed.song;
+    REQUIRE(parsed.value.song.has_value());
+    const auto song = *parsed.value.song;
     const auto warned =
         wormedit::convert_document(song, stepmania_request(song, wormedit::stepmania_profile_t::sm));
     REQUIRE(warned);

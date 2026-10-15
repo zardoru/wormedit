@@ -619,8 +619,6 @@ auto replace_retained_header_value(std::string_view line, std::string_view expec
     return result;
 }
 
-
-
 auto is_measure_length_command(std::string_view token) -> std::optional<std::size_t> {
     if (token.size() != 5 || token.substr(3) != "02" ||
         !std::ranges::all_of(token.substr(0, 3),
@@ -3263,15 +3261,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
 
 } // namespace
 
-auto bms_write_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto bms_write_result_t::from(bms_write_outcome_t&& outcome) -> bms_write_result_t {
-    return {.bytes = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto bms_write_result_t::from(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
+auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_outcome_t {
     bms_write_outcome_t result{};
     try {
         const chart_document_t* chart{};
@@ -3335,10 +3325,6 @@ auto bms_write_result_t::from(const song_document_t& song, bms_write_options_t o
             {diagnostic_severity_t::error, failure.code, failure.message, failure.path});
     }
     return result;
-}
-
-auto write_bms(const song_document_t& song, bms_write_options_t options) -> bms_write_result_t {
-    return bms_write_result_t::from(bms_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

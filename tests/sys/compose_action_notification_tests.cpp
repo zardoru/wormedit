@@ -1525,9 +1525,9 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     bms_parse_options_t options;
     options.lane_profile_id = "bme-7k-outside-scratch";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}), std::move(options));
-    require_action(parsed.song.has_value() && !parsed.has_errors());
+    require_action(parsed.value.song.has_value() && parsed.ok());
     action_notification_fixture_t fixture;
-    fixture.history = document_history_t::from(*parsed.song);
+    fixture.history = document_history_t::from(*parsed.value.song);
     fixture.workspace = *workspace_controller_t::from(fixture.history).value;
     fixture.workspace.active_tab = workspace_tab_t::compose;
     fixture.workspace.selected_chart = fixture.history.document.charts.front().id;

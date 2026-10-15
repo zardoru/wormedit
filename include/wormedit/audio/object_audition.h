@@ -57,9 +57,9 @@ struct object_audition_result_t {
     }
 };
 
-// Control-thread coordinator. prepare() resolves every layer without touching
+// Control-thread coordinator. prepare_object() resolves every layer without touching
 // the current transport generation; callers may therefore validate an object
-// before an edit removes it, then call start() only after that edit succeeds.
+// before an edit removes it, then call start_prepared() only after that edit succeeds.
 class object_audition_controller_t {
   public:
     explicit object_audition_controller_t(audition_transport_bridge_t& bridge) : bridge_(bridge) {}
@@ -79,10 +79,6 @@ class object_audition_controller_t {
     [[nodiscard]] auto prepare(const song_document_t& song, object_audition_request_t request,
                                std::span<const audition_source_binding_t> bindings,
                                audition_resolve_options_t options = {}) -> object_audition_result_t;
-    [[nodiscard]] auto start(prepared_object_audition_t prepared) -> object_audition_result_t;
-    [[nodiscard]] auto start(const song_document_t& song, object_audition_request_t request,
-                             std::span<const audition_source_binding_t> bindings,
-                             audition_resolve_options_t options = {}) -> object_audition_result_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
   private:

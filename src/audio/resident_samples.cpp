@@ -209,10 +209,11 @@ auto resident_sample_store_t::load(const resident_request_t& request, decoder_t&
             return resident_load_status_t::stopped;
         }
         const auto wanted = std::min(maximum_read_frames, frames - done);
-        const auto read = decoder.read_at(
+        const auto read_outcome = decoder.read_frames_at(
             done, std::span<float>{output + done * output_channel_count,
                                    wanted * output_channel_count},
             wanted);
+        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
         if (read.frames_read != wanted) {
             discard(span);
             return resident_load_status_t::decode_failed;

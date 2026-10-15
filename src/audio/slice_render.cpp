@@ -71,7 +71,8 @@ auto prime_float_range(decoder_t& decoder, std::uint64_t begin) -> bool {
     auto cursor = start;
     while (cursor < begin) {
         const auto count = static_cast<std::size_t>(std::min<std::uint64_t>(maximum_read_frames, begin - cursor));
-        const auto read = decoder.read_at(cursor, discard, count);
+        const auto read_outcome = decoder.read_frames_at(cursor, discard, count);
+        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
         if (read.status != read_status_t::success || read.frames_read != count) return false;
         cursor += count;
     }
@@ -85,10 +86,11 @@ auto read_range(decoder_t& decoder, const audio_slice_range_t& range, std::vecto
     std::size_t done = 0;
     while (done < frames) {
         const auto request = std::min(maximum_read_frames, frames - done);
-        const auto result = decoder.read_at(
+        const auto result_outcome = decoder.read_frames_at(
             range.begin_frame + done,
             std::span{samples}.subspan(done * output_channel_count, request * output_channel_count),
             request);
+        const auto& result = result_outcome ? *result_outcome : result_outcome.error();
         if (result.status != read_status_t::success || result.frames_read == 0) return false;
         done += result.frames_read;
     }

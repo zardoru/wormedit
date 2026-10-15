@@ -110,8 +110,8 @@ TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache bloc
             .source = source(names[index]),
             .block_index = 0,
         };
-        const auto decoded = transport.decode_block(decoders[index], *token, key);
-        REQUIRE(decoded.status == wormedit::audio::block_decode_status_t::decoded);
+        const auto decoded = transport.decode_source_block(decoders[index], *token, key);
+        REQUIRE(decoded.value().status == wormedit::audio::block_decode_status_t::decoded);
         REQUIRE(transport.schedule_voice(
                     *token, {
                                 .id = index + 1U,
@@ -152,7 +152,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
         .source = source("polyphonic-chord.ogg"),
         .block_index = 0,
     };
-    REQUIRE(transport.decode_block(decoder, *token, key).status ==
+    REQUIRE(transport.decode_source_block(decoder, *token, key).value().status ==
             wormedit::audio::block_decode_status_t::decoded);
     constexpr std::array kinds{
         wormedit::audio::voice_kind_t::music,
@@ -187,8 +187,8 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
     require_transport(!silent);
     CHECK(silent.error().status == wormedit::audio::transport_mix_status_t::stale_generation);
     CHECK(all_zero(after_stop));
-    CHECK(transport.decode_block(decoder, *token, key).status ==
-          wormedit::audio::block_decode_status_t::stale_generation);
+    CHECK(transport.decode_source_block(decoder, *token, key) ==
+          std::unexpected(wormedit::audio::block_decode_result_t{.status = wormedit::audio::block_decode_status_t::stale_generation}));
     CHECK(blocks.has_block(key));
 
     const auto next_token = transport.start();

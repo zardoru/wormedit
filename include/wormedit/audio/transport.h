@@ -108,8 +108,6 @@ class transport_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     [[nodiscard]] auto is_current(session_token_t token) const noexcept -> bool;
 
-    [[nodiscard]] auto decode_block(decoder_t& decoder, session_token_t token,
-                                    audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto decode_source_block(decoder_t& decoder, session_token_t token,
                                          audio_block_key_t key) -> block_decode_outcome_t;
     // Control/worker threads only. The mixer reads the published snapshot under

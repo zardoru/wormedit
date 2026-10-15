@@ -51,14 +51,14 @@ TEST_CASE("decoded source registry exposes authoritative geometry and exact iden
     const auto token = transport.start();
     REQUIRE(token.has_value());
     const audio_block_key_t key{added->source, 0};
-    const auto decoded = registry.decode_block(transport, *token, key);
-    CHECK(decoded.status == block_decode_status_t::decoded);
-    CHECK(decoded.frames > 0);
+    const auto decoded = registry.decode_source_block(transport, *token, key);
+    CHECK(decoded.value().status == block_decode_status_t::decoded);
+    CHECK(decoded.value().frames > 0);
     CHECK(cache.has_block(key));
 
-    const auto unknown = registry.decode_block(
+    const auto unknown = registry.decode_source_block(
         transport, *token, {.source = {"fixture:unknown", "missing:v1"}, .block_index = 0});
-    CHECK(unknown.status == block_decode_status_t::invalid_key);
+    CHECK(unknown == std::unexpected(block_decode_result_t{.status = block_decode_status_t::invalid_key}));
     CHECK(registry.remove(wormedit::asset_id_t{7}));
     CHECK_FALSE(registry.binding(wormedit::asset_id_t{7}));
     CHECK_FALSE(registry.remove(wormedit::asset_id_t{7}));
@@ -153,9 +153,9 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
     const auto token = transport.start();
     REQUIRE(token.has_value());
     const audio_block_key_t key{added->source, 0};
-    const auto decoded = registry.decode_block(transport, *token, key);
-    REQUIRE(decoded.status == block_decode_status_t::decoded);
-    CHECK(decoded.frames == 3);
+    const auto decoded = registry.decode_source_block(transport, *token, key);
+    REQUIRE(decoded.value().status == block_decode_status_t::decoded);
+    CHECK(decoded.value().frames == 3);
     REQUIRE(cache.with_block(key, [&](const decoded_audio_block_t& block) {
         CHECK(block.frame_count == 3);
         CHECK(block.interleaved_stereo == pcm);
@@ -286,8 +286,8 @@ void check_pending_decode(wormedit::audio::decoded_source_registry_t& registry, 
         const audio_block_key_t key{{"fixture:asset:" + std::to_string(asset),
                                      "pending-v1:" + std::to_string(asset)},
                                     0};
-        const auto decoded = registry.decode_block(transport, token, key);
-        CHECK(decoded.status == block_decode_status_t::decoded);
+        const auto decoded = registry.decode_source_block(transport, token, key);
+        CHECK(decoded.value().status == block_decode_status_t::decoded);
         CHECK(registry.binding(wormedit::asset_id_t{asset}).has_value());
         CHECK(registry.open_decoder_count() <= 4);
 }
@@ -343,7 +343,7 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
     const auto token = transport.start();
     REQUIRE(token.has_value());
     const audio_source_identity_t long_source{"fixture:long", "generated-v1:long"};
-    REQUIRE(registry.decode_block(transport, *token, {long_source, 0}).status ==
+    REQUIRE(registry.decode_source_block(transport, *token, {long_source, 0}).value().status ==
             block_decode_status_t::decoded);
     for (std::uint64_t asset = 1; asset <= 4; ++asset) {
         REQUIRE(registry.create_pending_source(pending_registration(asset)).has_value());

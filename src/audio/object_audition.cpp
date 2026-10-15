@@ -107,19 +107,6 @@ auto object_audition_controller_t::prepare(const song_document_t& song,
     return object_audition_result_t::from(prepare_object(song, request, bindings, options));
 }
 
-auto object_audition_controller_t::start(prepared_object_audition_t prepared)
-    -> object_audition_result_t {
-    return object_audition_result_t::from(start_prepared(std::move(prepared)));
-}
-
-auto object_audition_controller_t::start(const song_document_t& song,
-                                         object_audition_request_t request,
-                                         std::span<const audition_source_binding_t> bindings,
-                                         audition_resolve_options_t options)
-    -> object_audition_result_t {
-    return object_audition_result_t::from(start_object(song, request, bindings, options));
-}
-
 auto object_audition_controller_t::stop() noexcept -> transport_stop_result_t {
     return bridge_.stop();
 }

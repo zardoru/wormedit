@@ -116,8 +116,6 @@ class decoded_source_registry_t {
 
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
     [[nodiscard]] auto binding(asset_id_t asset) const -> std::optional<decoded_source_binding_t>;
-    [[nodiscard]] auto decode_block(transport_t& transport, session_token_t token,
-                                    audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto decode_source_block(transport_t& transport, session_token_t token,
                                          audio_block_key_t key) -> block_decode_outcome_t;
     // Decodes the first `frames` output frames into `block_cache` ahead of playback

@@ -95,8 +95,8 @@ TEST_CASE("slices render to WAV files that decode to the same frames", "[unit][a
     CHECK(second.info()->output_frame_count == total - total / 3);
 
     std::vector<float> expected(64 * 2), actual(64 * 2);
-    REQUIRE(source.read_at(total / 3 + 100, expected, 64).frames_read == 64);
-    REQUIRE(second.read_at(100, actual, 64).frames_read == 64);
+    REQUIRE(source.read_frames_at(total / 3 + 100, expected, 64).value().frames_read == 64);
+    REQUIRE(second.read_frames_at(100, actual, 64).value().frames_read == 64);
     for (std::size_t index = 0; index < expected.size(); ++index)
         CHECK(std::abs(expected[index] - actual[index]) < 1.0F / 16'000.0F);
 }
@@ -195,9 +195,8 @@ auto decoded_samples(decoder_t& decoder) -> std::optional<std::vector<float>> {
     if (!info || info->output_frame_count == 0 ||
         info->output_frame_count > maximum_read_frames) return std::nullopt;
     std::vector<float> samples(static_cast<std::size_t>(info->output_frame_count) * 2);
-    const auto read = decoder.read_at(0, samples, static_cast<std::size_t>(info->output_frame_count));
-    if ((read.status != read_status_t::success && read.status != read_status_t::end_of_stream) ||
-        read.frames_read != info->output_frame_count)
+    const auto read = decoder.read_frames_at(0, samples, static_cast<std::size_t>(info->output_frame_count));
+    if (!read || read->frames_read != info->output_frame_count)
         return std::nullopt;
     return samples;
 }

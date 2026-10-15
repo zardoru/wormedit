@@ -42,7 +42,7 @@ void service_chart_preview(sdl_preview_output_t& output,
     if (*serviced) return;
     const auto failed_frame = output.timeline_frame();
     static_cast<void>(output.stop());
-    if (serviced->status == sdl_preview_service_status_t::pump_failed)
+    if (serviced->error().status == sdl_preview_service_status_t::pump_failed)
         state.pause_at(failed_frame);
     else
         state.reset_transport();
@@ -87,28 +87,29 @@ auto preview_playhead_row(const runtime::chart_preview_t& state,
 
 } // namespace
 
-void post_audition_service_notifications(const sdl_audition_service_result_t& result,
+void post_audition_service_notifications(const sdl_audition_service_outcome_t& result,
                                          const notification_sink_t& notifications) {
     if (result) return;
     notifications.post(notification_severity_t::error, notification_source_t::audio,
-                       audition_failure_message(result));
+                       audition_failure_message(result.error()));
 }
 
-void post_preview_service_notifications(const sdl_preview_service_result_t& result,
+void post_preview_service_notifications(const sdl_preview_service_outcome_t& result,
                                         const notification_sink_t& notifications) {
-    if (result.rate_unavailable)
+    const auto& effect = result ? *result : result.error();
+    if (effect.rate_unavailable)
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
             "Playback mode change is unavailable; preview keeps its previous mode.");
-    if (result.silenced_voices > 0) {
+    if (effect.silenced_voices > 0) {
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
-            "Silenced " + std::to_string(result.silenced_voices) +
-                (result.silenced_music_voices > 0
+            "Silenced " + std::to_string(effect.silenced_voices) +
+                (effect.silenced_music_voices > 0
                     ? " preview voice(s), including music, that were not decoded in time."
                     : " preview voice(s) that were not decoded in time."));
     }
     if (!result)
         notifications.post(notification_severity_t::error, notification_source_t::audio,
-                           preview_failure_message(result));
+                           preview_failure_message(effect));
 }
 
 void service_audio_transport_frame(

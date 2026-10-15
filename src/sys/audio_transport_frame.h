@@ -12,9 +12,9 @@ namespace wormedit::sys {
 
 // Producer metadata is chosen from service enums; these helpers also preserve
 // fallback ordering before a terminal failure.
-void post_audition_service_notifications(const sdl_audition_service_result_t& result,
+void post_audition_service_notifications(const sdl_audition_service_outcome_t& result,
                                          const notification_sink_t& notifications);
-void post_preview_service_notifications(const sdl_preview_service_result_t& result,
+void post_preview_service_notifications(const sdl_preview_service_outcome_t& result,
                                         const notification_sink_t& notifications);
 
 // Services both audio transports and projects the chart-preview playhead for

@@ -164,24 +164,27 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     return {.status = status, .session = std::move(started), .message = std::move(message)};
 }
 
-auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_result_t> {
+auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outcome_t> {
     const auto callback_failure =
         callback_failure_.exchange(callback_failure_t::none, std::memory_order_acq_rel);
     if (callback_failure != callback_failure_t::none) {
-        return sdl_audition_service_result_t{
+        return std::unexpected(sdl_audition_service_result_t{
             .status = callback_failure == callback_failure_t::device
                           ? sdl_audition_service_status_t::device_failed
                           : sdl_audition_service_status_t::render_failed,
             .pump = std::nullopt,
-        };
+        });
     }
     auto pumped = take_refill_result();
     if (!pumped) return std::nullopt;
-    return sdl_audition_service_result_t{
+    sdl_audition_service_result_t result{
         .status = *pumped ? sdl_audition_service_status_t::ready
                          : sdl_audition_service_status_t::pump_failed,
         .pump = std::move(pumped),
     };
+    if (result.status != sdl_audition_service_status_t::ready)
+        return std::unexpected(std::move(result));
+    return result;
 }
 
 auto sdl_audition_output_t::stop() noexcept -> audio::transport_stop_result_t {

@@ -81,8 +81,8 @@ void check_exact_rendered_pcm(const render_fixture_t& fixture, const slice_span_
         std::size_t done{};
         while (done < frames) {
             const auto count = std::min(audio::maximum_read_frames, frames - done);
-            const auto read = decoder.read_at(span.begin_frame + done, std::span(pcm).subspan(done * 2, count * 2), count);
-            require_span(read.status == audio::read_status_t::success && read.frames_read == count);
+            const auto read = decoder.read_frames_at(span.begin_frame + done, std::span(pcm).subspan(done * 2, count * 2), count);
+            require_span(read.value().status == audio::read_status_t::success && read.value().frames_read == count);
             done += count;
         }
         check_span(bytes_at(rendered.value().files[index]) == audio::encode_wav_pcm16(pcm, audio::output_sample_rate));
@@ -343,7 +343,7 @@ TEST_CASE("BMS silent gameplay materializes one zero float sample",
     require_span(decoder.open(fixture.directory / "out" / converted.silent_files.front()));
     require_span(decoder.info()->output_frame_count == 1);
     std::array<float, 2> sample{1, 1};
-    require_span(decoder.read_at(0, sample, 1).frames_read == 1);
+    require_span(decoder.read_frames_at(0, sample, 1).value().frames_read == 1);
     check_span(sample[0] == 0 && sample[1] == 0);
 }
 

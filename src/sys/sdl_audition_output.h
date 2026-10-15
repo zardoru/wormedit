@@ -36,11 +36,9 @@ enum class sdl_audition_service_status_t {
 struct sdl_audition_service_result_t {
     sdl_audition_service_status_t status{sdl_audition_service_status_t::ready};
     std::optional<audio::audition_pump_outcome_t> pump;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == sdl_audition_service_status_t::ready;
-    }
 };
+using sdl_audition_service_outcome_t =
+    result_t<sdl_audition_service_result_t, sdl_audition_service_result_t>;
 
 // App-private SDL3 playback adapter. SDL's stream lock serializes callback
 // rendering with replacement and hard Stop. Decoder work runs on one refill
@@ -58,7 +56,7 @@ class sdl_audition_output_t {
 
     [[nodiscard]] auto start(std::span<const audio::audition_clip_t> clips)
         -> sdl_audition_start_result_t;
-    [[nodiscard]] auto service() -> std::optional<sdl_audition_service_result_t>;
+    [[nodiscard]] auto service() -> std::optional<sdl_audition_service_outcome_t>;
     [[nodiscard]] auto stop() noexcept -> audio::transport_stop_result_t;
     [[nodiscard]] auto available() const noexcept -> bool {
         return stream_ != nullptr;

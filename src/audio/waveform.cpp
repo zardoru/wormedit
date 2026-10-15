@@ -245,7 +245,8 @@ auto read_analysis_block(waveform_analysis_work_t& work, std::uint64_t block_ind
     const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
         work.stream_info.output_frame_count - start_frame, maximum_read_frames));
     std::vector<float> samples(maximum_read_frames * output_channel_count);
-    const auto read = work.decoder.read_at(start_frame, samples, requested_frames);
+    const auto read_outcome = work.decoder.read_frames_at(start_frame, samples, requested_frames);
+    const auto& read = read_outcome ? *read_outcome : read_outcome.error();
     if (read.status == read_status_t::seek_error) {
         return std::unexpected(waveform_analysis_error_t{
             .code = waveform_analysis_status_t::decode_failed, .failed_block_index = block_index,

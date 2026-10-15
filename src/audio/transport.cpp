@@ -287,11 +287,6 @@ auto transport_t::decode_source_block(decoder_t& decoder, session_token_t token,
     return result;
 }
 
-auto transport_t::decode_block(decoder_t& decoder, session_token_t token, audio_block_key_t key)
-    -> block_decode_result_t {
-    return block_decode_result_t::from(decode_source_block(decoder, token, std::move(key)));
-}
-
 void transport_t::set_resident_snapshot(resident_snapshot_ptr_t snapshot) {
     {
         const std::scoped_lock lock(mutex_);

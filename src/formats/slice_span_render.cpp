@@ -53,7 +53,8 @@ auto verify_decoding(audio::decoder_t& decoder, const slice_span_t& span,
     while (cursor < span.end_frame) {
         if (options.stop.stop_requested()) return std::unexpected(slice_span_render_payload_t::from("Slice rendering cancelled", span.asset));
         const auto requested = static_cast<std::size_t>(std::min<std::uint64_t>(audio::maximum_read_frames, span.end_frame - cursor));
-        const auto read = decoder.read_at(cursor, buffer, requested);
+        const auto read_outcome = decoder.read_frames_at(cursor, buffer, requested);
+        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
         if (read.status != audio::read_status_t::success || read.frames_read != requested)
             return std::unexpected(slice_span_render_payload_t::from("Cannot decode span for asset " + std::to_string(span.asset.value), span.asset));
         cursor += read.frames_read;

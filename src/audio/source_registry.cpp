@@ -476,11 +476,6 @@ auto decoded_source_registry_t::decode_source_block(transport_t& transport, sess
     return transport.decode_source_block(lease.decoder(), token, std::move(key));
 }
 
-auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
-                                             audio_block_key_t key) -> block_decode_result_t {
-    return block_decode_result_t::from(decode_source_block(transport, token, std::move(key)));
-}
-
 auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
                                              std::uint64_t frames, std::stop_token stop)
     -> std::size_t {

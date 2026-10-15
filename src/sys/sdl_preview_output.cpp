@@ -364,7 +364,7 @@ auto sdl_preview_output_t::set_loop_region(
     return true;
 }
 
-auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result_t> {
+auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_outcome_t> {
     const auto rate_unavailable = rate_unavailable_.exchange(false, std::memory_order_acq_rel);
     const auto silenced_voices = silenced_voices_.exchange(0, std::memory_order_acq_rel);
     const auto silenced_music_voices =
@@ -372,7 +372,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
     const auto callback_failure =
         callback_failure_.exchange(callback_failure_t::none, std::memory_order_acq_rel);
     if (callback_failure != callback_failure_t::none) {
-        return sdl_preview_service_result_t{
+        return std::unexpected(sdl_preview_service_result_t{
             .status = callback_failure == callback_failure_t::device
                           ? sdl_preview_service_status_t::device_failed
                           : sdl_preview_service_status_t::render_failed,
@@ -380,7 +380,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result
             .rate_unavailable = rate_unavailable,
             .silenced_voices = silenced_voices,
             .silenced_music_voices = silenced_music_voices,
-        };
+        });
     }
     // Callback publication owns ordinary latency updates; frame service must
     // not wait for its stream lock while active audio is being rendered.
@@ -398,7 +398,7 @@ auto sdl_preview_output_t::service_refill_result(
     std::optional<audio::preview_session_pump_outcome_t> pumped,
     bool rate_unavailable, std::uint64_t silenced_voices,
     std::uint64_t silenced_music_voices)
-    -> std::optional<sdl_preview_service_result_t> {
+    -> std::optional<sdl_preview_service_outcome_t> {
     if (pumped) {
         const auto& effect = *pumped ? pumped->value() : pumped->error();
         if (effect.status == audio::preview_session_pump_status_t::not_started)
@@ -416,7 +416,7 @@ auto sdl_preview_output_t::service_refill_result(
         if (decoded.status == audio::preview_pump_status_t::stale_generation)
             return std::nullopt;
     }
-    return sdl_preview_service_result_t{
+    sdl_preview_service_result_t result{
         .status = *pumped ? sdl_preview_service_status_t::ready
                          : sdl_preview_service_status_t::pump_failed,
         .pump = std::move(pumped),
@@ -424,6 +424,9 @@ auto sdl_preview_output_t::service_refill_result(
         .silenced_voices = silenced_voices,
         .silenced_music_voices = silenced_music_voices,
     };
+    if (result.status != sdl_preview_service_status_t::ready)
+        return std::unexpected(std::move(result));
+    return result;
 }
 
 auto sdl_preview_output_t::stop() noexcept -> audio::transport_stop_result_t {

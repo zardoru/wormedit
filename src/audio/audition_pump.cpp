@@ -109,7 +109,8 @@ auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& trans
                                   .cached_blocks = 0,
                                   .failure = std::nullopt};
     for (const auto& key : plan.keys) {
-        const auto decoded = sources.decode_block(transport, token, key);
+        const auto decoded_outcome = sources.decode_source_block(transport, token, key);
+        const auto& decoded = decoded_outcome ? *decoded_outcome : decoded_outcome.error();
         if (decoded.status == block_decode_status_t::decoded) {
             ++result.decoded_blocks;
             continue;

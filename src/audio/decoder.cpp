@@ -368,11 +368,6 @@ auto decoder_t::read_frames_at(std::uint64_t output_frame, std::span<float> inte
     return read_result_t::from(read_status_t::decode_error, static_cast<std::size_t>(frames_read));
 }
 
-auto decoder_t::read(std::span<float> interleaved_stereo, std::size_t requested_frames) noexcept
-    -> read_result_t {
-    return read_result_t::from(read_frames(interleaved_stereo, requested_frames));
-}
-
 auto decoder_t::read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
                         std::size_t requested_frames) noexcept -> read_result_t {
     return read_result_t::from(read_frames_at(output_frame, interleaved_stereo, requested_frames));

@@ -768,7 +768,7 @@ void exercise_background_refill() {
     expect_pitch(std::abs(maximum) > 0.9);
     const auto service = output.service();
     expect_pitch(service && static_cast<bool>(*service));
-    expect_pitch(service->silenced_voices == 0);
+    expect_pitch(service->value().silenced_voices == 0);
     static_cast<void>(output.stop());
     std::array<float, 256> silence;
     silence.fill(1.0F);
@@ -863,8 +863,8 @@ void exercise_pending_refill_failure() {
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
-    expect_pitch(failed->pump && !*failed->pump && failed->pump->error().status == preview_session_pump_status_t::decode_failed);
+    expect_pitch(failed && !*failed && failed->error().status == sys::sdl_preview_service_status_t::pump_failed);
+    expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }
 

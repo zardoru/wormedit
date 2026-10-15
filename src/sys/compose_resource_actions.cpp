@@ -1,4 +1,5 @@
 #include "sys/compose_actions_internal.h"
+#include "sys/resource_action_context.h"
 namespace wormedit::sys::compose_action_detail {
 auto stage_output_music(const wormedit::song_document_t& snapshot,
                         const wormedit::output_group_t& group,
@@ -430,7 +431,6 @@ auto copy_compose_resource_action_t::validate(compose_action_context_t& context)
                 notification_source_t::export_);
         output = group.relative_output_path;
     }
-    using namespace wormedit;
     plan = resource_copy_plan_t{id, source, output, exporting};
     return std::nullopt;
 }
@@ -559,7 +559,6 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
             !is_conversion_needs_slice_spans(doc, request))
             request.target_profile = extension.substr(1);
     }
-    using namespace wormedit;
     plan = output_export_plan_t{std::move(group), std::move(request)};
     return std::nullopt;
 }
@@ -938,9 +937,8 @@ dispatch_compose_resource_action(compose_action_context_t& context) {
             blocked->source = notification_source_t::edit;
             return std::move(*blocked);
         }
-        return dispatch_bga_action_outcome(context.action, context.environment.document.history,
-                                           context.environment.document.workspace,
-                                           context.state.chart);
+        return dispatch_bga_action_outcome(
+            {context.action, context.environment.document, context.state.chart});
     case WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK:
         return run_compose_action(relink_compose_sound_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:

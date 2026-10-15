@@ -1,6 +1,8 @@
 #include "sys/compose_bga_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
+#include "sys/resource_action_context.h"
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/resource_assignment.h>
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
 #include <wormedit/visual/image_decoder.h>
@@ -102,9 +104,72 @@ auto import_bga_feedback(document_history_t& history, workspace_controller_t& wo
         outcome.severity = notification_severity_t::warning;
     return outcome;
 }
-auto dispatch_bga_action_outcome(const WormUiWorkspaceAction& action, document_history_t& history,
-                                 workspace_controller_t& workspace, chart_id_t chart)
+namespace {
+struct import_bga_action_t {
+    auto operator==(const import_bga_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+
+        if (action.compose_import_path_count > WORM_UI_SOUND_DROP_CAPACITY)
+            return compose_action_outcome_t::blocked("Image import batch is too large.",
+                                                     notification_source_t::import_);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        std::vector<std::string> paths;
+        for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
+            if (action.compose_import_paths && action.compose_import_paths[index])
+                paths.emplace_back(action.compose_import_paths[index]);
+        auto outcome =
+            import_bga_feedback(history, context.document.workspace, context.chart, paths);
+        outcome.source = notification_source_t::import_;
+        return outcome;
+    }
+};
+static_assert(compose_action<import_bga_action_t, const resource_action_context_t>);
+} // namespace
+
+namespace {
+struct remove_unused_bga_action_t {
+    std::vector<resource_id_t> unused;
+    auto operator==(const remove_unused_bga_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        auto& history = context.document.history;
+        const auto referenced = referenced_bga_resources(history.document);
+        for (const auto& resource : history.document.resources)
+            if (std::ranges::find(resource.roles, resource_role_t::bga) != resource.roles.end() &&
+                !referenced.contains(resource.id.value))
+                unused.push_back(resource.id);
+        if (unused.empty())
+            return compose_action_outcome_t::from("No unused BGA resources.",
+                                                  notification_severity_t::info);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        auto& history = context.document.history;
+        auto result = apply_resource_deletions(history, unused);
+        return compose_action_outcome_t::from(
+            std::move(result),
+            compose_action_description_t{
+                .unchanged = "No BGA resources changed.",
+                .rebind_failure = "BGA changed, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_failure_policy = compose_rebind_failure_policy_t::message_only,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Removed " + std::to_string(unused.size()) + " unused BGA resources.");
+    }
+};
+static_assert(compose_action<remove_unused_bga_action_t, const resource_action_context_t>);
+} // namespace
+
+auto dispatch_bga_action_outcome(const resource_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
+    const auto& action = context.action;
+    auto& history = context.document.history;
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES &&
         action.compose_action != WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA)
         return std::nullopt;
@@ -114,37 +179,11 @@ auto dispatch_bga_action_outcome(const WormUiWorkspaceAction& action, document_h
     if (history.document.revision != action.compose_input_document_revision)
         return compose_action_outcome_t::blocked(wormedit::stale_action_message("BGA action"),
                                                  source);
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES) {
-        if (action.compose_import_path_count > WORM_UI_SOUND_DROP_CAPACITY)
-            return compose_action_outcome_t::blocked("Image import batch is too large.", source);
-        std::vector<std::string> paths;
-        for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
-            if (action.compose_import_paths && action.compose_import_paths[index])
-                paths.emplace_back(action.compose_import_paths[index]);
-        auto outcome = import_bga_feedback(history, workspace, chart, paths);
-        outcome.source = notification_source_t::import_;
-        return outcome;
-    }
-    const auto referenced = referenced_bga_resources(history.document);
-    std::vector<resource_id_t> unused;
-    for (const auto& resource : history.document.resources)
-        if (std::ranges::find(resource.roles, resource_role_t::bga) != resource.roles.end() &&
-            !referenced.contains(resource.id.value))
-            unused.push_back(resource.id);
-    if (unused.empty())
-        return compose_action_outcome_t::from("No unused BGA resources.",
-                                              notification_severity_t::info);
-    auto result = apply_resource_deletions(history, unused);
-    return compose_action_outcome_t::from(
-        std::move(result),
-        compose_action_description_t{
-            .unchanged = "No BGA resources changed.",
-            .rebind_failure = "BGA changed, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_failure_policy = compose_rebind_failure_policy_t::message_only,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Removed " + std::to_string(unused.size()) + " unused BGA resources.");
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)
+        return run_compose_action(import_bga_action_t{}, context);
+    return run_compose_action(remove_unused_bga_action_t{}, context);
 }
+
 auto import_bga_files(document_history_t& history, workspace_controller_t& workspace,
                       chart_id_t chart, std::span<const std::string> paths,
                       notification_sink_t notifications) -> std::string {
@@ -157,10 +196,11 @@ auto import_bga_files(document_history_t& history, workspace_controller_t& works
 auto dispatch_compose_bga_action(const WormUiWorkspaceAction& action, document_history_t& history,
                                  workspace_controller_t& workspace, chart_id_t chart,
                                  notification_sink_t notifications) -> std::optional<std::string> {
-    auto feedback = dispatch_bga_action_outcome(action, history, workspace, chart);
+    const document_edit_inputs_t document{history, workspace, notifications};
+    const resource_action_context_t context{action, document, chart};
+    auto feedback = dispatch_bga_action_outcome(context);
     if (!feedback)
         return std::nullopt;
-    const document_edit_inputs_t document{history, workspace, notifications};
     auto finished = finish_compose_action(document, notifications, std::move(*feedback));
     return std::move(finished.message);
 }

@@ -880,8 +880,7 @@ auto plan_single_bgm_move(const document_history_t& history,
                           std::optional<std::uint64_t> canvas_row, bool exact)
     -> std::variant<note_move_plan_t, diagnostic_list_t>;
 
-auto plan_move_gesture(const document_history_t& history, const editor_interaction_state_t& state,
-                       const chart_document_t& chart, const measure_index_t& index,
+auto plan_move_gesture(const editor_edit_context_t& context,
                        std::vector<object_id_t> targets, object_id_t reference,
                        local_position_t position, lane_id_t lane, bool exact_position,
                        std::optional<object_id_t> bgm_lane,
@@ -932,23 +931,11 @@ using interaction_detail::resize_parameters_t;
 using interaction_detail::resized_note_t;
 using interaction_detail::shifted_move_row_t;
 using interaction_detail::view_geometry_t;
-auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&,
-                                const duration_resize_plan_t&) -> editor_interaction_result_t;
-auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
-    -> editor_interaction_result_t;
-auto dispatch_nested_action(editor_edit_context_t& context, const editor_interaction_action_t& action)
-    -> editor_interaction_result_t;
 auto cancel_pointer_gesture(editor_edit_context_t& context) -> editor_interaction_result_t;
 auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
                         object_id_t reference, local_position_t end, bool exact_end = false)
     -> std::variant<duration_resize_plan_t, diagnostic_list_t>;
-auto make_move_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
-                    object_id_t reference, local_position_t position, lane_id_t lane,
-                    bool exact_position, std::optional<object_id_t> bgm_lane,
-                    std::optional<std::uint64_t> virtual_row)
-    -> std::variant<note_move_plan_t, diagnostic_list_t>;
-auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
-    -> editor_interaction_result_t;
+
 
 struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> notes;
@@ -1222,4 +1209,8 @@ auto validate_virtual_cursor_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
+
+// Field/view preparation and the action visitor run after the gesture boundary.
+auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
+    const editor_interaction_action_t& action) -> editor_interaction_result_t;
 } // namespace wormedit

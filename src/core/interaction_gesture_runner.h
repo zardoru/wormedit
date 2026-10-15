@@ -14,14 +14,20 @@ concept editor_gesture = requires(Gesture& gesture, editor_edit_context_t& conte
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 };
 
-// Captured state is validated at the runner boundary, including direct core callers.
+// Shared boundary for dispatched actions and direct Core gesture entry points.
+inline auto validate_gesture_capture(document_history_t& history, editor_interaction_state_t& state)
+    -> std::optional<editor_interaction_result_t> {
+    if (!state.is_stale(history.document.revision)) return std::nullopt;
+    state.clear();
+    return interaction_detail::diagnostic_result(history, state,
+        {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+}
+
 template<class Gesture>
 inline auto validate_gesture_capture(editor_edit_context_t& context)
     -> std::optional<editor_interaction_result_t> {
-    if ((context.state).is_stale(context.history.document.revision)) {
-        (context.state).clear();
-        return interaction_detail::diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    if (!context.has_validated_capture()) {
+        if (auto stale = validate_gesture_capture(context.history, context.state)) return stale;
     }
     if constexpr (requires { Gesture::needs_initial_view; }) {
         if (Gesture::needs_initial_view && !context.initial_view)

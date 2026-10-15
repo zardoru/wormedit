@@ -58,13 +58,10 @@ auto pending_note_duration_gesture_t::apply(editor_edit_context_t& context) cons
     auto planned = make_duration_plan(context, notes, reference_note, preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, *diagnostics);
-    return apply_duration_plan(context, std::get<duration_resize_plan_t>(planned));
+    return apply_duration_resize_plan(context.history, context.state, std::get<duration_resize_plan_t>(planned));
 }
 
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move_plan_t& plan,
                                   pending_note_move_gesture_t& pending) {
     auto lane = pending.preferred_bgm_lane.value_or(
@@ -86,10 +83,7 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
             pending.bgm_preview.push_back({id, lane, note->position, note->end, note->sound});
     }
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                                   pending_note_move_gesture_t& pending) {
     if (plan.staged_bgm_document) {
@@ -113,10 +107,7 @@ void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_mov
     if (!failures.empty())
         pending.conflicting_notes = std::max(std::size_t{1}, pending.conflicting_notes);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                               pending_note_move_gesture_t& pending) -> void {
     pending.bgm_preview = plan.bgm_moves;
@@ -157,10 +148,7 @@ auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_pl
         preview.occupant.reset();
     }
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_id_t reference_id,
                              bool displace_to_bgm) -> diagnosed_t<std::optional<pending_note_move_gesture_t>> {
     auto& state = context.state;
@@ -173,7 +161,7 @@ auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_i
     auto targets = editor_quantize_selection(state).notes;
     if (!bgm_reference && std::ranges::find(targets, reference_id) == targets.end())
         targets = {reference_id};
-    auto planned = make_move_plan(context, targets, reference_id,
+    auto planned = plan_move_gesture(context, targets, reference_id,
                                   reference ? reference->position : bgm_reference->position,
                                   lane_id_t{}, true, std::nullopt, std::nullopt);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
@@ -195,7 +183,7 @@ auto pending_note_move_gesture_t::update(editor_edit_context_t& context, local_p
                               std::optional<object_id_t> requested_bgm_lane,
                               std::optional<std::uint64_t> requested_bgm_row)
     -> diagnostic_list_t {
-    auto planned = make_move_plan(context, notes, reference_note,
+    auto planned = plan_move_gesture(context, notes, reference_note,
                                   requested_position, requested_to_bgm ? lane_id_t{} : requested_lane, false,
                                   requested_bgm_lane, requested_bgm_row);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) {
@@ -222,7 +210,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     const auto& pending = *this;
     auto planned =
-        make_move_plan(context, pending.notes, pending.reference_note, pending.preview_position,
+        plan_move_gesture(context, pending.notes, pending.reference_note, pending.preview_position,
                        to_bgm ? lane_id_t{} : pending.preview_lane, !virtual_bgm_row.has_value(),
                        preferred_bgm_lane, virtual_bgm_row);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
@@ -260,10 +248,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
     }
     return apply_note_move_plan(context.history, context.state, plan);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row,
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
@@ -282,10 +267,7 @@ auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, s
     additions.push_back({lane, *position});
     return std::nullopt;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::uint64_t first, std::uint64_t last,
                                  pending_note_paint_gesture_t& pending,
@@ -308,10 +290,7 @@ auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
         row = *next;
     }
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_note_paint_gesture_t::update(editor_edit_context_t& context, lane_id_t lane,
                                          local_position_t position,
                                          std::optional<bmson_source_geometry_t> geometry)
@@ -355,19 +334,13 @@ auto pending_note_paint_gesture_t::update(editor_edit_context_t& context, lane_i
     if (!source_geometry) source_geometry = geometry;
     return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto is_paint_sample_resource(const song_document_t& document, resource_id_t id) -> bool {
     const auto found = std::ranges::find(document.resources, id, &resource_entry_t::id);
     return found != document.resources.end() &&
            std::ranges::find(found->roles, resource_role_t::sample) != found->roles.end();
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
                                        const begin_note_paint_gesture_action_t& request)
     -> diagnosed_t<std::optional<pending_note_paint_gesture_t>> {
@@ -415,10 +388,7 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
     place_cursor_at(state, *target);
     return {.value = std::move(pending)};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto entry_stem_channel(const song_document_t& document, const chart_document_t& chart,
                         std::optional<resource_id_t> sound)
     -> std::variant<std::optional<object_id_t>, diagnostic_list_t> {
@@ -446,10 +416,7 @@ auto entry_stem_channel(const song_document_t& document, const chart_document_t&
                                        "The armed BMSON stem has no linked source channel")};
     return std::optional<object_id_t>{};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
                              const note_paint_plan_t& plan, object_id_t channel,
                              const std::optional<std::vector<layer_id_t>>& armed_layers,
@@ -491,10 +458,7 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
     notes.erase(std::unique(notes.begin(), notes.end()), notes.end());
     return prepared_note_paint_t{std::move(scratch.document), std::move(notes)};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto prepare_note_paint_document(const document_history_t& history, chart_id_t chart_id,
                                  const note_paint_plan_t& plan, note_kind_t kind,
                                  std::optional<resource_id_t> sound,
@@ -554,10 +518,7 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     }
     return prepared;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     auto& state = context.state;
@@ -591,10 +552,7 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     place_cursor_at(state, pending.last_position);
     return editor_interaction_result_t::from(context.history, state, true);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 
 auto hold_start_t::validate_sound(const song_document_t& document) const -> diagnostic_list_t {
     if (!sound || is_paint_sample_resource(document, *sound)) return {};
@@ -957,10 +915,7 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     result.created_note = id;
     return result;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
@@ -986,20 +941,14 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
     }
     return std::nullopt;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto is_keyboard_hold_action_allowed(const editor_interaction_action_t& action) -> bool {
     return is_gesture_action<move_edit_cursor_action_t, page_edit_cursor_action_t,
                              scroll_editor_view_action_t, begin_lane_key_hold_gesture_action_t,
                              release_lane_key_hold_gesture_action_t,
                              place_virtual_bms_hold_action_t>(action);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> bool {
     if (!state.hold())
@@ -1011,10 +960,7 @@ auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
     return is_gesture_action<update_alt_pointer_hold_gesture_action_t,
                              release_alt_pointer_hold_gesture_action_t>(action);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
                             const editor_interaction_action_t& action) -> bool {
     switch (kind) {
@@ -1039,10 +985,7 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
     }
     return false;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
     switch (kind) {
     case editor_gesture_kind_t::hold:
@@ -1062,10 +1005,7 @@ auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
     }
     return "finish or cancel the active gesture first";
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
@@ -1075,4 +1015,38 @@ auto validate_active_gesture_action(const document_history_t& history,
     return diagnostic_result(
         history, state, {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))});
 }
+template <class Action> auto is_committing_action(const editor_interaction_action_t& action) -> bool {
+    const auto* update = std::get_if<Action>(&action);
+    return update && update->phase == editor_gesture_phase_t::commit;
+}
+
+auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
+                                    const editor_interaction_action_t& action) -> bool {
+    return std::holds_alternative<commit_hold_action_t>(action) ||
+           std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
+           std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
+           std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
+           is_committing_action<update_note_duration_gesture_action_t>(action) ||
+           is_committing_action<update_note_move_gesture_action_t>(action) ||
+           std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
+           std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
+           std::holds_alternative<update_editor_area_selection_action_t>(action) ||
+           (state.gesture<wormedit::pending_space_range_selection_t>() &&
+            std::holds_alternative<space_range_selection_action_t>(action));
+}
+
+auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
+                            const editor_interaction_action_t& action) -> editor_interaction_result_t {
+    if (auto canceled = handle_editor_cancellation(history, state, action))
+        return *canceled;
+    if (auto stale = validate_gesture_capture(history, state)) return std::move(*stale);
+    if (auto rejected = validate_active_gesture_action(history, state, action)) return std::move(*rejected);
+    auto result = dispatch_editor_action_impl(history, state, action);
+    if (!result && is_terminal_editor_gesture_action(state, action)) {
+        (state).clear();
+        return diagnostic_result(history, state, std::move(result.diagnostics));
+    }
+    return result;
+}
+
 } // namespace wormedit

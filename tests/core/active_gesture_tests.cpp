@@ -276,3 +276,17 @@ TEST_CASE("Rejected hold completion ends the public capture", "[core][active-ges
     CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state, commit));
     fixture.check_capture_ended(0);
 }
+
+TEST_CASE("Direct gesture calls validate a replacement capture on a reused context", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
+    REQUIRE(update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 240}));
+    auto* stored = gesture_storage<pending_note_duration_gesture_t>(&*fixture.state.active_gesture);
+    REQUIRE(stored);
+    stored->stamp.revision = fixture.history.document.revision + 1;
+    const auto stale = update_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
+    CHECK_FALSE(stale);
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
+    fixture.check_capture_ended(0);
+}

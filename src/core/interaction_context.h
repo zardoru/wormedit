@@ -2,6 +2,9 @@
 
 #include <wormedit/core/interaction.h>
 
+#include <cstdint>
+#include <optional>
+
 namespace wormedit {
 
 // Synchronous dispatch references only. Nested mutations must rebuild the scope.
@@ -16,6 +19,12 @@ struct editor_edit_context_t {
     chart_scope_t scope;
     // Borrowed only during dispatch; view-dependent gestures never store this pointer.
     const editor_interaction_view_model_t* initial_view{};
+    // Only dispatch supplies this boundary result. Direct callers remain uncached.
+    std::optional<std::uint64_t> dispatch_capture_revision{};
+
+    [[nodiscard]] auto has_validated_capture() const noexcept -> bool {
+        return dispatch_capture_revision == history.document.revision;
+    }
 };
 
 using editor_initial_view_t = std::variant<editor_interaction_view_model_t, diagnostic_list_t>;

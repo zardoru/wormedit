@@ -740,18 +740,10 @@ auto recover_editor_interaction(const document_history_t& history,
     return result;
 }
 
-auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&,
-                                const duration_resize_plan_t&) -> editor_interaction_result_t;
-auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
-    -> editor_interaction_result_t;
 
-auto dispatch_nested_action(editor_edit_context_t& context, const editor_interaction_action_t& action)
-    -> editor_interaction_result_t {
-    return dispatch_editor_action(context.history, context.state, action);
-}
 auto cancel_pointer_gesture(editor_edit_context_t& context) -> editor_interaction_result_t {
-    return dispatch_nested_action(
-        context,
+    return dispatch_editor_action(
+        context.history, context.state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::pointer_capture_lost});
 }
 auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
@@ -761,20 +753,6 @@ auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t>
         context.scope.chart, context.scope.measures, std::move(targets), reference, end,
         edit_snap_denominator(context.scope.chart, context.state), exact_end);
 }
-auto make_move_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
-                    object_id_t reference, local_position_t position, lane_id_t lane,
-                    bool exact_position, std::optional<object_id_t> bgm_lane,
-                    std::optional<std::uint64_t> virtual_row)
-    -> std::variant<note_move_plan_t, diagnostic_list_t> {
-    return plan_move_gesture(context.history, context.state, context.scope.chart,
-                             context.scope.measures, std::move(targets), reference, position, lane,
-                             exact_position, bgm_lane, virtual_row);
-}
-auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
-    -> editor_interaction_result_t {
-    return apply_duration_resize_plan(context.history, context.state, plan);
-}
-
 
 
 auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
@@ -1706,49 +1684,6 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
 }
 
 namespace {
-auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
-                                 const editor_interaction_action_t& action) -> editor_interaction_result_t;
-} // namespace
-
-template <class Action> auto is_committing_action(const editor_interaction_action_t& action) -> bool {
-    const auto* update = std::get_if<Action>(&action);
-    return update && update->phase == editor_gesture_phase_t::commit;
-}
-
-auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
-                                    const editor_interaction_action_t& action) -> bool {
-    return std::holds_alternative<commit_hold_action_t>(action) ||
-           std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
-           std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
-           std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
-           is_committing_action<update_note_duration_gesture_action_t>(action) ||
-           is_committing_action<update_note_move_gesture_action_t>(action) ||
-           std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
-           std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
-           std::holds_alternative<update_editor_area_selection_action_t>(action) ||
-           (state.gesture<wormedit::pending_space_range_selection_t>() &&
-            std::holds_alternative<space_range_selection_action_t>(action));
-}
-
-auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
-                            const editor_interaction_action_t& action) -> editor_interaction_result_t {
-    if (auto canceled = handle_editor_cancellation(history, state, action))
-        return *canceled;
-    if ((state).is_stale(history.document.revision)) {
-        (state).clear();
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    }
-    auto result = dispatch_editor_action_impl(history, state, action);
-    if (!result && is_terminal_editor_gesture_action(state, action)) {
-        (state).clear();
-        return diagnostic_result(history, state, std::move(result.diagnostics));
-    }
-    return result;
-}
-
-namespace {
 auto handle(editor_edit_context_t& context, const move_edit_cursor_action_t& typed_action,
             const std::uint64_t& absolute) -> editor_interaction_result_t {
     interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
@@ -2041,10 +1976,10 @@ struct editor_action_visitor_t {
 
 };
 
+} // namespace
+
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> editor_interaction_result_t {
-    if (auto rejected = validate_active_gesture_action(history, state, action))
-        return *rejected;
     if (auto rejected = validate_virtual_cursor_action(history, state, action))
         return *rejected;
     const auto* chart = history.document.find_chart(state.chart);
@@ -2058,10 +1993,10 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto& index = std::get<measure_index_t>(built_index);
     const auto absolute = *state.cursor_canvas_row(index);
     editor_edit_context_t context{history, state, {*chart, index},
-                                  &std::get<editor_interaction_view_model_t>(initial_view)};
+                                  &std::get<editor_interaction_view_model_t>(initial_view),
+                                  history.document.revision};
     return std::visit(editor_action_visitor_t{context, absolute}, action);
 }
-} // namespace
 
 namespace {
 auto scoped_selection(const editor_interaction_state_t& state,

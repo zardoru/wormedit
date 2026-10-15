@@ -110,10 +110,15 @@ auto matching_pause_projection(chart_document_t& chart, const pause_event_t& eve
 }
 
 struct pause_warp_edit_context_t {
+    static constexpr std::string_view invalid_limits_message = "pause and warp event caps must be positive";
+    static auto has_valid_limits(const pause_warp_edit_limits_t& limits) -> bool {
+        return limits.maximum_pause_events != 0 && limits.maximum_warp_events != 0;
+    }
+
     song_document_t& proposed;
     document_command_result_t& result;
     pause_warp_edit_limits_t limits;
-    std::string command_label;
+    std::string command_label{};
     bool changed{};
 
     template <typename Edit> void operator()(const Edit& edit);
@@ -360,14 +365,9 @@ auto apply_pause_warp_action(pause_warp_edit_context_t& context, chart_document_
 }
 
 template <typename Edit>
-auto apply_pause_warp_operation(pause_warp_edit_context_t& context, const Edit& edit) -> void {
-    auto* chart = target_chart(context, edit.chart);
-    if (chart) apply_pause_warp_action(context, *chart, edit);
-}
-
-template <typename Edit>
 void pause_warp_edit_context_t::operator()(const Edit& edit) {
-    apply_pause_warp_operation(*this, edit);
+    auto* chart = target_chart(*this, edit.chart);
+    if (chart) apply_pause_warp_action(*this, *chart, edit);
 }
 
 
@@ -375,30 +375,13 @@ void pause_warp_edit_context_t::operator()(const Edit& edit) {
 
 auto apply_pause_warp_edit(document_history_t& history,
     const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    return apply_pause_warp_edit(transaction, action, limits);
+    return document_command_transaction_t::from(history).execute<pause_warp_edit_context_t>(action, limits);
 }
 
 auto apply_pause_warp_edit(document_command_transaction_t& transaction,
                            const pause_warp_edit_action_t& action, pause_warp_edit_limits_t limits)
     -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.commit({});
-    auto& result = transaction.outcome;
-    if (limits.maximum_pause_events == 0 || limits.maximum_warp_events == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "pause and warp event caps must be positive");
-        return transaction.finish_without_commit();
-    }
-
-    auto& proposed = transaction.copy_document();
-    pause_warp_edit_context_t context{.proposed = proposed, .result = result,
-        .limits = limits, .command_label = {}, .changed = false};
-    std::visit(context, action);
-
-    if (!result.diagnostics.empty() || !context.changed) {
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(std::move(context.command_label));
+    return transaction.execute<pause_warp_edit_context_t>(action, limits);
 }
 
 } // namespace wormedit

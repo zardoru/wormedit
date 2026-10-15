@@ -610,7 +610,7 @@ void populate_compose_recipe_areas(
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
-    const recipe_form_preview_t* preview);
+    const recipe_form_outcome_t* preview);
 
 void populate_compose_speed_spans(flattened_workspace_t& flattened,
                                   const compose_scene_cache_t& cache,

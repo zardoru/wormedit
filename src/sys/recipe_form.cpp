@@ -177,33 +177,46 @@ auto recipe_from_form(const WormUiTimingRecipeForm& form, const sv_recipe_t& cur
     return candidate;
 }
 
-auto propose_recipe_form(const song_document_t& document, const chart_document_t& chart,
-                         const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
-    -> recipe_form_preview_t {
-    recipe_form_preview_t preview{.stamp = chart_stamp_t::from(document, chart.id), .candidate = recipe};
-    const auto candidate = recipe_from_form(form, recipe);
-    if (!candidate) {
-        preview.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
-            .code = diagnostic_code_t::invalid_rational,
-            .message = "Values must be exact fractions and counts must be whole numbers."});
-        return preview;
-    }
-    preview.candidate = *candidate;
-    preview.diagnostics = validate_sv_recipe(chart, *candidate);
-    return preview;
+auto recipe_form_preview_t::propose(const song_document_t& document,
+    const chart_document_t& chart, const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form)
+    -> recipe_form_outcome_t {
+    return revise({}, document, chart, recipe, form);
 }
 
-auto apply_recipe_form(document_history_t& history, const recipe_form_preview_t& proposal)
+auto recipe_form_preview_t::revise(recipe_form_outcome_t previous,
+    const song_document_t& document, const chart_document_t& chart,
+    const sv_recipe_t& recipe, const WormUiTimingRecipeForm& form) -> recipe_form_outcome_t {
+    auto candidate = recipe_from_form(form, recipe);
+    recipe_form_report_t report{.candidate = candidate ? std::move(*candidate) : recipe};
+    previous.diagnostics.clear();
+    if (!candidate) {
+        previous.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::invalid_rational,
+            .message = "Values must be exact fractions and counts must be whole numbers."});
+    } else {
+        previous.diagnostics = validate_sv_recipe(chart, report.candidate);
+    }
+    previous.value = recipe_form_proposal_t{
+        .stamp = chart_stamp_t::from(document, chart.id), .payload = {.report = std::move(report)}};
+    recipe_form_proposal_t::complete(previous, bool(chart.id) && previous.diagnostics.empty());
+    return previous;
+}
+
+auto apply_recipe_form(document_history_t& history, const recipe_form_outcome_t& proposal)
     -> document_command_result_t {
     if (!proposal.diagnostics.empty())
         return document_command_transaction_t::rejection(history.document.revision, proposal.diagnostics);
-    auto transaction = document_command_transaction_t::from(history, proposal.stamp,
-        "SV recipe form", document_identity_policy_t::revision_only);
+    if (!proposal.value)
+        return document_command_transaction_t::rejection(history.document.revision, {});
+    const auto& pending = *proposal.value;
+    auto transaction = pending.transaction(history, "SV recipe form",
+        document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
+    const auto& candidate = pending.payload.report.candidate;
     return apply_sv_recipe_edit(
-        transaction, wormedit::update_edit_t<wormedit::sv_recipe_t>{.chart = proposal.stamp.chart,
-                                                                    .id = proposal.candidate.id,
-                                                                    .value = proposal.candidate});
+        transaction, wormedit::update_edit_t<wormedit::sv_recipe_t>{.chart = pending.stamp.chart,
+                                                                    .id = candidate.id,
+                                                                    .value = candidate});
 }
 
 auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_id_t recipe_id,
@@ -217,8 +230,10 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     if (recipe == chart->sv_recipes.end()) return "The SV recipe no longer exists.";
     auto candidate = recipe_from_form(form, *recipe);
     if (!candidate) return "Values must be exact fractions and counts must be whole numbers.";
-    const recipe_form_preview_t proposal{.stamp = chart_stamp_t::from(history.document, chart_id),
-                                         .candidate = std::move(*candidate)};
+    // This synchronous path leaves semantic validation to the native command, once.
+    const recipe_form_outcome_t proposal{.value = recipe_form_proposal_t{
+        .stamp = chart_stamp_t::from(history.document, chart_id),
+        .payload = {.report = {.candidate = std::move(*candidate)}}}};
     const auto result = apply_recipe_form(history, proposal);
     applied = result.applied;
     if (result.applied) {

@@ -18,11 +18,13 @@ compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& co
     if (!target)
         return compose_action_outcome_t::blocked(
             "SV recipe form ignored because the recipe or the document changed.");
-    auto preview = wormedit::sys::propose_recipe_form(context.environment.document.history.document,
-                                                      *target->chart, *target->recipe,
-                                                      context.action.compose_recipe_form);
+    auto& previous = context.environment.editor.commands.project.timing_recipe.recipe_preview;
+    auto preview = recipe_form_preview_t::revise(
+        previous ? std::move(*previous) : recipe_form_outcome_t{},
+        context.environment.document.history.document, *target->chart, *target->recipe,
+        context.action.compose_recipe_form);
     const auto status = preview.diagnostics.empty() ? std::string{"SV recipe preview updated."}
-                                                    : std::string{preview.message()};
+                                                    : preview.diagnostics.front().message;
     const auto severity =
         preview.diagnostics.empty()
             ? notification_severity_t::hint

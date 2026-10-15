@@ -674,7 +674,7 @@ void populate_compose_recipe_areas(
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
-    const recipe_form_preview_t* preview) {
+    const recipe_form_outcome_t* preview) {
     flattened.compose.recipe_area.clear();
     flattened.compose.recipe_graph_point.clear();
     flattened.compose.recipe_area_labels.clear();
@@ -684,6 +684,7 @@ void populate_compose_recipe_areas(
     view.recipe_graph_point_count = 0;
     if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;
+    const auto* report = preview ? recipe_form_proposal_t::report(*preview) : nullptr;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
     const auto row_to_y = [&](std::uint64_t row) {
@@ -698,11 +699,11 @@ void populate_compose_recipe_areas(
     for (const auto& stored_area : cache.timing.recipe_areas->areas) {
         const auto* shown = &stored_area;
         wormedit::sys::recipe_area_t previewed;
-        const bool previewing = preview && preview->candidate.id == stored_area.recipe;
+        const bool previewing = report && report->candidate.id == stored_area.recipe;
         if (previewing) {
             // The unapplied candidate replaces the stored values in this area's graph.
             previewed = stored_area;
-            const auto sampled = wormedit::sample_sv_recipe(chart, preview->candidate);
+            const auto sampled = wormedit::sample_sv_recipe(chart, report->candidate);
             previewed.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
             previewed.points.clear();
             for (const auto& point : sampled.points)
@@ -806,10 +807,11 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
     auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
-    const bool current = preview->stamp.is_current(chart.id, revision) &&
-                         preview->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
+    const auto* report = recipe_form_proposal_t::report(*preview);
+    const bool current = report && recipe_form_proposal_t::captured_stamp(*preview).is_current(chart.id, revision) &&
+                         report->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
-                             return recipe.id == preview->candidate.id;
+                             return recipe.id == report->candidate.id;
                          });
     if (!current)
         preview.reset();
@@ -830,7 +832,8 @@ void populate_compose_recipe_form(flattened_workspace_t& flattened,
     const auto& name = flattened.compose.recipe_form_text.emplace_back(recipe->name);
     const auto& source = flattened.compose.recipe_form_text.emplace_back(recipe->expression_source);
     const auto& status = flattened.compose.recipe_form_text.emplace_back(
-        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->message()} : std::string{});
+        application_state.project.timing_recipe.recipe_preview ? std::string{application_state.project.timing_recipe.recipe_preview->diagnostics.empty()
+            ? std::string_view{} : application_state.project.timing_recipe.recipe_preview->diagnostics.front().message} : std::string{});
     view.recipe_form.visible = true;
     view.recipe_form.recipe_id = recipe->id.value;
     view.recipe_form.enabled = recipe->enabled;

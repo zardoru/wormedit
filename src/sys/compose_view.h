@@ -622,7 +622,7 @@ struct application_command_state_t {
             bool timing_locked{};
             std::uint64_t kiai_selected_head{};
             std::uint64_t recipe_selected{};
-            std::optional<recipe_form_preview_t> recipe_preview;
+            std::optional<recipe_form_outcome_t> recipe_preview;
             bool audio_offset_locked{};
         } timing_recipe;
 

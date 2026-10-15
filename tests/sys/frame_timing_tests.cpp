@@ -2640,7 +2640,7 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     const auto& chart = fixture.history.document.charts.front();
     auto form = wormedit::sys::recipe_form_from_recipe(chart.sv_recipes.front());
     std::snprintf(form.value_to.numerator, sizeof(form.value_to.numerator), "9");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     CHECK(fixture.flattened.view.compose.recipe_areas[0].previewing);
@@ -2648,7 +2648,7 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
 
     form.curve = WORM_UI_TIMING_RECIPE_CURVE_EXPONENTIAL;
     std::snprintf(form.shape.numerator, sizeof(form.shape.numerator), "99");
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
     fixture.project();
     REQUIRE(fixture.flattened.view.compose.recipe_form.status_text != nullptr);
@@ -2660,9 +2660,9 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     CHECK_FALSE(fixture.flattened.view.compose.recipe_form.visible);
 
     fixture.application.project.timing_recipe.recipe_selected = 7001;
-    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::propose_recipe_form(
+    fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
-    fixture.application.project.timing_recipe.recipe_preview->stamp.document.revision += 5;
+    fixture.application.project.timing_recipe.recipe_preview->diagnostics.stamp.document.revision += 5;
     fixture.project();
     CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
 }

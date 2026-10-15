@@ -35,17 +35,17 @@ struct recipe_area_t {
     auto operator==(const recipe_area_t&) const -> bool = default;
 };
 
-struct recipe_areas_t {
+struct recipe_areas_view_t {
     // In stored recipe order.
     std::vector<recipe_area_t> areas;
     bool truncated{false};
-};
 
-// One area per stored recipe whose range lies inside the chart. Sampling is read-only; nothing
-// is written to the chart.
-[[nodiscard]] auto build_recipe_areas_view(const chart_document_t& chart,
-                                        const measure_index_t& measures, std::size_t limit)
-    -> recipe_areas_t;
+    // One area per stored recipe whose range lies inside the chart. Sampling is read-only; nothing
+    // is written to the chart.
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                   const measure_index_t& measures, std::size_t limit)
+        -> recipe_areas_view_t;
+};
 
 // A vertex of an area's graph: `x` is the value normalized to the visible range in [0, 1] and
 // `y` the viewport pixel row.

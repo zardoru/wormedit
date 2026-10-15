@@ -493,7 +493,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         REQUIRE(std::holds_alternative<measure_index_t>(measures));
         const auto timing = build_timing_index(history.document.charts.front());
         REQUIRE(timing);
-        cache.timing.dead_spans = build_dead_spans_view(history.document.charts.front(),
+        cache.timing.dead_spans = dead_spans_view_t::from(history.document.charts.front(),
             std::get<measure_index_t>(measures), *timing.index, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;

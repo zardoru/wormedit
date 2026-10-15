@@ -4,9 +4,9 @@
 namespace wormedit::sys {
 
 
-auto build_speed_spans_view(const chart_document_t& chart, const timing_index_t& timing,
-                         std::size_t limit) -> speed_spans_t {
-    speed_spans_t result;
+auto speed_spans_view_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                         std::size_t limit) -> speed_spans_view_t {
+    speed_spans_view_t result;
     if (chart.speeds.empty()) return result;
     const auto built = scroll_speed_index_t::from(chart, timing);
     if (!built.value) {

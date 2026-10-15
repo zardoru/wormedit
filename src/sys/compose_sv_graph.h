@@ -18,14 +18,14 @@ struct sv_step_t {
     auto operator==(const sv_step_t&) const -> bool = default;
 };
 
-struct sv_steps_t {
+struct sv_steps_view_t {
     // Ordered by row; events sharing a row keep the last one in source order.
     std::vector<sv_step_t> steps;
     bool truncated{false};
-};
 
-[[nodiscard]] auto build_sv_steps_view(const chart_document_t& chart, const measure_index_t& measures,
-                                    std::size_t limit) -> sv_steps_t;
+    [[nodiscard]] static auto from(const chart_document_t& chart, const measure_index_t& measures,
+                                   std::size_t limit) -> sv_steps_view_t;
+};
 
 // A point of the drawn graph. `x` is the value normalized to the visible range in [0, 1] and `y`
 // is the viewport pixel row, so a step is a horizontal run followed by a vertical jump.
@@ -46,7 +46,7 @@ struct sv_graph_t {
 // the values in force inside the window (a single value centers at 0.5). `row_to_y` maps an
 // absolute row to viewport pixels in drawn orientation.
 template <typename RowToY>
-[[nodiscard]] auto build_sv_graph(const sv_steps_t& steps, std::uint64_t first_row,
+[[nodiscard]] auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row,
                                   std::uint64_t last_row, RowToY&& row_to_y) -> sv_graph_t;
 
 } // namespace wormedit::sys

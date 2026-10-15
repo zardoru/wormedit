@@ -24,7 +24,7 @@ struct pause_group_t {
 };
 
 void add_pause_spans(const chart_document_t& chart, const measure_index_t& measures,
-                     const timing_index_t& timing, dead_span_projection_t& result) {
+                     const timing_index_t& timing, dead_spans_view_t& result) {
     std::map<std::tuple<std::uint64_t, int>, pause_group_t> groups;
     for (const auto& pause : chart.pauses) {
         const auto row = (measures).row_of(pause.position);
@@ -57,7 +57,7 @@ void add_pause_spans(const chart_document_t& chart, const measure_index_t& measu
 }
 
 void add_warp_spans(const chart_document_t& chart, const measure_index_t& measures,
-                    dead_span_projection_t& result) {
+                    dead_spans_view_t& result) {
     for (const auto& warp : chart.warps) {
         const auto begin = (measures).row_of(warp.span.begin);
         const auto end = (measures).row_of(warp.span.end);
@@ -75,10 +75,10 @@ void add_warp_spans(const chart_document_t& chart, const measure_index_t& measur
 
 } // namespace
 
-auto build_dead_spans_view(const chart_document_t& chart, const measure_index_t& measures,
+auto dead_spans_view_t::from(const chart_document_t& chart, const measure_index_t& measures,
                         const timing_index_t& timing, std::size_t limit)
-    -> dead_span_projection_t {
-    dead_span_projection_t result;
+    -> dead_spans_view_t {
+    dead_spans_view_t result;
     add_pause_spans(chart, measures, timing, result);
     add_warp_spans(chart, measures, result);
     std::ranges::sort(result.spans, [](const dead_span_t& left, const dead_span_t& right) {
@@ -92,7 +92,7 @@ auto build_dead_spans_view(const chart_document_t& chart, const measure_index_t&
     return result;
 }
 
-auto build_dead_span_bands_view(const dead_span_projection_t& projection, double pixels_per_row,
+auto build_dead_span_bands_view(const dead_spans_view_t& projection, double pixels_per_row,
                              double scroll_pixels, double viewport_height, bool downscroll,
                              double pause_band_pixels) -> std::vector<dead_span_band_t> {
     std::vector<dead_span_band_t> bands;
@@ -122,7 +122,7 @@ auto pointer_in_dead_span(const std::vector<dead_span_band_t>& bands, double y_p
     });
 }
 
-auto row_is_in_warp(const dead_span_projection_t& projection, std::uint64_t row) -> bool {
+auto row_is_in_warp(const dead_spans_view_t& projection, std::uint64_t row) -> bool {
     return std::ranges::any_of(projection.spans, [row](const dead_span_t& span) {
         return span.kind == dead_span_kind_t::warp && row >= span.begin_row && row < span.end_row;
     });

@@ -298,11 +298,11 @@ struct compose_scene_cache_t {
         std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
         std::optional<timing_index_t> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
-        std::optional<dead_span_projection_t> dead_spans;
-        std::optional<kiai_projection_t> kiai_spans;
-        std::optional<sv_steps_t> sv_steps;
-        std::optional<recipe_areas_t> recipe_areas;
-        std::optional<speed_spans_t> speed_spans;
+        std::optional<dead_spans_view_t> dead_spans;
+        std::optional<kiai_spans_view_t> kiai_spans;
+        std::optional<sv_steps_view_t> sv_steps;
+        std::optional<recipe_areas_view_t> recipe_areas;
+        std::optional<speed_spans_view_t> speed_spans;
         std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
         std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
         std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;

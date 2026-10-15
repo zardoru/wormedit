@@ -1204,18 +1204,18 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             cache.frame.projection_error_severity = to_notification_severity(diagnostics);
         }
         if (cache.scene.index) {
-            cache.timing.kiai_spans = wormedit::sys::build_kiai_spans_view(
+            cache.timing.kiai_spans = wormedit::sys::kiai_spans_view_t::from(
                 chart, cache.scene.index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
-            cache.timing.sv_steps = wormedit::sys::build_sv_steps_view(
+            cache.timing.sv_steps = wormedit::sys::sv_steps_view_t::from(
                 chart, cache.scene.index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
-            cache.timing.recipe_areas = wormedit::sys::build_recipe_areas_view(
+            cache.timing.recipe_areas = wormedit::sys::recipe_areas_view_t::from(
                 chart, cache.scene.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
         }
         auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
         if (timing.value) {
-            cache.timing.dead_spans = wormedit::sys::build_dead_spans_view(
+            cache.timing.dead_spans = wormedit::sys::dead_spans_view_t::from(
                 chart, cache.scene.index->measures, *timing.value, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
-            cache.timing.speed_spans = wormedit::sys::build_speed_spans_view(
+            cache.timing.speed_spans = wormedit::sys::speed_spans_view_t::from(
                 chart, *timing.value, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
             cache.timing.marker_timing_index = std::move(*timing.value);
         }

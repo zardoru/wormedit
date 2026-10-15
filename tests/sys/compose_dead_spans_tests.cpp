@@ -30,12 +30,12 @@ auto pause(std::uint64_t id, std::uint64_t row, pause_kind_t kind, std::int64_t 
             .source_unit = pause_unit_t::seconds};
 }
 
-auto project(const chart_document_t& chart, std::size_t limit = 64) -> dead_span_projection_t {
+auto project(const chart_document_t& chart, std::size_t limit = 64) -> dead_spans_view_t {
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
-    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, limit);
+    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.index, limit);
 }
 
 } // namespace
@@ -118,7 +118,7 @@ TEST_CASE("a pause inside a warp adds no dead span of its own", "[unit][sys][dea
 
 TEST_CASE("pause bands sit on their time side of the row and warps cover their rows",
           "[unit][sys][dead-spans]") {
-    dead_span_projection_t projection;
+    dead_spans_view_t projection;
     projection.spans = {{.kind = dead_span_kind_t::delay, .object = object_id_t{1},
                          .begin_row = 100, .end_row = 100, .seconds = {1, 1}},
                         {.kind = dead_span_kind_t::stop, .object = object_id_t{2},
@@ -148,7 +148,7 @@ TEST_CASE("pause bands sit on their time side of the row and warps cover their r
 
 namespace {
 auto project_pause_with_boundaries(signed_rational_t earlier, signed_rational_t later)
-    -> dead_span_projection_t {
+    -> dead_spans_view_t {
     auto chart = base_chart();
     chart.pauses = {pause(20, 240, pause_kind_t::stop, 1)};
     const auto measures = build_measure_index(chart);
@@ -160,7 +160,7 @@ auto project_pause_with_boundaries(signed_rational_t earlier, signed_rational_t 
     row->before_delays_seconds = earlier;
     row->event_seconds = earlier;
     row->after_stops_seconds = later;
-    return build_dead_spans_view(chart, std::get<measure_index_t>(measures), *timing.index, 64);
+    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.index, 64);
 }
 void check_reduced_pause_span(signed_rational_t earlier, signed_rational_t later,
                              signed_rational_t expected) {

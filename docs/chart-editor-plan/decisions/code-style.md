@@ -93,6 +93,13 @@ it in new code even before the card lands.
   `diagnosed_t<T>` for results that carry warnings. One success rule per type, no per-file
   `fail()`/`reject()`/`rejected()` builders, and no new bespoke `operator bool`. *(T-620)*
 
+- **Background work runs through one async shell** (owner, 2026-10-15): every job that leaves
+  the UI thread is an `async_job_t` instance over the shared `task_scheduler_t`, with one
+  `request` (a new request supersedes and cancels older generations), `poll`, `wait`, `cancel`,
+  in-flight bound, generation and captured identity/stamp. An owner supplies only its request
+  type, its work function and its payload; it never re-implements generations, in-flight lists or
+  poll/wait plumbing. Real-time threads (audio callback, preview refill) are not jobs. *(T-635)*
+
 ## Shared helpers, facts and policies
 
 - **Look for the home before writing a helper:** `text_util.h` (UTF-8, trim, ASCII case,
@@ -132,4 +139,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the ABI? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell?

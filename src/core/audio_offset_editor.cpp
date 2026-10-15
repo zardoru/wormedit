@@ -57,10 +57,8 @@ auto audio_offset_drag_t::propose(const song_document_t& document, chart_id_t ch
                                std::uint32_t sample_rate, bool timing_locked)
     -> audio_offset_drag_outcome_t {
     audio_offset_drag_outcome_t result;
-    if (timing_locked) {
-        result.diagnostics.push_back(
-            error(diagnostic_code_t::unsupported_feature,
-                  "audio offset dragging is disabled while timing is locked"));
+    if (auto locked = revision_policy.validate_lock(timing_locked, proposal_lock_order_t::before_stamp)) {
+        result.diagnostics.push_back(std::move(*locked));
         return result;
     }
     const auto* selected = document.find_chart(chart);
@@ -86,19 +84,12 @@ auto audio_offset_drag_t::propose(const song_document_t& document, chart_id_t ch
             .diagnostics = {}};
 }
 
-auto audio_offset_drag_t::revise(const chart_stamp_t& stamp, const song_document_t& document,
-                                 std::int64_t delta_frames,
-                                 bool timing_locked) const -> audio_offset_drag_outcome_t {
+auto audio_offset_drag_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+    std::int64_t delta_frames) const -> audio_offset_drag_outcome_t {
     audio_offset_drag_outcome_t result;
     const auto& drag = *this;
-    if (timing_locked) {
-        result.diagnostics.push_back(
-            error(diagnostic_code_t::unsupported_feature,
-                  "audio offset dragging is disabled while timing is locked"));
-        return result;
-    }
-    if (!stamp.document.is_current(document, document_identity_policy_t::revision_only))
-        return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_id, stale_action_message("Audio offset drag"))}};
+    const auto& document = scope.document();
+    const auto& stamp = scope.captured_stamp();
     const auto* selected = document.find_chart(stamp.chart);
     if (selected == nullptr ||
         selected->beat_zero_audio_offset_seconds != drag.original_offset_seconds) {

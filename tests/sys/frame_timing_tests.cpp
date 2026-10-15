@@ -2824,7 +2824,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     fixture.project();
     auto begun = audio_offset_drag_t::propose(fixture.history.document, chart_id_t{1}, 48000);
     REQUIRE(begun.value);
-    auto updated = begun.value->revise(fixture.history.document, 4800);
+    auto updated = begun.value->revise(fixture.history.document, {}, 4800);
     REQUIRE(updated.value);
     std::optional<proposal_t<audio_offset_drag_t>> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;

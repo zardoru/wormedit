@@ -95,7 +95,7 @@ using chart_paste_outcome_t =
     proposal_outcome_t<chart_paste_proposal_t, chart_stamp_t, chart_paste_diagnostics_t>;
 
 struct chart_paste_proposal_t {
-    static constexpr proposal_apply_policy_t apply_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "Chart paste proposal", .identity = document_identity_policy_t::revision_only};
     // Consumes a revision-bound object batch and publishes it once.
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>& scope) &&

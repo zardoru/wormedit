@@ -77,7 +77,7 @@ using lane_migration_proposal_outcome_t =
     proposal_outcome_t<lane_migration_proposal_t, chart_stamp_t, lane_migration_diagnostics_t>;
 
 struct lane_migration_proposal_t {
-    static constexpr proposal_apply_policy_t apply_policy{.stale_label = "Lane migration"};
+    static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Lane migration"};
     static constexpr auto apply_stale_issue = lane_migration_issue_t::stale_revision;
     static constexpr auto apply_commit_failure_issue = lane_migration_issue_t::invalid_mapping;
     static constexpr std::string_view apply_commit_failure_message = "The migrated chart failed document validation.";

@@ -78,11 +78,11 @@ struct sv_recipe_export_bake_result_t {
 // until Apply; replacement drafts retain the selected recipe's stable ID.
 struct sv_recipe_draft_t {
     static constexpr std::string_view begin_locked_message = "SV recipe editing is unavailable while timing is locked";
-    static constexpr proposal_apply_policy_t apply_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "SV recipe draft", .identity = document_identity_policy_t::revision_only,
-        .stale_code = diagnostic_code_t::invalid_binding};
+        .stale_code = diagnostic_code_t::invalid_binding,
+        .locked_message = "SV recipe draft was cancelled by timing lock"};
     static constexpr proposal_lifecycle_policy_t lifecycle_policy{
-        .locked_message = "SV recipe draft was cancelled by timing lock",
         .inactive_inspect_message = "SV recipe draft is not active",
         .can_echo_inactive_diagnostics = true};
     [[nodiscard]] auto validate_target(const song_document_t&, chart_id_t, proposal_operation_t) const
@@ -191,12 +191,12 @@ enum class sv_recipe_range_handle_t {
 // whole interval. Only preview_range changes during the gesture; the document
 // is published once by apply_proposal.
 struct sv_recipe_range_drag_t {
-    static constexpr proposal_apply_policy_t apply_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "SV recipe range drag", .identity = document_identity_policy_t::revision_only,
-        .stale_code = diagnostic_code_t::invalid_binding};
+        .stale_code = diagnostic_code_t::invalid_binding,
+        .locked_message = "SV recipe range drag was cancelled by timing lock"};
     static constexpr std::string_view invalid_target_message = "SV recipe range drag target no longer exists";
     static constexpr proposal_lifecycle_policy_t lifecycle_policy{
-        .locked_message = "SV recipe range drag was cancelled by timing lock",
         .inactive_apply_message = "SV recipe range drag is not active",
         .locked_status = proposal_status_t::rejected,
         .expired_status = proposal_status_t::rejected,

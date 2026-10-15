@@ -10,7 +10,7 @@ using namespace wormedit;
 namespace {
 
 struct metadata_payload_t {
-    static constexpr proposal_apply_policy_t apply_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "Title proposal"};
     std::string title;
 
@@ -55,7 +55,7 @@ struct warned_title_t : metadata_payload_t {
 };
 
 struct consuming_title_t {
-    static constexpr proposal_apply_policy_t apply_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "Consuming title", .identity = document_identity_policy_t::revision_only};
     std::unique_ptr<std::string> title;
     auto apply(proposal_edit_scope_t<document_stamp_t>& scope) &&

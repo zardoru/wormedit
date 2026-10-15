@@ -69,13 +69,13 @@ class timing_lane_pseudonote_outcome_t;
 using timing_lane_pseudonote_proposal_t = proposal_t<timing_lane_pseudonote_preview_t>;
 
 struct timing_lane_pseudonote_preview_t {
-    static constexpr proposal_apply_policy_t apply_policy{
-        .stale_label = "Timing pseudo-note", .identity = document_identity_policy_t::revision_only};
-    static constexpr std::string_view begin_locked_message = "timing is locked; timing lane edits are unavailable";
-    static constexpr proposal_lifecycle_policy_t lifecycle_policy{
+    static constexpr proposal_capture_policy_t apply_policy{
+        .stale_label = "Timing pseudo-note", .identity = document_identity_policy_t::revision_only,
         .lock_order = proposal_lock_order_t::after_stamp,
         .locked_code = diagnostic_code_t::unsupported_feature,
-        .locked_message = "timing lock changed while a pseudo-note was being edited",
+        .locked_message = "timing lock changed while a pseudo-note was being edited"};
+    static constexpr std::string_view begin_locked_message = "timing is locked; timing lane edits are unavailable";
+    static constexpr proposal_lifecycle_policy_t lifecycle_policy{
         .can_echo_inactive_diagnostics = true,
         .preparation_failure_status = proposal_status_t::rejected,
         .completion = proposal_completion_policy_t::applied_or_no_diagnostics};

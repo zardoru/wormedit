@@ -24,18 +24,49 @@ inline void append_diagnostics(diagnostic_list_t& target, diagnostic_list_t&& in
 }
 } // namespace proposal_detail
 
-struct proposal_apply_policy_t {
-    std::string_view stale_label;
-    document_identity_policy_t identity{document_identity_policy_t::project_and_revision};
-    diagnostic_code_t stale_code{diagnostic_code_t::invalid_id};
-    auto operator==(const proposal_apply_policy_t&) const -> bool = default;
-};
-
 enum class proposal_status_t { inactive, active, applied, cancelled, rejected };
 enum class proposal_application_stage_t { inactive, preflight, locked, expired, binding, unchanged, prepared, published };
 enum class proposal_operation_t { apply, revise, inspect };
 enum class proposal_lock_order_t { before_stamp, after_stamp };
 enum class proposal_completion_policy_t { no_diagnostics, applied, applied_or_no_diagnostics };
+
+struct proposal_capture_failure_t {
+    proposal_application_stage_t stage{proposal_application_stage_t::expired};
+    diagnostic_t diagnostic;
+    auto operator==(const proposal_capture_failure_t&) const -> bool = default;
+};
+
+struct proposal_capture_policy_t {
+    std::string_view stale_label;
+    document_identity_policy_t identity{document_identity_policy_t::project_and_revision};
+    diagnostic_code_t stale_code{diagnostic_code_t::invalid_id};
+    proposal_lock_order_t lock_order{proposal_lock_order_t::before_stamp};
+    diagnostic_code_t locked_code{diagnostic_code_t::invalid_binding};
+    std::string_view locked_message;
+    auto operator==(const proposal_capture_policy_t&) const -> bool = default;
+
+    [[nodiscard]] auto validate_lock(bool is_timing_locked, proposal_lock_order_t moment) const
+        -> std::optional<diagnostic_t> {
+        if (is_timing_locked && lock_order == moment && !locked_message.empty())
+            return error(locked_code, std::string(locked_message));
+        return std::nullopt;
+    }
+
+    [[nodiscard]] auto validate(const document_stamp_t& captured, const song_document_t& document,
+        bool is_timing_locked) const -> result_t<void, proposal_capture_failure_t> {
+        if (auto locked = validate_lock(is_timing_locked, proposal_lock_order_t::before_stamp))
+            return std::unexpected(proposal_capture_failure_t{
+                .stage = proposal_application_stage_t::locked, .diagnostic = std::move(*locked)});
+        if (!captured.is_current(document, identity))
+            return std::unexpected(proposal_capture_failure_t{
+                .stage = proposal_application_stage_t::expired,
+                .diagnostic = error(stale_code, stale_action_message(stale_label))});
+        if (auto locked = validate_lock(is_timing_locked, proposal_lock_order_t::after_stamp))
+            return std::unexpected(proposal_capture_failure_t{
+                .stage = proposal_application_stage_t::locked, .diagnostic = std::move(*locked)});
+        return {};
+    }
+};
 
 template<class Diagnostics> struct proposal_input_t {
     bool is_timing_locked{};
@@ -48,9 +79,6 @@ using proposal_revision_input_t = proposal_input_t<diagnostic_list_t>;
 
 // Policies retain the distinctions between early binding failures and edit failures.
 struct proposal_lifecycle_policy_t {
-    proposal_lock_order_t lock_order{proposal_lock_order_t::before_stamp};
-    diagnostic_code_t locked_code{diagnostic_code_t::invalid_binding};
-    std::string_view locked_message;
     std::string_view inactive_apply_message;
     std::string_view inactive_inspect_message;
     bool can_echo_inactive_diagnostics{};
@@ -126,20 +154,35 @@ template<class Payload> requires stateful_proposal_payload<Payload>
     else return (payload.report.lifecycle);
 }
 
-template<class Stamp> class proposal_revision_scope_t {
+template<class Stamp> class proposal_read_scope_t {
+public:
+    proposal_read_scope_t(const song_document_t& document, const Stamp& captured)
+        : document_(document), captured_stamp_(captured) {}
+    [[nodiscard]] auto document() const noexcept -> const song_document_t& { return document_; }
+    [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
+private:
+    const song_document_t& document_;
+    const Stamp& captured_stamp_;
+};
+
+template<class Payload, class Stamp, class... Arguments>
+using proposal_revision_outcome_t = decltype(std::declval<const Payload&>().revise(
+    std::declval<const proposal_read_scope_t<Stamp>&>(), std::declval<Arguments>()...));
+
+template<class Payload, class Stamp, class... Arguments>
+using proposal_revision_diagnostics_t = decltype(
+    std::declval<proposal_revision_outcome_t<Payload, Stamp, Arguments...>>().diagnostics);
+
+template<class Stamp> class proposal_revision_scope_t : public proposal_read_scope_t<Stamp> {
 public:
     proposal_revision_scope_t(const document_history_t& history, const Stamp& captured,
         diagnostic_list_t& diagnostics, const chart_document_t* target)
-        : history_(history), captured_stamp_(captured), diagnostics_(diagnostics), target_(target) {}
-    [[nodiscard]] auto history() const noexcept -> const document_history_t& { return history_; }
-    [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
+        : proposal_read_scope_t<Stamp>(history.document, captured), diagnostics_(diagnostics), target_(target) {}
     [[nodiscard]] auto diagnostics() const noexcept -> diagnostic_list_t& { return diagnostics_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
     [[nodiscard]] auto has_invalid_target() const noexcept -> bool { return has_invalid_target_; }
     void invalidate_target() noexcept { has_invalid_target_ = true; }
 private:
-    const document_history_t& history_;
-    const Stamp& captured_stamp_;
     diagnostic_list_t& diagnostics_;
     const chart_document_t* target_{};
     bool has_invalid_target_{};
@@ -188,8 +231,9 @@ public:
                                             std::string(policy.inactive_apply_message)));
             return proposal_application_stage_t::inactive;
         }
-        if (policy.lock_order == proposal_lock_order_t::before_stamp && input.is_timing_locked) {
-            diagnostics.push_back(error(policy.locked_code, std::string(policy.locked_message)));
+        if (auto locked = std::remove_cvref_t<Edit>::apply_policy.validate_lock(
+                input.is_timing_locked, proposal_lock_order_t::before_stamp)) {
+            diagnostics.push_back(std::move(*locked));
             return proposal_application_stage_t::locked;
         }
         return std::nullopt;
@@ -215,18 +259,12 @@ public:
             if (!pending.payload.can_revise(arguments...)) return false;
         }
         input.diagnostics.clear();
-        std::optional<proposal_application_stage_t> stopped;
-        if (input.is_timing_locked && policy.lock_order == proposal_lock_order_t::before_stamp)
-            stopped = proposal_application_stage_t::locked;
-        else if (!pending.is_current(history, payload_type::apply_policy.identity))
-            stopped = proposal_application_stage_t::expired;
-        else if (input.is_timing_locked) stopped = proposal_application_stage_t::locked;
-        if (stopped) {
-            input.diagnostics.push_back(*stopped == proposal_application_stage_t::locked
-                ? error(policy.locked_code, std::string(policy.locked_message))
-                : error(payload_type::apply_policy.stale_code,
-                    stale_action_message(payload_type::apply_policy.stale_label)));
-            lifecycle.invalidate(policy, *stopped);
+        auto captured = payload_type::apply_policy.validate(
+            pending.document_stamp(), history.document, input.is_timing_locked);
+        if (!captured) {
+            auto& failure = captured.error();
+            input.diagnostics.push_back(std::move(failure.diagnostic));
+            lifecycle.invalidate(policy, failure.stage);
             return false;
         }
         auto target = revision_target(pending.payload, history.document, pending.stamp.chart, arguments...);
@@ -245,10 +283,10 @@ public:
     template<class Edit> requires stateful_proposal_payload<Edit>
     [[nodiscard]] static auto prepare_application(Edit& edit, proposal_edit_scope_t<chart_stamp_t>& scope)
         -> std::optional<proposal_application_stage_t> {
-        const auto& policy = std::remove_cvref_t<Edit>::lifecycle_policy;
         auto& diagnostics = scope.transaction().outcome.diagnostics;
-        if (policy.lock_order == proposal_lock_order_t::after_stamp && scope.input().is_timing_locked) {
-            diagnostics.push_back(error(policy.locked_code, std::string(policy.locked_message)));
+        if (auto locked = std::remove_cvref_t<Edit>::apply_policy.validate_lock(
+                scope.input().is_timing_locked, proposal_lock_order_t::after_stamp)) {
+            diagnostics.push_back(std::move(*locked));
             return proposal_application_stage_t::locked;
         }
         if constexpr (requires { edit.is_unchanged(); }) {
@@ -389,6 +427,25 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         return outcome;
     }
 
+    template<class RevisionPayload = Payload, class... Arguments>
+        requires std::same_as<RevisionPayload, Payload> && (!stateful_proposal_payload<RevisionPayload>) &&
+        requires(const RevisionPayload& value, const proposal_read_scope_t<Stamp>& scope, Arguments&&... arguments) {
+            RevisionPayload::revision_policy;
+            value.revise(scope, std::forward<Arguments>(arguments)...);
+        }
+    [[nodiscard]] auto revise(const song_document_t& document,
+        proposal_input_t<proposal_revision_diagnostics_t<RevisionPayload, Stamp, Arguments...>> input,
+        Arguments&&... arguments) const -> proposal_revision_outcome_t<RevisionPayload, Stamp, Arguments...> {
+        auto captured = RevisionPayload::revision_policy.validate(document_stamp(), document, input.is_timing_locked);
+        if (!captured) {
+            input.diagnostics.clear();
+            input.diagnostics.push_back(std::move(captured.error().diagnostic));
+            return {.diagnostics = std::move(input.diagnostics)};
+        }
+        const proposal_read_scope_t<Stamp> scope{document, stamp};
+        return payload.revise(scope, std::forward<Arguments>(arguments)...);
+    }
+
     [[nodiscard]] auto inspect(const document_history_t& history,
         std::span<const diagnostic_t> recent_diagnostics = {}) const
         -> result_t<const chart_document_t*, diagnostic_list_t> requires stateful_proposal_payload<Payload> {
@@ -400,9 +457,9 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
                 std::string(policy.inactive_inspect_message)));
             return std::unexpected(std::move(diagnostics));
         }
-        if (!is_current(history, Payload::apply_policy.identity)) {
-            diagnostics.push_back(error(Payload::apply_policy.stale_code,
-                stale_action_message(Payload::apply_policy.stale_label)));
+        auto captured = Payload::apply_policy.validate(document_stamp(), history.document, false);
+        if (!captured) {
+            diagnostics.push_back(std::move(captured.error().diagnostic));
             return std::unexpected(std::move(diagnostics));
         }
         auto target = payload.validate_target(history.document, stamp.chart, proposal_operation_t::inspect);
@@ -413,6 +470,7 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         return *target;
     }
 
+    // Temporary: removed by T-634; Sys payloads in compose_view.h still use captured-stamp revision inputs.
     template <class... Arguments>
         requires requires(Payload& value, const Stamp& captured, Arguments&&... arguments) {
             value.revise(captured, std::forward<Arguments>(arguments)...);
@@ -421,12 +479,18 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         return payload.revise(stamp, std::forward<Arguments>(arguments)...);
     }
 
+    // Temporary: removed by T-634; Sys payloads in compose_view.h still use captured-stamp revision inputs.
     template <class... Arguments>
         requires requires(const Payload& value, const Stamp& captured, Arguments&&... arguments) {
             value.revise(captured, std::forward<Arguments>(arguments)...);
         }
     [[nodiscard]] auto revise(Arguments&&... arguments) const -> decltype(auto) {
         return payload.revise(stamp, std::forward<Arguments>(arguments)...);
+    }
+
+    [[nodiscard]] auto document_stamp() const noexcept -> const document_stamp_t& {
+        if constexpr (std::same_as<Stamp, chart_stamp_t>) return stamp.document;
+        else return stamp;
     }
 
     [[nodiscard]] auto is_current(const document_history_t& history,

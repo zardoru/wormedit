@@ -71,7 +71,7 @@ using channel_map_proposal_outcome_t =
     proposal_outcome_t<channel_map_proposal_t, chart_stamp_t, channel_map_diagnostics_t>;
 
 struct channel_map_proposal_t {
-    static constexpr proposal_apply_policy_t apply_policy{.stale_label = "Channel-map edit"};
+    static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Channel-map edit"};
     static constexpr auto apply_stale_issue = channel_map_issue_t::stale_revision;
     static constexpr auto apply_commit_failure_issue = channel_map_issue_t::invalid_replacement;
     static constexpr std::string_view apply_commit_failure_message = "The channel-map edit failed validation.";

@@ -97,13 +97,19 @@ using chart_paste_outcome_t =
 struct chart_paste_proposal_t {
     static constexpr proposal_capture_policy_t apply_policy{
         .stale_label = "Chart paste proposal", .identity = document_identity_policy_t::revision_only};
+    static constexpr proposal_capture_policy_t revision_policy{
+        .stale_label = apply_policy.stale_label, .identity = apply_policy.identity,
+        .stale_code = diagnostic_code_t::collision, .uses_current_project_diagnostics = true};
+    [[nodiscard]] static auto from(const proposal_read_scope_t<chart_stamp_t>&,
+        const chart_clipboard_t&, local_position_t anchor)
+        -> result_t<chart_paste_proposal_t, chart_paste_diagnostic_t>;
     // Consumes a revision-bound object batch and publishes it once.
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>& scope) &&
         -> diagnosed_t<std::optional<std::string>>;
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
         const chart_clipboard_t& clipboard, local_position_t anchor,
         std::uint64_t expected_revision) -> chart_paste_outcome_t;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& document,
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>&,
         const chart_clipboard_t& clipboard, local_position_t anchor) const -> chart_paste_outcome_t;
 
     chart_paste_report_t report;
@@ -114,7 +120,7 @@ struct chart_paste_proposal_t {
 
 static_assert(staged_proposal<chart_paste_proposal_t,
     std::tuple<const song_document_t&, chart_id_t, const chart_clipboard_t&, local_position_t, std::uint64_t>,
-    std::tuple<const chart_stamp_t&, const song_document_t&, const chart_clipboard_t&, local_position_t>,
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&, const chart_clipboard_t&, local_position_t>,
     chart_stamp_t, chart_paste_diagnostics_t>);
 
 using chart_paste_preview_view_t =

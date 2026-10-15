@@ -563,13 +563,13 @@ TEST_CASE("Paste revision rebuilds ghosts and preserves the captured revision",
     const auto first = chart_paste_proposal_t::propose(song, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 0}, song.revision);
     REQUIRE(first.value);
-    const auto revised = first.value->revise(song, clipboard,
+    const auto revised = first.value->revise(song, {}, clipboard,
         local_position_t{measure_id_t{1}, 120});
     REQUIRE(revised.value);
     expect(revised.value->stamp == first.value->stamp);
     expect(std::get<note_t>(revised.value->payload.report.objects.front()).position.row == 120);
     ++song.revision;
-    const auto stale = first.value->revise(song, clipboard,
+    const auto stale = first.value->revise(song, {}, clipboard,
         local_position_t{measure_id_t{1}, 120});
     REQUIRE_FALSE(stale.value);
     REQUIRE(stale.diagnostics.size() == 1);
@@ -589,4 +589,33 @@ TEST_CASE("Empty captured paste batches return before document publication",
     expect(result.diagnostics.empty());
     expect(history.undo.empty());
     expect(history.document.revision == 7);
+}
+
+TEST_CASE("Paste revision rebinds an equal-revision replacement project", "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    const auto initial = chart_paste_proposal_t::propose(song, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 0}, song.revision);
+    REQUIRE(initial.value);
+    song.id = song_id_t{99};
+    clipboard.source_song = song.id;
+    const auto revised = initial.value->revise(song, {}, clipboard, local_position_t{measure_id_t{1}, 120});
+    REQUIRE(revised.value);
+    CHECK(revised.value->stamp.document.project == song.id);
+    CHECK(revised.value->stamp.document.revision == initial.value->stamp.document.revision);
+    CHECK(initial.value->stamp.document.project == song_id_t{1});
+}
+
+TEST_CASE("Stale paste revision diagnoses the current project with the captured revision", "[core][paste-proposal-stamp]") {
+    auto [song, clipboard] = paste_fixture();
+    const auto initial = chart_paste_proposal_t::propose(song, chart_id_t{2}, clipboard,
+        {measure_id_t{1}, 0}, song.revision);
+    REQUIRE(initial.value);
+    song.id = song_id_t{99};
+    ++song.revision;
+    const auto revised = initial.value->revise(song, {}, clipboard, local_position_t{measure_id_t{1}, 120});
+    CHECK_FALSE(revised.value);
+    REQUIRE(revised.diagnostics.size() == 1);
+    CHECK(revised.diagnostics.front().stamp.document.project == song.id);
+    CHECK(revised.diagnostics.front().stamp.document.revision == initial.value->stamp.document.revision);
+    CHECK(revised.diagnostics.front().code == diagnostic_code_t::collision);
 }

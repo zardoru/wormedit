@@ -22,8 +22,6 @@ constexpr std::size_t maximum_objects = 32768;
 
 using wormedit::rows_to_fraction;
 
-
-
 auto note_lane(const chart_document_t& chart, const measure_index_t& index,
                const note_t& note) -> std::optional<std::size_t> {
     const auto* layout = layout_at(chart, index, note.position);
@@ -675,57 +673,65 @@ auto place_paste_objects(chart_document_t& chart, const measure_index_t& index,
     return {};
 }
 
-auto prepare_chart_paste(const song_document_t& document, chart_id_t chart_id,
-    const chart_clipboard_t& clipboard, local_position_t anchor, std::uint64_t expected_revision)
-    -> result_t<proposal_t<chart_paste_proposal_t>, chart_paste_diagnostic_t> {
-    proposal_t<chart_paste_proposal_t> result{.stamp = chart_stamp_t::from(document, chart_id)};
-    result.stamp.document.revision = expected_revision;
-    if (!result.stamp.document.is_current(document)) return std::unexpected(chart_paste_diagnostic_t::from(stale_action_message("Chart paste proposal"), result.stamp, std::move(result.payload.report)));
-    if (document.id != clipboard.source_song) return std::unexpected(chart_paste_diagnostic_t::from("Clipboard resources belong to another project.", result.stamp, std::move(result.payload.report)));
+} // namespace
+
+auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& scope,
+    const chart_clipboard_t& clipboard, local_position_t anchor)
+    -> result_t<chart_paste_proposal_t, chart_paste_diagnostic_t> {
+    const auto& document = scope.source_document();
+    const auto chart_id = scope.captured_stamp().chart;
+    const auto stamp = chart_stamp_t::from(document, chart_id);
+    chart_paste_proposal_t result;
+    if (document.id != clipboard.source_song) return std::unexpected(chart_paste_diagnostic_t::from("Clipboard resources belong to another project.", stamp, std::move(result.report)));
     if (clipboard.objects.empty() || clipboard.objects.size() > maximum_objects)
-        return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", result.stamp, std::move(result.payload.report)));
+        return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", stamp, std::move(result.report)));
     auto proposed = document;
     const auto chart = proposed.find_chart(chart_id);
-    if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", result.stamp, std::move(result.payload.report)));
+    if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", stamp, std::move(result.report)));
     const auto indexed = build_measure_index(*chart);
     const auto* index = std::get_if<measure_index_t>(&indexed);
     const auto row = index ? absolute_row(*index, anchor) : std::nullopt;
-    if (!row || !chart->divisions_per_standard_measure) return std::unexpected(chart_paste_diagnostic_t::from("The paste anchor is invalid.", result.stamp, std::move(result.payload.report)));
-    result.payload.report.missing_lane_count = missing_paste_lanes(clipboard, *chart, *index, *row);
-    if (result.payload.report.missing_lane_count)
-        return std::unexpected(chart_paste_diagnostic_t::from(std::to_string(result.payload.report.missing_lane_count) + " clipboard objects have unavailable target lanes.", result.stamp, std::move(result.payload.report)));
-    auto placed = place_paste_objects(*chart, *index, clipboard, *row, result.payload);
+    if (!row || !chart->divisions_per_standard_measure) return std::unexpected(chart_paste_diagnostic_t::from("The paste anchor is invalid.", stamp, std::move(result.report)));
+    result.report.missing_lane_count = missing_paste_lanes(clipboard, *chart, *index, *row);
+    if (result.report.missing_lane_count)
+        return std::unexpected(chart_paste_diagnostic_t::from(std::to_string(result.report.missing_lane_count) + " clipboard objects have unavailable target lanes.", stamp, std::move(result.report)));
+    auto placed = place_paste_objects(*chart, *index, clipboard, *row, result);
     if (!placed)
-        return std::unexpected(chart_paste_diagnostic_t::from(std::move(placed.error()), result.stamp,
-            std::move(result.payload.report)));
-    if (has_paste_collision(*chart, result.payload, *index)) {
-        return std::unexpected(chart_paste_diagnostic_t::from("Paste collides with existing chart objects.", result.stamp, std::move(result.payload.report)));
+        return std::unexpected(chart_paste_diagnostic_t::from(std::move(placed.error()), stamp,
+            std::move(result.report)));
+    if (has_paste_collision(*chart, result, *index)) {
+        return std::unexpected(chart_paste_diagnostic_t::from("Paste collides with existing chart objects.", stamp, std::move(result.report)));
     }
-    if (const auto problem = apply_stem_run_rules(document, *chart, *index, result.payload.stem_events))
-        return std::unexpected(chart_paste_diagnostic_t::from(*problem, result.stamp, std::move(result.payload.report)));
-    for (const auto& object : result.payload.report.objects) append_paste_object(*chart, object);
-    append_stem_events(*chart, result.payload.stem_events);
+    if (const auto problem = apply_stem_run_rules(document, *chart, *index, result.stem_events))
+        return std::unexpected(chart_paste_diagnostic_t::from(*problem, stamp, std::move(result.report)));
+    for (const auto& object : result.report.objects) append_paste_object(*chart, object);
+    append_stem_events(*chart, result.stem_events);
     const auto diagnostics = validate_document(proposed);
     const auto error = std::ranges::find(diagnostics, diagnostic_severity_t::error, &diagnostic_t::severity);
-    if (error != diagnostics.end()) return std::unexpected(chart_paste_diagnostic_t::from(error->message, result.stamp, std::move(result.payload.report)));
+    if (error != diagnostics.end()) return std::unexpected(chart_paste_diagnostic_t::from(error->message, stamp, std::move(result.report)));
     return result;
 }
-
-} // namespace
 
 auto chart_paste_proposal_t::propose(const song_document_t& document, chart_id_t chart,
     const chart_clipboard_t& clipboard, local_position_t anchor, std::uint64_t expected_revision)
     -> chart_paste_outcome_t {
-    auto prepared = prepare_chart_paste(document, chart, clipboard, anchor, expected_revision);
-    chart_paste_outcome_t outcome;
-    if (prepared) outcome.value = std::move(*prepared);
-    else outcome.diagnostics.push_back(std::move(prepared.error()));
-    return outcome;
+    auto captured = chart_stamp_t::from(document, chart);
+    captured.document.revision = expected_revision;
+    auto valid = revision_policy.validate(captured.document, document, false);
+    if (!valid) {
+        chart_paste_outcome_t rejected;
+        rejected.diagnostics.push_back(chart_paste_diagnostic_t::from(
+            std::move(valid.error().diagnostic.message), captured, {}));
+        return rejected;
+    }
+    const proposal_read_scope_t<chart_stamp_t> scope{document, captured};
+    return proposal_t<chart_paste_proposal_t>::from(captured, from(scope, clipboard, anchor));
 }
 
-auto chart_paste_proposal_t::revise(const chart_stamp_t& stamp, const song_document_t& document,
+auto chart_paste_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
     const chart_clipboard_t& clipboard, local_position_t anchor) const -> chart_paste_outcome_t {
-    return propose(document, stamp.chart, clipboard, anchor, stamp.document.revision);
+    const auto captured = chart_stamp_t::from(scope.source_document(), scope.captured_stamp().chart);
+    return proposal_t<chart_paste_proposal_t>::from(captured, from(scope, clipboard, anchor));
 }
 
 auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) &&
@@ -747,12 +753,14 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
 
 auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
                           const chart_clipboard_t& clipboard, local_position_t anchor) -> document_command_result_t {
-    auto prepared = prepare_chart_paste(history.document, chart_id, clipboard, anchor, history.document.revision);
+    const auto captured = chart_stamp_t::from(history.document, chart_id);
+    const proposal_read_scope_t<chart_stamp_t> scope{history.document, captured};
+    auto prepared = chart_paste_proposal_t::from(scope, clipboard, anchor);
     if (!prepared) {
         auto transaction = document_command_transaction_t::from(history);
         transaction.outcome.diagnostics.push_back(std::move(static_cast<diagnostic_t&>(prepared.error())));
         return transaction.finish_without_commit();
     }
-    return apply_proposal(history, std::move(*prepared));
+    return apply_proposal(history, proposal_t<chart_paste_proposal_t>::from(captured, std::move(*prepared)));
 }
 } // namespace wormedit

@@ -43,7 +43,8 @@ struct proposal_capture_policy_t {
     diagnostic_code_t stale_code{diagnostic_code_t::invalid_id};
     proposal_lock_order_t lock_order{proposal_lock_order_t::before_stamp};
     diagnostic_code_t locked_code{diagnostic_code_t::invalid_binding};
-    std::string_view locked_message;
+    std::string_view locked_message{};
+    bool uses_current_project_diagnostics{};
     auto operator==(const proposal_capture_policy_t&) const -> bool = default;
 
     [[nodiscard]] auto is_current(const document_stamp_t& captured, const song_document_t& document) const noexcept
@@ -85,8 +86,8 @@ using proposal_revision_input_t = proposal_input_t<diagnostic_list_t>;
 
 // Policies retain the distinctions between early binding failures and edit failures.
 struct proposal_lifecycle_policy_t {
-    std::string_view inactive_apply_message;
-    std::string_view inactive_inspect_message;
+    std::string_view inactive_apply_message{};
+    std::string_view inactive_inspect_message{};
     bool can_echo_inactive_diagnostics{};
     proposal_status_t locked_status{proposal_status_t::cancelled};
     proposal_status_t expired_status{proposal_status_t::cancelled};
@@ -472,7 +473,23 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         auto captured = inspect(document, RevisionPayload::revision_policy, input.is_timing_locked);
         if (!captured) {
             input.diagnostics.clear();
-            input.diagnostics.push_back(std::move(captured.error().diagnostic));
+            using diagnostic_type = typename std::remove_cvref_t<decltype(input.diagnostics)>::value_type;
+            if constexpr (std::same_as<diagnostic_type, diagnostic_t>) {
+                input.diagnostics.push_back(std::move(captured.error().diagnostic));
+            } else {
+                auto diagnostic_stamp = stamp;
+                if (RevisionPayload::revision_policy.uses_current_project_diagnostics) {
+                    if constexpr (std::same_as<Stamp, chart_stamp_t>) diagnostic_stamp.document.project = document.id;
+                    else diagnostic_stamp.project = document.id;
+                }
+                if constexpr (requires { RevisionPayload::apply_stale_issue; }) {
+                    input.diagnostics.push_back(diagnostic_type::from(RevisionPayload::apply_stale_issue,
+                        std::move(captured.error().diagnostic.message), diagnostic_stamp, {}));
+                } else {
+                    input.diagnostics.push_back(diagnostic_type::from(
+                        std::move(captured.error().diagnostic.message), diagnostic_stamp, {}));
+                }
+            }
             return {.diagnostics = std::move(input.diagnostics)};
         }
         return payload.revise(*captured, std::forward<Arguments>(arguments)...);

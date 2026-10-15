@@ -17,20 +17,12 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
     return validate_chart_position(chart, position, result.diagnostics, "timing anchor");
 }
 
-auto unique_anchor(chart_document_t& chart, object_id_t id, document_command_result_t& result)
-    -> timing_anchor_t* {
-    if (!chart.query_object_id(id).validate(result.diagnostics, {
-            "timing anchor command refers to an unknown anchor",
-            "timing anchor ID is ambiguous because it appears more than once",
-            "timing anchor command uses the reserved zero object ID"})) return nullptr;
-    const auto found = std::ranges::find(chart.timing_anchors, id, &timing_anchor_t::id);
-    if (found == chart.timing_anchors.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "timing anchor command refers to an unknown anchor");
-        return nullptr;
-    }
-    return &*found;
-}
+constexpr target_query_policy_t anchor_target_policy{
+    .messages = {"timing anchor command refers to an unknown anchor",
+                 "timing anchor ID is ambiguous because it appears more than once",
+                 "timing anchor command uses the reserved zero object ID"},
+    .scope = target_uniqueness_scope_t::chart_objects,
+    .order = target_query_order_t::identity_first};
 
 struct anchor_edit_result_t {
     bool changed{};
@@ -67,7 +59,8 @@ auto apply_anchor_edit(chart_document_t& chart,
                        const wormedit::update_edit_t<wormedit::timing_anchor_edit_value_t>& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
-    auto* anchor = unique_anchor(chart, edit.id, result);
+    auto* anchor = chart.unique_target(&chart_document_t::timing_anchors, edit.id,
+                                       result.diagnostics, anchor_target_policy);
     if (anchor == nullptr || !validate_position(chart, edit.value.position, result)) {
         return {};
     }
@@ -87,7 +80,8 @@ auto apply_anchor_edit(chart_document_t& chart,
                        const wormedit::delete_edit_t<wormedit::timing_anchor_edit_value_t>& edit,
                        timing_anchor_edit_limits_t, document_command_result_t& result)
     -> anchor_edit_result_t {
-    auto* anchor = unique_anchor(chart, edit.id, result);
+    auto* anchor = chart.unique_target(&chart_document_t::timing_anchors, edit.id,
+                                       result.diagnostics, anchor_target_policy);
     if (anchor == nullptr) {
         return {};
     }

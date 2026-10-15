@@ -40,14 +40,10 @@ auto validate_bpm_position(const chart_document_t& chart, local_position_t posit
 
 
 
-auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_result_t& result)
-    -> bpm_event_t* {
-    if (!chart.query_target(chart.bpms, id, target_uniqueness_scope_t::chart_objects)
-             .validate(result.diagnostics, {
-                 "BPM event command refers to an unknown event",
-                 "BPM event ID is ambiguous because it appears more than once"})) return nullptr;
-    return &*std::ranges::find(chart.bpms, id, &bpm_event_t::id);
-}
+constexpr target_query_policy_t bpm_target_policy{
+    .messages = {"BPM event command refers to an unknown event",
+                 "BPM event ID is ambiguous because it appears more than once"},
+    .scope = target_uniqueness_scope_t::chart_objects};
 
 struct bpm_edit_effect_t {
     bool changed{};
@@ -105,7 +101,8 @@ auto apply_update(bpm_edit_context_t context,
                "BPM update uses the reserved zero event ID");
         return std::unexpected(bpm_edit_effect_t{});
     }
-    auto* event = unique_bpm_event(context.chart, edit.id, context.result);
+    auto* event = context.chart.unique_target(&chart_document_t::bpms, edit.id,
+                                               context.result.diagnostics, bpm_target_policy);
     if (event == nullptr ||
         !validate_bpm_position(context.chart, edit.value.position, context.result) ||
         !validate_bpm_value(edit.value.settings.beats_per_minute, context.result)) {
@@ -128,7 +125,8 @@ auto apply_delete(bpm_edit_context_t context,
                "BPM deletion uses the reserved zero event ID");
         return std::unexpected(bpm_edit_effect_t{});
     }
-    auto* event = unique_bpm_event(context.chart, edit.id, context.result);
+    auto* event = context.chart.unique_target(&chart_document_t::bpms, edit.id,
+                                               context.result.diagnostics, bpm_target_policy);
     if (event == nullptr) {
         return std::unexpected(bpm_edit_effect_t{});
     }

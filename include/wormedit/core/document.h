@@ -812,6 +812,20 @@ struct target_query_messages_t {
     // Empty means zero is an ordinary ID in this domain.
     std::string_view reserved_zero{};
     std::string_view domain{};
+    // Preserve the two existing diagnostic grammars, including their zero policy.
+    [[nodiscard]] static constexpr auto from_event(std::string_view domain)
+        -> target_query_messages_t {
+        return {.missing = " command refers to an unknown event",
+                .ambiguous = " event ID is ambiguous because it appears more than once",
+                .domain = domain};
+    }
+    [[nodiscard]] static constexpr auto from_object(std::string_view domain)
+        -> target_query_messages_t {
+        return {.missing = " command refers to an unknown object",
+                .ambiguous = " ID is ambiguous because it appears more than once",
+                .reserved_zero = " command uses the reserved zero object ID",
+                .domain = domain};
+    }
     auto operator==(const target_query_messages_t&) const -> bool = default;
 };
 
@@ -830,10 +844,18 @@ struct target_identity_query_t {
         return from(id, std::ranges::count(values, id, &Value::id));
     }
     [[nodiscard]] auto validate(diagnostic_list_t& diagnostics,
-                                 target_query_messages_t messages) const -> bool;
+                                 const target_query_messages_t& messages) const -> bool;
 };
 
 enum class target_uniqueness_scope_t { collection, chart_objects };
+enum class target_query_order_t { kind_first, identity_first };
+
+struct target_query_policy_t {
+    target_query_messages_t messages;
+    target_uniqueness_scope_t scope{target_uniqueness_scope_t::collection};
+    target_query_order_t order{target_query_order_t::kind_first};
+    auto operator==(const target_query_policy_t&) const -> bool = default;
+};
 
 struct chart_document_t {
     chart_id_t id;
@@ -871,20 +893,42 @@ struct chart_document_t {
     // Derived, never serialized. Unchanged snapshot copies share the payload.
     chart_indices_slot_t indices_slot{};
     [[nodiscard]] auto query_object_id(object_id_t id) const -> target_identity_query_t;
-    template <class Value, class Id>
-    [[nodiscard]] auto query_target(const std::vector<Value>& values, Id id,
-        target_uniqueness_scope_t scope = target_uniqueness_scope_t::collection) const
-        -> target_identity_query_t {
-        if constexpr (std::is_same_v<Id, object_id_t>) {
-            if (scope == target_uniqueness_scope_t::chart_objects) {
-                // Reject a missing kind before checking chart-wide ambiguity.
-                if (std::ranges::find(values, id, &Value::id) == values.end())
-                    return target_identity_query_t::from(id, 0);
-                return query_object_id(id);
+    template <class Value>
+    [[nodiscard]] auto unique_target(std::vector<Value> chart_document_t::*collection, decltype(Value::id) id,
+        diagnostic_list_t& diagnostics, const target_query_policy_t& policy,
+        std::string_view wrong_kind = {}) -> Value* {
+        auto& values = this->*collection;
+        auto found = values.end();
+        auto identity = target_identity_query_t::from(id, 0);
+        if constexpr (std::is_same_v<decltype(Value::id), object_id_t>) {
+            if (policy.scope == target_uniqueness_scope_t::chart_objects) {
+                if (policy.order == target_query_order_t::kind_first) {
+                    found = std::ranges::find(values, id, &Value::id);
+                    if (found == values.end()) {
+                        (void)identity.validate(diagnostics, policy.messages);
+                        return nullptr;
+                    }
+                }
+                identity = query_object_id(id);
+            } else {
+                identity = target_identity_query_t::from(values, id);
             }
+        } else {
+            // Measures and layers retain their independent typed ID domains.
+            identity = target_identity_query_t::from(values, id);
         }
-        // Measures and semantic layers have their own typed collection domains.
-        return target_identity_query_t::from(values, id);
+        if (!identity.validate(diagnostics, policy.messages)) return nullptr;
+        if (found == values.end()) found = std::ranges::find(values, id, &Value::id);
+        if (found == values.end()) {
+            const bool has_custom_message = !wrong_kind.empty();
+            const target_query_messages_t missing_kind{
+                .missing = has_custom_message ? wrong_kind : policy.messages.missing,
+                .ambiguous = {},
+                .domain = has_custom_message ? std::string_view{} : policy.messages.domain};
+            (void)target_identity_query_t::from(id, 0).validate(diagnostics, missing_kind);
+            return nullptr;
+        }
+        return &*found;
     }
     [[nodiscard]] auto find_note(object_id_t id) const -> const note_t*;
     [[nodiscard]] auto find_note(object_id_t id) -> note_t*;

@@ -50,14 +50,11 @@ auto next_measure_id(const chart_document_t& chart) -> std::optional<measure_id_
     return measure_id_t{maximum + 1};
 }
 
-auto unique_measure(chart_document_t& chart, measure_id_t id, document_command_result_t& result)
-    -> measure_chunk_t* {
-    if (!chart.query_target(chart.measures, id).validate(result.diagnostics, {
-            "measure edit refers to an unknown measure",
-            "measure ID is ambiguous because it appears more than once",
-            "measure edit refers to an unknown measure"})) return nullptr;
-    return chart.find_measure(id);
-}
+constexpr std::string_view unknown_measure_message = "measure edit refers to an unknown measure";
+constexpr target_query_policy_t measure_target_policy{
+    .messages = {unknown_measure_message,
+                 "measure ID is ambiguous because it appears more than once",
+                 unknown_measure_message}};
 
 auto measure_definition_equal(const measure_definition_t& left, const measure_definition_t& right) -> bool {
     return left.length == right.length && left.meter == right.meter;
@@ -302,7 +299,8 @@ auto apply_measure_action(measure_edit_context_t& context,
     if (chart == nullptr) {
         return;
     }
-    const auto measure = unique_measure(*chart, edit.measure, context.result);
+    const auto measure = chart->unique_target(&chart_document_t::measures, edit.measure,
+                                               context.result.diagnostics, measure_target_policy);
     if (measure == nullptr ||
         !validate_definition(*chart, edit.definition, context.limits, context.result)) {
         return;
@@ -336,7 +334,8 @@ auto apply_measure_action(measure_edit_context_t& context,
             return;
         }
         seen.push_back(id);
-        const auto measure = unique_measure(*chart, id, context.result);
+        const auto measure = chart->unique_target(&chart_document_t::measures, id,
+                                                   context.result.diagnostics, measure_target_policy);
         if (measure == nullptr) {
             return;
         }
@@ -888,7 +887,8 @@ auto apply_measure_action(measure_edit_context_t& context,
     if (chart == nullptr) {
         return;
     }
-    const auto measure = unique_measure(*chart, edit.measure, context.result);
+    const auto measure = chart->unique_target(&chart_document_t::measures, edit.measure,
+                                               context.result.diagnostics, measure_target_policy);
     if (measure == nullptr) {
         return;
     }

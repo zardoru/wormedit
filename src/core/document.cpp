@@ -19,7 +19,7 @@
 namespace wormedit {
 
 auto target_identity_query_t::validate(diagnostic_list_t& diagnostics,
-                                        target_query_messages_t messages) const -> bool {
+                                        const target_query_messages_t& messages) const -> bool {
     auto message = std::string_view{};
     auto code = diagnostic_code_t::invalid_id;
     if (is_zero && !messages.reserved_zero.empty()) message = messages.reserved_zero;

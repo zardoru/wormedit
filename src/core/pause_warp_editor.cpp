@@ -77,16 +77,12 @@ auto validate_span(const chart_document_t& chart, position_span_t span,
 
 
 
-template <typename event_t>
-auto unique_event(const chart_document_t& chart, std::vector<event_t>& events, object_id_t id,
-                  std::string_view name, document_command_result_t& result) -> event_t* {
-    if (!chart.query_target(events, id, target_uniqueness_scope_t::chart_objects)
-             .validate(result.diagnostics, {
-                 " command refers to an unknown event",
-                 " event ID is ambiguous because it appears more than once", {}, name}))
-        return nullptr;
-    return &*std::ranges::find(events, id, &event_t::id);
-}
+constexpr target_query_policy_t pause_target_policy{
+    .messages = target_query_messages_t::from_event("pause"),
+    .scope = target_uniqueness_scope_t::chart_objects};
+constexpr target_query_policy_t warp_target_policy{
+    .messages = target_query_messages_t::from_event("warp"),
+    .scope = target_uniqueness_scope_t::chart_objects};
 
 auto matching_pause_projection(chart_document_t& chart, const pause_event_t& event,
                                document_command_result_t& result) -> bms_pause_projection_t* {
@@ -204,7 +200,8 @@ auto validate_pause_update(pause_warp_edit_context_t& context, chart_document_t&
                "pause update uses the reserved zero event ID");
         return std::nullopt;
     }
-    auto* event = unique_event(chart, chart.pauses, edit.id, "pause", context.result);
+    auto* event = chart.unique_target(&chart_document_t::pauses, edit.id,
+                                    context.result.diagnostics, pause_target_policy);
     if (!event || !validate_position(chart, edit.value.position, context.result, "pause event") ||
         !validate_pause_values(edit.value.settings.kind, edit.value.settings.duration,
                                edit.value.settings.source_unit, context.result))
@@ -251,7 +248,8 @@ auto delete_pause(pause_warp_edit_context_t& context, chart_document_t& chart,
                "pause deletion uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.pauses, edit.id, "pause", context.result);
+    auto* event = chart.unique_target(&chart_document_t::pauses, edit.id,
+                                    context.result.diagnostics, pause_target_policy);
     if (!event) return;
     const auto id = event->id;
     std::erase_if(chart.bms_pause_projections,
@@ -300,7 +298,8 @@ auto update_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
                "warp update uses the reserved zero event ID");
         return;
     }
-    auto* event = unique_event(chart, chart.warps, edit.id, "warp", context.result);
+    auto* event = chart.unique_target(&chart_document_t::warps, edit.id,
+                                    context.result.diagnostics, warp_target_policy);
     if (!event || !validate_span(chart, edit.value.span(), context.result))
         return;
     if (edit.value.source_encoding() && !is_valid_warp_encoding(*edit.value.source_encoding())) {
@@ -326,7 +325,8 @@ auto delete_warp(pause_warp_edit_context_t& context, chart_document_t& chart,
                "warp deletion uses the reserved zero event ID");
         return;
     }
-    if (!unique_event(chart, chart.warps, edit.id, "warp", context.result))
+    if (!chart.unique_target(&chart_document_t::warps, edit.id,
+                                    context.result.diagnostics, warp_target_policy))
         return;
     std::erase_if(chart.warps, [&](const auto& item) { return item.id == edit.id; });
     context.command_label = "Delete warp event";

@@ -83,14 +83,20 @@ auto stored_color(semantic_layer_rgba_t color) -> color_rgba_t {
             .alpha = color_channel(color.alpha)};
 }
 
-auto unique_layer(chart_document_t& chart, layer_id_t id, document_command_result_t& result)
-    -> semantic_layer_t* {
-    if (!chart.query_target(chart.semantic_layers, id).validate(result.diagnostics, {
-            "semantic layer command refers to an unknown layer",
-            "semantic layer ID is ambiguous because it appears more than once",
-            "semantic layer command uses the reserved zero layer ID"})) return nullptr;
-    return &*std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
-}
+constexpr target_query_policy_t layer_target_policy{
+    .messages = {"semantic layer command refers to an unknown layer",
+                 "semantic layer ID is ambiguous because it appears more than once",
+                 "semantic layer command uses the reserved zero layer ID"}};
+constexpr target_query_messages_t note_target_messages{
+    "semantic layer selection refers to an unknown note",
+    "note ID is ambiguous because it appears more than once in the chart",
+    "semantic layer selection uses the reserved zero note ID"};
+constexpr std::string_view unknown_bgm_target_message =
+    "semantic layer selection refers to an unknown BGM event";
+constexpr target_query_messages_t bgm_target_messages{
+    unknown_bgm_target_message,
+    "BGM event ID is ambiguous because it appears more than once in the chart",
+    unknown_bgm_target_message};
 
 struct chart_note_index_t {
     std::unordered_map<std::uint64_t, std::size_t> object_id_counts;
@@ -173,10 +179,7 @@ auto chart_note_index_t::unique_note(object_id_t id, document_command_result_t& 
     const auto count = object_id_counts.find(id.value);
     if (!target_identity_query_t::from(id,
             count == object_id_counts.end() ? 0 : count->second)
-             .validate(result.diagnostics, {
-                 "semantic layer selection refers to an unknown note",
-                 "note ID is ambiguous because it appears more than once in the chart",
-                 "semantic layer selection uses the reserved zero note ID"})) return nullptr;
+             .validate(result.diagnostics, note_target_messages)) return nullptr;
     const auto note = notes.find(id.value);
     if (note == notes.end()) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -220,7 +223,8 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
                "semantic layer note selection exceeds the configured cap");
         return false;
     }
-    auto* layer = unique_layer(chart, layer_id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, layer_id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }
@@ -340,10 +344,7 @@ auto chart_note_index_t::unique_bgm_event(object_id_t id, document_command_resul
     const auto count = object_id_counts.find(id.value);
     if (!target_identity_query_t::from(id,
             count == object_id_counts.end() ? 0 : count->second)
-             .validate(result.diagnostics, {
-                 "semantic layer selection refers to an unknown BGM event",
-                 "BGM event ID is ambiguous because it appears more than once in the chart",
-                 "semantic layer selection refers to an unknown BGM event"})) return nullptr;
+             .validate(result.diagnostics, bgm_target_messages)) return nullptr;
     const auto event = bgm_events.find(id.value);
     if (event == bgm_events.end()) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -539,7 +540,8 @@ auto update_semantic_layer(
     chart_document_t& chart,
     const wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>& edit,
     const semantic_layer_edit_limits_t& limits, document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, edit.id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }
@@ -578,7 +580,8 @@ auto delete_semantic_layer(
     chart_document_t& chart,
     const wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>& edit,
     const semantic_layer_edit_limits_t& limits, document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, edit.id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }

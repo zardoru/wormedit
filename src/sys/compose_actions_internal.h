@@ -146,19 +146,14 @@ auto import_resource_role(const WormUiWorkspaceAction& action)
 auto inspect_imported_resource(const std::filesystem::path& path, wormedit::resource_role_t role)
     -> std::variant<imported_resource_metadata_t, std::string>;
 
-std::optional<compose_action_outcome_t> commit_primary_music(compose_action_context_t& context,
+compose_action_outcome_t commit_primary_music(compose_action_context_t& context,
+                                              const std::filesystem::path& path,
+                                              const imported_resource_metadata_t& metadata);
+
+compose_action_outcome_t commit_resource_import(compose_action_context_t& context,
+                                                wormedit::resource_role_t role,
                                                 const std::filesystem::path& path,
-                                                const imported_resource_metadata_t& metadata);
-
-std::optional<compose_action_outcome_t> commit_resource_import(compose_action_context_t& context,
-                                                  wormedit::resource_role_t role,
-                                                  const std::filesystem::path& path,
-                                                  imported_resource_metadata_t metadata);
-
-std::optional<compose_action_outcome_t> import_resource_asset(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_import_resource_action(compose_action_context_t& context);
+                                                imported_resource_metadata_t metadata);
 
 struct resource_copy_plan_t {
     wormedit::asset_id_t asset;
@@ -167,24 +162,19 @@ struct resource_copy_plan_t {
     bool export_copy{};
 };
 
-auto prepare_resource_copy(compose_action_context_t& context)
-    -> std::variant<resource_copy_plan_t, compose_action_outcome_t>;
+compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
+                                             resource_copy_plan_t plan);
 
-std::optional<compose_action_outcome_t> start_resource_copy(compose_action_context_t& context,
-                                               resource_copy_plan_t plan);
-
-std::optional<compose_action_outcome_t> dispatch_compose_copy_resource_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_copy_resource_action(compose_action_context_t& context);
 
 struct output_export_plan_t {
     wormedit::output_group_t group;
     wormedit::conversion_request_t request;
 };
 
-auto prepare_output_export(compose_action_context_t& context)
-    -> std::variant<output_export_plan_t, compose_action_outcome_t>;
-
-std::optional<compose_action_outcome_t> start_output_export(compose_action_context_t& context,
-                                               output_export_plan_t plan);
+compose_action_outcome_t start_output_export(compose_action_context_t& context,
+                                             output_export_plan_t plan);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_export_output_group_action(compose_action_context_t& context);
@@ -196,22 +186,15 @@ auto apply_compose_resource_placement(compose_action_context_t& context,
                                       wormedit::resource_placement_kind_t kind)
     -> wormedit::document_command_result_t;
 
-std::optional<compose_action_outcome_t>
+compose_action_outcome_t
 finish_compose_resource_placement(compose_action_context_t& context,
                                   wormedit::resource_placement_kind_t kind);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_place_resource_action(compose_action_context_t& context);
 
-std::optional<compose_action_outcome_t> select_resource_uses(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t> assign_resource_to_selection(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t> create_resource_from_asset(compose_action_context_t& context);
-
-compose_action_outcome_t relink_sound_fallback(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t> dispatch_compose_resource_action(compose_action_context_t& context);
+std::optional<compose_action_outcome_t>
+dispatch_compose_resource_action(compose_action_context_t& context);
 
 auto selected_bmson_source_event(const compose_action_context_t& context,
                                  wormedit::object_id_t bgm_event)
@@ -297,7 +280,8 @@ dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
 
 struct edit_selected_note_labels_action_t {
     auto operator==(const edit_selected_note_labels_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<edit_selected_note_labels_action_t, compose_action_context_t>);
@@ -312,7 +296,8 @@ static_assert(compose_action<navigate_audio_marker_action_t, compose_action_cont
 
 struct search_selected_note_labels_action_t {
     auto operator==(const search_selected_note_labels_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<search_selected_note_labels_action_t, compose_action_context_t>);
@@ -322,7 +307,8 @@ auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<sele
 struct transform_selected_notes_action_t {
     selection_transform_t transform;
     auto operator==(const transform_selected_notes_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<transform_selected_notes_action_t, compose_action_context_t>);
@@ -330,7 +316,8 @@ static_assert(compose_action<transform_selected_notes_action_t, compose_action_c
 struct edit_cursor_measure_action_t {
     cursor_measure_command_t command;
     auto operator==(const edit_cursor_measure_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<edit_cursor_measure_action_t, compose_action_context_t>);
@@ -361,28 +348,32 @@ static_assert(compose_action<apply_recipe_form_action_t, compose_action_context_
 
 struct clear_recipe_form_preview_action_t {
     auto operator==(const clear_recipe_form_preview_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<clear_recipe_form_preview_action_t, compose_action_context_t>);
 
 struct set_cursor_measure_meter_action_t {
     auto operator==(const set_cursor_measure_meter_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<set_cursor_measure_meter_action_t, compose_action_context_t>);
 
 struct set_measures_meter_action_t {
     auto operator==(const set_measures_meter_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<set_measures_meter_action_t, compose_action_context_t>);
 
 struct move_compose_bar_line_action_t {
     auto operator==(const move_compose_bar_line_action_t&) const -> bool = default;
-    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto validate(compose_action_context_t& context) const
+        -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<move_compose_bar_line_action_t, compose_action_context_t>);
@@ -399,10 +390,11 @@ dispatch_compose_note_menu_action(compose_action_context_t& context);
 std::optional<compose_action_outcome_t>
 dispatch_semantic_layer_palette_action(compose_action_context_t& context);
 
-compose_action_outcome_t
-semantic_layer_edit_status(compose_action_context_t& context,
-                           wormedit::semantic_layer_edit_action_t edit, std::string_view success,
-                           std::string_view unchanged, std::string_view rebind_failure);
+compose_action_outcome_t semantic_layer_edit_status(compose_action_context_t& context,
+                                                    wormedit::semantic_layer_edit_action_t edit,
+                                                    std::string_view success,
+                                                    std::string_view unchanged,
+                                                    std::string_view rebind_failure);
 
 auto selected_catalog_layer(compose_action_context_t& context)
     -> std::pair<const wormedit::chart_document_t*, const wormedit::semantic_layer_t*>;

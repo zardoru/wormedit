@@ -160,4 +160,20 @@ concept staged_proposal = std::is_aggregate_v<proposal_t<Payload, Stamp>> &&
     (std::same_as<Stamp, chart_stamp_t> || std::same_as<Stamp, document_stamp_t>) &&
     proposal_detail::lifecycle_t<Payload, Stamp, Diagnostics, ProposeArguments, ReviseArguments>::value;
 
+// A context names the outcome at its boundary; core does not depend on frontend types.
+// Validation returns an early outcome, or permits perform to run exactly once.
+template <class Action, class Context>
+concept compose_action = std::is_aggregate_v<std::remove_cvref_t<Action>> &&
+    requires(Action& action, Context& context) {
+        { action.validate(context) } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        { action.perform(context) } -> std::same_as<typename Context::outcome_type>;
+    };
+
+template <class Action, class Context> requires compose_action<Action, Context>
+[[nodiscard]] auto run_compose_action(Action&& action, Context& context)
+    -> typename Context::outcome_type {
+    if (auto rejected = action.validate(context)) return std::move(*rejected);
+    return action.perform(context);
+}
+
 } // namespace wormedit

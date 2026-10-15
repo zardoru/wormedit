@@ -3,6 +3,7 @@
 #include <wormedit/core/proposal.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 
 using namespace wormedit;
 
@@ -332,4 +333,61 @@ TEST_CASE("Shared proposal outcomes support inline single diagnostics", "[core][
     CHECK(outcome.ok());
     outcome.diagnostics.reset();
     CHECK(outcome.ok());
+}
+
+namespace {
+struct action_test_context_t {
+    using outcome_type = document_command_result_t;
+    document_command_transaction_t& transaction;
+    unsigned validated{};
+    unsigned performed{};
+};
+struct action_test_t {
+    // A move-only field proves that the runner borrows its action.
+    std::unique_ptr<int> token;
+    auto validate(action_test_context_t& context) const
+        -> std::optional<document_command_result_t> {
+        ++context.validated;
+        if (!context.transaction.is_ready()) return context.transaction.outcome;
+        return std::nullopt;
+    }
+    auto perform(action_test_context_t& context) const -> document_command_result_t {
+        ++context.performed;
+        context.transaction.copy_document();
+        return context.transaction.finish_without_commit();
+    }
+};
+struct wrong_action_test_t {
+    auto validate(action_test_context_t&) -> bool;
+    auto perform(action_test_context_t&) -> document_command_result_t;
+};
+static_assert(compose_action<action_test_t, action_test_context_t>);
+static_assert(!compose_action<wrong_action_test_t, action_test_context_t>);
+}
+
+TEST_CASE("Compose action validation prevents perform and a stale document copy", "[core][proposal][compose-action]") {
+    auto history = make_history();
+    const auto stamp = document_stamp_t::from(history.document);
+    ++history.document.revision;
+    auto transaction = document_command_transaction_t::from(history, stamp, "Test action");
+    action_test_context_t context{transaction};
+    action_test_t action;
+    const auto outcome = run_compose_action(action, context);
+    CHECK(context.validated == 1);
+    CHECK(context.performed == 0);
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(outcome.diagnostics == transaction.outcome.diagnostics);
+    test::check_stale_action_message(outcome.diagnostics, "Test action");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Compose action performance follows one successful validation", "[core][proposal][compose-action]") {
+    auto history = make_history();
+    auto transaction = document_command_transaction_t::from(history);
+    action_test_context_t context{transaction};
+    const auto outcome = run_compose_action(action_test_t{}, context);
+    CHECK(context.validated == 1);
+    CHECK(context.performed == 1);
+    CHECK(outcome.diagnostics.empty());
+    CHECK(history.undo.empty());
 }

@@ -286,14 +286,6 @@ auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, s
 
 namespace wormedit {
 using namespace interaction_detail;
-void cancel_stale_explicit_paint(editor_interaction_state_t& state) {
-    if (state.pending_note_paint_gesture->intent != note_paint_intent_t::toggle)
-        state.pending_note_paint_gesture.reset();
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
 auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::uint64_t first, std::uint64_t last,
                                  pending_note_paint_gesture_t& pending,
@@ -320,44 +312,31 @@ auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured)
-    -> editor_interaction_result_t {
+auto pending_note_paint_gesture_t::update(editor_edit_context_t& context, lane_id_t lane,
+                                         local_position_t position,
+                                         std::optional<bmson_source_geometry_t> geometry)
+    -> diagnostic_list_t {
     auto& state = context.state;
-    if (!pointer_captured)
-        return cancel_pointer_gesture(context);
-    if (!state.pending_note_paint_gesture)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "note paint update requires an active gesture")});
-    auto& pending = *state.pending_note_paint_gesture;
-    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
-        cancel_stale_explicit_paint(state);
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    }
+    auto& pending = *this;
     const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
                                          edit_snap_denominator(context.scope.chart, state));
     if (!target)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::row_out_of_range,
-                                        "paint target cannot be snapped inside chart")});
+        return {error(diagnostic_code_t::row_out_of_range,
+                                        "paint target cannot be snapped inside chart")};
     const auto target_row = absolute_row(context.scope.measures, *target);
     const auto previous_row = absolute_row(context.scope.measures, pending.last_position);
     if (!target_row || !previous_row)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::row_out_of_range,
-                                        "paint gesture lies outside chart geometry")});
+        return {error(diagnostic_code_t::row_out_of_range,
+                                        "paint gesture lies outside chart geometry")};
     const auto same_lane = lane == pending.last_lane;
     std::vector<note_paint_target_t> additions;
     if (same_lane) {
         if (const auto invalid = add_measure_grid_paint_path(context, lane, *previous_row,
                                                              *target_row, pending, additions))
-            return diagnostic_result(context.history, state, {*invalid});
+            return {*invalid};
     } else if (const auto invalid =
                    add_paint_path_cell(context, lane, *target_row, pending, additions)) {
-        return diagnostic_result(context.history, state, {*invalid});
+        return {*invalid};
     }
     if (!additions.empty()) {
         auto expanded = std::make_shared<std::vector<note_paint_target_t>>(*pending.targets);
@@ -373,7 +352,8 @@ auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
     pending.last_position = *target;
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    return editor_interaction_result_t::from(context.history, state);
+    if (!source_geometry) source_geometry = geometry;
+    return {};
 }
 } // namespace wormedit
 
@@ -388,69 +368,52 @@ auto is_paint_sample_resource(const song_document_t& document, resource_id_t id)
 
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured,
-                              std::optional<resource_id_t> sound, note_paint_intent_t intent,
-                              std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t {
+auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
+                                       const begin_note_paint_gesture_action_t& request)
+    -> diagnosed_t<std::optional<pending_note_paint_gesture_t>> {
+    const auto& [lane, position, pointer_captured, sound, intent, geometry] = request;
     auto& state = context.state;
     if (intent != note_paint_intent_t::toggle && intent != note_paint_intent_t::draw &&
         intent != note_paint_intent_t::erase)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "note paint intent is invalid")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_hold, "note paint intent is invalid")}};
     if (intent != note_paint_intent_t::erase &&
         (state.armed_note_kind == note_kind_t::hold || state.armed_note_kind == note_kind_t::roll))
-        return diagnostic_result(
-            context.history, state,
-            {error(
+        return {.diagnostics = {error(
                 diagnostic_code_t::invalid_hold,
-                "Use the hold gesture to place Hold or Roll notes; painting needs an explicit end.")});
+                "Use the hold gesture to place Hold or Roll notes; painting needs an explicit end.")}};
     if (!pointer_captured)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "pointer capture is required to begin note painting")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_hold,
+                                        "pointer capture is required to begin note painting")}};
     if (intent != note_paint_intent_t::erase && sound &&
         !is_paint_sample_resource(context.history.document, *sound))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "paint sound is not an existing sample resource")});
-    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
-        state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
-        state.pending_space_range_selection)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                        "paint sound is not an existing sample resource")}};
     const auto resolved =
         resolve_row_placement(context.scope.chart, context.scope.measures, state, lane, position);
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
-        return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
+        return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
     const auto row = absolute_row(context.scope.measures, *target);
     if (!row)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::row_out_of_range,
-                                        "paint start lies outside chart geometry")});
+        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                        "paint start lies outside chart geometry")}};
     auto targets = std::make_shared<std::vector<note_paint_target_t>>();
     targets->push_back({lane, *target});
     pending_note_paint_gesture_t pending{
-        .stamp = document_stamp_t::from(context.history.document.revision),
         .targets = std::move(targets),
         .last_lane = lane,
         .last_position = *target,
         .sound = sound,
         .intent = intent,
-        .kind = state.armed_note_kind,
+        .note_kind = state.armed_note_kind,
         .layers = state.armed_note_layers,
         .source_geometry = geometry,
     };
     pending.visited.reserve(64);
     pending.visited.insert({lane, *row});
-    state.pending_note_paint_gesture = std::move(pending);
     state.active_lane = lane;
     place_cursor_at(state, *target);
-    return editor_interaction_result_t::from(context.history, state);
+    return {.value = std::move(pending)};
 }
 } // namespace wormedit
 
@@ -595,30 +558,12 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
 
 namespace wormedit {
 using namespace interaction_detail;
-auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                            local_position_t position, bool pointer_captured,
-                            std::optional<bmson_source_geometry_t> geometry)
+auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
-    if (!pointer_captured)
-        return append_note_paint_target(context, lane, position, false);
-    const auto updated = append_note_paint_target(context, lane, position, true);
-    if (!updated)
-        return updated;
     auto& state = context.state;
-    if (!state.pending_note_paint_gesture)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "note paint gesture was cancelled before commit")});
-    const auto pending = *state.pending_note_paint_gesture;
-    if (pending.intent != note_paint_intent_t::toggle)
-        state.pending_note_paint_gesture.reset();
-    if (!pending.stamp.is_revision_current(context.history.document.revision)) {
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    }
+    const auto& pending = *this;
     auto planned = plan_note_paint(context.scope.chart, context.scope.measures, *pending.targets,
-                                   pending.kind, pending.intent);
+                                   pending.note_kind, pending.intent);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, state, *diagnostics);
     const auto& plan = std::get<note_paint_plan_t>(planned);
@@ -627,17 +572,13 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
         return diagnostic_result(
             context.history, state,
             {error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")});
-    if (plan.additions.empty() && plan.removals.empty()) {
-        state.pending_note_paint_gesture.reset();
+    if (plan.additions.empty() && plan.removals.empty())
         return editor_interaction_result_t::from(context.history, state);
-    }
     auto prepared = prepare_note_paint_document(
-        context.history, state.chart, plan, pending.kind, pending.sound, pending.layers,
-        pending.source_geometry ? pending.source_geometry : geometry);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared)) {
-        state.pending_note_paint_gesture.reset();
+        context.history, state.chart, plan, pending.note_kind, pending.sound, pending.layers,
+        pending.source_geometry);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return diagnostic_result(context.history, state, *diagnostics);
-    }
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
     auto transaction = document_command_transaction_t::from(context.history);
     transaction.adopt_document(std::move(result.document));
@@ -645,9 +586,8 @@ auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
         transaction.commit("Paint notes");
     if (!command)
         return diagnostic_result(context.history, state, std::move(command.diagnostics));
-    state.pending_note_paint_gesture.reset();
     set_selected_notes(state, std::move(result.painted_notes));
-    state.active_lane = lane;
+    state.active_lane = pending.last_lane;
     place_cursor_at(state, pending.last_position);
     return editor_interaction_result_t::from(context.history, state, true);
 }

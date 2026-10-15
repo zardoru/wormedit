@@ -5955,7 +5955,7 @@ TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick
     const auto rejected = dispatch_chip_input(fixture, attempted.compose_inputs[0]);
     t475_check(rejected.find("paint sound is not an existing sample resource") != std::string::npos);
     t475_check(fixture.history.document.revision == revision && fixture.history.undo.size() == undos);
-    t475_check(!fixture.interaction->pending_note_paint_gesture);
+    t475_check(!fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
     const auto repicked = dispatch_chip_input(fixture, {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE});
     t475_check(repicked == "Draw source selected.");
     t475_project(fixture);
@@ -6990,7 +6990,7 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     expect_compose_test(chart.measures.front().notes.front().sound_channel_event.has_value());
     expect_compose_test(chart.sound_channels.front().events.back().continuation == !short_source);
     expect_compose_test(chart.sound_channels.front().events.back().playable);
-    expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->pending_note_paint_gesture);
+    expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
     expect_compose_test(fixture.history.undo.size() == 1);
     expect_compose_test(fixture.history.document.audio_assets.front().stream.sample_rate == 0);
 }

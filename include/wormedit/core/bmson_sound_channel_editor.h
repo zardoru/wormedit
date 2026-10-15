@@ -38,6 +38,7 @@ struct bmson_source_geometry_t {
     asset_id_t asset;
     std::uint32_t sample_rate{};
     std::uint64_t frame_count{};
+    auto operator==(const bmson_source_geometry_t&) const -> bool = default;
 };
 
 struct bmson_channel_resource_binding_t {

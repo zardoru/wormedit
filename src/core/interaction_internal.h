@@ -1030,21 +1030,12 @@ auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, s
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t>;
-void cancel_stale_explicit_paint(editor_interaction_state_t& state);
 auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::uint64_t first, std::uint64_t last,
                                  pending_note_paint_gesture_t& pending,
                                  std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t>;
-auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto is_paint_sample_resource(const song_document_t& document, resource_id_t id) -> bool;
-auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured,
-                              std::optional<resource_id_t> sound, note_paint_intent_t intent,
-                              std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
 auto entry_stem_channel(const song_document_t& document, const chart_document_t& chart,
                         std::optional<resource_id_t> sound)
     -> std::variant<std::optional<object_id_t>, diagnostic_list_t>;
@@ -1063,10 +1054,6 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
                                  const std::optional<std::vector<layer_id_t>>& armed_layers,
                                  std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t>;
-auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                            local_position_t position, bool pointer_captured,
-                            std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
 auto update_fixed_scroll_cursor(editor_edit_context_t& context,
                                 const scroll_editor_view_action_t& action,
                                 editor_interaction_state_t& proposed)

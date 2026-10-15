@@ -123,3 +123,22 @@ TEST_CASE("Gesture kind mismatch retains the original capture", "[core][active-g
     CHECK(fixture.state.gesture<pending_note_duration_gesture_t>() == nullptr);
     CHECK(fixture.history.undo.empty());
 }
+
+static_assert(editor_gesture<pending_note_paint_gesture_t, begin_note_paint_gesture_action_t,
+                            lane_id_t, local_position_t, std::optional<bmson_source_geometry_t>>);
+
+TEST_CASE("Paint projection retains targets without copying capture bookkeeping", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    REQUIRE(begin_gesture<pending_note_paint_gesture_t>(context,
+        begin_note_paint_gesture_action_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240},
+                                         .intent = note_paint_intent_t::draw}));
+    const auto* capture = fixture.state.gesture<pending_note_paint_gesture_t>();
+    const auto preview = build_editor_gesture_preview(fixture.state.active_gesture);
+    REQUIRE((capture && preview));
+    const auto& paint = std::get<note_paint_gesture_preview_t>(*preview);
+    CHECK(paint.targets == capture->targets);
+    REQUIRE(update_gesture<pending_note_paint_gesture_t>(context, lane_id_t{1},
+        local_position_t{measure_id_t{1}, 480}, std::nullopt));
+    CHECK((paint.targets->size() == 1 && capture->targets->size() == 2));
+}

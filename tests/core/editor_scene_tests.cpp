@@ -126,7 +126,7 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
                          local_position_t{measure_id_t{2}, 720}}}}};
         break;
     case 4:
-        result.pending_note_paint_gesture = note_paint_gesture_preview_t{
+        result.active_gesture = note_paint_gesture_preview_t{
             .stamp = wormedit::document_stamp_t::from(8), .targets = std::make_shared<const std::vector<note_paint_target_t>>(
                 std::vector<note_paint_target_t>{{lane_id_t{1}, {measure_id_t{1}, 720}}})};
         break;
@@ -942,7 +942,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     auto scene_view = view();
-    scene_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+    scene_view.active_gesture = wormedit::note_paint_gesture_preview_t{
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
@@ -975,7 +975,7 @@ TEST_CASE("field scene composes visible paint previews across measure and layout
     CHECK(second->bounds.left == Catch::Approx(116.0));
 
     auto stale_view = scene_view;
-    stale_view.pending_note_paint_gesture->stamp = wormedit::document_stamp_t::from(8);
+    stale_view.gesture<wormedit::note_paint_gesture_preview_t>()->stamp = wormedit::document_stamp_t::from(8);
     const auto stale = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), stale_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
@@ -1181,7 +1181,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     const auto& index = std::get<wormedit::editor_field_scene_index_t>(built);
     auto occupied_view = view();
     occupied_view.viewport_scroll_pixels = 0.0;
-    occupied_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+    occupied_view.active_gesture = wormedit::note_paint_gesture_preview_t{
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
@@ -1205,7 +1205,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
 
     auto collision_view = view();
     collision_view.viewport_scroll_pixels = 0.0;
-    collision_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+    collision_view.active_gesture = wormedit::note_paint_gesture_preview_t{
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
@@ -1234,7 +1234,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
         baseline.scene->hold_bodies.size() + baseline.scene->note_endpoints.size() +
         (baseline.scene->cursor.has_value() ? 1U : 0U);
     auto empty_cell_view = base_view;
-    empty_cell_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+    empty_cell_view.active_gesture = wormedit::note_paint_gesture_preview_t{
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{
@@ -1251,7 +1251,7 @@ TEST_CASE("field scene marks painted taps for erasure and enforces paint scene c
     CHECK(has_code(primitive_capped.diagnostics, wormedit::diagnostic_code_t::invalid_resolution));
 
     auto operation_view = base_view;
-    operation_view.pending_note_paint_gesture = wormedit::note_paint_gesture_preview_t{
+    operation_view.active_gesture = wormedit::note_paint_gesture_preview_t{
         .stamp = wormedit::document_stamp_t::from(7),
         .targets = std::make_shared<const std::vector<wormedit::note_paint_target_t>>(
             std::vector<wormedit::note_paint_target_t>{

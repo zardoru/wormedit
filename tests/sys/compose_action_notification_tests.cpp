@@ -999,13 +999,13 @@ TEST_CASE("Draw intent reaches the production note dispatcher and preserves occu
     add_draw_test_note(fixture);
     auto begin = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 1);
     INFO(fixture.dispatch_input(begin));
-    require_action(fixture.state.pending_note_paint_gesture.has_value());
-    check_action(fixture.state.pending_note_paint_gesture->intent == note_paint_intent_t::draw);
+    require_action(fixture.state.gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
+    check_action(fixture.state.gesture<wormedit::pending_note_paint_gesture_t>()->intent == note_paint_intent_t::draw);
     auto end = note_draw_input(fixture, WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, 1);
     INFO(fixture.dispatch_input(end));
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.charts.front().measures.front().notes.front().id == object_id_t{91});
-    check_action(!fixture.state.pending_note_paint_gesture);
+    check_action(!fixture.state.gesture<wormedit::pending_note_paint_gesture_t>());
 }
 TEST_CASE("Explicit erase reaches the production note dispatcher and undo restores the note",
           "[draw][compose-input]") {

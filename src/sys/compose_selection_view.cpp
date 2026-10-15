@@ -17,15 +17,7 @@ void populate_compose_selection_preview(
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
     interaction_view.pending_hold = retained_state->pending_hold;
-    interaction_view.active_gesture = retained_state->active_gesture;
-    interaction_view.pending_note_paint_gesture =
-        retained_state->pending_note_paint_gesture
-            ? std::optional{wormedit::note_paint_gesture_preview_t{
-                  .stamp =
-                      retained_state->pending_note_paint_gesture->stamp,
-                  .targets = retained_state->pending_note_paint_gesture->targets,
-              }}
-            : std::nullopt;
+    interaction_view.active_gesture = wormedit::build_editor_gesture_preview(retained_state->active_gesture);
     interaction_view.retained_selection_range = retained_state->retained_selection_range;
     interaction_view.pending_editor_area_selection =
         retained_state->pending_editor_area_selection

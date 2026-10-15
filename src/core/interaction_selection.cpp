@@ -672,7 +672,7 @@ auto begin_area_selection_gesture(area_selection_context_t& context,
                                  {error(diagnostic_code_t::invalid_hold,
                                         "pointer capture is required to begin area selection")});
     if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
+        state.gesture<pending_note_move_gesture_t>() || state.gesture<wormedit::pending_note_paint_gesture_t>() ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection)
         return diagnostic_result(
             history, state,

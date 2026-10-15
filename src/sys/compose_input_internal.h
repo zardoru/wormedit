@@ -884,7 +884,7 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
     if (!application_state.project.compose_gesture.note_paint_mode_active) {
-        if (state.pending_note_paint_gesture) {
+        if (state.gesture<wormedit::pending_note_paint_gesture_t>()) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             accepted = "Note-paint stroke canceled because paint mode is inactive.";
         } else {
@@ -906,19 +906,20 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
             return compose_input_family_result_t::from(
                 "Begin note painting over an editable chart lane.");
         if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE ||
-            !state.pending_note_paint_gesture) {
+            !state.gesture<wormedit::pending_note_paint_gesture_t>()) {
             result.accepted = true;
             accepted = "Note-paint preview retained outside editable chart geometry.";
             return compose_input_family_result_t::continue_with_result();
         }
-        const auto pending = *state.pending_note_paint_gesture;
+        const auto& pending = *state.gesture<wormedit::pending_note_paint_gesture_t>();
+        const auto sound = pending.sound;
         result = dispatch_editor_action(
             history, state,
             end_note_paint_gesture_action_t{
                 .lane = pending.last_lane,
                 .position = pending.last_position,
                 .source_geometry = compose_stem_geometry(history, state, cache, pending.sound)});
-        advance_sound_after_paint_commit(result, pending.sound, !state.selected_notes.empty());
+        advance_sound_after_paint_commit(result, sound, !state.selected_notes.empty());
         accepted = "Note-paint stroke released at its last editable cell.";
         return compose_input_family_result_t::continue_with_result();
     }
@@ -942,8 +943,8 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
                 .lane = target->lane, .position = target->position, .pointer_captured = captured});
         accepted = "Note-paint preview updated.";
     } else {
-        const auto stroke_sound = state.pending_note_paint_gesture
-                                      ? state.pending_note_paint_gesture->sound
+        const auto stroke_sound = state.gesture<wormedit::pending_note_paint_gesture_t>()
+                                      ? state.gesture<wormedit::pending_note_paint_gesture_t>()->sound
                                       : std::nullopt;
         result = dispatch_editor_action(
             history, state,

@@ -6925,7 +6925,7 @@ TEST_CASE("Production paint release outside the field commits its visited cells"
     t422_fixture_t f{t422_song()};
     prepare_placement(f);
     placement_press(f, placement_point(f, 120, 2));
-    expect_t422(f.interaction->pending_note_paint_gesture.has_value());
+    expect_t422(f.interaction->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
     placement_release(f, {1790, 1390});
     expect_t422(f.history.undo.size() == 1);
     expect_t422(!(has_pending_editor_gesture(*f.interaction)));
@@ -6938,7 +6938,7 @@ TEST_CASE("Production paint captures kind and layers at its beginning",
     prepare_placement(f);
     const auto point = placement_point(f, 120, 2);
     placement_press(f, point);
-    expect_t422(f.interaction->pending_note_paint_gesture.has_value());
+    expect_t422(f.interaction->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
     f.interaction->armed_note_kind = note_kind_t::mine;
     f.application.project.semantic_layer.semantic_layer_target_none = false;
     f.application.project.semantic_layer.semantic_layer_target = layer_id_t{7};

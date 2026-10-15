@@ -7,6 +7,7 @@
 #include <wormedit/core/lane_presentation.h>
 
 #include <compare>
+#include <concepts>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_set>
 #include <variant>
 #include <vector>
@@ -599,38 +601,64 @@ struct pending_note_move_gesture_t {
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };
 
-// Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
-using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
-                                      proposal_t<pending_note_move_gesture_t, document_stamp_t>>;
-
-template<class Gesture>
-[[nodiscard]] auto gesture_payload(active_gesture_t* active) -> Gesture* {
-    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
-    return proposal ? &proposal->payload : nullptr;
-}
-template<class Gesture>
-[[nodiscard]] auto gesture_payload(const active_gesture_t* active) -> const Gesture* {
-    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
-    return proposal ? &proposal->payload : nullptr;
-}
-
 struct pending_note_paint_gesture_t {
-    document_stamp_t stamp;
+    static constexpr auto kind = editor_gesture_kind_t::paint;
+    static constexpr auto update_message = "note paint update requires an active gesture";
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
     std::unordered_set<paint_cell_key_t, paint_cell_hash_t> visited;
     lane_id_t last_lane;
     local_position_t last_position;
     std::optional<resource_id_t> sound;
     note_paint_intent_t intent{note_paint_intent_t::toggle};
-    note_kind_t kind{note_kind_t::tap};
+    note_kind_t note_kind{note_kind_t::tap};
     std::optional<std::vector<layer_id_t>> layers;
     std::optional<bmson_source_geometry_t> source_geometry;
+
+    [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_note_paint_gesture_action_t&)
+        -> diagnosed_t<std::optional<pending_note_paint_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, lane_id_t, local_position_t,
+                              std::optional<bmson_source_geometry_t>) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const pending_note_paint_gesture_t&) const -> bool = default;
 };
 
 struct note_paint_gesture_preview_t {
     document_stamp_t stamp;
     std::shared_ptr<const std::vector<note_paint_target_t>> targets;
+    auto operator==(const note_paint_gesture_preview_t&) const -> bool = default;
 };
+
+// Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
+using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_note_move_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_note_paint_gesture_t, document_stamp_t>>;
+
+// A projection contains only render data; paint's visited cells stay in the capture.
+using active_gesture_preview_t = std::variant<
+    proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
+    proposal_t<pending_note_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t>;
+
+[[nodiscard]] inline auto build_editor_gesture_preview(const std::optional<active_gesture_t>& active)
+    -> std::optional<active_gesture_preview_t> {
+    if (!active) return std::nullopt;
+    return std::visit([](const auto& proposal) -> active_gesture_preview_t {
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_note_paint_gesture_t>)
+            return note_paint_gesture_preview_t{.stamp = proposal.stamp, .targets = proposal.payload.targets};
+        else
+            return proposal;
+    }, *active);
+}
+
+template<class Gesture, class Variant>
+[[nodiscard]] auto gesture_payload(Variant* active)
+    -> std::conditional_t<std::is_const_v<Variant>, const Gesture*, Gesture*> {
+    if constexpr (std::same_as<Gesture, note_paint_gesture_preview_t>)
+        return active ? std::get_if<Gesture>(active) : nullptr;
+    else {
+        const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
+        return proposal ? &proposal->payload : nullptr;
+    }
+}
 
 struct pending_semantic_layer_paint_gesture_t {
     layer_id_t layer;
@@ -742,7 +770,6 @@ struct editor_interaction_state_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
@@ -809,7 +836,7 @@ struct editor_interaction_view_model_t {
     };
     std::optional<virtual_hold_preview_t> pending_virtual_hold;
     std::vector<virtual_hold_preview_t> pending_canvas_keyboard_holds;
-    std::optional<active_gesture_t> active_gesture;
+    std::optional<active_gesture_preview_t> active_gesture;
 
     template<class Gesture> [[nodiscard]] auto gesture() -> Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
@@ -817,7 +844,6 @@ struct editor_interaction_view_model_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::optional<position_span_t> retained_selection_range;

@@ -1707,10 +1707,10 @@ template <typename Operate, typename YForRow, typename BandForRow>
 auto collect_visible_paint_targets(scene_geometry_context_t& context, scene_paint_preview_t& paint,
                                    Operate&& operate, YForRow&& y_for_row,
                                    BandForRow&& band_for_row) -> bool {
-    if (!context.view.pending_note_paint_gesture) {
+    if (!context.view.gesture<note_paint_gesture_preview_t>()) {
         return true;
     }
-    const auto& targets = *context.view.pending_note_paint_gesture->targets;
+    const auto& targets = *context.view.gesture<note_paint_gesture_preview_t>()->targets;
     paint.target_cells.reserve(targets.size());
     paint.visible_cells.reserve(targets.size());
     paint.consumed_cells.reserve(targets.size());
@@ -2237,10 +2237,10 @@ auto scene_canvas_rows(const chart_document_t& chart, const editor_field_scene_i
 auto is_valid_scene_paint_preview(const editor_interaction_view_model_t& view,
                                const editor_field_scene_index_t& index,
                                diagnostic_list_t& diagnostics) -> bool {
-    if (!view.pending_note_paint_gesture) {
+    if (!view.gesture<note_paint_gesture_preview_t>()) {
         return true;
     }
-    const auto& pending = *view.pending_note_paint_gesture;
+    const auto& pending = *view.gesture<note_paint_gesture_preview_t>();
     if (!pending.stamp.is_revision_current(index.document_revision)) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold, stale_action_message("Field scene preview")));
@@ -2558,7 +2558,7 @@ auto has_window_edit_preview(const editor_interaction_view_model_t& view) -> boo
     return view.pending_hold || !view.additional_keyboard_holds.empty() ||
         view.pending_virtual_hold || !view.pending_canvas_keyboard_holds.empty() ||
         view.gesture<pending_note_duration_gesture_t>() || view.gesture<pending_note_move_gesture_t>() ||
-        view.pending_note_paint_gesture;
+        view.gesture<note_paint_gesture_preview_t>();
 }
 auto is_window_bgm_width_current(const editor_field_scene_window_t& window,
                              const editor_field_scene_request_t& request) -> bool {

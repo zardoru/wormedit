@@ -2244,13 +2244,13 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
     REQUIRE(preview);
-    REQUIRE(preview.view->pending_note_paint_gesture.has_value());
-    REQUIRE(preview.view->pending_note_paint_gesture->targets != nullptr);
-    CHECK(preview.view->pending_note_paint_gesture->targets->size() == 3);
+    REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>() != nullptr);
+    REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>()->targets != nullptr);
+    CHECK(preview.view->gesture<note_paint_gesture_preview_t>()->targets->size() == 3);
     REQUIRE(dispatch_editor_action(
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
-    CHECK(state.pending_note_paint_gesture->targets->size() == 3);
+    CHECK(state.gesture<wormedit::pending_note_paint_gesture_t>()->targets->size() == 3);
     CHECK(note_count(history) == 0);
     CHECK(history.document.revision == 1);
 
@@ -2259,7 +2259,7 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
     REQUIRE(committed);
     CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     CHECK(note_count(history) == 3);
     CHECK(history.undo.size() == 1);
     CHECK(history.document.charts.front().measures.front().notes[0].position.row == 0);
@@ -2342,7 +2342,7 @@ TEST_CASE("note paint rejects a sound that is not an existing sample and changes
         const auto rejected = paint_stroke(history, state, bad);
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_id));
-        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+        CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
         CHECK(history.document.revision == revision);
         CHECK(note_count(history) == 0);
         CHECK(history.undo.empty());
@@ -2373,7 +2373,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
             begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
-        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+        CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
         CHECK(state.pending_editor_area_selection.has_value() == (selection_kind == 0));
         CHECK(state.pending_space_range_selection.has_value() == (selection_kind == 1));
         CHECK(note_count(history) == 0);
@@ -2569,7 +2569,7 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
     CHECK(colliding_history.document.revision == 1);
     CHECK(colliding_history.undo.empty());
     CHECK(note_count(colliding_history) == 1);
-    CHECK_FALSE(colliding_state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(colliding_state.gesture<wormedit::pending_note_paint_gesture_t>());
 }
 
 TEST_CASE("paint gestures cancel on capture loss and leave previews intact on cap rejection",
@@ -2590,8 +2590,8 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 50'000}, true});
     CHECK_FALSE(capped);
     CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
-    REQUIRE(state.pending_note_paint_gesture.has_value());
-    CHECK(state.pending_note_paint_gesture->targets->size() == 1);
+    REQUIRE(state.gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
+    CHECK(state.gesture<wormedit::pending_note_paint_gesture_t>()->targets->size() == 1);
     CHECK(note_count(history) == 0);
     CHECK(history.document.revision == 1);
 
@@ -2599,14 +2599,14 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     REQUIRE(dispatch_editor_action(
         history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -2623,10 +2623,10 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
     CHECK(history.document.revision == 2);
     CHECK(note_count(history) == 0);
     CHECK(history.undo.size() == 1);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
 }
 
 TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discrete safety ceiling",
@@ -4877,13 +4877,13 @@ TEST_CASE("explicit draw and erase no-ops finish without a document edit",
                                                 note_paint_intent_t::draw);
     require_note_paint_intent(draw);
     check_note_paint_intent(!draw.document_changed);
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
     const auto erase = note_paint_intent_stroke(history, state, 0, 0,
                                                  note_paint_intent_t::erase);
     require_note_paint_intent(erase);
     check_note_paint_intent(!erase.document_changed);
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 1);
     check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
 }
@@ -4913,7 +4913,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
                                           resource_id_t{7}, note_paint_intent_t::draw}));
     require_note_paint_intent(dispatch_editor_action(history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, false}));
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 0 && history.undo.empty());
 
     require_note_paint_intent(dispatch_editor_action(history, state,
@@ -4930,7 +4930,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
     check_note_paint_intent(!stale);
     check_note_paint_intent(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 0 && history.undo.size() == 1);
 }
 
@@ -4959,7 +4959,7 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
         auto state = make_state(history);
         require_note_kind_condition(arm_note_kind(history, state, kind));
         check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}})));
-        check_note_kind_condition(!(state.pending_note_paint_gesture));
+        check_note_kind_condition(!(state.gesture<wormedit::pending_note_paint_gesture_t>()));
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         check_note_kind_condition(note_count(history) == 0);
         require_note_kind_condition(state.pending_hold);

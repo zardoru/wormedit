@@ -427,13 +427,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
-        .active_gesture = state.active_gesture,
-        .pending_note_paint_gesture =
-            state.pending_note_paint_gesture
-                ? std::optional{note_paint_gesture_preview_t{
-                      .stamp = state.pending_note_paint_gesture->stamp,
-                      .targets = state.pending_note_paint_gesture->targets}}
-                : std::nullopt,
+        .active_gesture = build_editor_gesture_preview(state.active_gesture),
         .pending_editor_area_selection =
             state.pending_editor_area_selection
                 ? std::optional{editor_area_selection_preview_t{
@@ -1538,7 +1532,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
             {error(diagnostic_code_t::invalid_hold,
                    "pointer capture is required to begin semantic-layer painting")});
     if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
+        state.gesture<pending_note_move_gesture_t>() || state.gesture<wormedit::pending_note_paint_gesture_t>() ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
         return diagnostic_result(history, state,
@@ -1782,7 +1776,7 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
     if (!chart || !is_note_kind_allowed(*chart, kind))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_binding, "Note kind is unavailable for this chart profile.")});
-    if (state.pending_hold || state.pending_note_paint_gesture)
+    if (state.pending_hold || state.gesture<wormedit::pending_note_paint_gesture_t>())
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Finish or cancel note placement before changing kind.")});
     state.armed_note_kind = kind;
@@ -2103,19 +2097,20 @@ auto handle(editor_edit_context_t& context, const update_note_move_gesture_actio
 
 auto handle(editor_edit_context_t& context, const begin_note_paint_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return begin_note_paint_gesture(context, action.lane, action.position, action.pointer_captured,
-                                    action.sound, action.intent, action.source_geometry);
+    return begin_gesture<pending_note_paint_gesture_t>(context, action);
 }
 
 auto handle(editor_edit_context_t& context, const update_note_paint_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return append_note_paint_target(context, action.lane, action.position, action.pointer_captured);
+    if (!action.pointer_captured) return cancel_pointer_gesture(context);
+    return update_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
 }
 
 auto handle(editor_edit_context_t& context, const end_note_paint_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return end_note_paint_gesture(context, action.lane, action.position, action.pointer_captured,
-                                  action.source_geometry);
+    if (!action.pointer_captured) return cancel_pointer_gesture(context);
+    return commit_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
+                                                       action.source_geometry);
 }
 
 struct editor_action_visitor_t {

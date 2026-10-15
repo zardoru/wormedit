@@ -52,62 +52,98 @@ using namespace compose_action_detail;
 
 namespace compose_action_detail {
 
-auto dispatch_compose_bookmark_action(compose_action_context_t& context)
+struct compose_bookmark_action_t {
+    bool rename{};
+    const char* label_end{};
+    auto operator==(const compose_bookmark_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<compose_bookmark_action_t, compose_action_context_t>);
+
+auto compose_bookmark_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     const auto& action = context.action;
-    const bool rename = action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK;
-    if (!rename && action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK) return std::nullopt;
     if (action.compose_input_project_id != context.environment.document.history.document.id.value)
         return compose_action_outcome_t::blocked(wormedit::stale_action_message("Bookmark action"));
     if (auto blocked =
             context.require_no_gesture("Finish or cancel the active Compose gesture first."))
         return std::move(*blocked);
+    if (rename) {
+        label_end = std::find(
+            std::begin(action.compose_marker_label), std::end(action.compose_marker_label), '\0');
+        if (label_end == std::end(action.compose_marker_label))
+            return compose_action_outcome_t::blocked("Bookmark name is too long.");
+    }
+    return std::nullopt;
+}
+
+auto compose_bookmark_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    const auto& action = context.action;
     if (!rename)
         return context.environment.editor.commands.bookmarks.navigate_to_bookmark(
             context.environment.document.history, context.state,
             context.environment.editor.commands, action.compose_input_document_revision,
             context.state.chart, wormedit::object_id_t{action.compose_bookmark_id});
-    const auto label_end = std::find(std::begin(action.compose_marker_label),
-                                    std::end(action.compose_marker_label), '\0');
-    if (label_end == std::end(action.compose_marker_label))
-        return compose_action_outcome_t::blocked("Bookmark name is too long.");
     return context.environment.editor.commands.bookmarks.rename_bookmark(
         context.environment.document.history, action.compose_input_document_revision,
         context.state.chart, wormedit::object_id_t{action.compose_bookmark_id},
         std::string_view(action.compose_marker_label, label_end - action.compose_marker_label));
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_measure_navigation(compose_action_context_t& context) {
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE) return std::nullopt;
+struct navigate_compose_measure_action_t {
+    auto operator==(const navigate_compose_measure_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<navigate_compose_measure_action_t, compose_action_context_t>);
+
+auto navigate_compose_measure_action_t::validate(compose_action_context_t&) const
+    -> std::optional<compose_action_outcome_t> {
+    return std::nullopt;
+}
+
+auto navigate_compose_measure_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     return navigate_compose_measure(context.environment.document.history, context.state,
                                     context.environment.editor.commands,
                                     context.action.compose_measure_number);
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_bgm_column_count(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BGM columns changed, but workspace rebinding failed.";
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT)
-        return std::nullopt;
+struct set_compose_bgm_column_count_action_t {
+    auto operator==(const set_compose_bgm_column_count_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_compose_bgm_column_count_action_t, compose_action_context_t>);
+
+auto set_compose_bgm_column_count_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing BGM columns.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto set_compose_bgm_column_count_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "BGM columns changed, but workspace rebinding failed.";
     auto applied = wormedit::apply_bgm_column_count(
         context.environment.document.history,
         context.state.chart, context.action.compose_bgm_column_count);
     if (!applied.applied)
         return applied.diagnostics.empty()
-                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                   ? compose_action_outcome_t::from(
                          "BGM column count unchanged.", notification_severity_t::info,
-                         notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         notification_source_t::edit)
+                   : compose_action_outcome_t::from(
                          std::move(applied),
                          compose_action_description_t{.rebind_failure = rebind_failure,
-                                                      .source = notification_source_t::edit})};
+                                                      .source = notification_source_t::edit});
     auto outcome = compose_action_outcome_t::from(
         std::string{"BGM column count set to " +
                     std::to_string(context.action.compose_bgm_column_count) + "."},
@@ -117,12 +153,17 @@ dispatch_compose_bgm_column_count(compose_action_context_t& context) {
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_lane_profile(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "Lane profile changed, but workspace rebinding failed.";
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE)
-        return std::nullopt;
+struct set_compose_lane_profile_action_t {
+    std::vector<lane_input_profile_t> choices{};
+    local_position_t position{};
+    auto operator==(const set_compose_lane_profile_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_compose_lane_profile_action_t, compose_action_context_t>);
+
+auto set_compose_lane_profile_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing the lane profile.")) {
         blocked->source = notification_source_t::edit;
@@ -138,27 +179,34 @@ dispatch_compose_lane_profile(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked(
             "Key profiles require matching playable lanes without scratch or auxiliary roles.",
             notification_source_t::edit);
-    const auto choices = segment
+    choices = segment
         ? wormedit::lane_profile_choices(segment->layout.lanes.size())
         : wormedit::lane_profile_choices();
     if (context.action.compose_lane_profile_index >= choices.size())
         return compose_action_outcome_t::blocked("Choose a lane profile first.",
                                                  notification_source_t::edit);
-    const auto& target = choices[context.action.compose_lane_profile_index].layout;
-    const auto position = segment ? context.state.cursor
+    position = segment ? context.state.cursor
         : wormedit::local_position_t{chart->measures.empty()
               ? context.state.cursor.measure : chart->measures.front().id, 0};
+    return std::nullopt;
+}
+
+auto set_compose_lane_profile_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    const auto& target = choices[context.action.compose_lane_profile_index].layout;
+    constexpr std::string_view rebind_failure =
+        "Lane profile changed, but workspace rebinding failed.";
     auto applied = wormedit::apply_lane_profile_switch(context.environment.document.history,
                                                              context.state.chart, position, target);
     if (!applied.applied)
         return applied.diagnostics.empty()
-                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                   ? compose_action_outcome_t::from(
                          "Lane profile unchanged.", notification_severity_t::info,
-                         notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         notification_source_t::edit)
+                   : compose_action_outcome_t::from(
                          std::move(applied),
                          compose_action_description_t{.rebind_failure = rebind_failure,
-                                                      .source = notification_source_t::edit})};
+                                                      .source = notification_source_t::edit});
     auto outcome = compose_action_outcome_t::from(
         std::string{"Lane profile set to " + target.display_name + "."},
         notification_severity_t::success, notification_source_t::edit, applied.applied);
@@ -294,42 +342,63 @@ auto apply_compose_lane_layout_profile(compose_action_context_t& context,
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_lane_layout_profile(compose_action_context_t& context) {
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE)
-        return std::nullopt;
+struct apply_compose_lane_layout_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const apply_compose_lane_layout_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) -> compose_action_outcome_t;
+};
+static_assert(compose_action<apply_compose_lane_layout_action_t, compose_action_context_t>);
+
+auto apply_compose_lane_layout_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing a lane layout.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
-    const auto* chart = selected_chart(context.environment.document.history,
+    chart = selected_chart(context.environment.document.history,
                                        context.environment.document.workspace);
     if (!chart || chart->id.value != context.action.compose_input_chart_id ||
         context.action.compose_measure_number == 0)
         return compose_action_outcome_t::blocked(
             "Lane layout change ignored because the selected difficulty changed.",
             notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto apply_compose_lane_layout_action_t::perform(compose_action_context_t& context)
+    -> compose_action_outcome_t {
     auto materialized = false;
     if (auto refusal = materialize_layout_measure(context, chart, materialized))
-        return refusal;
+        return std::move(*refusal);
     auto outcome = apply_compose_lane_layout_profile(context, chart, materialized);
     outcome.mutated = outcome.mutated || materialized;
     outcome.rebind_failure = "Lane layout changed, but workspace rebinding failed.";
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_offset(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "Audio offset changed, but workspace rebinding failed.";
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET)
-        return std::nullopt;
+struct edit_compose_audio_offset_action_t {
+    auto operator==(const edit_compose_audio_offset_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_compose_audio_offset_action_t, compose_action_context_t>);
+
+auto edit_compose_audio_offset_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing audio offset.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto edit_compose_audio_offset_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "Audio offset changed, but workspace rebinding failed.";
     auto applied = wormedit::apply_audio_offset_edit(
         context.environment.document.history, context.state.chart,
         {context.action.compose_audio_offset_numerator,
@@ -337,19 +406,42 @@ dispatch_compose_audio_offset(compose_action_context_t& context) {
         context.environment.editor.commands.audio_offset_edits_locked());
     if (!applied.applied)
         return applied.diagnostics.empty()
-                   ? std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                   ? compose_action_outcome_t::from(
                          "Audio offset unchanged.", notification_severity_t::info,
-                         notification_source_t::edit)}
-                   : std::optional<compose_action_outcome_t>{compose_action_outcome_t::from(
+                         notification_source_t::edit)
+                   : compose_action_outcome_t::from(
                          std::move(applied),
                          compose_action_description_t{.rebind_failure = rebind_failure,
-                                                      .source = notification_source_t::edit})};
+                                                      .source = notification_source_t::edit});
     auto outcome = compose_action_outcome_t::from(std::string{"Audio offset changed."},
                                                   notification_severity_t::success,
                                                   notification_source_t::edit, applied.applied);
     outcome.rebind_failure = rebind_failure;
     outcome.diagnostics = std::move(applied.diagnostics);
     return outcome;
+}
+
+auto dispatch_compose_document_action_group(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK:
+    case WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK:
+        return run_compose_action(
+            compose_bookmark_action_t{
+                .rename = context.action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK}, context);
+    case WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE:
+        return run_compose_action(navigate_compose_measure_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT:
+        return run_compose_action(set_compose_bgm_column_count_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE:
+        return run_compose_action(set_compose_lane_profile_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE:
+        return run_compose_action(apply_compose_lane_layout_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET:
+        return run_compose_action(edit_compose_audio_offset_action_t{}, context);
+    default:
+        return std::nullopt;
+    }
 }
 
 struct select_compose_tool_action_t {
@@ -3237,17 +3329,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     }
     if (auto response = dispatch_compose_note_menu_action(context))
         return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_audio_offset(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_bookmark_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_measure_navigation(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_bgm_column_count(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_lane_profile(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_lane_layout_profile(context))
+    if (auto response = dispatch_compose_document_action_group(context))
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_remaining_action(context)) return *response;
     return finish_compose_action(

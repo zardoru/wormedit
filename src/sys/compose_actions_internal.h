@@ -83,17 +83,8 @@
 
 namespace wormedit::sys::compose_action_detail {
 
-auto dispatch_compose_bookmark_action(compose_action_context_t& context)
+auto dispatch_compose_document_action_group(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t>;
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_measure_navigation(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_bgm_column_count(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_lane_profile(compose_action_context_t& context);
 
 auto layout_profile_from_id(const wormedit::chart_document_t& chart,
                             wormedit::local_position_t position, std::string_view profile_id)
@@ -107,12 +98,6 @@ auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
 std::optional<compose_action_outcome_t>
 materialize_layout_measure(compose_action_context_t& context,
                            const wormedit::chart_document_t*& chart, bool& materialized);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_lane_layout_profile(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_offset(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_view_action_group(compose_action_context_t& context);

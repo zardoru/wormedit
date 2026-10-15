@@ -489,7 +489,7 @@ auto beat_fit_drag_matches(const compose_scene_cache_t& cache,
                            const audio::waveform_analysis_result_t& waveform) -> bool {
     return workspace.transport.audio_asset && cache.timing.beat_fit_drag &&
            cache.timing.beat_fit_asset == workspace.transport.audio_asset &&
-           cache.timing.beat_fit_drag->sample_rate == waveform.waveform->sample_rate &&
+           cache.timing.beat_fit_drag->payload.sample_rate == waveform.waveform->sample_rate &&
            cache.timing.beat_fit_drag->stamp.document.is_current(history.document, document_identity_policy_t::revision_only);
 }
 
@@ -560,13 +560,13 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
     if (!beat_fit_drag_matches(cache, workspace, history, waveform)) return;
     const auto& drag = *cache.timing.beat_fit_drag;
     auto& compose = flattened.view.compose;
-    populate_beat_fit_fields(compose, drag);
+    populate_beat_fit_fields(compose, drag.payload);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
     const auto chart = history.document.find_chart(drag.stamp.chart);
     if (chart == nullptr || !cache.scene.index || !interaction ||
         !cache.timing.marker_timing_index) return;
-    build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag);
-    rebuild_beat_fit_timing_index(cache, *chart, drag);
+    build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag.payload);
+    rebuild_beat_fit_timing_index(cache, *chart, drag.payload);
     if (cache.timing.proposed_beat_timing_index)
         build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                       *cache.timing.proposed_beat_timing_index, *interaction);

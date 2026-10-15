@@ -1244,7 +1244,7 @@ auto begin_compose_beat_fit(
 
 auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               const wormedit::document_history_t& history,
-                              const wormedit::beat_interval_drag_t& drag,
+                              const wormedit::proposal_t<wormedit::beat_interval_drag_t>& drag,
                               std::uint64_t target_frame, bool timing_locked)
     -> wormedit::beat_interval_drag_outcome_t;
 

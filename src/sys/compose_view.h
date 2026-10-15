@@ -192,7 +192,7 @@ struct compose_scene_cache_t {
         std::optional<std::pair<std::size_t, std::size_t>> location;
     };
     struct offset_fit_drag_t {
-        wormedit::beat_interval_drag_t beat;
+        wormedit::proposal_t<wormedit::beat_interval_drag_t> beat;
         wormedit::timing_index_t timing;
         wormedit::asset_id_t asset;
         double target_y_pixels{};
@@ -304,7 +304,7 @@ struct compose_scene_cache_t {
         std::optional<speed_spans_t> speed_spans;
         std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
         std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
-        std::optional<wormedit::beat_interval_drag_t> beat_fit_drag;
+        std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;
         std::optional<wormedit::asset_id_t> beat_fit_asset;
         bool beat_fit_onset_snapped{};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

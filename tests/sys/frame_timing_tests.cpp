@@ -2791,7 +2791,7 @@ TEST_CASE("Locked offset fit rejects captured input without clearing a BPM previ
     compose_test_fixture_t fixture;
     fixture.project();
     fixture.application.project.timing_recipe.audio_offset_locked = true;
-    fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};
+    fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
     WormUiWorkspaceAction action{};
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -2822,7 +2822,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     std::optional<proposal_t<audio_offset_drag_t>> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
     fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
-    fixture.cache.timing.beat_fit_drag = beat_interval_drag_t{};
+    fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
     fixture.cache.timing.proposed_offset_seconds = signed_rational_t{1, 10};
     WormUiWorkspaceAction action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;

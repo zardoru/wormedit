@@ -267,7 +267,7 @@ auto stage_selection_timing(document_history_t& staged, editor_interaction_state
 
 auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state, const selection_delete_options_t& options)
     -> editor_interaction_result_t {
-    if (has_pending_editor_gesture(state)) return selection_error("Finish or cancel the active gesture first.");
+    if ((state).is_pending()) return selection_error("Finish or cancel the active gesture first.");
     const auto boundaries = selected_kiai_boundaries(history.document, state, options.kiai_head);
     if (!boundaries) return selection_error("The selected Kiai area no longer exists.");
     auto proposed_state = state;

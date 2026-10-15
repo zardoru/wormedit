@@ -1888,7 +1888,7 @@ TEST_CASE("Mouse stem placement shares decoded span classification and clears fa
         wormedit::end_note_paint_gesture_action_t{lane, position, true, geometry});
     INFO((released.diagnostics.empty() ? "No placement diagnostic" : released.diagnostics.front().message));
     expect_bmson_core(static_cast<bool>(released) == decoded);
-    expect_bmson_core(!state.gesture<wormedit::pending_note_paint_gesture_t>() && !state.pending_hold);
+    expect_bmson_core(!state.gesture<wormedit::pending_note_paint_gesture_t>() && !state.hold());
     if (decoded) {
         const auto& channel = history.document.charts.front().sound_channels.front();
         expect_bmson_core(channel.events.back().playable);

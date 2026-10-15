@@ -10,7 +10,6 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
-#include <wormedit/core/interaction_gestures.h>
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>
@@ -838,7 +837,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
                                                         : "Note resize released.")
                              : "Note resize preview updated.";
     } else {
-        const auto sound = state.pending_hold ? state.pending_hold->sound : std::nullopt;
+        const auto sound = state.hold() ? state.hold()->sound : std::nullopt;
         result = releasing ? dispatch_editor_action(history, state,
                                                     release_alt_pointer_hold_gesture_action_t{
                                                         .position = *position,
@@ -1332,10 +1331,10 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
     using namespace wormedit;
     // A pending hold keeps the sound captured at its first click; the end click only commits.
     const auto sound =
-        context.state.pending_hold ? context.state.pending_hold->sound : note_paint_sound(input);
+        context.state.hold() ? context.state.hold()->sound : note_paint_sound(input);
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
-        context.state.pending_hold
+        context.state.hold()
             ? editor_interaction_action_t{commit_hold_action_t{
                   target.position,
                   compose_stem_geometry(context.environment.document.history, context.state,
@@ -1349,7 +1348,7 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
         context.environment.commands.preferences.editor_preferences.audition_on_click,
         context.environment.document.history, context.state, result);
     accepted =
-        context.state.pending_hold ? "Hold gesture started; click its end row." : "Note placed.";
+        context.state.hold() ? "Hold gesture started; click its end row." : "Note placed.";
 }
 
 auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,

@@ -5,12 +5,12 @@
 view_result_unwrap | 0 | src | holds_alternative<editor_interaction_view_model_t>
 outcome_move_adapter | 83 | src,include | _result_t::from\([a-z0-9_:<>, ]*_outcome_t&&
 transaction_ready_guard | 23 | src | if \(!transaction\.is_ready\(\)\)
-gesture_already_active_guard | 2 | src | already active"
+gesture_already_active_guard | 1 | src | already active"
 gesture_requires_active_guard | 0 | src | requires an active gesture
 hand_rolled_job_generation | 9 | src,include | next_generation_
 variant_allow_list_probe | 24 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
 compatibility_forwarder | 7 | src,include | // Compatibility
 envelope_stamp_unpacked | 0 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
-detail_namespace_reopen | 71 | src | ^using namespace [a-z_]+_detail;
+detail_namespace_reopen | 60 | src | ^using namespace [a-z_]+_detail;
 dispatch_probe_chain | 32 | src | if \(auto (result|response) = [a-z_]+\(context\)\)
 local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_id|next_paste_id|scan_chart_objects|conversion_object_id)\(

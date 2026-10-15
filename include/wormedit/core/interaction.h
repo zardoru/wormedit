@@ -6,6 +6,7 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
 
+#include <array>
 #include <compare>
 #include <concepts>
 #include <cmath>
@@ -24,10 +25,11 @@ namespace wormedit {
 
 struct editor_interaction_setup_t;
 struct editor_edit_context_t;
+struct hold_start_t;
 struct editor_interaction_result_t;
 
 enum class editor_gesture_kind_t {
-    hold, keyboard_holds, duration, move, paint, semantic_paint, area, range
+    hold, duration, move, paint, semantic_paint, area, range
 };
 
 // Four editor lanes: background (including video), layer, layer 2, poor.
@@ -139,10 +141,12 @@ struct begin_hold_action_t {
 };
 
 struct update_hold_preview_action_t {
+    static constexpr auto missing_gesture_message = "hold preview requires a pending hold start";
     local_position_t position;
 };
 
 struct commit_hold_action_t {
+    static constexpr auto missing_gesture_message = "hold completion requires a pending hold start";
     local_position_t position;
     std::optional<bmson_source_geometry_t> source_geometry;
 };
@@ -173,12 +177,14 @@ struct begin_alt_pointer_hold_gesture_action_t {
 };
 
 struct update_alt_pointer_hold_gesture_action_t {
+    static constexpr auto missing_gesture_message = "hold gesture update does not match the active input";
     local_position_t position;
     bool alt_or_option_down{true};
     bool pointer_captured{true};
 };
 
 struct release_alt_pointer_hold_gesture_action_t {
+    static constexpr auto missing_gesture_message = "hold gesture release does not match the active input";
     local_position_t position;
     bool alt_or_option_down{true};
     bool pointer_captured{true};
@@ -500,7 +506,6 @@ using pending_hold_placement_preview_t = hold_placement_t<hold_preview_removals_
 struct pending_hold_t {
     local_position_t position;
     lane_id_t lane;
-    document_stamp_t stamp;
     std::optional<std::uint64_t> anchor_canvas_row;
     std::optional<std::uint64_t> preview_canvas_row;
     std::optional<local_position_t> preview_end;
@@ -513,7 +518,94 @@ struct pending_hold_t {
     std::optional<std::vector<layer_id_t>> layers;
     std::shared_ptr<const bmson_source_geometry_t> source_geometry;
 
+    [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&)
+        -> diagnosed_t<std::optional<pending_hold_t>>;
+    [[nodiscard]] auto validate_start(const editor_edit_context_t&) const -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&, local_position_t,
+                             std::optional<bmson_source_geometry_t>) const -> editor_interaction_result_t;
     auto operator==(const pending_hold_t&) const -> bool = default;
+};
+
+struct keyboard_entry_plan_t {
+    lane_id_t lane;
+    local_position_t position;
+    std::optional<object_id_t> occupant;
+    std::optional<object_id_t> stem;
+    std::optional<resource_id_t> sound;
+    bool is_displacing{};
+    std::optional<bmson_source_geometry_t> geometry;
+    [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&)
+        -> diagnosed_t<std::optional<keyboard_entry_plan_t>>;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const keyboard_entry_plan_t&) const -> bool = default;
+};
+
+class hold_gesture_t {
+public:
+    static constexpr auto kind = editor_gesture_kind_t::hold;
+    static constexpr auto update_message = update_hold_preview_action_t::missing_gesture_message;
+    explicit hold_gesture_t(pending_hold_t primary) : primary_(std::move(primary)) {}
+    hold_gesture_t(std::optional<pending_hold_t> primary, std::vector<pending_hold_t> additional)
+        : primary_(std::move(primary)), additional_(std::move(additional)) {}
+    explicit hold_gesture_t(keyboard_entry_plan_t entry) : immediate_(std::move(entry)) {}
+    [[nodiscard]] auto primary() -> pending_hold_t* { return primary_ ? &*primary_ : nullptr; }
+    [[nodiscard]] auto primary() const -> const pending_hold_t* { return primary_ ? &*primary_ : nullptr; }
+    [[nodiscard]] auto additional() const -> std::span<const pending_hold_t> { return additional_; }
+    [[nodiscard]] auto has_pending() const -> bool { return primary_ || !additional_.empty(); }
+    [[nodiscard]] auto has_immediate_edit() const -> bool { return immediate_.has_value(); }
+    [[nodiscard]] auto is_keyboard() const -> bool {
+        return primary_ ? primary_->gesture_source == hold_gesture_source_t::keyboard_lane
+                        : !additional_.empty();
+    }
+    void discard_primary() { primary_.reset(); }
+    [[nodiscard]] static auto can_restore_begin(const hold_start_t&) -> bool;
+    template<class Action> [[nodiscard]] static constexpr auto can_restore_update(const Action&) -> bool {
+        return std::same_as<Action, begin_lane_key_hold_gesture_action_t> || std::same_as<Action, std::uint64_t>;
+    }
+    [[nodiscard]] static auto begin(editor_edit_context_t&, const hold_start_t&)
+        -> diagnosed_t<std::optional<hold_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, const begin_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, const update_hold_preview_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, const update_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, std::uint64_t canvas_row) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, const commit_hold_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, const release_lane_key_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto update(editor_edit_context_t&, const release_alt_pointer_hold_gesture_action_t&) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) -> editor_interaction_result_t;
+    auto operator==(const hold_gesture_t&) const -> bool = default;
+private:
+    struct release_t {
+        lane_id_t lane;
+        local_position_t position;
+        std::optional<std::array<std::uint64_t, 2>> canvas_rows;
+        std::optional<bmson_source_geometry_t> geometry;
+        auto operator==(const release_t&) const -> bool = default;
+    };
+    [[nodiscard]] auto update_primary(editor_edit_context_t&, local_position_t, bool keep_visible) -> diagnostic_list_t;
+    [[nodiscard]] auto selected_hold(lane_id_t) const -> const pending_hold_t*;
+    void remove_hold(lane_id_t);
+    std::optional<pending_hold_t> primary_;
+    std::vector<pending_hold_t> additional_;
+    std::optional<keyboard_entry_plan_t> immediate_;
+    std::optional<release_t> release_;
+};
+
+struct hold_gesture_preview_t {
+    static constexpr auto kind = editor_gesture_kind_t::hold;
+    std::optional<pending_hold_t> primary_hold;
+    std::vector<pending_hold_t> additional_holds;
+    [[nodiscard]] static auto from(const hold_gesture_t& holds) -> hold_gesture_preview_t {
+        const auto* primary = holds.primary();
+        const auto additional = holds.additional();
+        return {.primary_hold = primary ? std::optional{*primary} : std::nullopt,
+                .additional_holds = std::vector<pending_hold_t>{additional.begin(), additional.end()}};
+    }
+    [[nodiscard]] auto primary() -> pending_hold_t* { return primary_hold ? &*primary_hold : nullptr; }
+    [[nodiscard]] auto primary() const -> const pending_hold_t* { return primary_hold ? &*primary_hold : nullptr; }
+    [[nodiscard]] auto additional() const -> std::span<const pending_hold_t> { return additional_holds; }
+    auto operator==(const hold_gesture_preview_t&) const -> bool = default;
 };
 
 struct note_duration_preview_t {
@@ -728,13 +820,15 @@ using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t
                                       proposal_t<pending_note_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>,
                                       proposal_t<pending_editor_area_selection_t, document_stamp_t>,
-                                      proposal_t<pending_space_range_selection_t, document_stamp_t>>;
+                                      proposal_t<pending_space_range_selection_t, document_stamp_t>,
+                                      proposal_t<hold_gesture_t, document_stamp_t>>;
 
 // A projection contains only render data; paint's visited cells stay in the capture.
 using active_gesture_preview_t = std::variant<
     proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
     proposal_t<pending_note_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t,
-    editor_area_selection_preview_t, space_range_selection_preview_t>;
+    editor_area_selection_preview_t, space_range_selection_preview_t,
+    proposal_t<hold_gesture_preview_t, document_stamp_t>>;
 
 [[nodiscard]] inline auto build_editor_gesture_preview(const std::optional<active_gesture_t>& active,
     double viewport_scroll_pixels = 0.0,
@@ -753,8 +847,9 @@ using active_gesture_preview_t = std::variant<
         else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_space_range_selection_t>) {
             if (!range_preview) return std::nullopt;
             return std::move(*range_preview);
-        } else
-            return proposal;
+        } else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, hold_gesture_t>)
+            return proposal_t<hold_gesture_preview_t, document_stamp_t>{.stamp = proposal.stamp, .payload = hold_gesture_preview_t::from(proposal.payload)};
+        else return proposal;
     }, *active);
 }
 
@@ -778,6 +873,22 @@ template<class Gesture, class Variant>
 [[nodiscard]] auto gesture_stamp(const Variant* active) -> const document_stamp_t* {
     const auto stored = gesture_storage<Gesture>(active);
     return stored ? &stored->stamp : nullptr;
+}
+
+template<class Variant>
+using hold_projection_t = std::conditional_t<std::same_as<std::remove_cv_t<Variant>, active_gesture_t>,
+    hold_gesture_t, hold_gesture_preview_t>;
+
+template<class Variant>
+[[nodiscard]] auto hold_payload(Variant* active) {
+    const auto holds = gesture_payload<hold_projection_t<Variant>>(active);
+    return holds ? holds->primary() : nullptr;
+}
+
+template<class Variant>
+[[nodiscard]] auto additional_hold_payload(const Variant* active) -> std::span<const pending_hold_t> {
+    const auto holds = gesture_payload<hold_projection_t<Variant>>(active);
+    return holds ? holds->additional() : std::span<const pending_hold_t>{};
 }
 
 struct canvas_row_span_t {
@@ -818,8 +929,6 @@ struct editor_interaction_state_t {
     double viewport_height_pixels{1.0};
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
-    std::optional<pending_hold_t> pending_hold;
-    std::vector<pending_hold_t> additional_keyboard_holds;
     std::optional<active_gesture_t> active_gesture;
 
     template<class Gesture> [[nodiscard]] auto gesture() -> Gesture* {
@@ -831,8 +940,28 @@ struct editor_interaction_state_t {
     template<class Gesture> [[nodiscard]] auto gesture_stamp() const -> const document_stamp_t* {
         return wormedit::gesture_stamp<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
+    [[nodiscard]] auto hold() -> pending_hold_t* {
+        return hold_payload(active_gesture ? &*active_gesture : nullptr);
+    }
+    [[nodiscard]] auto hold() const -> const pending_hold_t* {
+        return hold_payload(active_gesture ? &*active_gesture : nullptr);
+    }
+    [[nodiscard]] auto additional_keyboard_holds() const -> std::span<const pending_hold_t> {
+        return additional_hold_payload(active_gesture ? &*active_gesture : nullptr);
+    }
     [[nodiscard]] auto cursor_canvas_row(const measure_index_t& index) const -> std::optional<std::uint64_t> {
         return virtual_bms_cursor_row ? virtual_bms_cursor_row : index.row_of(cursor);
+    }
+    [[nodiscard]] auto is_pending() const -> bool { return active_gesture.has_value(); }
+    void clear() { active_gesture.reset(); }
+    [[nodiscard]] auto is_stale(std::uint64_t revision) const -> bool {
+        return active_gesture && std::visit([revision](const auto& proposal) {
+            return !proposal.stamp.is_revision_current(revision);
+        }, *active_gesture);
+    }
+    [[nodiscard]] auto gesture_kind() const -> std::optional<editor_gesture_kind_t> {
+        if (!active_gesture) return std::nullopt;
+        return std::visit([](const auto& proposal) { return proposal.payload.kind; }, *active_gesture);
     }
     // The most recently committed non-empty area/Space interval. This is
     // controller state rather than renderer state so marker authoring and
@@ -883,8 +1012,6 @@ struct editor_interaction_view_model_t {
     double viewport_end_margin_fraction{editor_cursor_edge_margin_fraction};
     std::optional<double> fixed_cursor_screen_y_pixels;
     editor_field_scroll_direction_t scroll_direction{editor_field_scroll_direction_t::up};
-    std::optional<pending_hold_t> pending_hold;
-    std::vector<pending_hold_t> additional_keyboard_holds;
     struct virtual_hold_preview_t {
         std::uint64_t anchor_row{};
         std::uint64_t end_row{};
@@ -907,6 +1034,15 @@ struct editor_interaction_view_model_t {
     }
     template<class Gesture> [[nodiscard]] auto gesture_stamp() const -> const document_stamp_t* {
         return wormedit::gesture_stamp<Gesture>(active_gesture ? &*active_gesture : nullptr);
+    }
+    [[nodiscard]] auto hold() -> pending_hold_t* {
+        return hold_payload(active_gesture ? &*active_gesture : nullptr);
+    }
+    [[nodiscard]] auto hold() const -> const pending_hold_t* {
+        return hold_payload(active_gesture ? &*active_gesture : nullptr);
+    }
+    [[nodiscard]] auto additional_keyboard_holds() const -> std::span<const pending_hold_t> {
+        return additional_hold_payload(active_gesture ? &*active_gesture : nullptr);
     }
     std::optional<position_span_t> retained_selection_range;
     std::optional<canvas_row_span_t> retained_canvas_selection_range;
@@ -1352,6 +1488,5 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
     -> quantize_selection_t;
 
 // Shared ownership predicate for commands that require a completed canvas edit.
-[[nodiscard]] auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool;
 
 } // namespace wormedit

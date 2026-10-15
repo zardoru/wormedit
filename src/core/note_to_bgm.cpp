@@ -617,7 +617,7 @@ auto move_selected_objects_to_lane(document_history_t& history,
 
 namespace {
 auto is_note_conversion_pending(const editor_interaction_state_t& state) -> bool {
-    return has_pending_editor_gesture(state);
+    return (state).is_pending();
 }
 
 auto selected_conversion_notes(const editor_interaction_state_t& state) -> std::vector<object_id_t> {

@@ -3,7 +3,6 @@
 #include "interaction_geometry.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/snap.h>
@@ -31,6 +30,31 @@
 #include <utility>
 
 namespace wormedit {
+struct hold_start_t {
+    lane_id_t lane;
+    local_position_t position;
+    std::optional<hold_gesture_source_t> source;
+    std::optional<resource_id_t> sound;
+    bool is_displacing{};
+    std::optional<bmson_source_geometry_t> geometry;
+    template<class Action>
+    [[nodiscard]] static auto from(const editor_interaction_state_t& state, const Action& action) -> hold_start_t {
+        hold_start_t start{.lane = state.active_lane, .position = state.cursor};
+        if constexpr (requires { action.position; }) start.position = action.position;
+        if constexpr (requires { action.lane; }) start.lane = action.lane;
+        if constexpr (requires { action.sound; }) start.sound = action.sound;
+        if constexpr (requires { action.source_geometry; }) start.geometry = action.source_geometry;
+        if constexpr (requires { action.displace_to_bgm; }) start.is_displacing = action.displace_to_bgm;
+        if constexpr (std::same_as<Action, begin_lane_key_hold_gesture_action_t>)
+            start.source = hold_gesture_source_t::keyboard_lane;
+        else if constexpr (std::same_as<Action, begin_alt_pointer_hold_gesture_action_t>)
+            start.source = hold_gesture_source_t::alt_pointer;
+        return start;
+    }
+    [[nodiscard]] auto validate_sound(const song_document_t&) const -> diagnostic_list_t;
+    auto operator==(const hold_start_t&) const -> bool = default;
+};
+
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
                                    editor_area_selection_mode_t mode,
@@ -1084,30 +1108,6 @@ auto stage_keyboard_entry(const editor_edit_context_t& context, lane_id_t lane,
                           std::optional<object_id_t> stem,
                           std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_keyboard_entry_t, diagnostic_list_t>;
-auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                          std::optional<resource_id_t> sound, bool displace,
-                          std::optional<bmson_source_geometry_t> geometry)
-    -> std::optional<editor_interaction_result_t>;
-auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                        hold_gesture_source_t source,
-                        std::optional<resource_id_t> sound = std::nullopt, bool displace = false,
-                        std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                         local_position_t position) -> editor_interaction_result_t;
-auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                          local_position_t position,
-                          std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto begin_hold_action(editor_edit_context_t& context, local_position_t position,
-                       std::optional<resource_id_t> sound = std::nullopt,
-                       std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto validate_pending_hold_start(const editor_edit_context_t& context,
-                                 const pending_hold_t& pending)
-    -> std::optional<editor_interaction_result_t>;
-auto update_hold_preview(editor_edit_context_t& context, local_position_t position)
-    -> editor_interaction_result_t;
 auto prepare_stem_hold_document(const editor_edit_context_t& context, const pending_hold_t& pending,
                                 const hold_placement_plan_t& placement, object_id_t channel,
                                 std::optional<bmson_source_geometry_t> geometry)
@@ -1116,15 +1116,6 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
                       const hold_placement_plan_t& placement, local_position_t target,
                       std::optional<bmson_source_geometry_t> geometry)
     -> std::optional<editor_interaction_result_t>;
-auto commit_hold(editor_edit_context_t& context, local_position_t position,
-                 std::optional<bmson_source_geometry_t> geometry) -> editor_interaction_result_t;
-auto refresh_keyboard_hold_revisions(editor_edit_context_t& context) -> void;
-auto begin_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
-                                 std::optional<resource_id_t> sound, bool displace,
-                                 std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
-auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t action_lane)
-    -> editor_interaction_result_t;
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
                                    editor_area_selection_mode_t mode,
@@ -1150,7 +1141,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
                            editor_interaction_result_t result) -> editor_interaction_result_t;
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
-                         const virtual_hold_rows_t& rows) -> editor_interaction_result_t;
+                         const virtual_hold_rows_t& rows, const pending_hold_t* captured = nullptr) -> editor_interaction_result_t;
 auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t;

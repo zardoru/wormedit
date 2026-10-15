@@ -211,7 +211,7 @@ auto compose_action_context_t::require_resources() const
 
 auto compose_action_context_t::require_no_gesture(std::string_view message) const
     -> std::optional<compose_action_outcome_t> {
-    if (wormedit::has_pending_editor_gesture(state))
+    if ((state).is_pending())
         return compose_action_outcome_t::blocked(std::string{message});
     return std::nullopt;
 }

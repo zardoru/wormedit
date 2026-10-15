@@ -595,203 +595,241 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
 
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                        hold_gesture_source_t source, std::optional<resource_id_t> sound,
-                        bool displace, std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.gesture<pending_note_move_gesture_t>())
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
-    if (source == hold_gesture_source_t::keyboard_lane)
-        if (auto removed = apply_keyboard_entry(context, lane, position, sound, displace, geometry))
-            return std::move(*removed);
-    if (sound && !is_paint_sample_resource(context.history.document, *sound))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "paint sound is not an existing sample resource")});
-    const auto before = state;
-    state.active_lane = lane;
-    auto result = dispatch_nested_action(context, begin_hold_action_t{position});
-    if (!result) {
-        state = before;
-        auto refreshed = editor_interaction_result_t::from(context.history, state);
-        result.view = std::move(refreshed.view);
-        return result;
-    }
-    if (state.pending_hold) {
-        state.pending_hold->gesture_source = source;
-        state.pending_hold->sound = sound;
-        if (geometry)
-            state.pending_hold->source_geometry =
-                std::make_shared<const bmson_source_geometry_t>(*geometry);
-    }
-    auto refreshed = editor_interaction_result_t::from(context.history, state);
-    result.view = std::move(refreshed.view);
-    result.diagnostics = std::move(refreshed.diagnostics);
-    return result;
-}
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                         local_position_t position) -> editor_interaction_result_t {
-    auto& state = context.state;
-    const auto before = state;
-    if (!state.pending_hold || state.pending_hold->gesture_source != source)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "hold gesture update does not match the active input")});
-    const auto pending = *state.pending_hold;
-    if (!pending.stamp.is_revision_current(context.history.document.revision))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
-                                         edit_snap_denominator(context.scope.chart, state));
-    state.pending_hold->gesture_source.reset();
-    auto result =
-        dispatch_nested_action(context, update_hold_preview_action_t{target.value_or(position)});
-    if (state.pending_hold)
-        state.pending_hold->gesture_source = source;
-    if (!result)
-        return result;
-    state.pending_hold->preview_canvas_row.reset();
-    if (source == hold_gesture_source_t::keyboard_lane &&
-        !interaction_detail::keep_cursor_visible(context.scope.chart, context.scope.measures,
-                                                 state)) {
-        state = before;
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_resolution,
-                                        "hold movement cannot keep the cursor visible")});
-    }
-    auto refreshed = editor_interaction_result_t::from(context.history, state);
-    result.view = std::move(refreshed.view);
-    result.diagnostics = std::move(refreshed.diagnostics);
-    return result;
+auto hold_start_t::validate_sound(const song_document_t& document) const -> diagnostic_list_t {
+    if (!sound || is_paint_sample_resource(document, *sound)) return {};
+    return {error(diagnostic_code_t::invalid_id, "paint sound is not an existing sample resource")};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                          local_position_t position,
-                          std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    if (!state.pending_hold || state.pending_hold->gesture_source != source)
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "hold gesture release does not match the active input")});
-    const auto target = snapped_position(context.scope.chart, context.scope.measures, position,
-                                         edit_snap_denominator(context.scope.chart, state));
-    state.pending_hold->gesture_source.reset();
-    auto result =
-        dispatch_nested_action(context, commit_hold_action_t{target.value_or(position), geometry});
-    if (state.pending_hold)
-        state.pending_hold->gesture_source = source;
-    if (result) {
-        auto refreshed = editor_interaction_result_t::from(context.history, state);
-        result.view = std::move(refreshed.view);
-        result.diagnostics = std::move(refreshed.diagnostics);
+auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& start)
+    -> diagnosed_t<std::optional<pending_hold_t>> {
+    if (start.source) {
+        auto diagnostics = start.validate_sound(context.history.document);
+        if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     }
-    return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto begin_hold_action(editor_edit_context_t& context, local_position_t position,
-                       std::optional<resource_id_t> sound,
-                       std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
-    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state,
-                                                state.active_lane, position);
-    const auto* snapped = std::get_if<local_position_t>(&resolved);
-    if (!snapped)
-        return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
-    if (sound && !is_paint_sample_resource(history.document, *sound))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "paint sound is not an existing sample resource")});
-    const auto plan = plan_hold_placement<hold_preview_removals_t>(
-        context.scope.chart, context.scope.measures, state.active_lane, *snapped, *snapped);
+    if (start.source == hold_gesture_source_t::keyboard_lane && context.state.virtual_bms_cursor_row)
+        return {.value = pending_hold_t{.position = context.state.cursor, .lane = start.lane,
+            .anchor_canvas_row = context.state.virtual_bms_cursor_row,
+            .preview_canvas_row = context.state.virtual_bms_cursor_row,
+            .gesture_source = start.source, .sound = start.sound,
+            .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
+            .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr}};
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
+        context.state, start.lane, start.position);
+    const auto* position = std::get_if<local_position_t>(&resolved);
+    if (!position) return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
+    if (!start.source) {
+        auto diagnostics = start.validate_sound(context.history.document);
+        if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+    }
+    const auto plan = plan_hold_placement<hold_preview_removals_t>(context.scope.chart,
+        context.scope.measures, start.lane, *position, *position);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
-        return diagnostic_result(history, state, *diagnostics);
-    state.pending_hold = pending_hold_t{
-        .position = *snapped,
-        .lane = state.active_lane,
-        .stamp = document_stamp_t::from(history.document.revision),
+        return {.diagnostics = *diagnostics};
+    return {.value = pending_hold_t{.position = *position, .lane = start.lane,
         .placement_preview = std::get<pending_hold_placement_preview_t>(plan),
-        .sound = sound,
-        .kind = state.armed_note_kind,
-        .layers = state.armed_note_layers,
-        .source_geometry =
-            geometry ? std::make_shared<const bmson_source_geometry_t>(*geometry) : nullptr,
-    };
-    place_cursor_at(state, *snapped);
-    return editor_interaction_result_t::from(history, state);
+        .gesture_source = start.source, .sound = start.sound,
+        .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
+        .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr}};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto validate_pending_hold_start(const editor_edit_context_t& context,
-                                 const pending_hold_t& pending)
-    -> std::optional<editor_interaction_result_t> {
-    if (!pending.stamp.is_revision_current(context.history.document.revision))
-        return diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
-    if (snapped_position(context.scope.chart, context.scope.measures, pending.position,
-                         edit_snap_denominator(context.scope.chart, context.state)) ==
-            pending.position)
-        return std::nullopt;
-    return diagnostic_result(
-        context.history, context.state,
-        {error(diagnostic_code_t::invalid_hold,
-               "pending hold start is stale after a document or snap change")});
+auto pending_hold_t::validate_start(const editor_edit_context_t& context) const -> diagnostic_list_t {
+    if (snapped_position(context.scope.chart, context.scope.measures, position,
+        edit_snap_denominator(context.scope.chart, context.state)) == position) return {};
+    return {error(diagnostic_code_t::invalid_hold,
+        "pending hold start is stale after a document or snap change")};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto update_hold_preview(editor_edit_context_t& context, local_position_t position)
-    -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
-    if (!state.pending_hold)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold, "hold preview requires a pending hold start")});
-    const auto pending = *state.pending_hold;
-    if (auto stale = validate_pending_hold_start(context, pending))
-        return *stale;
-    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state,
-                                                pending.lane, position);
+auto pending_hold_t::update(editor_edit_context_t& context, local_position_t target) -> diagnostic_list_t {
+    auto diagnostics = validate_start(context);
+    if (!diagnostics.empty()) return diagnostics;
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
+        context.state, lane, target);
     const auto* snapped = std::get_if<local_position_t>(&resolved);
-    if (!snapped)
-        return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
-    const auto plan = plan_hold_placement<hold_preview_removals_t>(
-        context.scope.chart, context.scope.measures, pending.lane, pending.position, *snapped,
-        pending.kind);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
-        return diagnostic_result(history, state, *diagnostics);
-    state.pending_hold->preview_end =
-        *snapped == pending.position ? std::optional<local_position_t>{} : std::optional{*snapped};
-    state.pending_hold->placement_preview = std::get<pending_hold_placement_preview_t>(plan);
-    place_cursor_at(state, *snapped);
-    state.active_lane = pending.lane;
-    return editor_interaction_result_t::from(history, state);
+    if (!snapped) return std::get<diagnostic_list_t>(resolved);
+    const auto plan = plan_hold_placement<hold_preview_removals_t>(context.scope.chart,
+        context.scope.measures, lane, position, *snapped, kind);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&plan)) return *failure;
+    preview_end = *snapped == position ? std::optional<local_position_t>{} : std::optional{*snapped};
+    placement_preview = std::get<pending_hold_placement_preview_t>(plan);
+    return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
+auto hold_gesture_t::can_restore_begin(const hold_start_t& start) -> bool { return start.source.has_value(); }
+
+auto hold_gesture_t::begin(editor_edit_context_t& context, const hold_start_t& start)
+    -> diagnosed_t<std::optional<hold_gesture_t>> {
+    if (start.source == hold_gesture_source_t::keyboard_lane && !context.state.virtual_bms_cursor_row) {
+        auto entry = keyboard_entry_plan_t::from(context, start);
+        if (!entry.ok()) return {.diagnostics = std::move(entry.diagnostics)};
+        if (entry.value) return {.value = hold_gesture_t{std::move(*entry.value)}};
+    }
+    auto planned = pending_hold_t::from(context, start);
+    if (!planned.ok() || !planned.value) return {.diagnostics = std::move(planned.diagnostics)};
+    if (!(start.source == hold_gesture_source_t::keyboard_lane && context.state.virtual_bms_cursor_row)) {
+        context.state.active_lane = planned.value->lane;
+        place_cursor_at(context.state, planned.value->position);
+    }
+    return {.value = hold_gesture_t{std::move(*planned.value)}};
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, const begin_lane_key_hold_gesture_action_t& action)
+    -> diagnostic_list_t {
+    if (!is_keyboard())
+        return {error(diagnostic_code_t::invalid_hold,
+            update_alt_pointer_hold_gesture_action_t::missing_gesture_message)};
+    if (primary_ && (primary_->lane == action.lane ||
+        std::ranges::any_of(additional_, [&action](const auto& hold) { return hold.lane == action.lane; })))
+        return {error(diagnostic_code_t::invalid_hold, "lane key is already held")};
+    const auto start = hold_start_t::from(context.state, action);
+    auto planned = begin(context, start);
+    if (!planned.ok() || !planned.value) return std::move(planned.diagnostics);
+    auto next = std::move(*planned.value);
+    if (next.immediate_) {
+        immediate_ = std::move(next.immediate_);
+    } else {
+        if (primary_) additional_.push_back(std::move(*primary_));
+        primary_ = std::move(next.primary_);
+    }
+    return {};
+}
+
+auto hold_gesture_t::update_primary(editor_edit_context_t& context, local_position_t position,
+    bool keep_visible) -> diagnostic_list_t {
+    if (!primary_) return {error(diagnostic_code_t::invalid_hold, update_message)};
+    editor_gesture_state_transaction_t transaction(context, keep_visible);
+    auto diagnostics = primary_->update(context, position);
+    if (!diagnostics.empty()) return diagnostics;
+    place_cursor_at(context.state, primary_->preview_end.value_or(primary_->position));
+    context.state.active_lane = primary_->lane;
+    if (keep_visible) {
+        primary_->preview_canvas_row.reset();
+        if (!keep_cursor_visible(context.scope.chart, context.scope.measures, context.state))
+            return {error(diagnostic_code_t::invalid_resolution, "hold movement cannot keep the cursor visible")};
+    }
+    transaction.accept();
+    return {};
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, const update_hold_preview_action_t& action)
+    -> diagnostic_list_t { return update_primary(context, action.position, false); }
+
+auto hold_gesture_t::update(editor_edit_context_t& context, const update_alt_pointer_hold_gesture_action_t& action)
+    -> diagnostic_list_t {
+    if (!primary_ || primary_->gesture_source != hold_gesture_source_t::alt_pointer)
+        return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
+    auto diagnostics = update_primary(context, action.position, false);
+    if (diagnostics.empty()) primary_->preview_canvas_row.reset();
+    return diagnostics;
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, local_position_t position) -> diagnostic_list_t {
+    if (!primary_) return {};
+    if (!is_keyboard())
+        return {error(diagnostic_code_t::invalid_hold,
+            update_alt_pointer_hold_gesture_action_t::missing_gesture_message)};
+    editor_gesture_state_transaction_t transaction(context);
+    place_cursor_at(context.state, context.state.cursor);
+    for (std::size_t i = 0; i < additional_.size(); ++i) {
+        std::swap(*primary_, additional_[i]);
+        auto diagnostics = update_primary(context, position, true);
+        auto& current = *context.state.gesture<hold_gesture_t>();
+        std::swap(*current.primary_, current.additional_[i]);
+        if (!diagnostics.empty()) return diagnostics;
+    }
+    transaction.accept();
+    return update_primary(context, position, true);
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, std::uint64_t row) -> diagnostic_list_t {
+    if (!primary_ || !has_chart_virtual_tail(context.scope.chart))
+        return {error(diagnostic_code_t::invalid_hold, "canvas hold movement requires a BMS lane key")};
+    primary_->preview_canvas_row = row;
+    for (auto& hold : additional_) hold.preview_canvas_row = row;
+    place_cursor_on_canvas_row(context.state, position_at(context.scope.measures, row), row);
+    if (!keep_cursor_visible(context.scope.chart, context.scope.measures, context.state))
+        return {error(diagnostic_code_t::invalid_resolution,
+            "canvas hold movement cannot keep the cursor visible")};
+    return {};
+}
+
+auto hold_gesture_t::selected_hold(lane_id_t lane) const -> const pending_hold_t* {
+    if (primary_ && primary_->lane == lane) return &*primary_;
+    const auto found = std::ranges::find(additional_, lane, &pending_hold_t::lane);
+    return found == additional_.end() ? nullptr : &*found;
+}
+
+void hold_gesture_t::remove_hold(lane_id_t lane) {
+    if (primary_ && primary_->lane == lane) {
+        if (additional_.empty()) primary_.reset();
+        else { primary_ = std::move(additional_.back()); additional_.pop_back(); }
+    } else {
+        const auto found = std::ranges::find(additional_, lane, &pending_hold_t::lane);
+        if (found != additional_.end()) additional_.erase(found);
+    }
+}
+
+auto hold_gesture_t::update(editor_edit_context_t&, const commit_hold_action_t& action) -> diagnostic_list_t {
+    if (!primary_) return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
+    release_ = release_t{.lane = primary_->lane, .position = action.position, .geometry = action.source_geometry};
+    return {};
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, const release_alt_pointer_hold_gesture_action_t& action)
+    -> diagnostic_list_t {
+    if (!primary_ || primary_->gesture_source != hold_gesture_source_t::alt_pointer)
+        return {error(diagnostic_code_t::invalid_hold, action.missing_gesture_message)};
+    const auto target = snapped_position(context.scope.chart, context.scope.measures, action.position,
+        edit_snap_denominator(context.scope.chart, context.state));
+    release_ = release_t{.lane = primary_->lane, .position = target.value_or(action.position),
+        .geometry = action.source_geometry};
+    return {};
+}
+
+auto hold_gesture_t::update(editor_edit_context_t& context, const release_lane_key_hold_gesture_action_t& action)
+    -> diagnostic_list_t {
+    if (!primary_) return {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")};
+    const auto lane = action.lane.value == 0 ? primary_->lane : action.lane;
+    const auto* pending = selected_hold(lane);
+    if (!pending) return {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")};
+    if (pending->gesture_source != hold_gesture_source_t::keyboard_lane)
+        return {error(diagnostic_code_t::invalid_hold,
+            release_alt_pointer_hold_gesture_action_t::missing_gesture_message)};
+    release_t release{.lane = lane, .position = pending->preview_end.value_or(pending->position)};
+    if (pending->anchor_canvas_row || pending->preview_canvas_row) {
+        const auto anchor = pending->anchor_canvas_row ? pending->anchor_canvas_row
+            : context.scope.measures.row_of(pending->position);
+        if (!anchor) return {error(diagnostic_code_t::row_out_of_range, "hold anchor is unavailable")};
+        release.canvas_rows = std::array{*anchor, pending->preview_canvas_row.value_or(*anchor)};
+    }
+    release_ = release;
+    return {};
+}
+
+auto hold_gesture_t::apply(editor_edit_context_t& context) -> editor_interaction_result_t {
+    if (immediate_) {
+        auto result = immediate_->apply(context);
+        immediate_.reset();
+        return result;
+    }
+    if (!release_) return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_hold, "hold completion requires a final target")}};
+    const auto release = std::exchange(release_, std::nullopt);
+    const auto* selected = selected_hold(release->lane);
+    if (!selected) return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")}};
+    const auto pending = *selected;
+    editor_interaction_result_t result;
+    if (release->canvas_rows) {
+        const place_virtual_bms_hold_action_t action{release->canvas_rows->front(),
+            release->canvas_rows->back(), pending.lane, pending.sound, release->geometry};
+        const auto rows = resolve_virtual_hold_rows(context, action);
+        if (const auto* failure = std::get_if<diagnostic_list_t>(&rows))
+            return editor_interaction_result_t{.diagnostics = *failure};
+        result = commit_virtual_hold(context, action, std::get<virtual_hold_rows_t>(rows), &pending);
+    } else result = pending.apply(context, release->position, release->geometry);
+    if (result) remove_hold(release->lane);
+    return result;
+}
+
 auto prepare_stem_hold_document(const editor_edit_context_t& context, const pending_hold_t& pending,
                                 const hold_placement_plan_t& placement, object_id_t channel,
                                 std::optional<bmson_source_geometry_t> geometry)
@@ -816,10 +854,7 @@ auto prepare_stem_hold_document(const editor_edit_context_t& context, const pend
     }
     return prepared;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pending,
                       const hold_placement_plan_t& placement, local_position_t target,
                       std::optional<bmson_source_geometry_t> geometry)
@@ -829,12 +864,11 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
     const auto* channel = std::get_if<std::optional<object_id_t>>(&resolved);
     if (channel && !*channel)
         return std::nullopt;
-    context.state.pending_hold.reset();
     if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
-        return diagnostic_result(context.history, context.state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     auto prepared = prepare_stem_hold_document(context, pending, placement, **channel, geometry);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
-        return diagnostic_result(context.history, context.state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     auto document = std::get<prepared_note_paint_t>(std::move(prepared));
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
@@ -843,35 +877,29 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
     transaction.adopt_document(std::move(document.document));
     const auto committed = transaction.commit("Place linked BMSON stem note");
     if (!committed)
-        return diagnostic_result(context.history, context.state, committed.diagnostics);
+        return editor_interaction_result_t{.diagnostics = committed.diagnostics};
     place_cursor_at(context.state, target);
     context.state.active_lane = pending.lane;
     auto result = editor_interaction_result_t::from(context.history, context.state, true);
     result.created_note = created;
     return result;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
-auto commit_hold(editor_edit_context_t& context, local_position_t position,
-                 std::optional<bmson_source_geometry_t> geometry) -> editor_interaction_result_t {
+auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t position,
+    std::optional<bmson_source_geometry_t> geometry) const -> editor_interaction_result_t {
     auto& history = context.history;
     auto& state = context.state;
-    if (!state.pending_hold)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "hold completion requires a pending hold start")});
-    const auto pending = *state.pending_hold;
+    const auto& pending = *this;
     if (pending.source_geometry)
         geometry = *pending.source_geometry;
-    if (auto stale = validate_pending_hold_start(context, pending))
-        return *stale;
+    auto start_diagnostics = validate_start(context);
+    if (!start_diagnostics.empty())
+        return editor_interaction_result_t{.diagnostics = std::move(start_diagnostics)};
     const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state,
                                                 pending.lane, position);
     const auto* snapped = std::get_if<local_position_t>(&resolved);
     if (!snapped)
-        return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
+        return editor_interaction_result_t{.diagnostics = std::get<diagnostic_list_t>(resolved)};
     if (*snapped == pending.position &&
         (pending.kind == note_kind_t::hold || pending.kind == note_kind_t::roll))
         return diagnostic_result(
@@ -879,13 +907,12 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
             {error(diagnostic_code_t::invalid_hold,
                    "Move to a different row to finish the Hold or Roll gesture.")});
     if (pending.sound && !is_paint_sample_resource(history.document, *pending.sound))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_id,
-                                        "paint sound is not an existing sample resource")});
+        return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                        "paint sound is not an existing sample resource")}};
     const auto plan = plan_hold_placement(context.scope.chart, context.scope.measures, pending.lane,
                                           pending.position, *snapped, pending.kind, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&plan))
-        return diagnostic_result(history, state, *diagnostics);
+        return editor_interaction_result_t{.diagnostics = *diagnostics};
     const auto& placement = std::get<hold_placement_plan_t>(plan);
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
@@ -905,9 +932,8 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
         const auto measure =
             chart->find_measure(placement.head.measure);
         if (measure == nullptr)
-            return diagnostic_result(history, state,
-                                     {error(diagnostic_code_t::unknown_measure,
-                                            "normalized hold head refers to an unknown measure")});
+            return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::unknown_measure,
+                                            "normalized hold head refers to an unknown measure")}};
         measure->notes.push_back(
             {.id = *id,
              .position = placement.head,
@@ -922,150 +948,13 @@ auto commit_hold(editor_edit_context_t& context, local_position_t position,
                            : "Remove note";
     auto command = transaction.commit(label);
     if (!command)
-        return diagnostic_result(history, state, std::move(command.diagnostics));
-    state.pending_hold.reset();
+        return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
     place_cursor_at(state, *snapped);
     state.active_lane = pending.lane;
     auto result = editor_interaction_result_t::from(history, state);
     result.accepted = true;
     result.document_changed = true;
     result.created_note = id;
-    return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto refresh_keyboard_hold_revisions(editor_edit_context_t& context) -> void {
-    auto& state = context.state;
-    if (state.pending_hold)
-        state.pending_hold->stamp = document_stamp_t::from(context.history.document.revision);
-    for (auto& hold : state.additional_keyboard_holds)
-        hold.stamp = document_stamp_t::from(context.history.document.revision);
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto begin_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
-                                 std::optional<resource_id_t> sound, bool displace,
-                                 std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    const auto before = state;
-    if (state.pending_hold) {
-        if (state.pending_hold->lane == lane ||
-            std::ranges::any_of(state.additional_keyboard_holds,
-                                [lane](const auto& hold) { return hold.lane == lane; }))
-            return diagnostic_result(
-                context.history, state,
-                {error(diagnostic_code_t::invalid_hold, "lane key is already held")});
-        state.additional_keyboard_holds.push_back(*state.pending_hold);
-        state.pending_hold.reset();
-    }
-    if (state.virtual_bms_cursor_row) {
-        if (sound && !is_paint_sample_resource(context.history.document, *sound)) {
-            state = before;
-            return diagnostic_result(context.history, state,
-                                     {error(diagnostic_code_t::invalid_id,
-                                            "paint sound is not an existing sample resource")});
-        }
-        state.pending_hold = pending_hold_t{
-            .position = state.cursor,
-            .lane = lane,
-            .stamp = document_stamp_t::from(context.history.document.revision),
-            .anchor_canvas_row = *state.virtual_bms_cursor_row,
-            .preview_canvas_row = *state.virtual_bms_cursor_row,
-            .gesture_source = hold_gesture_source_t::keyboard_lane,
-            .sound = sound,
-            .kind = state.armed_note_kind,
-            .layers = state.armed_note_layers,
-            .source_geometry =
-                geometry ? std::make_shared<const bmson_source_geometry_t>(*geometry) : nullptr,
-        };
-        auto view = make_view(context.history, state);
-        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) {
-            state = before;
-            return diagnostic_result(context.history, state, *diagnostics);
-        }
-        return {.accepted = true,
-                .view = std::get<editor_interaction_view_model_t>(std::move(view))};
-    }
-    auto result =
-        begin_hold_gesture(context, lane, state.cursor, hold_gesture_source_t::keyboard_lane, sound,
-                           displace, geometry);
-    if (!result) {
-        state = before;
-    } else if (result.document_changed) {
-        if (!state.additional_keyboard_holds.empty()) {
-            state.pending_hold = state.additional_keyboard_holds.back();
-            state.additional_keyboard_holds.pop_back();
-        }
-        refresh_keyboard_hold_revisions(context);
-        const auto view = make_view(context.history, state);
-        if (const auto* current = std::get_if<editor_interaction_view_model_t>(&view))
-            result.view = *current;
-    }
-    return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t action_lane)
-    -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
-    if (!state.pending_hold)
-        return editor_interaction_result_t::from(history, state);
-    const auto before = state;
-    const auto lane = action_lane.value == 0 ? state.pending_hold->lane : action_lane;
-    const auto found =
-        std::ranges::find(state.additional_keyboard_holds, lane, &pending_hold_t::lane);
-    const bool primary = state.pending_hold->lane == lane;
-    if (!primary && found == state.additional_keyboard_holds.end())
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold, "released lane key has no pending hold")});
-    if (!primary)
-        std::swap(*state.pending_hold, *found);
-    const auto position = state.pending_hold->preview_end.value_or(state.pending_hold->position);
-    editor_interaction_result_t result;
-    if (state.pending_hold->anchor_canvas_row || state.pending_hold->preview_canvas_row) {
-        const auto resolved_anchor =
-            state.pending_hold->anchor_canvas_row
-                ? state.pending_hold->anchor_canvas_row
-                : absolute_row(context.scope.measures, state.pending_hold->position);
-        if (!resolved_anchor)
-            return diagnostic_result(
-                history, state,
-                {error(diagnostic_code_t::row_out_of_range, "hold anchor is unavailable")});
-        const auto anchor = *resolved_anchor;
-        const auto end = state.pending_hold->preview_canvas_row.value_or(anchor);
-        const auto hold_lane = state.pending_hold->lane;
-        const auto sound = state.pending_hold->sound;
-        state.pending_hold->gesture_source.reset();
-        result = dispatch_nested_action(
-            context, place_virtual_bms_hold_action_t{anchor, end, hold_lane, sound});
-    } else {
-        result = release_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
-    }
-    if (!result) {
-        state = before;
-        return result;
-    }
-    if (!primary) {
-        state.pending_hold = *found;
-        state.additional_keyboard_holds.erase(found);
-    } else if (!state.additional_keyboard_holds.empty()) {
-        state.pending_hold = state.additional_keyboard_holds.back();
-        state.additional_keyboard_holds.pop_back();
-    }
-    if (result.document_changed)
-        refresh_keyboard_hold_revisions(context);
-    const auto view = make_view(history, state);
-    if (const auto* current = std::get_if<editor_interaction_view_model_t>(&view))
-        result.view = *current;
     return result;
 }
 } // namespace wormedit
@@ -1090,10 +979,7 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
         return cancel_gesture(history, state);
     }
     if (std::holds_alternative<cancel_editor_area_selection_action_t>(action)) {
-        visit_editor_gestures(state, [](auto kind, auto& field) {
-            if (kind == editor_gesture_kind_t::area)
-                clear_editor_gesture(field);
-        });
+        if (state.gesture<pending_editor_area_selection_t>()) state.clear();
         auto result = editor_interaction_result_t::from(history, state);
         result.accepted = true;
         return result;
@@ -1116,9 +1002,11 @@ namespace wormedit {
 using namespace interaction_detail;
 auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> bool {
-    if (!state.pending_hold || !state.pending_hold->gesture_source)
-        return true;
-    if (*state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane)
+    if (!state.hold())
+        return is_keyboard_hold_action_allowed(action) ||
+            is_gesture_action<begin_hold_action_t, update_hold_preview_action_t, commit_hold_action_t>(action);
+    if (!state.hold()->gesture_source) return true;
+    if (*state.hold()->gesture_source == hold_gesture_source_t::keyboard_lane)
         return is_keyboard_hold_action_allowed(action);
     return is_gesture_action<update_alt_pointer_hold_gesture_action_t,
                              release_alt_pointer_hold_gesture_action_t>(action);
@@ -1132,12 +1020,6 @@ auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interact
     switch (kind) {
     case editor_gesture_kind_t::hold:
         return is_hold_gesture_action_allowed(state, action);
-    case editor_gesture_kind_t::keyboard_holds:
-        // The authorized lane action delegates its begin/preview/commit to these
-        // legacy verbs.
-        return is_keyboard_hold_action_allowed(action) ||
-               is_gesture_action<begin_hold_action_t, update_hold_preview_action_t,
-                                 commit_hold_action_t, place_virtual_bms_hold_action_t>(action);
     case editor_gesture_kind_t::duration:
         return is_gesture_action<update_note_duration_gesture_action_t>(action);
     case editor_gesture_kind_t::move:
@@ -1164,7 +1046,6 @@ using namespace interaction_detail;
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
     switch (kind) {
     case editor_gesture_kind_t::hold:
-    case editor_gesture_kind_t::keyboard_holds:
         return "finish or cancel the active hold input gesture first";
     case editor_gesture_kind_t::duration:
         return "finish or cancel the active note duration gesture first";
@@ -1189,14 +1070,8 @@ auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
-    std::optional<editor_gesture_kind_t> blocked;
-    visit_editor_gestures(state, [&](auto kind, const auto& field) {
-        if (!blocked && is_editor_gesture_pending(field) &&
-            !is_gesture_action_allowed(kind, state, action))
-            blocked = kind;
-    });
-    if (!blocked)
-        return std::nullopt;
+    const auto blocked = state.gesture_kind();
+    if (!blocked || is_gesture_action_allowed(*blocked, state, action)) return std::nullopt;
     return diagnostic_result(
         history, state, {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))});
 }

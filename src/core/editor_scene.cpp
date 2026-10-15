@@ -852,7 +852,7 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
             error(diagnostic_code_t::invalid_hold, "field-scene hold preview is stale or invalid"));
         return false;
     }
-    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
+    if (!context.view.gesture_stamp<hold_gesture_preview_t>()->is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -883,9 +883,10 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
 template <typename Operate>
 auto collect_regular_holds(scene_geometry_context_t& context, hold_proposals_t& holds,
                            Operate&& operate) -> bool {
-    auto pending_holds = context.view.additional_keyboard_holds;
-    if (context.view.pending_hold) {
-        pending_holds.push_back(*context.view.pending_hold);
+    const auto additional = context.view.additional_keyboard_holds();
+    auto pending_holds = std::vector<pending_hold_t>{additional.begin(), additional.end()};
+    if (context.view.hold()) {
+        pending_holds.push_back(*context.view.hold());
     }
     for (const auto& pending : pending_holds) {
         if (!append_regular_hold(context, holds, pending, operate)) {
@@ -2357,7 +2358,7 @@ auto prepare_scene_visible_rows(const chart_document_t& chart,
 
 auto is_valid_note_transform_previews(const editor_interaction_view_model_t& view,
                                    diagnostic_list_t& diagnostics) -> bool {
-    const auto count = static_cast<unsigned>(view.pending_hold.has_value() ||
+    const auto count = static_cast<unsigned>((view.hold() != nullptr) ||
                                              view.pending_virtual_hold.has_value() ||
                                              !view.pending_canvas_keyboard_holds.empty()) +
                        static_cast<unsigned>(view.gesture<pending_note_duration_gesture_t>() != nullptr) +
@@ -2555,7 +2556,7 @@ auto window_request_scalars(const editor_field_scene_request_t& request) {
         request.grid_density.minimum_active_snap_spacing_pixels};
 }
 auto has_window_edit_preview(const editor_interaction_view_model_t& view) -> bool {
-    return view.pending_hold || !view.additional_keyboard_holds.empty() ||
+    return view.hold() || !view.additional_keyboard_holds().empty() ||
         view.pending_virtual_hold || !view.pending_canvas_keyboard_holds.empty() ||
         view.gesture<pending_note_duration_gesture_t>() || view.gesture<pending_note_move_gesture_t>() ||
         view.gesture<note_paint_gesture_preview_t>();

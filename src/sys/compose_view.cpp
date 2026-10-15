@@ -10,7 +10,6 @@
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>
@@ -879,7 +878,8 @@ auto compose_snap_preferences(const application_command_state_t& state, wormedit
 
 auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
     -> bool {
-    return wormedit::has_pending_editor_gesture(state);
+    // Temporary: removed by T-634 after core proposal owners; remaining Sys callers share this query.
+    return state.is_pending();
 }
 
 namespace compose_projection_detail {
@@ -1447,7 +1447,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;
     const auto hover_gesture_active =
-        retained_state->pending_hold.has_value() ||
+        (retained_state->hold() != nullptr) ||
         retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
@@ -2552,7 +2552,7 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
 auto projected_pointer_hold_active(const std::optional<wormedit::editor_interaction_state_t>& state)
     -> bool {
     return state && (state->gesture<wormedit::pending_note_duration_gesture_t>() ||
-        (state->pending_hold && state->pending_hold->gesture_source ==
+        (state->hold() && state->hold()->gesture_source ==
             wormedit::hold_gesture_source_t::alt_pointer));
 }
 
@@ -2580,9 +2580,9 @@ void populate_compose_view(flattened_workspace_t& flattened,
         return;
     }
     auto& view = flattened.view.compose;
-    view.editor_gesture_active = retained_state && has_pending_editor_gesture(*retained_state);
+    view.editor_gesture_active = retained_state && (*retained_state).is_pending();
     view.editor_gesture_current = view.editor_gesture_active &&
-        !is_editor_gestures_stale(*retained_state, history.document.revision);
+        !(*retained_state).is_stale(history.document.revision);
     view.editor_pointer_hold_active = projected_pointer_hold_active(retained_state);
     if (!workspace.selected_chart) {
         report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,

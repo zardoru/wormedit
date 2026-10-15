@@ -2699,8 +2699,8 @@ void t422_check_unmodified(const t422_fixture_t& fixture, std::string_view bytes
     CHECK(fixture.history.document.revision == revision);
     CHECK(fixture.history.undo.size() == undo_depth);
     t422_check_selection(fixture, selected_notes, selected_objects);
-    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
-    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+    CHECK_FALSE((fixture.interaction->hold() != nullptr));
+    CHECK(fixture.interaction->additional_keyboard_holds().empty());
 }
 
 void t422_check_native_binding(const t422_fixture_t& fixture) {
@@ -2809,7 +2809,7 @@ void t422_check_shift_step(t422_fixture_t& fixture, song_document_t& expected_do
     expected_document.revision = fixture.history.document.revision;
     CHECK(t422_native_bytes(fixture.history.document) == t422_native_bytes(expected_document));
     CHECK(t422_native_bytes(fixture.history.document) != original_bytes);
-    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+    CHECK_FALSE((fixture.interaction->hold() != nullptr));
 }
 
 void t422_check_undo_result(t422_fixture_t& fixture,
@@ -2820,7 +2820,7 @@ void t422_check_undo_result(t422_fixture_t& fixture,
     t422_check_note_contents(*t422_note(fixture.history, 103), originals[2], lane_id_t{1});
     CHECK(fixture.interaction->selected_notes.empty());
     CHECK(fixture.interaction->selected_objects.empty());
-    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
+    CHECK_FALSE((fixture.interaction->hold() != nullptr));
 }
 
 void t422_apply_shift_sequence(t422_fixture_t& fixture, song_document_t& expected_document,
@@ -2893,8 +2893,8 @@ TEST_CASE("A plain profile lane key moves all selected notes and preserves their
     CHECK(fixture.history.undo.size() == 1);
     t422_check_selection(fixture, selection, selected_objects);
     t422_check_all_notes_in_lane(fixture, originals, lane_id_t{2});
-    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
-    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+    CHECK_FALSE((fixture.interaction->hold() != nullptr));
+    CHECK(fixture.interaction->additional_keyboard_holds().empty());
 }
 
 auto t422_copy_notes(const document_history_t& history) -> std::vector<note_t> {
@@ -2926,8 +2926,8 @@ void t422_reject_without_mutation(t422_fixture_t& fixture, std::string_view reas
     t422_check_notes_unchanged(fixture, original);
     CHECK(t422_native_bytes(fixture.history.document) == original_bytes);
     t422_check_selection(fixture, selection, objects);
-    CHECK_FALSE(fixture.interaction->pending_hold.has_value());
-    CHECK(fixture.interaction->additional_keyboard_holds.empty());
+    CHECK_FALSE((fixture.interaction->hold() != nullptr));
+    CHECK(fixture.interaction->additional_keyboard_holds().empty());
 }
 
 TEST_CASE("A lane overlap rejects Shift assignment without changing document or selection",
@@ -6706,7 +6706,7 @@ TEST_CASE("Rejected Alt duration release retires the production gesture and pres
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT));
     const auto release = button_event(false, target->first, target->second);
     (void)f.dispatch(f.harness.frame(std::span{&release, 1}, SDL_KMOD_ALT));
-    expect_draw(!has_pending_editor_gesture(*f.interaction));
+    expect_draw(!(*f.interaction).is_pending());
     expect_draw(f.history.undo.empty());
     expect_draw(t422_native_bytes(f.history.document) == original);
 }
@@ -6726,15 +6726,15 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     const auto second = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     (void)f.dispatch(f.harness.frame(std::span{&first, 1}));
     (void)f.dispatch(f.harness.frame(std::span{&second, 1}));
-    section_import_require(f.interaction->additional_keyboard_holds.size() == 1);
+    section_import_require(f.interaction->additional_keyboard_holds().size() == 1);
     const auto forward = key_event(SDL_EVENT_KEY_DOWN, SDLK_UP, SDL_SCANCODE_UP);
     (void)f.dispatch(f.harness.frame(std::span{&forward, 1}));
     const auto first_up = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
     (void)f.dispatch(f.harness.frame(std::span{&first_up, 1}));
-    section_import_require(f.interaction->pending_hold.has_value());
+    section_import_require((f.interaction->hold() != nullptr));
     f.project();
     (void)f.dispatch(f.harness.frame());
-    expect_draw(f.interaction->pending_hold.has_value());
+    expect_draw((f.interaction->hold() != nullptr));
     auto changed = f.history.document;
     changed.metadata.title = "External edit";
     section_import_require(static_cast<bool>(commit_document_command(f.history, std::move(changed), "External edit")));
@@ -6746,7 +6746,7 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     f.harness.view().compose = f.flattened.view.compose;
     f.harness.view().document_revision = f.history.document.revision;
     (void)f.dispatch(f.harness.frame());
-    expect_draw(!has_pending_editor_gesture(*f.interaction));
+    expect_draw(!(*f.interaction).is_pending());
     f.project();
     const auto second_up = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
     (void)f.dispatch(f.harness.frame(std::span{&second_up, 1}));
@@ -6928,7 +6928,7 @@ TEST_CASE("Production paint release outside the field commits its visited cells"
     expect_t422(f.interaction->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
     placement_release(f, {1790, 1390});
     expect_t422(f.history.undo.size() == 1);
-    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(!((*f.interaction).is_pending()));
 }
 
 TEST_CASE("Production paint captures kind and layers at its beginning",
@@ -6991,14 +6991,14 @@ TEST_CASE("Virtual Hold and Roll clicks share the authored gesture owner and com
     const auto point = placement_point(f, 2400, 2);
     for (const auto& frame : click_at(f.harness, point.first, point.second))
         (void)f.dispatch(frame);
-    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422((f.interaction->hold() != nullptr));
     expect_t422(f.history.undo.empty());
     expect_t422(f.history.document.charts.front().measures.size() == 2);
     f.project();
     const auto end = placement_point(f, same_row ? 2400 : 2640, 2);
     for (const auto& frame : click_at(f.harness, end.first, end.second))
         (void)f.dispatch(frame);
-    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(!((*f.interaction).is_pending()));
     expect_t422(f.history.undo.size() == (same_row ? 0 : 1));
     if (!same_row) {
         const auto& notes = f.history.document.charts.front().measures.back().notes;
@@ -7025,7 +7025,7 @@ TEST_CASE("Virtual lane keys reject same-row Hold and Roll without publishing or
     (void)t422_lane_press(f, SDL_KMOD_NONE);
     expect_t422(f.history.undo.empty());
     expect_t422(f.history.document.charts.front().measures.size() == 2);
-    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(!((*f.interaction).is_pending()));
 }
 
 namespace {
@@ -7067,8 +7067,8 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     const auto start = placement_point(f, 240, 2);
     for (const auto& frame : click_at(f.harness, start.first, start.second))
         (void)f.dispatch(frame);
-    expect_t422(f.interaction->pending_hold.has_value());
-    expect_t422(f.interaction->pending_hold->source_geometry != nullptr);
+    expect_t422((f.interaction->hold() != nullptr));
+    expect_t422(f.interaction->hold()->source_geometry != nullptr);
     f.project();
     f.cache.stems.stem_index.bindings.clear();
     const auto end = placement_point(f, 480, 2);
@@ -7080,7 +7080,7 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     expect_t422(chart.measures.front().notes.front().end == local_position_t{measure_id_t{1}, 480});
     expect_t422(chart.sound_channels.front().events.back().continuation == !short_source);
     expect_t422(f.history.undo.size() == 1);
-    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(!((*f.interaction).is_pending()));
     expect_t422(f.history.document.audio_assets.front().stream.sample_rate == 0);
 }
 
@@ -7094,18 +7094,18 @@ TEST_CASE("Production virtual lane chords survive independent materialization an
     const auto second = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     (void)f.dispatch(f.harness.frame(std::span{&first, 1}));
     (void)f.dispatch(f.harness.frame(std::span{&second, 1}));
-    expect_t422(f.interaction->additional_keyboard_holds.size() == 1);
+    expect_t422(f.interaction->additional_keyboard_holds().size() == 1);
     const auto forward = key_event(SDL_EVENT_KEY_DOWN, SDLK_UP, SDL_SCANCODE_UP);
     (void)f.dispatch(f.harness.frame(std::span{&forward, 1}));
     const auto first_up = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
     (void)f.dispatch(f.harness.frame(std::span{&first_up, 1}));
-    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422((f.interaction->hold() != nullptr));
     expect_t422(f.history.undo.size() == 1);
     f.project();
     const auto second_up = key_event(SDL_EVENT_KEY_UP, SDLK_2, SDL_SCANCODE_2);
     (void)f.dispatch(f.harness.frame(std::span{&second_up, 1}));
     expect_t422(f.history.undo.size() == 2);
-    expect_t422(!(has_pending_editor_gesture(*f.interaction)));
+    expect_t422(!((*f.interaction).is_pending()));
     expect_t422(f.history.document.charts.front().measures.back().notes.size() == 2);
 }
 
@@ -7358,7 +7358,7 @@ TEST_CASE("Production Alt mine begin does not retain a rejected hold", "[fronten
     const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
     (void)f.dispatch(begin);
-    expect_t422(!f.interaction->pending_hold && !f.interaction->gesture<wormedit::pending_note_duration_gesture_t>());
+    expect_t422(!f.interaction->hold() && !f.interaction->gesture<wormedit::pending_note_duration_gesture_t>());
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     f.project();
@@ -7448,7 +7448,7 @@ TEST_CASE("Production accepted Alt hold owns its release after modifier changes"
         button_event(true, start.first, start.second)};
     // SDL's frame snapshot is authoritative even without a separate Alt key event.
     (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
-    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422((f.interaction->hold() != nullptr));
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     f.project();
@@ -7456,11 +7456,11 @@ TEST_CASE("Production accepted Alt hold owns its release after modifier changes"
     const auto move = motion_event(end.first, end.second);
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_SHIFT));
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
-    expect_t422(f.interaction->pending_hold.has_value());
+    expect_t422((f.interaction->hold() != nullptr));
     f.project();
     const auto up = button_event(false, end.first, end.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}, SDL_KMOD_NONE));
-    expect_t422(!f.interaction->pending_hold);
+    expect_t422(!f.interaction->hold());
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422(f.history.undo.size() == 1);
     const auto& notes = f.history.document.charts.front().measures.front().notes;

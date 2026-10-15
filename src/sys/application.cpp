@@ -1,4 +1,3 @@
-#include <wormedit/core/interaction_gestures.h>
 #include "core/text_util.h"
 #include "sys/catalog_view.h"
 #include "sys/application.h"
@@ -1163,11 +1162,7 @@ void cancel_stale_compose_interaction(
         const auto& state = *compose_interaction_state;
         const bool selected_chart_changed =
             !workspace.selected_chart || *workspace.selected_chart != state.chart;
-        const bool pending_is_stale =
-            (state.pending_hold &&
-             !state.pending_hold->stamp.is_revision_current(history.document.revision)) ||
-            (state.active_gesture &&
-             wormedit::is_editor_gesture_stale(state.active_gesture, history.document.revision));
+        const bool pending_is_stale = state.is_stale(history.document.revision);
         const bool compose_inactive =
             workspace.active_tab != wormedit::workspace_tab_t::compose;
         if (editor_interaction_has_pending_gesture(state) &&

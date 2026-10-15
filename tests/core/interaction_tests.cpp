@@ -281,18 +281,18 @@ auto parallel_hold_result(bool release_newest_first)
     if (!apply(begin_lane_key_hold_gesture_action_t{lane_id_t{1}}) ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
         !apply(begin_lane_key_hold_gesture_action_t{lane_id_t{2}}) ||
-        !state.pending_hold || state.additional_keyboard_holds.size() != 1 ||
+        !state.hold() || state.additional_keyboard_holds().size() != 1 ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}))
         return std::nullopt;
     const auto first_release = release_newest_first ? lane_id_t{2} : lane_id_t{1};
     const auto second_release = release_newest_first ? lane_id_t{1} : lane_id_t{2};
     if (!apply(release_lane_key_hold_gesture_action_t{first_release}) ||
-        note_count(history) != 1 || !state.pending_hold ||
-        state.pending_hold->lane != second_release ||
+        note_count(history) != 1 || !state.hold() ||
+        state.hold()->lane != second_release ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
         !apply(release_lane_key_hold_gesture_action_t{second_release}) ||
-        note_count(history) != 2 || state.pending_hold ||
-        !state.additional_keyboard_holds.empty())
+        note_count(history) != 2 || state.hold() ||
+        !state.additional_keyboard_holds().empty())
         return std::nullopt;
     const auto* first = find_note(history, object_id_t{101});
     const auto* second = find_note(history, object_id_t{102});
@@ -470,7 +470,7 @@ TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
     CHECK(moved.view->pending_canvas_keyboard_holds.front().anchor_row == 959'040);
     CHECK(state.virtual_bms_cursor_row == 959'280);
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
-    CHECK_FALSE(state.pending_hold);
+    CHECK_FALSE(state.hold());
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(history.document.charts.front().measures.size() == 2);
@@ -570,7 +570,7 @@ TEST_CASE("virtual BMS lane key may move the cursor before confirming a hold",
     REQUIRE(state.virtual_bms_cursor_row);
     const auto end = *state.virtual_bms_cursor_row;
     CHECK(end == anchor + 240);
-    state.pending_hold.reset();
+    state.clear();
     const auto placed = dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{anchor, end, lane_id_t{1}});
     REQUIRE(placed);
@@ -643,7 +643,7 @@ TEST_CASE("virtual BMS hold preview shows transitive authored unions before comm
     CHECK(preview.adds_note);
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
-    state.pending_hold.reset();
+    state.clear();
     REQUIRE(dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}}));
     REQUIRE(history.document.charts.front().measures[1].notes.size() == 1);
@@ -3058,9 +3058,9 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     REQUIRE(begun);
     CHECK_FALSE(begun.document_changed);
     REQUIRE(begun.view.has_value());
-    REQUIRE(begun.view->pending_hold.has_value());
-    CHECK(begun.view->pending_hold->position == local_position_t{measure_id_t{1}, 720});
-    CHECK(begun.view->pending_hold->lane == lane_id_t{1});
+    REQUIRE((begun.view->hold() != nullptr));
+    CHECK(begun.view->hold()->position == local_position_t{measure_id_t{1}, 720});
+    CHECK(begun.view->hold()->lane == lane_id_t{1});
     CHECK(history.document.revision == 1);
     CHECK(note_count(history) == 0);
 
@@ -3068,8 +3068,8 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
         history, state, update_hold_preview_action_t{{measure_id_t{2}, 241}});
     REQUIRE(previewed);
     CHECK_FALSE(previewed.document_changed);
-    REQUIRE(previewed.view->pending_hold->preview_end.has_value());
-    CHECK(*previewed.view->pending_hold->preview_end == local_position_t{measure_id_t{2}, 240});
+    REQUIRE(previewed.view->hold()->preview_end.has_value());
+    CHECK(*previewed.view->hold()->preview_end == local_position_t{measure_id_t{2}, 240});
     CHECK(note_count(history) == 0);
 
     const auto committed =
@@ -3077,7 +3077,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     REQUIRE(committed);
     CHECK(committed.document_changed);
     REQUIRE(committed.view.has_value());
-    CHECK_FALSE(committed.view->pending_hold.has_value());
+    CHECK_FALSE((committed.view->hold() != nullptr));
     CHECK(committed.view->cursor == local_position_t{measure_id_t{2}, 240});
     REQUIRE(note_count(history) == 1);
     const auto& hold = history.document.charts.front().measures.front().notes.front();
@@ -3096,7 +3096,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     const auto merged =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{2}, 0}});
     REQUIRE(merged);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(history.document.revision == 3);
     CHECK(note_count(history) == 1);
     const auto* merged_note = find_note(history, object_id_t{102});
@@ -3106,7 +3106,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
 
     const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK_FALSE(cancelled.document_changed);
     CHECK(history.document.revision == 3);
 
@@ -3125,13 +3125,13 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     const auto reverse_preview = dispatch_editor_action(
         history, state, update_hold_preview_action_t{{measure_id_t{1}, 480}});
     REQUIRE(reverse_preview);
-    REQUIRE(reverse_preview.view->pending_hold->preview_end.has_value());
-    CHECK(*reverse_preview.view->pending_hold->preview_end ==
+    REQUIRE(reverse_preview.view->hold()->preview_end.has_value());
+    CHECK(*reverse_preview.view->hold()->preview_end ==
           local_position_t{measure_id_t{1}, 480});
-    REQUIRE(reverse_preview.view->pending_hold->placement_preview.has_value());
-    CHECK(reverse_preview.view->pending_hold->placement_preview->head ==
+    REQUIRE(reverse_preview.view->hold()->placement_preview.has_value());
+    CHECK(reverse_preview.view->hold()->placement_preview->head ==
           local_position_t{measure_id_t{1}, 480});
-    CHECK(reverse_preview.view->pending_hold->placement_preview->tail ==
+    CHECK(reverse_preview.view->hold()->placement_preview->tail ==
           local_position_t{measure_id_t{1}, 720});
     const auto reverse_commit =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 480}});
@@ -3162,8 +3162,8 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     const auto union_preview = dispatch_editor_action(
         union_history, union_state, update_hold_preview_action_t{{measure_id_t{1}, 720}});
     REQUIRE(union_preview);
-    REQUIRE(union_preview.view->pending_hold->placement_preview.has_value());
-    const auto& placement = *union_preview.view->pending_hold->placement_preview;
+    REQUIRE(union_preview.view->hold()->placement_preview.has_value());
+    const auto& placement = *union_preview.view->hold()->placement_preview;
     CHECK(placement.adds_note);
     CHECK(placement.head == local_position_t{measure_id_t{1}, 0});
     CHECK(placement.tail == local_position_t{measure_id_t{2}, 0});
@@ -3199,7 +3199,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
                                                  commit_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(conflict);
     CHECK(has_code(conflict.diagnostics, diagnostic_code_t::collision));
-    CHECK_FALSE(conflicting_state.pending_hold.has_value());
+    CHECK_FALSE((conflicting_state.hold() != nullptr));
     CHECK(conflicting_history.document.revision == 1);
     CHECK(note_count(conflicting_history) == 1);
 
@@ -3216,7 +3216,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
         metadata_history, metadata_state, begin_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(metadata_conflict);
     CHECK(has_code(metadata_conflict.diagnostics, diagnostic_code_t::collision));
-    CHECK_FALSE(metadata_state.pending_hold.has_value());
+    CHECK_FALSE((metadata_state.hold() != nullptr));
     CHECK(metadata_history.document.revision == 1);
 }
 
@@ -3230,7 +3230,7 @@ TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][int
 
     REQUIRE(committed);
     CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     REQUIRE(note_count(history) == 1);
     const auto& note = history.document.charts.front().measures.front().notes.front();
     CHECK(note.kind == note_kind_t::tap);
@@ -3246,9 +3246,9 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto pressed =
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
     REQUIRE(pressed);
-    REQUIRE(pressed.view->pending_hold.has_value());
-    CHECK(pressed.view->pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane);
-    CHECK(pressed.view->pending_hold->position == local_position_t{measure_id_t{1}, 720});
+    REQUIRE((pressed.view->hold() != nullptr));
+    CHECK(pressed.view->hold()->gesture_source == hold_gesture_source_t::keyboard_lane);
+    CHECK(pressed.view->hold()->position == local_position_t{measure_id_t{1}, 720});
     CHECK(history.document.revision == 1);
     CHECK(note_count(history) == 0);
 
@@ -3258,8 +3258,8 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto extended_again = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(extended_again);
-    REQUIRE(extended_again.view->pending_hold->preview_end.has_value());
-    CHECK(*extended_again.view->pending_hold->preview_end ==
+    REQUIRE(extended_again.view->hold()->preview_end.has_value());
+    CHECK(*extended_again.view->hold()->preview_end ==
           local_position_t{measure_id_t{2}, 240});
 
     const auto reversed = dispatch_editor_action(
@@ -3268,14 +3268,14 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto reversed_again = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(reversed_again);
-    CHECK_FALSE(reversed_again.view->pending_hold->preview_end.has_value());
+    CHECK_FALSE(reversed_again.view->hold()->preview_end.has_value());
     const auto tap =
         dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
     REQUIRE(tap);
     CHECK(tap.document_changed);
     REQUIRE(note_count(history) == 1);
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     REQUIRE(undo_document_command(history));
     CHECK(note_count(history) == 0);
 
@@ -3337,8 +3337,8 @@ TEST_CASE("held lane key follows the cursor through multiple measures",
         second_page.view && second_page.view->cursor == local_position_t{measure_id_t{3}, 0},
         first_page.view && second_page.view &&
             second_page.view->viewport_scroll_pixels > first_page.view->viewport_scroll_pixels,
-        second_page.view && second_page.view->pending_hold &&
-            second_page.view->pending_hold->preview_end ==
+        second_page.view && second_page.view->hold() &&
+            second_page.view->hold()->preview_end ==
                 local_position_t{measure_id_t{3}, 0},
         committed.document_changed,
         note && note->end == local_position_t{measure_id_t{3}, 0},
@@ -3468,13 +3468,13 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
     const auto moved = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
     const auto preview_valid = state.virtual_bms_cursor_row &&
-                               state.additional_keyboard_holds.size() == 1 && moved.view &&
+                               state.additional_keyboard_holds().size() == 1 && moved.view &&
                                moved.view->pending_canvas_keyboard_holds.size() == 2 &&
                                history.document.charts.front().measures.size() == 2;
     const auto back = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 2});
-    const auto returned_to_authored = !state.virtual_bms_cursor_row && state.pending_hold &&
-                                      !state.pending_hold->preview_canvas_row;
+    const auto returned_to_authored = !state.virtual_bms_cursor_row && state.hold() &&
+                                      !state.hold()->preview_canvas_row;
     const auto forward = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
 
@@ -3482,7 +3482,7 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
         history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
     const auto first_committed = first.document_changed &&
                                  history.document.charts.front().measures.size() == 4 &&
-                                 state.pending_hold && state.pending_hold->lane == lane_id_t{2};
+                                 state.hold() && state.hold()->lane == lane_id_t{2};
     const auto second = dispatch_editor_action(
         history, state, release_lane_key_hold_gesture_action_t{lane_id_t{2}});
     const auto* first_note = find_note(history, object_id_t{101});
@@ -3490,7 +3490,7 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
     const std::array checks{
         bool(jump), bool(first_press), bool(second_press), bool(moved), preview_valid,
         bool(back), returned_to_authored, bool(forward), bool(first), first_committed,
-        bool(second), second.document_changed, !state.pending_hold,
+        bool(second), second.document_changed, !state.hold(),
         first_note && first_note->end && first_note->end->measure == measure_id_t{4},
         second_note && second_note->end && second_note->end->measure == measure_id_t{4},
     };
@@ -3595,7 +3595,7 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
     REQUIRE(pressed);
     CHECK(pressed.document_changed);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
     const auto released =
         dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
@@ -3614,7 +3614,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
     CHECK_FALSE(no_modifier);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -3626,7 +3626,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         update_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, false, true});
     REQUIRE(modifier_lost);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     REQUIRE(dispatch_editor_action(
@@ -3636,7 +3636,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     REQUIRE(dispatch_editor_action(
@@ -3668,13 +3668,13 @@ TEST_CASE("hold input gestures retire stale previews and can cancel after focus 
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     const auto cancelled = dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 }
 
@@ -4060,13 +4060,13 @@ TEST_CASE("hold previews reject stale document revisions and retire captures",
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     history.document.charts.front().lane_layouts.front().layout.lanes.clear();
     const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK_FALSE(cancelled.view.has_value());
     CHECK(has_code(cancelled.diagnostics, diagnostic_code_t::unknown_lane));
 }
@@ -4962,9 +4962,9 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
         check_note_kind_condition(!(state.gesture<wormedit::pending_note_paint_gesture_t>()));
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         check_note_kind_condition(note_count(history) == 0);
-        require_note_kind_condition(state.pending_hold);
+        require_note_kind_condition(state.hold());
         check_note_kind_condition(!(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 0}})));
-        check_note_kind_condition(!state.pending_hold);
+        check_note_kind_condition(!state.hold());
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         require_note_kind_condition(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 240}}));
         require_note_kind_condition(note_count(history) == 1);
@@ -5391,8 +5391,8 @@ TEST_CASE("lane-key interaction captures sound and default layers for authored a
     if (virtual_measure) enter_sound_test_virtual_measure(history, state);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
-    require_lane_sound(state.pending_hold);
-    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    require_lane_sound(state.hold());
+    check_lane_sound(state.hold()->sound == resource_id_t{7});
     check_lane_sound(history.undo.empty());
     if (hold) require_lane_sound(dispatch_editor_action(history, state,
         move_edit_cursor_action_t{interaction_direction_t::forward}));
@@ -5421,8 +5421,8 @@ TEST_CASE("alt-pointer hold captures the armed sound and default layers like a l
     require_lane_sound(dispatch_editor_action(history, state,
         begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
                                                 resource_id_t{7}}));
-    require_lane_sound(state.pending_hold);
-    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    require_lane_sound(state.hold());
+    check_lane_sound(state.hold()->sound == resource_id_t{7});
     const auto released = dispatch_editor_action(history, state,
         release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, true});
     require_lane_sound(released);
@@ -5443,8 +5443,8 @@ TEST_CASE("click placement captures the armed sound for taps and click-click hol
         place_tap_action_t{{measure_id_t{1}, 0}, resource_id_t{7}});
     require_lane_sound(placed);
     if (hold) {
-        require_lane_sound(state.pending_hold);
-        check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+        require_lane_sound(state.hold());
+        check_lane_sound(state.hold()->sound == resource_id_t{7});
         placed = dispatch_editor_action(history, state,
             commit_hold_action_t{{measure_id_t{1}, 480}});
         require_lane_sound(placed);
@@ -5472,7 +5472,7 @@ TEST_CASE("lane-key interaction rejects absent and non-sample sounds without cha
     check_lane_sound_false(rejected);
     require_lane_sound_false(rejected.diagnostics.empty());
     check_lane_sound(rejected.diagnostics.front().message == "paint sound is not an existing sample resource");
-    check_lane_sound_false(state.pending_hold);
+    check_lane_sound_false(state.hold());
     check_lane_sound(history.document.revision == revision);
     check_lane_sound(history.undo.empty());
     check_lane_sound(note_count(history) == 0);
@@ -5651,7 +5651,6 @@ auto t475_views_match(const editor_interaction_view_model_t& a,
         a.viewport_scroll_pixels == b.viewport_scroll_pixels &&
         a.viewport_height_pixels == b.viewport_height_pixels &&
         a.fixed_cursor_screen_y_pixels == b.fixed_cursor_screen_y_pixels &&
-        a.pending_hold == b.pending_hold && a.additional_keyboard_holds == b.additional_keyboard_holds &&
         a.active_gesture == b.active_gesture &&
         a.retained_selection_range == b.retained_selection_range &&
         a.retained_canvas_selection_range == b.retained_canvas_selection_range &&
@@ -5715,7 +5714,7 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
         update_hold_preview_action_t{{measure_id_t{2}, 240}})));
     const auto retained = inspect_editor_interaction(history, state, geometry);
     t475_require(std::holds_alternative<editor_interaction_view_model_t>(retained));
-    t475_check(std::get<editor_interaction_view_model_t>(retained).pending_hold.has_value());
+    t475_check(std::get<editor_interaction_view_model_t>(retained).hold() != nullptr);
     t475_check(t475_retained_matches_legacy(history, state, geometry));
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 }

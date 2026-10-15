@@ -4445,11 +4445,11 @@ void check_ten_key_note_commit() {
             .lane_id = binding.lane.value};
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-        expect_compose_test(fixture.interaction->pending_hold.has_value());
+        expect_compose_test((fixture.interaction->hold() != nullptr));
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-        expect_compose_test(!fixture.interaction->pending_hold.has_value());
+        expect_compose_test(!(fixture.interaction->hold() != nullptr));
     }
     const auto& notes = fixture.history.document.charts.front().measures.front().notes;
     expect_compose_test(notes.size() == 10);
@@ -4950,8 +4950,8 @@ void check_lane_key_callback(bool virtual_measure, bool hold) {
         expect_compose_test(f.compose.interaction->virtual_bms_cursor_row == 1920);
     }
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(f.compose.interaction->pending_hold.has_value());
-    expect_compose_test(f.compose.interaction->pending_hold->sound == resource_id_t{7});
+    expect_compose_test((f.compose.interaction->hold() != nullptr));
+    expect_compose_test(f.compose.interaction->hold()->sound == resource_id_t{7});
     expect_compose_test(f.compose.history.undo.empty());
     expect_compose_test(placed_resource_notifications.empty());
     if (hold) (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
@@ -5046,7 +5046,7 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
           "[sys][compose][lane-key-sound]") {
     lane_key_callback_fixture_t f;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(f.compose.interaction->pending_hold.has_value());
+    expect_compose_test((f.compose.interaction->hold() != nullptr));
     SECTION("explicit cancellation") {
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
     }
@@ -6388,8 +6388,8 @@ TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor row
     }
     const auto revision = f.compose.history.document.revision;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(!f.compose.interaction->pending_hold);
-    expect_compose_test(f.compose.interaction->additional_keyboard_holds.empty());
+    expect_compose_test(!f.compose.interaction->hold());
+    expect_compose_test(f.compose.interaction->additional_keyboard_holds().empty());
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
     expect_compose_test(f.notes().empty());
@@ -6990,7 +6990,7 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     expect_compose_test(chart.measures.front().notes.front().sound_channel_event.has_value());
     expect_compose_test(chart.sound_channels.front().events.back().continuation == !short_source);
     expect_compose_test(chart.sound_channels.front().events.back().playable);
-    expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
+    expect_compose_test(!fixture.interaction->hold() && !fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
     expect_compose_test(fixture.history.undo.size() == 1);
     expect_compose_test(fixture.history.document.audio_assets.front().stream.sample_rate == 0);
 }

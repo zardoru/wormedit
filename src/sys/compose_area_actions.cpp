@@ -20,7 +20,7 @@ auto can_apply_compose_quantize(const application_command_state_t& application,
                                 const editor_interaction_state_t& state) -> bool {
     return !application.project.compose_view.compose_timing_focus &&
            !application.project.clipboard.paste_session &&
-           !wormedit::has_pending_editor_gesture(state);
+           !(state).is_pending();
 }
 
 auto apply_compose_quantize_selection(document_history_t& history,

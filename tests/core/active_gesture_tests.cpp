@@ -1,10 +1,12 @@
 #include "core/interaction_gesture_runner.h"
 #include "../support/stale_action_assertions.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <array>
 
 using namespace wormedit;
 static_assert(editor_gesture<pending_note_duration_gesture_t, object_id_t, local_position_t>);
+static_assert(editor_gesture<hold_gesture_t, hold_start_t, update_hold_preview_action_t>);
 
 namespace {
 struct gesture_fixture_t {
@@ -34,7 +36,7 @@ struct gesture_fixture_t {
     }
 
     void check_capture_ended(std::size_t undo_count) const {
-        CHECK_FALSE(has_pending_editor_gesture(state));
+        CHECK_FALSE((state).is_pending());
         REQUIRE(history.undo.size() == undo_count);
     }
 };
@@ -52,7 +54,7 @@ TEST_CASE("Duration begin rejects every existing live capture at its core bounda
     }
     const auto rejected = begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101});
     CHECK_FALSE(rejected);
-    CHECK(has_pending_editor_gesture(fixture.state));
+    CHECK((fixture.state).is_pending());
 }
 
 TEST_CASE("Duration core update retires stale captures", "[core][active-gesture]") {
@@ -104,7 +106,7 @@ TEST_CASE("Gesture terminal errors clear captures and ordinary update errors ret
     REQUIRE(begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101}));
     const auto invalid_end = local_position_t{measure_id_t{99}, 0};
     CHECK_FALSE(update_gesture<pending_note_duration_gesture_t>(context, invalid_end));
-    CHECK(has_pending_editor_gesture(fixture.state));
+    CHECK((fixture.state).is_pending());
     CHECK_FALSE(commit_gesture<pending_note_duration_gesture_t>(context, invalid_end));
     fixture.check_capture_ended(0);
 }
@@ -205,7 +207,7 @@ TEST_CASE("Legacy hold blocks starting a Space range capture", "[core][active-ge
     const auto rejected = dispatch_editor_action(fixture.history, fixture.state,
         space_range_selection_action_t{});
     CHECK_FALSE(rejected);
-    CHECK(fixture.state.pending_hold.has_value());
+    CHECK((fixture.state.hold() != nullptr));
     CHECK_FALSE(static_cast<bool>(fixture.state.gesture<wormedit::pending_space_range_selection_t>()));
     CHECK(fixture.history.undo.empty());
 }
@@ -224,5 +226,53 @@ TEST_CASE("Space commits its captured range preview without a document edit", "[
     REQUIRE(commit_gesture<pending_space_range_selection_t>(context,
         editor_gesture_commit_view_policy_t::captured));
     CHECK(fixture.state.selected_objects == *objects);
+    fixture.check_capture_ended(0);
+}
+
+TEST_CASE("Hold begin rejects replacing an active legacy capture", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    editor_interaction_action_t another = begin_hold_action_t{{measure_id_t{1}, 480}};
+    SECTION("another legacy begin") {}
+    SECTION("a keyboard lane begin") {
+        fixture.history.document.charts.front().lane_layouts.front().layout.lanes.push_back(
+            {.id = lane_id_t{2}, .name = "Second key"});
+        another = begin_lane_key_hold_gesture_action_t{.lane = lane_id_t{2}};
+    }
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        begin_hold_action_t{{measure_id_t{1}, 240}}));
+    const auto rejected = dispatch_editor_action(fixture.history, fixture.state, another);
+    CHECK_FALSE(rejected);
+    CHECK((fixture.state.hold() &&
+        fixture.state.hold()->position == local_position_t{measure_id_t{1}, 240} &&
+        !fixture.state.hold()->gesture_source));
+    CHECK(fixture.state.additional_keyboard_holds().empty());
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Hold core updates retire stale captures", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    REQUIRE(begin_gesture<hold_gesture_t>(context, hold_start_t{.lane = lane_id_t{1}, .position = {measure_id_t{1}, 240}}));
+    ++fixture.history.document.revision;
+    const auto stale = update_gesture<hold_gesture_t>(context, update_hold_preview_action_t{{measure_id_t{1}, 480}});
+    CHECK_FALSE(stale);
+    test::check_stale_action_message(stale.diagnostics, "Editor gesture");
+    CHECK_FALSE((fixture.state).is_pending());
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Rejected hold completion ends the public capture", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    fixture.state.armed_note_kind = note_kind_t::hold;
+    fixture.state.cursor = {measure_id_t{1}, 240};
+    const bool is_keyboard = GENERATE(false, true);
+    const editor_interaction_action_t begin = is_keyboard
+        ? editor_interaction_action_t{begin_lane_key_hold_gesture_action_t{lane_id_t{1}}}
+        : editor_interaction_action_t{begin_hold_action_t{{measure_id_t{1}, 240}}};
+    const editor_interaction_action_t commit = is_keyboard
+        ? editor_interaction_action_t{release_lane_key_hold_gesture_action_t{lane_id_t{1}}}
+        : editor_interaction_action_t{commit_hold_action_t{{measure_id_t{1}, 240}}};
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state, begin));
+    CHECK_FALSE(dispatch_editor_action(fixture.history, fixture.state, commit));
     fixture.check_capture_ended(0);
 }

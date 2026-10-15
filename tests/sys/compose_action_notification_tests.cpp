@@ -95,6 +95,11 @@ struct action_notification_fixture_t {
         state.supported_snap_denominators = {4};
         state.cursor = {measure_id_t{1}, 0};
     }
+    void capture_hold() {
+        state.active_gesture = proposal_t<hold_gesture_t, document_stamp_t>{
+            .stamp = document_stamp_t::from(history.document.revision),
+            .payload = hold_gesture_t{pending_hold_t{}}};
+    }
     auto action(WormUiComposeActionKind kind) const -> WormUiWorkspaceAction {
         WormUiWorkspaceAction value{};
         value.compose_action = kind;
@@ -392,7 +397,7 @@ TEST_CASE("Compose bookmark seek feedback is finished once and respects muting",
 
 TEST_CASE("Compose pending gesture rejects an edit without changing history", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
-    fixture.state.pending_hold.emplace();
+    fixture.capture_hold();
     const auto revision = fixture.history.document.revision;
     check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER)) ==
           "Finish or cancel the active Compose gesture before adding a semantic layer.");
@@ -402,7 +407,7 @@ TEST_CASE("Compose pending gesture rejects an edit without changing history", "[
     check_action(fixture.history.document.revision == revision);
     check_action(fixture.history.undo.empty());
     check_action(fixture.history.document.charts.front().semantic_layers.empty());
-    check_action(fixture.state.pending_hold.has_value());
+    check_action((fixture.state.hold() != nullptr));
 }
 
 TEST_CASE("Compose lane profile dispatcher creates the first BGM-only layout",
@@ -479,7 +484,7 @@ TEST_CASE("Compose lane profile picker retains the active gesture warning withou
           "[compose-action-notifications][lane-profile]") {
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().lane_layouts.clear();
-    fixture.state.pending_hold.emplace();
+    fixture.capture_hold();
     const auto action = fixture.action(WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE);
     check_action(fixture.dispatch(action) ==
         "Finish or cancel the active Compose gesture before changing the lane profile.");
@@ -1609,7 +1614,7 @@ TEST_CASE("Snap badge refuses active gestures and paste previews", "[unit][sys][
         action_notification_fixture_t fixture;
         fixture.state.supported_snap_denominators = {4, 8};
         if (paste) fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{};
-        else fixture.state.pending_hold.emplace();
+        else fixture.capture_hold();
         auto snap = fixture.action(WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
         snap.compose_snap_denominator = 8;
         (void)fixture.dispatch(snap);
@@ -1992,11 +1997,11 @@ TEST_CASE("Scroll direction toolbar changes only its family and preserves author
 
 TEST_CASE("Direction switching rejects an unfinished hold without changing preferences", "[compose-action-notifications][feedback]") {
     action_notification_fixture_t f;
-    f.state.pending_hold = pending_hold_t{};
+    f.capture_hold();
     const auto preferences = f.application.preferences.editor_preferences;
     (void)f.dispatch(f.action(WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION));
     check_action(f.application.preferences.editor_preferences == preferences);
-    check_action(f.state.pending_hold.has_value());
+    check_action((f.state.hold() != nullptr));
     check_action(f.history.document.revision == 1);
     check_action(f.history.undo.empty());
 }
@@ -2097,7 +2102,7 @@ TEST_CASE("BGA visibility preserves authored and revealed kinds and rejects pend
     check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)) ==
         "BGA lane shown.");
     check_action(fixture.state.bga_revealed_lane_mask == mask);
-    fixture.state.pending_hold.emplace();
+    fixture.capture_hold();
     check_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)).find("Finish or cancel") != std::string::npos);
     check_action(fixture.state.bga_lane_visible);
     check_action(fixture.history.document.revision == revision);
@@ -2218,7 +2223,7 @@ TEST_CASE("Find fitting snap rejects empty stale and gesturing selection", "[uni
     (void)f.dispatch(action);
     check_action(f.state.active_snap_denominator==4);
     action.compose_input_project_id=f.history.document.id.value;
-    f.state.pending_hold.emplace();
+    f.capture_hold();
     (void)f.dispatch(action);
     check_action(f.state.supported_snap_denominators==std::vector<std::uint64_t>{4});
     check_action(f.history.undo.empty());

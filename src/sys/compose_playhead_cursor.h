@@ -17,7 +17,7 @@ namespace wormedit::sys {
 
 [[nodiscard]] inline auto playhead_cursor_edit_blocked(const editor_interaction_state_t& state)
     -> bool {
-    return has_pending_editor_gesture(state);
+    return (state).is_pending();
 }
 
 // While playing, the playhead stays anchored at the edge margin measured from the

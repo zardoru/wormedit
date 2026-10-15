@@ -9,7 +9,6 @@
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>

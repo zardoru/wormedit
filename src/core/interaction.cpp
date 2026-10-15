@@ -3,7 +3,6 @@
 #include "interaction_gesture_runner.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/snap.h>
@@ -423,8 +422,6 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .viewport_end_margin_fraction = state.viewport_end_margin_fraction,
         .fixed_cursor_screen_y_pixels = state.fixed_cursor_screen_y_pixels,
         .scroll_direction = state.scroll_direction,
-        .pending_hold = state.pending_hold,
-        .additional_keyboard_holds = state.additional_keyboard_holds,
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
@@ -476,7 +473,7 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
 }
 
 auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
-    return has_pending_editor_gesture(state);
+    return (state).is_pending();
 }
 
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
@@ -1261,21 +1258,21 @@ auto update_fixed_scroll_cursor(editor_edit_context_t& context,
 auto preserve_keyboard_hold_after_scroll(editor_edit_context_t& context,
                                          const editor_interaction_state_t& proposed)
     -> std::optional<editor_interaction_result_t> {
-    if (!context.state.pending_hold ||
-        context.state.pending_hold->gesture_source != hold_gesture_source_t::keyboard_lane ||
+    if (!context.state.hold() ||
+        context.state.hold()->gesture_source != hold_gesture_source_t::keyboard_lane ||
         (proposed.cursor == context.state.cursor &&
          proposed.virtual_bms_cursor_row == context.state.virtual_bms_cursor_row))
         return std::nullopt;
     const auto before = context.state;
     const auto canvas_hold =
-        proposed.virtual_bms_cursor_row || context.state.pending_hold->anchor_canvas_row ||
-        std::ranges::any_of(context.state.additional_keyboard_holds,
+        proposed.virtual_bms_cursor_row || context.state.hold()->anchor_canvas_row ||
+        std::ranges::any_of(context.state.additional_keyboard_holds(),
                             [](const auto& hold) { return hold.anchor_canvas_row.has_value(); });
     const auto cursor_row = *proposed.cursor_canvas_row(context.scope.measures);
     context.state = proposed;
     const auto updated = canvas_hold
-                             ? interaction_detail::update_canvas_keyboard_holds(context, cursor_row)
-                             : interaction_detail::update_keyboard_holds(context, proposed.cursor);
+                             ? update_gesture<hold_gesture_t>(context, cursor_row)
+                             : update_gesture<hold_gesture_t>(context, proposed.cursor);
     if (!updated)
         context.state = before;
     return updated;
@@ -1354,8 +1351,7 @@ auto stage_keyboard_occupant(document_history_t& scratch, editor_interaction_sta
             move_notes_to_bgm(scratch, state.chart, ids, std::nullopt);
         return moved.diagnostics;
     }
-    state.pending_hold.reset();
-    state.additional_keyboard_holds.clear();
+    state.clear();
     state.selected_notes = {occupant.id};
     state.selected_objects.clear();
     const auto removed = dispatch_editor_action(scratch, state, delete_editor_selection_action_t{});
@@ -1367,8 +1363,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
                           std::optional<object_id_t> stem,
                           std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<object_id_t, diagnostic_list_t> {
-    state.pending_hold.reset();
-    state.additional_keyboard_holds.clear();
+    state.clear();
     state.selected_notes.clear();
     state.selected_objects.clear();
     place_cursor_at(state, target);
@@ -1421,92 +1416,42 @@ auto stage_keyboard_entry(const editor_edit_context_t& context, lane_id_t lane,
     return prepared_keyboard_entry_t{std::move(scratch.document), created};
 }
 
-auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                          std::optional<resource_id_t> sound, bool displace,
-                          std::optional<bmson_source_geometry_t> geometry)
-    -> std::optional<editor_interaction_result_t> {
-    auto& state = context.state;
-    const auto resolved_row =
-        resolve_row_placement(context.scope.chart, context.scope.measures, state, lane, position);
-    const auto* target = std::get_if<local_position_t>(&resolved_row);
-    if (!target)
-        return std::nullopt;
-    const auto occupied =
-        keyboard_entry_occupant(context.scope.chart, context.scope.measures, lane, *target);
-    if (const auto* failure = std::get_if<diagnostic_list_t>(&occupied))
-        return diagnostic_result(context.history, state, *failure);
-    const auto resolved = entry_stem_channel(context.history.document, context.scope.chart, sound);
-    if (const auto* failure = std::get_if<diagnostic_list_t>(&resolved))
-        return diagnostic_result(context.history, state, *failure);
+auto keyboard_entry_plan_t::from(editor_edit_context_t& context, const hold_start_t& start)
+    -> diagnosed_t<std::optional<keyboard_entry_plan_t>> {
+    const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
+        context.state, start.lane, start.position);
+    const auto* target = std::get_if<local_position_t>(&resolved);
+    if (!target) return {};
+    const auto occupied = keyboard_entry_occupant(context.scope.chart, context.scope.measures, start.lane, *target);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&occupied)) return {.diagnostics = *failure};
+    const auto linked = entry_stem_channel(context.history.document, context.scope.chart, start.sound);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&linked)) return {.diagnostics = *failure};
     const auto* occupant = std::get<const note_t*>(occupied);
-    const auto stem = std::get<std::optional<object_id_t>>(resolved);
-    if (!occupant && !stem)
-        return std::nullopt;
-    auto staged =
-        stage_keyboard_entry(context, lane, *target, occupant, sound, displace, stem, geometry);
-    if (const auto* failure = std::get_if<diagnostic_list_t>(&staged))
-        return diagnostic_result(context.history, state, *failure);
+    const auto stem = std::get<std::optional<object_id_t>>(linked);
+    if (!occupant && !stem) return {};
+    return {.value = keyboard_entry_plan_t{.lane = start.lane, .position = *target,
+        .occupant = occupant ? std::optional{occupant->id} : std::nullopt, .stem = stem,
+        .sound = start.sound, .is_displacing = start.is_displacing, .geometry = start.geometry}};
+}
+
+auto keyboard_entry_plan_t::apply(editor_edit_context_t& context) const -> editor_interaction_result_t {
+    const auto* original = occupant ? context.scope.chart.find_note(*occupant) : nullptr;
+    if (occupant && !original)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Lane-key entry target no longer exists", *occupant)}};
+    auto staged = stage_keyboard_entry(context, lane, position, original, sound, is_displacing, stem, geometry);
+    if (const auto* failure = std::get_if<diagnostic_list_t>(&staged)) return {.diagnostics = *failure};
     auto prepared = std::get<prepared_keyboard_entry_t>(std::move(staged));
     auto transaction = document_command_transaction_t::from(context.history);
     transaction.adopt_document(std::move(prepared.document));
-    const auto command = transaction.commit("Enter note from lane key");
-    if (!command)
-        return diagnostic_result(context.history, state, command.diagnostics);
-    place_cursor_at(state, *target);
-    state.active_lane = lane;
-    auto result = editor_interaction_result_t::from(context.history, state, true);
+    auto command = transaction.commit("Enter note from lane key");
+    if (!command) return {.diagnostics = std::move(command.diagnostics)};
+    place_cursor_at(context.state, position);
+    context.state.active_lane = lane;
+    auto result = editor_interaction_result_t::from(context.history, context.state, true);
     result.created_note = prepared.created;
     return result;
 }
 
-
-auto interaction_detail::update_keyboard_holds(editor_edit_context_t& context,
-                                               local_position_t position)
-    -> editor_interaction_result_t {
-    const auto before = context.state;
-    place_cursor_at(context.state, context.state.cursor);
-    if (!context.state.pending_hold)
-        return editor_interaction_result_t::from(context.history, context.state, false);
-    for (auto& pending : context.state.additional_keyboard_holds) {
-        std::swap(*context.state.pending_hold, pending);
-        auto result = update_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
-        std::swap(*context.state.pending_hold, pending);
-        if (!result) {
-            context.state = before;
-            return result;
-        }
-    }
-    return update_hold_gesture(context, hold_gesture_source_t::keyboard_lane, position);
-}
-
-auto interaction_detail::update_canvas_keyboard_holds(editor_edit_context_t& context,
-                                                      std::uint64_t row)
-    -> editor_interaction_result_t {
-    auto& state = context.state;
-    const auto before = state;
-    if (!state.pending_hold || !has_chart_virtual_tail(context.scope.chart))
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "canvas hold movement requires a BMS lane key")});
-    state.pending_hold->preview_canvas_row = row;
-    for (auto& hold : state.additional_keyboard_holds)
-        hold.preview_canvas_row = row;
-    const auto authored = position_at(context.scope.measures, row);
-    place_cursor_on_canvas_row(state, authored, row);
-    if (!interaction_detail::keep_cursor_visible(context.scope.chart, context.scope.measures,
-                                                 state)) {
-        state = before;
-        return diagnostic_result(context.history, state,
-                                 {error(diagnostic_code_t::invalid_resolution,
-                                        "canvas hold movement cannot keep the cursor visible")});
-    }
-    auto view = make_view(context.history, state);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&view)) {
-        state = before;
-        return diagnostic_result(context.history, state, *diagnostics);
-    }
-    return {.accepted = true, .view = std::get<editor_interaction_view_model_t>(std::move(view))};
-}
 
 // Materialization is private preparation. Authored and virtual requests run the
 // same placement verb, then publish the prepared document as one history entry.
@@ -1753,7 +1698,7 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
     if (!chart || !is_note_kind_allowed(*chart, kind))
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_binding, "Note kind is unavailable for this chart profile.")});
-    if (state.pending_hold || state.gesture<wormedit::pending_note_paint_gesture_t>())
+    if (state.hold() || state.gesture<wormedit::pending_note_paint_gesture_t>())
         return diagnostic_result(history, state,
             {error(diagnostic_code_t::invalid_hold, "Finish or cancel note placement before changing kind.")});
     state.armed_note_kind = kind;
@@ -1789,15 +1734,15 @@ auto dispatch_editor_action(document_history_t& history, editor_interaction_stat
                             const editor_interaction_action_t& action) -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
         return *canceled;
-    if (is_editor_gestures_stale(state, history.document.revision)) {
-        clear_editor_gestures(state);
+    if ((state).is_stale(history.document.revision)) {
+        (state).clear();
         return diagnostic_result(history, state,
                                  {error(diagnostic_code_t::invalid_hold,
                                         stale_action_message("Editor gesture"))});
     }
     auto result = dispatch_editor_action_impl(history, state, action);
     if (!result && is_terminal_editor_gesture_action(state, action)) {
-        clear_editor_gestures(state);
+        (state).clear();
         return diagnostic_result(history, state, std::move(result.diagnostics));
     }
     return result;
@@ -1852,37 +1797,38 @@ auto handle(editor_edit_context_t& context, const place_tap_action_t& typed_acti
     -> editor_interaction_result_t {
     if (context.state.armed_note_kind == note_kind_t::hold ||
         context.state.armed_note_kind == note_kind_t::roll)
-        return begin_hold_action(context, typed_action.position, typed_action.sound,
-                                 typed_action.source_geometry);
+        return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
     return place_tap(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context, const begin_hold_action_t& typed_action)
     -> editor_interaction_result_t {
-    return begin_hold_action(context, typed_action.position);
+    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
 }
 
 auto handle(editor_edit_context_t& context, const update_hold_preview_action_t& typed_action)
     -> editor_interaction_result_t {
-    return update_hold_preview(context, typed_action.position);
+    return update_gesture<hold_gesture_t>(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context, const commit_hold_action_t& typed_action)
     -> editor_interaction_result_t {
-    return commit_hold(context, typed_action.position, typed_action.source_geometry);
+    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
             const begin_lane_key_hold_gesture_action_t& typed_action)
     -> editor_interaction_result_t {
-    return begin_lane_key_hold_gesture(context, typed_action.lane, typed_action.sound,
-                                       typed_action.displace_to_bgm, typed_action.source_geometry);
+    if (const auto* holds = context.state.gesture<hold_gesture_t>(); holds && holds->is_keyboard())
+        return update_gesture<hold_gesture_t>(context, typed_action);
+    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
 }
 
 auto handle(editor_edit_context_t& context,
             const release_lane_key_hold_gesture_action_t& typed_action)
     -> editor_interaction_result_t {
-    return release_lane_key_hold_gesture(context, typed_action.lane);
+    if (!context.state.hold()) return editor_interaction_result_t::from(context.history, context.state);
+    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1895,9 +1841,7 @@ auto handle(editor_edit_context_t& context,
             {error(diagnostic_code_t::invalid_hold,
                    "Alt/Option must be held to begin a pointer hold gesture")});
     }
-    return begin_hold_gesture(context, typed_action.lane, typed_action.position,
-                              hold_gesture_source_t::alt_pointer, typed_action.sound, false,
-                              typed_action.source_geometry);
+    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1912,7 +1856,7 @@ auto handle(editor_edit_context_t& context,
             context.history, context.state,
             cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
     }
-    return update_hold_gesture(context, hold_gesture_source_t::alt_pointer, typed_action.position);
+    return update_gesture<hold_gesture_t>(context, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -1927,8 +1871,7 @@ auto handle(editor_edit_context_t& context,
             context.history, context.state,
             cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
     }
-    return release_hold_gesture(context, hold_gesture_source_t::alt_pointer, typed_action.position,
-                                typed_action.source_geometry);
+    return commit_gesture<hold_gesture_t>(context, editor_gesture_commit_view_policy_t::captured, typed_action);
 }
 
 auto handle(editor_edit_context_t& context,
@@ -2211,17 +2154,6 @@ auto prune_stale_selection(const chart_document_t& chart, std::uint64_t document
         changed = true;
     }
     return changed;
-}
-
-} // namespace wormedit
-
-namespace wormedit {
-auto has_pending_editor_gesture(const editor_interaction_state_t& state) -> bool {
-    bool pending{};
-    visit_editor_gestures(state, [&](auto, const auto& field) {
-        pending |= is_editor_gesture_pending(field);
-    });
-    return pending;
 }
 
 } // namespace wormedit

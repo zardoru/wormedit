@@ -10,11 +10,11 @@ auto resolve_resize_parameters(const chart_document_t& chart, const measure_inde
                                        "duration resize requires a tap or hold reference note",
                                        reference_id)};
     const auto snapped =
-        exact ? (absolute_row(index, reference_end) ? std::optional{reference_end} : std::nullopt)
+        exact ? (index.row_of(reference_end) ? std::optional{reference_end} : std::nullopt)
               : snapped_position(chart, index, reference_end, snap_denominator);
-    const auto begin = absolute_row(index, reference->position);
-    const auto old_end = reference->end ? absolute_row(index, *reference->end) : begin;
-    const auto new_end = snapped ? absolute_row(index, *snapped) : std::nullopt;
+    const auto begin = index.row_of(reference->position);
+    const auto old_end = reference->end ? index.row_of(*reference->end) : begin;
+    const auto new_end = snapped ? index.row_of(*snapped) : std::nullopt;
     if (!snapped || !begin || !old_end || !new_end || *new_end < *begin)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                        "reference duration cannot end before its note head",
@@ -274,7 +274,7 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
                                        "note move requires a tap or hold reference note",
                                        reference_id)};
     auto snapped =
-        exact ? (absolute_row(index, reference_position) ? std::optional{reference_position}
+        exact ? (index.row_of(reference_position) ? std::optional{reference_position}
                                                          : std::nullopt)
               : snapped_position(chart, index, reference_position, snap_denominator);
     // A pointer move that stays in the reference note's own grid cell (a
@@ -285,8 +285,8 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
         if (keep_rows || (home && *home == *snapped))
             snapped = reference->position;
     }
-    const auto begin = absolute_row(index, reference->position);
-    const auto target = snapped ? absolute_row(index, *snapped) : std::nullopt;
+    const auto begin = index.row_of(reference->position);
+    const auto target = snapped ? index.row_of(*snapped) : std::nullopt;
     if (!snapped || !begin || !target)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "note move reference cannot be snapped inside chart",
@@ -354,8 +354,8 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
     if (!note || (note->kind != note_kind_t::tap && note->kind != note_kind_t::hold))
         return error(diagnostic_code_t::invalid_hold,
                      "selected note move contains a non-tap/hold note", id);
-    const auto begin = absolute_row(context.index, note->position);
-    const auto end = note->end ? absolute_row(context.index, *note->end) : begin;
+    const auto begin = context.index.row_of(note->position);
+    const auto end = note->end ? context.index.row_of(*note->end) : begin;
     if (!begin || !end || *end < *begin)
         return error(diagnostic_code_t::row_out_of_range,
                      "selected note move source lies outside chart geometry", id);
@@ -533,7 +533,7 @@ namespace wormedit::interaction_detail {
 auto translated_object_position(const measure_index_t& index, local_position_t position,
                                 std::uint64_t origin, std::uint64_t target)
     -> std::optional<local_position_t> {
-    const auto row = absolute_row(index, position);
+    const auto row = index.row_of(position);
     if (!row)
         return std::nullopt;
     const auto delta = target >= origin ? target - origin : origin - target;
@@ -541,7 +541,7 @@ auto translated_object_position(const measure_index_t& index, local_position_t p
         return std::nullopt;
     if (target >= origin && delta > std::numeric_limits<std::uint64_t>::max() - *row)
         return std::nullopt;
-    return position_at_absolute_row(index, target >= origin ? *row + delta : *row - delta);
+    return index.position_at(target >= origin ? *row + delta : *row - delta);
 }
 } // namespace wormedit::interaction_detail
 
@@ -549,8 +549,8 @@ namespace wormedit::interaction_detail {
 auto append_selected_bgm_moves(const chart_document_t& chart, const measure_index_t& index,
                                std::span<const object_id_t> ids, local_position_t origin,
                                note_move_plan_t& plan) -> diagnostic_list_t {
-    const auto from = absolute_row(index, origin);
-    const auto to = absolute_row(index, plan.reference_position);
+    const auto from = index.row_of(origin);
+    const auto to = index.row_of(plan.reference_position);
     if (!from || !to)
         return {error(diagnostic_code_t::row_out_of_range,
                       "Mixed move reference is outside chart geometry")};
@@ -608,8 +608,8 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
                           .bgm_moves = {}};
     if (!notes.empty()) {
         const auto* first = chart.find_note(notes.front());
-        const auto origin = absolute_row(index, reference_bgm->position);
-        const auto destination = absolute_row(index, *target);
+        const auto origin = index.row_of(reference_bgm->position);
+        const auto destination = index.row_of(*target);
         const auto shifted =
             first && origin && destination
                 ? translated_object_position(index, first->position, *origin, *destination)
@@ -682,15 +682,15 @@ auto plan_single_bgm_move(const document_history_t& history,
         return moved.diagnostics;
     const auto& destination = *scratch.document.find_chart(state.chart);
     const auto* event = destination.find_bgm_event(source.id);
-    const auto built = build_measure_index(destination);
-    if (const auto* errors = std::get_if<diagnostic_list_t>(&built))
-        return *errors;
-    const auto& index = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(destination);
+    if (!built)
+        return built.error();
+    const auto& index = *built;
     note_move_bgm_preview_t preview{event->id, event->source_lane, event->position, event->end,
                                     event->sound};
-    preview.canvas_begin_row = absolute_row(index, event->position);
+    preview.canvas_begin_row = index.row_of(event->position);
     preview.canvas_end_row =
-        event->end ? absolute_row(index, *event->end) : preview.canvas_begin_row;
+        event->end ? index.row_of(*event->end) : preview.canvas_begin_row;
     note_move_plan_t plan{.reference_note = source.id,
                           .reference_lane = state.active_lane,
                           .reference_position = event->position,

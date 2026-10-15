@@ -48,10 +48,9 @@ auto selected_kiai_boundaries(const song_document_t& document,
     if (!head) return std::vector<editor_selection_object_t>{};
     const auto chart = document.find_chart(state.chart);
     if (chart == nullptr) return std::nullopt;
-    const auto indexed = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&indexed);
-    if (!index) return std::nullopt;
-    for (const auto& span : kiai_spans_of(*chart, *index)) {
+    const auto indexed = measure_index_t::from(*chart);
+    if (!indexed) return std::nullopt;
+    for (const auto& span : kiai_spans_of(*chart, *indexed)) {
         if (span.head != head) continue;
         std::vector<editor_selection_object_t> result{{editor_selection_object_kind_t::kiai_event, span.head}};
         if (!span.open_ended) result.push_back({editor_selection_object_kind_t::kiai_event, span.tail});
@@ -74,9 +73,9 @@ auto stem_of(const chart_document_t& chart, const std::optional<object_id_t>& li
 
 auto append_note(chart_clipboard_t& clipboard, const chart_document_t& chart,
                  const measure_index_t& index, const note_t& note) -> bool {
-    const auto row = absolute_row(index, note.position);
+    const auto row = index.row_of(note.position);
     const auto lane = note_lane(chart, index, note);
-    const auto end = note.end ? absolute_row(index, *note.end) : row;
+    const auto end = note.end ? index.row_of(*note.end) : row;
     if (!row || !lane || !end || *end < *row) return false;
     clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
         rows_to_fraction(*end - *row, chart.divisions_per_standard_measure), *lane, note,
@@ -86,10 +85,10 @@ auto append_note(chart_clipboard_t& clipboard, const chart_document_t& chart,
 
 auto append_bgm(chart_clipboard_t& clipboard, const chart_document_t& chart,
                 const measure_index_t& index, const bgm_event_t& event) -> bool {
-    const auto row = absolute_row(index, event.position);
+    const auto row = index.row_of(event.position);
     const auto lane = std::ranges::find(chart.bgm_source_lanes, event.source_lane,
                                        &bgm_source_lane_t::id);
-    const auto end = event.end ? absolute_row(index, *event.end) : row;
+    const auto end = event.end ? index.row_of(*event.end) : row;
     if (!row || !end || *end < *row || lane == chart.bgm_source_lanes.end()) return false;
     clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
         rows_to_fraction(*end - *row, chart.divisions_per_standard_measure),
@@ -193,12 +192,11 @@ auto chart_clipboard_t::from(const song_document_t& document,
         return std::unexpected(std::string{"Select notes, BGM events or timing objects to copy."});
     if (selected.size() > maximum_objects)
         return std::unexpected(std::string{"The clipboard object limit was exceeded."});
-    const auto indexed = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&indexed);
-    if (!index || !chart->divisions_per_standard_measure)
+    const auto indexed = measure_index_t::from(*chart);
+    if (!indexed || !chart->divisions_per_standard_measure)
         return std::unexpected(std::string{"The chart positions are invalid."});
     chart_clipboard_t clipboard{document.id, chart->id, {}};
-    if (!collect(clipboard, *chart, *index, selected))
+    if (!collect(clipboard, *chart, *indexed, selected))
         return std::unexpected(
             std::string{"The selection contains unavailable or unsupported objects."});
     // Every absolute offset originated as an integer row in this resolution.
@@ -603,8 +601,8 @@ auto stem_audio_playing(const song_document_t& document, const chart_document_t&
 auto apply_stem_run_rules(const song_document_t& document, const chart_document_t& chart,
                           const measure_index_t& index, std::vector<chart_paste_stem_event_t>& events)
     -> std::optional<std::string> {
-    const auto timing = build_timing_index(chart);
-    if (!timing || !timing.index) return std::nullopt;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return std::nullopt;
     std::vector<object_id_t> done;
     for (const auto& lead : events) {
         if (std::ranges::find(done, lead.channel) != done.end()) continue;
@@ -615,12 +613,12 @@ auto apply_stem_run_rules(const song_document_t& document, const chart_document_
         for (auto& event : events)
             if (event.channel == lead.channel) run.push_back(&event);
         const auto row_of = [&](const chart_paste_stem_event_t* event) {
-            return absolute_row(index, event->event.position).value_or(0);
+            return index.row_of(event->event.position).value_or(0);
         };
         std::ranges::sort(run, {}, row_of);
         const auto first = row_of(run.front());
         const auto last = row_of(run.back());
-        const auto playing = stem_audio_playing(document, chart, *channel, *timing.index, first);
+        const auto playing = stem_audio_playing(document, chart, *channel, *timing.value, first);
         if (!playing || *playing) continue;
         const auto overlaps = std::ranges::any_of(channel->events, [&](const auto& existing) {
             const auto row = absolute_row(index, existing.position);
@@ -687,21 +685,20 @@ auto prepare_chart_paste(const song_document_t& document, chart_id_t chart_id,
     auto proposed = document;
     const auto chart = proposed.find_chart(chart_id);
     if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", result.stamp, std::move(result.payload.report)));
-    const auto indexed = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&indexed);
-    const auto row = index ? absolute_row(*index, anchor) : std::nullopt;
+    const auto indexed = measure_index_t::from(*chart);
+    const auto row = indexed ? indexed->row_of(anchor) : std::nullopt;
     if (!row || !chart->divisions_per_standard_measure) return std::unexpected(chart_paste_diagnostic_t::from("The paste anchor is invalid.", result.stamp, std::move(result.payload.report)));
-    result.payload.report.missing_lane_count = missing_paste_lanes(clipboard, *chart, *index, *row);
+    result.payload.report.missing_lane_count = missing_paste_lanes(clipboard, *chart, *indexed, *row);
     if (result.payload.report.missing_lane_count)
         return std::unexpected(chart_paste_diagnostic_t::from(std::to_string(result.payload.report.missing_lane_count) + " clipboard objects have unavailable target lanes.", result.stamp, std::move(result.payload.report)));
-    auto placed = place_paste_objects(*chart, *index, clipboard, *row, result.payload);
+    auto placed = place_paste_objects(*chart, *indexed, clipboard, *row, result.payload);
     if (!placed)
         return std::unexpected(chart_paste_diagnostic_t::from(std::move(placed.error()), result.stamp,
             std::move(result.payload.report)));
-    if (has_paste_collision(*chart, result.payload, *index)) {
+    if (has_paste_collision(*chart, result.payload, *indexed)) {
         return std::unexpected(chart_paste_diagnostic_t::from("Paste collides with existing chart objects.", result.stamp, std::move(result.payload.report)));
     }
-    if (const auto problem = apply_stem_run_rules(document, *chart, *index, result.payload.stem_events))
+    if (const auto problem = apply_stem_run_rules(document, *chart, *indexed, result.payload.stem_events))
         return std::unexpected(chart_paste_diagnostic_t::from(*problem, result.stamp, std::move(result.payload.report)));
     for (const auto& object : result.payload.report.objects) append_paste_object(*chart, object);
     append_stem_events(*chart, result.payload.stem_events);

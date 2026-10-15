@@ -128,7 +128,7 @@ auto snap_position(const chart_document_t& chart, const measure_index_t& index,
     if (!absolute) return std::nullopt;
     const auto snapped = snap_absolute_row(chart, index, *absolute, denominator);
     if (!snapped) return std::nullopt;
-    return position_at_absolute_row(index, *snapped);
+    return index.position_at(*snapped);
 }
 
 } // namespace wormedit

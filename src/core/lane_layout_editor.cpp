@@ -22,7 +22,7 @@ auto ordered_segments(const chart_document_t& chart, const measure_index_t& inde
     -> std::optional<std::vector<located_segment_t>> {
     std::vector<located_segment_t> ordered;
     for (const auto& segment : chart.lane_layouts) {
-        const auto row = absolute_row(index, segment.position);
+        const auto row = index.row_of(segment.position);
         if (!row) return std::nullopt;
         ordered.push_back({*row, &segment});
     }
@@ -34,15 +34,14 @@ auto has_lane(const lane_layout_t& layout, lane_id_t lane) -> bool { return layo
 
 // Notes whose lane is missing from the layout active at their position.
 auto count_unmapped_notes(const chart_document_t& chart) -> std::optional<std::size_t> {
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (index == nullptr) return std::nullopt;
-    const auto segments = ordered_segments(chart, *index);
+    const auto built = measure_index_t::from(chart);
+    if (!built) return std::nullopt;
+    const auto segments = ordered_segments(chart, *built);
     if (!segments) return std::nullopt;
     std::size_t unmapped{};
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            const auto row = absolute_row(*index, note.position);
+            const auto row = built->row_of(note.position);
             if (!row) return std::nullopt;
             const located_segment_t* active{};
             for (const auto& entry : *segments) {
@@ -68,9 +67,8 @@ auto is_position_allowed(const layout_edit_context_t& context, local_position_t 
                "lane layout changes must start on a measure boundary");
         return false;
     }
-    const auto built = build_measure_index(context.chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (index == nullptr || !absolute_row(*index, position)) {
+    const auto built = measure_index_t::from(context.chart);
+    if (!built || !built->row_of(position)) {
         reject(context.result, diagnostic_code_t::row_out_of_range,
                "lane layout change lies outside the chart");
         return false;
@@ -125,9 +123,8 @@ void apply_edit(layout_edit_context_t& context,
                 const wormedit::delete_edit_t<wormedit::lane_layout_edit_value_t>& edit) {
     const auto found = find_segment(context, edit.id);
     if (found == context.chart.lane_layouts.end()) return;
-    const auto built = build_measure_index(context.chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    const auto row = index == nullptr ? std::nullopt : absolute_row(*index, found->position);
+    const auto built = measure_index_t::from(context.chart);
+    const auto row = !built ? std::nullopt : built->row_of(found->position);
     if (!row || *row == 0) {
         reject(context.result, diagnostic_code_t::invalid_measure,
                "the lane layout at the chart start cannot be removed");
@@ -138,11 +135,10 @@ void apply_edit(layout_edit_context_t& context,
 }
 
 void sort_segments(chart_document_t& chart) {
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (index == nullptr) return;
+    const auto built = measure_index_t::from(chart);
+    if (!built) return;
     std::ranges::stable_sort(chart.lane_layouts, {}, [&](const auto& segment) {
-        return absolute_row(*index, segment.position).value_or(0);
+        return absolute_row(*built, segment.position).value_or(0);
     });
 }
 

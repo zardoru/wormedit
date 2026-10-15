@@ -71,7 +71,7 @@ struct lifecycle_t : std::false_type {};
 
 template <class Payload, class Stamp, class Diagnostics, class... ProposeArguments, class... ReviseArguments>
 struct lifecycle_t<Payload, Stamp, Diagnostics, std::tuple<ProposeArguments...>, std::tuple<ReviseArguments...>>
-    : std::bool_constant<requires(const Payload& payload, ProposeArguments... proposed,
+    : std::bool_constant<requires(Payload& payload, ProposeArguments... proposed,
                                  ReviseArguments... revised) {
           { Payload::propose(std::forward<ProposeArguments>(proposed)...) }
               -> std::same_as<proposal_outcome_t<Payload, Stamp, Diagnostics>>;

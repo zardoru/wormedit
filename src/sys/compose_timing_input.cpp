@@ -305,24 +305,25 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         input.span_edge == WORM_UI_SPAN_HANDLE_BEGIN ? sv_recipe_range_handle_t::begin
         : input.span_edge == WORM_UI_SPAN_HANDLE_END ? sv_recipe_range_handle_t::end
                                                      : sv_recipe_range_handle_t::whole_span;
-    auto drag = begin_sv_recipe_range_drag(
+    auto drag = sv_recipe_range_drag_t::propose(
         context.environment.document.history, chart->id, recipe_id_t{input.object_id}, handle, *press,
         edit_snap_denominator(*chart, context.state),
         context.environment.commands.project.timing_recipe.timing_locked);
-    if (drag.status != sv_recipe_range_drag_status_t::previewing) {
+    if (!drag.value) {
         result.diagnostics = drag.diagnostics;
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    if (!revise_sv_recipe_range_drag(
-            context.environment.document.history, drag, *release,
-            context.environment.commands.project.timing_recipe.timing_locked)) {
-        result.diagnostics = drag.diagnostics;
-        return drag.diagnostics.empty() ? "SV recipe edit was rejected."
-                                        : drag.diagnostics.front().message;
+    auto revised = drag.value->payload.revise(drag.value->stamp,
+        context.environment.document.history, *release,
+        context.environment.commands.project.timing_recipe.timing_locked);
+    if (!revised.value) {
+        result.diagnostics = std::move(revised.diagnostics);
+        return result.diagnostics.empty() ? "SV recipe edit was rejected."
+                                          : result.diagnostics.front().message;
     }
     const auto committed = apply_sv_recipe_range_drag(
-        context.environment.document.history, drag,
+        context.environment.document.history, *revised.value,
         context.environment.commands.project.timing_recipe.timing_locked);
     result.accepted = committed.applied;
     result.document_changed = committed.applied;

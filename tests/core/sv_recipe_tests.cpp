@@ -47,6 +47,30 @@ auto make_recipe_song() -> song_document_t {
     return song;
 }
 
+auto make_range_proposal(const document_history_t& history, sv_recipe_range_handle_t handle,
+                          local_position_t pointer) -> proposal_outcome_t<sv_recipe_range_drag_t> {
+    auto proposal = sv_recipe_range_drag_t::propose(history, chart_id_t{10}, recipe_id_t{20},
+        handle, pointer, 4, false);
+    REQUIRE(proposal.value);
+    return proposal;
+}
+
+void check_locked_range(const proposal_outcome_t<sv_recipe_range_drag_t>& outcome) {
+    CHECK_FALSE(outcome.value);
+    REQUIRE(outcome.diagnostics.size() == 1);
+    CHECK(outcome.diagnostics.front().message == "SV recipe range dragging is unavailable while timing is locked");
+}
+
+void check_retained_range(const document_history_t& history,
+    const proposal_t<sv_recipe_range_drag_t>& previous,
+    const proposal_outcome_t<sv_recipe_range_drag_t>& rejected, position_span_t retained) {
+    CHECK_FALSE(rejected.value);
+    REQUIRE_FALSE(rejected.diagnostics.empty());
+    CHECK(previous.payload.preview_range == retained);
+    CHECK(previous.payload.status == sv_recipe_range_drag_status_t::previewing);
+    CHECK(history.undo.empty());
+}
+
 } // namespace
 
 TEST_CASE("SV recipes sample built-in constant, linear, exponential, and bump curves",
@@ -290,19 +314,18 @@ TEST_CASE("SV recipe range drag snaps, previews without mutation, and commits on
     auto history = document_history_t::from(std::move(song));
     const auto revision = history.document.revision;
 
-    auto drag = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                           sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17},
-                                           4, false);
-    REQUIRE(drag.status == sv_recipe_range_drag_status_t::previewing);
-    REQUIRE(revise_sv_recipe_range_drag(history, drag, {measure_id_t{11}, 370}, false));
-    CHECK((drag.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
+    auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
+    REQUIRE(drag.value->payload.status == sv_recipe_range_drag_status_t::previewing);
+    const auto drag_revised = drag.value->payload.revise(drag.value->stamp, history, {measure_id_t{11}, 370}, false);
+    REQUIRE(drag_revised.value);
+    CHECK((drag.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
     CHECK((history.document.charts.front().sv_recipes.front().range.begin ==
            local_position_t{measure_id_t{11}, 0}));
     CHECK(history.document.revision == revision);
 
-    const auto committed = apply_sv_recipe_range_drag(history, drag, false);
+    const auto committed = apply_sv_recipe_range_drag(history, *drag.value, false);
     REQUIRE(committed);
-    CHECK(drag.status == sv_recipe_range_drag_status_t::committed);
+    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::committed);
     CHECK((history.document.charts.front().sv_recipes.front().range.begin ==
            local_position_t{measure_id_t{11}, 480}));
     CHECK(history.undo.size() == 1);
@@ -315,29 +338,27 @@ TEST_CASE("SV recipe endpoint crossing normalizes while whole-span drag preserve
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
     auto history = document_history_t::from(std::move(song));
 
-    auto endpoint = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                               sv_recipe_range_handle_t::begin,
-                                               {measure_id_t{11}, 0}, 4, false);
-    REQUIRE(revise_sv_recipe_range_drag(history, endpoint, {measure_id_t{12}, 481}, false));
-    CHECK((endpoint.preview_range.begin == local_position_t{measure_id_t{12}, 0}));
-    CHECK((endpoint.preview_range.end == local_position_t{measure_id_t{12}, 480}));
-    cancel_sv_recipe_range_drag(endpoint);
-    CHECK(endpoint.status == sv_recipe_range_drag_status_t::cancelled);
+    auto endpoint = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
+    const auto endpoint_revised = endpoint.value->payload.revise(endpoint.value->stamp, history, {measure_id_t{12}, 481}, false);
+    REQUIRE(endpoint_revised.value);
+    CHECK((endpoint.value->payload.preview_range.begin == local_position_t{measure_id_t{12}, 0}));
+    CHECK((endpoint.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
+    cancel_sv_recipe_range_drag(*endpoint.value);
+    CHECK(endpoint.value->payload.status == sv_recipe_range_drag_status_t::cancelled);
 
     auto chart_end =
-        begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                   sv_recipe_range_handle_t::end, {measure_id_t{12}, 0}, 4, false);
-    REQUIRE(revise_sv_recipe_range_drag(history, chart_end, {measure_id_t{12}, 959}, false));
-    CHECK((chart_end.preview_range.end == local_position_t{measure_id_t{12}, 960}));
-    cancel_sv_recipe_range_drag(chart_end);
+        make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
+    const auto chart_end_revised = chart_end.value->payload.revise(chart_end.value->stamp, history, {measure_id_t{12}, 959}, false);
+    REQUIRE(chart_end_revised.value);
+    CHECK((chart_end.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 960}));
+    cancel_sv_recipe_range_drag(*chart_end.value);
 
-    auto whole = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                            sv_recipe_range_handle_t::whole_span,
-                                            {measure_id_t{11}, 0}, 4, false);
-    REQUIRE(revise_sv_recipe_range_drag(history, whole, {measure_id_t{11}, 370}, false));
-    CHECK((whole.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
-    CHECK((whole.preview_range.end == local_position_t{measure_id_t{12}, 480}));
-    CHECK(history.document.charts.front().sv_recipes.front().range == whole.original_range);
+    auto whole = make_range_proposal(history, sv_recipe_range_handle_t::whole_span, {measure_id_t{11}, 0});
+    const auto whole_revised = whole.value->payload.revise(whole.value->stamp, history, {measure_id_t{11}, 370}, false);
+    REQUIRE(whole_revised.value);
+    CHECK((whole.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
+    CHECK((whole.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
+    CHECK(history.document.charts.front().sv_recipes.front().range == whole.value->payload.original_range);
 }
 
 TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions atomically",
@@ -348,27 +369,26 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     auto history = document_history_t::from(std::move(song));
     const auto original = history.document.charts.front().sv_recipes.front().range;
 
-    auto zero = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                           sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0},
-                                           4, false);
-    CHECK_FALSE(revise_sv_recipe_range_drag(history, zero, {measure_id_t{12}, 0}, false));
-    CHECK(zero.preview_range == original);
-    CHECK(zero.status == sv_recipe_range_drag_status_t::previewing);
+    auto zero = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
+    const auto zero_revised = zero.value->payload.revise(zero.value->stamp, history, {measure_id_t{12}, 0}, false);
+    CHECK_FALSE(zero_revised.value);
+    CHECK(zero.value->payload.preview_range == original);
+    CHECK(zero.value->payload.status == sv_recipe_range_drag_status_t::previewing);
 
     auto locked =
-        begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
+        sv_recipe_range_drag_t::propose(history, chart_id_t{10}, recipe_id_t{20},
                                    sv_recipe_range_handle_t::end, {measure_id_t{12}, 0}, 4, true);
-    CHECK(locked.status == sv_recipe_range_drag_status_t::rejected);
+    check_locked_range(locked);
 
     auto stale =
-        begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-                                   sv_recipe_range_handle_t::end, {measure_id_t{12}, 0}, 4, false);
+        make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
     auto proposed = history.document;
     proposed.metadata.title = "revision change";
     REQUIRE(commit_document_command(history, std::move(proposed), "Unrelated edit"));
-    CHECK_FALSE(revise_sv_recipe_range_drag(history, stale, {measure_id_t{12}, 480}, false));
-    test::check_stale_action_message(stale.diagnostics, "SV recipe range drag");
-    CHECK(stale.status == sv_recipe_range_drag_status_t::rejected);
+    const auto stale_revised = stale.value->payload.revise(stale.value->stamp, history, {measure_id_t{12}, 480}, false);
+    CHECK_FALSE(stale_revised.value);
+    test::check_stale_action_message(stale_revised.diagnostics, "SV recipe range drag");
+    CHECK(stale.value->payload.status == sv_recipe_range_drag_status_t::rejected);
     CHECK(history.document.charts.front().sv_recipes.front().range == original);
 }
 
@@ -696,13 +716,13 @@ TEST_CASE("SV range stamps keep equal-revision project replacement draggable",
     song.charts.front().sv_recipes.push_back(
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
     auto history = document_history_t::from(std::move(song));
-    auto drag = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-        sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17}, 4, false);
-    CHECK(drag.stamp == chart_stamp_t::from(history.document, chart_id_t{10}));
+    auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
+    CHECK(drag.value->stamp == chart_stamp_t::from(history.document, chart_id_t{10}));
     history.document.id = song_id_t{99};
-    REQUIRE(revise_sv_recipe_range_drag(history, drag, {measure_id_t{11}, 370}, false));
-    CHECK(apply_sv_recipe_range_drag(history, drag, false).applied);
-    CHECK(drag.status == sv_recipe_range_drag_status_t::committed);
+    const auto drag_revised = drag.value->payload.revise(drag.value->stamp, history, {measure_id_t{11}, 370}, false);
+    REQUIRE(drag_revised.value);
+    CHECK(apply_sv_recipe_range_drag(history, *drag.value, false).applied);
+    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::committed);
     CHECK(history.undo.size() == 1);
 }
 
@@ -726,13 +746,32 @@ TEST_CASE("SV range Apply keeps captured-stale binding diagnostics",
     song.charts.front().sv_recipes.push_back(
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
     auto history = document_history_t::from(std::move(song));
-    auto drag = begin_sv_recipe_range_drag(history, chart_id_t{10}, recipe_id_t{20},
-        sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17}, 4, false);
+    auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
     ++history.document.revision;
-    const auto result = apply_sv_recipe_range_drag(history, drag, false);
+    const auto result = apply_sv_recipe_range_drag(history, *drag.value, false);
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_binding);
     test::check_stale_action_message(result.diagnostics, "SV recipe range drag");
-    CHECK(drag.status == sv_recipe_range_drag_status_t::rejected);
+    CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::rejected);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("SV range failed revisions retain the last valid applicable range",
+          "[unit][sv-recipe][interaction][proposal-stamp]") {
+    auto song = make_recipe_song();
+    song.charts.front().sv_recipes.push_back(
+        make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
+    auto history = document_history_t::from(std::move(song));
+    auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
+    const auto valid = drag.value->payload.revise(drag.value->stamp, history,
+        {measure_id_t{11}, 370}, false);
+    REQUIRE(valid.value);
+    const auto retained = drag.value->payload.preview_range;
+    const auto rejected = drag.value->payload.revise(drag.value->stamp, history,
+        {measure_id_t{12}, 0}, false);
+    check_retained_range(history, *drag.value, rejected, retained);
+    REQUIRE(apply_sv_recipe_range_drag(history, *drag.value, false));
+    CHECK(history.document.charts.front().sv_recipes.front().range == retained);
+    REQUIRE(history.undo.size() == 1);
+    CHECK(history.undo.front().label == "Move SV recipe range");
 }

@@ -26,6 +26,20 @@ struct metadata_payload_t {
     }
 };
 
+// State-machine revisions may reject the original state while returning no proposal.
+struct mutable_payload_t {
+    bool is_rejected{};
+    static auto propose() -> proposal_outcome_t<mutable_payload_t> {
+        return {.value = proposal_t<mutable_payload_t>{}};
+    }
+    auto revise(bool reject) -> proposal_outcome_t<mutable_payload_t> {
+        is_rejected = reject;
+        if (reject) return {};
+        return {.value = proposal_t<mutable_payload_t>{.payload = *this}};
+    }
+};
+static_assert(staged_proposal<mutable_payload_t, std::tuple<>, std::tuple<bool>>);
+
 struct wrong_outcome_payload_t {
     static auto propose() -> bool;
     auto revise() const -> bool;
@@ -180,4 +194,15 @@ TEST_CASE("Shared proposals retain typed diagnostics and private payload invaria
     CHECK(failed.diagnostics.front().code == private_payload_issue_t::negative_number);
     const auto accepted = private_payload_t::propose(history.document, 4);
     CHECK(accepted.value.has_value());
+}
+
+TEST_CASE("Shared proposal revisions support mutable state machines", "[core][proposal]") {
+    auto initial = mutable_payload_t::propose();
+    REQUIRE(initial.value);
+    const auto rejected = initial.value->payload.revise(true);
+    CHECK_FALSE(rejected.value);
+    CHECK(initial.value->payload.is_rejected);
+    const auto revised = initial.value->payload.revise(false);
+    REQUIRE(revised.value);
+    CHECK_FALSE(revised.value->payload.is_rejected);
 }

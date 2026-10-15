@@ -2417,8 +2417,8 @@ struct application_t::implementation_t {
         auto saved_document = session.history.document;
         wormedit::sys::rebase_project_paths(saved_document, session.project_identity.asset_base,
                                             destination_base);
-        const auto result = publish_native_project_atomic(destination, saved_document);
-        if (!result.published) {
+        const auto result = create_native_project_file(destination, saved_document);
+        if (!result.value) {
             post_project_feedback(
                 result.diagnostics.empty()
                     ? notification_severity_t::error

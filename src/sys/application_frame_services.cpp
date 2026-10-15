@@ -148,9 +148,9 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
     if (const auto result = autosave_loop.tick(
             history.document, is_document_dirty(history),
             native_project_autosave_loop_t::clock_t::now(), target)) {
-        if (result->status == native_project_autosave_status_t::published)
+        if (result->value.status == native_project_autosave_status_t::published)
             notifications.post(notification_severity_t::success, notification_source_t::recovery,
-                "Autosaved revision " + std::to_string(result->revision) + ".");
+                "Autosaved revision " + std::to_string(result->value.revision) + ".");
     }
 }
 

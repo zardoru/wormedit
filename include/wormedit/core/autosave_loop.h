@@ -28,7 +28,7 @@ struct native_project_autosave_target_t {
 };
 
 [[nodiscard]] auto
-native_project_recovery_session_sequence(const native_project_recovery_scan_result_t& scan,
+native_project_recovery_session_sequence(const native_project_recovery_scan_outcome_t& scan,
                                          song_id_t project_id) noexcept -> std::uint64_t;
 
 // Calls are cheap while the cadence is not due. When due, the document is
@@ -66,7 +66,7 @@ class native_project_autosave_loop_t {
     [[nodiscard]] auto tick(const song_document_t& song, bool dirty, clock_t::time_point now,
                             const native_project_autosave_target_t& target,
                             native_project_storage_options_t options = {})
-        -> std::optional<native_project_autosave_result_t>;
+        -> std::optional<native_project_autosave_outcome_t>;
 
     [[nodiscard]] auto is_busy() const noexcept -> bool;
     [[nodiscard]] auto session_sequence() const noexcept -> std::uint64_t;
@@ -74,7 +74,7 @@ class native_project_autosave_loop_t {
   private:
     struct completion_t {
         native_project_autosave_coordinator_t coordinator;
-        native_project_autosave_result_t result;
+        native_project_autosave_outcome_t result;
     };
 
     struct worker_t {
@@ -83,7 +83,7 @@ class native_project_autosave_loop_t {
     };
 
     void collect_completed(clock_t::time_point now,
-                           std::optional<native_project_autosave_result_t>& result);
+                           std::optional<native_project_autosave_outcome_t>& result);
 
     task_scheduler_t& scheduler_;
     notification_sink_t notifications_{notification_sink_t::muted()};

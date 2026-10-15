@@ -88,16 +88,16 @@ auto recovery_action_request(
 }
 
 auto load_recovered_document(
-    const wormedit::native_project_recovery_action_result_t& result,
+    const wormedit::native_project_recovery_action_outcome_t& result,
     const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered,
     const wormedit::notification_sink_t& notifications) -> std::string {
     using namespace wormedit;
-    if (!result.document)
+    if (!result.value.document)
         return post_recovery_feedback(notifications, notification_severity_t::error,
             "Recovery action completed without a replacement document.");
-    auto replacement_history = document_history_t::from(*result.document, 128, false);
+    auto replacement_history = document_history_t::from(*result.value.document, 128, false);
     auto replacement_binding = workspace_controller_t::from(replacement_history);
     if (!replacement_binding) {
         return post_recovery_feedback(notifications, notification_severity_t::error,
@@ -111,7 +111,7 @@ auto load_recovered_document(
         const auto& row = recovery_view.rows[action.recovery_row_index];
         if (row.last_explicit_save_revision) {
             recovered_save_baseline = native_project_document_version_t{
-                .project_id = result.document->id,
+                .project_id = result.value.document->id,
                 .revision = *row.last_explicit_save_revision};
         }
         if (row.recovery_session_sequence)
@@ -162,7 +162,7 @@ auto dispatch_recovery_ui_action(
             diagnostic.empty() ? "Recovery action did not produce a result." : diagnostic);
     }
     const auto& result = *dispatched.value.action_result;
-    if (result.has_errors() || !result.applied) {
+    if (!result.ok() || !result.value.applied) {
         return post_recovery_feedback(notifications,
             recovery_diagnostic_severity(dispatched, notification_severity_t::error),
             diagnostic.empty() ? "Recovery action did not complete." : diagnostic);
@@ -170,10 +170,10 @@ auto dispatch_recovery_ui_action(
 
     switch (action.kind) {
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT:
-        if (result.document) {
+        if (result.value.document) {
             return post_recovery_feedback(notifications, notification_severity_t::info,
-                "Inspected recovery candidate read-only: " + result.document->metadata.title +
-                " (revision " + std::to_string(result.document->revision) + ").");
+                "Inspected recovery candidate read-only: " + result.value.document->metadata.title +
+                " (revision " + std::to_string(result.value.document->revision) + ").");
         }
         return post_recovery_feedback(notifications, notification_severity_t::info, "Recovery candidate inspected read-only.");
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER:
@@ -185,8 +185,8 @@ auto dispatch_recovery_ui_action(
         return post_recovery_feedback(notifications, notification_severity_t::success, "Recovery artifact moved to its recoverable discarded location.");
     case WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE:
         return post_recovery_feedback(notifications, notification_severity_t::success,
-            result.quarantined_path
-                ? "Recovery artifact quarantined at " + result.quarantined_path->generic_string()
+            result.value.quarantined_path
+                ? "Recovery artifact quarantined at " + result.value.quarantined_path->generic_string()
                 : "Recovery artifact quarantined.");
     default:
         return post_recovery_feedback(notifications, notification_severity_t::warning, "Invalid recovery action.");

@@ -87,7 +87,7 @@ struct native_project_recovery_controller_view_t {
 struct native_project_recovery_controller_effect_t {
     bool accepted{};
     bool diagnostics_truncated{};
-    std::optional<native_project_recovery_action_result_t> action_result;
+    std::optional<native_project_recovery_action_outcome_t> action_result;
 };
 using native_project_recovery_controller_dispatch_outcome_t =
     diagnosed_t<native_project_recovery_controller_effect_t,
@@ -102,7 +102,7 @@ class native_project_recovery_controller_t {
 
     // Replaces the active scan and invalidates every action token issued for
     // the previous scan. The scanner result is moved into controller ownership.
-    [[nodiscard]] auto replace_scan(native_project_recovery_scan_result_t scan)
+    [[nodiscard]] auto replace_scan(native_project_recovery_scan_outcome_t scan)
         -> const native_project_recovery_controller_view_t&;
 
     [[nodiscard]] auto view() const noexcept -> const native_project_recovery_controller_view_t&;
@@ -116,7 +116,7 @@ class native_project_recovery_controller_t {
                                native_project_storage_diagnostic_code_t code, std::string message);
     native_project_recovery_controller_options_t options_;
     native_project_recovery_controller_view_t view_;
-    std::optional<native_project_recovery_scan_result_t> scan_;
+    std::optional<native_project_recovery_scan_outcome_t> scan_;
     std::uint64_t generation_{};
     bool generation_exhausted_{};
 };

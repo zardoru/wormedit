@@ -42,7 +42,7 @@ auto valid_song(std::uint64_t revision) -> wormedit::song_document_t {
 }
 
 auto scan_project(const std::filesystem::path& primary)
-    -> wormedit::native_project_recovery_scan_result_t {
+    -> wormedit::native_project_recovery_scan_outcome_t {
     return wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
 }
@@ -56,9 +56,9 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
     const auto primary = directory.path / "chart.wormedit";
     const auto backup = native_project_adjacent_backup_path(primary);
     const auto save_as = directory.path / "recovered-copy.wormedit";
-    REQUIRE(publish_native_project_atomic(primary, valid_song(5)).published);
-    REQUIRE(publish_native_project_recovery_atomic(backup, valid_song(6), {.session_sequence = 2})
-                .published);
+    REQUIRE(create_native_project_file(primary, valid_song(5)).value);
+    REQUIRE(create_native_project_recovery_file(backup, valid_song(6), {.session_sequence = 2})
+                .value);
     const auto primary_before = read_text(primary);
     const auto backup_before = read_text(backup);
     auto scan = scan_project(primary);
@@ -83,9 +83,9 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
         .kind = wormedit::native_project_recovery_target_kind_t::inspect});
     REQUIRE(inspected.value.accepted);
     REQUIRE(inspected.value.action_result.has_value());
-    REQUIRE(inspected.value.action_result->applied);
-    REQUIRE(inspected.value.action_result->document.has_value());
-    CHECK(inspected.value.action_result->document->revision == 6);
+    REQUIRE(inspected.value.action_result->value.applied);
+    REQUIRE(inspected.value.action_result->value.document.has_value());
+    CHECK(inspected.value.action_result->value.document->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
     auto mismatched_target = backup_row.target;
@@ -121,7 +121,7 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
                                  .project_id = song_id_t{417}, .revision = 4}}});
     REQUIRE(wrong_session.value.accepted);
     REQUIRE(wrong_session.value.action_result.has_value());
-    CHECK_FALSE(wrong_session.value.action_result->applied);
+    CHECK_FALSE(wrong_session.value.action_result->value.applied);
     CHECK(read_text(primary) == primary_before);
     CHECK(read_text(backup) == backup_before);
 
@@ -132,15 +132,15 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
                                  .project_id = song_id_t{417}, .revision = 5}}});
     REQUIRE(recovered.value.accepted);
     REQUIRE(recovered.value.action_result.has_value());
-    REQUIRE(recovered.value.action_result->applied);
-    CHECK(recovered.value.action_result->document->revision == 6);
+    REQUIRE(recovered.value.action_result->value.applied);
+    CHECK(recovered.value.action_result->value.document->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
     const auto saved_as = controller.dispatch_action(save_as_native_project_recovery_action_t{
         .target = backup_row.target, .destination = save_as});
     REQUIRE(saved_as.value.accepted);
     REQUIRE(saved_as.value.action_result.has_value());
-    REQUIRE(saved_as.value.action_result->applied);
+    REQUIRE(saved_as.value.action_result->value.applied);
     const auto saved_document = parse_native_project(read_text(save_as));
     REQUIRE(saved_document.value.has_value());
     CHECK(saved_document.value->revision == 6);
@@ -151,7 +151,7 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
                                                                      .destination = primary});
     REQUIRE(attempted_primary_overwrite.value.accepted);
     REQUIRE(attempted_primary_overwrite.value.action_result.has_value());
-    CHECK_FALSE(attempted_primary_overwrite.value.action_result->applied);
+    CHECK_FALSE(attempted_primary_overwrite.value.action_result->value.applied);
     CHECK(read_text(primary) == primary_before);
 
     const auto old_generation = view.scan_generation;
@@ -171,10 +171,10 @@ TEST_CASE("recovery controller exposes backend-neutral bounded rows and typed ac
         .kind = wormedit::native_project_recovery_target_kind_t::discard});
     REQUIRE(discarded.value.accepted);
     REQUIRE(discarded.value.action_result.has_value());
-    REQUIRE(discarded.value.action_result->applied);
-    REQUIRE(discarded.value.action_result->quarantined_path.has_value());
+    REQUIRE(discarded.value.action_result->value.applied);
+    REQUIRE(discarded.value.action_result->value.quarantined_path.has_value());
     CHECK_FALSE(std::filesystem::exists(backup));
-    CHECK(read_text(*discarded.value.action_result->quarantined_path) == backup_before);
+    CHECK(read_text(*discarded.value.action_result->value.quarantined_path) == backup_before);
     CHECK(read_text(primary) == primary_before);
     CHECK_FALSE(controller.view().banner_visible);
     CHECK(controller.view().rows.empty());
@@ -191,7 +191,7 @@ TEST_CASE("recovery controller exposes corrupt-candidate quarantine and scan gen
     temporary_directory_t directory;
     const auto primary = directory.path / "chart.wormedit";
     const auto backup = native_project_adjacent_backup_path(primary);
-    REQUIRE(publish_native_project_atomic(primary, valid_song(1)).published);
+    REQUIRE(create_native_project_file(primary, valid_song(1)).value);
     {
         std::ofstream stream(backup, std::ios::binary);
         stream << "corrupt recovery data";
@@ -225,10 +225,10 @@ TEST_CASE("recovery controller exposes corrupt-candidate quarantine and scan gen
         .kind = wormedit::native_project_recovery_target_kind_t::quarantine});
     REQUIRE(quarantined.value.accepted);
     REQUIRE(quarantined.value.action_result.has_value());
-    REQUIRE(quarantined.value.action_result->applied);
-    REQUIRE(quarantined.value.action_result->quarantined_path.has_value());
+    REQUIRE(quarantined.value.action_result->value.applied);
+    REQUIRE(quarantined.value.action_result->value.quarantined_path.has_value());
     CHECK_FALSE(std::filesystem::exists(backup));
-    CHECK(read_text(*quarantined.value.action_result->quarantined_path) == backup_before);
+    CHECK(read_text(*quarantined.value.action_result->value.quarantined_path) == backup_before);
 }
 
 TEST_CASE("recovery controller bounds rows, labels, diagnostics, and candidate acceptance",
@@ -237,8 +237,8 @@ TEST_CASE("recovery controller bounds rows, labels, diagnostics, and candidate a
     temporary_directory_t directory;
     const auto primary = directory.path / "a-long-project-filename.wormedit";
     const auto backup = native_project_adjacent_backup_path(primary);
-    REQUIRE(publish_native_project_atomic(primary, valid_song(1)).published);
-    REQUIRE(publish_native_project_recovery_atomic(backup, valid_song(2), {}).published);
+    REQUIRE(create_native_project_file(primary, valid_song(1)).value);
+    REQUIRE(create_native_project_recovery_file(backup, valid_song(2), {}).value);
     auto scan = scan_project(primary);
 
     native_project_recovery_controller_options_t options;

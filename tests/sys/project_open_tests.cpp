@@ -615,9 +615,9 @@ TEST_CASE("an imported chart saves and reopens with its assets rooted at the sou
     auto saved_document = *imported.document;
     wormedit::sys::rebase_project_paths(saved_document, imported.asset_base,
                                          file.path.parent_path());
-    const auto saved = wormedit::publish_native_project_atomic(file.path, saved_document);
+    const auto saved = wormedit::create_native_project_file(file.path, saved_document);
     INFO((saved.diagnostics.empty() ? "" : saved.diagnostics.front().message));
-    REQUIRE(saved.published);
+    REQUIRE(saved.value);
 
     const auto reopened = wormedit::sys::open_project_file(file.path);
     INFO(reopened.error);
@@ -1064,7 +1064,7 @@ TEST_CASE("Native startup refreshes availability before creating clean saved his
     imported.document->resources[0].missing = false;
     imported.document->resources[1].missing = true;
     const auto path = directory.path / "startup.wormedit";
-    require_open_audio(wormedit::publish_native_project_atomic(path, *imported.document).published);
+    require_open_audio(wormedit::create_native_project_file(path, *imported.document).value);
     auto startup = wormedit::prepare_native_project_startup({}, {.primary_path = path});
     require_open_audio(startup.loaded_primary);
     check_open_audio(!startup.document.resources[0].missing);

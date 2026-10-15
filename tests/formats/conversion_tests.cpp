@@ -1,6 +1,7 @@
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/formats/osu_mania.h>
 #include <wormedit/formats/stepmania.h>
 
@@ -691,4 +692,40 @@ TEST_CASE("BMSON slice conversion writes StepMania keysounds with one file per d
     check_conversion(actual.first == expected.first);
     check_conversion(actual.first + actual.second > spans.size());
     check_conversion(wormedit::write_bmson(*song).json == original_bmson.json);
+}
+
+TEST_CASE("conversion canonical warnings retain output and atomic metadata", "[format][conversion][results]") {
+    using namespace wormedit;
+    conversion_outcome_t outcome{};
+    outcome.value.outputs.push_back({.suggested_filename = "chart.bms", .bytes = "bytes", .reimport_validated = true});
+    outcome.value.asset_copies.push_back({asset_id_t{7}, "assets/a.wav"});
+    outcome.value.silent_files.emplace_back("silent.wav");
+    outcome.diagnostics.push_back({.severity = diagnostic_severity_t::warning, .loss = true});
+    check_conversion(outcome.ok());
+    const auto legacy = conversion_result_t::from(std::move(outcome));
+    check_conversion(static_cast<bool>(legacy));
+    check_conversion(legacy.outputs.front().bytes == "bytes" && legacy.outputs.front().reimport_validated);
+    check_conversion(legacy.asset_copies.front() == conversion_asset_copy_t{asset_id_t{7}, "assets/a.wav"});
+    check_conversion(legacy.silent_files.front() == "silent.wav" && legacy.diagnostics.front().loss);
+}
+
+TEST_CASE("conversion empty successful report keeps the legacy output requirement", "[format][conversion][results]") {
+    using namespace wormedit;
+    conversion_outcome_t outcome{};
+    check_conversion(outcome.ok());
+    const auto legacy = conversion_result_t::from(std::move(outcome));
+    check_conversion(!static_cast<bool>(legacy));
+    check_conversion(!legacy.has_errors());
+}
+
+TEST_CASE("conversion primary prepares a reimported output atomically", "[format][conversion][results]") {
+    using namespace wormedit;
+    const auto song = stepmania_song();
+    const auto before = native_project_write_result_t::from(song).value;
+    require_conversion(before.has_value());
+    const auto outcome = conversion_result_t::from(song, {.target = format_family_t::native_project});
+    require_conversion(outcome.ok());
+    require_conversion(outcome.value.outputs.size() == 1);
+    check_conversion(outcome.value.outputs.front().reimport_validated);
+    check_conversion(native_project_write_result_t::from(song).value == before);
 }

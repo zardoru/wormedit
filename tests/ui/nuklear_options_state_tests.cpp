@@ -548,7 +548,7 @@ TEST_CASE("Recent files cap history and retain missing entries for normal open d
 TEST_CASE("Corrupt recent files do not prevent preference startup", "[options][recent-files]") {
     temporary_preferences_t file;
     program_preferences_runtime_t runtime{.path = file.directory / "preferences.json"};
-    require_recent(static_cast<bool>(save_file_atomic(file.directory / "recent-files.json", "{broken", maximum_preferences_bytes)));
+    require_recent(static_cast<bool>(create_file_atomic(file.directory / "recent-files.json", "{broken", maximum_preferences_bytes)));
     load_recent_files(runtime);
     expect_options(runtime.recent_files.empty());
     expect_options(!(runtime.warnings.empty()));

@@ -3,6 +3,7 @@
 
 #include <wormedit/audio/audition_pump.h>
 #include <wormedit/audio/playhead_snapshot.h>
+#include <wormedit/core/result.h>
 
 #include <mutex>
 #include <optional>
@@ -17,7 +18,24 @@ enum class audition_session_start_status_t {
     prime_failed,
 };
 
+struct started_audition_session_t {
+    session_token_t token;
+    audition_start_result_t transport;
+    std::optional<audition_pump_result_t> prime;
+    auto operator==(const started_audition_session_t&) const -> bool = default;
+};
+struct audition_session_start_error_t {
+    audition_session_start_status_t code{audition_session_start_status_t::transport_failed};
+    audition_start_result_t transport;
+    auto operator==(const audition_session_start_error_t&) const -> bool = default;
+};
+using audition_session_start_outcome_t =
+    result_t<started_audition_session_t, audition_session_start_error_t>;
+
 struct audition_session_start_result_t {
+    [[nodiscard]] static auto from(audition_session_start_outcome_t&& outcome)
+        -> audition_session_start_result_t;
+
     audition_session_start_status_t status{audition_session_start_status_t::transport_failed};
     std::optional<session_token_t> token;
     std::optional<audition_start_result_t> transport;
@@ -40,6 +58,7 @@ enum class audition_session_render_status_t {
 };
 
 using audition_session_render_result_t = session_render_result_t<audition_session_render_status_t>;
+using audition_session_render_outcome_t = session_render_outcome_t<audition_session_render_status_t>;
 
 // Owns one active click-preview timeline above the transport bridge. start()
 // checks resident PCM before publishing; streamed priming remains pending until
@@ -53,9 +72,13 @@ class audition_session_t {
 
     [[nodiscard]] auto start(std::span<const audition_clip_t> clips)
         -> audition_session_start_result_t;
+    [[nodiscard]] auto start_session(std::span<const audition_clip_t> clips)
+        -> audition_session_start_outcome_t;
     [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_result_t;
     [[nodiscard]] auto render(std::span<float> interleaved_stereo)
         -> audition_session_render_result_t;
+    [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo)
+        -> audition_session_render_outcome_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     // Lock-free reads of a snapshot published by start/render/stop.

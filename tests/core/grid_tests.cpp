@@ -49,7 +49,7 @@ TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, an
         .density = {0.0, 0.0, 0.0},
     };
 
-    const auto result = make_editor_grid_lines(chart, request);
+    const auto result = editor_grid_t::from(chart, request);
     REQUIRE(result.ok());
 
     const auto* first_group = line_at(result, 480);
@@ -72,7 +72,7 @@ TEST_CASE("editor grid lines use exact meter, compound groups, variable bars, an
     CHECK(compound_group->position.whole_rows == 360);
 
     request.authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}};
-    const auto regrouped = make_editor_grid_lines(chart, request);
+    const auto regrouped = editor_grid_t::from(chart, request);
     REQUIRE(regrouped.ok());
     const auto* authored_group = line_at(regrouped, 1200);
     REQUIRE(authored_group != nullptr);
@@ -85,7 +85,7 @@ TEST_CASE("editor grid preserves fractional beat coordinates below note-row reso
     auto chart = make_chart(3, {
                                    {.id = measure_id_t{1}, .definition = {{1, 3}, meter_t{2, 6}}},
                                });
-    const auto result = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+    const auto result = editor_grid_t::from(chart, {.visible_begin_row = 0,
                                                        .visible_end_row = 1,
                                                        .pixels_per_standard_measure = 192.0,
                                                        .density = {0.0, 0.0, 0.0}});
@@ -103,11 +103,11 @@ TEST_CASE("editor grid preserves fractional beat coordinates below note-row reso
 TEST_CASE("grid zoom suppresses dense subdivisions without moving retained lines",
           "[unit][core][grid]") {
     const auto chart = make_chart(960, {{.id = measure_id_t{1}}});
-    const auto high_zoom = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+    const auto high_zoom = editor_grid_t::from(chart, {.visible_begin_row = 0,
                                                           .visible_end_row = 960,
                                                           .active_snap_denominator = 16,
                                                           .pixels_per_standard_measure = 192.0});
-    const auto low_zoom = make_editor_grid_lines(chart, {.visible_begin_row = 0,
+    const auto low_zoom = editor_grid_t::from(chart, {.visible_begin_row = 0,
                                                          .visible_end_row = 960,
                                                          .active_snap_denominator = 16,
                                                          .pixels_per_standard_measure = 24.0});
@@ -133,7 +133,7 @@ TEST_CASE("grid zoom suppresses dense subdivisions without moving retained lines
 TEST_CASE("visible grid intervals are half-open and reject malformed groupings",
           "[unit][core][grid]") {
     const auto chart = make_chart(960, {{.id = measure_id_t{1}}});
-    const auto clipped = make_editor_grid_lines(chart, {.visible_begin_row = 100,
+    const auto clipped = editor_grid_t::from(chart, {.visible_begin_row = 100,
                                                         .visible_end_row = 480,
                                                         .pixels_per_standard_measure = 192.0,
                                                         .density = {0.0, 0.0, 0.0}});
@@ -145,7 +145,7 @@ TEST_CASE("visible grid intervals are half-open and reject malformed groupings",
         make_chart(960, {
                             {.id = measure_id_t{2}, .definition = {{3, 4}, meter_t{6, 8}}},
                         });
-    const auto invalid_grouping = make_editor_grid_lines(
+    const auto invalid_grouping = editor_grid_t::from(
         metered, {.visible_begin_row = 0,
                   .visible_end_row = 720,
                   .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2}}}});
@@ -161,7 +161,7 @@ TEST_CASE("dense grid thinning retains stable representatives instead of hiding 
         make_chart(960, {
                             {.id = measure_id_t{1}, .definition = {{7, 8}, meter_t{7, 8}}},
                         });
-    const auto result = make_editor_grid_lines(
+    const auto result = editor_grid_t::from(
         chart, {.visible_begin_row = 0,
                 .visible_end_row = 840,
                 .pixels_per_standard_measure = 64.0,
@@ -184,7 +184,7 @@ TEST_CASE("BMS grid projects the final virtual measure without materializing it"
                                                .active_snap_denominator = 4,
                                                .include_virtual_bms_tail = true,
                                                .density = {0.0, 0.0, 0.0}};
-    const auto projected = make_editor_grid_lines(chart, request);
+    const auto projected = editor_grid_t::from(chart, request);
     REQUIRE(projected.ok());
     const auto* final_measure = line_at(projected, 959'040);
     REQUIRE(final_measure);
@@ -200,14 +200,14 @@ TEST_CASE("BMS grid projects the final virtual measure without materializing it"
     CHECK(chart.measures.size() == 1);
     auto authored_only = request;
     authored_only.include_virtual_bms_tail = false;
-    CHECK_FALSE(make_editor_grid_lines(chart, authored_only).ok());
+    CHECK_FALSE(editor_grid_t::from(chart, authored_only).ok());
 }
 
 TEST_CASE("virtual BMS beats retain exact fractions when note rows are coarse",
           "[unit][core][grid][virtual-canvas]") {
     auto chart = make_chart(3, {{.id = measure_id_t{1}}});
     chart.source_family = format_family_t::bms;
-    const auto grid = make_editor_grid_lines(chart, {.visible_begin_row = 3,
+    const auto grid = editor_grid_t::from(chart, {.visible_begin_row = 3,
                                                      .visible_end_row = 6,
                                                      .include_virtual_bms_tail = true,
                                                      .density = {0.0, 0.0, 0.0}});
@@ -230,7 +230,7 @@ TEST_CASE("snap subdivisions restart at every short authored measure head",
         {.id = measure_id_t{2}, .definition = {{1, 8}, std::nullopt}},
         {.id = measure_id_t{3}},
     });
-    const auto result = make_editor_grid_lines(chart, {
+    const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 180, .visible_end_row = 1140,
         .active_snap_denominator = 8, .density = {0.0, 0.0, 0.0}});
     expect_grid(result.ok());
@@ -255,7 +255,7 @@ TEST_CASE("offset measure grids retain authored grouping and clipped snap phase"
         {.id = measure_id_t{1}, .definition = {{1, 16}, std::nullopt}},
         {.id = measure_id_t{2}, .definition = {{3, 4}, meter_t{6, 8}}},
     });
-    const auto result = make_editor_grid_lines(chart, {
+    const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 121, .visible_end_row = 421,
         .active_snap_denominator = 16, .density = {0.0, 0.0, 0.0},
         .authored_groupings = {{.measure = measure_id_t{2}, .beat_counts = {2, 2, 2}}}});
@@ -275,7 +275,7 @@ TEST_CASE("virtual BMS snap phase follows the final authored measure and stays b
     auto chart = make_chart(960, {{.id = measure_id_t{1},
         .definition = {{1, 16}, std::nullopt}}});
     chart.source_family = format_family_t::bms;
-    const auto result = make_editor_grid_lines(chart, {
+    const auto result = editor_grid_t::from(chart, {
         .visible_begin_row = 958'141, .visible_end_row = 958'501,
         .active_snap_denominator = 8, .include_virtual_bms_tail = true,
         .density = {0.0, 0.0, 0.0}, .maximum_line_count = 32});
@@ -285,7 +285,7 @@ TEST_CASE("virtual BMS snap phase follows the final authored measure and stays b
     expect_grid(snap->position.measure == measure_id_t{});
     expect_grid(snap->position.whole_rows == 120);
     expect_grid(result.value.lines.size() < 16);
-    expect_grid(!make_editor_grid_lines(chart, {
+    expect_grid(!editor_grid_t::from(chart, {
         .visible_begin_row = 60, .visible_end_row = 1020,
         .active_snap_denominator = 960, .include_virtual_bms_tail = true,
         .density = {0.0, 0.0, 0.0}, .maximum_line_count = 16}).ok());

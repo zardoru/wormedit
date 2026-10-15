@@ -4,18 +4,12 @@
 #include <optional>
 #include <wormedit/core/document.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/result.h>
 #include <string>
 
 namespace wormedit {
 
-struct platform_recovery_directory_result_t {
-    std::filesystem::path path;
-    std::string error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return !path.empty();
-    }
-};
+using platform_recovery_directory_result_t = result_t<std::filesystem::path, std::string>;
 
 // Resolves and creates Wormedit's per-user recovery directory through SDL's
 // platform filesystem policy. This remains an application boundary; the

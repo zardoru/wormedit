@@ -8,7 +8,7 @@ namespace {
 using namespace wormedit;
 using action_t = ui::workspace_menu_action_t;
 struct menu_fixture_t {
-    command_registry_t registry{make_default_editor_command_registry({})};
+    command_registry_t registry{command_registry_t::from({})};
     ui::workspace_menu_t model{{"Edit", "Copy", action_t::copy, "edit.copy", true}};
     menu_fixture_t() {
         [NSApplication sharedApplication];

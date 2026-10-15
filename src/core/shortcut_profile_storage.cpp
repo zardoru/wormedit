@@ -128,14 +128,14 @@ auto open_shortcut_profile(const std::filesystem::path& path) -> shortcut_profil
                       "could not finish reading shortcut profile"}});
     }
 
-    auto parsed = parse_shortcut_profile(bytes);
-    if (!parsed.profile) {
+    auto parsed = shortcut_profile_parse_result_t::from(bytes);
+    if (!parsed.value) {
         return std::unexpected(diagnosed_t<error_t<shortcut_profile_load_status_t>>{
             .value = {shortcut_profile_load_status_t::invalid, {}},
             .diagnostics = std::move(parsed.diagnostics)});
     }
     // The legacy loader does not expose parser diagnostics on a successful load.
-    return std::move(*parsed.profile);
+    return std::move(*parsed.value);
 }
 
 auto create_shortcut_profile_file(const std::filesystem::path& path,
@@ -176,38 +176,6 @@ auto create_shortcut_profile_file(const std::filesystem::path& path,
             shortcut_profile_save_status_t::io_error, std::move(saved.error())});
     }
     return {};
-}
-
-auto shortcut_profile_load_result_t::from(shortcut_profile_load_outcome_t&& outcome)
-    -> shortcut_profile_load_result_t {
-    if (!outcome) {
-        return {.status = outcome.error().value.code,
-                .profile = std::nullopt,
-                .diagnostics = std::move(outcome.error().diagnostics),
-                .error = std::move(outcome.error().value.message)};
-    }
-    return {.status = shortcut_profile_load_status_t::loaded,
-            .profile = std::move(*outcome),
-            .diagnostics = {},
-            .error = {}};
-}
-
-auto shortcut_profile_save_result_t::from(shortcut_profile_save_outcome_t&& outcome)
-    -> shortcut_profile_save_result_t {
-    if (!outcome) {
-        return {.status = outcome.error().code, .error = std::move(outcome.error().message)};
-    }
-    return {.status = shortcut_profile_save_status_t::published, .error = {}};
-}
-
-auto load_shortcut_profile(const std::filesystem::path& path) -> shortcut_profile_load_result_t {
-    return shortcut_profile_load_result_t::from(open_shortcut_profile(path));
-}
-
-auto save_shortcut_profile_atomic(const std::filesystem::path& path,
-                                  const shortcut_profile_t& profile)
-    -> shortcut_profile_save_result_t {
-    return shortcut_profile_save_result_t::from(create_shortcut_profile_file(path, profile));
 }
 
 } // namespace wormedit

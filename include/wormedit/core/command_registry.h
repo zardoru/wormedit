@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/result.h>
 #include <wormedit/core/workspace.h>
 
 #include <compare>
@@ -166,7 +167,11 @@ struct command_invocation_context_t {
     bool auto_repeat{};
 };
 
+using command_invocation_outcome_t = diagnosed_t<bool>;
+
 struct command_invocation_result_t {
+    [[nodiscard]] static auto from(command_invocation_outcome_t&& outcome) -> command_invocation_result_t;
+    [[nodiscard]] auto into_outcome() && -> command_invocation_outcome_t;
     bool accepted{};
     diagnostic_list_t diagnostics;
 
@@ -220,7 +225,16 @@ inline constexpr std::size_t maximum_shortcuts_per_command = 8;
 inline constexpr std::size_t maximum_shortcut_profile_bindings = maximum_registered_commands;
 inline constexpr std::size_t maximum_shortcut_profile_bytes = 1024U * 1024U;
 
+using command_registry_outcome_t = diagnosed_t<bool>;
+
 struct command_registry_result_t {
+    [[nodiscard]] static auto from(command_registry_t& registry, command_registration_t registration)
+        -> command_registry_outcome_t;
+    [[nodiscard]] static auto from(command_registry_outcome_t&& outcome) -> command_registry_result_t;
+    [[nodiscard]] static auto update_state(command_registry_t& registry, const command_id_t& id,
+        bool enabled, std::optional<bool> checked) -> command_registry_outcome_t;
+    [[nodiscard]] static auto remap(command_registry_t& registry, const command_id_t& id,
+        std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t;
     bool applied{};
     diagnostic_list_t diagnostics;
 
@@ -260,7 +274,12 @@ struct shortcut_profile_t {
     auto operator==(const shortcut_profile_t&) const -> bool = default;
 };
 
+using shortcut_profile_outcome_t = diagnosed_t<bool>;
+
 struct shortcut_profile_result_t {
+    [[nodiscard]] static auto from(command_registry_t& registry, const shortcut_profile_t& profile)
+        -> shortcut_profile_outcome_t;
+    [[nodiscard]] static auto from(shortcut_profile_outcome_t&& outcome) -> shortcut_profile_result_t;
     bool applied{};
     diagnostic_list_t diagnostics;
 
@@ -290,7 +309,12 @@ struct shortcut_conflict_t {
     -> std::vector<shortcut_conflict_t>;
 [[nodiscard]] auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::string;
 
+using shortcut_profile_parse_outcome_t = diagnosed_t<std::optional<shortcut_profile_t>>;
+
 struct shortcut_profile_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view serialized) -> shortcut_profile_parse_outcome_t;
+    [[nodiscard]] static auto from(shortcut_profile_parse_outcome_t&& outcome)
+        -> shortcut_profile_parse_result_t;
     std::optional<shortcut_profile_t> profile;
     diagnostic_list_t diagnostics;
 
@@ -313,7 +337,21 @@ enum class command_dispatch_status_t : std::uint8_t {
     invalid_event,
 };
 
+struct shortcut_event_t;
+struct command_dispatch_effect_t {
+    command_dispatch_status_t status{command_dispatch_status_t::no_match};
+    std::optional<command_id_t> command;
+    auto operator==(const command_dispatch_effect_t&) const -> bool = default;
+};
+using command_dispatch_outcome_t = diagnosed_t<command_dispatch_effect_t>;
+
 struct command_dispatch_result_t {
+    [[nodiscard]] static auto from(const command_registry_t& registry,
+        const shortcut_event_t& event, const command_focus_t& focus,
+        shortcut_primary_modifier_t primary_modifier) -> command_dispatch_outcome_t;
+    [[nodiscard]] static auto invoke(const command_registry_t& registry, const command_id_t& id,
+        const command_focus_t& focus = {}) -> command_dispatch_outcome_t;
+    [[nodiscard]] static auto from(command_dispatch_outcome_t&& outcome) -> command_dispatch_result_t;
     command_dispatch_status_t status{command_dispatch_status_t::no_match};
     std::optional<command_id_t> command;
     diagnostic_list_t diagnostics;
@@ -335,9 +373,5 @@ struct shortcut_event_t {
 [[nodiscard]] auto invoke_command(const command_registry_t& registry, const command_id_t& id,
                                   const command_focus_t& focus = {}) -> command_dispatch_result_t;
 
-// Creates discoverable built-ins from the editor plan. The supplied invoker
-// is called by keyboard, menu, and toolbar paths through the same signature.
-[[nodiscard]] auto make_default_editor_command_registry(command_invoker_t invoker)
-    -> command_registry_t;
 
 } // namespace wormedit

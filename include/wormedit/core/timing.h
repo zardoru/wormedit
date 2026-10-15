@@ -11,6 +11,8 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <tuple>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -34,6 +36,26 @@ enum class timing_error_code_t {
 using timing_diagnostic_t =
     object_diagnostic_t<timing_error_code_t, timing_error_code_t::invalid_document>;
 
+template <class Value, class Metadata = std::optional<timing_diagnostic_t>>
+struct timing_query_value_t {
+    [[nodiscard]] static auto from(std::optional<Value>&& value, Metadata&& metadata = {})
+        -> result_t<timing_query_value_t, Metadata> {
+        if (value) return timing_query_value_t{.value = std::move(*value), .metadata = std::move(metadata)};
+        return std::unexpected(std::move(metadata));
+    }
+    Value value;
+    Metadata metadata;
+};
+template <class Value, class Metadata = std::optional<timing_diagnostic_t>>
+using timing_query_outcome_t = result_t<timing_query_value_t<Value, Metadata>, Metadata>;
+
+struct timing_coordinate_metadata_t {
+    bool inside_warp{};
+    std::optional<timing_diagnostic_t> diagnostic;
+};
+using timing_coordinate_outcome_t =
+    timing_query_outcome_t<signed_rational_t, timing_coordinate_metadata_t>;
+
 enum class timing_boundary_side_t {
     // Arrival at the musical row, before a delay at that row.
     before_delays,
@@ -44,6 +66,8 @@ enum class timing_boundary_side_t {
 };
 
 struct timing_row_state_t {
+    [[nodiscard]] static auto departure_less(const timing_row_state_t& boundary, signed_rational_t value)
+        -> bool;
     std::uint64_t absolute_row{};
     signed_rational_t before_delays_seconds;
     signed_rational_t event_seconds;
@@ -72,6 +96,8 @@ struct timing_build_options_t {
 };
 
 struct timing_query_result_t {
+    [[nodiscard]] auto into_outcome() && -> timing_coordinate_outcome_t;
+    [[nodiscard]] static auto from(timing_coordinate_outcome_t&& outcome) -> timing_query_result_t;
     std::optional<signed_rational_t> seconds;
     bool inside_warp{};
     std::optional<timing_diagnostic_t> error;
@@ -96,6 +122,8 @@ struct timing_inverse_options_t {
 };
 
 struct timing_position_query_result_t {
+    [[nodiscard]] auto into_outcome() && -> timing_coordinate_outcome_t;
+    [[nodiscard]] static auto from(timing_coordinate_outcome_t&& outcome) -> timing_position_query_result_t;
     // Exact absolute row on ordinary clocks; bounded clocks return a nanorow
     // coordinate for interior segments. Fractional rows are retained either way.
     std::optional<signed_rational_t> absolute_row;
@@ -111,6 +139,18 @@ struct timing_position_query_result_t {
 enum class chart_end_policy_t { reject, clamp_to_end, clamp_to_last_row, extrapolate_tail };
 
 struct timing_index_t {
+    [[nodiscard]] auto query_seconds(std::uint64_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_seconds(exact_chart_row_t row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_seconds(const measure_index_t& measures, local_position_t position,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    [[nodiscard]] auto query_position(signed_rational_t seconds,
+        timing_inverse_options_t options = {}) const -> timing_coordinate_outcome_t;
+
+    [[nodiscard]] static auto from(const chart_document_t& chart, timing_build_options_t options = {})
+        -> diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint64_t divisions_per_standard_measure{};
     std::uint64_t total_rows{};
     // Detects accidental reuse after timing/measure edits. UI publication still
@@ -145,7 +185,10 @@ struct timing_index_t {
     [[nodiscard]] auto row_at_frame(std::uint64_t frame, std::uint32_t sample_rate,
         chart_end_policy_t policy, timing_inverse_options_t options = {}) const -> std::optional<double>;
 };
+using timing_build_outcome_t = diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
+
 struct timing_build_result_t {
+    [[nodiscard]] static auto from(timing_build_outcome_t&& outcome) -> timing_build_result_t;
     std::optional<timing_index_t> index;
     std::vector<timing_diagnostic_t> diagnostics;
 
@@ -160,7 +203,16 @@ enum class sample_rounding_t {
     nearest_ties_to_even,
 };
 
+struct sample_frame_t {
+    [[nodiscard]] static auto from(signed_rational_t seconds, std::uint32_t sample_rate,
+                                   sample_rounding_t rounding = sample_rounding_t::nearest_ties_to_even)
+        -> timing_query_outcome_t<sample_frame_t>;
+    std::uint64_t frame{};
+};
+using sample_frame_outcome_t = timing_query_outcome_t<sample_frame_t>;
+
 struct sample_frame_result_t {
+    [[nodiscard]] static auto from(sample_frame_outcome_t&& outcome) -> sample_frame_result_t;
     std::optional<std::uint64_t> frame;
     std::optional<timing_diagnostic_t> error;
 
@@ -201,7 +253,12 @@ proposed_timing_y_on_fixed_waveform(const timing_index_t& original, const timing
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
 
+using beat_interval_fit_outcome_t = result_t<signed_rational_t, timing_diagnostic_t>;
 struct beat_interval_fit_result_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, object_id_t bpm_event,
+        local_position_t beat, std::uint64_t target_sample_frame, std::uint32_t sample_rate)
+        -> beat_interval_fit_outcome_t;
+    [[nodiscard]] static auto from(beat_interval_fit_outcome_t&& outcome) -> beat_interval_fit_result_t;
     std::optional<signed_rational_t> beats_per_minute;
     std::optional<timing_diagnostic_t> error;
 
@@ -262,7 +319,17 @@ struct scroll_displacement_segment_t {
     bool warped{};
 };
 
+struct scroll_speed_build_options_t {
+    std::size_t maximum_events{200'000};
+    std::size_t maximum_timing_boundaries{100'000};
+    std::size_t maximum_segments{200'001};
+};
+
 struct scroll_speed_index_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const timing_index_t& timing,
+                                   scroll_speed_build_options_t options = {})
+        -> diagnosed_t<std::optional<scroll_speed_index_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint64_t divisions_per_standard_measure{};
     std::uint64_t total_rows{};
     std::uint64_t timing_source_fingerprint{};
@@ -281,13 +348,10 @@ struct scroll_speed_index_t {
     signed_rational_t total_displacement_beats{};
 };
 
-struct scroll_speed_build_options_t {
-    std::size_t maximum_events{200'000};
-    std::size_t maximum_timing_boundaries{100'000};
-    std::size_t maximum_segments{200'001};
-};
+using scroll_speed_build_outcome_t = diagnosed_t<std::optional<scroll_speed_index_t>, std::vector<timing_diagnostic_t>>;
 
 struct scroll_speed_build_result_t {
+    [[nodiscard]] static auto from(scroll_speed_build_outcome_t&& outcome) -> scroll_speed_build_result_t;
     std::optional<scroll_speed_index_t> index;
     std::vector<timing_diagnostic_t> diagnostics;
 
@@ -297,6 +361,9 @@ struct scroll_speed_build_result_t {
 };
 
 struct scroll_speed_state_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+        signed_rational_t row, timing_boundary_side_t side = timing_boundary_side_t::event,
+        bool extrapolate_before_chart = false) -> timing_query_outcome_t<scroll_speed_state_t>;
     signed_rational_t scroll_multiplier{1, 1};
     signed_rational_t speed_multiplier{1, 1};
     signed_rational_t effective_multiplier{1, 1};
@@ -307,7 +374,10 @@ struct scroll_speed_state_t {
     double render_displacement_beats{};
 };
 
+using scroll_speed_query_outcome_t = timing_query_outcome_t<scroll_speed_state_t>;
+
 struct scroll_speed_query_result_t {
+    [[nodiscard]] static auto from(scroll_speed_query_outcome_t&& outcome) -> scroll_speed_query_result_t;
     std::optional<scroll_speed_state_t> state;
     std::optional<timing_diagnostic_t> error;
 
@@ -321,6 +391,9 @@ struct scroll_speed_query_result_t {
 // where a seconds-clock transition can advance without moving in row space.
 // The end is clipped at a replacement speed event or chart end.
 struct scroll_speed_transition_span_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   object_id_t source_event)
+        -> timing_query_outcome_t<scroll_speed_transition_span_t>;
     object_id_t source_event;
     signed_rational_t begin_row;
     signed_rational_t end_row;
@@ -329,8 +402,11 @@ struct scroll_speed_transition_span_t {
     bool transition_is_seconds{};
     bool clipped{};
 };
+using scroll_speed_transition_span_outcome_t = timing_query_outcome_t<scroll_speed_transition_span_t>;
 
 struct scroll_speed_transition_span_result_t {
+    [[nodiscard]] static auto from(scroll_speed_transition_span_outcome_t&& outcome)
+        -> scroll_speed_transition_span_result_t;
     std::optional<scroll_speed_transition_span_t> span;
     std::optional<timing_diagnostic_t> error;
 
@@ -345,7 +421,19 @@ struct scroll_speed_transition_spans_options_t {
     std::size_t maximum_spans{100'000};
 };
 
+struct scroll_speed_transition_spans_t {
+    [[nodiscard]] static auto from(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   scroll_speed_transition_spans_options_t options = {})
+        -> diagnosed_t<scroll_speed_transition_spans_t, std::vector<timing_diagnostic_t>>;
+    std::vector<scroll_speed_transition_span_t> spans;
+    bool truncated{};
+};
+using scroll_speed_transition_spans_outcome_t =
+    diagnosed_t<scroll_speed_transition_spans_t, std::vector<timing_diagnostic_t>>;
+
 struct scroll_speed_transition_spans_result_t {
+    [[nodiscard]] static auto from(scroll_speed_transition_spans_outcome_t&& outcome)
+        -> scroll_speed_transition_spans_result_t;
     // Successful spans are returned in compiled SPEEDS order. If an exact
     // evaluation fails, prior spans are retained and an error diagnostic is
     // included. A cap warning is reported separately through diagnostics.
@@ -354,9 +442,7 @@ struct scroll_speed_transition_spans_result_t {
     bool truncated{};
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return std::ranges::none_of(diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == diagnostic_severity_t::error;
-        });
+        return !diagnostic_queries::has_errors(diagnostics);
     }
 };
 
@@ -410,6 +496,12 @@ enum class metronome_accent_t : std::uint8_t {
 };
 
 struct preview_audio_event_t {
+    [[nodiscard]] auto playable_sort_key() const {
+        return std::tie(sample_frame, source_order, object.value);
+    }
+    [[nodiscard]] auto bgm_sort_key() const {
+        return std::tie(sample_frame, source_order, secondary_order, object.value);
+    }
     std::uint64_t sample_frame{};
     object_id_t object;
     resource_id_t resource;
@@ -419,6 +511,9 @@ struct preview_audio_event_t {
 };
 
 struct preview_visual_event_t {
+    [[nodiscard]] auto sort_key() const {
+        return std::tie(sample_frame, draw_order, source_order, object.value);
+    }
     std::uint64_t sample_frame{};
     object_id_t object;
     resource_id_t resource;
@@ -439,6 +534,10 @@ struct preview_metronome_event_t {
 };
 
 struct preview_discontinuity_event_t {
+    [[nodiscard]] auto sort_key(timing_discontinuity_profile_t profile) const {
+        return std::tuple{sample_frame, timing_discontinuity_order(profile, kind), source_order,
+                          static_cast<std::uint8_t>(kind), object.value, family_index};
+    }
     std::uint64_t sample_frame{};
     preview_discontinuity_kind_t kind{preview_discontinuity_kind_t::playable};
     object_id_t object;
@@ -455,7 +554,29 @@ struct preview_layer_tick_t {
     std::vector<layer_id_t> layers;
 };
 
+struct preview_schedule_options_t {
+    std::uint32_t sample_rate{44'100};
+    sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
+    std::size_t maximum_playable_events{100'000};
+    std::size_t maximum_bgm_events{100'000};
+    std::size_t maximum_bga_events{100'000};
+    std::size_t maximum_metronome_events{100'000};
+    // Covers all four 100k presentation queues plus the 200k timing-event cap.
+    std::size_t maximum_discontinuity_events{600'000};
+    bool include_metronome{true};
+    // Number of first-measure metronome pulses to schedule before row zero.
+    // They use the row-zero BPM and meter, and are included only when their
+    // exact audio time maps to a nonnegative sample frame.
+    std::uint32_t count_in_pulses{};
+    bool include_layer_ticks{};
+    std::size_t maximum_layer_tick_events{200'000};
+};
+
 struct preview_schedule_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart, const timing_index_t& timing,
+                                   preview_schedule_options_t options = {})
+        -> diagnosed_t<std::optional<preview_schedule_t>, std::vector<timing_diagnostic_t>>;
+
     std::uint32_t sample_rate{};
     timing_discontinuity_profile_t discontinuity_profile{
         timing_discontinuity_profile_t::canonical};
@@ -481,25 +602,10 @@ struct preview_schedule_t {
     const preview_schedule_t::music_event_t& music, std::uint64_t timeline_frame)
     -> std::optional<std::uint64_t>;
 
-struct preview_schedule_options_t {
-    std::uint32_t sample_rate{44'100};
-    sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
-    std::size_t maximum_playable_events{100'000};
-    std::size_t maximum_bgm_events{100'000};
-    std::size_t maximum_bga_events{100'000};
-    std::size_t maximum_metronome_events{100'000};
-    // Covers all four 100k presentation queues plus the 200k timing-event cap.
-    std::size_t maximum_discontinuity_events{600'000};
-    bool include_metronome{true};
-    // Number of first-measure metronome pulses to schedule before row zero.
-    // They use the row-zero BPM and meter, and are included only when their
-    // exact audio time maps to a nonnegative sample frame.
-    std::uint32_t count_in_pulses{};
-    bool include_layer_ticks{};
-    std::size_t maximum_layer_tick_events{200'000};
-};
+using preview_schedule_outcome_t = diagnosed_t<std::optional<preview_schedule_t>, std::vector<timing_diagnostic_t>>;
 
 struct preview_schedule_result_t {
+    [[nodiscard]] static auto from(preview_schedule_outcome_t&& outcome) -> preview_schedule_result_t;
     std::optional<preview_schedule_t> schedule;
     std::vector<timing_diagnostic_t> diagnostics;
 

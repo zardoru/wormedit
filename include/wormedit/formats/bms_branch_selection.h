@@ -40,7 +40,24 @@ struct bms_branch_selection_request_t {
     std::size_t max_slots_per_line{500'000};
 };
 
+struct bms_branch_selection_payload_t {
+    std::optional<song_document_t> song;
+    bms_branch_projection_preview_t preview;
+};
+struct bms_branch_selection_diagnostics_t {
+    std::vector<bms_branch_selection_diagnostic_t> selection;
+    std::vector<bms_write_diagnostic_t> write;
+    std::vector<bms_parse_diagnostic_t> parse;
+    [[nodiscard]] auto has_errors() const -> bool {
+        return diagnostic_queries::has_errors(selection) || diagnostic_queries::has_errors(write) || diagnostic_queries::has_errors(parse);
+    }
+    auto operator==(const bms_branch_selection_diagnostics_t&) const -> bool = default;
+};
+using bms_branch_selection_outcome_t = diagnosed_t<bms_branch_selection_payload_t, bms_branch_selection_diagnostics_t>;
 struct bms_branch_selection_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song,
+        const bms_branch_selection_request_t& request) -> bms_branch_selection_outcome_t;
+    [[nodiscard]] static auto from(bms_branch_selection_outcome_t&& outcome) -> bms_branch_selection_result_t;
     std::optional<song_document_t> song;
     bms_branch_projection_preview_t preview;
     std::vector<bms_branch_selection_diagnostic_t> diagnostics;

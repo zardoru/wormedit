@@ -146,13 +146,13 @@ void remove_owned(const std::filesystem::path& path, const file_identity_t& owne
 
 auto expand_external_player_arguments(std::string_view text, std::string_view app,
     std::string_view filename, std::uint64_t measure) -> external_player_arguments_t {
-    external_player_arguments_t result;
+    std::vector<std::string> arguments;
     std::string token;
     char quote{};
     bool active{};
     if (text.find('\0') != std::string_view::npos || app.find('\0') != std::string_view::npos ||
         filename.find('\0') != std::string_view::npos)
-        return {.error = "Player arguments contain a NUL character."};
+        return std::unexpected{"Player arguments contain a NUL character."};
     for (const char character : text) {
         if (quote != 0) {
             if (character == quote) quote = 0;
@@ -162,7 +162,7 @@ auto expand_external_player_arguments(std::string_view text, std::string_view ap
             active = true;
         } else if (character == ' ' || character == '\t' || character == '\n' || character == '\r') {
             if (active) {
-                result.arguments.push_back(substitute(token, app, filename, measure));
+                arguments.push_back(substitute(token, app, filename, measure));
                 token.clear();
                 active = false;
             }
@@ -171,9 +171,9 @@ auto expand_external_player_arguments(std::string_view text, std::string_view ap
             active = true;
         }
     }
-    if (quote != 0) return {.error = "Player argument template has an unmatched quote."};
-    if (active) result.arguments.push_back(substitute(token, app, filename, measure));
-    return result;
+    if (quote != 0) return std::unexpected{"Player argument template has an unmatched quote."};
+    if (active) arguments.push_back(substitute(token, app, filename, measure));
+    return arguments;
 }
 
 
@@ -282,7 +282,7 @@ auto external_player_t::launch(const external_player_definition_t& player,
     // Validate template syntax before creating any file.
     auto expanded = expand_external_player_arguments(argument_template_for(player, action),
                                                      app.string(), "", measure);
-    if (!expanded) return {.error = expanded.error};
+    if (!expanded) return {.error = expanded.error()};
     external_player_launch_result_t result;
     if (action != external_player_action_t::stop) {
         result = prepare_preview(song, chart, source);
@@ -295,11 +295,11 @@ auto external_player_t::launch(const external_player_definition_t& player,
             remove_temporary(temporary_files_.back());
             temporary_files_.pop_back();
         }
-        return {.error = expanded.error};
+        return {.error = expanded.error()};
     }
-    expanded.arguments.insert(expanded.arguments.begin(), player.path);
+    expanded->insert(expanded->begin(), player.path);
     std::vector<const char*> arguments;
-    for (const auto& argument : expanded.arguments) arguments.push_back(argument.c_str());
+    for (const auto& argument : *expanded) arguments.push_back(argument.c_str());
     arguments.push_back(nullptr);
     auto* process = SDL_CreateProcess(arguments.data(), false);
     if (!process) {

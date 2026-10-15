@@ -46,7 +46,17 @@ struct measure_definition_t {
     std::optional<meter_t> meter;
 };
 
+struct measure_capacity_t {
+    [[nodiscard]] static auto from(std::uint64_t divisions_per_standard_measure,
+                                   const measure_definition_t& measure)
+        -> result_t<measure_capacity_t, measure_error_t>;
+    std::uint64_t row_capacity{};
+    auto operator==(const measure_capacity_t&) const -> bool = default;
+};
+using measure_capacity_outcome_t = result_t<measure_capacity_t, measure_error_t>;
+
 struct measure_validation_t {
+    [[nodiscard]] static auto from(measure_capacity_outcome_t&& outcome) -> measure_validation_t;
     std::optional<std::uint64_t> row_capacity;
     measure_error_t error{measure_error_t::none};
 

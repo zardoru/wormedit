@@ -59,7 +59,15 @@ struct bms_parse_options_t {
     std::vector<branch_choice_t> branch_choices;
 };
 
+struct bms_parse_payload_t {
+    std::optional<song_document_t> song{};
+    encoding_provenance_t encoding{};
+    std::optional<bms_profile_detection_result_t> lane_profile_detection{};
+};
+using bms_parse_outcome_t = diagnosed_t<bms_parse_payload_t, std::vector<bms_parse_diagnostic_t>>;
 struct bms_parse_result_t {
+    [[nodiscard]] static auto from(std::span<const std::byte> bytes, bms_parse_options_t options = {}) -> bms_parse_outcome_t;
+    [[nodiscard]] static auto from(bms_parse_outcome_t&& outcome) -> bms_parse_result_t;
     std::optional<song_document_t> song;
     encoding_provenance_t encoding;
     // Present once channel/header evidence has been evaluated. Ambiguous and

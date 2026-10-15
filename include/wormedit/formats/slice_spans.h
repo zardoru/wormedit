@@ -9,6 +9,7 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -41,6 +42,8 @@ struct slice_span_mapping_t {
     auto operator==(const slice_span_mapping_t&) const -> bool = default;
 };
 struct slice_span_diagnostic_t {
+    [[nodiscard]] auto is_error() const noexcept -> bool { return true; }
+    auto operator==(const slice_span_diagnostic_t&) const -> bool = default;
     std::string message;
     std::optional<asset_id_t> asset;
     std::optional<object_id_t> event;
@@ -51,7 +54,17 @@ struct slice_span_options_t {
     // Existing output names, compared without ASCII case, are skipped deterministically.
     std::vector<std::string> occupied_filenames;
 };
+struct slice_span_plan_payload_t {
+    std::vector<slice_span_t> spans;
+    std::vector<slice_span_mapping_t> mappings;
+    std::vector<slice_span_source_t> sources;
+    auto operator==(const slice_span_plan_payload_t&) const -> bool = default;
+};
+using slice_span_plan_outcome_t = diagnosed_t<slice_span_plan_payload_t, std::vector<slice_span_diagnostic_t>>;
 struct slice_span_plan_t {
+    [[nodiscard]] static auto from(const song_document_t& song, chart_id_t chart,
+        std::span<const slice_span_source_t> sources, const slice_span_options_t& options = {}) -> slice_span_plan_outcome_t;
+    [[nodiscard]] static auto from(slice_span_plan_outcome_t&& outcome) -> slice_span_plan_t;
     std::vector<slice_span_t> spans;
     std::vector<slice_span_mapping_t> mappings;
     std::vector<slice_span_source_t> sources;
@@ -67,6 +80,20 @@ struct slice_span_plan_t {
 [[nodiscard]] auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
     std::span<const slice_span_source_t> sources, const slice_span_options_t& options = {}) -> slice_span_plan_t;
 
+// Operation-scoped borrowed geometry; no vector or document copies.
+struct slice_span_render_input_t {
+    const std::vector<slice_span_t>& spans;
+    const std::vector<slice_span_mapping_t>& mappings;
+    const std::vector<slice_span_source_t>& sources;
+    bool has_errors{};
+    [[nodiscard]] static auto from(const slice_span_plan_t& plan) -> slice_span_render_input_t {
+        return {plan.spans, plan.mappings, plan.sources, !plan.diagnostics.empty()};
+    }
+    [[nodiscard]] static auto from(const slice_span_plan_outcome_t& plan) -> slice_span_render_input_t {
+        return {plan.value.spans, plan.value.mappings, plan.value.sources, !plan.ok()};
+    }
+};
+
 struct slice_span_render_options_t {
     std::filesystem::path source_directory;
     std::filesystem::path output_directory;
@@ -74,13 +101,27 @@ struct slice_span_render_options_t {
     std::uint64_t maximum_span_frames{10ULL * 60ULL * slice_span_sample_rate};
     bool preserve_float_samples{false};
 };
+struct slice_span_render_payload_t {
+    std::vector<std::filesystem::path> files{};
+    std::string error{};
+    std::optional<asset_id_t> asset{};
+    [[nodiscard]] static auto from(std::string message, std::optional<asset_id_t> asset = {}) -> slice_span_render_payload_t {
+        return {.files = {}, .error = std::move(message), .asset = asset};
+    }
+    auto operator==(const slice_span_render_payload_t&) const -> bool = default;
+};
+using slice_span_render_outcome_t = result_t<slice_span_render_payload_t, slice_span_render_payload_t>;
 struct slice_span_render_result_t {
+    [[nodiscard]] static auto from(slice_span_render_outcome_t&& outcome) -> slice_span_render_result_t;
     bool completed{};
     std::vector<std::filesystem::path> files;
     std::string error;
     std::optional<asset_id_t> asset;
     [[nodiscard]] explicit operator bool() const noexcept { return completed; }
 };
+[[nodiscard]] auto create_slice_span_files(const song_document_t& song, const slice_span_render_input_t& plan,
+    const slice_span_render_options_t& options) -> slice_span_render_outcome_t;
+
 // Preflights every referenced decoder/span before writing; one render call per distinct span
 // supports overlapping ranges. Exclusive publication never overwrites an existing file.
 // Any failure removes our staged and published files and leaves the input unchanged.

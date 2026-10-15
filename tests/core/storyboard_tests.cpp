@@ -84,7 +84,7 @@ TEST_CASE("OSB parser and emitter preserve nested loop semantics deterministical
                                         "   T,HitSound,0,100\n"
                                         " L,500,0\n"
                                         "  F,0,0,10,1,0\n";
-    const auto parsed = parse_osb(source);
+    const auto parsed = storyboard_parse_result_t::from(storyboard_parse_result_t::from(source));
     REQUIRE(parsed);
     REQUIRE(parsed.document->sprites.size() == 1);
     const auto& sprite = parsed.document->sprites.front();
@@ -95,7 +95,7 @@ TEST_CASE("OSB parser and emitter preserve nested loop semantics deterministical
     CHECK(sprite.nodes[0].children[1].loop_iteration_count == 3);
     CHECK(sprite.nodes[1].loop_iteration_count == 0);
 
-    const auto emitted = emit_osb(*parsed.document);
+    const auto emitted = storyboard_emit_result_t::from(storyboard_emit_result_t::from(*parsed.document));
     REQUIRE(emitted);
     const auto emitted_again = emit_osb(*parsed.document);
     REQUIRE(emitted_again);
@@ -150,7 +150,7 @@ TEST_CASE("OSB easing 15 through 34 evaluates and invalid model easing is reject
         storyboard_sprite_t sprite;
         sprite.nodes.push_back(fade(0, 100, 0.0, 1.0));
         sprite.nodes.front().command.easing = easing;
-        return evaluate_storyboard_property(sprite, storyboard_opcode_t::fade, time);
+        return storyboard_evaluation_result_t::from(storyboard_evaluation_result_t::from(sprite, storyboard_opcode_t::fade, time));
     };
 
     for (std::int32_t easing = 15; easing <= 34; ++easing) {
@@ -210,7 +210,7 @@ TEST_CASE("storyboard schedule seeks by time and advances one contiguous head",
     sprite.nodes = {fade(10, 20, 0.0, 1.0, 8), fade(10, 30, 1.0, 0.0, 3)};
     document.sprites.push_back(sprite);
 
-    const auto built = compile_storyboard_schedule(document);
+    const auto built = storyboard_schedule_result_t::from(storyboard_schedule_result_t::from(document));
     REQUIRE(built);
     REQUIRE(built.schedule->events.size() == 4);
     CHECK(built.schedule->events[0].time_ms == 10);
@@ -225,7 +225,7 @@ TEST_CASE("storyboard schedule seeks by time and advances one contiguous head",
 
     storyboard_event_cursor_t cursor;
     CHECK(cursor.start(*built.schedule, 10) == storyboard_cursor_status_t::ready);
-    const auto first_window = cursor.advance(21);
+    const auto first_window = storyboard_cursor_result_t::from(cursor.advance_events(21));
     REQUIRE(first_window.status == storyboard_cursor_status_t::ready);
     CHECK(first_window.events.size() == 3);
     CHECK(first_window.events[0].time_ms == 10);
@@ -312,4 +312,35 @@ TEST_CASE("OSB parsing rejects configured bounds before publishing a document",
         "Sprite,Foreground,Centre,\"a.png\",0,0\n L,0,1\n  F,0,0,1,0,1\n", {.maximum_nodes = 1});
     CHECK_FALSE(node_limited);
     CHECK(node_limited.diagnostics.front().code == storyboard_diagnostic_code_t::node_limit);
+}
+
+namespace {
+auto has_error_annotated_storyboard_values() -> bool {
+    const storyboard_diagnostic_t diagnostic{storyboard_diagnostic_code_t::invalid_model, 7, "error"};
+    storyboard_parse_outcome_t parsed{.value = storyboard_document_model_t{}, .diagnostics = {diagnostic}};
+    storyboard_emit_outcome_t emitted{.value = std::string{"text"}, .diagnostics = {diagnostic}};
+    storyboard_schedule_outcome_t scheduled{.value = storyboard_schedule_t{}, .diagnostics = {diagnostic}};
+    if (parsed.ok() || emitted.ok() || scheduled.ok()) return false;
+    const auto raw_parse = storyboard_parse_result_t::from(std::move(parsed));
+    const auto raw_emit = storyboard_emit_result_t::from(std::move(emitted));
+    const auto raw_schedule = storyboard_schedule_result_t::from(std::move(scheduled));
+    return raw_parse && raw_emit && raw_schedule && raw_parse.diagnostics.size() == 1 &&
+        raw_emit.diagnostics == raw_parse.diagnostics && raw_schedule.diagnostics == raw_parse.diagnostics;
+}
+} // namespace
+TEST_CASE("storyboard adapters preserve value-presence acceptance independently of diagnostics", "[core][storyboard][results]") {
+    CHECK(has_error_annotated_storyboard_values());
+}
+
+TEST_CASE("storyboard cursor errors and missing properties remain distinct outcomes", "[core][storyboard][results]") {
+    storyboard_event_cursor_t cursor;
+    const auto advance = cursor.advance_events(1);
+    REQUIRE_FALSE(advance);
+    CHECK(advance.error() == storyboard_cursor_status_t::not_started);
+    const storyboard_sprite_t sprite;
+    auto evaluated = storyboard_evaluation_result_t::from(sprite, storyboard_opcode_t::fade, 0);
+    REQUIRE(evaluated);
+    CHECK_FALSE(evaluated->value.present);
+    const auto legacy = storyboard_evaluation_result_t::from(std::move(evaluated));
+    CHECK_FALSE(legacy.failed);
 }

@@ -101,7 +101,15 @@ struct program_preferences_t {
     layout_preferences_t layout;
     auto operator==(const program_preferences_t&) const -> bool = default;
 };
+struct preferences_parse_effect_t {
+    program_preferences_t preferences;
+    std::vector<std::string> warnings;
+    auto operator==(const preferences_parse_effect_t&) const -> bool = default;
+};
+using preferences_parse_outcome_t = result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
 struct preferences_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view bytes) -> preferences_parse_outcome_t;
+    [[nodiscard]] static auto from(preferences_parse_outcome_t&& outcome) -> preferences_parse_result_t;
     program_preferences_t preferences;
     std::vector<std::string> warnings;
     bool parsed{};
@@ -120,7 +128,7 @@ struct preferences_load_result_t {
 [[nodiscard]] auto load_program_preferences(const std::filesystem::path& path)
     -> preferences_load_result_t;
 [[nodiscard]] auto save_program_preferences_atomic(const std::filesystem::path& path,
-    const program_preferences_t& preferences) -> atomic_file_save_result_t;
+    const program_preferences_t& preferences) -> atomic_file_save_outcome_t;
 
 // Legacy quoted-text file is read only during first-run migration; failures retain values.
 [[nodiscard]] auto load_legacy_external_player_preferences(const std::filesystem::path& path,

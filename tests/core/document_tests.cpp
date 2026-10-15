@@ -352,10 +352,10 @@ TEST_CASE("stable IDs never allocate the reserved zero value", "[unit][core][doc
 
 TEST_CASE("measure index preserves exact variable-length prefixes", "[unit][core][document]") {
     const auto song = make_valid_song();
-    const auto result = build_measure_index(song.charts.front());
-    REQUIRE(std::holds_alternative<measure_index_t>(result));
+    const auto result = measure_index_t::from(song.charts.front());
+    REQUIRE(result);
 
-    const auto& index = std::get<measure_index_t>(result);
+    const auto& index = *result;
     REQUIRE(index.entries.size() == 2);
     CHECK(index.entries[0].absolute_begin_row == 0);
     CHECK(index.entries[0].row_capacity == 960);
@@ -423,9 +423,9 @@ TEST_CASE("measure index diagnoses each later duplicate by its measure number",
 
 TEST_CASE("measure index still rejects zero IDs without calling them duplicates",
           "[unit][core][document]") {
-    const auto result = build_measure_index(chart_with_measure_ids({0, 0, 3}));
-    REQUIRE(std::holds_alternative<diagnostic_list_t>(result));
-    const auto& diagnostics = std::get<diagnostic_list_t>(result);
+    const auto result = measure_index_t::from(chart_with_measure_ids({0, 0, 3}));
+    REQUIRE_FALSE(result);
+    const auto& diagnostics = result.error();
     CHECK(has_code(diagnostics, diagnostic_code_t::invalid_id));
     CHECK_FALSE(has_code(diagnostics, diagnostic_code_t::duplicate_id));
 }

@@ -28,14 +28,20 @@ struct native_project_limits_t {
     std::size_t maximum_nesting_depth{128};
 };
 
+using native_project_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<native_project_diagnostic_t>>;
 struct native_project_write_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, native_project_limits_t limits = {}) -> native_project_write_outcome_t;
+    [[nodiscard]] static auto from(native_project_write_outcome_t&& outcome) -> native_project_write_result_t;
     std::optional<std::string> bytes;
     std::vector<native_project_diagnostic_t> diagnostics;
 
     [[nodiscard]] auto has_errors() const -> bool;
 };
 
+using native_project_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<native_project_diagnostic_t>>;
 struct native_project_parse_result_t {
+    [[nodiscard]] static auto from(std::string_view bytes, native_project_limits_t limits = {}) -> native_project_parse_outcome_t;
+    [[nodiscard]] static auto from(native_project_parse_outcome_t&& outcome) -> native_project_parse_result_t;
     std::optional<song_document_t> song;
     std::vector<native_project_diagnostic_t> diagnostics;
 

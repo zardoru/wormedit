@@ -17,6 +17,11 @@
 
 namespace wormedit {
 
+auto resource_entry_t::has_role(resource_role_t role) const -> bool {
+    return std::ranges::find(roles, role) != roles.end();
+}
+
+
 auto error(diagnostic_code_t code, std::string message, std::optional<object_id_t> object) -> diagnostic_t {
     return {.severity = diagnostic_severity_t::error, .code = code,
             .message = std::move(message), .object = object};
@@ -1224,9 +1229,7 @@ auto validate_chart(const chart_document_t& chart,
 
 } // namespace
 
-auto conversion_report_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
+
 
 namespace {
 
@@ -1253,8 +1256,8 @@ auto later_duplicate_measure_flags(const chart_document_t& chart) -> std::vector
 
 } // namespace
 
-auto build_measure_index(const chart_document_t& chart)
-    -> std::variant<measure_index_t, diagnostic_list_t> {
+auto measure_index_t::from(const chart_document_t& chart)
+    -> result_t<measure_index_t, diagnostic_list_t> {
     diagnostic_list_t diagnostics;
     measure_index_t index;
     index.entries.reserve(chart.measures.size());
@@ -1277,20 +1280,20 @@ auto build_measure_index(const chart_document_t& chart)
             continue;
         }
         const auto validation =
-            validate_measure(chart.divisions_per_standard_measure, measure.definition);
+            measure_capacity_t::from(chart.divisions_per_standard_measure, measure.definition);
         if (!validation) {
             add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
                            "measure " + std::to_string(measure_number) + ": " +
-                               measure_error_message(validation.error));
+                               measure_error_message(validation.error()));
             continue;
         }
         index.entries.push_back({
             .id = measure.id,
             .absolute_begin_row = index.total_rows,
-            .row_capacity = *validation.row_capacity,
+            .row_capacity = validation->row_capacity,
         });
         std::uint64_t total{};
-        if (!add_checked(index.total_rows, *validation.row_capacity, total)) {
+        if (!add_checked(index.total_rows, validation->row_capacity, total)) {
             add_diagnostic(diagnostics, diagnostic_code_t::invalid_measure,
                            "measure " + std::to_string(measure_number) +
                                " prefix rows overflow the supported range");
@@ -1300,9 +1303,16 @@ auto build_measure_index(const chart_document_t& chart)
     }
 
     if (!diagnostics.empty()) {
-        return diagnostics;
+        return std::unexpected(std::move(diagnostics));
     }
     return index;
+}
+
+auto build_measure_index(const chart_document_t& chart)
+    -> std::variant<measure_index_t, diagnostic_list_t> {
+    auto outcome = measure_index_t::from(chart);
+    if (!outcome) return std::move(outcome.error());
+    return std::move(*outcome);
 }
 
 auto chart_metadata_t::format_group_for(format_family_t family) -> format_metadata_t& {

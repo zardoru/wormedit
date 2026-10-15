@@ -232,11 +232,11 @@ auto bmson_layer_export_matches() -> export_parity_result_t {
 
 auto empty_group_schema_keeps_previous_bytes() -> bool {
     const auto song = rich_bmson_song();
-    const auto written = wormedit::write_native_project(song);
+    const auto written = wormedit::native_project_write_result_t::from(wormedit::native_project_write_result_t::from(song));
     REQUIRE(written.bytes);
     CHECK(written.bytes->find("sound_groups") == std::string::npos);
     CHECK(written.bytes->find("sound_group\"") == std::string::npos);
-    const auto parsed = wormedit::parse_native_project(*written.bytes);
+    const auto parsed = wormedit::native_project_parse_result_t::from(wormedit::native_project_parse_result_t::from(*written.bytes));
     REQUIRE(parsed.song);
     const auto rewritten = wormedit::write_native_project(*parsed.song);
     REQUIRE(rewritten.bytes);
@@ -1509,4 +1509,22 @@ TEST_CASE("native project rejects malformed UTF-8 preset names", "[unit][format]
     auto song = rich_bmson_song();
     song.quantization_presets.front().name = "\xc0\x80";
     CHECK_FALSE(wormedit::write_native_project(song).bytes.has_value());
+}
+
+namespace {
+auto has_warning_native_codec_adapters() -> bool {
+    const wormedit::native_project_diagnostic_t warning{wormedit::diagnostic_severity_t::warning,
+        wormedit::native_project_diagnostic_code_t::invalid_document, "warning", "$.document"};
+    wormedit::native_project_write_outcome_t written{.value = std::string{"bytes"}, .diagnostics = {warning}};
+    wormedit::native_project_parse_outcome_t parsed{.diagnostics = {warning}};
+    if (!written.ok() || !parsed.ok()) return false;
+    const auto raw_write = wormedit::native_project_write_result_t::from(std::move(written));
+    const auto raw_parse = wormedit::native_project_parse_result_t::from(std::move(parsed));
+    return raw_write.bytes.has_value() && !raw_write.has_errors() && !raw_parse.song &&
+        !raw_parse.has_errors() && raw_write.diagnostics.size() == 1 && raw_parse.diagnostics.size() == 1 &&
+        raw_write.diagnostics.front().message == "warning" && raw_parse.diagnostics.front().path == "$.document";
+}
+} // namespace
+TEST_CASE("native-codec adapters retain warning severity independently of payload presence", "[core][native-project][results]") {
+    CHECK(has_warning_native_codec_adapters());
 }

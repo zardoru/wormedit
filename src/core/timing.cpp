@@ -937,9 +937,19 @@ auto compile_timing_with_policy(timing_build_context_t& source, signed_rational_
 
 } // namespace
 
-auto build_timing_index(const chart_document_t& chart, timing_build_options_t options)
-    -> timing_build_result_t {
-    timing_build_result_t result;
+auto timing_query_result_t::into_outcome() && -> timing_coordinate_outcome_t {
+    return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+        std::move(seconds), {.inside_warp = inside_warp, .diagnostic = std::move(error)});
+}
+
+auto timing_position_query_result_t::into_outcome() && -> timing_coordinate_outcome_t {
+    return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+        std::move(absolute_row), {.inside_warp = inside_warp, .diagnostic = std::move(error)});
+}
+
+auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t options)
+    -> timing_build_outcome_t {
+    timing_build_outcome_t result{};
     if (options.discontinuity_profile &&
         !is_valid_timing_discontinuity_profile(*options.discontinuity_profile)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
@@ -999,8 +1009,16 @@ auto build_timing_index(const chart_document_t& chart, timing_build_options_t op
         return result;
     }
 
-    result.index = std::move(*index);
+    result.value = std::move(*index);
     return result;
+}
+
+auto timing_build_result_t::from(timing_build_outcome_t&& outcome) -> timing_build_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_timing_index(const chart_document_t& chart, timing_build_options_t options) -> timing_build_result_t {
+    return timing_build_result_t::from(timing_index_t::from(chart, options));
 }
 
 namespace {
@@ -1060,33 +1078,51 @@ auto timing_at_bounded_integer_row(const timing_index_t& index, std::uint64_t ab
 
 } // namespace
 
-auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
-               timing_boundary_side_t side) -> timing_query_result_t {
-    return index.bounded_clock ? timing_at_bounded_integer_row(index, absolute_row, side)
-                               : timing_at_exact_integer_row(index, absolute_row, side);
+auto timing_index_t::query_seconds(std::uint64_t absolute_row, timing_boundary_side_t side) const
+    -> timing_coordinate_outcome_t {
+    return (bounded_clock ? timing_at_bounded_integer_row(*this, absolute_row, side)
+                          : timing_at_exact_integer_row(*this, absolute_row, side)).into_outcome();
 }
 
-auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
-               timing_boundary_side_t side) -> timing_query_result_t {
+auto timing_index_t::query_seconds(exact_chart_row_t absolute_row, timing_boundary_side_t side) const
+    -> timing_coordinate_outcome_t {
+    const auto& index = *this;
     if (absolute_row.fractional_rows.numerator == 0 &&
         absolute_row.fractional_rows.denominator != 0) {
-        return index.seconds_at(absolute_row.whole_rows, side);
+        return query_seconds(absolute_row.whole_rows, side);
     }
     if (absolute_row.whole_rows > maximum_i64_magnitude ||
         absolute_row.fractional_rows.numerator > maximum_i64_magnitude ||
         absolute_row.fractional_rows.denominator == 0 ||
         absolute_row.fractional_rows.numerator >= absolute_row.fractional_rows.denominator) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "fractional timing row lies outside chart geometry")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "fractional timing row lies outside chart geometry")});
     }
     const auto row = add_exact({static_cast<std::int64_t>(absolute_row.whole_rows), 1},
                                {static_cast<std::int64_t>(absolute_row.fractional_rows.numerator),
                                 absolute_row.fractional_rows.denominator});
     if (!row) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "fractional timing row exceeds exact arithmetic bounds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::arithmetic_overflow,
+                               "fractional timing row exceeds exact arithmetic bounds")});
     }
-    return timing_seconds_at_row(index, *row, side);
+    return timing_seconds_at_row(index, *row, side).into_outcome();
+}
+
+auto timing_query_result_t::from(timing_coordinate_outcome_t&& outcome) -> timing_query_result_t {
+    if (outcome) return {.seconds = outcome->value, .inside_warp = outcome->metadata.inside_warp,
+                          .error = std::move(outcome->metadata.diagnostic)};
+    return {.seconds = std::nullopt, .inside_warp = outcome.error().inside_warp,
+            .error = std::move(outcome.error().diagnostic)};
+}
+
+auto timing_at(const timing_index_t& index, std::uint64_t row, timing_boundary_side_t side)
+    -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(row, side));
+}
+
+auto timing_at(const timing_index_t& index, exact_chart_row_t row, timing_boundary_side_t side)
+    -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(row, side));
 }
 
 auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll_pixels,
@@ -1153,14 +1189,19 @@ auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
     return static_cast<double>(y);
 }
 
-auto timing_at(const timing_index_t& index, const measure_index_t& measures,
-               local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
+auto timing_index_t::query_seconds(const measure_index_t& measures, local_position_t position,
+                                    timing_boundary_side_t side) const -> timing_coordinate_outcome_t {
     const auto row = absolute_row(measures, position);
     if (!row) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "timing query position is outside chart geometry")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "timing query position is outside chart geometry")});
     }
-    return index.seconds_at(*row, side);
+    return query_seconds(*row, side);
+}
+
+auto timing_at(const timing_index_t& index, const measure_index_t& measures,
+               local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
+    return timing_query_result_t::from(index.query_seconds(measures, position, side));
 }
 
 namespace {
@@ -1243,32 +1284,35 @@ auto candidate_beat_time(chart_document_t& candidate, const beat_fit_selection_t
 
 } // namespace
 
-auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
+auto beat_interval_fit_result_t::from(beat_interval_fit_outcome_t&& outcome) -> beat_interval_fit_result_t {
+    if (!outcome) return {.error = std::move(outcome.error())};
+    return {.beats_per_minute = *outcome};
+}
+
+namespace {
+
+auto build_beat_interval_fit(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
                        std::uint64_t target_sample_frame, std::uint32_t sample_rate)
-    -> beat_interval_fit_result_t {
-    const auto reject = [](timing_error_code_t code,
-                           std::string message) -> beat_interval_fit_result_t {
-        return {.error = error(code, std::move(message))};
-    };
+    -> beat_interval_fit_outcome_t {
     if (sample_rate == 0 || target_sample_frame > maximum_i64_magnitude) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "beat fit requires a representable target source frame and sample rate");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "beat fit requires a representable target source frame and sample rate"));
     }
     const auto measure_build = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(measure_build)) {
-        return reject(timing_error_code_t::invalid_document,
-                      "beat fit requires valid chart measure geometry");
+        return std::unexpected(error(timing_error_code_t::invalid_document,
+                      "beat fit requires valid chart measure geometry"));
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
     const auto selection = beat_fit_selection(chart, measures, bpm_event, beat);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&selection)) {
-        return {.error = *failure};
+        return std::unexpected(*failure);
     }
     const auto& selected = std::get<beat_fit_selection_t>(selection);
     const auto original_build = build_timing_index(chart);
     if (!original_build) {
-        return reject(timing_error_code_t::invalid_document,
-                      "beat fit requires a valid timing index");
+        return std::unexpected(error(timing_error_code_t::invalid_document,
+                      "beat fit requires a valid timing index"));
     }
     auto candidate = chart;
     const auto at_sixty = candidate_beat_time(candidate, selected, 60);
@@ -1283,39 +1327,52 @@ auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, loc
         signed_rational_t{static_cast<std::int64_t>(target_sample_frame), sample_rate};
     const auto available = fixed ? subtract_exact(target_time, *fixed) : std::nullopt;
     if (!scaled || !available) {
-        return reject(timing_error_code_t::arithmetic_overflow,
-                      "beat fit exceeds exact rational arithmetic bounds");
+        return std::unexpected(error(timing_error_code_t::arithmetic_overflow,
+                      "beat fit exceeds exact rational arithmetic bounds"));
     }
     if (scaled->numerator <= 0 || available->numerator <= 0) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "target frame leaves no positive BPM interval");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "target frame leaves no positive BPM interval"));
     }
     const auto fitted_bpm =
         positive_fraction({static_cast<std::uint64_t>(scaled->numerator), available->denominator},
                           {scaled->denominator, static_cast<std::uint64_t>(available->numerator)});
     if (!fitted_bpm || fitted_bpm->numerator <= 0) {
-        return reject(timing_error_code_t::arithmetic_overflow,
-                      "fitted BPM exceeds exact rational arithmetic bounds");
+        return std::unexpected(error(timing_error_code_t::arithmetic_overflow,
+                      "fitted BPM exceeds exact rational arithmetic bounds"));
     }
     candidate.bpms[selected.selected_index].beats_per_minute = *fitted_bpm;
     const auto fitted_build = build_timing_index(candidate);
     if (!fitted_build) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "fitted BPM does not produce a valid timing index");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not produce a valid timing index"));
     }
     const auto fitted_beat = (*fitted_build.index).seconds_at(selected.beat_row);
     const auto matched =
         fitted_beat ? compare_exact(*fitted_beat.seconds, target_time) : std::nullopt;
     if (!matched || *matched != 0) {
-        return reject(timing_error_code_t::invalid_fit,
-                      "fitted BPM does not reach the exact target frame");
+        return std::unexpected(error(timing_error_code_t::invalid_fit,
+                      "fitted BPM does not reach the exact target frame"));
     }
     if (!is_locked_anchors_preserved(chart, measures, *fitted_build.index, selected.anchor_row,
                                   sample_rate)) {
-        return reject(timing_error_code_t::locked_anchor_conflict,
-                      "beat fit would move a locked timing anchor");
+        return std::unexpected(error(timing_error_code_t::locked_anchor_conflict,
+                      "beat fit would move a locked timing anchor"));
     }
-    return {.beats_per_minute = *fitted_bpm};
+    return *fitted_bpm;
+}
+} // namespace
+
+auto beat_interval_fit_result_t::from(const chart_document_t& chart, object_id_t bpm_event,
+    local_position_t beat, std::uint64_t target_sample_frame, std::uint32_t sample_rate)
+    -> beat_interval_fit_outcome_t {
+    return build_beat_interval_fit(chart, bpm_event, beat, target_sample_frame, sample_rate);
+}
+
+auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event, local_position_t beat,
+    std::uint64_t target_sample_frame, std::uint32_t sample_rate) -> beat_interval_fit_result_t {
+    return beat_interval_fit_result_t::from(beat_interval_fit_result_t::from(chart, bpm_event, beat,
+        target_sample_frame, sample_rate));
 }
 
 namespace {
@@ -1521,68 +1578,84 @@ auto prepare_inverse_query(const timing_index_t& index, signed_rational_t query,
 
 } // namespace
 
-auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
-                         timing_inverse_options_t options) -> timing_position_query_result_t {
+auto timing_row_state_t::departure_less(const timing_row_state_t& boundary, signed_rational_t value)
+    -> bool {
+    const auto comparison = compare_exact(boundary.after_stops_seconds, value);
+    return comparison && *comparison < 0;
+}
+
+auto timing_index_t::query_position(signed_rational_t seconds, timing_inverse_options_t options) const
+    -> timing_coordinate_outcome_t {
+    const auto& index = *this;
     auto query = try_normalize(seconds);
     if (!query) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "inverse timing query requires valid rational seconds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::invalid_document,
+                               "inverse timing query requires valid rational seconds")});
     }
-    const auto prepared = prepare_inverse_query(index, *query, options);
-    if (prepared.result) return *prepared.result;
+    auto prepared = prepare_inverse_query(index, *query, options);
+    if (prepared.result) return std::move(*prepared.result).into_outcome();
     query = prepared.seconds;
 
     // A warp collapses every row in its half-open span to one audio time. Find
     // that plateau first so its endpoint choice is independent of neighboring
     // row pauses or segments.
-    if (const auto warp = warp_position_at(index, *query, options.warp_side)) {
-        return *warp;
+    if (auto warp = warp_position_at(index, *query, options.warp_side)) {
+        return std::move(*warp).into_outcome();
     }
 
     const auto row =
         std::lower_bound(index.rows.begin(), index.rows.end(), *query,
-                         [](const timing_row_state_t& boundary, signed_rational_t value) {
-                             const auto comparison =
-                                 compare_exact(boundary.after_stops_seconds, value);
-                             return comparison && *comparison < 0;
-                         });
+                         timing_row_state_t::departure_less);
     if (row == index.rows.end()) {
-        return {.error = error(timing_error_code_t::position_out_of_range,
-                               "audio time lies outside chart timing bounds")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                               "audio time lies outside chart timing bounds")});
     }
     const auto arrival_comparison = compare_exact(*query, row->before_delays_seconds);
     const auto departure_comparison = compare_exact(*query, row->after_stops_seconds);
     if (!arrival_comparison || !departure_comparison) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "timing index contains an invalid row time")};
+        return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::invalid_document,
+                               "timing index contains an invalid row time")});
     }
     if (*arrival_comparison >= 0 && *departure_comparison <= 0) {
         if (row->absolute_row > maximum_i64_magnitude) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "inverse musical row exceeds exact position bounds")};
+            return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::arithmetic_overflow,
+                                   "inverse musical row exceeds exact position bounds")});
         }
-        return {.absolute_row = signed_rational_t{static_cast<std::int64_t>(row->absolute_row), 1},
-                .inside_warp = row->inside_warp};
+        return timing_query_value_t<signed_rational_t, timing_coordinate_metadata_t>::from(
+            signed_rational_t{static_cast<std::int64_t>(row->absolute_row), 1}, {.inside_warp = row->inside_warp});
     }
 
     const auto row_index = static_cast<std::size_t>(row - index.rows.begin());
     if (*arrival_comparison < 0 && row_index > 0) {
-        return row_inside_segment(index, index.segments[row_index - 1], *query);
+        return row_inside_segment(index, index.segments[row_index - 1], *query).into_outcome();
     }
-    return {.error = error(timing_error_code_t::position_out_of_range,
-                           "audio time has no musical position in the timing index")};
+    return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
+                           "audio time has no musical position in the timing index")});
 }
 
-auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
-                     sample_rounding_t rounding) -> sample_frame_result_t {
+auto timing_position_query_result_t::from(timing_coordinate_outcome_t&& outcome)
+    -> timing_position_query_result_t {
+    if (outcome) return {.absolute_row = outcome->value, .inside_warp = outcome->metadata.inside_warp,
+                          .error = std::move(outcome->metadata.diagnostic)};
+    return {.absolute_row = std::nullopt, .inside_warp = outcome.error().inside_warp,
+            .error = std::move(outcome.error().diagnostic)};
+}
+
+auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
+                         timing_inverse_options_t options) -> timing_position_query_result_t {
+    return timing_position_query_result_t::from(index.query_position(seconds, options));
+}
+
+auto sample_frame_t::from(signed_rational_t seconds, std::uint32_t sample_rate,
+                     sample_rounding_t rounding) -> sample_frame_outcome_t {
     const auto value = try_normalize(seconds);
     if (!value || sample_rate == 0) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "sample-frame conversion requires valid seconds and sample rate")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "sample-frame conversion requires valid seconds and sample rate")});
     }
     if (value->numerator < 0) {
-        return {.error = error(timing_error_code_t::negative_sample_frame,
-                               "event occurs before audio frame zero")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::negative_sample_frame,
+                               "event occurs before audio frame zero")});
     }
     auto numerator = magnitude(value->numerator);
     auto denominator = value->denominator;
@@ -1599,8 +1672,8 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
         const auto quotient = wide_math::divide(
             wide_math::multiply(numerator, reduced_rate), {0, denominator});
         if (!wide_math::can_fit_u64(quotient.quotient)) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "sample-frame conversion overflows")};
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                   "sample-frame conversion overflows")});
         }
         whole = quotient.quotient.low;
         remainder = quotient.remainder.low;
@@ -1608,8 +1681,8 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
     auto frame = whole;
     if (rounding == sample_rounding_t::ceil && remainder != 0) {
         if (frame == std::numeric_limits<std::uint64_t>::max()) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                   "rounded sample frame overflows")};
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                   "rounded sample frame overflows")});
         }
         ++frame;
     } else if (rounding == sample_rounding_t::nearest_ties_to_even && remainder != 0) {
@@ -1617,13 +1690,23 @@ auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
         const bool round_up = remainder > complement || (remainder == complement && frame % 2 != 0);
         if (round_up) {
             if (frame == std::numeric_limits<std::uint64_t>::max()) {
-                return {.error = error(timing_error_code_t::arithmetic_overflow,
-                                       "rounded sample frame overflows")};
+                return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                                       "rounded sample frame overflows")});
             }
             ++frame;
         }
     }
-    return {.frame = frame};
+    return timing_query_value_t<sample_frame_t>::from(sample_frame_t{.frame = frame});
+}
+
+auto sample_frame_result_t::from(sample_frame_outcome_t&& outcome) -> sample_frame_result_t {
+    if (outcome) return {.frame = outcome->value.frame, .error = std::move(outcome->metadata)};
+    return {.frame = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto sample_frame_at(signed_rational_t seconds, std::uint32_t sample_rate,
+                     sample_rounding_t rounding) -> sample_frame_result_t {
+    return sample_frame_result_t::from(sample_frame_t::from(seconds, sample_rate, rounding));
 }
 
 auto preview_schedule_t::music_event_t::from(resource_id_t resource,
@@ -1649,6 +1732,9 @@ namespace {
 enum class scroll_speed_source_kind_t : std::uint8_t { scroll, speed };
 
 struct positioned_scroll_speed_event_t {
+    [[nodiscard]] auto sort_key() const {
+        return std::tuple{row, source_order, insertion_order, id.value, static_cast<std::uint8_t>(kind)};
+    }
     std::uint64_t row{};
     std::size_t insertion_order{};
     object_id_t id;
@@ -2021,9 +2107,9 @@ auto compile_displacement_segments(scroll_speed_event_context_t& context,
 
 } // namespace
 
-auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_t& timing,
-                              scroll_speed_build_options_t options) -> scroll_speed_build_result_t {
-    scroll_speed_build_result_t result;
+auto scroll_speed_index_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                              scroll_speed_build_options_t options) -> scroll_speed_build_outcome_t {
+    scroll_speed_build_outcome_t result{};
     const auto built_measures = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(built_measures)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
@@ -2073,12 +2159,7 @@ auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_
     if (has_errors(result.diagnostics)) {
         return result;
     }
-    std::ranges::stable_sort(events, [](const auto& left, const auto& right) {
-        return std::tuple{left.row, left.source_order, left.insertion_order, left.id.value,
-                          static_cast<std::uint8_t>(left.kind)} <
-               std::tuple{right.row, right.source_order, right.insertion_order, right.id.value,
-                          static_cast<std::uint8_t>(right.kind)};
-    });
+    std::ranges::stable_sort(events, {}, &positioned_scroll_speed_event_t::sort_key);
 
     scroll_speed_index_t index{
         .divisions_per_standard_measure = chart.divisions_per_standard_measure,
@@ -2102,8 +2183,17 @@ auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_
     if (!compile_displacement_segments(event_context, index, displacement_boundaries)) {
         return result;
     }
-    result.index = std::move(index);
+    result.value = std::move(index);
     return result;
+}
+
+auto scroll_speed_build_result_t::from(scroll_speed_build_outcome_t&& outcome) -> scroll_speed_build_result_t {
+    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_scroll_speed_index(const chart_document_t& chart, const timing_index_t& timing,
+                              scroll_speed_build_options_t options) -> scroll_speed_build_result_t {
+    return scroll_speed_build_result_t::from(scroll_speed_index_t::from(chart, timing, options));
 }
 
 auto is_scroll_speed_index_current(const scroll_speed_index_t& index, const chart_document_t& chart,
@@ -2172,6 +2262,25 @@ auto scroll_displacement_at(const scroll_speed_index_t& index, signed_rational_t
     return *accumulated;
 }
 
+struct scroll_speed_begin_less_t {
+    [[nodiscard]] static auto from(bool before_event_side) -> scroll_speed_begin_less_t {
+        return {.before_event_side = before_event_side};
+    }
+    template <class Segment>
+    [[nodiscard]] auto operator()(signed_rational_t query, const Segment& segment) const -> bool {
+        const auto comparison = compare_row_to_integer(query, segment.begin_row);
+        return comparison && (*comparison < 0 || (*comparison == 0 && before_event_side));
+    }
+    bool before_event_side{};
+};
+
+template <class Segment>
+auto find_scroll_speed_segment(const std::vector<Segment>& segments, signed_rational_t row,
+                                bool before_event_side) -> typename std::vector<Segment>::const_iterator {
+    return std::upper_bound(segments.begin(), segments.end(), row,
+                            scroll_speed_begin_less_t::from(before_event_side));
+}
+
 auto extrapolated_scroll_speed_before_chart(const scroll_speed_index_t& index,
                                             const timing_index_t& timing, signed_rational_t row)
     -> scroll_speed_query_result_t {
@@ -2202,63 +2311,55 @@ auto extrapolated_scroll_speed_before_chart(const scroll_speed_index_t& index,
 
 } // namespace
 
-auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_state_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                      signed_rational_t absolute_row, timing_boundary_side_t side,
-                     bool extrapolate_before_chart) -> scroll_speed_query_result_t {
+                     bool extrapolate_before_chart) -> scroll_speed_query_outcome_t {
     if (index.divisions_per_standard_measure != timing.divisions_per_standard_measure ||
         index.total_rows != timing.total_rows ||
         index.timing_source_fingerprint != timing.source_fingerprint) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "scroll/speed index does not match the timing index")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "scroll/speed index does not match the timing index")});
     }
     const auto row = try_normalize(absolute_row);
     if (!row) {
-        return {.error = error(timing_error_code_t::invalid_document,
-                               "scroll/speed query requires a valid rational row")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                               "scroll/speed query requires a valid rational row")});
     }
     if (row->numerator < 0 && extrapolate_before_chart) {
-        return extrapolated_scroll_speed_before_chart(index, timing, *row);
+        auto report = extrapolated_scroll_speed_before_chart(index, timing, *row);
+        return timing_query_value_t<scroll_speed_state_t>::from(std::move(report.state), std::move(report.error));
     }
     const auto query_time = timing_seconds_at_row(timing, *row, side);
     if (!query_time) {
-        return {.error = *query_time.error};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*query_time.error});
     }
     const auto before_event_side = side == timing_boundary_side_t::before_delays;
-    const auto find_segment = [&](const auto& segments) {
-        return std::upper_bound(
-            segments.begin(), segments.end(), *row,
-            [&](signed_rational_t query, const auto& segment) {
-                const auto comparison = compare_row_to_integer(query, segment.begin_row);
-                return comparison && (*comparison < 0 || (*comparison == 0 && before_event_side));
-            });
-    };
-
     auto scroll_multiplier = signed_rational_t{1, 1};
-    const auto scroll_after = find_segment(index.scroll_segments);
+    const auto scroll_after = find_scroll_speed_segment(index.scroll_segments, *row, before_event_side);
     if (scroll_after != index.scroll_segments.begin()) {
         scroll_multiplier = std::prev(scroll_after)->multiplier;
     }
     auto speed_multiplier = signed_rational_t{1, 1};
-    const auto speed_after = find_segment(index.speed_segments);
+    const auto speed_after = find_scroll_speed_segment(index.speed_segments, *row, before_event_side);
     if (speed_after != index.speed_segments.begin()) {
         const auto& segment = *std::prev(speed_after);
         const auto value = speed_segment_value(segment, *row, *query_time.seconds,
                                                index.divisions_per_standard_measure);
         if (!value) {
-            return {.error = error(timing_error_code_t::arithmetic_overflow,
+            return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
                                    "speed curve evaluation exceeds exact arithmetic bounds",
-                                   segment.source_event)};
+                                   segment.source_event)});
         }
         speed_multiplier = *value;
     }
     const auto effective = multiply_exact(scroll_multiplier, speed_multiplier);
     if (!effective) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "effective scroll multiplier exceeds exact arithmetic bounds")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                               "effective scroll multiplier exceeds exact arithmetic bounds")});
     }
     const auto displacement_result = scroll_displacement_at(index, *row, speed_multiplier);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&displacement_result)) {
-        return {.error = *failure};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*failure});
     }
     const auto displacement = std::get<signed_rational_t>(displacement_result);
     const auto render_multiplier =
@@ -2266,15 +2367,27 @@ auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& ti
     const auto render_displacement =
         to_double(displacement);
     if (!std::isfinite(render_multiplier) || !std::isfinite(render_displacement)) {
-        return {.error = error(timing_error_code_t::arithmetic_overflow,
-                               "scroll multiplier or displacement is not finite for rendering")};
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::arithmetic_overflow,
+                               "scroll multiplier or displacement is not finite for rendering")});
     }
-    return {.state = scroll_speed_state_t{.scroll_multiplier = scroll_multiplier,
+    return timing_query_value_t<scroll_speed_state_t>::from(scroll_speed_state_t{.scroll_multiplier = scroll_multiplier,
                                           .speed_multiplier = speed_multiplier,
                                           .effective_multiplier = *effective,
                                           .displacement_beats = displacement,
                                           .render_multiplier = render_multiplier,
-                                          .render_displacement_beats = render_displacement}};
+                                          .render_displacement_beats = render_displacement});
+}
+
+auto scroll_speed_query_result_t::from(scroll_speed_query_outcome_t&& outcome) -> scroll_speed_query_result_t {
+    if (outcome) return {.state = std::move(outcome->value), .error = std::move(outcome->metadata)};
+    return {.state = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto scroll_speed_at(const scroll_speed_index_t& index, const timing_index_t& timing,
+                     signed_rational_t row, timing_boundary_side_t side, bool extrapolate_before_chart)
+    -> scroll_speed_query_result_t {
+    return scroll_speed_query_result_t::from(
+        scroll_speed_state_t::from(index, timing, row, side, extrapolate_before_chart));
 }
 
 namespace {
@@ -2384,31 +2497,27 @@ auto rows_transition_end(const transition_span_context_t& context)
 auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
                                      const timing_index_t& timing,
                                      std::vector<speed_curve_segment_t>::const_iterator segment)
-    -> scroll_speed_transition_span_result_t {
+    -> scroll_speed_transition_span_outcome_t {
     const auto source_event = segment->source_event;
-    const auto span_error = [&](timing_error_code_t code, std::string message) {
-        return scroll_speed_transition_span_result_t{
-            .error = error(code, std::move(message), source_event)};
-    };
     if (segment->begin_row > segment->end_row || segment->end_row > index.total_rows ||
         segment->begin_row > maximum_i64_magnitude ||
         segment->transition_duration.denominator == 0) {
-        return span_error(timing_error_code_t::invalid_document,
-                          "compiled SPEEDS transition span is invalid");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                          "compiled SPEEDS transition span is invalid", source_event)});
     }
 
     const auto begin_row = signed_rational_t{static_cast<std::int64_t>(segment->begin_row), 1};
     const auto begin_seconds = segment->begin_seconds;
     const auto duration = segment->transition_duration;
     if (duration.numerator == 0) {
-        return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+        return timing_query_value_t<scroll_speed_transition_span_t>::from(scroll_speed_transition_span_t{.source_event = source_event,
                                                        .begin_row = begin_row,
                                                        .end_row = begin_row,
                                                        .begin_seconds = begin_seconds,
                                                        .end_seconds = begin_seconds,
                                                        .transition_is_seconds =
                                                            segment->transition_is_seconds,
-                                                       .clipped = false}};
+                                                       .clipped = false});
     }
 
     const auto next_segment = std::next(segment);
@@ -2420,7 +2529,7 @@ auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
                                                    : timing_boundary_side_t::before_delays);
     const auto cap_time = timing_seconds_at_row(timing, cap_row, cap_side);
     if (!cap_time) {
-        return span_error(cap_time.error->code, cap_time.error->message);
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(cap_time.error->code, cap_time.error->message, source_event)});
     }
 
     const auto context = transition_span_context_t{
@@ -2428,18 +2537,18 @@ auto scroll_speed_transition_span_at(const scroll_speed_index_t& index,
     const auto end = segment->transition_is_seconds ? seconds_transition_end(context)
                                                     : rows_transition_end(context);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&end)) {
-        return {.error = *failure};
+        return std::unexpected(std::optional<timing_diagnostic_t>{*failure});
     }
     const auto& resolved = std::get<transition_span_end_t>(end);
 
-    return {.span = scroll_speed_transition_span_t{.source_event = source_event,
+    return timing_query_value_t<scroll_speed_transition_span_t>::from(scroll_speed_transition_span_t{.source_event = source_event,
                                                    .begin_row = begin_row,
                                                    .end_row = resolved.row,
                                                    .begin_seconds = begin_seconds,
                                                    .end_seconds = resolved.seconds,
                                                    .transition_is_seconds =
                                                        segment->transition_is_seconds,
-                                                   .clipped = resolved.clipped}};
+                                                   .clipped = resolved.clipped});
 }
 
 auto is_scroll_speed_span_index_current(const scroll_speed_index_t& index,
@@ -2451,30 +2560,38 @@ auto is_scroll_speed_span_index_current(const scroll_speed_index_t& index,
 
 } // namespace
 
-auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_transition_span_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                                   object_id_t source_event)
-    -> scroll_speed_transition_span_result_t {
-    const auto span_error = [&](timing_error_code_t code, std::string message) {
-        return scroll_speed_transition_span_result_t{
-            .error = error(code, std::move(message), source_event)};
-    };
+    -> scroll_speed_transition_span_outcome_t {
     if (!is_scroll_speed_span_index_current(index, timing)) {
-        return span_error(timing_error_code_t::invalid_document,
-                          "scroll/speed index does not match the timing index");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::invalid_document,
+                          "scroll/speed index does not match the timing index", source_event)});
     }
     const auto segment =
         std::ranges::find(index.speed_segments, source_event, &speed_curve_segment_t::source_event);
     if (segment == index.speed_segments.end()) {
-        return span_error(timing_error_code_t::position_out_of_range,
-                          "SPEEDS object is not present in the compiled index");
+        return std::unexpected(std::optional<timing_diagnostic_t>{error(timing_error_code_t::position_out_of_range,
+                          "SPEEDS object is not present in the compiled index", source_event)});
     }
     return scroll_speed_transition_span_at(index, timing, segment);
 }
 
-auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+auto scroll_speed_transition_span_result_t::from(scroll_speed_transition_span_outcome_t&& outcome)
+    -> scroll_speed_transition_span_result_t {
+    if (outcome) return {.span = std::move(outcome->value), .error = std::move(outcome->metadata)};
+    return {.span = std::nullopt, .error = std::move(outcome.error())};
+}
+
+auto scroll_speed_transition_span(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                  object_id_t source_event) -> scroll_speed_transition_span_result_t {
+    return scroll_speed_transition_span_result_t::from(
+        scroll_speed_transition_span_t::from(index, timing, source_event));
+}
+
+auto scroll_speed_transition_spans_t::from(const scroll_speed_index_t& index, const timing_index_t& timing,
                                    scroll_speed_transition_spans_options_t options)
-    -> scroll_speed_transition_spans_result_t {
-    scroll_speed_transition_spans_result_t result;
+    -> scroll_speed_transition_spans_outcome_t {
+    scroll_speed_transition_spans_outcome_t result{};
     if (!is_scroll_speed_span_index_current(index, timing)) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "scroll/speed index does not match the timing index"));
@@ -2482,26 +2599,39 @@ auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timi
     }
 
     const auto count = std::min(index.speed_segments.size(), options.maximum_spans);
-    result.truncated = count < index.speed_segments.size();
-    result.spans.reserve(count);
+    result.value.truncated = count < index.speed_segments.size();
+    result.value.spans.reserve(count);
     const auto first = index.speed_segments.cbegin();
     for (std::size_t position = 0; position < count; ++position) {
-        const auto span = scroll_speed_transition_span_at(
-            index, timing, first + static_cast<std::ptrdiff_t>(position));
+        const auto span = scroll_speed_transition_span_result_t::from(scroll_speed_transition_span_at(
+            index, timing, first + static_cast<std::ptrdiff_t>(position)));
         if (!span.span) {
             result.diagnostics.push_back(
                 span.error.value_or(error(timing_error_code_t::invalid_document,
                                           "SPEEDS transition span could not be built")));
             break;
         }
-        result.spans.push_back(*span.span);
+        result.value.spans.push_back(*span.span);
     }
-    if (result.truncated) {
+    if (result.value.truncated) {
         result.diagnostics.push_back(
             warning(timing_error_code_t::capacity_exceeded,
                     "SPEEDS transition spans were truncated at the configured cap"));
     }
     return result;
+}
+
+auto scroll_speed_transition_spans_result_t::from(scroll_speed_transition_spans_outcome_t&& outcome)
+    -> scroll_speed_transition_spans_result_t {
+    return {.spans = std::move(outcome.value.spans), .diagnostics = std::move(outcome.diagnostics),
+            .truncated = outcome.value.truncated};
+}
+
+auto scroll_speed_transition_spans(const scroll_speed_index_t& index, const timing_index_t& timing,
+                                   scroll_speed_transition_spans_options_t options)
+    -> scroll_speed_transition_spans_result_t {
+    return scroll_speed_transition_spans_result_t::from(
+        scroll_speed_transition_spans_t::from(index, timing, options));
 }
 
 namespace {
@@ -2963,11 +3093,43 @@ auto append_chart_timing_markers(preview_discontinuity_context_t& context) -> vo
     }
 }
 
+template <class Event>
+void append_preview_discontinuity_family(preview_schedule_t& schedule, const std::vector<Event>& events,
+                                         preview_discontinuity_kind_t kind) {
+    for (std::size_t index = 0; index < events.size(); ++index) {
+        const auto& event = events[index];
+        schedule.discontinuities.push_back({.sample_frame = event.sample_frame, .kind = kind,
+                                            .object = event.object, .source_order = event.source_order,
+                                            .family_index = index});
+    }
+}
+
+void append_metronome_discontinuities(preview_schedule_t& schedule) {
+    for (std::size_t index = 0; index < schedule.metronome.size(); ++index) {
+        const auto& event = schedule.metronome[index];
+        schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
+                                            .kind = preview_discontinuity_kind_t::metronome,
+                                            .object = {}, .source_order = index, .family_index = index});
+    }
+}
+
+struct preview_discontinuity_less_t {
+    [[nodiscard]] static auto from(timing_discontinuity_profile_t profile) -> preview_discontinuity_less_t {
+        return {.profile = profile};
+    }
+    [[nodiscard]] auto operator()(const preview_discontinuity_event_t& left,
+                                  const preview_discontinuity_event_t& right) const -> bool {
+        return left.sort_key(profile) < right.sort_key(profile);
+    }
+    timing_discontinuity_profile_t profile;
+};
+
+
 } // namespace
 
-auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,
-                            preview_schedule_options_t options) -> preview_schedule_result_t {
-    preview_schedule_result_t result;
+auto preview_schedule_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                            preview_schedule_options_t options) -> preview_schedule_outcome_t {
+    preview_schedule_outcome_t result{};
     if (options.sample_rate == 0 ||
         timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
         !is_valid_timing_discontinuity_profile(timing.discontinuity_profile)) {
@@ -3045,20 +3207,9 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
         return result;
     }
 
-    std::ranges::stable_sort(schedule.playable, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.source_order, left.object.value) <
-               std::tie(right.sample_frame, right.source_order, right.object.value);
-    });
-    std::ranges::stable_sort(schedule.bgm, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.source_order, left.secondary_order,
-                        left.object.value) < std::tie(right.sample_frame, right.source_order,
-                                                      right.secondary_order, right.object.value);
-    });
-    std::ranges::stable_sort(schedule.bga, [](const auto& left, const auto& right) {
-        return std::tie(left.sample_frame, left.draw_order, left.source_order, left.object.value) <
-               std::tie(right.sample_frame, right.draw_order, right.source_order,
-                        right.object.value);
-    });
+    std::ranges::stable_sort(schedule.playable, {}, &preview_audio_event_t::playable_sort_key);
+    std::ranges::stable_sort(schedule.bgm, {}, &preview_audio_event_t::bgm_sort_key);
+    std::ranges::stable_sort(schedule.bga, {}, &preview_visual_event_t::sort_key);
     std::ranges::stable_sort(schedule.metronome, {}, &preview_metronome_event_t::sample_frame);
 
     const auto activation_count = schedule.playable.size() + schedule.bgm.size() +
@@ -3073,49 +3224,29 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
         return result;
     }
     schedule.discontinuities.reserve(activation_count + chart.bpms.size() + chart.pauses.size());
-    const auto append_family = [&](const auto& events, preview_discontinuity_kind_t kind) {
-        for (std::size_t index = 0; index < events.size(); ++index) {
-            const auto& event = events[index];
-            schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
-                                                .kind = kind,
-                                                .object = event.object,
-                                                .source_order = event.source_order,
-                                                .family_index = index});
-        }
-    };
-    append_family(schedule.playable, preview_discontinuity_kind_t::playable);
-    append_family(schedule.bgm, preview_discontinuity_kind_t::bgm);
-    append_family(schedule.bga, preview_discontinuity_kind_t::bga);
-    for (std::size_t index = 0; index < schedule.metronome.size(); ++index) {
-        const auto& event = schedule.metronome[index];
-        schedule.discontinuities.push_back({.sample_frame = event.sample_frame,
-                                            .kind = preview_discontinuity_kind_t::metronome,
-                                            .object = {},
-                                            .source_order = index,
-                                            .family_index = index});
-    }
+    append_preview_discontinuity_family(schedule, schedule.playable, preview_discontinuity_kind_t::playable);
+    append_preview_discontinuity_family(schedule, schedule.bgm, preview_discontinuity_kind_t::bgm);
+    append_preview_discontinuity_family(schedule, schedule.bga, preview_discontinuity_kind_t::bga);
+    append_metronome_discontinuities(schedule);
     auto discontinuity_context = preview_discontinuity_context_t{
         chart, timing, options, row_lookup, schedule, result.diagnostics};
     append_chart_timing_markers(discontinuity_context);
-    std::ranges::stable_sort(schedule.discontinuities, [&](const auto& left, const auto& right) {
-        return std::tuple{left.sample_frame,
-                          timing_discontinuity_order(schedule.discontinuity_profile, left.kind),
-                          left.source_order,
-                          static_cast<std::uint8_t>(left.kind),
-                          left.object.value,
-                          left.family_index} <
-               std::tuple{right.sample_frame,
-                          timing_discontinuity_order(schedule.discontinuity_profile, right.kind),
-                          right.source_order,
-                          static_cast<std::uint8_t>(right.kind),
-                          right.object.value,
-                          right.family_index};
-    });
+    std::ranges::stable_sort(schedule.discontinuities,
+        preview_discontinuity_less_t::from(schedule.discontinuity_profile));
     if (has_errors(result.diagnostics)) {
         return result;
     }
-    result.schedule = std::move(schedule);
+    result.value = std::move(schedule);
     return result;
+}
+
+auto preview_schedule_result_t::from(preview_schedule_outcome_t&& outcome) -> preview_schedule_result_t {
+    return {.schedule = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto build_preview_schedule(const chart_document_t& chart, const timing_index_t& timing,
+                            preview_schedule_options_t options) -> preview_schedule_result_t {
+    return preview_schedule_result_t::from(preview_schedule_t::from(chart, timing, options));
 }
 
 auto timing_index_t::seconds_at(std::uint64_t row, timing_boundary_side_t side) const
@@ -3126,6 +3257,7 @@ auto timing_index_t::seconds_at(const measure_index_t& measures, local_position_
     timing_boundary_side_t side) const -> timing_query_result_t {
     return timing_at(*this, measures, position, side);
 }
+
 auto timing_index_t::row_at(signed_rational_t seconds, timing_inverse_options_t options) const
     -> timing_position_query_result_t { return musical_position_at(*this, seconds, options); }
 

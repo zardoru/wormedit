@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/catalogs.h>
+#include <wormedit/core/result.h>
 
 #include <array>
 #include <cstddef>
@@ -118,7 +119,15 @@ struct workspace_controller_t {
     workspace_limits_t limits;
 };
 
+using workspace_bind_outcome_t = diagnosed_t<std::optional<workspace_controller_t>>;
+using workspace_action_outcome_t = diagnosed_t<bool>;
+
 struct workspace_bind_result_t {
+    [[nodiscard]] static auto from(const song_document_t& document, const workspace_limits_t& limits = {})
+        -> workspace_bind_outcome_t;
+    [[nodiscard]] static auto from(const document_history_t& history, const workspace_limits_t& limits = {})
+        -> workspace_bind_outcome_t;
+    [[nodiscard]] static auto from(workspace_bind_outcome_t&& outcome) -> workspace_bind_result_t;
     std::optional<workspace_controller_t> workspace;
     diagnostic_list_t diagnostics;
 
@@ -127,14 +136,6 @@ struct workspace_bind_result_t {
     }
 };
 
-struct workspace_action_result_t {
-    bool applied{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return applied && diagnostics.empty();
-    }
-};
 
 struct workspace_switch_tab_action_t {
     workspace_tab_t tab{workspace_tab_t::setup};
@@ -178,6 +179,22 @@ using workspace_action_t =
                  workspace_clear_focus_action_t, workspace_select_asset_action_t,
                  workspace_select_clip_action_t, workspace_seek_action_t,
                  workspace_set_playing_action_t, workspace_set_loop_action_t>;
+
+struct workspace_action_result_t {
+    [[nodiscard]] static auto from(workspace_controller_t& workspace, const song_document_t& document,
+        const workspace_action_t& action) -> workspace_action_outcome_t;
+    [[nodiscard]] static auto from(workspace_action_outcome_t&& outcome) -> workspace_action_result_t;
+    [[nodiscard]] static auto rebind(workspace_controller_t& workspace, const song_document_t& document)
+        -> workspace_action_outcome_t;
+    [[nodiscard]] static auto rebind(workspace_controller_t& workspace, const document_history_t& history)
+        -> workspace_action_outcome_t;
+    bool applied{};
+    diagnostic_list_t diagnostics;
+
+    [[nodiscard]] explicit operator bool() const noexcept {
+        return applied && diagnostics.empty();
+    }
+};
 
 // Actions are rejected atomically unless the bound document identity and
 // revision still match. Rebind after publishing/undoing an
@@ -365,7 +382,16 @@ struct workspace_view_t {
     workspace_tab_view_t tab_view;
 };
 
+using workspace_view_outcome_t = diagnosed_t<std::optional<workspace_view_t>>;
+
 struct workspace_view_result_t {
+    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document)
+        -> workspace_view_outcome_t;
+    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document,
+        workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics = nullptr,
+        workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
+        workspace_binding_validation_cache_t* binding_cache = nullptr) -> workspace_view_outcome_t;
+    [[nodiscard]] static auto from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t;
     std::optional<workspace_view_t> view;
     diagnostic_list_t diagnostics;
 

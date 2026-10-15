@@ -19,7 +19,28 @@ enum class preview_session_start_status_t {
     prime_failed,
 };
 
+struct preview_session_start_detail_t {
+    std::optional<preview_bridge_start_result_t> bridge{};
+    std::optional<preview_bridge_pump_result_t> materialize{};
+    std::optional<preview_pump_result_t> prime{};
+    auto operator==(const preview_session_start_detail_t&) const -> bool = default;
+};
+struct started_preview_session_t {
+    session_token_t token;
+    preview_session_start_detail_t detail;
+    auto operator==(const started_preview_session_t&) const -> bool = default;
+};
+struct preview_session_start_error_t {
+    preview_session_start_status_t code{preview_session_start_status_t::bridge_failed};
+    preview_session_start_detail_t detail{};
+    auto operator==(const preview_session_start_error_t&) const -> bool = default;
+};
+using preview_session_start_outcome_t =
+    result_t<started_preview_session_t, preview_session_start_error_t>;
+
 struct preview_session_start_result_t {
+    [[nodiscard]] static auto from(preview_session_start_outcome_t&& outcome)
+        -> preview_session_start_result_t;
     preview_session_start_status_t status{preview_session_start_status_t::bridge_failed};
     std::optional<session_token_t> token;
     std::optional<preview_bridge_start_result_t> bridge;
@@ -40,7 +61,21 @@ enum class preview_session_pump_status_t {
     decode_failed,
 };
 
+struct preview_session_pump_effect_t {
+    preview_session_pump_status_t status{preview_session_pump_status_t::not_started};
+    std::optional<preview_bridge_pump_result_t> materialize{};
+    std::optional<preview_pump_result_t> decode{};
+    [[nodiscard]] auto has_ready_decode() const -> bool {
+        return decode.has_value() && static_cast<bool>(*decode);
+    }
+    auto operator==(const preview_session_pump_effect_t&) const -> bool = default;
+};
+using preview_session_pump_outcome_t =
+    result_t<preview_session_pump_effect_t, preview_session_pump_effect_t>;
+
 struct preview_session_pump_result_t {
+    [[nodiscard]] static auto from(preview_session_pump_outcome_t&& outcome)
+        -> preview_session_pump_result_t;
     preview_session_pump_status_t status{preview_session_pump_status_t::not_started};
     std::optional<preview_bridge_pump_result_t> materialize;
     std::optional<preview_pump_result_t> decode;
@@ -62,6 +97,7 @@ enum class preview_session_render_status_t {
 };
 
 using preview_session_render_result_t = session_render_result_t<preview_session_render_status_t>;
+using preview_session_render_outcome_t = session_render_outcome_t<preview_session_render_status_t>;
 
 struct preview_loop_region_t {
     std::uint64_t begin_frame{};
@@ -84,17 +120,31 @@ class preview_session_t {
                              std::span<const preview_object_source_binding_t> objects,
                              std::span<const preview_metronome_source_binding_t> metronome = {},
                              std::uint64_t seek_frame = 0, preview_pump_options_t options = {},
-                             std::uint64_t minimum_end_frame = 0)
-        -> preview_session_start_result_t;
+                             std::uint64_t minimum_end_frame = 0) -> preview_session_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame, preview_pump_options_t options = {})
         -> preview_session_start_result_t;
     [[nodiscard]] auto pump(preview_pump_options_t options = {}) -> preview_session_pump_result_t;
+    [[nodiscard]] auto
+    start_session(const preview_schedule_t& schedule,
+                  std::span<const preview_object_source_binding_t> objects,
+                  std::span<const preview_metronome_source_binding_t> metronome = {},
+                  std::uint64_t seek_frame = 0, preview_pump_options_t options = {},
+                  std::uint64_t minimum_end_frame = 0) -> preview_session_start_outcome_t;
+    [[nodiscard]] auto seek_session(std::uint64_t sample_frame, preview_pump_options_t options = {})
+        -> preview_session_start_outcome_t;
+    [[nodiscard]] auto restart_session_loop(std::uint64_t expected_generation)
+        -> preview_session_start_outcome_t;
+    [[nodiscard]] auto pump_session(preview_pump_options_t options = {})
+        -> preview_session_pump_outcome_t;
     // Output producers can require their owned generation; stale work emits
     // silence and leaves a replacement session untouched.
     [[nodiscard]] auto render(std::span<float> interleaved_stereo,
-        std::optional<std::uint64_t> expected_generation = {})
+                              std::optional<std::uint64_t> expected_generation = {})
         -> preview_session_render_result_t;
-    [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept -> transport_stop_result_t;
+    [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,
+        std::optional<std::uint64_t> expected_generation = {}) -> preview_session_render_outcome_t;
+    [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept
+        -> transport_stop_result_t;
 
     // Rendering clamps at end_frame and never seeks. An output refill worker can
     // prepare the next iteration while already queued PCM continues playing.
@@ -142,7 +192,7 @@ class preview_session_t {
   private:
     [[nodiscard]] auto prime_started(preview_bridge_start_result_t started,
                                      std::uint64_t timeline_frame, preview_pump_options_t options, bool loop_restart = false)
-        -> preview_session_start_result_t;
+        -> preview_session_start_outcome_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
 

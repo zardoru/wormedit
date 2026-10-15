@@ -862,3 +862,57 @@ TEST_CASE("SV preparation reads an already staged transaction document",
     CHECK(history.document.charts.front().sv_recipes.back().id == recipe_id_t{21});
     CHECK(history.undo.size() == 1);
 }
+
+TEST_CASE("SV shared samples retain tolerance and strict legacy warning rejection", "[unit][sv-recipe][results]") {
+    sv_recipe_sample_outcome_t samples{.value = {.tolerance_met = false},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::unsupported_feature, .message = "warning"}}};
+    CHECK(samples.ok());
+    const auto sampled = sv_recipe_sample_result_t::from(std::move(samples));
+    CHECK_FALSE(sampled);
+    CHECK_FALSE(sampled.tolerance_met);
+}
+
+TEST_CASE("SV shared compilation retains output and strict legacy warning rejection", "[unit][sv-recipe][results]") {
+    sv_recipe_compilation_outcome_t compilation{.value = {.output = sv_recipe_output_t::speeds},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::unsupported_feature, .message = "warning"}}};
+    CHECK(compilation.ok());
+    auto compiled = sv_recipe_compilation_t::from(std::move(compilation));
+    CHECK_FALSE(compiled);
+    const auto restored = std::move(compiled).into_outcome();
+    CHECK(restored.ok());
+    CHECK(restored.value.output == sv_recipe_output_t::speeds);
+}
+
+TEST_CASE("SV shared export bake retains chart and strict legacy warning rejection", "[unit][sv-recipe][results]") {
+    sv_recipe_export_bake_outcome_t bake{.value = make_recipe_chart(),
+        .diagnostics = {{.severity = diagnostic_severity_t::warning,
+            .code = diagnostic_code_t::unsupported_feature, .message = "warning"}}};
+    CHECK(bake.ok());
+    const auto baked = sv_recipe_export_bake_result_t::from(std::move(bake));
+    CHECK_FALSE(baked);
+    CHECK(baked.chart.has_value());
+}
+
+TEST_CASE("SV primary sample factory retains exact curve points", "[unit][sv-recipe][results]") {
+    const auto chart = make_recipe_chart();
+    const auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {3, 1});
+    const auto samples = sv_recipe_samples_t::from(chart, recipe);
+    REQUIRE(samples.ok());
+    REQUIRE(samples.value.points.size() == 3);
+    CHECK(samples.value.points[1].value == Catch::Approx(2.0));
+}
+
+TEST_CASE("SV primary compilation factory retains the output family", "[unit][sv-recipe][results]") {
+    const auto compilation = sv_recipe_compiled_output_t::from(make_recipe_chart(), sv_recipe_output_t::sv);
+    REQUIRE(compilation.ok());
+    CHECK(compilation.value.output == sv_recipe_output_t::sv);
+}
+
+TEST_CASE("SV primary bake factory publishes a chart without recipes", "[unit][sv-recipe][results]") {
+    const auto bake = sv_recipe_export_bake_result_t::from(make_recipe_chart());
+    REQUIRE(bake.ok());
+    REQUIRE(bake.value.has_value());
+    CHECK(bake.value->sv_recipes.empty());
+}

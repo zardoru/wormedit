@@ -1573,14 +1573,16 @@ auto append_osu_event_resources(chart_document_t& chart,
 } // namespace
 
 auto osu_mania_parse_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
-    -> osu_mania_parse_result_t {
-    osu_mania_parse_result_t result;
+auto osu_mania_parse_result_t::from(osu_mania_parse_outcome_t&& outcome) -> osu_mania_parse_result_t {
+    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto osu_mania_parse_result_t::from(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
+    -> osu_mania_parse_outcome_t {
+    osu_mania_parse_outcome_t result{};
     const auto fail = [&](osu_mania_parse_diagnostic_code_t code, std::string message,
                           std::size_t order = 0,
                           std::optional<std::size_t> offset = std::nullopt) -> void {
@@ -1725,7 +1727,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
             source_group.ordered_field_source_orders;
 
         song.charts.push_back(std::move(chart));
-        result.song = std::move(song);
+        result.value = std::move(song);
         if (timing_quantized)
             result.diagnostics.push_back({diagnostic_severity_t::warning,
                 osu_mania_parse_diagnostic_code_t::timing_quantization,
@@ -1733,15 +1735,15 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                 "retain bounded source-time alignment and original timestamps are preserved",
                 0, std::nullopt});
     } catch (const parse_abort_t&) {
-        result.song.reset();
+        result.value.reset();
     } catch (const std::exception& error) {
-        result.song.reset();
+        result.value.reset();
         result.diagnostics.push_back({diagnostic_severity_t::error,
                                       osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                                       std::string("osu! import failed atomically: ") + error.what(),
                                       0, std::nullopt});
     } catch (...) {
-        result.song.reset();
+        result.value.reset();
         result.diagnostics.push_back({diagnostic_severity_t::error,
                                       osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                                       "osu! import failed atomically", 0, std::nullopt});
@@ -3284,14 +3286,16 @@ auto serialize_osu_bookmarks(const chart_document_t& chart, const measure_index_
 } // namespace
 
 auto osu_mania_write_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options)
-    -> osu_mania_write_result_t {
-    osu_mania_write_result_t result;
+auto osu_mania_write_result_t::from(osu_mania_write_outcome_t&& outcome) -> osu_mania_write_result_t {
+    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write_options_t options)
+    -> osu_mania_write_outcome_t {
+    osu_mania_write_outcome_t result{};
     const auto fail = [&](osu_mania_write_diagnostic_code_t code, std::string message,
                           std::string field = {}) -> void {
         result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
@@ -3411,7 +3415,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                 ? passthrough_fields(*chart, song, result.diagnostics)
                                 : std::vector<passthrough_field_t>{};
         project_osu_specialstyle_field(*chart, extra_fields);
-        if (result.has_errors())
+        if (!result.ok())
             throw osu_write_abort_t{};
         std::size_t metadata_field_count{};
         std::size_t metadata_bytes{};
@@ -3427,27 +3431,35 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         };
         account_osu_metadata(music_files, bookmark_times, song, *chart, tags, keys, extra_fields,
                              account_metadata);
-        result.text = assemble_osu_output(song, *chart, options, output_profile, music_files,
+        result.value = assemble_osu_output(song, *chart, options, output_profile, music_files,
                                           bookmark_times, tags, keys, extra_fields, event_output,
                                           timing_output, hit_output, storyboard_output,
                                           account_event, fail);
     } catch (const osu_write_abort_t&) {
-        result.text.reset();
+        result.value.reset();
     } catch (const std::exception& error) {
-        result.text.reset();
+        result.value.reset();
         result.diagnostics.push_back(
             {.severity = diagnostic_severity_t::error,
              .code = osu_mania_write_diagnostic_code_t::invalid_document,
              .message = std::string("osu! export failed atomically: ") + error.what(),
              .field = "document"});
     } catch (...) {
-        result.text.reset();
+        result.value.reset();
         result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
                                       .code = osu_mania_write_diagnostic_code_t::invalid_document,
                                       .message = "osu! export failed atomically",
                                       .field = "document"});
     }
     return result;
+}
+
+auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options) -> osu_mania_parse_result_t {
+    return osu_mania_parse_result_t::from(osu_mania_parse_result_t::from(bytes, std::move(options)));
+}
+
+auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options) -> osu_mania_write_result_t {
+    return osu_mania_write_result_t::from(osu_mania_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

@@ -1266,3 +1266,36 @@ TEST_CASE("BMS branch leaf move rejects edges stale input and else leaves atomic
     CHECK_FALSE(result.diagnostics.empty());
     CHECK(with_else.document.revision == else_revision);
 }
+
+TEST_CASE("BMS rematerialization failures retain the three diagnostic phases", "[unit][bms][branch][results]") {
+    bms_branch_selection_outcome_t outcome{};
+    outcome.diagnostics.selection.push_back({.message = "selection"});
+    outcome.diagnostics.write.push_back({.message = "write"});
+    outcome.diagnostics.parse.push_back({.message = "parse"});
+    CHECK_FALSE(outcome.ok());
+    const auto legacy = bms_branch_selection_result_t::from(std::move(outcome));
+    CHECK_FALSE(static_cast<bool>(legacy));
+    CHECK(legacy.has_errors());
+    CHECK(legacy.write_diagnostics.front().message == "write");
+    CHECK(legacy.parse_diagnostics.front().message == "parse");
+}
+
+TEST_CASE("BMS rematerialization retains its legacy song-presence rule", "[unit][bms][branch][results]") {
+    bms_branch_selection_outcome_t outcome{};
+    outcome.value.song.emplace();
+    outcome.diagnostics.write.push_back({.message = "write"});
+    const auto legacy = bms_branch_selection_result_t::from(std::move(outcome));
+    CHECK(static_cast<bool>(legacy));
+    CHECK(legacy.has_errors());
+    CHECK(legacy.write_diagnostics.front().message == "write");
+}
+
+TEST_CASE("BMS primary rematerialization selects a detached branch", "[unit][bms][branch][results]") {
+    auto history = make_history();
+    const auto before = retained_bms_bytes(history.document);
+    const auto outcome = bms_branch_selection_result_t::from(history.document, selected_branch(history, 2));
+    REQUIRE(outcome.ok());
+    REQUIRE(outcome.value.song.has_value());
+    CHECK(first_note_resource_name(*outcome.value.song) == "inactive.wav");
+    CHECK(retained_bms_bytes(history.document) == before);
+}

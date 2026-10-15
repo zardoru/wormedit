@@ -248,8 +248,4 @@ auto create_file_atomic(const std::filesystem::path& path, std::string_view byte
     temporary.owned = false;
     return {};
 }
-auto save_file_atomic(const std::filesystem::path& path, std::string_view bytes,
-                      std::size_t maximum_bytes) -> atomic_file_save_result_t {
-    return atomic_file_save_result_t::from(create_file_atomic(path, bytes, maximum_bytes));
-}
 } // namespace wormedit

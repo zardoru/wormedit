@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/decoder.h>
+#include <wormedit/core/result.h>
 
 #include <atomic>
 #include <cstddef>
@@ -186,10 +187,23 @@ enum class block_decode_status_t {
 };
 
 struct block_decode_result_t {
+    [[nodiscard]] static auto from(block_decode_status_t status, std::size_t frames = 0,
+                                   read_status_t decoder_status = read_status_t::not_open)
+        -> result_t<block_decode_result_t, block_decode_result_t>;
+    [[nodiscard]] static auto from(block_decode_result_t&& report)
+        -> result_t<block_decode_result_t, block_decode_result_t>;
+    [[nodiscard]] static auto from(result_t<block_decode_result_t, block_decode_result_t>&& outcome)
+        -> block_decode_result_t;
     block_decode_status_t status{block_decode_status_t::decoder_unavailable};
     std::size_t frames{};
     read_status_t decoder_status{read_status_t::not_open};
+    auto operator==(const block_decode_result_t&) const -> bool = default;
 };
+using block_decode_outcome_t = result_t<block_decode_result_t, block_decode_result_t>;
+
+[[nodiscard]] auto decode_cached_block(decoder_t& decoder, decoded_block_cache_t& cache,
+                                     decode_session_t& session, session_token_t token,
+                                     audio_block_key_t key) -> block_decode_outcome_t;
 
 // Decodes at most one maximum_read_frames block. A completed block is retained
 // in the cache and its key is published only if the supplied session generation

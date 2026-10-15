@@ -1084,3 +1084,26 @@ TEST_CASE("aligned waveform window includes the outward-rounded visible rows", "
     CHECK(actual->begin_frame == expected->begin_frame);
     CHECK(actual->end_frame == expected->end_frame);
 }
+
+namespace {
+auto aligned_waveform_expected_error_keeps_selected_bin_size() -> bool {
+    using namespace wormedit::audio;
+    const auto chart = chart_fixture();
+    const auto timing = wormedit::build_timing_index(chart);
+    if (!timing) return false;
+    const auto waveform = pulse_waveform();
+    auto projected = aligned_waveform_result_t::from(waveform, nullptr, *timing.index,
+        {.viewport_scroll_pixels = 0, .viewport_height_pixels = 960,
+         .pixels_per_standard_measure = 960, .maximum_rows = 1},
+        nullptr, {.sample_points = true, .detail_level = true});
+    if (projected) return false;
+    const auto legacy = aligned_waveform_result_t::from(std::move(projected));
+    return !legacy && legacy.status == aligned_waveform_status_t::capacity_exceeded &&
+           legacy.chosen_frames_per_bin == 32 && legacy.rows.empty();
+}
+} // namespace
+
+TEST_CASE("aligned waveform expected capacity errors retain chosen detail bins",
+          "[unit][audio][waveform][aligned][result]") {
+    CHECK(aligned_waveform_expected_error_keeps_selected_bin_size());
+}

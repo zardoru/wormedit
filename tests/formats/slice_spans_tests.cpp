@@ -403,3 +403,24 @@ TEST_CASE("slice_spans unbound gameplay objects retain explicit no-audio mapping
     check_span(std::ranges::all_of(plan.mappings, [](const auto& mapping) { return !mapping.span_index; }));
     check_span(same_input(fixture.song, before));
 }
+
+TEST_CASE("slice plan diagnostics remain errors even with empty messages", "[unit][slice-spans][results]") {
+    using namespace wormedit;
+    slice_span_diagnostic_t diagnostic{};
+    check_span(diagnostic.is_error());
+    slice_span_plan_outcome_t outcome{.diagnostics = {diagnostic}};
+    check_span(!outcome.ok());
+    const auto legacy = slice_span_plan_t::from(std::move(outcome));
+    check_span(!static_cast<bool>(legacy));
+    check_span(legacy.diagnostics.front().message.empty());
+}
+
+TEST_CASE("slice render input borrows canonical geometry", "[unit][slice-spans][results]") {
+    using namespace wormedit;
+    slice_span_plan_outcome_t outcome{};
+    const auto input = slice_span_render_input_t::from(outcome);
+    check_span(&input.spans == &outcome.value.spans);
+    check_span(&input.mappings == &outcome.value.mappings);
+    check_span(&input.sources == &outcome.value.sources);
+    check_span(!input.has_errors);
+}

@@ -324,56 +324,56 @@ auto fill_assist_clicks(const preview_assist_click_grid_t& grid,
 
 } // namespace
 
-auto preview_transport_bridge_t::start(
+auto preview_object_source_binding_t::is_valid() const -> bool {
+    return static_cast<bool>(object) && !voices.empty() &&
+           std::ranges::all_of(voices, is_valid_voice_source);
+}
+
+auto preview_metronome_source_binding_t::is_valid() const -> bool {
+    return is_valid_accent(accent) && is_valid_voice_source(voice);
+}
+
+auto preview_transport_bridge_t::start_preview(
     const preview_schedule_t& schedule, std::span<const preview_object_source_binding_t> objects,
     std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
-    -> preview_bridge_start_result_t {
+    -> preview_bridge_start_outcome_t {
     if (schedule.sample_rate != output_sample_rate) {
-        return {.status = preview_bridge_start_status_t::unsupported_sample_rate};
+        return std::unexpected(preview_bridge_start_status_t::unsupported_sample_rate);
     }
     if (!is_sorted_events(schedule.playable) || !is_sorted_events(schedule.bgm) ||
         !is_sorted_metronome_events(schedule.metronome)) {
-        return {.status = preview_bridge_start_status_t::invalid_schedule};
+        return std::unexpected(preview_bridge_start_status_t::invalid_schedule);
     }
     std::size_t total_voices{};
     for (const auto& binding : objects) {
         if (binding.voices.size() > maximum_layers_per_object_ ||
             binding.voices.size() > maximum_total_voices_ - total_voices) {
-            return {.status = preview_bridge_start_status_t::source_binding_capacity_exceeded};
+            return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
         }
         total_voices += binding.voices.size();
     }
     if (objects.size() > maximum_object_bindings_ || total_voices > maximum_total_voices_) {
-        return {.status = preview_bridge_start_status_t::source_binding_capacity_exceeded};
+        return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
     }
-    if (!std::ranges::all_of(objects,
-                             [](const auto& binding) {
-                                 return static_cast<bool>(binding.object) &&
-                                        !binding.voices.empty() &&
-                                        std::ranges::all_of(binding.voices, is_valid_voice_source);
-                             }) ||
-        !std::ranges::all_of(metronome, [](const auto& binding) {
-            return is_valid_accent(binding.accent) && is_valid_voice_source(binding.voice);
-        })) {
-        return {.status = preview_bridge_start_status_t::invalid_source_binding};
+    if (!std::ranges::all_of(objects, &preview_object_source_binding_t::is_valid) ||
+        !std::ranges::all_of(metronome, &preview_metronome_source_binding_t::is_valid)) {
+        return std::unexpected(preview_bridge_start_status_t::invalid_source_binding);
     }
 
     std::vector<preview_object_source_binding_t> sorted_objects{objects.begin(), objects.end()};
     std::ranges::sort(sorted_objects, {}, &preview_object_source_binding_t::object);
     if (std::ranges::adjacent_find(sorted_objects, {}, &preview_object_source_binding_t::object) !=
         sorted_objects.end()) {
-        return {.status = preview_bridge_start_status_t::duplicate_source_binding};
+        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
     }
 
     std::vector<preview_metronome_source_binding_t> sorted_metronome{metronome.begin(),
                                                                      metronome.end()};
-    std::ranges::sort(sorted_metronome, [](const auto& left, const auto& right) {
-        return left.accent < right.accent;
-    });
-    if (std::ranges::adjacent_find(sorted_metronome, [](const auto& left, const auto& right) {
-            return left.accent == right.accent;
-        }) != sorted_metronome.end()) {
-        return {.status = preview_bridge_start_status_t::duplicate_source_binding};
+    std::ranges::sort(sorted_metronome, {}, &preview_metronome_source_binding_t::accent);
+    if (std::ranges::adjacent_find(sorted_metronome, {},
+                                   &preview_metronome_source_binding_t::accent) !=
+        sorted_metronome.end()) {
+        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
     }
 
     schedule_ = &schedule;
@@ -382,19 +382,20 @@ auto preview_transport_bridge_t::start(
     return begin_session(seek_frame);
 }
 
-auto preview_transport_bridge_t::seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t {
+auto preview_transport_bridge_t::seek_preview(std::uint64_t sample_frame)
+    -> preview_bridge_start_outcome_t {
     if (schedule_ == nullptr) {
-        return {.status = preview_bridge_start_status_t::not_started};
+        return std::unexpected(preview_bridge_start_status_t::not_started);
     }
     return begin_session(sample_frame);
 }
 
 auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
-    -> preview_bridge_start_result_t {
+    -> preview_bridge_start_outcome_t {
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return {.status = preview_bridge_start_status_t::transport_start_failed};
+        return std::unexpected(preview_bridge_start_status_t::transport_start_failed);
     }
     token_ = token;
     resumed_objects_.clear();
@@ -426,15 +427,34 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
             }
         }
     }
-    layer_tick_head_ = static_cast<std::size_t>(std::ranges::lower_bound(layer_tick_frames_, seek_frame) -
-                                               layer_tick_frames_.begin());
+    layer_tick_head_ = static_cast<std::size_t>(
+        std::ranges::lower_bound(layer_tick_frames_, seek_frame) - layer_tick_frames_.begin());
     assist_grid_.reset();
     assist_count_ = assist_head_ = 0;
     last_assist_handed_frame_.reset();
     assist_begin_frame_ = seek_frame;
     next_voice_id_ = 1;
     last_materialized_end_ = seek_frame;
-    return {.status = preview_bridge_start_status_t::started, .token = token};
+    return *token;
+}
+
+auto preview_bridge_start_result_t::from(preview_bridge_start_outcome_t&& outcome)
+    -> preview_bridge_start_result_t {
+    if (!outcome)
+        return {.status = outcome.error(), .token = std::nullopt};
+    return {.status = preview_bridge_start_status_t::started, .token = *outcome};
+}
+
+auto preview_transport_bridge_t::start(
+    const preview_schedule_t& schedule, std::span<const preview_object_source_binding_t> objects,
+    std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
+    -> preview_bridge_start_result_t {
+    return preview_bridge_start_result_t::from(
+        start_preview(schedule, objects, metronome, seek_frame));
+}
+
+auto preview_transport_bridge_t::seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t {
+    return preview_bridge_start_result_t::from(seek_preview(sample_frame));
 }
 
 auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
@@ -540,21 +560,24 @@ void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::ui
                                       static_cast<std::uint64_t>(bounded_end), assist_clicks_);
 }
 
-auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
-                                                        std::uint64_t current_frame)
-    -> preview_bridge_pump_result_t {
+auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end_frame,
+                                                     std::uint64_t current_frame)
+    -> preview_bridge_pump_outcome_t {
     if (schedule_ == nullptr || !token_.has_value()) {
-        return {.status = preview_bridge_pump_status_t::not_started};
+        return std::unexpected(
+            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::not_started});
     }
     if (!transport_.is_current(*token_)) {
-        return {.status = preview_bridge_pump_status_t::stale_generation};
+        return std::unexpected(
+            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::stale_generation});
     }
     if (exclusive_end_frame < last_materialized_end_) {
-        return {.status = preview_bridge_pump_status_t::non_monotonic_window};
+        return std::unexpected(preview_bridge_pump_effect_t{
+            .status = preview_bridge_pump_status_t::non_monotonic_window});
     }
 
     refill_assist_clicks(exclusive_end_frame, current_frame);
-    auto result = preview_bridge_pump_result_t{
+    auto result = preview_bridge_pump_effect_t{
         .status = preview_bridge_pump_status_t::ready,
     };
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
@@ -565,7 +588,8 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
 
     while (true) {
         const auto candidate = next_candidate(
-            {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index, bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
+            {playable, bgm, resumed_playable_, resumed_bgm_, clicks, playable_head_.index,
+             bgm_head_.index, resumed_playable_head_.index, resumed_bgm_head_.index,
              metronome_head_.index, music_pending_, music_timeline_frame_, music_source_frame_,
              music_frame_count_, std::span{assist_clicks_.data(), assist_count_}, assist_head_,
              layer_tick_frames_, layer_tick_head_});
@@ -573,13 +597,15 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             break;
         }
 
-        const auto selected_sources = sources_for_candidate(*candidate, objects_, resumed_objects_, metronome_);
+        const auto selected_sources =
+            sources_for_candidate(*candidate, objects_, resumed_objects_, metronome_);
         const auto sources = selected_sources.sources;
         const auto voice_kind = selected_sources.kind;
         if (sources.empty()) {
             ++result.missing_sources;
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_,
+                              layer_tick_head_);
             continue;
         }
         if (next_voice_id_ == 0 ||
@@ -588,12 +614,12 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             break;
         }
 
-        const auto music_segment = candidate->queue == queue_kind_t::music
-                                       ? std::min<std::uint64_t>(
-                                             candidate->frame_count,
-                                             maximum_read_frames -
-                                                 candidate->sample_frame % maximum_read_frames)
-                                       : candidate->frame_count;
+        const auto music_segment =
+            candidate->queue == queue_kind_t::music
+                ? std::min<std::uint64_t>(candidate->frame_count,
+                                          maximum_read_frames -
+                                              candidate->sample_frame % maximum_read_frames)
+                : candidate->frame_count;
         auto segment = *candidate;
         segment.frame_count = music_segment;
         auto voices = candidate_voices(segment, sources, voice_kind, next_voice_id_);
@@ -612,17 +638,36 @@ auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_f
             music_pending_ = music_frame_count_ != 0;
         } else {
             advance_candidate(*candidate, playable_head_, bgm_head_, resumed_playable_head_,
-                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_, layer_tick_head_);
+                              resumed_bgm_head_, metronome_head_, music_pending_, assist_head_,
+                              layer_tick_head_);
         }
-        const auto last_voice_id = next_voice_id_ + sources.size() - 1;
-        if (last_voice_id == std::numeric_limits<std::uint64_t>::max()) {
-            next_voice_id_ = 0;
-        } else {
-            next_voice_id_ = last_voice_id + 1;
-        }
+        advance_voice_ids(sources.size());
     }
     last_materialized_end_ = exclusive_end_frame;
+    if (result.status != preview_bridge_pump_status_t::ready)
+        return std::unexpected(std::move(result));
     return result;
+}
+
+void preview_transport_bridge_t::advance_voice_ids(std::size_t source_count) {
+    const auto last_voice_id = next_voice_id_ + source_count - 1;
+    next_voice_id_ =
+        last_voice_id == std::numeric_limits<std::uint64_t>::max() ? 0 : last_voice_id + 1;
+}
+
+auto preview_bridge_pump_result_t::from(preview_bridge_pump_outcome_t&& outcome)
+    -> preview_bridge_pump_result_t {
+    const auto& effect = outcome ? *outcome : outcome.error();
+    return {.status = effect.status,
+            .scheduled_events = effect.scheduled_events,
+            .missing_sources = effect.missing_sources};
+}
+
+auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
+                                                   std::uint64_t current_frame)
+    -> preview_bridge_pump_result_t {
+    return preview_bridge_pump_result_t::from(
+        materialize_preview(exclusive_end_frame, current_frame));
 }
 
 auto preview_transport_bridge_t::is_exhausted() const noexcept -> bool {

@@ -280,3 +280,26 @@ TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
         }
     }
 }
+
+namespace {
+auto expected_decoder_reads_keep_eof_and_positioned_counts() -> bool {
+    using namespace wormedit::audio;
+    decoder_t decoder;
+    const std::vector<float> pcm{0.25F, 0.5F, 0.75F, 1.0F};
+    if (!decoder.open_pcm(pcm)) return false;
+    std::vector<float> output(8);
+    const auto first = decoder.read_frames(output, 4);
+    if (!first) return false;
+    const auto positioned = decoder.read_frames_at(1, output, 4);
+    if (!positioned) return false;
+    const auto remaining = decoder.read(output, 1);
+    return first->status == read_status_t::end_of_stream && first->frames_read == 2 &&
+           positioned->status == read_status_t::end_of_stream && positioned->frames_read == 1 &&
+           remaining.status == read_status_t::end_of_stream && remaining.frames_read == 0;
+}
+} // namespace
+
+TEST_CASE("decoder expected reads keep EOF payloads and positioned cursor behavior",
+          "[unit][audio][decoder][result][eof]") {
+    CHECK(expected_decoder_reads_keep_eof_and_positioned_counts());
+}

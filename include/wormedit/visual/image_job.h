@@ -3,6 +3,7 @@
 #include <wormedit/core/async_job.h>
 #include <wormedit/core/task_graph.h>
 #include <wormedit/visual/image_decoder.h>
+#include <wormedit/visual/job_result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -58,14 +59,22 @@ struct image_job_options_t {
 
 using image_job_start_result_t = ::wormedit::async_job_start_result_t;
 
+using image_job_item_value_t = visual_job_value_t<resolved_visual_asset_t, rgba_image_t, image_status_t>;
+using image_job_item_outcome_t = result_t<image_job_item_value_t,
+    visual_job_error_t<resolved_visual_asset_t, rgba_image_t, image_status_t>>;
+
 struct image_job_item_t {
+    [[nodiscard]] static auto from(resolved_visual_asset_t source, image_status_t status,
+                                   std::shared_ptr<const rgba_image_t> image = {}, std::string message = {})
+        -> image_job_item_outcome_t;
+    [[nodiscard]] static auto from(image_job_item_outcome_t&& outcome) -> image_job_item_t;
     resolved_visual_asset_t source;
     image_status_t status{image_status_t::decode_failed};
     std::shared_ptr<const rgba_image_t> image;
     std::string message;
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return status == image_status_t::ready && image != nullptr;
+        return image_job_item_value_t::can_publish(status, image);
     }
 };
 
@@ -75,7 +84,11 @@ struct image_job_result_t {
     std::vector<image_job_item_t> items;
 };
 
+using image_job_completion_outcome_t =
+    async_job_completion_outcome_t<async_job_project_identity_t, image_job_result_t>;
+
 struct image_job_completion_t {
+    [[nodiscard]] static auto from(image_job_completion_outcome_t&& outcome) -> image_job_completion_t;
     std::uint64_t generation{};
     song_id_t project;
     std::uint64_t document_revision{};
@@ -109,6 +122,8 @@ class image_job_t {
                                image_job_options_t options = {}) -> image_job_start_result_t;
     [[nodiscard]] auto poll() -> std::optional<image_job_completion_t>;
     [[nodiscard]] auto wait() -> std::optional<image_job_completion_t>;
+    [[nodiscard]] auto poll_completion() -> std::optional<image_job_completion_outcome_t>;
+    [[nodiscard]] auto wait_completion() -> std::optional<image_job_completion_outcome_t>;
     void cancel() noexcept;
     [[nodiscard]] auto is_busy() const noexcept -> bool;
 

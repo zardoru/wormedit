@@ -34,24 +34,18 @@ namespace {
 struct conversion_context_t {
     const conversion_request_t& request;
     const conversion_limits_t& limits;
-    conversion_result_t& result;
+    conversion_outcome_t& result;
 };
 auto byte_span(std::string_view bytes) -> std::span<const std::byte> {
     return {reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()};
 }
 
-void add_diagnostic(conversion_result_t& result, diagnostic_severity_t severity,
+void add_diagnostic(conversion_outcome_t& result, diagnostic_severity_t severity,
                     conversion_diagnostic_code_t code, conversion_stage_t stage,
                     format_family_t target, std::optional<chart_id_t> chart,
                     std::string message, std::string path = {}, bool loss = false) {
     result.diagnostics.push_back({severity, code, stage, target, chart, loss, std::move(message),
                                   std::move(path)});
-}
-
-auto has_result_errors(const conversion_result_t& result) -> bool {
-    return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
 }
 
 auto selected_chart_ids(conversion_context_t& context, const song_document_t& song)
@@ -145,7 +139,7 @@ auto bms_extension(std::string_view profile) -> std::string_view {
 }
 
 template <typename Diagnostic>
-void append_target_diagnostics(conversion_result_t& result,
+void append_target_diagnostics(conversion_outcome_t& result,
                                const std::vector<Diagnostic>& diagnostics,
                                format_family_t target, std::optional<chart_id_t> chart,
                                loss_policy_t loss_policy) {
@@ -390,7 +384,7 @@ auto referenced_slice_export_resources(const song_document_t& song,
 
 template <typename Asset>
 void retain_slice_export_assets(std::vector<Asset>& assets,
-    const std::unordered_set<std::uint64_t>& retained, conversion_result_t& result) {
+    const std::unordered_set<std::uint64_t>& retained, conversion_outcome_t& result) {
     for (auto& asset : assets) {
         if (!retained.contains(asset.id.value)) continue;
         auto extension = asset.source_path.extension().string();
@@ -398,14 +392,14 @@ void retain_slice_export_assets(std::vector<Asset>& assets,
                 return c != '.' && !std::isalnum(c);
             })) extension.clear();
         const auto filename = "retained-" + std::to_string(asset.id.value) + extension;
-        result.asset_copies.push_back({asset.id, filename});
+        result.value.asset_copies.push_back({asset.id, filename});
         asset.source_path = filename;
     }
 }
 
 void prepare_retained_slice_assets(song_document_t& song, const std::vector<chart_id_t>& charts,
     const shared_slices_t& shared, const std::unordered_set<std::uint64_t>& silent_resources,
-    conversion_result_t& result) {
+    conversion_outcome_t& result) {
     const auto resources = referenced_slice_export_resources(song, charts);
     auto generated = silent_resources;
     for (const auto& [identity, item] : shared) {
@@ -419,8 +413,8 @@ void prepare_retained_slice_assets(song_document_t& song, const std::vector<char
     retain_slice_export_assets(song.audio_assets, retained, result);
     retain_slice_export_assets(song.visual_assets, retained, result);
     for (auto& resource : song.resources) {
-        const auto copy = std::ranges::find(result.asset_copies, resource.asset, &conversion_asset_copy_t::asset);
-        if (copy != result.asset_copies.end()) resource.name = copy->relative_path.generic_string();
+        const auto copy = std::ranges::find(result.value.asset_copies, resource.asset, &conversion_asset_copy_t::asset);
+        if (copy != result.value.asset_copies.end()) resource.name = copy->relative_path.generic_string();
     }
 }
 
@@ -467,7 +461,7 @@ void prepare_osu_slice_layout(chart_document_t& chart) {
 }
 
 auto add_bms_silent_binding(song_document_t& song, const std::vector<chart_id_t>& charts,
-    conversion_result_t& result, std::unordered_set<std::uint64_t>& silent_resources) -> bool {
+    conversion_outcome_t& result, std::unordered_set<std::uint64_t>& silent_resources) -> bool {
     std::optional<resource_id_t> silence;
     for (auto& chart : song.charts) {
         if (chart.source_family != format_family_t::bmson ||
@@ -481,7 +475,7 @@ auto add_bms_silent_binding(song_document_t& song, const std::vector<chart_id_t>
                     const auto filename = "conversion-silence.wav";
                     silence = append_slice_resource(song, {.begin_frame = 0, .end_frame = 1,
                         .filename = filename});
-                    result.silent_files.emplace_back(filename);
+                    result.value.silent_files.emplace_back(filename);
                     silent_resources.insert(silence->value);
                 }
                 note.sound = silence;
@@ -601,7 +595,7 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
         report_slice_timestamp_loss(context, *chart);
         for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
         if (!render_plan.spans.empty())
-            context.result.slice_plans.push_back(std::move(render_plan));
+            context.result.value.slice_plans.push_back(std::move(render_plan));
     }
     if (std::ranges::any_of(charts, [&](const auto id) {
             return selected_chart(prepared, id)->source_family == format_family_t::bmson;
@@ -786,7 +780,7 @@ void append_conversion_output(conversion_context_t& context, const song_document
                        "Conversion filename cannot fit its configured byte limit");
         return;
     }
-    context.result.outputs.push_back(
+    context.result.value.outputs.push_back(
         {context.request.target, chart, *filename, std::move(*bytes), false});
 }
 
@@ -797,7 +791,7 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
                        conversion_stage_t::request, context.request.target, std::nullopt,
                        "Unknown native-project target profile: " + context.request.target_profile);
     }
-    if (has_result_errors(context.result)) {
+    if (!context.result.ok()) {
         return;
     }
     const auto written = write_native_project(prepared);
@@ -959,8 +953,8 @@ auto serialize_conversion(conversion_context_t& context, const song_document_t& 
 auto validate_conversion_outputs(conversion_context_t& context,
                                  const stepmania_export_policy_result_t* stepmania_options)
     -> bool {
-    if (has_result_errors(context.result)) {
-        context.result.outputs.clear();
+    if (!context.result.ok()) {
+        context.result.value.outputs.clear();
         return false;
     }
     if (context.request.loss_policy == loss_policy_t::reject &&
@@ -969,10 +963,10 @@ auto validate_conversion_outputs(conversion_context_t& context,
                        conversion_diagnostic_code_t::loss_rejected, conversion_stage_t::serialize,
                        context.request.target, context.request.chart,
                        "Conversion produced a loss diagnostic under the reject policy");
-        context.result.outputs.clear();
+        context.result.value.outputs.clear();
         return false;
     }
-    if (context.result.outputs.empty()) {
+    if (context.result.value.outputs.empty()) {
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::target_diagnostic,
                        conversion_stage_t::serialize, context.request.target, context.request.chart,
@@ -980,20 +974,20 @@ auto validate_conversion_outputs(conversion_context_t& context,
         return false;
     }
     std::size_t total_bytes{};
-    for (const auto& output : context.result.outputs) {
+    for (const auto& output : context.result.value.outputs) {
         if (output.bytes.size() > context.limits.maximum_total_output_bytes - total_bytes) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::output_limit,
                            conversion_stage_t::serialize, context.request.target, output.chart,
                            "Conversion output set exceeds its configured byte limit");
-            context.result.outputs.clear();
+            context.result.value.outputs.clear();
             return false;
         }
         total_bytes += output.bytes.size();
     }
-    for (auto& output : context.result.outputs) {
+    for (auto& output : context.result.value.outputs) {
         if (!validate_reimport(context, output, stepmania_options)) {
-            context.result.outputs.clear();
+            context.result.value.outputs.clear();
             return false;
         }
         output.reimport_validated = true;
@@ -1003,14 +997,18 @@ auto validate_conversion_outputs(conversion_context_t& context,
 
 } // namespace
 
+auto conversion_result_t::from(conversion_outcome_t&& outcome) -> conversion_result_t {
+    return {.outputs = std::move(outcome.value.outputs), .slice_plans = std::move(outcome.value.slice_plans),
+        .asset_copies = std::move(outcome.value.asset_copies), .silent_files = std::move(outcome.value.silent_files),
+        .diagnostics = std::move(outcome.diagnostics)};
+}
+
 auto conversion_result_t::has_errors() const -> bool {
-    return has_result_errors(*this);
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
 conversion_result_t::operator bool() const noexcept {
-    return !outputs.empty() && !std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-               return diagnostic.severity == diagnostic_severity_t::error;
-           });
+    return !outputs.empty() && !has_errors();
 }
 
 auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
@@ -1027,36 +1025,41 @@ auto is_conversion_needs_slice_spans(const song_document_t& song, const conversi
     });
 }
 
-auto convert_document(const song_document_t& song, const conversion_request_t& request,
-                      conversion_limits_t limits) -> conversion_result_t {
-    conversion_result_t result;
+auto conversion_result_t::from(const song_document_t& song, const conversion_request_t& request,
+                      conversion_limits_t limits) -> conversion_outcome_t {
+    conversion_outcome_t result{};
     conversion_context_t context{request, limits, result};
     if (!validate_request_policies(context, song)) {
         return result;
     }
     const auto charts = selected_chart_ids(context, song);
-    if (has_result_errors(result) || !validate_selected_target(context, song, charts)) {
+    if (!result.ok() || !validate_selected_target(context, song, charts)) {
         return result;
     }
     auto prepared = prepare_document(context, song, charts);
-    if (!prepared || has_result_errors(result)) {
-        result.outputs.clear();
+    if (!prepared || !result.ok()) {
+        result.value.outputs.clear();
         return result;
     }
     if (!prepare_slice_exports(context, *prepared, charts)) {
-        result.slice_plans.clear();
-        result.asset_copies.clear();
-        result.silent_files.clear();
+        result.value.slice_plans.clear();
+        result.value.asset_copies.clear();
+        result.value.silent_files.clear();
         return result;
     }
     auto stepmania_options = serialize_conversion(context, *prepared, charts);
     if (!validate_conversion_outputs(context, stepmania_options ? &*stepmania_options : nullptr)) {
-        result.slice_plans.clear();
-        result.asset_copies.clear();
-        result.silent_files.clear();
+        result.value.slice_plans.clear();
+        result.value.asset_copies.clear();
+        result.value.silent_files.clear();
         return result;
     }
     return result;
+}
+
+auto convert_document(const song_document_t& song, const conversion_request_t& request,
+    conversion_limits_t limits) -> conversion_result_t {
+    return conversion_result_t::from(conversion_result_t::from(song, request, limits));
 }
 
 } // namespace wormedit

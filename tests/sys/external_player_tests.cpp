@@ -53,9 +53,11 @@ TEST_CASE("external_player expands quotes before source measure and path substit
         "-s <measure> \"<filename>\" '<apppath>/player exe' \"\" literal\\path ; $(echo)",
         "/app directory", "/chart directory/<measure>.bms", 17);
     REQUIRE(expanded);
-    CHECK(expanded.arguments == std::vector<std::string>{"-s", "17",
+    CHECK(*expanded == std::vector<std::string>{"-s", "17",
         "/chart directory/<measure>.bms", "/app directory/player exe", "", "literal\\path", ";", "$(echo)"});
-    CHECK_FALSE(expand_external_player_arguments("\"unfinished", "", "", 0));
+    const auto malformed = expand_external_player_arguments("valid \"unfinished", "", "", 0);
+    REQUIRE_FALSE(malformed);
+    CHECK(malformed.error() == "Player argument template has an unmatched quote.");
     CHECK_FALSE(expand_external_player_arguments(std::string{"bad\0arg", 7}, "", "", 0));
 }
 

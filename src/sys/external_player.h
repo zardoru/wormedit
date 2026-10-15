@@ -2,6 +2,7 @@
 
 #include <wormedit/core/document.h>
 #include <wormedit/core/preferences.h>
+#include <wormedit/core/result.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -16,11 +17,7 @@ namespace wormedit::sys {
 using external_player_definition_t = wormedit::external_player_definition_t;
 using external_player_preferences_t = wormedit::external_player_preferences_t;
 
-struct external_player_arguments_t {
-    std::vector<std::string> arguments;
-    std::string error;
-    explicit operator bool() const { return error.empty(); }
-};
+using external_player_arguments_t = result_t<std::vector<std::string>, std::string>;
 
 // Tokenize before substitution: spaces in substituted paths cannot create arguments.
 // Single/double quotes group arguments; backslashes are literal (including Windows paths).

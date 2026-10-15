@@ -110,14 +110,16 @@ TEST_CASE("cancelling or invalid requests leave no files behind", "[unit][audio]
     std::stop_source stop;
     std::size_t published = 0;
     const std::vector<audio_slice_range_t> ranges{{0, 100}, {100, 200}, {200, 300}};
-    const auto cancelled = render_audio_slices(
+    auto cancelled_outcome = rendered_audio_slices_t::from(
         source, ranges,
         {.directory = scratch.path, .base_name = "x", .stop = stop.get_token(),
          .progress = [&](std::size_t done, std::size_t) {
              published = done;
              if (done == 2) stop.request_stop();
          }});
-    CHECK(cancelled.status == slice_render_status_t::cancelled);
+    CHECK(cancelled_outcome == std::unexpected(wormedit::error_t<slice_render_status_t>{
+        slice_render_status_t::cancelled, "cancelled"}));
+    const auto cancelled = slice_render_result_t::from(std::move(cancelled_outcome));
     CHECK(published == 2);
     CHECK(cancelled.files.empty());
     CHECK(file_count(scratch.path) == 0);

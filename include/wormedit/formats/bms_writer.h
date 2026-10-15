@@ -52,7 +52,10 @@ struct bms_write_options_t {
     std::size_t max_slots_per_line{500'000};
 };
 
+using bms_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bms_write_diagnostic_t>>;
 struct bms_write_result_t {
+    [[nodiscard]] static auto from(const song_document_t& song, bms_write_options_t options = {}) -> bms_write_outcome_t;
+    [[nodiscard]] static auto from(bms_write_outcome_t&& outcome) -> bms_write_result_t;
     std::optional<std::string> bytes;
     std::vector<bms_write_diagnostic_t> diagnostics;
 

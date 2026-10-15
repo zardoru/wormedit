@@ -12,11 +12,12 @@ auto load_program_preferences_runtime() -> program_preferences_runtime_t {
     program_preferences_runtime_t runtime;
     try {
         const auto shortcut_path = prepare_platform_shortcut_profile_path();
-        if (!shortcut_path) {
-            runtime.warnings.push_back("Program preferences directory unavailable: " + shortcut_path.error);
+        if (!shortcut_path || shortcut_path->empty()) {
+            runtime.warnings.push_back("Program preferences directory unavailable: " +
+                                       (shortcut_path ? std::string{} : shortcut_path.error()));
             return runtime;
         }
-        runtime.path = shortcut_path.path.parent_path() / "preferences.json";
+        runtime.path = shortcut_path->parent_path() / "preferences.json";
         auto loaded = load_program_preferences_for_startup(runtime.path,
             runtime.path.parent_path() / "external-players.conf");
         runtime.preferences = std::move(loaded.contents.preferences);
@@ -35,8 +36,8 @@ auto apply_program_preferences(program_preferences_runtime_t& runtime,
     if (!serialized) return "Program preferences contain invalid or oversized values.";
     runtime.preferences = std::move(candidate);
     if (runtime.path.empty()) return "Program preferences changed, but their directory is unavailable.";
-    const auto saved = save_file_atomic(runtime.path, *serialized, maximum_preferences_bytes);
-    if (!saved) return "Program preferences changed, but saving failed: " + saved.error;
+    const auto saved = create_file_atomic(runtime.path, *serialized, maximum_preferences_bytes);
+    if (!saved) return "Program preferences changed, but saving failed: " + saved.error();
     return {};
 }
 namespace {
@@ -89,9 +90,9 @@ auto remember_recent_file(program_preferences_runtime_t& runtime,
     if (runtime.path.empty()) return "Recent files changed, but their directory is unavailable.";
     auto json = nlohmann::json::array();
     for (const auto& entry : runtime.recent_files) json.push_back(entry.path);
-    const auto saved = save_file_atomic(runtime.path.parent_path() / "recent-files.json",
+    const auto saved = create_file_atomic(runtime.path.parent_path() / "recent-files.json",
                                        json.dump(2), maximum_preferences_bytes);
-    return saved ? std::string{} : "Could not save recent files: " + saved.error;
+    return saved ? std::string{} : "Could not save recent files: " + saved.error();
 }
 
 void build_recent_files_view(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view) {

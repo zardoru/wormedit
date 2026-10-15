@@ -433,9 +433,10 @@ TEST_CASE("sample-frame conversion is exact with explicit rounding",
 
 TEST_CASE("sample-frame conversion rejects negative times",
           "[unit][core][timing][sample-frame]") {
-    const auto negative = sample_frame_at({-1, 2}, 44'100);
+    const auto negative = sample_frame_t::from({-1, 2}, 44'100);
     REQUIRE_FALSE(negative);
-    CHECK(negative.error->code == timing_error_code_t::negative_sample_frame);
+    REQUIRE(negative.error().has_value());
+    CHECK(negative.error()->code == timing_error_code_t::negative_sample_frame);
 }
 
 TEST_CASE("sample-frame conversion divides a wide coprime rational",
@@ -1080,7 +1081,8 @@ TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
     REQUIRE(built);
     CHECK(is_scroll_speed_index_current(*built.index, chart, *timing.index));
 
-    const auto midpoint = scroll_speed_at(*built.index, *timing.index, {120, 1});
+    auto shared_midpoint = scroll_speed_state_t::from(*built.index, *timing.index, {120, 1});
+    const auto midpoint = scroll_speed_query_result_t::from(std::move(shared_midpoint));
     REQUIRE(midpoint);
     CHECK(midpoint.state->speed_multiplier == signed_rational_t{3, 2});
     CHECK(midpoint.state->displacement_beats == signed_rational_t{5, 8});
@@ -1362,12 +1364,12 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
     REQUIRE(chart_end_timing);
     const auto chart_end_speed = build_scroll_speed_index(chart_end_chart, *chart_end_timing.index);
     REQUIRE(chart_end_speed);
-    const auto chart_end_span = scroll_speed_transition_span(
+    const auto chart_end_span = scroll_speed_transition_span_t::from(
         *chart_end_speed.index, *chart_end_timing.index, object_id_t{88});
     REQUIRE(chart_end_span);
-    CHECK(chart_end_span.span->begin_row == signed_rational_t{1'440, 1});
-    CHECK(chart_end_span.span->end_row == signed_rational_t{1'680, 1});
-    CHECK(chart_end_span.span->clipped);
+    CHECK(chart_end_span->value.begin_row == signed_rational_t{1'440, 1});
+    CHECK(chart_end_span->value.end_row == signed_rational_t{1'680, 1});
+    CHECK(chart_end_span->value.clipped);
 }
 
 TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps",
@@ -1412,20 +1414,20 @@ TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps"
     }
 
     const auto capped =
-        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 1});
-    REQUIRE(capped);
-    REQUIRE(capped.spans.size() == 1);
-    CHECK(capped.truncated);
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 1});
+    REQUIRE(capped.ok());
+    REQUIRE(capped.value.spans.size() == 1);
+    CHECK(capped.value.truncated);
     REQUIRE(capped.diagnostics.size() == 1);
     CHECK(capped.diagnostics[0].severity == diagnostic_severity_t::warning);
     CHECK(capped.diagnostics[0].code == timing_error_code_t::capacity_exceeded);
-    CHECK(capped.spans[0].source_event == speed.index->speed_segments[0].source_event);
+    CHECK(capped.value.spans[0].source_event == speed.index->speed_segments[0].source_event);
 
     const auto zero_cap =
-        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = 0});
-    REQUIRE(zero_cap);
-    CHECK(zero_cap.spans.empty());
-    CHECK(zero_cap.truncated);
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 0});
+    REQUIRE(zero_cap.ok());
+    CHECK(zero_cap.value.spans.empty());
+    CHECK(zero_cap.value.truncated);
     REQUIRE(zero_cap.diagnostics.size() == 1);
     CHECK(zero_cap.diagnostics[0].severity == diagnostic_severity_t::warning);
 
@@ -1812,7 +1814,8 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
     const auto& index = *built.index;
     for (const auto side : {timing_boundary_side_t::before_delays,
                             timing_boundary_side_t::event, timing_boundary_side_t::after_stops}) {
-        const auto member = index.seconds_at(240, side);
+        auto shared = index.query_seconds(240, side);
+        const auto member = timing_query_result_t::from(std::move(shared));
         const auto original = timing_at(index, 240, side);
         require_timing_query(static_cast<bool>(member.seconds));
         check_timing_query(static_cast<bool>(member.seconds == original.seconds));
@@ -1820,7 +1823,8 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
     }
     const auto fractional = exact_chart_row_t{120, {1, 2}};
     check_timing_query(static_cast<bool>(index.seconds_at(fractional).seconds == timing_at(index, fractional).seconds));
-    const auto inverse = index.row_at({0, 1}, {.extrapolate_before_chart = true});
+    auto shared_inverse = index.query_position({0, 1}, {.extrapolate_before_chart = true});
+    const auto inverse = timing_position_query_result_t::from(std::move(shared_inverse));
     check_timing_query(static_cast<bool>(inverse.absolute_row == musical_position_at(index, {0, 1},
         {.extrapolate_before_chart = true}).absolute_row));
     check_timing_query(static_cast<bool>(index.row_at({0, 1}).error->code == timing_error_code_t::position_out_of_range));
@@ -1885,4 +1889,59 @@ TEST_CASE("Timing frame last-row policy preserves playback clock rejection", "[u
     const auto before_zero = build_timing_index(chart);
     require_timing_query(static_cast<bool>(before_zero));
     check_timing_query(!before_zero.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
+}
+
+TEST_CASE("timing query adapters preserve an empty error without fabricating a diagnostic",
+          "[unit][core][timing][sample-frame]") {
+    auto outcome = timing_query_value_t<sample_frame_t>::from(std::nullopt);
+    REQUIRE_FALSE(outcome);
+    const auto legacy = sample_frame_result_t::from(std::move(outcome));
+    CHECK_FALSE(legacy);
+    CHECK_FALSE(legacy.error);
+}
+
+TEST_CASE("timing query value presence retains its diagnostic annotation",
+          "[unit][core][timing][sample-frame]") {
+    auto outcome = timing_query_value_t<sample_frame_t>::from(sample_frame_t{.frame = 7},
+        std::optional<timing_diagnostic_t>{timing_diagnostic_t{
+            .severity = diagnostic_severity_t::error, .code = timing_error_code_t::arithmetic_overflow,
+            .message = "retained annotation"}});
+    REQUIRE(outcome);
+    const auto legacy = sample_frame_result_t::from(std::move(outcome));
+    CHECK(legacy.frame == 7);
+    REQUIRE(legacy.error);
+    CHECK(legacy.error->message == "retained annotation");
+}
+
+TEST_CASE("coordinate errors retain warp metadata even without a diagnostic",
+          "[unit][core][timing]") {
+    auto original = timing_position_query_result_t{.absolute_row = std::nullopt, .inside_warp = true,
+                                                  .error = std::nullopt};
+    auto outcome = std::move(original).into_outcome();
+    REQUIRE_FALSE(outcome);
+    CHECK(outcome.error().inside_warp);
+    const auto legacy = timing_position_query_result_t::from(std::move(outcome));
+    CHECK(legacy.inside_warp);
+    CHECK_FALSE(legacy.error);
+}
+
+TEST_CASE("beat fit primary outcome retains the exact fitted rational", "[unit][core][timing][beat-fit][results]") {
+    auto fitted = beat_interval_fit_result_t::from(base_chart(), object_id_t{10},
+        {measure_id_t{1}, 480}, 3 * 48'000, 48'000);
+    REQUIRE(fitted);
+    CHECK(*fitted == signed_rational_t{60, 1});
+    const auto legacy = beat_interval_fit_result_t::from(std::move(fitted));
+    CHECK(legacy.beats_per_minute == signed_rational_t{60, 1});
+    CHECK_FALSE(legacy.error);
+}
+
+TEST_CASE("beat fit primary outcome retains invalid-fit diagnostics", "[unit][core][timing][beat-fit][results]") {
+    auto fitted = beat_interval_fit_result_t::from(base_chart(), object_id_t{10},
+        {measure_id_t{1}, 480}, 0, 0);
+    REQUIRE_FALSE(fitted);
+    CHECK(fitted.error().code == timing_error_code_t::invalid_fit);
+    const auto legacy = beat_interval_fit_result_t::from(std::move(fitted));
+    REQUIRE(legacy.error);
+    CHECK(legacy.error->code == timing_error_code_t::invalid_fit);
+    CHECK_FALSE(legacy.beats_per_minute);
 }

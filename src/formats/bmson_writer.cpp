@@ -1321,11 +1321,15 @@ auto bmson_write_result_t::has_errors() const -> bool {
     });
 }
 
-auto write_bmson(const song_document_t& song, bmson_write_options_t options)
-    -> bmson_write_result_t {
-    bmson_write_result_t result;
+auto bmson_write_result_t::from(bmson_write_outcome_t&& outcome) -> bmson_write_result_t {
+    return {.json = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+
+auto bmson_write_result_t::from(const song_document_t& song, bmson_write_options_t options)
+    -> bmson_write_outcome_t {
+    bmson_write_outcome_t result{};
     try {
-        result.json = write_impl(song, std::move(options), result.diagnostics);
+        result.value = write_impl(song, std::move(options), result.diagnostics);
     } catch (const write_failure_t& failure) {
         result.diagnostics.push_back({diagnostic_severity_t::error, failure.code,
                                       failure.message, failure.path});
@@ -1338,5 +1342,9 @@ auto write_bmson(const song_document_t& song, bmson_write_options_t options)
 }
 
 
+
+auto write_bmson(const song_document_t& song, bmson_write_options_t options) -> bmson_write_result_t {
+    return bmson_write_result_t::from(bmson_write_result_t::from(song, std::move(options)));
+}
 
 } // namespace wormedit

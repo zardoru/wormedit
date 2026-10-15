@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_slicer.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -46,7 +47,17 @@ enum class slice_render_status_t {
     write_error,
 };
 
+struct rendered_audio_slices_t {
+    [[nodiscard]] static auto from(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
+                                   const slice_render_options_t& options)
+        -> result_t<rendered_audio_slices_t, error_t<slice_render_status_t>>;
+    std::vector<std::filesystem::path> files;
+    auto operator==(const rendered_audio_slices_t&) const -> bool = default;
+};
+using slice_render_outcome_t = result_t<rendered_audio_slices_t, error_t<slice_render_status_t>>;
+
 struct slice_render_result_t {
+    [[nodiscard]] static auto from(slice_render_outcome_t&& outcome) -> slice_render_result_t;
     slice_render_status_t status{slice_render_status_t::invalid_request};
     // Every published file in order; empty unless status is completed.
     std::vector<std::filesystem::path> files;

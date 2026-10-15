@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/transport.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -16,6 +17,7 @@ struct audition_clip_t {
     std::uint64_t source_start_frame{};
     std::uint64_t frame_count{};
     float gain{1.0F};
+    auto operator==(const audition_clip_t&) const -> bool = default;
 };
 
 enum class audition_start_status_t : std::uint8_t {
@@ -28,10 +30,20 @@ enum class audition_start_status_t : std::uint8_t {
     transport_rejected_clip,
 };
 
+struct started_audition_t {
+    session_token_t token;
+    std::size_t scheduled_layers{};
+    auto operator==(const started_audition_t&) const -> bool = default;
+};
+using audition_start_outcome_t = result_t<started_audition_t, audition_start_status_t>;
+
 struct audition_start_result_t {
+    [[nodiscard]] static auto from(audition_start_outcome_t&& outcome) -> audition_start_result_t;
+
     audition_start_status_t status{audition_start_status_t::transport_start_failed};
     std::optional<session_token_t> token;
     std::size_t scheduled_layers{};
+    auto operator==(const audition_start_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == audition_start_status_t::started && token.has_value();
@@ -50,6 +62,8 @@ class audition_transport_bridge_t {
 
     [[nodiscard]] auto start(std::span<const audition_clip_t> clips)
         -> audition_start_result_t;
+    [[nodiscard]] auto start_clips(std::span<const audition_clip_t> clips)
+        -> audition_start_outcome_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {

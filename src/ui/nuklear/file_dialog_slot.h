@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/result.h>
 #include <cstdint>
 #include <limits>
 #include <mutex>
@@ -6,11 +7,19 @@
 #include <string>
 #include <utility>
 namespace wormedit::ui {
-struct file_dialog_result_t {
+struct file_dialog_choice_t {
     std::string path;
-    std::string error;
     bool canceled{};
+
+    auto operator==(const file_dialog_choice_t&) const -> bool = default;
 };
+struct file_dialog_failure_t {
+    file_dialog_choice_t choice;
+    std::string message;
+
+    auto operator==(const file_dialog_failure_t&) const -> bool = default;
+};
+using file_dialog_result_t = result_t<file_dialog_choice_t, file_dialog_failure_t>;
 class file_dialog_slot_t {
   public:
     auto begin() -> std::optional<std::uint64_t> {
@@ -28,7 +37,12 @@ class file_dialog_slot_t {
         if (!open_ || generation != generation_)
             return;
         open_ = false;
-        result_ = {.path = std::move(path), .error = std::move(error), .canceled = canceled};
+        file_dialog_choice_t choice{.path = std::move(path), .canceled = canceled};
+        if (error.empty())
+            result_.emplace(std::move(choice));
+        else
+            result_.emplace(std::unexpected{file_dialog_failure_t{
+                .choice = std::move(choice), .message = std::move(error)}});
     }
     auto take() -> std::optional<file_dialog_result_t> {
         std::lock_guard lock{mutex_};

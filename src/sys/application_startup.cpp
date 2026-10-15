@@ -33,13 +33,13 @@ auto select_initial_application_status(
         status = "Opened native project: " + requested_primary_path.generic_string();
     } else if (!requested_primary_path.empty()) {
         status = "Primary project was not loaded; review the completed recovery scan.";
-    } else if (platform_recovery) {
+    } else if (platform_recovery && !platform_recovery->empty()) {
         status = "No project loaded; recovery scan complete.";
     } else {
         status = "No project loaded; recovery discovery unavailable.";
     }
-    if (!platform_recovery && !platform_recovery.error.empty()) {
-        status += " " + platform_recovery.error;
+    if (!platform_recovery && !platform_recovery.error().empty()) {
+        status += " " + platform_recovery.error();
     }
     return status;
 }

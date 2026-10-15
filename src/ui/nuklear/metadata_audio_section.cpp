@@ -361,20 +361,21 @@ static void consume_metadata_file_dialog_result() {
     auto picked = worm_ui_nuklear_metadata_file_dialog_take();
     if (!picked) return;
     state.external_music_error.fill('\0');
-    if (!picked->error.empty()) {
+    if (!*picked) {
         std::snprintf(state.external_music_error.data(), state.external_music_error.size(), "%s",
-                      picked->error.c_str());
+                      picked->error().message.c_str());
         return;
     }
-    if (picked->canceled) return;
-    if (picked->path.size() >= state.external_music_path.size() ||
-        !std::filesystem::path{picked->path}.is_absolute()) {
+    const auto& choice = picked->value();
+    if (choice.canceled) return;
+    if (choice.path.size() >= state.external_music_path.size() ||
+        !std::filesystem::path{choice.path}.is_absolute()) {
         std::snprintf(state.external_music_error.data(), state.external_music_error.size(),
                       "Choose a bounded absolute file path.");
         return;
     }
     std::snprintf(state.external_music_path.data(), state.external_music_path.size(), "%s",
-                  picked->path.c_str());
+                  choice.path.c_str());
 }
 
 static void open_metadata_file_dialog() {

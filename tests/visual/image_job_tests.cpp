@@ -17,6 +17,17 @@ namespace {
 using namespace wormedit;
 using namespace wormedit::visual;
 
+auto has_item_error(const image_job_item_t& item, image_status_t status) -> bool {
+    auto outcome = image_job_item_t::from(item.source, item.status, item.image, item.message);
+    if (outcome) return false;
+    const auto& error = outcome.error();
+    const auto is_expected = error.cause.code == status && error.context.resource == item.source.resource &&
+                             error.context.asset == item.source.asset && error.cause.message == item.message &&
+                             error.payload == item.image;
+    const auto legacy = image_job_item_t::from(std::move(outcome));
+    return is_expected && !legacy;
+}
+
 constexpr std::array<std::uint8_t, 62> two_pixel_bmp{
     0x42, 0x4d, 0x3e, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x36, 0x00, 0x00, 0x00, 0x28, 0x00,
     0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01, 0x00, 0x18, 0x00, 0x00, 0x00,
@@ -133,8 +144,8 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     REQUIRE(completion);
     REQUIRE(*completion);
     REQUIRE(completion->result->items.size() == 2);
-    CHECK(completion->result->items[0].status == image_status_t::byte_limit_exceeded);
-    CHECK(completion->result->items[1].status == image_status_t::read_failed);
+    CHECK(has_item_error(completion->result->items[0], image_status_t::byte_limit_exceeded));
+    CHECK(has_item_error(completion->result->items[1], image_status_t::read_failed));
     CHECK(cache.size() == 0);
 
     CHECK(job.request(song_id_t{}, 20, sources).status ==
@@ -147,4 +158,17 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     image_job_t disabled{cache, scheduler, 5, 0};
     CHECK(disabled.request(song_id_t{3}, 20, sources).status ==
           image_job_start_status_t::invalid_request);
+}
+
+TEST_CASE("visual job publication requires a payload and preserves success messages",
+          "[unit][visual][image-job][negative]") {
+    const auto item_source = source(resource_id_t{4}, asset_id_t{5}, "synthetic.bmp");
+    auto missing = image_job_item_value_t::from(item_source, image_status_t::ready, {}, "missing payload");
+    REQUIRE_FALSE(missing.has_value());
+    CHECK(missing.error().cause.code == image_status_t::ready);
+    auto present = image_job_item_value_t::from(item_source, image_status_t::ready,
+        std::make_shared<const rgba_image_t>(), "cached image");
+    REQUIRE(present.has_value());
+    const auto legacy = image_job_item_t::from(std::move(present));
+    CHECK(legacy.message == "cached image");
 }

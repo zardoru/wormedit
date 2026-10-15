@@ -418,3 +418,64 @@ TEST_CASE("chart identity stamp query ignores revision for persistent configurat
     document.id = song_id_t{99};
     CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{2}));
 }
+
+TEST_CASE("command diagnosed no-change preserves revision and legacy application policy", "[unit][core][command][results]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    auto outcome = transaction.commit_outcome("No change");
+    REQUIRE(outcome.ok());
+    CHECK(outcome.value == document_command_effect_t{false, history.document.revision});
+    const auto legacy = document_command_result_t::from(std::move(outcome));
+    CHECK_FALSE(static_cast<bool>(legacy));
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("command diagnosed adapters retain warnings independently of application", "[unit][core][command][results]") {
+    document_command_outcome_t outcome{.value = {.applied = true, .revision = 7},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    REQUIRE(outcome.ok());
+    auto legacy = document_command_result_t::from(std::move(outcome));
+    CHECK(static_cast<bool>(legacy));
+    auto restored = document_command_result_t::from(std::move(legacy));
+    CHECK(restored.value == document_command_effect_t{true, 7});
+    CHECK(restored.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("command primary commit publishes one undoable document", "[unit][core][command][results]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    transaction.copy_document().charts.front().measures.front().notes.front().position.row = 240;
+    const auto outcome = transaction.commit_outcome("Move note");
+    REQUIRE(outcome.ok());
+    CHECK((outcome.value.applied && outcome.value.revision == history.document.revision));
+    REQUIRE(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(note_row(history) == 130);
+}
+
+TEST_CASE("command payload outcomes preserve domain metadata and command diagnostics", "[unit][core][command][results]") {
+    command_result_with_outcome_t<quantize_command_payload_t> outcome{
+        .value = {.command = {.applied = true, .revision = 7}, .payload = {.promoted_from = 240, .promoted_to = 480}},
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
+    REQUIRE(outcome.ok());
+    auto legacy = quantize_command_result_t::from(std::move(outcome));
+    CHECK(static_cast<bool>(legacy));
+    auto restored = quantize_command_result_t::from(std::move(legacy));
+    CHECK(restored.value.command == document_command_effect_t{true, 7});
+    CHECK((restored.value.payload.promoted_from == 240 && restored.value.payload.promoted_to == 480));
+    CHECK(restored.diagnostics.front().message == "warning");
+}
+
+TEST_CASE("failed command publication consumes its public working snapshot", "[unit][core][command][results]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t::from(history);
+    auto& working = transaction.copy_document();
+    const auto revision = working.revision;
+    working.charts.front().measures.front().notes.front().lane = lane_id_t{999};
+    const auto result = transaction.commit("Invalid note");
+    CHECK_FALSE(result.applied);
+    REQUIRE(transaction.proposed.has_value());
+    CHECK(transaction.proposed->charts.empty());
+    CHECK(transaction.proposed->revision == revision);
+    CHECK(history.undo.empty());
+}

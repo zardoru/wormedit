@@ -62,6 +62,30 @@ auto has_command(const command_registry_t& registry, std::string_view id) -> boo
     return find_command(registry, command_id_t{std::string(id)}) != nullptr;
 }
 
+auto warning_invoker(const command_invocation_context_t&) -> command_invocation_result_t {
+    return {.accepted = true, .diagnostics = {{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::unsupported_feature, .message = "callback warning"}}};
+}
+
+auto has_warning_only_dispatch() -> bool {
+    command_registry_t registry;
+    const shortcut_chord_t chord{.key = shortcut_key_t::a, .modifiers = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::control)};
+    const auto registered = command_registry_result_t::from(registry,
+        registration("edit.warning", command_focus_scope_t::global, chord, warning_invoker));
+    if (!registered.value || !registered.ok()) return false;
+    auto raw = warning_invoker({});
+    if (raw) return false;
+    auto invocation = std::move(raw).into_outcome();
+    if (!invocation.value || !invocation.ok()) return false;
+    const auto adapted = command_invocation_result_t::from(std::move(invocation));
+    const auto shortcut = dispatch_shortcut(registry, {.chord = chord}, focus_for_compose(),
+                                            shortcut_primary_modifier_t::control);
+    const auto menu = command_dispatch_result_t::from(command_dispatch_result_t::invoke(registry, command_id_t{"edit.warning"}, focus_for_compose()));
+    return adapted.accepted && !adapted && shortcut.status == command_dispatch_status_t::invoked &&
+           menu.status == command_dispatch_status_t::invoked && shortcut.diagnostics.size() == 1 &&
+           menu.diagnostics.size() == 1 && shortcut.diagnostics.front().message == "callback warning";
+}
+
 } // namespace
 
 namespace {
@@ -318,14 +342,14 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
     REQUIRE(profile.bindings.size() == 2);
     const auto serialized = serialize_shortcut_profile(profile);
     REQUIRE_FALSE(serialized.empty());
-    const auto parsed = parse_shortcut_profile(serialized);
+    const auto parsed = shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from(serialized));
     REQUIRE(parsed);
     CHECK(*parsed.profile == profile);
 
     REQUIRE(remap_command(registry, command_id_t{"edit.one"}, {}).applied);
     REQUIRE(
         remap_command(registry, command_id_t{"edit.two"}, {{.key = shortcut_key_t::d}}).applied);
-    REQUIRE(apply_shortcut_profile(registry, *parsed.profile).applied);
+    REQUIRE(shortcut_profile_result_t::from(shortcut_profile_result_t::from(registry, *parsed.profile)).applied);
     CHECK(find_command(registry, command_id_t{"edit.one"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{
               {.key = shortcut_key_t::c,
@@ -343,7 +367,7 @@ TEST_CASE("shortcut profiles round trip independently and apply atomically",
 
 TEST_CASE("malformed profiles, unknown chords, and all configured bounds are rejected",
           "[unit][core][command_registry][negative]") {
-    const auto invalid_json = parse_shortcut_profile("{bad json");
+    const auto invalid_json = shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from("{bad json"));
     CHECK_FALSE(invalid_json);
     CHECK(has_code(invalid_json.diagnostics, diagnostic_code_t::invalid_binding));
     const auto oversized_json =
@@ -724,11 +748,11 @@ const shortcut_chord_t remap_test_chord{.key = shortcut_key_t::k,
 
 void check_save_and_reload(const command_registry_t& registry, const std::shared_ptr<std::vector<command_id_t>>& calls,
                            const std::filesystem::path& path) {
-    REQUIRE(save_shortcut_profile_atomic(path, shortcut_profile_t::from(registry, "user")));
+    REQUIRE(create_shortcut_profile_file(path, shortcut_profile_t::from(registry, "user")));
     auto reloaded = remap_test_registry(calls);
-    const auto loaded = load_shortcut_profile(path);
+    const auto loaded = open_shortcut_profile(path);
     REQUIRE(loaded);
-    REQUIRE(apply_shortcut_profile(reloaded, *loaded.profile).applied);
+    REQUIRE(apply_shortcut_profile(reloaded, *loaded).applied);
     const auto* command = find_command(reloaded, {"test.remap"});
     REQUIRE(command != nullptr);
     CHECK(command->current_shortcuts == std::vector<shortcut_chord_t>{remap_test_chord});
@@ -756,7 +780,7 @@ TEST_CASE("failed remap save keeps the in-memory shortcut", "[core][command-regi
     std::filesystem::create_directories(directory);
 
     // A save into a missing directory fails, and the in-memory mapping stays in place.
-    CHECK_FALSE(save_shortcut_profile_atomic(directory / "missing" / "shortcuts.json",
+    CHECK_FALSE(create_shortcut_profile_file(directory / "missing" / "shortcuts.json",
                                              shortcut_profile_t::from(registry, "user")));
     CHECK(find_command(registry, {"test.remap"})->current_shortcuts ==
           std::vector<shortcut_chord_t>{remap_test_chord});
@@ -960,4 +984,47 @@ TEST_CASE("Workspace project command uses the shared Project vocabulary", "[core
     const auto* project = find_command(registry, {"workspace.open_setup"});
     REQUIRE(project != nullptr);
     CHECK(project->definition.display_name == "Open Project");
+}
+
+TEST_CASE("warning-only invocation remains accepted by menu and shortcut dispatch",
+          "[unit][core][command_registry]") {
+    CHECK(has_warning_only_dispatch());
+}
+
+namespace {
+auto has_warning_profile_adapters() -> bool {
+    const diagnostic_t warning{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::duplicate_binding, .message = "conflict"};
+    shortcut_profile_outcome_t applied{.value = true, .diagnostics = {warning}};
+    if (!applied.ok()) return false;
+    const auto legacy_applied = shortcut_profile_result_t::from(std::move(applied));
+    shortcut_profile_parse_outcome_t parsed{.value = shortcut_profile_t{.id = "warning"},
+        .diagnostics = {warning}};
+    if (!parsed.ok()) return false;
+    const auto legacy_parsed = shortcut_profile_parse_result_t::from(std::move(parsed));
+    return legacy_applied.applied && !legacy_applied && legacy_parsed.profile.has_value() &&
+           !legacy_parsed && legacy_parsed.diagnostics.size() == 1 &&
+           legacy_applied.diagnostics.size() == 1 &&
+           legacy_parsed.diagnostics.front().message == "conflict" &&
+           legacy_applied.diagnostics.front().message == "conflict";
+}
+} // namespace
+
+TEST_CASE("shortcut profile adapters retain warning-bearing successful effects",
+          "[unit][core][command_registry][results]") {
+    CHECK(has_warning_profile_adapters());
+}
+
+TEST_CASE("quiet shortcut dispatch is diagnostically successful without invoking a command",
+          "[unit][core][command_registry][results]") {
+    const command_registry_t registry;
+    auto quiet = command_dispatch_result_t::from(registry, {.chord = {.key = shortcut_key_t::a}},
+        {}, shortcut_primary_modifier_t::control);
+    CHECK(quiet.ok());
+    CHECK(quiet.value.status == command_dispatch_status_t::no_match);
+    CHECK_FALSE(quiet.value.command);
+    const auto legacy = command_dispatch_result_t::from(std::move(quiet));
+    CHECK_FALSE(legacy);
+    CHECK(legacy.status == command_dispatch_status_t::no_match);
+    CHECK(legacy.diagnostics.empty());
 }

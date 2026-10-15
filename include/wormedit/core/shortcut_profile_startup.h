@@ -16,27 +16,10 @@ inline constexpr std::size_t maximum_shortcut_profile_startup_diagnostic_bytes =
 
 using shortcut_profile_startup_outcome_t = diagnosed_t<shortcut_profile_startup_status_t>;
 
-[[nodiscard]] auto apply_startup_shortcut_profile(const std::filesystem::path& path,
-                                                  command_registry_t& registry)
-    -> shortcut_profile_startup_outcome_t;
-
-struct shortcut_profile_startup_result_t {
-    [[nodiscard]] static auto from(shortcut_profile_startup_outcome_t&& outcome)
-        -> shortcut_profile_startup_result_t;
-
-    shortcut_profile_startup_status_t status{shortcut_profile_startup_status_t::unavailable};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == shortcut_profile_startup_status_t::applied;
-    }
-};
-
 // Loads and applies a user preference profile at startup. A missing file is a
 // normal first-run condition and returns silently; rejected preferences leave
 // the registry unchanged. Diagnostics are capped for direct UI presentation.
-[[nodiscard]] auto load_shortcut_profile_for_startup(const std::filesystem::path& path,
-                                                     command_registry_t& registry)
-    -> shortcut_profile_startup_result_t;
-
+[[nodiscard]] auto apply_startup_shortcut_profile(const std::filesystem::path& path,
+                                                  command_registry_t& registry)
+    -> shortcut_profile_startup_outcome_t;
 } // namespace wormedit

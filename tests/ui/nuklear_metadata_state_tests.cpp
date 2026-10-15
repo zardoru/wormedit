@@ -68,7 +68,7 @@ TEST_CASE("Metadata file picker discards stale callbacks and reset generations",
     CHECK_FALSE(worm_ui_nuklear_metadata_file_dialog_open());
     const auto picked = worm_ui_nuklear_metadata_file_dialog_take();
     REQUIRE(picked);
-    CHECK(picked->path == "/selected.wav");
+    CHECK(picked->value().path == "/selected.wav");
     CHECK_FALSE(worm_ui_nuklear_metadata_file_dialog_take());
 
     const auto second = worm_ui_nuklear_metadata_file_dialog_begin();
@@ -202,4 +202,32 @@ TEST_CASE("Tag grips cancel or reject stale and stationary draft drops",
     worm_ui_nuklear_cancel_metadata_tag_drag();
     CHECK_FALSE(worm_ui_nuklear_finish_metadata_tag_drag());
     CHECK_FALSE(worm_ui_nuklear_begin_metadata_tag_drag(3, 10, 10));
+}
+
+TEST_CASE("File dialog cancellation is a present quiet completion", "[unit][frontend][metadata]") {
+    wormedit::ui::file_dialog_slot_t slot;
+    const auto generation = slot.begin();
+    REQUIRE(generation);
+    slot.complete(*generation, "/canceled.wav", {}, true);
+    const auto result = slot.take();
+    REQUIRE(result);
+    REQUIRE(*result);
+    CHECK(result->value().canceled);
+    CHECK(result->value().path == "/canceled.wav");
+    CHECK_FALSE(slot.take());
+}
+
+TEST_CASE("File dialog failure retains completion metadata and wins over cancellation",
+          "[unit][frontend][metadata]") {
+    wormedit::ui::file_dialog_slot_t slot;
+    const auto generation = slot.begin();
+    REQUIRE(generation);
+    slot.complete(*generation, "/failed.wav", "Picker failed.", true);
+    slot.complete(*generation, "/ignored.wav", {}, false);
+    const auto result = slot.take();
+    REQUIRE(result);
+    REQUIRE_FALSE(*result);
+    CHECK(result->error().message == "Picker failed.");
+    CHECK(result->error().choice.path == "/failed.wav");
+    CHECK(result->error().choice.canceled);
 }

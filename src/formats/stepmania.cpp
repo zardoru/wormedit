@@ -566,12 +566,6 @@ auto as_metadata_group(const std::vector<field_t>& fields, stepmania_profile_t p
     return group;
 }
 
-auto has_error(const std::vector<stepmania_parse_diagnostic_t>& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
-
 auto local_position(std::uint64_t row, std::uint64_t divisions) -> local_position_t {
     return {measure_id_t{row / divisions + 1}, row % divisions};
 }
@@ -1353,17 +1347,20 @@ auto validate_input_bytes(std::span<const std::byte> bytes,
 } // namespace
 
 auto stepmania_parse_result_t::has_errors() const -> bool {
-    return has_error(diagnostics);
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_options_t options)
-    -> stepmania_parse_result_t {
-    stepmania_parse_result_t result;
+auto stepmania_parse_result_t::from(stepmania_parse_outcome_t&& outcome) -> stepmania_parse_result_t {
+    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto stepmania_parse_result_t::from(std::span<const std::byte> bytes, stepmania_parse_options_t options)
+    -> stepmania_parse_outcome_t {
+    stepmania_parse_outcome_t result{};
     const auto source = validate_input_bytes(bytes, options, result.diagnostics);
     if (!source) return result;
     try {
         auto song = parse_stepmania_document(bytes, *source, options, result.diagnostics);
-        if (!has_error(result.diagnostics)) result.song = std::move(song);
+        if (result.ok()) result.value = std::move(song);
     } catch (const failure_t& failure) {
         result.diagnostics.push_back({.severity=diagnostic_severity_t::error,
             .code=failure.code, .message=failure.message, .source_order=failure.order,
@@ -1375,6 +1372,9 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
             .source_order=0, .byte_offset=std::nullopt});
     }
     return result;
+}
+auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_options_t options) -> stepmania_parse_result_t {
+    return stepmania_parse_result_t::from(stepmania_parse_result_t::from(bytes, std::move(options)));
 }
 
 namespace {
@@ -2163,35 +2163,38 @@ auto note_map_text(const chart_document_t& chart,
 } // namespace
 
 auto stepmania_write_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
+    return diagnostic_queries::has_errors(diagnostics);
 }
 
-auto resolve_stepmania_export_policy(stepmania_export_policy_t policy)
-    -> stepmania_export_policy_result_t {
-    stepmania_export_policy_result_t result;
+auto stepmania_export_policy_result_t::from(stepmania_export_policy_outcome_t&& outcome) -> stepmania_export_policy_result_t {
+    if (!outcome) return {.options = {}, .error = outcome.error().code,
+        .message = std::move(outcome.error().message)};
+    return {.options = std::move(*outcome), .error = stepmania_export_policy_error_t::none, .message = {}};
+}
+auto stepmania_export_policy_result_t::from(stepmania_export_policy_t policy)
+    -> stepmania_export_policy_outcome_t {
+    error_t<stepmania_export_policy_error_t> result{};
     if (policy.timing_syntax == stepmania_timing_syntax_t::unspecified) {
-        result.error = stepmania_export_policy_error_t::timing_syntax_required;
+        result.code = stepmania_export_policy_error_t::timing_syntax_required;
         result.message = "Select a StepMania timing syntax explicitly";
-        return result;
+        return std::unexpected(std::move(result));
     }
     if (policy.implementation_profile !=
             stepmania_implementation_profile_t::unspecified &&
         policy.file_profile != stepmania_profile_t::ssc) {
-        result.error =
+        result.code =
             stepmania_export_policy_error_t::named_implementation_requires_ssc;
         result.message = "Named StepMania implementation targets currently require SSC output";
-        return result;
+        return std::unexpected(std::move(result));
     }
     if (policy.implementation_profile !=
             stepmania_implementation_profile_t::unspecified &&
         policy.timing_syntax != stepmania_timing_syntax_t::native_warps) {
-        result.error =
+        result.code =
             stepmania_export_policy_error_t::named_implementation_requires_native_warps;
         result.message =
             "The selected implementation target is audited only with native WARPS";
-        return result;
+        return std::unexpected(std::move(result));
     }
 
     stepmania_write_options_t options;
@@ -2211,75 +2214,81 @@ auto resolve_stepmania_export_policy(stepmania_export_policy_t policy)
     case stepmania_timing_syntax_t::unspecified:
         break;
     }
-    result.options = std::move(options);
-    return result;
+    return options;
 }
 
-struct stepmania_writer_t {
-    const song_document_t& song;
-    stepmania_write_options_t options;
-    stepmania_write_result_t result;
-    std::string output;
-    std::vector<const chart_document_t*> charts;
-    std::vector<chart_document_t> baked_charts;
-    std::vector<std::vector<std::pair<std::string, std::string>>> timing_by_chart;
-    std::set<std::string> global_timing_keys;
-    const format_metadata_t* song_group{};
-    keysound_table_t keysounds;
+auto resolve_stepmania_export_policy(stepmania_export_policy_t policy) -> stepmania_export_policy_result_t {
+    return stepmania_export_policy_result_t::from(stepmania_export_policy_result_t::from(policy));
+}
+
+class stepmania_writer_t {
+    const song_document_t& song_;
+    stepmania_write_options_t options_;
+    stepmania_write_outcome_t result_{};
+    std::string output_;
+    std::vector<const chart_document_t*> charts_;
+    std::vector<chart_document_t> baked_charts_;
+    std::vector<std::vector<std::pair<std::string, std::string>>> timing_by_chart_;
+    std::set<std::string> global_timing_keys_;
+    const format_metadata_t* song_group_{};
+    keysound_table_t keysounds_;
 
     void report(stepmania_write_diagnostic_code_t code, std::string message,
                 std::string field, diagnostic_severity_t severity = diagnostic_severity_t::error) {
-        result.diagnostics.push_back({severity, code, std::move(message), std::move(field)});
+        result_.diagnostics.push_back({severity, code, std::move(message), std::move(field)});
     }
     auto resolve_options() -> bool {
-        if (options.target_implementation_profile !=
+        if (options_.target_implementation_profile !=
         stepmania_implementation_profile_t::unspecified) {
-        const auto resolved = resolve_stepmania_export_policy(
-            {.file_profile = options.profile,
-             .timing_syntax = options.target_timing_syntax ==
+        const auto resolved = stepmania_export_policy_result_t::from(
+            {.file_profile = options_.profile,
+             .timing_syntax = options_.target_timing_syntax ==
                                       stepmania_timing_syntax_t::unspecified
                                   ? stepmania_timing_syntax_t::native_warps
-                                  : options.target_timing_syntax,
-             .implementation_profile = options.target_implementation_profile});
+                                  : options_.target_timing_syntax,
+             .implementation_profile = options_.target_implementation_profile});
         if (!resolved) {
             report(stepmania_write_diagnostic_code_t::unsupported_feature,
-                   resolved.message,
-                   resolved.error ==
+                   resolved.error().message,
+                   resolved.error().code ==
                            stepmania_export_policy_error_t::named_implementation_requires_ssc
                        ? "profile"
                        : "WARPS");
             return false;
         }
-        options.target_timing_syntax = resolved.options->target_timing_syntax;
-        options.warp_encoding = resolved.options->warp_encoding;
+        options_.target_timing_syntax = resolved->target_timing_syntax;
+        options_.warp_encoding = resolved->warp_encoding;
     }
         return true;
     }
+  public:
     stepmania_writer_t(const song_document_t& source_song,
                        stepmania_write_options_t write_options)
-        : song(source_song), options(std::move(write_options)) {}
+        : song_(source_song), options_(std::move(write_options)) {}
+
+  private:
 
     auto select_and_bake_charts() -> bool {
-    for (const auto& chart : song.charts)
-        if (!options.chart || chart.id == *options.chart)
-            charts.push_back(&chart);
-    if (charts.empty()) {
+    for (const auto& chart : song_.charts)
+        if (!options_.chart || chart.id == *options_.chart)
+            charts_.push_back(&chart);
+    if (charts_.empty()) {
         report(stepmania_write_diagnostic_code_t::missing_chart,
                "No chart matches the requested StepMania output", "NOTES");
         return false;
     }
-    if (charts.size() > options.max_charts) {
+    if (charts_.size() > options_.max_charts) {
         report(stepmania_write_diagnostic_code_t::output_limit,
                "StepMania output exceeds the configured chart limit", "NOTES");
         return false;
     }
-    if (options.max_output_bytes == 0 || options.max_rows_per_measure == 0) {
+    if (options_.max_output_bytes == 0 || options_.max_rows_per_measure == 0) {
         report(stepmania_write_diagnostic_code_t::output_limit,
                "StepMania writer limits must be positive", "NOTES");
         return false;
     }
-    baked_charts.reserve(charts.size());
-    for (const auto* chart : charts) {
+    baked_charts_.reserve(charts_.size());
+    for (const auto* chart : charts_) {
         auto baked = bake_sv_recipes_for_export(*chart);
         if (!baked) {
             report(stepmania_write_diagnostic_code_t::unrepresentable_position,
@@ -2287,21 +2296,21 @@ struct stepmania_writer_t {
                    "SCROLLS/SPEEDS");
             return false;
         }
-        baked_charts.push_back(std::move(*baked.chart));
+        baked_charts_.push_back(std::move(*baked.chart));
     }
-    charts.clear();
-    charts.reserve(baked_charts.size());
-    for (const auto& chart : baked_charts) {
-        charts.push_back(&chart);
+    charts_.clear();
+    charts_.reserve(baked_charts_.size());
+    for (const auto& chart : baked_charts_) {
+        charts_.push_back(&chart);
     }
         return true;
     }
     void emit(std::string_view key, std::string_view value) {
-        emit_field(output, key, value, result.diagnostics, options.max_output_bytes);
+        emit_field(output_, key, value, result_.diagnostics, options_.max_output_bytes);
     }
     auto music_path() -> std::optional<std::string> {
         const resource_entry_t* music{};
-        for (const auto& resource : song.resources) {
+        for (const auto& resource : song_.resources) {
             if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end())
                 continue;
             if (music) {
@@ -2312,7 +2321,7 @@ struct stepmania_writer_t {
             music = &resource;
         }
         if (!music) return std::nullopt;
-        const auto asset = song.find_audio_asset(music->asset);
+        const auto asset = song_.find_audio_asset(music->asset);
         if (asset == nullptr || asset->source_path.empty()) {
             report(stepmania_write_diagnostic_code_t::invalid_metadata,
                    "Music resource has no audio asset path", "MUSIC");
@@ -2347,7 +2356,7 @@ struct stepmania_writer_t {
         const auto note = [&](const std::optional<resource_id_t>& sound) {
             if (sound && seen.insert(*sound).second) ordered.push_back(*sound);
         };
-        for (const auto* chart : charts)
+        for (const auto* chart : charts_)
             for (const auto& measure : chart->measures) {
                 for (const auto& item : measure.notes) note(item.sound);
                 for (const auto& item : measure.bgm_events) note(item.sound);
@@ -2357,7 +2366,7 @@ struct stepmania_writer_t {
     // The name a resource has in #KEYSOUNDS, or nothing when its file cannot be
     // written as a relative path that survives the comma-separated list.
     auto keysound_name(const resource_entry_t& resource) const -> std::optional<std::string> {
-        const auto asset = song.find_audio_asset(resource.asset);
+        const auto asset = song_.find_audio_asset(resource.asset);
         if (asset == nullptr) return std::nullopt;
         const auto authored = std::ranges::find_if(
             resource.target_identities, [](const auto& identity) {
@@ -2378,8 +2387,8 @@ struct stepmania_writer_t {
     }
     auto original_keysound_names() const -> std::vector<std::string> {
         std::optional<std::string> value;
-        if (song_group)
-            for (const auto& [key, text] : song_group->ordered_fields)
+        if (song_group_)
+            for (const auto& [key, text] : song_group_->ordered_fields)
                 if (text_util::ascii_upper(std::string(key)) == "KEYSOUNDS") value = text;
         if (!value || trim(*value).empty()) return {};
         std::string_view text = *value;
@@ -2396,42 +2405,42 @@ struct stepmania_writer_t {
                    "KEYSOUNDS", diagnostic_severity_t::warning);
             return;
         }
-        auto found = std::ranges::find(keysounds.names, *name);
-        if (found == keysounds.names.end()) {
-            keysounds.names.push_back(*name);
-            keysounds.bound.push_back(false);
-            found = std::prev(keysounds.names.end());
+        auto found = std::ranges::find(keysounds_.names, *name);
+        if (found == keysounds_.names.end()) {
+            keysounds_.names.push_back(*name);
+            keysounds_.bound.push_back(false);
+            found = std::prev(keysounds_.names.end());
         }
-        const auto index = static_cast<std::size_t>(std::distance(keysounds.names.begin(), found));
-        keysounds.bound[index] = true;
-        keysounds.indices.emplace(resource.id, index);
+        const auto index = static_cast<std::size_t>(std::distance(keysounds_.names.begin(), found));
+        keysounds_.bound[index] = true;
+        keysounds_.indices.emplace(resource.id, index);
     }
     void build_keysound_table() {
-        keysounds.names = original_keysound_names();
-        keysounds.bound.assign(keysounds.names.size(), false);
+        keysounds_.names = original_keysound_names();
+        keysounds_.bound.assign(keysounds_.names.size(), false);
         for (const auto id : referenced_sounds()) {
-            const auto found = std::ranges::find(song.resources, id, &resource_entry_t::id);
-            if (found != song.resources.end()) bind_keysound(*found);
+            const auto found = std::ranges::find(song_.resources, id, &resource_entry_t::id);
+            if (found != song_.resources.end()) bind_keysound(*found);
         }
     }
     void emit_keysounds() {
         build_keysound_table();
-        if (keysounds.names.empty()) return;
+        if (keysounds_.names.empty()) return;
         std::string value;
-        for (std::size_t index = 0; index < keysounds.names.size(); ++index)
-            value += (index == 0 ? "" : ",") + keysounds.names[index];
-        if (options.profile == stepmania_profile_t::ssc && keysounds.names.front().starts_with('#'))
+        for (std::size_t index = 0; index < keysounds_.names.size(); ++index)
+            value += (index == 0 ? "" : ",") + keysounds_.names[index];
+        if (options_.profile == stepmania_profile_t::ssc && keysounds_.names.front().starts_with('#'))
             value.insert(0, "\\");
         emit("KEYSOUNDS", value);
     }
     void emit_song_metadata() {
-    if (options.profile == stepmania_profile_t::ssc)
+    if (options_.profile == stepmania_profile_t::ssc)
         emit("VERSION", "0.83");
-    if (!song.metadata.title.empty())
-        emit("TITLE", song.metadata.title);
-    if (!song.metadata.artist.empty())
-        emit("ARTIST", song.metadata.artist);
-    song_group = family_group(song.metadata.format_groups);
+    if (!song_.metadata.title.empty())
+        emit("TITLE", song_.metadata.title);
+    if (!song_.metadata.artist.empty())
+        emit("ARTIST", song_.metadata.artist);
+    song_group_ = family_group(song_.metadata.format_groups);
     const auto modeled_music = music_path();
     if (modeled_music) emit("MUSIC", *modeled_music);
     emit_keysounds();
@@ -2440,13 +2449,13 @@ struct stepmania_writer_t {
         "WARPS",     "SCROLLS",    "SPEEDS",     "NOTEDATA", "STEPSTYPE",   "DESCRIPTION",
         "CHARTNAME", "CHARTSTYLE", "DIFFICULTY", "METER",    "RADARVALUES", "NOTES",
         "KEYSOUNDS"};
-    const auto source_music = group_value(song_group, "MUSIC");
+    const auto source_music = group_value(song_group_, "MUSIC");
     if (modeled_music || stepmania_relative_path(source_music)) modeled_song.insert("MUSIC");
-    if (options.profile == stepmania_profile_t::sm) {
+    if (options_.profile == stepmania_profile_t::sm) {
         modeled_song.insert("CREDIT");
-        const auto& author = charts.front()->metadata.author;
+        const auto& author = charts_.front()->metadata.author;
         if (std::ranges::any_of(
-                charts, [&](const auto* chart) { return chart->metadata.author != author; })) {
+                charts_, [&](const auto* chart) { return chart->metadata.author != author; })) {
             report(stepmania_write_diagnostic_code_t::conflicting_song_metadata,
                    "SM stores CREDIT at song scope; selected charts have different authors",
                    "CREDIT");
@@ -2456,49 +2465,49 @@ struct stepmania_writer_t {
     } else {
         modeled_song.insert("VERSION");
     }
-    append_unknown_fields(output, song_group, modeled_song, options.preserve_unknown_fields,
-                          result.diagnostics, options.max_output_bytes);
+    append_unknown_fields(output_, song_group_, modeled_song, options_.preserve_unknown_fields,
+                          result_.diagnostics, options_.max_output_bytes);
     }
     void prepare_timing() {
-        timing_by_chart.reserve(charts.size());
-        for (const auto* chart : charts)
-            timing_by_chart.push_back(make_timing_fields(*chart, options, result.diagnostics));
-        if (options.profile == stepmania_profile_t::sm) emit_shared_sm_timing();
+        timing_by_chart_.reserve(charts_.size());
+        for (const auto* chart : charts_)
+            timing_by_chart_.push_back(make_timing_fields(*chart, options_, result_.diagnostics));
+        if (options_.profile == stepmania_profile_t::sm) emit_shared_sm_timing();
         else emit_shared_ssc_timing();
     }
     void emit_shared_sm_timing() {
-        for (std::size_t index = 1; index < timing_by_chart.size(); ++index) {
-            if (timing_by_chart.front() != timing_by_chart[index])
+        for (std::size_t index = 1; index < timing_by_chart_.size(); ++index) {
+            if (timing_by_chart_.front() != timing_by_chart_[index])
                 report(stepmania_write_diagnostic_code_t::conflicting_song_timing,
                        "SM stores timing at song scope; selected charts have different timing maps",
                        "BPMS/STOPS/DELAYS/WARPS/SCROLLS/SPEEDS");
         }
-        for (const auto& [key, value] : timing_by_chart.front())
+        for (const auto& [key, value] : timing_by_chart_.front())
             emit(key, value);
     }
     void emit_shared_ssc_timing() {
         constexpr std::array<std::string_view, 7> timing_keys{
             "OFFSET", "BPMS", "STOPS", "DELAYS", "WARPS", "SCROLLS", "SPEEDS"};
         for (const auto key : timing_keys) {
-            if (!has_group_field(song_group, key))
+            if (!has_group_field(song_group_, key))
                 continue;
             bool chart_override{};
-            for (const auto* chart : charts)
+            for (const auto* chart : charts_)
                 chart_override = chart_override ||
                                  has_group_field(family_group(chart->metadata.format_groups), key);
             if (chart_override)
                 continue;
-            const auto first = std::ranges::find(timing_by_chart.front(), key,
+            const auto first = std::ranges::find(timing_by_chart_.front(), key,
                                                  &std::pair<std::string, std::string>::first);
-            if (first == timing_by_chart.front().end())
+            if (first == timing_by_chart_.front().end())
                 continue;
-            const bool shared = std::ranges::all_of(timing_by_chart, [&](const auto& timing) {
+            const bool shared = std::ranges::all_of(timing_by_chart_, [&](const auto& timing) {
                 const auto found =
                     std::ranges::find(timing, key, &std::pair<std::string, std::string>::first);
                 return found != timing.end() && found->second == first->second;
             });
             if (shared) {
-                global_timing_keys.insert(std::string(key));
+                global_timing_keys_.insert(std::string(key));
                 emit(first->first, first->second);
             }
         }
@@ -2555,10 +2564,10 @@ struct stepmania_writer_t {
         if (!chart_name.empty()) emit("CHARTNAME", chart_name);
         if (!chart_style.empty()) emit("CHARTSTYLE", chart_style);
         if (!chart.metadata.author.empty()) emit("CREDIT", chart.metadata.author);
-        append_unknown_fields(output, group, modeled_chart, options.preserve_unknown_fields,
-                              result.diagnostics, options.max_output_bytes);
-        for (const auto& [key, value] : timing_by_chart[chart_index])
-            if (!global_timing_keys.contains(key)) emit(key, value);
+        append_unknown_fields(output_, group, modeled_chart, options_.preserve_unknown_fields,
+                              result_.diagnostics, options_.max_output_bytes);
+        for (const auto& [key, value] : timing_by_chart_[chart_index])
+            if (!global_timing_keys_.contains(key)) emit(key, value);
         emit("NOTES", note_text);
     }
     void emit_sm_chart(const std::string& step_type, const std::string& description,
@@ -2575,7 +2584,7 @@ struct stepmania_writer_t {
         const auto& step_type = *resolved_step_type;
         const auto retained_description = group_value(group, "DESCRIPTION");
         const auto description =
-            options.profile == stepmania_profile_t::sm
+            options_.profile == stepmania_profile_t::sm
                 ? (!chart.metadata.name.empty() ? chart.metadata.name : retained_description)
                 : retained_description;
         const auto difficulty =
@@ -2588,11 +2597,11 @@ struct stepmania_writer_t {
                                ? "0,0,0,0,0"
                                : group_value(group, "RADARVALUES");
         const auto note_text = note_map_text(
-            chart, result.diagnostics, options.max_rows_per_measure, options.max_output_bytes,
-            keysounds);
+            chart, result_.diagnostics, options_.max_rows_per_measure, options_.max_output_bytes,
+            keysounds_);
         if (!note_text)
             return false;
-        if (options.profile == stepmania_profile_t::ssc) {
+        if (options_.profile == stepmania_profile_t::ssc) {
             emit_ssc_chart(chart, group, chart_index, step_type, description, difficulty, meter,
                            radar, *note_text);
         } else {
@@ -2605,20 +2614,28 @@ struct stepmania_writer_t {
                    "editor metadata", diagnostic_severity_t::warning);
         return true;
     }
-    auto run() -> stepmania_write_result_t {
-        if (!resolve_options() || !select_and_bake_charts()) return std::move(result);
+  public:
+    auto run() -> stepmania_write_outcome_t {
+        if (!resolve_options() || !select_and_bake_charts()) return std::move(result_);
         emit_song_metadata();
         prepare_timing();
-        for (std::size_t index = 0; index < charts.size(); ++index)
-            emit_chart(*charts[index], index);
-        if (!result.has_errors()) result.text = std::move(output);
-        return std::move(result);
+        for (std::size_t index = 0; index < charts_.size(); ++index)
+            emit_chart(*charts_[index], index);
+        if (result_.ok()) result_.value = std::move(output_);
+        return std::move(result_);
     }
 };
 
-auto write_stepmania(const song_document_t& song, stepmania_write_options_t options)
-    -> stepmania_write_result_t {
+auto stepmania_write_result_t::from(stepmania_write_outcome_t&& outcome) -> stepmania_write_result_t {
+    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
+}
+auto stepmania_write_result_t::from(const song_document_t& song, stepmania_write_options_t options)
+    -> stepmania_write_outcome_t {
     return stepmania_writer_t{song, std::move(options)}.run();
+}
+
+auto write_stepmania(const song_document_t& song, stepmania_write_options_t options) -> stepmania_write_result_t {
+    return stepmania_write_result_t::from(stepmania_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

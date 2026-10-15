@@ -9,15 +9,9 @@
 namespace wormedit {
 namespace {
 
-auto has_error(const auto& diagnostics) -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
-
-auto add_error(bms_branch_selection_result_t& result, bms_branch_selection_diagnostic_code_t code,
+auto add_error(bms_branch_selection_outcome_t& result, bms_branch_selection_diagnostic_code_t code,
                std::string message, std::string path) -> void {
-    result.diagnostics.push_back(
+    result.diagnostics.selection.push_back(
         {diagnostic_severity_t::error, code, std::move(message), std::move(path)});
 }
 
@@ -170,15 +164,15 @@ auto make_parse_options(const bms_branch_selection_request_t& request,
 auto serialize_branch_source(const song_document_t& song, const chart_document_t& chart,
                              const bms_branch_selection_request_t& request,
                              const std::optional<std::string>& profile_id,
-                             bms_branch_selection_result_t& result) -> std::optional<std::string> {
+                             bms_branch_selection_outcome_t& result) -> std::optional<std::string> {
     auto written = write_bms(song, {.chart = chart.id,
                                     .lane_profile_id = profile_id,
                                     .preserve_unchanged_source = false,
                                     .branch_policy = bms_branch_policy_t::preserve_tree,
                                     .output_encoding = std::nullopt,
                                     .max_slots_per_line = request.max_slots_per_line});
-    result.write_diagnostics = std::move(written.diagnostics);
-    if (!written.bytes.has_value() || has_error(result.write_diagnostics)) {
+    result.diagnostics.write = std::move(written.diagnostics);
+    if (!written.bytes.has_value() || diagnostic_queries::has_errors(result.diagnostics.write)) {
         add_error(result, bms_branch_selection_diagnostic_code_t::write_failed,
                   "the current BMS document could not be serialized without changing policy", "$");
         return std::nullopt;
@@ -195,11 +189,11 @@ auto baseline_controls_for(std::span<const std::byte> bytes,
                            const bms_branch_selection_request_t& request,
                            const std::optional<std::string>& profile_id,
                            const control_inventory_t& original,
-                           bms_branch_selection_result_t& result)
+                           bms_branch_selection_outcome_t& result)
     -> std::optional<control_inventory_t> {
     auto baseline = parse_bms_bytes(bytes, make_parse_options(request, profile_id));
     if (!baseline.song.has_value() || baseline.has_errors()) {
-        result.parse_diagnostics = std::move(baseline.diagnostics);
+        result.diagnostics.parse = std::move(baseline.diagnostics);
         add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
                   "serialized BMS source could not be reparsed for control-tree verification", "$");
         return std::nullopt;
@@ -225,7 +219,7 @@ auto baseline_controls_for(std::span<const std::byte> bytes,
 auto map_proposed_choices(const bms_branch_selection_request_t& request,
                           const control_inventory_t& original,
                           const control_inventory_t& baseline,
-                          bms_branch_selection_result_t& result)
+                          bms_branch_selection_outcome_t& result)
     -> std::optional<std::vector<bms_parse_options_t::branch_choice_t>> {
     std::vector<bms_parse_options_t::branch_choice_t> choices;
     choices.reserve(request.proposed.size());
@@ -276,12 +270,12 @@ auto parse_proposed_branch_source(std::span<const std::byte> bytes,
                                  std::vector<bms_parse_options_t::branch_choice_t> choices,
                                  const control_inventory_t& original,
                                  const chart_document_t& source_chart,
-                                 bms_branch_selection_result_t& result)
+                                 bms_branch_selection_outcome_t& result)
     -> std::optional<song_document_t> {
     auto parsed = parse_bms_bytes(bytes,
                                   make_parse_options(request, profile_id, std::move(choices)));
-    result.parse_diagnostics = std::move(parsed.diagnostics);
-    if (!parsed.song.has_value() || has_error(result.parse_diagnostics)) {
+    result.diagnostics.parse = std::move(parsed.diagnostics);
+    if (!parsed.song.has_value() || diagnostic_queries::has_errors(result.diagnostics.parse)) {
         add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
                   "serialized BMS source could not materialize the proposed branch selection", "$");
         return std::nullopt;
@@ -346,13 +340,13 @@ auto preserve_editor_state(const song_document_t& song, const chart_document_t& 
 } // namespace
 
 auto bms_branch_selection_result_t::has_errors() const -> bool {
-    return has_error(diagnostics) || has_error(write_diagnostics) || has_error(parse_diagnostics);
+    return diagnostic_queries::has_errors(diagnostics) || diagnostic_queries::has_errors(write_diagnostics) || diagnostic_queries::has_errors(parse_diagnostics);
 }
 
-auto rematerialize_bms_branch_selection(const song_document_t& song,
+auto bms_branch_selection_result_t::from(const song_document_t& song,
                                         const bms_branch_selection_request_t& request)
-    -> bms_branch_selection_result_t {
-    bms_branch_selection_result_t result;
+    -> bms_branch_selection_outcome_t {
+    bms_branch_selection_outcome_t result{};
     if (song.charts.size() != 1) {
         add_error(result, bms_branch_selection_diagnostic_code_t::unsupported_song_shape,
                   "BMS branch rematerialization currently requires a one-chart source document",
@@ -381,10 +375,10 @@ auto rematerialize_bms_branch_selection(const song_document_t& song,
         return result;
     }
 
-    result.preview =
+    result.value.preview =
         preview_bms_branch_projection(*chart->bms_control_tree, chart->active_branch_selection,
                                       request.proposed, request.projection_limits);
-    if (!result.preview) {
+    if (!result.value.preview) {
         add_error(result, bms_branch_selection_diagnostic_code_t::invalid_selection,
                   "the current or proposed branch selection does not resolve exactly",
                   "$.charts[0].active_branch_selection");
@@ -420,8 +414,19 @@ auto rematerialize_bms_branch_selection(const song_document_t& song,
         return result;
     }
     preserve_editor_state(song, *chart, *rematerialized);
-    result.song = std::move(rematerialized);
+    result.value.song = std::move(rematerialized);
     return result;
+}
+
+auto bms_branch_selection_result_t::from(bms_branch_selection_outcome_t&& outcome) -> bms_branch_selection_result_t {
+    return {.song = std::move(outcome.value.song), .preview = std::move(outcome.value.preview),
+        .diagnostics = std::move(outcome.diagnostics.selection), .write_diagnostics = std::move(outcome.diagnostics.write),
+        .parse_diagnostics = std::move(outcome.diagnostics.parse)};
+}
+
+auto rematerialize_bms_branch_selection(const song_document_t& song,
+    const bms_branch_selection_request_t& request) -> bms_branch_selection_result_t {
+    return bms_branch_selection_result_t::from(bms_branch_selection_result_t::from(song, request));
 }
 
 } // namespace wormedit

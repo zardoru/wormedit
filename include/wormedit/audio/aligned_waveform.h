@@ -2,6 +2,7 @@
 
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/result.h>
 
 #include <array>
 #include <cstddef>
@@ -109,6 +110,7 @@ struct aligned_waveform_row_t {
     std::array<float, output_channel_count> rms{};
     bool sample_point{};
     std::array<float, output_channel_count> samples{};
+    auto operator==(const aligned_waveform_row_t&) const -> bool = default;
 };
 
 enum class aligned_waveform_status_t {
@@ -120,6 +122,24 @@ enum class aligned_waveform_status_t {
 };
 
 struct aligned_waveform_result_t {
+    [[nodiscard]] static auto from(aligned_waveform_result_t&& report)
+        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+    [[nodiscard]] static auto from(result_t<aligned_waveform_result_t, aligned_waveform_result_t>&& outcome)
+        -> aligned_waveform_result_t;
+    [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
+                                   aligned_waveform_request_t request)
+        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+    [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
+                                   aligned_waveform_request_t request, decoded_block_cache_t& cache)
+        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+    [[nodiscard]] static auto from(const waveform_t& overview, const waveform_t* detail,
+                                   const timing_index_t& timing, aligned_waveform_request_t request,
+                                   decoded_block_cache_t* blocks, aligned_waveform_style_t style)
+        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+    [[nodiscard]] static auto from(const waveform_t& overview, const waveform_t* detail,
+                                   const display_row_table_t& table, aligned_waveform_request_t request,
+                                   decoded_block_cache_t* blocks, aligned_waveform_style_t style)
+        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
     aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
     std::vector<aligned_waveform_row_t> rows;
     // Composition diagnostics distinguish drawing mode from per-span data availability.
@@ -130,11 +150,13 @@ struct aligned_waveform_result_t {
     // Display work counters, independent of source length/zoom when pyramids are available.
     std::size_t sampled_bins{};
     std::size_t visited_slices{};
+    auto operator==(const aligned_waveform_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == aligned_waveform_status_t::projected;
     }
 };
+using aligned_waveform_outcome_t = result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
 
 // Each pixel span uses PCM, then available detail bins, then overview bins.
 // Drawing style is supplied independently of availability.
@@ -149,19 +171,32 @@ struct aligned_waveform_result_t {
 struct waveform_overview_row_t {
     double audio_fraction{};
     float absolute_peak{};
+    auto operator==(const waveform_overview_row_t&) const -> bool = default;
 };
 
 struct waveform_overview_result_t {
+    [[nodiscard]] static auto from(waveform_overview_result_t&& report)
+        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
+    [[nodiscard]] static auto from(result_t<waveform_overview_result_t, waveform_overview_result_t>&& outcome)
+        -> waveform_overview_result_t;
+    [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
+                                   aligned_waveform_request_t viewport, std::size_t maximum_rows)
+        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
+    [[nodiscard]] static auto from(const waveform_t& waveform, double begin_fraction,
+                                   double end_fraction, std::size_t maximum_rows)
+        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
     aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
     double visible_begin_fraction{};
     double visible_end_fraction{};
     std::optional<double> beat_zero_fraction;
     std::vector<waveform_overview_row_t> rows;
+    auto operator==(const waveform_overview_result_t&) const -> bool = default;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return status == aligned_waveform_status_t::projected;
     }
 };
+using waveform_overview_outcome_t = result_t<waveform_overview_result_t, waveform_overview_result_t>;
 
 [[nodiscard]] auto build_waveform_overview_view(
     const waveform_t& waveform, const timing_index_t& timing, aligned_waveform_request_t viewport,

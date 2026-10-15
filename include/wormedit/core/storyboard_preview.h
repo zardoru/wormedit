@@ -7,6 +7,9 @@
 #include <optional>
 #include <span>
 #include <string_view>
+#include <tuple>
+#include <limits>
+#include <algorithm>
 #include <vector>
 
 namespace wormedit {
@@ -14,6 +17,13 @@ namespace wormedit {
 // Immutable renderer-neutral index. Build it when the storyboard document
 // changes, then evaluate it from either an interactive or offline transport.
 struct storyboard_preview_source_t {
+    [[nodiscard]] auto is_active(std::int64_t time_ms) const noexcept -> bool {
+        return begin_time_ms <= time_ms && time_ms <= end_time_ms;
+    }
+    [[nodiscard]] auto has_sentinel_begin() const noexcept -> bool {
+        return begin_time_ms == std::numeric_limits<std::int64_t>::max();
+    }
+    [[nodiscard]] auto sort_key() const { return std::tie(layer_order, source_order, sprite_index); }
     std::size_t sprite_index{};
     std::uint64_t stable_id{};
     std::int64_t begin_time_ms{};
@@ -23,10 +33,15 @@ struct storyboard_preview_source_t {
 };
 
 struct storyboard_preview_index_t {
+    [[nodiscard]] static auto from(const storyboard_document_model_t& document,
+        storyboard_schedule_options_t options = {})
+        -> diagnosed_t<std::optional<storyboard_preview_index_t>, std::vector<storyboard_diagnostic_t>>;
     std::vector<storyboard_preview_source_t> sources;
 };
 
+using storyboard_preview_index_outcome_t = diagnosed_t<std::optional<storyboard_preview_index_t>, std::vector<storyboard_diagnostic_t>>;
 struct storyboard_preview_index_result_t {
+    [[nodiscard]] static auto from(storyboard_preview_index_outcome_t&& outcome) -> storyboard_preview_index_result_t;
     std::optional<storyboard_preview_index_t> index;
     std::vector<storyboard_diagnostic_t> diagnostics;
 
@@ -64,7 +79,22 @@ struct storyboard_frame_options_t {
     std::size_t maximum_nesting{128};
 };
 
+struct storyboard_frame_effect_t {
+    // std::span has no default equality; compare the live borrowed view through its element values.
+    [[nodiscard]] auto operator==(const storyboard_frame_effect_t& other) const -> bool {
+        return std::ranges::equal(instances, other.instances) && diagnostic == other.diagnostic &&
+            arena_error == other.arena_error;
+    }
+    std::span<const storyboard_draw_instance_t> instances;
+    std::optional<storyboard_diagnostic_t> diagnostic;
+    storyboard_arena_error_t arena_error{storyboard_arena_error_t::none};
+};
+using storyboard_frame_outcome_t = result_t<storyboard_frame_effect_t, storyboard_frame_effect_t>;
 struct storyboard_frame_result_t {
+    [[nodiscard]] static auto from(const storyboard_document_model_t& document,
+        const storyboard_preview_index_t& index, std::int64_t time_ms, storyboard_frame_arena_t& arena,
+        storyboard_frame_options_t options = {}) -> storyboard_frame_outcome_t;
+    [[nodiscard]] static auto from(storyboard_frame_outcome_t&& outcome) -> storyboard_frame_result_t;
     std::span<const storyboard_draw_instance_t> instances;
     std::optional<storyboard_diagnostic_t> diagnostic;
     storyboard_arena_error_t arena_error{storyboard_arena_error_t::none};

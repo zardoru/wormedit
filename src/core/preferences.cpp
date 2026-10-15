@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <array>
 #include <fstream>
+#include <functional>
 #include <iomanip>
 #include <sstream>
 #include <limits>
@@ -24,7 +25,7 @@ auto is_supported_rate(rational_t rate) -> bool {
 }
 
 struct preference_reader_t {
-    preferences_parse_result_t& result;
+    preferences_parse_effect_t& result;
     bool unknown{};
     void warn(std::string message) {
         if (result.warnings.size() < 128) result.warnings.push_back(std::move(message));
@@ -318,19 +319,30 @@ auto is_valid_external_player_preferences(const external_player_preferences_t& v
     });
 }
 
-auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t {
-    preferences_parse_result_t result{.preferences = program_preferences_t::with_defaults()};
+namespace {
+struct preference_json_budget_t {
+    std::size_t nodes{};
+    auto operator()(int depth, json_t::parse_event_t, json_t&) -> bool {
+        if (depth > static_cast<int>(maximum_preferences_depth) || ++nodes > 65536)
+            throw std::runtime_error("Preferences exceed nesting or node limits.");
+        return true;
+    }
+};
+} // namespace
+
+auto preferences_parse_result_t::from(preferences_parse_outcome_t&& outcome) -> preferences_parse_result_t {
+    const auto parsed = outcome.has_value();
+    auto effect = parsed ? std::move(*outcome) : std::move(outcome.error());
+    return {.preferences = std::move(effect.preferences), .warnings = std::move(effect.warnings), .parsed = parsed};
+}
+auto preferences_parse_result_t::from(std::string_view bytes) -> preferences_parse_outcome_t {
+    preferences_parse_effect_t result{.preferences = program_preferences_t::with_defaults()};
     if (bytes.size() > maximum_preferences_bytes) {
-        result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return result;
+        result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return std::unexpected(std::move(result));
     }
     try {
-        std::size_t nodes{};
-        const auto callback = [&](int depth, json_t::parse_event_t, json_t&) {
-            if (depth > static_cast<int>(maximum_preferences_depth) || ++nodes > 65536)
-                throw std::runtime_error("Preferences exceed nesting or node limits.");
-            return true;
-        };
-        const auto root = json_t::parse(bytes.begin(), bytes.end(), callback);
+        preference_json_budget_t budget;
+        const auto root = json_t::parse(bytes.begin(), bytes.end(), std::ref(budget));
         if (!root.is_object()) throw std::runtime_error("Preferences root must be an object.");
         const auto version = root.find("version");
         if (version != root.end() && (!version->is_number_integer() || *version != 1))
@@ -340,12 +352,16 @@ auto parse_program_preferences(std::string_view bytes) -> preferences_parse_resu
         read_general(reader, root); read_editor_audio(reader, root);
         read_display_minimap_layout(reader, root); read_players(reader, root);
         if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
-        result.parsed = true;
+        return result;
     } catch (const std::exception&) {
         result.preferences = program_preferences_t::with_defaults();
         result.warnings = {"Preferences are corrupt, unsupported, or exceed limits; defaults retained."};
     }
-    return result;
+    return std::unexpected(std::move(result));
+}
+
+auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t {
+    return preferences_parse_result_t::from(preferences_parse_result_t::from(bytes));
 }
 
 auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
@@ -390,10 +406,10 @@ auto load_program_preferences(const std::filesystem::path& path) -> preferences_
 }
 
 auto save_program_preferences_atomic(const std::filesystem::path& path,
-    const program_preferences_t& value) -> atomic_file_save_result_t {
+    const program_preferences_t& value) -> atomic_file_save_outcome_t {
     const auto bytes = serialize_program_preferences(value);
-    if (!bytes) return {.error = "Preferences contain invalid or oversized values."};
-    return save_file_atomic(path, *bytes, maximum_preferences_bytes);
+    if (!bytes) return std::unexpected{"Preferences contain invalid or oversized values."};
+    return create_file_atomic(path, *bytes, maximum_preferences_bytes);
 }
 auto load_legacy_external_player_preferences(const std::filesystem::path& path,
     external_player_preferences_t& preferences) -> std::string {
@@ -434,7 +450,7 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
         else result.migrated = true;
     }
     const auto saved = save_program_preferences_atomic(path, result.contents.preferences);
-    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error);
+    if (!saved) result.contents.warnings.push_back("Preferences could not be saved: " + saved.error());
     return result;
 }
 

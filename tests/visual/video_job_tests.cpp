@@ -43,6 +43,28 @@ auto frame_for(const resolved_visual_asset_t& item, std::size_t byte_count = 16U
                            .pixels = std::vector<std::uint8_t>(byte_count)});
 }
 
+auto has_bounded_decode_error() -> bool {
+    const auto item = source();
+    video_frame_cache_t cache;
+    task_scheduler_t scheduler{1, 1};
+    video_frame_job_t job{cache, scheduler};
+    if (!job.begin(song_id_t{9}, 8, item, clock(item.resource, 0), {.maximum_rgba_bytes = 1}))
+        return false;
+    const auto completion = job.wait_completion();
+    if (!completion || !*completion || !completion->value().payload) return false;
+    auto report = *completion->value().payload;
+    auto outcome = video_job_result_t::from(std::move(report));
+    if (outcome) return false;
+    const auto& error = outcome.error();
+    const auto is_expected = error.context.identity.project == song_id_t{9} &&
+                             error.context.identity.document_revision == 8 &&
+                             error.context.source.resource == item.resource && error.context.clock.event == object_id_t{30} &&
+                             error.cause.code == video_frame_status_t::byte_limit_exceeded && !error.payload &&
+                             !error.cause.message.empty();
+    const auto legacy = video_job_result_t::from(std::move(outcome));
+    return is_expected && !legacy && cache.size() == 0;
+}
+
 } // namespace
 
 TEST_CASE("video frame cache keys exact clocks and enforces byte and entry bounds",
@@ -116,4 +138,9 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
     const auto decoded = decode_video_frame_rgba(item, clock(item.resource, 0), {}, cancelled.get_token());
     REQUIRE_FALSE(decoded.has_value());
     CHECK(decoded.error().code == video_frame_status_t::cancelled);
+}
+
+TEST_CASE("completed video worker preserves bounded decode failure identity",
+          "[unit][visual][video-job][negative]") {
+    CHECK(has_bounded_decode_error());
 }

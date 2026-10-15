@@ -114,12 +114,6 @@ dispatch_compose_lane_layout_profile(compose_action_context_t& context);
 std::optional<compose_action_outcome_t>
 dispatch_compose_audio_offset(compose_action_context_t& context);
 
-compose_action_outcome_t select_compose_tool(compose_action_context_t& context);
-
-auto toggle_compose_scroll_direction(compose_action_context_t& context) -> compose_action_outcome_t;
-
-auto reset_compose_view(compose_action_context_t& context) -> compose_action_outcome_t;
-
 std::optional<compose_action_outcome_t>
 dispatch_compose_view_action_group(compose_action_context_t& context);
 

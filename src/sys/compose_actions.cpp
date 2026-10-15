@@ -352,7 +352,15 @@ dispatch_compose_audio_offset(compose_action_context_t& context) {
     return outcome;
 }
 
-compose_action_outcome_t select_compose_tool(compose_action_context_t& context) {
+struct select_compose_tool_action_t {
+    auto operator==(const select_compose_tool_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<select_compose_tool_action_t, compose_action_context_t>);
+
+auto select_compose_tool_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto& action = context.action;
     auto& application_state = context.environment.editor.commands;
@@ -366,6 +374,14 @@ compose_action_outcome_t select_compose_tool(compose_action_context_t& context) 
                                              application_state.project.semantic_layer.semantic_layer_target))
         return compose_action_outcome_t::blocked(
             "Pick an unlocked visible layer in the Layers dock.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto select_compose_tool_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& application_state = context.environment.editor.commands;
     (void)dispatch_editor_action(context.environment.document.history, context.state,
                                  cancel_editor_gesture_action_t{});
     application_state.project.compose_gesture.bga_draw_stroke.reset();
@@ -375,8 +391,16 @@ compose_action_outcome_t select_compose_tool(compose_action_context_t& context) 
                                           notification_source_t::input);
 }
 
-auto toggle_compose_scroll_direction(compose_action_context_t& context)
-    -> compose_action_outcome_t {
+struct toggle_compose_scroll_direction_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const toggle_compose_scroll_direction_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_compose_scroll_direction_action_t, compose_action_context_t>);
+
+auto toggle_compose_scroll_direction_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active gesture before changing scroll direction."))
@@ -385,11 +409,17 @@ auto toggle_compose_scroll_direction(compose_action_context_t& context)
         return compose_action_outcome_t::blocked(
             "Finish or cancel the active gesture before changing scroll direction.",
             notification_source_t::edit);
-    const auto* chart =
+    chart =
         context.environment.document.history.document.find_chart(context.state.chart);
     if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected difficulty is no longer available.",
                                                  notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto toggle_compose_scroll_direction_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     const auto family = chart->lane_layouts.empty() ? editor_mode_family_t::other
         : compose_mode_family(chart->lane_layouts.front().layout);
     const bool down = !compose_field_downscroll(
@@ -404,91 +434,121 @@ auto toggle_compose_scroll_direction(compose_action_context_t& context)
                                           notification_source_t::input);
 }
 
-auto reset_compose_view(compose_action_context_t& context) -> compose_action_outcome_t {
+struct reset_compose_view_action_t {
+    auto operator==(const reset_compose_view_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<reset_compose_view_action_t, compose_action_context_t>);
+
+auto reset_compose_view_action_t::validate(compose_action_context_t&) const
+    -> std::optional<compose_action_outcome_t> {
+    return std::nullopt;
+}
+
+auto reset_compose_view_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     auto result =
         reset_compose_navigation_view(context.environment.document.history, context.state);
     return compose_action_outcome_t::from(std::move(result), "Compose field view reset.");
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_view_action_group(compose_action_context_t& context) {
-    using namespace wormedit;
-    auto& action = context.action;
-    auto& history = context.environment.document.history;
-    auto& state = context.state;
-    auto& viewport_height = context.viewport_height;
-    auto& application_state = context.environment.editor.commands;
-    auto& scroll_direction = context.scroll_direction;
-    editor_interaction_result_t result;
-    std::string status;
-    switch (action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION:
-        return toggle_compose_scroll_direction(context);
-    case WORM_UI_COMPOSE_ACTION_ZOOM_IN:
-        result = dispatch_editor_action(
-            history, state,
-            adjust_editor_zoom_action_t{.factor = 1.25, .anchor_screen_y_pixels = std::nullopt});
-        status = "Compose field zoomed in.";
-        break;
-    case WORM_UI_COMPOSE_ACTION_ZOOM_OUT:
-        result = dispatch_editor_action(
-            history, state,
-            adjust_editor_zoom_action_t{.factor = 1.0 / 1.25,
-                                        .anchor_screen_y_pixels = std::nullopt});
-        status = "Compose field zoomed out.";
-        break;
-    case WORM_UI_COMPOSE_ACTION_SCROLL_UP:
-    case WORM_UI_COMPOSE_ACTION_SCROLL_DOWN: {
-        const auto direction =
-            action.compose_action == WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -1.0 : 1.0;
-        result = dispatch_editor_action(
-            history, state,
-            scroll_editor_view_action_t{direction * std::max(64.0, viewport_height * 0.75),
-                                        compose_cursor_screen_anchor(
-                                            viewport_height,
-                                            scroll_direction == editor_field_scroll_direction_t::down),
-                                        scroll_direction});
-        status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
-        break;
+struct compose_zoom_action_t {
+    double factor;
+    std::string_view message;
+    auto operator==(const compose_zoom_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
     }
-    case WORM_UI_COMPOSE_ACTION_RESET_VIEW:
-        return reset_compose_view(context);
-    case WORM_UI_COMPOSE_ACTION_SELECT_TOOL:
-    case WORM_UI_COMPOSE_ACTION_DRAW_TOOL:
-    case WORM_UI_COMPOSE_ACTION_LAYER_TOOL:
-        return select_compose_tool(context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
-        if (!wormedit::ui::compose_notes_editable(compose_mode_of(application_state)))
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        std::string status;
+        auto result = dispatch_editor_action(
+            context.environment.document.history, context.state,
+            adjust_editor_zoom_action_t{.factor = factor, .anchor_screen_y_pixels = std::nullopt});
+        status = message;
+        return compose_action_outcome_t::from(std::move(result), status);
+    }
+};
+static_assert(compose_action<compose_zoom_action_t, compose_action_context_t>);
+
+struct compose_scroll_action_t {
+    double direction;
+    auto operator==(const compose_scroll_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        std::string status;
+        auto result = dispatch_editor_action(
+            context.environment.document.history, context.state,
+            scroll_editor_view_action_t{
+                direction * std::max(64.0, context.viewport_height * 0.75),
+                compose_cursor_screen_anchor(
+                    context.viewport_height,
+                    context.scroll_direction == editor_field_scroll_direction_t::down),
+                context.scroll_direction});
+        status = direction < 0.0 ? "Compose field scrolled up." : "Compose field scrolled down.";
+        return compose_action_outcome_t::from(std::move(result), status);
+    }
+};
+static_assert(compose_action<compose_scroll_action_t, compose_action_context_t>);
+
+struct toggle_compose_note_paint_action_t {
+    auto operator==(const toggle_compose_note_paint_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
+        if (!wormedit::ui::compose_notes_editable(compose_mode_of(context.environment.editor.commands)))
             return compose_action_outcome_t::blocked(
                 "Note painting is unavailable in Timing focus.", notification_source_t::edit);
-        if (editor_interaction_has_pending_gesture(state)) {
-            result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
-            if (!result.accepted) {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        std::string status;
+        auto& application_state = context.environment.editor.commands;
+        if (editor_interaction_has_pending_gesture(context.state)) {
+            auto result = dispatch_editor_action(context.environment.document.history, context.state,
+                                                 cancel_editor_gesture_action_t{});
+            if (!result.accepted)
                 return compose_action_outcome_t::from(std::move(result), "Compose gesture canceled.");
-            }
         }
         application_state.project.compose_gesture.note_paint_mode_active = !application_state.project.compose_gesture.note_paint_mode_active;
-        if (application_state.project.compose_gesture.note_paint_mode_active) {
+        if (application_state.project.compose_gesture.note_paint_mode_active)
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-        }
-        status = application_state.project.compose_gesture.note_paint_mode_active ? "Note-paint mode enabled."
-                                                          : "Note-paint mode disabled.";
+        status = application_state.project.compose_gesture.note_paint_mode_active
+                     ? "Note-paint mode enabled." : "Note-paint mode disabled.";
         return compose_action_outcome_t::from(status, notification_severity_t::info,
                                               notification_source_t::input);
-    case WORM_UI_COMPOSE_ACTION_RATE_SLOWER:
-    case WORM_UI_COMPOSE_ACTION_RATE_FASTER: {
+    }
+};
+static_assert(compose_action<toggle_compose_note_paint_action_t, compose_action_context_t>);
+
+struct step_compose_rate_action_t {
+    auto operator==(const step_compose_rate_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         const auto stepped = step_transport_rate_status(
-            application_state, action.compose_action == WORM_UI_COMPOSE_ACTION_RATE_FASTER);
+            context.environment.editor.commands,
+            context.action.compose_action == WORM_UI_COMPOSE_ACTION_RATE_FASTER);
         return stepped
                    ? compose_action_outcome_t::from(*stepped, notification_severity_t::info,
                                                     notification_source_t::audio)
                    : compose_action_outcome_t::blocked("Playback output rejected the rate change.",
                                                        notification_source_t::audio);
     }
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS: {
+};
+static_assert(compose_action<step_compose_rate_action_t, compose_action_context_t>);
+
+struct toggle_compose_timing_focus_action_t {
+    auto operator==(const toggle_compose_timing_focus_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
         if (auto blocked = context.require_no_gesture(
                 "Finish or cancel the active Compose gesture before changing the Compose mode."))
             return std::move(*blocked);
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& application_state = context.environment.editor.commands;
         application_state.project.compose_view.compose_timing_focus = !application_state.project.compose_view.compose_timing_focus;
         if (application_state.project.compose_view.compose_timing_focus) {
             // Timing focus never edits notes, so leave any note tool.
@@ -496,50 +556,104 @@ dispatch_compose_view_action_group(compose_action_context_t& context) {
             application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
         }
         return compose_action_outcome_t::from(
-            application_state.project.compose_view.compose_timing_focus ? "Timing focus on."
-                                                                        : "Timing focus off.",
+            application_state.project.compose_view.compose_timing_focus ? "Timing focus on." : "Timing focus off.",
             notification_severity_t::info, notification_source_t::input);
     }
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP: {
+};
+static_assert(compose_action<toggle_compose_timing_focus_action_t, compose_action_context_t>);
+
+struct toggle_compose_edit_snap_action_t {
+    auto operator==(const toggle_compose_edit_snap_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
         if (auto blocked = context.require_no_gesture(
                 "Finish or cancel the active Compose gesture before changing snapping."))
             return std::move(*blocked);
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& application_state = context.environment.editor.commands;
         application_state.project.compose_view.edit_snap_enabled = !application_state.project.compose_view.edit_snap_enabled;
         return compose_action_outcome_t::from(
-            application_state.project.compose_view.edit_snap_enabled
-                ? "Snap on."
-                : "Snap off: edits use the finest row.",
+            application_state.project.compose_view.edit_snap_enabled ? "Snap on." : "Snap off: edits use the finest row.",
             notification_severity_t::info, notification_source_t::input);
     }
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK: {
-        application_state.project.compose_view.y_lock = !application_state.project.compose_view.y_lock;
-        state.y_lock = application_state.project.compose_view.y_lock;
-        return compose_action_outcome_t::from(application_state.project.compose_view.y_lock
-                                                  ? "Y-lock on: dragged notes keep their rows."
-                                                  : "Y-lock off.",
-                                              notification_severity_t::info,
-                                              notification_source_t::input);
+};
+static_assert(compose_action<toggle_compose_edit_snap_action_t, compose_action_context_t>);
+
+struct toggle_compose_y_lock_action_t {
+    auto operator==(const toggle_compose_y_lock_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
     }
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY: {
-        if (action.compose_timing_lane >= compose_timing_lane_count) {
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& application_state = context.environment.editor.commands;
+        application_state.project.compose_view.y_lock = !application_state.project.compose_view.y_lock;
+        context.state.y_lock = application_state.project.compose_view.y_lock;
+        return compose_action_outcome_t::from(application_state.project.compose_view.y_lock
+                                                  ? "Y-lock on: dragged notes keep their rows." : "Y-lock off.",
+                                              notification_severity_t::info, notification_source_t::input);
+    }
+};
+static_assert(compose_action<toggle_compose_y_lock_action_t, compose_action_context_t>);
+
+struct toggle_compose_timing_lane_action_t {
+    auto operator==(const toggle_compose_timing_lane_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
+        if (context.action.compose_timing_lane >= compose_timing_lane_count)
             return compose_action_outcome_t::blocked("The requested timing lane does not exist.",
                                                      notification_source_t::edit);
-        }
         if (auto blocked = context.require_no_gesture(
                 "Finish or cancel the active Compose gesture before changing timing lanes."))
             return std::move(*blocked);
-        const auto bit = static_cast<std::uint8_t>(1U << action.compose_timing_lane);
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& application_state = context.environment.editor.commands;
+        const auto bit = static_cast<std::uint8_t>(1U << context.action.compose_timing_lane);
         application_state.project.compose_view.compose_timing_lane_visibility_mask ^= bit;
         return compose_action_outcome_t::from(
             (application_state.project.compose_view.compose_timing_lane_visibility_mask & bit) != 0
-                ? "Compose timing lane shown."
-                : "Compose timing lane hidden.",
+                ? "Compose timing lane shown." : "Compose timing lane hidden.",
             notification_severity_t::info, notification_source_t::input);
     }
+};
+static_assert(compose_action<toggle_compose_timing_lane_action_t, compose_action_context_t>);
+
+std::optional<compose_action_outcome_t>
+dispatch_compose_view_action_group(compose_action_context_t& context) {
+    switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION:
+        return run_compose_action(toggle_compose_scroll_direction_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_ZOOM_IN:
+        return run_compose_action(compose_zoom_action_t{1.25, "Compose field zoomed in."}, context);
+    case WORM_UI_COMPOSE_ACTION_ZOOM_OUT:
+        return run_compose_action(compose_zoom_action_t{1.0 / 1.25, "Compose field zoomed out."}, context);
+    case WORM_UI_COMPOSE_ACTION_SCROLL_UP:
+    case WORM_UI_COMPOSE_ACTION_SCROLL_DOWN:
+        return run_compose_action(compose_scroll_action_t{
+            context.action.compose_action == WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -1.0 : 1.0}, context);
+    case WORM_UI_COMPOSE_ACTION_RESET_VIEW:
+        return run_compose_action(reset_compose_view_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_SELECT_TOOL:
+    case WORM_UI_COMPOSE_ACTION_DRAW_TOOL:
+    case WORM_UI_COMPOSE_ACTION_LAYER_TOOL:
+        return run_compose_action(select_compose_tool_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
+        return run_compose_action(toggle_compose_note_paint_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_RATE_SLOWER:
+    case WORM_UI_COMPOSE_ACTION_RATE_FASTER:
+        return run_compose_action(step_compose_rate_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS:
+        return run_compose_action(toggle_compose_timing_focus_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP:
+        return run_compose_action(toggle_compose_edit_snap_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK:
+        return run_compose_action(toggle_compose_y_lock_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY:
+        return run_compose_action(toggle_compose_timing_lane_action_t{}, context);
     default:
         return std::nullopt;
     }
-    return compose_action_outcome_t::from(std::move(result), status);
 }
 
 // Points a missing sound at one of its fallback candidates through the shared relink command; the
@@ -2473,17 +2587,31 @@ auto invoke_compose_quantize_command(bool toggle_preview, document_history_t& hi
     return apply_compose_quantize_selection(history, state, application, action);
 }
 
-auto toggle_compose_bga_visibility(compose_action_context_t& context) -> compose_action_outcome_t {
+struct toggle_compose_bga_visibility_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const toggle_compose_bga_visibility_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_compose_bga_visibility_action_t, compose_action_context_t>);
+
+auto toggle_compose_bga_visibility_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing the BGA lane.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
-    const auto* chart =
+    chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
     if (!chart)
         return compose_action_outcome_t::blocked("Choose a chart before changing the BGA lane.",
                                                  notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto toggle_compose_bga_visibility_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto mask = wormedit::editor_bga_visible_lane_mask(*chart, context.state.bga_revealed_lane_mask);
     const auto visible = context.state.bga_lane_visible && mask != 0;
     context.state.bga_lane_visible = !visible;
@@ -2496,7 +2624,7 @@ auto toggle_compose_bga_visibility(compose_action_context_t& context) -> compose
 auto dispatch_compose_remaining_action(compose_action_context_t& context)
     -> std::optional<std::string> {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)
-        return finish_compose_action(context, toggle_compose_bga_visibility(context));
+        return finish_compose_action(context, run_compose_action(toggle_compose_bga_visibility_action_t{}, context));
     if (auto response = dispatch_compose_view_action_group(context))
         return finish_compose_action(context, std::move(*response));
     if (auto response = dispatch_compose_resource_action(context)) return finish_compose_action(context, std::move(*response));

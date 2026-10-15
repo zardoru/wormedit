@@ -6504,14 +6504,17 @@ TEST_CASE("Workspace frame cache clears when the same document is reopened", "[s
     const workspace_document_cache_query_t key{.document = document, .limits = limits};
     static_cast<void>(cache.binding_validation.get_or_build(key,
         std::bind_front(validate_document, std::cref(document))));
-    cache.branch_outline.valid = true;
+    const workspace_bms_branch_outline_cache_query_t branch_key{
+        .document = key, .chart = document.charts.front()};
+    static_cast<void>(cache.branch_outline.get_or_build(branch_key,
+        std::bind_front(std::identity{}, workspace_bms_branch_outline_view_t{})));
     cache.cached_diagnostics.push_back({});
     cache.bind_project_session(7);
     expect_compose_test(cache.binding_validation.has_value());
     cache.bind_project_session(8);
     expect_compose_test(!cache.binding_validation.has_value());
     expect_compose_test(cache.binding_validation.build_count() == 0);
-    expect_compose_test(!cache.branch_outline.valid && cache.cached_diagnostics.empty());
+    expect_compose_test(!cache.branch_outline.has_value() && cache.cached_diagnostics.empty());
     expect_compose_test(cache.session_generation == 8);
 }
 

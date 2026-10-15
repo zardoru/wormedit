@@ -281,7 +281,10 @@ struct workspace_bms_branch_choice_t {
     bool can_clear{};
 };
 
-struct workspace_bms_branch_outline_cache_t;
+struct workspace_bms_branch_outline_cache_key_t;
+struct workspace_bms_branch_outline_view_t;
+using workspace_bms_branch_outline_cache_t = keyed_cache_t<
+    workspace_bms_branch_outline_cache_key_t, workspace_bms_branch_outline_view_t>;
 
 struct workspace_bms_branch_outline_view_t {
     [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart,
@@ -323,18 +326,24 @@ struct workspace_document_cache_key_t {
 using workspace_binding_validation_cache_t =
     keyed_cache_t<workspace_document_cache_key_t, diagnostic_list_t>;
 
-// One owned outline; branch choices and limits participate even between revisions.
-struct workspace_bms_branch_outline_cache_t {
-    const void* document_identity{};
-    const void* chart_identity{};
-    song_id_t song;
+struct workspace_bms_branch_outline_cache_query_t {
+    workspace_document_cache_query_t document;
+    const chart_document_t& chart;
+};
+
+// Choice ownership is captured only on misses; repeated fills reuse its storage.
+struct workspace_bms_branch_outline_cache_key_t {
+    workspace_document_cache_key_t document;
+    const chart_document_t* chart_identity{};
     chart_id_t chart;
-    std::uint64_t revision{};
-    workspace_limits_t limits;
-    std::vector<std::pair<branch_id_t, std::int64_t>> choices;
-    workspace_bms_branch_outline_view_t outline;
-    bool valid{};
-    std::size_t build_count{};
+    std::vector<branch_selection_t> choices;
+
+    [[nodiscard]] static auto from(const workspace_bms_branch_outline_cache_query_t& query)
+        -> workspace_bms_branch_outline_cache_key_t;
+    void assign(const workspace_bms_branch_outline_cache_query_t& query);
+    [[nodiscard]] auto operator==(const workspace_bms_branch_outline_cache_query_t& query) const
+        -> bool;
+    auto operator==(const workspace_bms_branch_outline_cache_key_t&) const -> bool = default;
 };
 
 struct workspace_compose_view_t {

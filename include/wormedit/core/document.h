@@ -762,6 +762,7 @@ struct bms_control_node_t {
 struct branch_selection_t {
     branch_id_t branch;
     std::int64_t selected_value{};
+    auto operator==(const branch_selection_t&) const -> bool = default;
 };
 
 struct format_metadata_t {

@@ -35,6 +35,29 @@ auto workspace_document_cache_key_t::operator==(const workspace_document_cache_q
            limits == query.limits;
 }
 
+auto workspace_bms_branch_outline_cache_key_t::from(
+    const workspace_bms_branch_outline_cache_query_t& query)
+    -> workspace_bms_branch_outline_cache_key_t {
+    workspace_bms_branch_outline_cache_key_t key;
+    key.assign(query);
+    return key;
+}
+
+void workspace_bms_branch_outline_cache_key_t::assign(
+    const workspace_bms_branch_outline_cache_query_t& query) {
+    document.assign(query.document);
+    chart_identity = &query.chart;
+    chart = query.chart.id;
+    choices.assign(query.chart.active_branch_selection.begin(),
+                   query.chart.active_branch_selection.end());
+}
+
+auto workspace_bms_branch_outline_cache_key_t::operator==(
+    const workspace_bms_branch_outline_cache_query_t& query) const -> bool {
+    return document == query.document && chart_identity == &query.chart && chart == query.chart.id &&
+           std::ranges::equal(choices, query.chart.active_branch_selection);
+}
+
 auto workspace_chart_option_t::from(const chart_document_t& chart) -> workspace_chart_option_t {
     return {
         .id = chart.id,
@@ -748,14 +771,6 @@ auto report_unmatched_branch_selections(branch_outline_context_t& context) -> vo
     }
 }
 
-auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t& cache,
-                                 const chart_document_t& chart) -> bool {
-    return std::ranges::equal(cache.choices, chart.active_branch_selection,
-        [](const auto& retained, const auto& active) {
-            return retained.first == active.branch && retained.second == active.selected_value;
-        });
-}
-
 } // namespace
 
 auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
@@ -767,27 +782,13 @@ auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
     if (!chart.bms_control_tree) return {};
     if (!cache)
         return workspace_bms_branch_outline_view_t::from(chart, limits);
-    if (cache->valid && cache->document_identity == &document &&
-        cache->chart_identity == &chart && cache->song == document.id &&
-        cache->chart == chart.id && cache->revision == document.revision &&
-        cache->limits == limits && is_branch_cache_choices_current(*cache, chart))
-        return cache->outline;
-    auto outline = workspace_bms_branch_outline_view_t::from(chart, limits);
-    cache->valid = false;
-    cache->choices.clear();
-    cache->choices.reserve(chart.active_branch_selection.size());
-    for (const auto& choice : chart.active_branch_selection)
-        cache->choices.emplace_back(choice.branch, choice.selected_value);
-    cache->outline = std::move(outline);
-    cache->document_identity = &document;
-    cache->chart_identity = &chart;
-    cache->song = document.id;
-    cache->chart = chart.id;
-    cache->revision = document.revision;
-    cache->limits = limits;
-    cache->valid = true;
-    ++cache->build_count;
-    return cache->outline;
+    const workspace_bms_branch_outline_cache_query_t key{
+        .document = {.document = document, .limits = limits}, .chart = chart};
+    return cache->get_or_build(key, std::bind_front(
+        static_cast<workspace_bms_branch_outline_view_t (*)(const chart_document_t&,
+                                                           const workspace_limits_t&)>(
+            &workspace_bms_branch_outline_view_t::from),
+        std::cref(key.chart), std::cref(key.document.limits)));
 }
 
 auto workspace_bms_branch_outline_view_t::from(const chart_document_t& chart,

@@ -767,12 +767,12 @@ auto branch_cache_tracks_choices_without_revision() -> bool {
     auto& workspace = *binding.workspace;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, workspace, cache) ||
-        !branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 1)
+        !branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 1)
         return false;
-    const auto before = cache.outline;
+    const auto before = cache.value();
     song.charts.front().active_branch_selection.front().selected_value = 1;
-    return branch_cache_matches_reference(song, workspace, cache) && cache.build_count == 2 &&
-        !branch_cache_outlines_equal(before, cache.outline);
+    return branch_cache_matches_reference(song, workspace, cache) && cache.build_count() == 2 &&
+        !branch_cache_outlines_equal(before, cache.value());
 }
 auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     auto song = branch_cache_large_song();
@@ -782,22 +782,22 @@ auto branch_cache_tracks_limits_revision_and_identity() -> bool {
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, workspace, cache)) return false;
     workspace.limits.maximum_bms_branch_rows = 5;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 2 ||
-        !cache.outline.rows_truncated) return false;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 2 ||
+        !cache.value().rows_truncated) return false;
     workspace.limits.maximum_bms_branch_display_bytes = 1;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 3 ||
-        !cache.outline.display_text_truncated) return false;
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 3 ||
+        !cache.value().display_text_truncated) return false;
     ++song.revision;
     workspace.document_revision = song.revision;
-    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count != 4)
+    if (!branch_cache_matches_reference(song, workspace, cache) || cache.build_count() != 4)
         return false;
     auto replacement = song;
     replacement.charts.front().bms_control_tree->original_text = "different retained root";
-    if (!branch_cache_matches_reference(replacement, workspace, cache) || cache.build_count != 5)
+    if (!branch_cache_matches_reference(replacement, workspace, cache) || cache.build_count() != 5)
         return false;
     replacement.charts.back().bms_control_tree = replacement.charts.front().bms_control_tree;
     workspace.selected_chart = replacement.charts.back().id;
-    return branch_cache_matches_reference(replacement, workspace, cache) && cache.build_count == 6;
+    return branch_cache_matches_reference(replacement, workspace, cache) && cache.build_count() == 6;
 }
 auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
     auto song = workspace_song();
@@ -810,9 +810,9 @@ auto branch_cache_preserves_plain_sidebar_and_skips_absent_tree() -> bool {
     if (!binding) return false;
     workspace_bms_branch_outline_cache_t cache;
     if (!branch_cache_matches_reference(song, *binding.workspace, cache) ||
-        cache.outline.rows.size() != 2 || cache.build_count != 1) return false;
+        cache.value().rows.size() != 2 || cache.build_count() != 1) return false;
     chart.bms_control_tree.reset();
-    return branch_cache_matches_reference(song, *binding.workspace, cache) && cache.build_count == 1;
+    return branch_cache_matches_reference(song, *binding.workspace, cache) && cache.build_count() == 1;
 }
 } // namespace
 

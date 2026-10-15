@@ -1,6 +1,7 @@
 #pragma once
 
 #include "sys/compose_action_context.h"
+#include "sys/compose_action_routes.h"
 #include "sys/compose_area_actions.h"
 
 namespace wormedit::sys {
@@ -11,13 +12,9 @@ dispatch_compose_area_action(const WormUiWorkspaceAction& action, document_histo
                              notification_sink_t notifications = notification_sink_t::muted(),
                              bool timing_locked = false) -> std::optional<std::string> {
     const auto kind = action.compose_action;
-    if (!action.compose_area_clear_requested && kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
+    const auto* route = compose_action_detail::compose_action_route_t::find(
+        kind, compose_action_detail::compose_area_routes);
+    if (!action.compose_area_clear_requested && !route)
         return std::nullopt;
     if (compose_area_pause_conversion(kind) &&
         history.document.id.value != action.compose_input_project_id) {
@@ -44,9 +41,10 @@ dispatch_compose_area_action(const WormUiWorkspaceAction& action, document_histo
         {history, workspace, notifications}, {commands, retained}, {}};
     compose_action_detail::compose_action_context_t context{
         environment, action, state, 0.0, false, editor_field_scroll_direction_t::up, notifications};
-    auto outcome = compose_action_detail::dispatch_compose_area_action(context);
-    if (!outcome)
+    if (auto blocked = compose_action_detail::process_compose_area_boundary(context))
+        return compose_action_detail::finish_compose_action(context, std::move(*blocked));
+    if (!route)
         return std::nullopt;
-    return compose_action_detail::finish_compose_action(context, std::move(*outcome));
+    return compose_action_detail::finish_compose_action(context, route->operation(context));
 }
 } // namespace wormedit::sys

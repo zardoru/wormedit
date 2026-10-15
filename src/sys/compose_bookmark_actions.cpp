@@ -132,20 +132,6 @@ auto edit_beat_section_action_t::perform(compose_action_context_t& context) cons
             .rebind_failure = "Section changed, but workspace rebinding failed."});
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_beat_section_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION:
-    case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL:
-    case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN:
-    case WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END:
-    case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION:
-        return run_compose_action(edit_beat_section_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 auto make_audio_bookmark_edit(compose_action_context_t& context,
                               const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string> {
@@ -216,18 +202,6 @@ auto edit_audio_bookmark_action_t::perform(compose_action_context_t& context) co
                                      .rebind_failure =
                                          "Audio bookmark changed, but workspace rebinding failed.",
                                      .source = notification_source_t::edit});
-}
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_bookmark_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK:
-    case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK:
-    case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK:
-        return run_compose_action(edit_audio_bookmark_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
 }
 
 auto make_audio_section_edit(compose_action_context_t& context,
@@ -303,18 +277,6 @@ auto edit_audio_section_action_t::perform(compose_action_context_t& context) con
                                      .source = notification_source_t::edit});
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_section_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
-    case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
-    case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION:
-        return run_compose_action(edit_audio_section_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string> {
@@ -380,18 +342,6 @@ auto edit_beat_bookmark_action_t::perform(compose_action_context_t& context) con
                                          "Bookmark changed, but workspace rebinding failed."});
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_beat_bookmark_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
-    case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
-    case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:
-        return run_compose_action(edit_beat_bookmark_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 auto navigate_audio_marker_action_t::validate(compose_action_context_t& context)
     -> std::optional<compose_action_outcome_t> {
     auto& app = context.environment.editor.commands;
@@ -436,4 +386,39 @@ auto navigate_audio_marker_action_t::perform(compose_action_context_t& context) 
                                                     notification_source_t::audio);
     return app.services.transport_seek_audio_milliseconds(*marker.value.item->audio_milliseconds);
 }
+
+namespace {
+constexpr auto bookmark_route_entries = std::array{
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION,
+                           .operation = run_routed_compose_action<edit_beat_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL,
+                           .operation = run_routed_compose_action<edit_beat_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_BEGIN,
+                           .operation = run_routed_compose_action<edit_beat_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BEAT_SECTION_END,
+                           .operation = run_routed_compose_action<edit_beat_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_SECTION,
+                           .operation = run_routed_compose_action<edit_beat_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK,
+                           .operation = run_routed_compose_action<edit_audio_bookmark_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_BOOKMARK,
+                           .operation = run_routed_compose_action<edit_audio_bookmark_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK,
+                           .operation = run_routed_compose_action<edit_audio_bookmark_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION,
+                           .operation = run_routed_compose_action<edit_audio_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION,
+                           .operation = run_routed_compose_action<edit_audio_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION,
+                           .operation = run_routed_compose_action<edit_audio_section_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK,
+                           .operation = run_routed_compose_action<edit_beat_bookmark_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION,
+                           .operation = run_routed_compose_action<edit_beat_bookmark_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK,
+                           .operation = run_routed_compose_action<edit_beat_bookmark_action_t>},
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_bookmark_routes{
+    bookmark_route_entries};
 } // namespace wormedit::sys::compose_action_detail

@@ -1,9 +1,9 @@
 #include "sys/compose_actions.h"
 #include "sys/application_edit_inputs.h"
+#include "sys/bookmark_commands.h"
 #include "sys/compose_actions_internal.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
-#include "sys/bookmark_commands.h"
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_navigation.h"
@@ -14,6 +14,7 @@
 #include "sys/metadata_commands.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
+#include <cassert>
 #include <wormedit/core/bmson_lane_mode.h>
 
 #include <unordered_set>
@@ -421,29 +422,6 @@ auto edit_compose_audio_offset_action_t::perform(compose_action_context_t& conte
     return outcome;
 }
 
-auto dispatch_compose_document_action_group(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t> {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK:
-    case WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK:
-        return run_compose_action(
-            compose_bookmark_action_t{
-                .rename = context.action.compose_action == WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK}, context);
-    case WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE:
-        return run_compose_action(navigate_compose_measure_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT:
-        return run_compose_action(set_compose_bgm_column_count_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE:
-        return run_compose_action(set_compose_lane_profile_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE:
-        return run_compose_action(apply_compose_lane_layout_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET:
-        return run_compose_action(edit_compose_audio_offset_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 struct select_compose_tool_action_t {
     auto operator==(const select_compose_tool_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -546,6 +524,10 @@ auto reset_compose_view_action_t::perform(compose_action_context_t& context) con
 }
 
 struct compose_zoom_action_t {
+    static auto from(bool zoom_in) -> compose_zoom_action_t {
+        return {zoom_in ? 1.25 : 1.0 / 1.25,
+                zoom_in ? "Compose field zoomed in." : "Compose field zoomed out."};
+    }
     double factor;
     std::string_view message;
     auto operator==(const compose_zoom_action_t&) const -> bool = default;
@@ -710,43 +692,6 @@ struct toggle_compose_timing_lane_action_t {
     }
 };
 static_assert(compose_action<toggle_compose_timing_lane_action_t, compose_action_context_t>);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_view_action_group(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION:
-        return run_compose_action(toggle_compose_scroll_direction_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_ZOOM_IN:
-        return run_compose_action(compose_zoom_action_t{1.25, "Compose field zoomed in."}, context);
-    case WORM_UI_COMPOSE_ACTION_ZOOM_OUT:
-        return run_compose_action(compose_zoom_action_t{1.0 / 1.25, "Compose field zoomed out."}, context);
-    case WORM_UI_COMPOSE_ACTION_SCROLL_UP:
-    case WORM_UI_COMPOSE_ACTION_SCROLL_DOWN:
-        return run_compose_action(compose_scroll_action_t{
-            context.action.compose_action == WORM_UI_COMPOSE_ACTION_SCROLL_UP ? -1.0 : 1.0}, context);
-    case WORM_UI_COMPOSE_ACTION_RESET_VIEW:
-        return run_compose_action(reset_compose_view_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SELECT_TOOL:
-    case WORM_UI_COMPOSE_ACTION_DRAW_TOOL:
-    case WORM_UI_COMPOSE_ACTION_LAYER_TOOL:
-        return run_compose_action(select_compose_tool_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE:
-        return run_compose_action(toggle_compose_note_paint_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_RATE_SLOWER:
-    case WORM_UI_COMPOSE_ACTION_RATE_FASTER:
-        return run_compose_action(step_compose_rate_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS:
-        return run_compose_action(toggle_compose_timing_focus_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP:
-        return run_compose_action(toggle_compose_edit_snap_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK:
-        return run_compose_action(toggle_compose_y_lock_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY:
-        return run_compose_action(toggle_compose_timing_lane_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
 
 // Points a missing sound at one of its fallback candidates through the shared relink command; the
 // authored token and every reference stay as they are.
@@ -1182,43 +1127,7 @@ auto change_bmson_lane_mode_action_t::perform(compose_action_context_t& context)
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_bmson_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM:
-    case WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL:
-    case WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL:
-        return run_compose_action(change_bmson_lane_mode_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART:
-    case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE:
-        return run_compose_action(set_bmson_selection_restart_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE:
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM:
-        return run_compose_action(assign_bmson_selection_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR:
-        return run_compose_action(move_bmson_selection_to_cursor_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR:
-    case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR:
-        return run_compose_action(insert_bmson_marker_at_cursor_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR:
-    case WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR:
-        return run_compose_action(stage_bmson_marker_at_cursor_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM:
-        return run_compose_action(apply_bmson_marker_batch_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM:
-        context.environment.editor.commands.project.compose_gesture.bmson_marker_draft.reset();
-        return compose_action_outcome_t::from("BMSON marker batch canceled.",
-                                              notification_severity_t::hint,
-                                              notification_source_t::input);
-    case WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER:
-        return run_compose_action(delete_bmson_selected_marker_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 // The form's recipe and the stored recipe it edits, when the action still matches the document.
-
 
 // Shows the unapplied form candidate in the lane. A malformed form or a candidate the core
 // validator rejects keeps its message for the form and draws no graph.
@@ -1601,27 +1510,6 @@ auto step_semantic_layer_palette_action_t::perform(compose_action_context_t& con
         notification_severity_t::hint, notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_note_menu_action(compose_action_context_t& context) {
-    using namespace wormedit;
-    const auto& action = context.action;
-    switch (action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU:
-        return run_compose_action(open_compose_note_layer_menu_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU:
-        return run_compose_action(open_compose_sound_layer_menu_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER:
-        return run_compose_action(add_selected_compose_sounds_to_layer_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW:
-        return run_compose_action(set_compose_note_layer_menu_window_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU:
-        return run_compose_action(close_compose_note_layer_menu_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER:
-        return run_compose_action(assign_compose_note_menu_layer_action_t{}, context);
-    default: return std::nullopt;
-    }
-}
-
 struct choose_no_semantic_layer_action_t {
     auto operator==(const choose_no_semantic_layer_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -1649,25 +1537,6 @@ auto choose_no_semantic_layer_action_t::perform(compose_action_context_t& contex
     return compose_action_outcome_t::from("Semantic-layer target: No layer",
                                           notification_severity_t::info,
                                           notification_source_t::input);
-}
-
-std::optional<compose_action_outcome_t>
-dispatch_semantic_layer_palette_action(compose_action_context_t& context) {
-    using namespace wormedit;
-    auto& action = context.action;
-    switch (action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW:
-        return run_compose_action(set_semantic_layer_window_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER:
-        return run_compose_action(choose_no_semantic_layer_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER:
-        return run_compose_action(select_semantic_layer_target_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE:
-    case WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE:
-        return run_compose_action(step_semantic_layer_palette_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
 }
 
 compose_action_outcome_t
@@ -1941,32 +1810,6 @@ auto move_semantic_layer_catalog_entry_action_t::perform(compose_action_context_
         "Semantic-layer order updated, but workspace rebinding failed.");
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_semantic_layer_catalog_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW:
-    case WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE:
-    case WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE:
-        return dispatch_semantic_layer_palette_action(context);
-    case WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER:
-        return run_compose_action(add_semantic_layer_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR:
-        return run_compose_action(update_semantic_layer_catalog_entry_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS:
-        return run_compose_action(delete_semantic_layer_catalog_entry_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP:
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN:
-        return run_compose_action(move_semantic_layer_catalog_entry_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_REMOVE_SEMANTIC_LAYER:
-    default:
-        return std::nullopt;
-    }
-}
-
 void clear_semantic_layer_selection(application_command_state_t& app, bool clear_modes) {
     app.project.semantic_layer.semantic_layer_target.reset();
     app.project.semantic_layer.semantic_layer_target_none = false;
@@ -1988,44 +1831,10 @@ auto target_semantic_layer_action_row(compose_action_context_t& context) -> bool
     return true;
 }
 
-auto semantic_layer_menu_action(WormUiComposeActionKind kind) -> bool {
-    switch (kind) {
-    case WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS:
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP:
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO:
-    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES:
-        return true;
-    default: return false;
-    }
-}
-
-auto locked_semantic_layer_menu_action(WormUiComposeActionKind kind) -> bool {
-    switch (kind) {
-    case WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS:
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP:
-    case WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER:
-        return true;
-    default: return false;
-    }
-}
-
-auto target_captured_semantic_layer_action(compose_action_context_t& context)
+auto target_captured_semantic_layer_action(compose_action_context_t& context,
+                                           bool rejects_locked_target)
     -> std::optional<compose_action_outcome_t> {
-    const auto kind = context.action.compose_action;
-    if (!semantic_layer_menu_action(kind) || context.action.compose_semantic_layer_id == 0)
+    if (context.action.compose_semantic_layer_id == 0)
         return std::nullopt;
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
@@ -2034,7 +1843,7 @@ auto target_captured_semantic_layer_action(compose_action_context_t& context)
     if (!layer)
         return compose_action_outcome_t::blocked(
             "The selected semantic layer is no longer available.", notification_source_t::edit);
-    if (layer->locked && locked_semantic_layer_menu_action(kind))
+    if (layer->locked && rejects_locked_target)
         return compose_action_outcome_t::blocked("Layer is locked", notification_source_t::edit);
     (void)target_semantic_layer_action_row(context);
     return std::nullopt;
@@ -2424,34 +2233,6 @@ struct clear_semantic_layer_target_action_t {
 };
 static_assert(compose_action<clear_semantic_layer_target_action_t, compose_action_context_t>);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) {
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK)
-        return run_compose_action(toggle_layer_assist_tick_action_t{}, context);
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY:
-        return run_compose_action(toggle_semantic_layer_visibility_or_lock_action_t{.toggle_lock = false}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK:
-        return run_compose_action(toggle_semantic_layer_visibility_or_lock_action_t{.toggle_lock = true}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER:
-        return run_compose_action(toggle_semantic_layer_filter_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
-        return run_compose_action(clear_semantic_layer_target_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE:
-        return run_compose_action(toggle_semantic_layer_paint_mode_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO:
-        return run_compose_action(toggle_semantic_layer_solo_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES:
-        return run_compose_action(select_semantic_layer_notes_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER:
-        return run_compose_action(edit_semantic_layer_membership_action_t{}, context);
-    default:
-        return std::nullopt;
-    }
-}
-
 struct edit_compose_bms_branch_choice_action_t {
     auto operator==(const edit_compose_bms_branch_choice_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -2812,31 +2593,6 @@ auto edit_compose_bms_branch_block_action_t::perform(compose_action_context_t& c
     return run_bms_block_command(action, history, *chart, *workspace.selected_chart);
 }
 
-auto dispatch_compose_bms_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t> {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE:
-    case WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE:
-        return run_compose_action(edit_compose_bms_branch_choice_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT:
-    case WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT:
-    case WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT: {
-        auto outcome = run_compose_action(edit_compose_bms_branch_statement_action_t{}, context);
-        outcome.has_bms_statement_feedback = true;
-        return outcome;
-    }
-    case WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK:
-    case WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK:
-    case WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF: {
-        auto outcome = run_compose_action(edit_compose_bms_branch_block_action_t{}, context);
-        outcome.has_bms_statement_feedback = true;
-        return outcome;
-    }
-    default:
-        return std::nullopt;
-    }
-}
-
 auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool {
     using namespace wormedit;
     return request.divisions != 0 &&
@@ -3117,6 +2873,9 @@ auto rename_compose_quantize_preset_action_t::perform(compose_action_context_t& 
 }
 
 struct set_compose_edit_snap_action_t {
+    static auto from(const compose_action_context_t& context) -> set_compose_edit_snap_action_t {
+        return {.divisions = context.action.compose_snap_denominator};
+    }
     std::uint64_t divisions{};
     auto operator==(const set_compose_edit_snap_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
@@ -3253,59 +3012,6 @@ auto toggle_compose_quantize_preview_action_t::perform(compose_action_context_t&
         notification_severity_t::info, notification_source_t::input);
 }
 
-auto dispatch_quantize_preset_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t> {
-    using namespace wormedit;
-    const auto kind = context.action.compose_action;
-    if (kind == WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW)
-        return run_compose_action(toggle_compose_quantize_preview_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP)
-        return run_compose_action(set_compose_edit_snap_action_t{.divisions = context.action.compose_snap_denominator}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP) return run_compose_action(find_compose_selection_snap_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS)
-        return run_compose_action(apply_compose_quantize_settings_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET)
-        return run_compose_action(select_compose_quantize_preset_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET) return run_compose_action(save_compose_quantize_preset_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET)
-        return run_compose_action(delete_compose_quantize_preset_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET)
-        return run_compose_action(rename_compose_quantize_preset_action_t{}, context);
-    return std::nullopt;
-}
-
-auto dispatch_compose_area_with_quantize_report(compose_action_context_t& context)
-    -> std::optional<std::string> {
-    using namespace wormedit;
-    const auto& action = context.action;
-    auto& history = context.environment.document.history;
-    auto& state = context.state;
-    auto& application_state = context.environment.editor.commands;
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE) {
-        if (application_state.project.compose_view.compose_timing_focus ||
-            application_state.project.clipboard.paste_session)
-            return finish_compose_action(
-                context, compose_action_outcome_t::blocked(compose_quantize_idle_message,
-                                                           notification_source_t::input));
-        if (auto blocked = context.require_no_gesture(compose_quantize_idle_message)) {
-            blocked->source = notification_source_t::input;
-            return finish_compose_action(context, std::move(*blocked));
-        }
-    }
-    if (compose_area_pause_conversion(action.compose_action) &&
-        (application_state.project.clipboard.paste_session || application_state.project.compose_gesture.bga_draw_stroke || application_state.project.compose_gesture.bmson_razor_stroke)) {
-        const auto message = application_state.project.clipboard.paste_session ? "Finish the paste before converting the area."
-            : "Finish the current edit before converting the area.";
-        return finish_compose_action(
-            context, compose_action_outcome_t::from(message, notification_severity_t::hint,
-                                                    notification_source_t::edit));
-    }
-    auto response = dispatch_compose_area_action(context);
-    if (!response)
-        return std::nullopt;
-    return finish_compose_action(context, std::move(*response));
-}
-
 } // namespace compose_action_detail
 
 auto invoke_compose_quantize_command(bool toggle_preview, document_history_t& history,
@@ -3371,26 +3077,389 @@ auto toggle_compose_bga_visibility_action_t::perform(compose_action_context_t& c
                                           notification_source_t::input);
 }
 
-auto dispatch_compose_remaining_action(compose_action_context_t& context)
-    -> std::optional<std::string> {
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY)
-        return finish_compose_action(context, run_compose_action(toggle_compose_bga_visibility_action_t{}, context));
-    if (auto response = dispatch_compose_view_action_group(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_resource_action(context)) return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_bmson_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_marker_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = target_captured_semantic_layer_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_semantic_layer_catalog_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_semantic_layer_state_action(context))
-        return finish_compose_action(context, std::move(*response));
-    return std::nullopt;
+namespace compose_action_detail {
+
+auto cancel_compose_bmson_marker_batch(compose_action_context_t& context)
+    -> compose_action_outcome_t {
+    context.environment.editor.commands.project.compose_gesture.bmson_marker_draft.reset();
+    return compose_action_outcome_t::from("BMSON marker batch canceled.",
+                                          notification_severity_t::hint,
+                                          notification_source_t::input);
 }
 
+namespace {
+constexpr auto local_route_entries = std::array{
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RENAME_BOOKMARK,
+                           .operation = run_routed_compose_action<compose_bookmark_action_t, true>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK,
+                           .operation =
+                               run_routed_compose_action<compose_bookmark_action_t, false>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_GO_TO_MEASURE,
+                           .operation =
+                               run_routed_compose_action<navigate_compose_measure_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT,
+                           .operation =
+                               run_routed_compose_action<set_compose_bgm_column_count_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE,
+                           .operation =
+                               run_routed_compose_action<set_compose_lane_profile_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE,
+                           .operation =
+                               run_routed_compose_action<apply_compose_lane_layout_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_APPLY_AUDIO_OFFSET,
+                           .operation =
+                               run_routed_compose_action<edit_compose_audio_offset_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_scroll_direction_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ZOOM_IN,
+                           .operation = run_routed_compose_action<compose_zoom_action_t, true>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ZOOM_OUT,
+                           .operation = run_routed_compose_action<compose_zoom_action_t, false>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SCROLL_UP,
+                           .operation = run_routed_compose_action<compose_scroll_action_t, -1>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SCROLL_DOWN,
+                           .operation = run_routed_compose_action<compose_scroll_action_t, 1>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RESET_VIEW,
+                           .operation = run_routed_compose_action<reset_compose_view_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_TOOL,
+                           .operation = run_routed_compose_action<select_compose_tool_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DRAW_TOOL,
+                           .operation = run_routed_compose_action<select_compose_tool_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_LAYER_TOOL,
+                           .operation = run_routed_compose_action<select_compose_tool_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_note_paint_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RATE_SLOWER,
+                           .operation = run_routed_compose_action<step_compose_rate_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RATE_FASTER,
+                           .operation = run_routed_compose_action<step_compose_rate_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_FOCUS,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_timing_focus_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_EDIT_SNAP,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_edit_snap_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK,
+                           .operation = run_routed_compose_action<toggle_compose_y_lock_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_timing_lane_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM,
+                           .operation = run_routed_compose_action<change_bmson_lane_mode_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL,
+                           .operation = run_routed_compose_action<change_bmson_lane_mode_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL,
+                           .operation = run_routed_compose_action<change_bmson_lane_mode_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART,
+                           .operation =
+                               run_routed_compose_action<set_bmson_selection_restart_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE,
+                           .operation =
+                               run_routed_compose_action<set_bmson_selection_restart_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE,
+                           .operation = run_routed_compose_action<assign_bmson_selection_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM,
+                           .operation = run_routed_compose_action<assign_bmson_selection_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR,
+                           .operation =
+                               run_routed_compose_action<move_bmson_selection_to_cursor_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR,
+                           .operation =
+                               run_routed_compose_action<insert_bmson_marker_at_cursor_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR,
+                           .operation =
+                               run_routed_compose_action<insert_bmson_marker_at_cursor_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR,
+                           .operation =
+                               run_routed_compose_action<stage_bmson_marker_at_cursor_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR,
+                           .operation =
+                               run_routed_compose_action<stage_bmson_marker_at_cursor_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM,
+                           .operation =
+                               run_routed_compose_action<apply_bmson_marker_batch_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER,
+                           .operation =
+                               run_routed_compose_action<delete_bmson_selected_marker_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_OPEN_NOTE_LAYER_MENU,
+                           .operation =
+                               run_routed_compose_action<open_compose_note_layer_menu_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU,
+                           .operation =
+                               run_routed_compose_action<open_compose_sound_layer_menu_action_t>},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER,
+        .operation = run_routed_compose_action<add_selected_compose_sounds_to_layer_action_t>},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW,
+        .operation = run_routed_compose_action<set_compose_note_layer_menu_window_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CLOSE_NOTE_LAYER_MENU,
+                           .operation =
+                               run_routed_compose_action<close_compose_note_layer_menu_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER,
+                           .operation =
+                               run_routed_compose_action<assign_compose_note_menu_layer_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW,
+                           .operation =
+                               run_routed_compose_action<set_semantic_layer_window_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_NO_SEMANTIC_LAYER,
+                           .operation =
+                               run_routed_compose_action<choose_no_semantic_layer_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER,
+                           .operation =
+                               run_routed_compose_action<select_semantic_layer_target_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_PREVIOUS_SEMANTIC_LAYER_PAGE,
+                           .operation =
+                               run_routed_compose_action<step_semantic_layer_palette_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_NEXT_SEMANTIC_LAYER_PAGE,
+                           .operation =
+                               run_routed_compose_action<step_semantic_layer_palette_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER,
+                           .operation = run_routed_compose_action<add_semantic_layer_action_t>},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_RENAME_SEMANTIC_LAYER,
+        .operation = run_routed_compose_action<update_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_COLOR,
+        .operation = run_routed_compose_action<update_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER,
+        .operation = run_routed_compose_action<delete_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_DELETE_SEMANTIC_LAYER_WITH_MEMBERSHIPS,
+        .operation = run_routed_compose_action<delete_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_UP,
+        .operation = run_routed_compose_action<move_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_MOVE_SEMANTIC_LAYER_DOWN,
+        .operation = run_routed_compose_action<move_semantic_layer_catalog_entry_action_t>,
+        .captures_semantic_target = true,
+        .rejects_locked_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY,
+        .operation =
+            run_routed_compose_action<toggle_semantic_layer_visibility_or_lock_action_t, false>,
+        .captures_semantic_target = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK,
+        .operation =
+            run_routed_compose_action<toggle_semantic_layer_visibility_or_lock_action_t, true>,
+        .captures_semantic_target = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER,
+                           .operation =
+                               run_routed_compose_action<toggle_semantic_layer_filter_action_t>,
+                           .captures_semantic_target = true,
+                           .rejects_locked_target = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER,
+                           .operation =
+                               run_routed_compose_action<toggle_semantic_layer_filter_action_t>,
+                           .captures_semantic_target = true,
+                           .rejects_locked_target = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER,
+                           .operation =
+                               run_routed_compose_action<clear_semantic_layer_target_action_t>},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE,
+        .operation = run_routed_compose_action<toggle_semantic_layer_paint_mode_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO,
+                           .operation =
+                               run_routed_compose_action<toggle_semantic_layer_solo_action_t>,
+                           .captures_semantic_target = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES,
+                           .operation =
+                               run_routed_compose_action<select_semantic_layer_notes_action_t>,
+                           .captures_semantic_target = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER,
+                           .operation =
+                               run_routed_compose_action<edit_semantic_layer_membership_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER,
+                           .operation =
+                               run_routed_compose_action<edit_semantic_layer_membership_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_QUANTIZE_PREVIEW,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_quantize_preview_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP,
+                           .operation = run_routed_compose_action<set_compose_edit_snap_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_FIND_FITTING_SNAP,
+                           .operation =
+                               run_routed_compose_action<find_compose_selection_snap_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS,
+                           .operation =
+                               run_routed_compose_action<apply_compose_quantize_settings_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_QUANTIZE_PRESET,
+                           .operation =
+                               run_routed_compose_action<select_compose_quantize_preset_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SAVE_QUANTIZE_PRESET,
+                           .operation =
+                               run_routed_compose_action<save_compose_quantize_preset_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_DELETE_QUANTIZE_PRESET,
+                           .operation =
+                               run_routed_compose_action<delete_compose_quantize_preset_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RENAME_QUANTIZE_PRESET,
+                           .operation =
+                               run_routed_compose_action<rename_compose_quantize_preset_action_t>,
+                           .bypasses_area_clear = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY,
+                           .operation =
+                               run_routed_compose_action<toggle_compose_bga_visibility_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK,
+                           .operation =
+                               run_routed_compose_action<toggle_layer_assist_tick_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM,
+                           .operation = cancel_compose_bmson_marker_batch},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE,
+                           .operation =
+                               run_routed_compose_action<edit_compose_bms_branch_choice_action_t>,
+                           .is_workspace_only = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE,
+                           .operation =
+                               run_routed_compose_action<edit_compose_bms_branch_choice_action_t>,
+                           .is_workspace_only = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT,
+        .operation = run_routed_compose_action<edit_compose_bms_branch_statement_action_t>,
+        .is_workspace_only = true,
+        .has_bms_statement_feedback = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT,
+        .operation = run_routed_compose_action<edit_compose_bms_branch_statement_action_t>,
+        .is_workspace_only = true,
+        .has_bms_statement_feedback = true},
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT,
+        .operation = run_routed_compose_action<edit_compose_bms_branch_statement_action_t>,
+        .is_workspace_only = true,
+        .has_bms_statement_feedback = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK,
+                           .operation =
+                               run_routed_compose_action<edit_compose_bms_branch_block_action_t>,
+                           .is_workspace_only = true,
+                           .has_bms_statement_feedback = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK,
+                           .operation =
+                               run_routed_compose_action<edit_compose_bms_branch_block_action_t>,
+                           .is_workspace_only = true,
+                           .has_bms_statement_feedback = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF,
+                           .operation =
+                               run_routed_compose_action<edit_compose_bms_branch_block_action_t>,
+                           .is_workspace_only = true,
+                           .has_bms_statement_feedback = true},
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_local_routes{local_route_entries};
+
+namespace {
+constexpr auto compose_kind_count =
+    static_cast<std::size_t>(WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER) + 1;
+auto build_compose_action_routes() -> std::array<compose_action_route_t, compose_kind_count> {
+    std::array<compose_action_route_t, compose_kind_count> routes{};
+    for (const auto module :
+         {compose_local_routes, compose_resource_routes, compose_marker_routes,
+          compose_bookmark_routes, compose_area_routes, compose_bga_routes, compose_sound_routes}) {
+        for (const auto& route : module) {
+            const auto index = static_cast<std::size_t>(route.kind);
+            assert(index < routes.size() && !routes[index].operation);
+            routes[index] = route;
+        }
+    }
+    return routes;
+}
+const auto compose_routes = build_compose_action_routes();
+} // namespace
+
+auto compose_action_route_t::find(WormUiComposeActionKind kind) -> const compose_action_route_t* {
+    const auto index = static_cast<std::size_t>(kind);
+    if (index >= compose_routes.size() || !compose_routes[index].operation)
+        return nullptr;
+    return &compose_routes[index];
+}
+
+auto process_compose_action_boundary(compose_action_context_t& context,
+                                     const compose_action_route_t* route)
+    -> std::optional<compose_action_outcome_t> {
+    if (route && route->bypasses_area_clear)
+        return std::nullopt;
+    auto& application = context.environment.editor.commands;
+    const auto& action = context.action;
+    if (action.compose_action == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE) {
+        if (application.project.compose_view.compose_timing_focus ||
+            application.project.clipboard.paste_session)
+            return compose_action_outcome_t::blocked(compose_quantize_idle_message,
+                                                     notification_source_t::input);
+        if (auto blocked = context.require_no_gesture(compose_quantize_idle_message)) {
+            blocked->source = notification_source_t::input;
+            return blocked;
+        }
+    }
+    if (compose_area_pause_conversion(action.compose_action) &&
+        (application.project.clipboard.paste_session ||
+         application.project.compose_gesture.bga_draw_stroke ||
+         application.project.compose_gesture.bmson_razor_stroke)) {
+        return compose_action_outcome_t::from(
+            application.project.clipboard.paste_session
+                ? "Finish the paste before converting the area."
+                : "Finish the current edit before converting the area.",
+            notification_severity_t::hint, notification_source_t::edit);
+    }
+    return process_compose_area_boundary(context);
+}
+
+auto perform_routed_compose_action(compose_action_context_t& context,
+                                   const compose_action_route_t& route)
+    -> compose_action_outcome_t {
+    if (route.captures_semantic_target) {
+        if (auto blocked =
+                target_captured_semantic_layer_action(context, route.rejects_locked_target))
+            return std::move(*blocked);
+    }
+    if (route.requires_resources) {
+        if (auto blocked = context.require_resources())
+            return std::move(*blocked);
+    }
+    auto outcome = route.operation(context);
+    outcome.has_bms_statement_feedback = route.has_bms_statement_feedback;
+    return outcome;
+}
+
+auto perform_compose_view_action(compose_action_context_t& context) -> compose_action_outcome_t {
+    const auto* route = compose_action_route_t::find(context.action.compose_action);
+    if (auto blocked = process_compose_action_boundary(context, route))
+        return std::move(*blocked);
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+        return {.delivery = compose_feedback_delivery_t::none};
+    if (!route || route->is_standalone_only)
+        return compose_action_outcome_t::blocked(
+            compose_result_status(editor_interaction_result_t{}, {}), notification_source_t::input);
+    if (route->is_workspace_only) {
+        auto outcome = compose_action_outcome_t::blocked(
+            "BMS branch actions must use the workspace action boundary.",
+            notification_source_t::format, compose_feedback_delivery_t::notification);
+        return outcome;
+    }
+    return perform_routed_compose_action(context, *route);
+}
+} // namespace compose_action_detail
 auto resource_path_tab_action(const WormUiWorkspaceAction& action,
                               wormedit::workspace_tab_t tab) -> bool {
     if (tab == wormedit::workspace_tab_t::audio_slices)
@@ -3469,37 +3538,10 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
                                          application_state.preferences.editor_preferences)
             ? editor_field_scroll_direction_t::down
             : editor_field_scroll_direction_t::up;
-    editor_interaction_result_t result;
-    std::string status;
-
     compose_action_context_t context{
         environment,          action,           state,        viewport_height,
         metadata_import_busy, scroll_direction, notifications};
-    if (auto response = dispatch_quantize_preset_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_area_with_quantize_report(context))
-        return *response;
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE) return {};
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK ||
-        action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF) {
-        notifications.post(notification_severity_t::warning, notification_source_t::format,
-                           "BMS branch actions must use the workspace action boundary.");
-        return "BMS branch actions must use the workspace action boundary.";
-    }
-    if (auto response = dispatch_compose_note_menu_action(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_document_action_group(context))
-        return finish_compose_action(context, std::move(*response));
-    if (auto response = dispatch_compose_remaining_action(context)) return *response;
-    return finish_compose_action(
-        context, compose_action_outcome_t::blocked(compose_result_status(result, status),
-                                                   notification_source_t::input));
+    return finish_compose_action(context, perform_compose_view_action(context));
 }
 
 auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
@@ -3537,8 +3579,10 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
                                      metadata_import_busy,
                                      wormedit::editor_field_scroll_direction_t::up,
                                      notifications};
-    if (auto outcome = dispatch_compose_export_output_group_action(context))
-        static_cast<void>(finish_compose_action(context, std::move(*outcome)));
+    const auto* route = compose_action_route_t::find(action.compose_action);
+    assert(route);
+    static_cast<void>(
+        finish_compose_action(context, perform_routed_compose_action(context, *route)));
     return true;
 }
 
@@ -3566,8 +3610,10 @@ auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceActio
                                          metadata_import_busy,
                                          editor_field_scroll_direction_t::up,
                                          notifications};
-    if (auto outcome = dispatch_compose_bms_action(bms_context)) {
-        static_cast<void>(finish_compose_action(bms_context, std::move(*outcome)));
+    const auto* route = compose_action_route_t::find(action.compose_action);
+    if (route && route->is_workspace_only) {
+        static_cast<void>(
+            finish_compose_action(bms_context, perform_routed_compose_action(bms_context, *route)));
         return true;
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&

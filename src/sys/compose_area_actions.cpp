@@ -1,8 +1,10 @@
 #include "sys/compose_area_actions.h"
 #include "core/timing_arithmetic.h"
 #include "sys/compose_action_context.h"
+#include "sys/compose_action_routes.h"
 #include "sys/compose_quantize_request.h"
 #include <algorithm>
+#include <array>
 #include <ranges>
 #include <utility>
 #include <wormedit/core/chart_clipboard.h>
@@ -449,46 +451,86 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
 }
 
 namespace compose_action_detail {
-std::optional<compose_action_outcome_t>
-dispatch_compose_area_action(compose_action_context_t& context) {
-    using namespace wormedit;
-    const auto kind = context.action.compose_action;
-    if (compose_area_pause_conversion(kind) &&
+
+auto process_compose_area_boundary(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    if (compose_area_pause_conversion(context.action.compose_action) &&
         context.environment.document.history.document.id.value !=
             context.action.compose_input_project_id)
-        return compose_action_outcome_t::blocked(wormedit::stale_action_message("Area conversion"));
+        return compose_action_outcome_t::blocked(stale_action_message("Area conversion"));
     if (context.action.compose_area_clear_requested) {
         context.state.retained_selection_range.reset();
         context.state.retained_canvas_selection_range.reset();
     }
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR)
-        return run_compose_action(clear_compose_area_action_t{}, context);
-    if (kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_DELETE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE &&
-        kind != WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN && !compose_area_pause_conversion(kind))
-        return std::nullopt;
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE)
-        return run_compose_action(quantize_compose_selection_action_t{}, context);
+    return std::nullopt;
+}
+
+template <class Action>
+auto run_routed_area_action(compose_action_context_t& context) -> compose_action_outcome_t {
     const auto* chart =
         context.environment.document.history.document.find_chart(context.state.chart);
-    if (chart == nullptr)
+    if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
     const auto built = build_measure_index(*chart);
     const auto* measures = std::get_if<measure_index_t>(&built);
     if (!measures)
         return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
-    if (compose_area_pause_conversion(kind))
-        return run_compose_action(convert_compose_area_to_pause_action_t{}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE)
-        return run_compose_action(add_sv_recipe_over_area_action_t{.source_chart = &(*chart)}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN)
-        return run_compose_action(add_speed_span_over_area_action_t{.source_chart = &(*chart), .source_index = &(*measures)}, context);
-    if (kind == WORM_UI_COMPOSE_ACTION_AREA_DELETE)
-        return run_compose_action(delete_compose_area_contents_action_t{.source_index = &(*measures)}, context);
-    return run_compose_action(resize_compose_area_action_t{.source_chart = &(*chart), .source_index = &(*measures)}, context);
+    Action action{};
+    if constexpr (requires { action.source_chart = chart; })
+        action.source_chart = chart;
+    if constexpr (requires { action.source_index = measures; })
+        action.source_index = measures;
+    return run_compose_action(std::move(action), context);
 }
+
+namespace {
+constexpr auto area_route_entries = std::array{
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_CLEAR,
+        .operation = run_routed_compose_action<clear_compose_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE,
+        .operation = run_routed_compose_action<quantize_compose_selection_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_SET,
+        .operation = run_routed_area_action<resize_compose_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE,
+        .operation = run_routed_area_action<resize_compose_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_DELETE,
+        .operation = run_routed_area_action<delete_compose_area_contents_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE,
+        .operation = run_routed_area_action<add_sv_recipe_over_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_ADD_SPEED_SPAN,
+        .operation = run_routed_area_action<add_speed_span_over_area_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP,
+        .operation = run_routed_area_action<convert_compose_area_to_pause_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY,
+        .operation = run_routed_area_action<convert_compose_area_to_pause_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE,
+        .operation = run_routed_area_action<convert_compose_area_to_pause_action_t>,
+    },
+    compose_action_route_t{
+        .kind = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_DELAY_RESIZE,
+        .operation = run_routed_area_action<convert_compose_area_to_pause_action_t>,
+    },
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_area_routes{area_route_entries};
 } // namespace compose_action_detail
 } // namespace wormedit::sys

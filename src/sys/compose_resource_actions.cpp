@@ -467,16 +467,6 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_copy_resource_action(compose_action_context_t& context) {
-    if (auto blocked = context.require_resources())
-        return std::move(*blocked);
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT &&
-        context.action.compose_action != WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT)
-        return std::nullopt;
-    return run_compose_action(copy_compose_resource_action_t{}, context);
-}
-
 struct export_compose_output_group_action_t {
     output_export_plan_t plan{};
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
@@ -574,15 +564,6 @@ compose_action_outcome_t start_output_export(compose_action_context_t& context,
         notification_source_t::export_);
     outcome.delivery = compose_feedback_delivery_t::none;
     return outcome;
-}
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_export_output_group_action(compose_action_context_t& context) {
-    if (auto blocked = context.require_resources())
-        return std::move(*blocked);
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)
-        return std::nullopt;
-    return run_compose_action(export_compose_output_group_action_t{}, context);
 }
 
 auto compose_placement_kind(const WormUiWorkspaceAction& action)
@@ -685,13 +666,6 @@ struct place_compose_resource_action_t {
     }
 };
 static_assert(compose_action<place_compose_resource_action_t, compose_action_context_t>);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_place_resource_action(compose_action_context_t& context) {
-    if (context.action.compose_action != WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE)
-        return std::nullopt;
-    return run_compose_action(place_compose_resource_action_t{}, context);
-}
 
 struct select_compose_resource_uses_action_t {
     resource_id_t resource{};
@@ -881,55 +855,36 @@ auto relink_compose_sound_action_t::perform(compose_action_context_t& context) c
                                              notification_source_t::edit);
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_resource_action(compose_action_context_t& context) {
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES:
-        return run_compose_action(select_compose_resource_uses_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION:
-        return run_compose_action(assign_compose_resource_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE:
-        return run_compose_action(create_compose_resource_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET:
-        return run_compose_action(import_compose_resource_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT:
-    case WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT:
-        return dispatch_compose_copy_resource_action(context);
-    case WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP:
-        return dispatch_compose_export_output_group_action(context);
-    case WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE:
-        return dispatch_compose_place_resource_action(context);
-    case WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES:
-    case WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA:
-        if (auto blocked = context.require_no_gesture(
-                "Finish or cancel the active Compose gesture before editing BGA.")) {
-            blocked->source = notification_source_t::edit;
-            return std::move(*blocked);
-        }
-        return dispatch_bga_action_outcome(
-            {context.action, context.environment.document, context.state.chart});
-    case WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK:
-        return run_compose_action(relink_compose_sound_action_t{}, context);
-    case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
-    case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
-    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
-    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
-    case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
-    case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
-    case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
-        if (auto blocked = context.require_no_gesture(
-                "Finish or cancel the active Compose gesture before editing sounds.")) {
-            blocked->source = notification_source_t::edit;
-            return std::move(*blocked);
-        }
-        return dispatch_sound_edit_outcome(
-            {context.action, context.environment.document, context.state.chart},
-            context.environment.editor.commands);
-    default:
-        return std::nullopt;
-    }
-}
+namespace {
+constexpr auto resource_route_entries = std::array{
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_SELECT_RESOURCE_USES,
+                           .operation =
+                               run_routed_compose_action<select_compose_resource_uses_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_ASSIGN_RESOURCE_TO_SELECTION,
+                           .operation =
+                               run_routed_compose_action<assign_compose_resource_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CREATE_RESOURCE,
+                           .operation =
+                               run_routed_compose_action<create_compose_resource_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_IMPORT_RESOURCE_ASSET,
+                           .operation =
+                               run_routed_compose_action<import_compose_resource_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK,
+                           .operation = run_routed_compose_action<relink_compose_sound_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT,
+                           .operation = run_routed_compose_action<copy_compose_resource_action_t>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT,
+                           .operation = run_routed_compose_action<copy_compose_resource_action_t>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP,
+                           .operation =
+                               run_routed_compose_action<export_compose_output_group_action_t>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
+                           .operation = run_routed_compose_action<place_compose_resource_action_t>},
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_resource_routes{
+    resource_route_entries};
 } // namespace wormedit::sys::compose_action_detail

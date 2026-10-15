@@ -47,23 +47,6 @@ auto search_selected_note_labels_action_t::perform(compose_action_context_t& con
                                           notification_source_t::input);
 }
 
-auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t> {
-    switch (kind) {
-    case WORM_UI_COMPOSE_ACTION_TRANSFORM_MIRROR:
-        return selection_transform_t::mirror;
-    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_LEFT:
-        return selection_transform_t::rotate_left;
-    case WORM_UI_COMPOSE_ACTION_TRANSFORM_ROTATE_RIGHT:
-        return selection_transform_t::rotate_right;
-    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_EARLIER:
-        return selection_transform_t::shift_earlier;
-    case WORM_UI_COMPOSE_ACTION_TRANSFORM_SHIFT_LATER:
-        return selection_transform_t::shift_later;
-    default:
-        return std::nullopt;
-    }
-}
-
 auto transform_selected_notes_action_t::validate(compose_action_context_t& context) const
     -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(

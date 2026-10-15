@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
@@ -335,32 +336,6 @@ auto paste_position(const measure_index_t& index, std::uint64_t row)
     return local_position_t{measure.id, row - measure.absolute_begin_row};
 }
 
-auto next_paste_id(const chart_document_t& chart) -> std::uint64_t {
-    std::uint64_t highest{};
-    const auto scan = [&highest](const auto& values) {
-        for (const auto& value : values) highest = std::max(highest, value.id.value);
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    return highest;
-}
-
 auto place_note(note_t note, const chart_clipboard_object_t& object,
                 const chart_document_t& chart, const measure_index_t& index,
                 local_position_t position, std::uint64_t row) -> std::optional<note_t> {
@@ -685,7 +660,7 @@ namespace {
 auto place_paste_objects(chart_document_t& chart, const measure_index_t& index,
     const chart_clipboard_t& clipboard, std::uint64_t row, chart_paste_proposal_t& proposal)
     -> result_t<void, std::string> {
-    auto id = next_paste_id(chart);
+    auto id = object_id_ceiling_t::from(chart).maximum;
     for (const auto& source : clipboard.objects) {
         auto object = place_object(source, chart, index, row);
         if (!object) return std::unexpected("A clipboard position, duration or lane cannot be represented exactly.");

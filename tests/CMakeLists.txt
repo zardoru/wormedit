@@ -134,6 +134,7 @@ add_executable(wormedit_core_tests
     core/quantize_tests.cpp
     core/rational_tests.cpp
     core/recovery_controller_tests.cpp
+    core/chart_object_ids_tests.cpp
     core/bgm_columns_tests.cpp
     core/lane_profile_switch_tests.cpp
     core/lane_migration_tests.cpp

@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include "timing_event_internal.h"
 #include <wormedit/core/rational.h>
 #include "timing_arithmetic.h"
@@ -94,33 +95,6 @@ auto exact_offset(std::int64_t frame, std::uint32_t sample_rate) -> signed_ratio
 
 
 
-auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    auto maximum = std::uint64_t{};
-    const auto scan = [&maximum](const auto& values) {
-        for (const auto& value : values) maximum = std::max(maximum, value.id.value);
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
-    return object_id_t{maximum + 1};
-}
-
 auto prepare_tap_timing_proposal(const song_document_t& document, chart_id_t chart_id,
                     const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
                     std::uint16_t beats_per_measure, tap_bpm_choice_t choice)
@@ -172,7 +146,7 @@ auto effective_row_zero_index(const chart_document_t& chart) -> std::optional<st
 }
 
 auto insert_initial_bpm(chart_document_t& chart, signed_rational_t bpm) -> bool {
-    const auto id = next_object_id(chart);
+    const auto id = next_chart_object_id(chart).id;
     const auto source_order = next_source_order(chart.bpms);
     if (!id || !source_order || chart.measures.empty()) return false;
     chart.bpms.push_back({.id = *id,

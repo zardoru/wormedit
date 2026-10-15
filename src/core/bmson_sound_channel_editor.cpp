@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include "timing_arithmetic.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/measure.h>
@@ -421,30 +422,13 @@ auto validate_marker_targets(const chart_document_t& chart, const measure_index_
     return std::nullopt;
 }
 
-struct chart_object_stats_t {
-    std::uint64_t largest{};
-    std::size_t count{};
-};
-
-auto chart_object_stats(const chart_document_t& chart) -> chart_object_stats_t {
-    chart_object_stats_t stats;
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) {
-            stats.largest = std::max(stats.largest, value.id.value);
-            ++stats.count;
-        }
-    };
-    scan(chart.bgm_source_lanes); scan(chart.lane_layouts); scan(chart.bpms);
-    scan(chart.pauses); scan(chart.warps); scan(chart.scrolls); scan(chart.speeds);
-    scan(chart.kiai); scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections);
-    scan(chart.bga_events); scan(chart.sound_channels);
+// Marker reservation also includes source clips, a distinct ID domain. Keep its
+// existing ceiling/cap policy separate from chart object declarations.
+auto chart_object_stats(const chart_document_t& chart) -> object_id_ceiling_t {
+    auto stats = object_id_ceiling_t::from(chart);
     for (const auto& channel : chart.sound_channels) {
-        stats.largest = std::max(stats.largest, channel.source_clip.id.value);
+        stats.maximum = std::max(stats.maximum, channel.source_clip.id.value);
         ++stats.count;
-        scan(channel.events);
-    }
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes); scan(measure.bgm_events);
     }
     return stats;
 }
@@ -524,7 +508,7 @@ auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
     auto stats = chart_object_stats(*found_chart);
     const auto needed = markers.size() * 2;
     if (stats.count > default_maximum_chart_objects - needed ||
-        stats.largest > std::numeric_limits<std::uint64_t>::max() - needed)
+        stats.maximum > std::numeric_limits<std::uint64_t>::max() - needed)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
 
@@ -534,7 +518,7 @@ auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
     const auto channel_offset = static_cast<std::size_t>(
         source.channel - found_chart->sound_channels.data());
     auto& changed_channel = changed_chart.sound_channels[channel_offset];
-    auto largest = stats.largest;
+    auto largest = stats.maximum;
     for (const auto& marker : markers) {
         if (auto failure = append_marker(changed_chart, changed_channel, marker,
                                          *source.marker, largest, revision)) return *failure;
@@ -768,18 +752,7 @@ auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::u
     const auto found = std::ranges::find_if(chart.bgm_source_lanes,
         [&](const auto& lane) { return lane.source_order == order; });
     if (found != chart.bgm_source_lanes.end()) return found->id;
-    auto largest = std::uint64_t{};
-    const auto scan = [&](const auto& items) {
-        for (const auto& item : items) largest = std::max(largest, item.id.value);
-    };
-    scan(chart.bgm_source_lanes); scan(chart.lane_layouts); scan(chart.bpms);
-    scan(chart.pauses); scan(chart.warps); scan(chart.scrolls); scan(chart.speeds);
-    scan(chart.kiai); scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections);
-    scan(chart.bga_events); scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes); scan(measure.bgm_events);
-    }
+    const auto largest = object_id_ceiling_t::from(chart).maximum;
     if (largest == std::numeric_limits<std::uint64_t>::max())
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON BGM lane ID space is exhausted");
@@ -1126,8 +1099,8 @@ auto allocate_two_ids(chart_document_t& chart, std::uint64_t& largest,
                       std::uint64_t count) -> bool {
     const auto stats = chart_object_stats(chart);
     if (stats.count > default_maximum_chart_objects - count ||
-        stats.largest > std::numeric_limits<std::uint64_t>::max() - count) return false;
-    largest = stats.largest;
+        stats.maximum > std::numeric_limits<std::uint64_t>::max() - count) return false;
+    largest = stats.maximum;
     return true;
 }
 

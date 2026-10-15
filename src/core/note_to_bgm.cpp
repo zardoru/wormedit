@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include <wormedit/core/note_to_bgm.h>
 
 #include <wormedit/core/bmson_sound_channel_editor.h>
@@ -15,20 +16,6 @@
 namespace wormedit {
 namespace {
 
-
-auto largest_object_id(const chart_document_t& chart) -> std::uint64_t {
-    std::uint64_t largest{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) largest = std::max(largest, value.id.value);
-    };
-    scan(chart.bgm_source_lanes); scan(chart.lane_layouts); scan(chart.bpms); scan(chart.pauses);
-    scan(chart.warps); scan(chart.scrolls); scan(chart.speeds); scan(chart.kiai);
-    scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections); scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) { scan(measure.notes); scan(measure.bgm_events); }
-    return largest;
-}
 
 struct group_key_t {
     bool is_group{};
@@ -198,7 +185,7 @@ auto prepare_allocation_state(const chart_document_t& chart, const resource_keys
     for (std::size_t i = 0; i < state.lanes.size(); ++i)
         state.lane_index.emplace(state.lanes[i].id, i);
     rank_group_preferences(state, counts);
-    state.largest_id = largest_object_id(chart);
+    state.largest_id = object_id_ceiling_t::from(chart).maximum;
     for (const auto& lane : state.lanes) {
         if (lane.order == std::numeric_limits<std::size_t>::max())
             state.order_exhausted = true;

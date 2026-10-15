@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include "timing_arithmetic.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/core/measure_editor.h>
@@ -625,21 +626,6 @@ auto is_conversion_points_clear(const chart_document_t& chart, const measure_ind
 
 using timing_arithmetic::rows_to_beat_fraction;
 
-auto conversion_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    std::uint64_t maximum{};
-    const auto scan = [&](const auto& values) {
-        for (const auto& value : values) maximum = std::max(maximum, value.id.value);
-    };
-    scan(chart.lane_layouts); scan(chart.bgm_source_lanes); scan(chart.bpms); scan(chart.pauses);
-    scan(chart.warps); scan(chart.scrolls); scan(chart.speeds); scan(chart.kiai);
-    scan(chart.timing_anchors); scan(chart.bookmarks); scan(chart.sections); scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) scan(channel.events);
-    for (const auto& measure : chart.measures) { scan(measure.notes); scan(measure.bgm_events); }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) return std::nullopt;
-    return object_id_t{maximum + 1};
-}
-
 // Geometry and object movement use the same lift/place machinery as measure
 // resizing. Every later endpoint moves by the same absolute-row displacement.
 auto shorten_conversion_measures(chart_document_t& chart, const measure_index_t& before,
@@ -782,7 +768,7 @@ void apply_measure_action(measure_edit_context_t& context, const convert_range_t
     }
     const bool bms_ticks = chart->source_family == format_family_t::bms && edit.kind == pause_kind_t::stop;
     const auto duration = rows_to_beat_fraction(*last - *first, chart->divisions_per_standard_measure, bms_ticks ? 192 : 4);
-    const auto id = conversion_object_id(*chart);
+    const auto id = next_chart_object_id(*chart).id;
     if (!duration || !id || !convert_pause_geometry(*chart, *before, range, edit.resize_measures,
             {.id = id.value_or(object_id_t{}), .kind = edit.kind,
              .duration = duration.value_or(signed_rational_t{}),

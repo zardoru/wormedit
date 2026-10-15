@@ -13,4 +13,4 @@ compatibility_forwarder | 7 | src,include | // Compatibility
 envelope_stamp_unpacked | 55 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
 detail_namespace_reopen | 81 | src | ^using namespace [a-z_]+_detail;
 dispatch_probe_chain | 37 | src | if \(auto (result|response) = [a-z_]+\(context\)\)
-local_object_id_scan | 9 | src | auto (largest_object_id|largest_id|next_object_id|next_paste_id|scan_chart_objects|conversion_object_id)\(
+local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_id|next_paste_id|scan_chart_objects|conversion_object_id)\(

@@ -1,3 +1,4 @@
+#include "chart_object_ids.h"
 #include "interaction_internal.h"
 namespace wormedit::interaction_detail {
 auto is_plain_editable_note(const note_t& note) -> bool {
@@ -96,36 +97,8 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
 
 namespace wormedit::interaction_detail {
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
-    auto maximum = std::uint64_t{};
-    const auto scan = [&maximum](const auto& values) {
-        for (const auto& value : values) {
-            maximum = std::max(maximum, value.id.value);
-        }
-    };
-    scan(chart.bgm_source_lanes);
-    scan(chart.lane_layouts);
-    scan(chart.bpms);
-    scan(chart.pauses);
-    scan(chart.warps);
-    scan(chart.scrolls);
-    scan(chart.speeds);
-    scan(chart.kiai);
-    scan(chart.timing_anchors);
-    scan(chart.bookmarks);
-    scan(chart.sections);
-    scan(chart.bga_events);
-    scan(chart.sound_channels);
-    for (const auto& channel : chart.sound_channels) {
-        scan(channel.events);
-    }
-    for (const auto& measure : chart.measures) {
-        scan(measure.notes);
-        scan(measure.bgm_events);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return object_id_t{maximum + 1};
+    // Temporary: removed by T-642 when interaction callers use the shared allocation query.
+    return next_chart_object_id(chart).id;
 }
 } // namespace wormedit::interaction_detail
 

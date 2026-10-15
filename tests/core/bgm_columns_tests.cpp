@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <limits>
 
 using namespace wormedit;
 
@@ -189,4 +190,23 @@ TEST_CASE("BGM column count rejects BMSON without changing its lanes",
     CHECK(lane_count(history) == 1);
     check_original_bgm_event(history.document.charts.front());
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("BGM column growth reserves all IDs before reaching the ceiling",
+          "[unit][core][bgm-columns]") {
+    auto song = column_song();
+    song.charts.front().bpms.front().id =
+        object_id_t{std::numeric_limits<std::uint64_t>::max() - 2};
+    auto history = document_history_t::from(song);
+    const auto blocked = apply_bgm_column_count(history, chart_id_t{2}, 4);
+    CHECK_FALSE(blocked);
+    REQUIRE_FALSE(blocked.diagnostics.empty());
+    CHECK(blocked.diagnostics.front().message == "BGM source lane ID space is exhausted");
+    CHECK((history.document.revision == song.revision && history.undo.empty() &&
+           lane_count(history) == 1));
+    require_column_count(history, 3);
+    const auto& lanes = history.document.charts.front().bgm_source_lanes;
+    CHECK((lanes.size() == 3 &&
+           lanes[1].id.value == std::numeric_limits<std::uint64_t>::max() - 1 &&
+           lanes[2].id.value == std::numeric_limits<std::uint64_t>::max()));
 }

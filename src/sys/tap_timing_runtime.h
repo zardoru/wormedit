@@ -74,7 +74,7 @@ class tap_timing_runtime_t {
     [[nodiscard]] auto bpm_choice() const -> tap_bpm_choice_t { return choice_; }
     void prepare_apply(const song_document_t& document, bool timing_locked);
     [[nodiscard]] auto apply_proposal() const
-        -> const std::optional<tap_timing_apply_proposal_t>& { return proposal_; }
+        -> const std::optional<proposal_t<tap_timing_apply_proposal_t>>& { return proposal_; }
     auto apply(document_history_t& history, const tap_timing_clock_t& clock,
                std::uint64_t expected_revision, bool timing_locked)
         -> document_command_result_t;
@@ -91,7 +91,7 @@ class tap_timing_runtime_t {
     std::uint16_t tap_segment_{};
     bool timing_locked_{};
     tap_bpm_choice_t choice_{tap_bpm_choice_t::raw};
-    std::optional<tap_timing_apply_proposal_t> proposal_;
+    std::optional<proposal_t<tap_timing_apply_proposal_t>> proposal_;
     std::optional<tap_timing_clock_t> proposal_clock_;
     std::optional<tap_tempo_estimate_t> proposal_estimate_;
 };

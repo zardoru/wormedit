@@ -148,7 +148,6 @@ auto prepare_tap_timing_proposal(const song_document_t& document, chart_id_t cha
         return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing phase exceeds the exact audio offset range"));
     }
     return tap_timing_apply_proposal_t{
-        .stamp = chart_stamp_t::from(document, chart_id),
         .sample_rate = sample_rate,
         .beats_per_measure = beats_per_measure,
         .estimate = estimate,
@@ -193,11 +192,12 @@ auto apply_proposal_to_chart(chart_document_t& chart,
 }
 
 auto proposed_document(const song_document_t& document,
-                      const tap_timing_apply_proposal_t& proposal) -> std::optional<song_document_t> {
-    const auto verified = prepare_tap_timing_proposal(document, proposal.stamp.chart, proposal.estimate,
-        proposal.sample_rate, proposal.beats_per_measure, proposal.choice);
-    if (!verified || verified->beats_per_minute != proposal.beats_per_minute ||
-        verified->beat_zero_audio_offset_seconds != proposal.beat_zero_audio_offset_seconds)
+                      const proposal_t<tap_timing_apply_proposal_t>& proposal) -> std::optional<song_document_t> {
+    const auto& payload = proposal.payload;
+    const auto verified = prepare_tap_timing_proposal(document, proposal.stamp.chart, payload.estimate,
+        payload.sample_rate, payload.beats_per_measure, payload.choice);
+    if (!verified || verified->beats_per_minute != payload.beats_per_minute ||
+        verified->beat_zero_audio_offset_seconds != payload.beat_zero_audio_offset_seconds)
         return std::nullopt;
     auto proposed = document;
     const auto chart = proposed.find_chart(proposal.stamp.chart);
@@ -213,7 +213,7 @@ auto proposed_document(const song_document_t& document,
 
 } // namespace
 
-auto tap_timing_apply_proposal_t::from(const song_document_t& document, chart_id_t chart,
+auto tap_timing_apply_proposal_t::propose(const song_document_t& document, chart_id_t chart,
                                       const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
                                       std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
                                       bool timing_locked) -> tap_timing_apply_proposal_outcome_t {
@@ -225,14 +225,28 @@ auto tap_timing_apply_proposal_t::from(const song_document_t& document, chart_id
     }
     auto proposal = prepare_tap_timing_proposal(document, chart, estimate, sample_rate, beats_per_measure, choice);
     if (proposal)
-        result.value = std::move(*proposal);
+        result.value = proposal_t<tap_timing_apply_proposal_t>{
+            .stamp = chart_stamp_t::from(document, chart), .payload = std::move(*proposal)};
     else
         result.diagnostics.push_back(std::move(proposal.error()));
     return result;
 }
 
+auto tap_timing_apply_proposal_t::revise(const chart_stamp_t& stamp,
+    const song_document_t& document, tap_bpm_choice_t choice, bool timing_locked) const
+    -> tap_timing_apply_proposal_outcome_t {
+    if (!timing_locked &&
+        !stamp.document.is_current(document, document_identity_policy_t::revision_only))
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                      stale_action_message("Tap timing proposal"))}};
+    auto revised = propose(document, stamp.chart, estimate, sample_rate, beats_per_measure,
+                           choice, timing_locked);
+    if (revised.value) revised.value->stamp = stamp;
+    return revised;
+}
+
 auto make_tap_timing_preview(const song_document_t& document,
-                             const tap_timing_apply_proposal_t& proposal)
+                             const proposal_t<tap_timing_apply_proposal_t>& proposal)
     -> std::optional<chart_document_t> {
     if (!proposal.stamp.document.is_current(document,
             document_identity_policy_t::revision_only)) return std::nullopt;
@@ -244,7 +258,7 @@ auto make_tap_timing_preview(const song_document_t& document,
 }
 
 auto apply_tap_timing_proposal(document_history_t& history,
-                               const tap_timing_apply_proposal_t& proposal, bool timing_locked)
+                               const proposal_t<tap_timing_apply_proposal_t>& proposal, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     if (timing_locked) {
@@ -252,8 +266,8 @@ auto apply_tap_timing_proposal(document_history_t& history,
                "tap timing apply is disabled while timing is locked");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history, proposal.stamp,
-        "Tap timing proposal", document_identity_policy_t::revision_only);
+    auto transaction = proposal.transaction(history, "Tap timing proposal",
+                                           document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) return transaction.finish_without_commit();
     auto proposed = proposed_document(history.document, proposal);
     if (!proposed) {

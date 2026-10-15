@@ -590,10 +590,10 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (!proposal.stamp.is_current(history.document, *workspace.selected_chart,
             document_identity_policy_t::revision_only)) return;
     const auto& bound = cache.timing.tap_preview_binding;
-    if (!bound || std::tie(bound->stamp.chart, bound->stamp.document.revision, bound->beats_per_minute,
-                           bound->beat_zero_audio_offset_seconds) !=
-                  std::tie(proposal.stamp.chart, proposal.stamp.document.revision, proposal.beats_per_minute,
-                           proposal.beat_zero_audio_offset_seconds)) {
+    if (!bound || std::tie(bound->stamp.chart, bound->stamp.document.revision, bound->payload.beats_per_minute,
+                           bound->payload.beat_zero_audio_offset_seconds) !=
+                  std::tie(proposal.stamp.chart, proposal.stamp.document.revision, proposal.payload.beats_per_minute,
+                           proposal.payload.beat_zero_audio_offset_seconds)) {
         cache.timing.tap_preview_binding = proposal;
         cache.timing.tap_preview_timing.reset();
         const auto candidate = make_tap_timing_preview(history.document, proposal);
@@ -606,8 +606,8 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
     if (chart == nullptr) return;
     build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
                                   *cache.timing.tap_preview_timing, *interaction);
-    const audio_offset_drag_t offset{.sample_rate = proposal.sample_rate,
-        .proposed_offset_seconds = proposal.beat_zero_audio_offset_seconds};
+    const audio_offset_drag_t offset{.sample_rate = proposal.payload.sample_rate,
+        .proposed_offset_seconds = proposal.payload.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);
     flattened.view.compose.waveform_offset_drag_active = true;
 }

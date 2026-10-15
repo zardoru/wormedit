@@ -1801,9 +1801,9 @@ void build_tap_timing_view(wormedit::sys::tap_timing_runtime_t& runtime,
     target.apply_available = proposal.has_value();
     if (proposal) {
         target.apply_revision = proposal->stamp.document.revision;
-        target.proposed_bpm = wormedit::to_double(proposal->beats_per_minute);
-        target.proposed_offset_ms = 1000.0 * proposal->beat_zero_audio_offset_seconds.numerator /
-                                   proposal->beat_zero_audio_offset_seconds.denominator;
+        target.proposed_bpm = wormedit::to_double(proposal->payload.beats_per_minute);
+        target.proposed_offset_ms = 1000.0 * proposal->payload.beat_zero_audio_offset_seconds.numerator /
+                                   proposal->payload.beat_zero_audio_offset_seconds.denominator;
     }
     if (!state.estimate) return;
     target.estimate_available = true;

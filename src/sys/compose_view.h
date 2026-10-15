@@ -293,8 +293,8 @@ struct compose_scene_cache_t {
     } measures;
 
     struct timing_state_t {
-        std::optional<tap_timing_apply_proposal_t> tap_apply_proposal;
-        std::optional<tap_timing_apply_proposal_t> tap_preview_binding;
+        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_apply_proposal;
+        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
         std::optional<timing_index_t> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
         std::optional<dead_span_projection_t> dead_spans;

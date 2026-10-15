@@ -47,7 +47,7 @@ Apply the stale-plan check (rule 9) first.
 
 - **Status:** ready
 - **Outcome:** each recipe draws as a bar spanning its exact interval in the Compose SV lane (with its curve drawn inside); clicking it selects it and opens an "SV recipe" section at the top of the inspector with the same fields as the Timing pane recipe form; its ends and body drag with the existing snapped range-drag controller; "Add SV recipe" from the area menu creates one over the band.
-- **Read first:** `include/wormedit/core/sv_recipe.h` (`begin_sv_recipe_draft`, `begin_sv_recipe_range_drag`, `apply_sv_recipe_draft`), `src/ui/nuklear/timing_panel.cpp` (recipe form, `cancel_timing_recipe_range_drag`), `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_timing_lanes`), `src/sys/compose_view.cpp`.
+- **Read first:** `include/wormedit/core/sv_recipe.h` (`sv_recipe_draft_t::propose`, `sv_recipe_range_drag_t::propose`, `apply_proposal`), `src/ui/nuklear/timing_panel.cpp` (recipe form, `cancel_timing_recipe_range_drag`), `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_timing_lanes`), `src/sys/compose_view.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, new `src/ui/nuklear/compose_recipe_inspector.cpp/.h`, `CMakeLists.txt`.
 - **Steps:**
   1. Project recipe spans (id, top row, bottom row, enabled, selected, bounded curve polyline) for visible rows.

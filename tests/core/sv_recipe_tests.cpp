@@ -7,8 +7,12 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <type_traits>
 
 using namespace wormedit;
+
+static_assert(std::is_aggregate_v<sv_recipe_draft_t>);
+static_assert(std::is_aggregate_v<proposal_t<sv_recipe_draft_t>>);
 
 namespace {
 
@@ -80,8 +84,7 @@ auto checked_draft(proposal_outcome_t<sv_recipe_draft_t> outcome)
 void revise_draft(const document_history_t& history, proposal_outcome_t<sv_recipe_draft_t>& draft,
                   sv_recipe_t candidate) {
     REQUIRE(draft.value);
-    auto revised = draft.value->revise(history, std::move(candidate),
-        false, std::move(draft.diagnostics));
+    auto revised = draft.value->revise(history, {.diagnostics = std::move(draft.diagnostics)}, std::move(candidate));
     REQUIRE(revised.value);
     draft = std::move(revised);
 }
@@ -89,8 +92,7 @@ void revise_draft(const document_history_t& history, proposal_outcome_t<sv_recip
 void revise_draft_range(const document_history_t& history,
     proposal_outcome_t<sv_recipe_draft_t>& draft, position_span_t hits, std::uint64_t snap) {
     REQUIRE(draft.value);
-    auto revised = draft.value->revise(history, hits, snap,
-        false, std::move(draft.diagnostics));
+    auto revised = draft.value->revise(history, {.diagnostics = std::move(draft.diagnostics)}, hits, snap);
     REQUIRE(revised.value);
     draft = std::move(revised);
 }
@@ -439,7 +441,7 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
     candidate.transition_duration = rational_t{3, 2};
     candidate.transition_is_seconds = true;
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
-    REQUIRE(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     CHECK_FALSE(draft.value->payload.candidate.id);
     const auto preview = preview_sv_recipe_draft(history, *draft.value);
     REQUIRE(preview);
@@ -453,20 +455,20 @@ TEST_CASE("SV recipe draft previews raw and composed values without mutation, th
     CHECK(history.undo.size() == initial_undo_size);
     CHECK(history.document.charts.front().sv_recipes.size() == 1);
 
-    const auto applied = apply_sv_recipe_draft(history, *draft.value);
+    const auto applied = apply_proposal(history, *draft.value);
     REQUIRE(applied);
-    CHECK(draft.value->payload.status == sv_recipe_draft_status_t::applied);
+    CHECK(draft.value->payload.lifecycle.status() == proposal_status_t::applied);
     CHECK(history.document.revision == initial_revision + 1);
     CHECK(history.undo.size() == initial_undo_size + 1);
     REQUIRE(history.document.charts.front().sv_recipes.size() == 2);
     CHECK(history.document.charts.front().sv_recipes.back().id);
 
     auto cancelled = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
-    REQUIRE(cancelled.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(cancelled.value->payload.lifecycle.status() == proposal_status_t::active);
     const auto revision_before_cancel = history.document.revision;
     const auto undo_before_cancel = history.undo.size();
-    cancel_sv_recipe_draft(*cancelled.value);
-    CHECK(cancelled.value->payload.status == sv_recipe_draft_status_t::cancelled);
+    cancelled.value->payload.lifecycle.cancel();
+    CHECK(cancelled.value->payload.lifecycle.status() == proposal_status_t::cancelled);
     CHECK(history.document.revision == revision_before_cancel);
     CHECK(history.undo.size() == undo_before_cancel);
     CHECK(history.document.charts.front().sv_recipes.size() == 2);
@@ -483,9 +485,9 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
 
     auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
-    REQUIRE(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     REQUIRE(preview_sv_recipe_draft(history, *draft.value));
-    REQUIRE(apply_sv_recipe_draft(history, *draft.value));
+    REQUIRE(apply_proposal(history, *draft.value));
 
     CHECK_FALSE(workspace_view_t::from(workspace, history.document));
     REQUIRE(rebind_workspace(workspace, history));
@@ -515,7 +517,7 @@ TEST_CASE("SV recipe edit drafts substitute in stable order and preserve replace
     auto history = document_history_t::from(std::move(song));
 
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, recipe_id_t{21}));
-    REQUIRE(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     auto replacement = draft.value->payload.candidate;
     replacement.parameters.value_from = {4, 1};
     revise_draft(history, draft, replacement);
@@ -530,7 +532,7 @@ TEST_CASE("SV recipe edit drafts substitute in stable order and preserve replace
     CHECK((history.document.charts.front().sv_recipes[1].parameters.value_from ==
            signed_rational_t{3, 1}));
 
-    const auto applied = apply_sv_recipe_draft(history, *draft.value);
+    const auto applied = apply_proposal(history, *draft.value);
     REQUIRE(applied);
     CHECK(history.document.charts.front().sv_recipes.size() == 3);
     CHECK(history.document.charts.front().sv_recipes[1].id == recipe_id_t{21});
@@ -548,7 +550,7 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
     auto draft =
         checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10},
                               make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1})));
-    REQUIRE(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     revise_draft_range(history, draft, {{measure_id_t{12}, 451}, {measure_id_t{11}, 17}}, 4);
     CHECK((draft.value->payload.candidate.range.begin == local_position_t{measure_id_t{11}, 0}));
     CHECK((draft.value->payload.candidate.range.end == local_position_t{measure_id_t{12}, 480}));
@@ -564,7 +566,7 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
     CHECK(chart_end_preview.candidate_points.points.back().absolute_row == 1919);
 
     const auto before_failed_range = draft.value->payload.candidate.range;
-    const auto failed_range = draft.value->revise(history,
+    const auto failed_range = draft.value->revise(history, {},
         position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
     CHECK_FALSE(failed_range.value);
     CHECK(draft.value->payload.candidate.range == before_failed_range);
@@ -591,32 +593,32 @@ TEST_CASE("SV recipe drafts reject invalid candidates and stale revisions withou
     auto history = document_history_t::from(make_recipe_song());
     auto invalid = make_constant_recipe({}, measure_id_t{11}, measure_id_t{11}, {2, 1});
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, invalid));
-    REQUIRE(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     const auto revision = history.document.revision;
     CHECK_FALSE(preview_sv_recipe_draft(history, *draft.value));
-    const auto rejected_apply = apply_sv_recipe_draft(history, *draft.value);
+    const auto rejected_apply = apply_proposal(history, *draft.value);
     CHECK_FALSE(rejected_apply);
-    CHECK(draft.value->payload.status == sv_recipe_draft_status_t::editing);
+    CHECK(draft.value->payload.lifecycle.status() == proposal_status_t::active);
     CHECK(history.document.revision == revision);
     CHECK(history.document.charts.front().sv_recipes.empty());
 
     auto valid = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
     revise_draft(history, draft, valid);
     REQUIRE(preview_sv_recipe_draft(history, *draft.value));
-    REQUIRE(apply_sv_recipe_draft(history, *draft.value));
+    REQUIRE(apply_proposal(history, *draft.value));
     CHECK(history.document.charts.front().sv_recipes.size() == 1);
 
     auto stale = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, valid));
-    REQUIRE(stale.value->payload.status == sv_recipe_draft_status_t::editing);
+    REQUIRE(stale.value->payload.lifecycle.status() == proposal_status_t::active);
     auto proposed = history.document;
     proposed.metadata.title = "revision change";
     REQUIRE(commit_document_command(history, std::move(proposed), "Unrelated edit"));
     const auto after_external_edit = history.document.revision;
     CHECK_FALSE(preview_sv_recipe_draft(history, *stale.value));
-    const auto expired = apply_sv_recipe_draft(history, *stale.value);
+    const auto expired = apply_proposal(history, *stale.value);
     CHECK_FALSE(expired);
     test::check_stale_action_message(expired.diagnostics, "SV recipe draft");
-    CHECK(stale.value->payload.status == sv_recipe_draft_status_t::cancelled);
+    CHECK(stale.value->payload.lifecycle.status() == proposal_status_t::cancelled);
     CHECK(history.document.revision == after_external_edit);
     CHECK(history.document.charts.front().sv_recipes.size() == 1);
 }
@@ -727,8 +729,8 @@ TEST_CASE("SV draft stamps keep equal-revision project replacement editable",
     CHECK(draft.value->stamp == chart_stamp_t::from(history.document, chart_id_t{10}));
     history.document.id = song_id_t{99};
     revise_draft(history, draft, candidate);
-    CHECK(apply_sv_recipe_draft(history, *draft.value).applied);
-    CHECK(draft.value->payload.status == sv_recipe_draft_status_t::applied);
+    CHECK(apply_proposal(history, *draft.value).applied);
+    CHECK(draft.value->payload.lifecycle.status() == proposal_status_t::applied);
     CHECK(history.undo.size() == 1);
 }
 
@@ -754,11 +756,11 @@ TEST_CASE("SV draft Apply keeps binding diagnostics and lock priority",
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10},
         make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1})));
     ++history.document.revision;
-    const auto result = apply_sv_recipe_draft(history, *draft.value, true);
+    const auto result = apply_proposal(history, *draft.value, proposal_application_input_t{.is_timing_locked = true});
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_binding);
     CHECK(result.diagnostics.front().message == "SV recipe draft was cancelled by timing lock");
-    CHECK(draft.value->payload.status == sv_recipe_draft_status_t::cancelled);
+    CHECK(draft.value->payload.lifecycle.status() == proposal_status_t::cancelled);
     CHECK(history.undo.empty());
 }
 
@@ -819,7 +821,7 @@ TEST_CASE("SV draft range revisions transfer existing string storage",
     candidate.name.assign(512, 'n');
     auto initial = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
     const auto* name_storage = initial.value->payload.candidate.name.data();
-    const auto revised = initial.value->revise(history,
+    const auto revised = initial.value->revise(history, {},
         position_span_t{{measure_id_t{11}, 17}, {measure_id_t{12}, 451}}, 4);
     REQUIRE(revised.value);
     CHECK(revised.value->payload.candidate.name == candidate.name);
@@ -834,13 +836,13 @@ TEST_CASE("SV draft inactive views borrow the latest outcome diagnostics",
     auto candidate = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1});
     candidate.output = sv_recipe_output_t::speeds;
     auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
-    const auto blocked = apply_sv_recipe_draft(history, *draft.value, true);
+    const auto blocked = apply_proposal(history, *draft.value, proposal_application_input_t{.is_timing_locked = true});
     REQUIRE(blocked.diagnostics.size() == 1);
-    CHECK(draft.value->payload.status == sv_recipe_draft_status_t::cancelled);
+    CHECK(draft.value->payload.lifecycle.status() == proposal_status_t::cancelled);
     const auto preview = preview_sv_recipe_draft(history, *draft.value, blocked.diagnostics);
     CHECK(preview.diagnostics == blocked.diagnostics);
     CHECK(preview.effective_output.output == sv_recipe_output_t::speeds);
-    const auto repeated = apply_sv_recipe_draft(history, *draft.value, false, blocked.diagnostics);
+    const auto repeated = apply_proposal(history, *draft.value, proposal_application_input_t{.diagnostics = blocked.diagnostics});
     CHECK(repeated.diagnostics == blocked.diagnostics);
     CHECK(history.undo.empty());
 }
@@ -915,4 +917,35 @@ TEST_CASE("SV primary bake factory publishes a chart without recipes", "[unit][s
     REQUIRE(bake.ok());
     REQUIRE(bake.value.has_value());
     CHECK(bake.value->sv_recipes.empty());
+}
+
+TEST_CASE("SV draft no-op application completes without an Undo record", "[unit][sv-recipe][proposal]") {
+    auto song = make_recipe_song();
+    song.charts.front().sv_recipes.push_back(
+        make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {2, 1}));
+    auto history = document_history_t::from(std::move(song));
+    auto pending = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, recipe_id_t{20}));
+    const auto result = apply_proposal(history, *pending.value);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(pending.value->payload.lifecycle.status() == proposal_status_t::applied);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("SV draft failed range revisions reuse diagnostics and keep the capture active",
+          "[unit][sv-recipe][proposal]") {
+    auto history = document_history_t::from(make_recipe_song());
+    auto pending = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10},
+        make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {2, 1})));
+    diagnostic_list_t diagnostics;
+    diagnostics.reserve(4);
+    diagnostics.push_back(error(diagnostic_code_t::invalid_hold, "Previous range error"));
+    const auto* storage = diagnostics.data();
+    const auto revised = pending.value->revise(history, {.diagnostics = std::move(diagnostics)},
+        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
+    CHECK_FALSE(revised.value);
+    REQUIRE(revised.diagnostics.size() == 1);
+    CHECK(revised.diagnostics.data() == storage);
+    CHECK(pending.value->payload.lifecycle.is_active());
+    CHECK(history.undo.empty());
 }

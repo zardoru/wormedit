@@ -203,6 +203,10 @@ auto document_command_transaction_t::has_copy() const noexcept -> bool {
     return proposed.has_value();
 }
 
+auto document_command_transaction_t::document() const noexcept -> const song_document_t& {
+    return proposed ? *proposed : history.document;
+}
+
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
     const auto found = history.document.find_chart(id);
     return found == nullptr ? nullptr : &*found;

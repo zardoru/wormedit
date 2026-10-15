@@ -219,6 +219,8 @@ struct document_command_transaction_t {
         -> document_command_transaction_t;
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;
+    // The current transaction document, including an already prepared snapshot.
+    [[nodiscard]] auto document() const noexcept -> const song_document_t&;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
     auto copy_document() -> song_document_t&;
     // Staged editors hand over their existing snapshot without copying the live document.

@@ -607,7 +607,7 @@ auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
 }
 
 
-auto beat_interval_drag_t::validate_apply(bool timing_locked) const -> diagnostic_list_t {
+auto beat_interval_drag_t::validate_apply(const chart_stamp_t&, bool timing_locked) const -> diagnostic_list_t {
     if (snap_active && (proposed_bpm.numerator <= 0 || proposed_bpm.denominator == 0))
         return {error(diagnostic_code_t::invalid_rational, "BPM snap must produce a positive exact value")};
     if (timing_locked)

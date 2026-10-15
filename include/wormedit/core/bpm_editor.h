@@ -68,7 +68,7 @@ using bpm_edit_action_t = chart_edit_t<bpm_edit_value_t>;
 struct beat_interval_drag_t {
     static constexpr proposal_apply_policy_t apply_policy{
         .stale_label = "Beat fit", .identity = document_identity_policy_t::revision_only};
-    [[nodiscard]] auto validate_apply(bool timing_locked = false) const -> diagnostic_list_t;
+    [[nodiscard]] auto validate_apply(const chart_stamp_t&, bool timing_locked = false) const -> diagnostic_list_t;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
                              bool timing_locked = false) const
         -> diagnosed_t<std::optional<std::string>>;

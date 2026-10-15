@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/result.h>
+#include <wormedit/core/proposal_apply_result.h>
 
 #include <concepts>
 #include <iterator>
@@ -47,26 +48,82 @@ private:
     const Stamp& captured_stamp_;
 };
 
+enum class proposal_application_stage_t { preflight, expired, prepared, published };
+
+namespace proposal_detail {
+// One projection keeps typed domain failures separate from commit diagnostics.
+template<class Diagnostics> struct application_result_t {
+    using result_type = std::conditional_t<std::same_as<Diagnostics, diagnostic_list_t>,
+        document_command_result_t, command_result_with_t<Diagnostics>>;
+
+    static void merge(document_command_transaction_t& transaction, Diagnostics& diagnostics,
+                      proposal_application_stage_t stage) {
+        if constexpr (std::same_as<Diagnostics, diagnostic_list_t>) {
+            if (diagnostics.empty()) return;
+            if (stage == proposal_application_stage_t::preflight) {
+                append_diagnostics(diagnostics, std::move(transaction.outcome.diagnostics));
+                transaction.outcome.diagnostics = std::move(diagnostics);
+            } else append_diagnostics(transaction.outcome.diagnostics, std::move(diagnostics));
+            diagnostics.clear();
+        }
+    }
+
+    template<class Edit>
+    [[nodiscard]] static auto finish(document_command_result_t command, Diagnostics diagnostics,
+        proposal_application_stage_t stage) -> result_type {
+        if constexpr (std::same_as<Diagnostics, diagnostic_list_t>) {
+            append_diagnostics(command.diagnostics, std::move(diagnostics));
+            return command;
+        } else {
+            if (stage == proposal_application_stage_t::expired) {
+                diagnostics.issue = std::remove_cvref_t<Edit>::apply_stale_issue;
+                diagnostics.message = std::move(command.diagnostics.front().message);
+                command.diagnostics.clear();
+            } else if (stage == proposal_application_stage_t::published && !command.applied) {
+                diagnostics.issue = std::remove_cvref_t<Edit>::apply_commit_failure_issue;
+                diagnostics.message = std::remove_cvref_t<Edit>::apply_commit_failure_message;
+            }
+            return {.command = std::move(command), .payload = std::move(diagnostics)};
+        }
+    }
+};
+} // namespace proposal_detail
+
+template<class Edit, class Scope, class... Arguments>
+using proposal_edit_outcome_t = decltype(std::declval<Edit>().apply(
+    std::declval<Scope&>(), std::declval<Arguments>()...));
+
+template<class Edit, class Scope, class... Arguments>
+using proposal_edit_diagnostics_t = decltype(
+    std::declval<proposal_edit_outcome_t<Edit, Scope, Arguments...>>().diagnostics);
+
 // A prepared edit supplies its Undo label; an empty value is a no-op.
 template<class Edit, class Scope, class... Arguments>
 concept proposal_edit = std::derived_from<Scope, document_edit_scope_t> &&
     requires(Edit&& edit, Scope& scope, Arguments&&... arguments) {
         { std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...) }
-            -> std::same_as<diagnosed_t<std::optional<std::string>>>;
+            -> std::same_as<diagnosed_t<std::optional<std::string>,
+                proposal_edit_diagnostics_t<Edit, Scope, Arguments...>>>;
     };
 
 // Synchronous edits and captured proposals share ready/error/no-op/publication policy.
 template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edit, Scope, Arguments...>
-[[nodiscard]] auto apply_proposal_edit(Scope& scope,
-    Edit&& edit, Arguments&&... arguments) -> document_command_result_t {
+[[nodiscard]] auto apply_proposal_edit(Scope& scope, Edit&& edit, Arguments&&... arguments) {
+    using diagnostics_type = proposal_edit_diagnostics_t<Edit, Scope, Arguments...>;
+    using application_result = proposal_detail::application_result_t<diagnostics_type>;
     auto& transaction = scope.transaction();
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
+    if (!transaction.is_ready())
+        return application_result::template finish<Edit>(transaction.finish_without_commit(), {},
+            proposal_application_stage_t::expired);
     auto prepared = std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...);
-    proposal_detail::append_diagnostics(transaction.outcome.diagnostics, std::move(prepared.diagnostics));
-    const bool can_commit = prepared.value.has_value() &&
+    application_result::merge(transaction, prepared.diagnostics, proposal_application_stage_t::prepared);
+    const bool can_commit = prepared.value.has_value() && prepared.ok() &&
         !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
-    if (!can_commit) return transaction.finish_without_commit();
-    return transaction.commit(std::move(*prepared.value));
+    if (!can_commit)
+        return application_result::template finish<Edit>(transaction.finish_without_commit(),
+            std::move(prepared.diagnostics), proposal_application_stage_t::prepared);
+    return application_result::template finish<Edit>(transaction.commit(std::move(*prepared.value)),
+        std::move(prepared.diagnostics), proposal_application_stage_t::published);
 }
 
 // Applicable state has one stamp; diagnostics belong to the build/revision outcome.
@@ -124,20 +181,23 @@ concept applicable_proposal = requires {
 
 template<class Pending, class... Arguments> requires applicable_proposal<Pending>
 [[nodiscard]] auto apply_proposal(document_history_t& history,
-    Pending&& pending, Arguments&&... arguments) -> document_command_result_t {
-    diagnostic_list_t preflight;
-    if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
-        preflight = pending.payload.validate_apply(arguments...);
+    Pending&& pending, Arguments&&... arguments) {
+    using scope_type = proposal_edit_scope_t<typename std::remove_cvref_t<Pending>::stamp_type>;
+    using edit_type = decltype((std::forward<Pending>(pending).payload));
+    using diagnostics_type = proposal_edit_diagnostics_t<edit_type, scope_type, Arguments...>;
+    using application_result = proposal_detail::application_result_t<diagnostics_type>;
+    diagnostics_type preflight;
+    if constexpr (requires { pending.payload.validate_apply(pending.stamp, arguments...); }) {
+        preflight = pending.payload.validate_apply(pending.stamp, arguments...);
         if (diagnostic_queries::has_errors(preflight))
-            return document_command_transaction_t::rejection(history.document.revision, std::move(preflight));
+            return application_result::template finish<edit_type>(
+                document_command_transaction_t::rejection(history.document.revision, diagnostic_list_t{}),
+                std::move(preflight), proposal_application_stage_t::preflight);
     }
     const auto& policy = std::remove_cvref_t<Pending>::payload_type::apply_policy;
     auto transaction = pending.transaction(history, policy.stale_label, policy.identity, policy.stale_code);
-    if constexpr (requires { pending.payload.validate_apply(arguments...); }) {
-        proposal_detail::append_diagnostics(preflight, std::move(transaction.outcome.diagnostics));
-        transaction.outcome.diagnostics = std::move(preflight);
-    }
-    proposal_edit_scope_t<typename std::remove_cvref_t<Pending>::stamp_type> scope{transaction, pending.stamp};
+    application_result::merge(transaction, preflight, proposal_application_stage_t::preflight);
+    scope_type scope{transaction, pending.stamp};
     return apply_proposal_edit(scope, std::forward<Pending>(pending).payload,
                                std::forward<Arguments>(arguments)...);
 }

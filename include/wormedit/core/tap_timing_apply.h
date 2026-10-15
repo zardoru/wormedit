@@ -13,7 +13,7 @@ enum class tap_bpm_choice_t { raw, nearest_one, nearest_half };
 struct tap_timing_apply_proposal_t {
     static constexpr proposal_apply_policy_t apply_policy{
         .stale_label = "Tap timing proposal", .identity = document_identity_policy_t::revision_only};
-    [[nodiscard]] static auto validate_apply(bool timing_locked = false) -> diagnostic_list_t;
+    [[nodiscard]] static auto validate_apply(const chart_stamp_t&, bool timing_locked = false) -> diagnostic_list_t;
     [[nodiscard]] auto prepare_document(const song_document_t&, chart_id_t) const
         -> std::optional<song_document_t>;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,

@@ -273,7 +273,7 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
     const auto view = channel_map_preview_view_t::from(preview);
     if (!view.proposal || view.report->conflict_count != 0)
         return {notification_severity_t::warning, "The channel-map preview is not applicable."};
-    auto result = apply_bms_channel_map_edit(history, *view.proposal);
+    auto result = apply_proposal(history, *view.proposal);
     metadata_drop.clear_channel_map_preview();
     if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);

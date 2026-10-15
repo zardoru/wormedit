@@ -16,7 +16,6 @@
 namespace wormedit {
 
 struct channel_map_proposal_payload_t;
-class channel_map_proposal_access_t;
 
 enum class channel_map_issue_t {
     none,
@@ -72,6 +71,14 @@ using channel_map_proposal_outcome_t =
     proposal_outcome_t<channel_map_proposal_t, chart_stamp_t, channel_map_diagnostics_t>;
 
 struct channel_map_proposal_t {
+    static constexpr proposal_apply_policy_t apply_policy{.stale_label = "Channel-map edit"};
+    static constexpr auto apply_stale_issue = channel_map_issue_t::stale_revision;
+    static constexpr auto apply_commit_failure_issue = channel_map_issue_t::invalid_replacement;
+    static constexpr std::string_view apply_commit_failure_message = "The channel-map edit failed validation.";
+    [[nodiscard]] auto validate_apply(const chart_stamp_t&) const
+        -> proposal_apply_payload_t<channel_map_issue_t>;
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&) const
+        -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<channel_map_issue_t>>;
     [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
         chart_id_t chart, object_id_t layout_segment,
         std::span<const channel_map_replacement_t> replacements) -> channel_map_proposal_outcome_t;
@@ -84,8 +91,9 @@ struct channel_map_proposal_t {
     auto operator==(const channel_map_proposal_t&) const -> bool = default;
 
   private:
+    [[nodiscard]] static auto prepare(const song_document_t&, const chart_stamp_t&, object_id_t,
+        std::span<const channel_map_replacement_t>) -> channel_map_proposal_outcome_t;
     std::shared_ptr<const channel_map_proposal_payload_t> canonical_;
-    friend class channel_map_proposal_access_t;
 };
 
 static_assert(staged_proposal<channel_map_proposal_t,
@@ -97,12 +105,5 @@ static_assert(staged_proposal<channel_map_proposal_t,
 
 using channel_map_preview_view_t =
     proposal_preview_view_t<channel_map_proposal_t, chart_stamp_t, channel_map_diagnostics_t>;
-
-using channel_map_apply_result_t = proposal_apply_result_t<channel_map_issue_t>;
-
-// Applies the sealed preview as one revision-checked undoable command.
-[[nodiscard]] auto apply_bms_channel_map_edit(
-    document_history_t& history, const proposal_t<channel_map_proposal_t>& proposal)
-    -> channel_map_apply_result_t;
 
 } // namespace wormedit

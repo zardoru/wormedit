@@ -88,7 +88,7 @@ auto batch_swap_scenario() -> bool {
     const auto preview = channel_map_proposal_t::propose(history.document, 7, chart_id_t{2},
                                                        object_id_t{10}, replacements);
     if (!preview.value || preview.value->payload.report.affected_note_count != 2) return false;
-    if (!apply_bms_channel_map_edit(history, *preview.value)) return false;
+    if (!apply_proposal(history, *preview.value)) return false;
     const auto& changed = history.document.charts.front();
     const auto changed_first = std::ranges::find(changed.lane_layouts[0].layout.lanes, first.id,
                                                   &lane_definition_t::id);
@@ -250,7 +250,7 @@ auto root_export_swap_scenario() -> bool {
     const auto preview = channel_map_proposal_t::propose(history.document,
         history.document.revision, chart.id, layout.id, replacements);
     if (!preview.value || preview.value->payload.report.affected_note_count != 2 ||
-        !apply_bms_channel_map_edit(history, *preview.value)) return false;
+        !apply_proposal(history, *preview.value)) return false;
     const auto written = write_bms(history.document);
     if (!written.bytes || written.has_errors() ||
         written.bytes->find("#00011:02") == std::string::npos ||
@@ -296,14 +296,14 @@ TEST_CASE("BMS channel-map proposals reject stale or altered state",
     const auto stale = channel_map_proposal_t::propose(song, song.revision + 1, chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
     check_stale_channel_outcome(stale);
     auto history = document_history_t::from(other);
-    CHECK(apply_bms_channel_map_edit(history, *proposal.value).payload.issue ==
+    CHECK(apply_proposal(history, *proposal.value).payload.issue ==
           channel_map_issue_t::stale_revision);
-    test::check_stale_action_message(apply_bms_channel_map_edit(history, *proposal.value).payload.message, "Channel-map edit");
+    test::check_stale_action_message(apply_proposal(history, *proposal.value).payload.message, "Channel-map edit");
     CHECK(history.document.revision == other.revision);
     history = document_history_t::from(song);
     auto altered = proposal;
     altered.value->payload.report.affected_note_count = 42;
-    CHECK(apply_bms_channel_map_edit(history, *altered.value).payload.issue ==
+    CHECK(apply_proposal(history, *altered.value).payload.issue ==
           channel_map_issue_t::invalid_replacement);
     CHECK(history.document.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible ==
           song.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible);
@@ -319,7 +319,7 @@ TEST_CASE("Sealed channel-map stamp changes stay tamper errors before staleness"
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
     REQUIRE(proposal.value);
     ++proposal.value->stamp.document.revision;
-    const auto result = apply_bms_channel_map_edit(history, *proposal.value);
+    const auto result = apply_proposal(history, *proposal.value);
     CHECK(result.payload.issue == channel_map_issue_t::invalid_replacement);
     CHECK(result.payload.message == "Channel-map preview data changed after proposal.");
     CHECK(result.command.diagnostics.empty());
@@ -366,7 +366,7 @@ TEST_CASE("Channel-map revision reseals changed mappings without publishing",
     REQUIRE(revised.value);
     CHECK(revised.value->stamp == original.value->stamp);
     CHECK(history.undo.empty());
-    REQUIRE(apply_bms_channel_map_edit(history, *revised.value));
+    REQUIRE(apply_proposal(history, *revised.value));
 }
 
 TEST_CASE("Channel-map revision keeps seal tampering ahead of expiry",
@@ -384,5 +384,23 @@ TEST_CASE("Channel-map revision keeps seal tampering ahead of expiry",
     CHECK_FALSE(rejected.value);
     REQUIRE(rejected.diagnostics.size() == 1);
     CHECK(rejected.diagnostics.front().issue == channel_map_issue_t::invalid_replacement);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Channel-map publication keeps typed failure and command diagnostics",
+          "[unit][core][channel-map][proposal-stamp]") {
+    auto history = document_history_t::from(channel_song());
+    auto& chart = history.document.charts.front();
+    const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
+    const auto proposal = channel_map_proposal_t::propose(history.document, history.document.revision,
+        chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
+    REQUIRE(proposal.value);
+    // An unrelated invalid BPM passes seal revalidation but fails document publication.
+    chart.bpms.front().beats_per_minute = {0, 1};
+    const auto result = apply_proposal(history, *proposal.value);
+    CHECK_FALSE(result.command.applied);
+    CHECK(result.payload.issue == channel_map_issue_t::invalid_replacement);
+    CHECK(result.payload.message == "The channel-map edit failed validation.");
+    CHECK_FALSE(result.command.diagnostics.empty());
     CHECK(history.undo.empty());
 }

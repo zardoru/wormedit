@@ -47,6 +47,13 @@ struct metadata_payload_t {
     }
 };
 
+struct warned_title_t : metadata_payload_t {
+    static auto validate_apply(const document_stamp_t&) -> diagnostic_list_t {
+        return {{.severity = diagnostic_severity_t::warning,
+                 .code = diagnostic_code_t::unsupported_feature, .message = "Review title."}};
+    }
+};
+
 struct consuming_title_t {
     static constexpr proposal_apply_policy_t apply_policy{
         .stale_label = "Consuming title", .identity = document_identity_policy_t::revision_only};
@@ -383,4 +390,29 @@ TEST_CASE("Shared proposal scopes retain captured provenance before consuming", 
     REQUIRE(pending.payload.title);
     CHECK(*pending.payload.title == "Consumed");
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposal warnings remain before expiry diagnostics", "[core][proposal]") {
+    auto history = make_history();
+    const proposal_t<warned_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document), .payload = {{.title = "Proposed"}}};
+    ++history.document.revision;
+    const auto result = apply_proposal(history, pending);
+    CHECK_FALSE(result.applied);
+    REQUIRE(result.diagnostics.size() == 2);
+    CHECK(result.diagnostics.front().message == "Review title.");
+    test::check_stale_action_message(result.diagnostics.back().message, "Title proposal");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposals retain commit diagnostic replacement", "[core][proposal]") {
+    auto history = make_history();
+    const proposal_t<warned_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document), .payload = {{.title = "Proposed"}}};
+    const auto result = apply_proposal(history, pending);
+    CHECK(result.applied);
+    // commit_validated_document supplies validation diagnostics, replacing preflight warnings.
+    CHECK(result.diagnostics.empty());
+    CHECK(history.document.metadata.title == "Proposed");
+    CHECK(history.undo.size() == 1);
 }

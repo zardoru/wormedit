@@ -189,7 +189,7 @@ auto tap_timing_apply_proposal_t::propose(const song_document_t& document, chart
                                       std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
                                       bool timing_locked) -> tap_timing_apply_proposal_outcome_t {
     tap_timing_apply_proposal_outcome_t result;
-    result.diagnostics = validate_apply(timing_locked);
+    result.diagnostics = validate_apply(chart_stamp_t::from(document, chart), timing_locked);
     if (!result.ok()) return result;
     auto proposal = prepare_tap_timing_proposal(document, chart, estimate, sample_rate, beats_per_measure, choice);
     if (proposal)
@@ -225,7 +225,7 @@ auto make_tap_timing_preview(const song_document_t& document,
                                            : std::optional<chart_document_t>{*chart};
 }
 
-auto tap_timing_apply_proposal_t::validate_apply(bool timing_locked) -> diagnostic_list_t {
+auto tap_timing_apply_proposal_t::validate_apply(const chart_stamp_t&, bool timing_locked) -> diagnostic_list_t {
     if (timing_locked)
         return {error(diagnostic_code_t::unsupported_feature,
             "tap timing apply is disabled while timing is locked")};

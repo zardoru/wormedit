@@ -1,3 +1,4 @@
+#include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/metadata_actions.h"
 #include "ui/frontend.h"
@@ -26,8 +27,8 @@ struct metadata_notification_fixture_t {
         REQUIRE(apply_new_chart_command(history));
         history = document_history_t::from(std::move(history.document));
         const auto binding = workspace_controller_t::from(history);
-        REQUIRE(binding);
-        workspace = *binding.workspace;
+        wormedit::test::require_workspace_result(binding);
+        workspace = *binding.value;
     }
 
     auto dispatch(const WormUiWorkspaceAction& action, bool timing_locked = false) -> std::optional<std::string> {
@@ -149,8 +150,8 @@ void prepare_channel_map_request(channel_map_request_t& request,
 void use_bms_song(metadata_notification_fixture_t& fixture) {
     fixture.history = document_history_t::from(bms_channel_song());
     const auto binding = workspace_controller_t::from(fixture.history);
-    REQUIRE(static_cast<bool>(binding));
-    fixture.workspace = *binding.workspace;
+    wormedit::test::require_workspace_result(binding);
+    fixture.workspace = *binding.value;
 }
 
 auto visible_channel(const metadata_notification_fixture_t& fixture, std::size_t lane) -> std::string {
@@ -215,8 +216,8 @@ TEST_CASE("metadata redivision action redivides exactly or rejects inexact chart
     metadata_notification_fixture_t fixture;
     fixture.history = document_history_t::from(redivision_song(130));
     const auto binding = workspace_controller_t::from(fixture.history);
-    require_metadata_notification(static_cast<bool>(binding));
-    fixture.workspace = *binding.workspace;
+    require_metadata_notification(static_cast<bool>((binding.value && binding.diagnostics.empty())));
+    fixture.workspace = *binding.value;
 
     const auto applied = fixture.dispatch(redivision_action(fixture, 192));
     require_metadata_notification(applied == "Redivided 1 positions to 192 divisions per measure.");
@@ -229,8 +230,8 @@ TEST_CASE("metadata redivision action redivides exactly or rejects inexact chart
 
     fixture.history = document_history_t::from(redivision_song(131));
     const auto inexact_binding = workspace_controller_t::from(fixture.history);
-    require_metadata_notification(static_cast<bool>(inexact_binding));
-    fixture.workspace = *inexact_binding.workspace;
+    require_metadata_notification(static_cast<bool>((inexact_binding.value && inexact_binding.diagnostics.empty())));
+    fixture.workspace = *inexact_binding.value;
     const auto revision = fixture.history.document.revision;
     const auto rejected = fixture.dispatch(redivision_action(fixture, 192));
     require_metadata_notification(static_cast<bool>(rejected));

@@ -2584,9 +2584,9 @@ struct t422_fixture_t {
         : history(document_history_t::from(std::move(song))),
           binding(workspace_controller_t::from(history)) {
         expect_t422(harness.ready());
-        expect_t422(binding.workspace.has_value());
-        binding.workspace->active_tab = workspace_tab_t::compose;
-        binding.workspace->selected_chart = chart_id_t{1};
+        expect_t422(binding.value.has_value());
+        binding.value->active_tab = workspace_tab_t::compose;
+        binding.value->selected_chart = chart_id_t{1};
         project();
         if (interaction) {
             interaction->selected_notes = {object_id_t{103}, object_id_t{101}, object_id_t{102}};
@@ -2602,7 +2602,7 @@ struct t422_fixture_t {
     void project() {
         flattened = {};
         flattened.view.compose.visible = true;
-        populate_compose_view(flattened, history, *binding.workspace, cache, 1800, 1400,
+        populate_compose_view(flattened, history, *binding.value, cache, 1800, 1400,
                               interaction, application, nullptr);
         CAPTURE(flattened.projection_feedback.size(), cache.frame.projection_error,
                 history.document.revision, interaction.has_value());
@@ -2625,7 +2625,7 @@ struct t422_fixture_t {
     }
 
     auto dispatch_action(WormUiWorkspaceAction& action) -> std::string {
-        return dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+        return dispatch_compose_input_action(action, history, *binding.value, *interaction,
                                              viewport, navigation, application, cache, 0.0, &sink);
     }
 };
@@ -6741,7 +6741,7 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     // Stale captures can temporarily make scene projection unavailable; pass that real view
     // through the frontend rather than requiring a healthy scene before cancellation.
     f.flattened = {};
-    populate_compose_view(f.flattened, f.history, *f.binding.workspace, f.cache, 1800, 1400,
+    populate_compose_view(f.flattened, f.history, *f.binding.value, f.cache, 1800, 1400,
                           f.interaction, f.application, nullptr);
     f.harness.view().compose = f.flattened.view.compose;
     f.harness.view().document_revision = f.history.document.revision;
@@ -6816,7 +6816,7 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
             auto action = frame.get();
             auto history = wormedit::document_history_t::from(t422_song());
             const auto binding = wormedit::workspace_controller_t::from(history);
-            auto workspace = *binding.workspace;
+            auto workspace = *binding.value;
             workspace.active_tab = wormedit::workspace_tab_t::compose;
             check_layer_menu(action.compose_menu_command);
             check_layer_menu(wormedit::sys::compose_menu_command_is_current(action, history, workspace));
@@ -8015,14 +8015,14 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
         expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history,
             {.resource = resource_id_t{1}, .kind = sound_kind_t::keysound, .name = "Concurrent change"})));
         const auto revision = f.history.document.revision;
-        expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+        expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.value,
             chart_id_t{1}, f.application, f.sink).has_value());
         expect_t422(f.history.document.revision == revision && f.history.undo.size() == 1);
         expect_t422(f.history.document.resources.front().name == "Concurrent change");
         expect_t422(f.history.document.resources.front().asset == asset_id_t{1});
         return;
     }
-    expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+    expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.value,
         chart_id_t{1}, f.application, f.sink).has_value());
     expect_t422(f.history.undo.size() == 1);
     expect_t422(f.history.document.resources.front().id == resource_id_t{1});
@@ -8061,7 +8061,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
           "[frontend-state][event-harness][resource-import-consolidation]") {
     auto history = document_history_t::from(t422_song());
     auto binding = workspace_controller_t::from(history);
-    expect_t422(binding.workspace.has_value());
+    expect_t422(binding.value.has_value());
     task_scheduler_t scheduler{1, 1};
     runtime::metadata_asset_t assets;
     metadata_drop_state_t drop;
@@ -8098,7 +8098,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     const auto up = harness.frame(std::array{motion, press});
     const auto& action = down.get().metadata_edit != WORM_UI_METADATA_EDIT_NONE ? down.get() : up.get();
     expect_t422(action.metadata_edit == WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE);
-    expect_t422(dispatch_metadata_action(action, history, *binding.workspace, false,
+    expect_t422(dispatch_metadata_action(action, history, *binding.value, false,
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(drop.lane_profile_preview.has_value());
     history.document.id = song_id_t{2};
@@ -8112,7 +8112,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
         return frame.get().metadata_edit == WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
     });
     expect_t422(apply != apply_frames.end());
-    expect_t422(dispatch_metadata_action(apply->get(), history, *binding.workspace, false,
+    expect_t422(dispatch_metadata_action(apply->get(), history, *binding.value, false,
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(!drop.lane_profile_preview.has_value());
     expect_t422(history.undo.empty());

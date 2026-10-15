@@ -71,10 +71,10 @@ auto valid_request() -> WormUiSoundUsageRequest {
 
 auto audio_workspace(const song_document_t& document) -> std::optional<workspace_controller_t> {
     auto bound = workspace_controller_t::from(document);
-    if (!bound)
+    if (!bound.value || !bound.diagnostics.empty())
         return std::nullopt;
-    bound.workspace->active_tab = workspace_tab_t::audio_slices;
-    return std::move(bound.workspace);
+    bound.value->active_tab = workspace_tab_t::audio_slices;
+    return std::move(bound.value);
 }
 
 void check_document_unchanged(const document_history_t& history, std::uint64_t revision,

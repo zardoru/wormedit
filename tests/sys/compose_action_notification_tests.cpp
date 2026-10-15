@@ -77,7 +77,7 @@ struct action_notification_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
     document_history_t history{document_history_t::from(action_notification_song())};
-    workspace_controller_t workspace{*workspace_controller_t::from(history).workspace};
+    workspace_controller_t workspace{*workspace_controller_t::from(history).value};
     editor_interaction_state_t state;
     application_command_state_t application;
     std::filesystem::path asset_base;
@@ -1194,8 +1194,8 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
             ? (target == format_family_t::osu_mania ? "exports/chart.osu" : "exports/chart.bme")
             : "exports"}};
     const auto workspace = workspace_controller_t::from(fixture.history);
-    require_action(static_cast<bool>(workspace));
-    fixture.workspace = *workspace.workspace;
+    require_action(static_cast<bool>((workspace.value && workspace.diagnostics.empty())));
+    fixture.workspace = *workspace.value;
     fixture.workspace.active_tab = tab;
     fixture.workspace.selected_chart = other_selected_chart ? fixture.history.document.charts.back().id
         : fixture.history.document.charts.front().id;
@@ -1260,8 +1260,8 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
         .charts = {chart.id},
         .relative_output_path = incompatible_name ? "exports/chart.pms" : "exports"}};
     const auto workspace = workspace_controller_t::from(fixture.history);
-    require_action(static_cast<bool>(workspace));
-    fixture.workspace = *workspace.workspace;
+    require_action(static_cast<bool>((workspace.value && workspace.diagnostics.empty())));
+    fixture.workspace = *workspace.value;
     fixture.workspace.active_tab = workspace_tab_t::compose;
     fixture.workspace.selected_chart = chart.id;
     fixture.state.chart = chart.id;
@@ -1495,7 +1495,7 @@ TEST_CASE("BMSON lane_mode dispatcher shares channel and sound targets with atom
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
     require_action(parsed.value.has_value());
     fixture.history = document_history_t::from(*parsed.value);
-    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
+    fixture.workspace = *workspace_controller_t::from(fixture.history).value;
     fixture.workspace.active_tab = sounds_tab ? workspace_tab_t::audio_slices : workspace_tab_t::compose;
     fixture.state.chart = fixture.history.document.charts.front().id;
     fixture.state.cursor = {fixture.history.document.charts.front().measures.front().id, 0};
@@ -1528,7 +1528,7 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     require_action(parsed.song.has_value() && !parsed.has_errors());
     action_notification_fixture_t fixture;
     fixture.history = document_history_t::from(*parsed.song);
-    fixture.workspace = *workspace_controller_t::from(fixture.history).workspace;
+    fixture.workspace = *workspace_controller_t::from(fixture.history).value;
     fixture.workspace.active_tab = workspace_tab_t::compose;
     fixture.workspace.selected_chart = fixture.history.document.charts.front().id;
     fixture.state.chart = fixture.history.document.charts.front().id;

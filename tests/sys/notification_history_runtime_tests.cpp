@@ -35,8 +35,8 @@ struct navigation_fixture_t {
     std::optional<editor_interaction_state_t> interaction;
     navigation_fixture_t() {
         auto binding = workspace_controller_t::from(history);
-        REQUIRE(binding.workspace);
-        workspace = *binding.workspace;
+        REQUIRE(binding.value);
+        workspace = *binding.value;
         auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
             {measure_id_t{1}, 0}, std::array<std::uint64_t, 1>{4}, 4);
         REQUIRE(setup.state);
@@ -151,8 +151,8 @@ TEST_CASE("history Go to switches chart and jumps without snap rounding", "[sys]
 TEST_CASE("history deleted target rejects before changing workspace or editor", "[sys][notifications]") {
     auto history = document_history_t::from(history_song());
     auto binding = workspace_controller_t::from(history);
-    REQUIRE(binding.workspace);
-    auto workspace = *binding.workspace;
+    REQUIRE(binding.value);
+    auto workspace = *binding.value;
     notification_center_t center{[] { return 0ns; }};
     const auto id = post_target(center, object_id_t{302});
     history.document.charts[1].measures[0].notes.clear();

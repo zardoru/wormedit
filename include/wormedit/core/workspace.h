@@ -14,8 +14,6 @@
 
 namespace wormedit {
 
-struct workspace_bind_result_t;
-struct workspace_view_result_t;
 
 // UI-independent tabs for the song workspace. Storyboard is intentionally
 // present in the navigation model while its editor is not implemented yet.
@@ -102,10 +100,10 @@ struct workspace_history_summary_t {
 struct workspace_controller_t {
     [[nodiscard]] static auto from(const song_document_t& document,
                                    const workspace_limits_t& limits = {})
-        -> workspace_bind_result_t;
+        -> diagnosed_t<std::optional<workspace_controller_t>>;
     [[nodiscard]] static auto from(const document_history_t& history,
                                    const workspace_limits_t& limits = {})
-        -> workspace_bind_result_t;
+        -> diagnosed_t<std::optional<workspace_controller_t>>;
 
     song_id_t song;
     std::uint64_t document_revision{};
@@ -121,21 +119,6 @@ struct workspace_controller_t {
 
 using workspace_bind_outcome_t = diagnosed_t<std::optional<workspace_controller_t>>;
 using workspace_action_outcome_t = diagnosed_t<bool>;
-
-struct workspace_bind_result_t {
-    [[nodiscard]] static auto from(const song_document_t& document, const workspace_limits_t& limits = {})
-        -> workspace_bind_outcome_t;
-    [[nodiscard]] static auto from(const document_history_t& history, const workspace_limits_t& limits = {})
-        -> workspace_bind_outcome_t;
-    [[nodiscard]] static auto from(workspace_bind_outcome_t&& outcome) -> workspace_bind_result_t;
-    std::optional<workspace_controller_t> workspace;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return workspace.has_value() && diagnostics.empty();
-    }
-};
-
 
 struct workspace_switch_tab_action_t {
     workspace_tab_t tab{workspace_tab_t::setup};
@@ -358,7 +341,7 @@ using workspace_tab_view_t =
 
 struct workspace_view_t {
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
-                                   const song_document_t& document) -> workspace_view_result_t;
+                                   const song_document_t& document) -> diagnosed_t<std::optional<workspace_view_t>>;
     // Also builds a non-active tab's view. This lets the shell display the
     // storyboard placeholder while navigation/actions continue to reject it.
     // Compare diagnostics may be supplied from a cache keyed to this document's
@@ -368,7 +351,7 @@ struct workspace_view_t {
                                    const diagnostic_list_t* cached_diagnostics = nullptr,
                                    workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
                                    workspace_binding_validation_cache_t* binding_cache = nullptr)
-        -> workspace_view_result_t;
+        -> diagnosed_t<std::optional<workspace_view_t>>;
 
     song_id_t song;
     std::uint64_t document_revision{};
@@ -383,21 +366,5 @@ struct workspace_view_t {
 };
 
 using workspace_view_outcome_t = diagnosed_t<std::optional<workspace_view_t>>;
-
-struct workspace_view_result_t {
-    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document)
-        -> workspace_view_outcome_t;
-    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document,
-        workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics = nullptr,
-        workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
-        workspace_binding_validation_cache_t* binding_cache = nullptr) -> workspace_view_outcome_t;
-    [[nodiscard]] static auto from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t;
-    std::optional<workspace_view_t> view;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return view.has_value() && diagnostics.empty();
-    }
-};
 
 } // namespace wormedit

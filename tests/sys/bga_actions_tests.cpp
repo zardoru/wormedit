@@ -32,8 +32,8 @@ struct Fixture {
         require_bga(static_cast<bool>(validate_document(song).empty()));
         history = document_history_t::from(std::move(song));
         const auto binding = workspace_controller_t::from(history);
-        require_bga(static_cast<bool>(binding.workspace));
-        workspace = *binding.workspace;
+        require_bga(static_cast<bool>(binding.value));
+        workspace = *binding.value;
     }
     ~Fixture() { std::error_code error; std::filesystem::remove_all(directory, error); }
     auto image(const char* name) -> std::string {

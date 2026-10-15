@@ -1,3 +1,4 @@
+#include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "compose_area_dispatch_fixture.h"
@@ -251,8 +252,8 @@ struct SoundImportDispatchFixture {
 
     SoundImportDispatchFixture() {
         const auto created = wormedit::workspace_controller_t::from(history);
-        REQUIRE(created);
-        workspace = *created.workspace;
+        wormedit::test::require_workspace_result(created);
+        workspace = *created.value;
     }
 
     auto dispatch(const WormUiSoundImportItem* items, std::size_t item_count,
@@ -288,8 +289,8 @@ struct SoundSlotBatchDispatchFixture {
         history.document.resources.front().target_identities.push_back(
             {format_family_t::bms, "05", "WAV"});
         const auto created = workspace_controller_t::from(history);
-        REQUIRE(created);
-        workspace = *created.workspace;
+        wormedit::test::require_workspace_result(created);
+        workspace = *created.value;
     }
 
     auto dispatch(const WormUiSoundImportItem* items, std::size_t count,
@@ -689,8 +690,8 @@ struct TimingInsertFixture {
             jump_edit_cursor_action_t{cursor, fixture.history.document.revision});
         REQUIRE(moved.accepted);
         const auto workspace_result = workspace_controller_t::from(fixture.history);
-        REQUIRE(workspace_result);
-        workspace = *workspace_result.workspace;
+        wormedit::test::require_workspace_result(workspace_result);
+        workspace = *workspace_result.value;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.selected_chart = chart.id;
         compose_state = fixture.state;
@@ -2212,9 +2213,9 @@ void check_placement_audition(bool enabled) {
     using namespace wormedit;
     document_history_t history{document_history_t::from(click_audition_song())};
     auto binding = workspace_controller_t::from(history);
-    REQUIRE(binding.workspace.has_value());
-    binding.workspace->active_tab = workspace_tab_t::compose;
-    binding.workspace->selected_chart = chart_id_t{1};
+    REQUIRE(binding.value.has_value());
+    binding.value->active_tab = workspace_tab_t::compose;
+    binding.value->selected_chart = chart_id_t{1};
     compose_scene_cache_t cache;
     application_command_state_t application;
     application.preferences.editor_preferences.audition_on_click = enabled;
@@ -2222,7 +2223,7 @@ void check_placement_audition(bool enabled) {
     std::optional<editor_interaction_state_t> interaction;
     flattened_workspace_t flattened;
     flattened.view.compose.visible = true;
-    populate_compose_view(flattened, history, *binding.workspace, cache, 1280, 980, interaction,
+    populate_compose_view(flattened, history, *binding.value, cache, 1280, 980, interaction,
                           application, nullptr);
     REQUIRE(flattened.view.compose.scene_available);
     REQUIRE(interaction.has_value());
@@ -2244,7 +2245,7 @@ void check_placement_audition(bool enabled) {
             compose_field_downscroll(chart, application.preferences.editor_preferences))};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    (void)dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+    (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,
         viewport, navigation, application, cache, 0.016);
     REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
     CHECK(cache.frame.audition_request.has_value() == enabled);

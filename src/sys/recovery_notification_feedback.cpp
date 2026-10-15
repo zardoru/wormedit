@@ -99,7 +99,7 @@ auto load_recovered_document(
             "Recovery action completed without a replacement document.");
     auto replacement_history = document_history_t::from(*result.value.document, 128, false);
     auto replacement_binding = workspace_controller_t::from(replacement_history);
-    if (!replacement_binding) {
+    if (!replacement_binding.value || !replacement_binding.diagnostics.empty()) {
         return post_recovery_feedback(notifications, notification_severity_t::error,
             "Recovered data validated, but the workspace could not be rebound; "
             "the current workspace was kept.", notification_source_t::document);
@@ -123,7 +123,7 @@ auto load_recovered_document(
             "Wait for the current autosave to finish before recovering a session.");
     }
     history = std::move(replacement_history);
-    workspace = std::move(*replacement_binding.workspace);
+    workspace = std::move(*replacement_binding.value);
     recovered = true;
     (void)controller.replace_scan({});
     return post_recovery_feedback(notifications, notification_severity_t::success,

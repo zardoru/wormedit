@@ -76,8 +76,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
 
     auto history = document_history_t::from(std::move(*document), 128, true);
     auto bound = workspace_controller_t::from(history);
-    if (!bound) return false;
-    auto& workspace = *bound.workspace;
+    if (!bound.value || !bound.diagnostics.empty()) return false;
+    auto& workspace = *bound.value;
     if (workspace.history.dirty || !workspace.selected_chart) return false;
     const auto selected = apply_workspace_action(
         workspace, history.document,

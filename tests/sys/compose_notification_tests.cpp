@@ -1,3 +1,4 @@
+#include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_input.h"
@@ -69,8 +70,8 @@ struct compose_notification_fixture_t {
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
         optional_state = state;
         const auto binding = workspace_controller_t::from(history);
-        REQUIRE(binding);
-        workspace = *binding.workspace;
+        wormedit::test::require_workspace_result(binding);
+        workspace = *binding.value;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.selected_chart = chart_id_t{7};
         application.project.semantic_layer.semantic_layer_target = layer_id_t{8};

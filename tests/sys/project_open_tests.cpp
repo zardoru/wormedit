@@ -213,8 +213,8 @@ auto opened_stepmania_music_is_selected() -> bool {
         resource.roles.size() != 1 || resource.roles.front() != wormedit::resource_role_t::music)
         return false;
     const auto binding = wormedit::workspace_controller_t::from(*opened.value().document);
-    return binding.workspace &&
-           binding.workspace->transport.audio_asset == opened.value().document->audio_assets.front().id;
+    return binding.value &&
+           binding.value->transport.audio_asset == opened.value().document->audio_assets.front().id;
 }
 
 auto stepmania_music_case_fallback_exports_resolved_path() -> bool {

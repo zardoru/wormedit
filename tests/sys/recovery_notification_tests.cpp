@@ -19,8 +19,8 @@ struct recovery_fixture_t {
     recovery_fixture_t() {
         std::filesystem::create_directories(directory);
         const auto binding = workspace_controller_t::from(history);
-        expect_recovery(static_cast<bool>(binding));
-        workspace = *binding.workspace;
+        expect_recovery(static_cast<bool>((binding.value && binding.diagnostics.empty())));
+        workspace = *binding.value;
         const auto primary = directory / "chart.wormedit";
         expect_recovery(create_native_project_file(primary, history.document).value);
         auto backup = history.document;

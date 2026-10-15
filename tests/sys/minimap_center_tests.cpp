@@ -223,9 +223,9 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     chart.source_family = format_family_t::bms;
     auto history = document_history_t::from(song_document_t{.id = song_id_t{1}, .charts = {chart}});
     auto binding = workspace_controller_t::from(history);
-    REQUIRE(binding.workspace);
-    binding.workspace->selected_chart = chart.id;
-    binding.workspace->active_tab = workspace_tab_t::compose;
+    REQUIRE(binding.value);
+    binding.value->selected_chart = chart.id;
+    binding.value->active_tab = workspace_tab_t::compose;
     compose_scene_cache_t cache;
     cache.frame.bgm_bar_audio_seen = true;
     application_command_state_t application;
@@ -234,7 +234,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     const auto project = [&] {
         flattened = {};
         flattened.view.compose.visible = true;
-        populate_compose_view(flattened, history, *binding.workspace, cache, 1280, 800,
+        populate_compose_view(flattened, history, *binding.value, cache, 1280, 800,
                               interaction, application, nullptr);
         REQUIRE(flattened.view.compose.scene_available);
         CHECK(flattened.view.compose.bgm_bar_available);
@@ -253,7 +253,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
         action.compose_input_count = 1;
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
         action.compose_inputs[0].overview_primary = currently_visible;
-        (void)dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+        (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,
             viewport, navigation, application, cache, 0.0);
     };
     toggle(false);

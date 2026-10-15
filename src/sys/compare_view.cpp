@@ -66,7 +66,7 @@ auto build_workspace_frame_model(compare_scene_cache_t& cache,
                                  const wormedit::workspace_controller_t& workspace,
                                  const wormedit::song_document_t& document,
                                  std::uint64_t session_generation)
-    -> wormedit::workspace_view_result_t {
+    -> wormedit::workspace_view_outcome_t {
     cache.bind_project_session(session_generation);
     const bool compare_active = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
     if (compare_active) cache_compare_diagnostics(cache, document);

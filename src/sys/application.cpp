@@ -2857,7 +2857,7 @@ struct application_t::implementation_t {
         wormedit::sys::refresh_project_audio_availability(document, asset_base);
         auto replacement_history = document_history_t::from(std::move(document), 128, saved);
         auto replacement_binding = workspace_controller_t::from(replacement_history);
-        if (!replacement_binding) {
+        if (!replacement_binding.value || !replacement_binding.diagnostics.empty()) {
             post_project_feedback(notification_severity_t::error, notification_source_t::document,
                                   "The selected document could not be bound to a workspace.");
             return false;
@@ -2879,7 +2879,7 @@ struct application_t::implementation_t {
             return false;
         }
         session.history = std::move(replacement_history);
-        session.workspace = std::move(*replacement_binding.workspace);
+        session.workspace = std::move(*replacement_binding.value);
         begin_project_session({.session_loaded = loaded,
                                .native_project_loaded = native_project,
                                .active_project_path = std::move(native_path),
@@ -3822,14 +3822,14 @@ struct application_t::implementation_t {
         dispatch_options_frame_action(action);
     }
 
-    auto handle_workspace_view_error(const workspace_view_result_t& model,
+    auto handle_workspace_view_error(const workspace_view_outcome_t& model,
                                      const WormUiNotificationView& notifications, bool confirm)
         -> bool {
         const wormedit::sys::projection_identity_t identity{
             session.history.document.id, session.history.document.revision,
             session.workspace.selected_chart.value_or(wormedit::chart_id_t{}),
             views.project_chart_runtime.session_generation};
-        if (model) {
+        if (model.value && model.diagnostics.empty()) {
             views.workspace_view_feedback.publish(identity, {}, platform.notification_sink);
             return false;
         }
@@ -3967,11 +3967,11 @@ struct application_t::implementation_t {
         refresh_project_audio_availability(startup.document, session.project_identity.asset_base);
         session.history = document_history_t::from(std::move(startup.document), 128, true);
         auto binding = workspace_controller_t::from(session.history);
-        if (!binding) {
+        if (!binding.value || !binding.diagnostics.empty()) {
             std::fprintf(stderr, "Initial workspace binding failed\n");
             return false;
         }
-        session.workspace = std::move(*binding.workspace);
+        session.workspace = std::move(*binding.value);
         const auto sequence = native_project_recovery_session_sequence(startup.recovery_scan,
                                                                        session.history.document.id);
         (void)session.autosave_loop.reset_session(native_project_autosave_loop_t::clock_t::now(),
@@ -4481,7 +4481,7 @@ struct application_t::implementation_t {
                                     preferences.program_preferences.preferences.display, commands);
     }
 
-    void prepare_frame_model(workspace_view_result_t& model) {
+    void prepare_frame_model(workspace_view_outcome_t& model) {
         {
             wormedit::sys::frame_phase_scope_t preparation(
                 wormedit::sys::frame_phase_t::workspace_preparation);
@@ -4750,13 +4750,13 @@ struct application_t::implementation_t {
         wormedit::sys::frame_timing().restore(wormedit::sys::frame_phase_t::count);
         service_frame_audio();
         const auto field_skin_lanes = configure_frame_field_skin();
-        workspace_view_result_t model;
+        workspace_view_outcome_t model;
         prepare_frame_model(model);
         const auto notification_view = build_frame_notifications(notification_now);
         if (!handle_workspace_view_error(
                 model, notification_view,
                 preferences.program_preferences.preferences.general.confirm_unsaved_close)) {
-            compose_bound_frame({*model.view, notification_view, field_skin_lanes, viewport_delta});
+            compose_bound_frame({*model.value, notification_view, field_skin_lanes, viewport_delta});
         }
         finish_frame(frame_start_ns);
     }

@@ -803,7 +803,7 @@ auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
            tab != workspace_tab_t::timing;
 }
 
-auto workspace_bind_result_t::from(const song_document_t& document, const workspace_limits_t& limits)
+auto workspace_controller_t::from(const song_document_t& document, const workspace_limits_t& limits)
     -> workspace_bind_outcome_t {
     workspace_bind_outcome_t result{};
     result.diagnostics = validate_binding_bounds(document, limits);
@@ -829,9 +829,9 @@ auto workspace_bind_result_t::from(const song_document_t& document, const worksp
     return result;
 }
 
-auto workspace_bind_result_t::from(const document_history_t& history,
+auto workspace_controller_t::from(const document_history_t& history,
                                   const workspace_limits_t& limits) -> workspace_bind_outcome_t {
-    auto result = workspace_bind_result_t::from(history.document, limits);
+    auto result = workspace_controller_t::from(history.document, limits);
     if (result.value.has_value()) {
         result.value->history = {.available = true,
                                      .undo_depth = history.undo.size(),
@@ -839,20 +839,6 @@ auto workspace_bind_result_t::from(const document_history_t& history,
                                      .dirty = is_document_dirty(history)};
     }
     return result;
-}
-
-auto workspace_bind_result_t::from(workspace_bind_outcome_t&& outcome) -> workspace_bind_result_t {
-    return {.workspace = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto workspace_controller_t::from(const song_document_t& document, const workspace_limits_t& limits)
-    -> workspace_bind_result_t {
-    return workspace_bind_result_t::from(workspace_bind_result_t::from(document, limits));
-}
-
-auto workspace_controller_t::from(const document_history_t& history, const workspace_limits_t& limits)
-    -> workspace_bind_result_t {
-    return workspace_bind_result_t::from(workspace_bind_result_t::from(history, limits));
 }
 
 auto rebind_transport(workspace_transport_t& transport, const song_document_t& document) -> void {
@@ -1475,12 +1461,12 @@ auto build_requested_workspace_tab(workspace_view_build_context_t& context, work
     return true;
 }
 
-auto workspace_view_result_t::from(const workspace_controller_t& workspace,
+auto workspace_view_t::from(const workspace_controller_t& workspace,
                             const song_document_t& document) -> workspace_view_outcome_t {
-    return workspace_view_result_t::from(workspace, document, workspace.active_tab);
+    return workspace_view_t::from(workspace, document, workspace.active_tab);
 }
 
-auto workspace_view_result_t::from(const workspace_controller_t& workspace,
+auto workspace_view_t::from(const workspace_controller_t& workspace,
                             const song_document_t& document, workspace_tab_t requested_tab,
                             const diagnostic_list_t* cached_diagnostics,
                             workspace_bms_branch_outline_cache_t* branch_cache,
@@ -1546,23 +1532,6 @@ auto workspace_view_result_t::from(const workspace_controller_t& workspace,
         return result;
     result.value = std::move(view);
     return result;
-}
-
-auto workspace_view_result_t::from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t {
-    return {.view = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto workspace_view_t::from(const workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_view_result_t {
-    return workspace_view_result_t::from(workspace_view_result_t::from(workspace, document));
-}
-
-auto workspace_view_t::from(const workspace_controller_t& workspace, const song_document_t& document,
-    workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics,
-    workspace_bms_branch_outline_cache_t* branch_cache, workspace_binding_validation_cache_t* binding_cache)
-    -> workspace_view_result_t {
-    return workspace_view_result_t::from(workspace_view_result_t::from(
-        workspace, document, tab, cached_diagnostics, branch_cache, binding_cache));
 }
 
 } // namespace wormedit

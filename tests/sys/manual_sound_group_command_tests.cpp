@@ -31,8 +31,8 @@ struct dispatch_fixture_t {
         }
         history = document_history_t::from(std::move(song));
         const auto binding = workspace_controller_t::from(history);
-        REQUIRE(binding.workspace);
-        workspace = *binding.workspace;
+        REQUIRE(binding.value);
+        workspace = *binding.value;
     }
 
     auto dispatch(const WormUiSoundGroupAssignment* assignments, std::size_t count,

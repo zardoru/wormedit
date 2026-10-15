@@ -482,3 +482,22 @@ TEST_CASE("kiai span edit deletes an area and rejects bad input without a revisi
     CHECK(noop.diagnostics.empty());
     CHECK(history.document.revision == revision);
 }
+
+TEST_CASE("marker aggregate text postvalidation rejects the mutated copy atomically",
+          "[unit][core][marker-editor][execution]") {
+    auto history = document_history_t::from(marker_song());
+    const auto& chart = history.document.charts.front();
+    std::size_t total{};
+    for (const auto& bookmark : chart.bookmarks) total += bookmark.label.size();
+    for (const auto& section : chart.sections) total += section.label.size();
+    const auto result = apply_marker_edit(history, insert_edit_t<bookmark_edit_value_t>{
+        .chart = chart_id_t{2},
+        .value = {.label = "extra", .position = local_position_t{measure_id_t{3}, 240}}},
+        {.maximum_total_label_bytes = total});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
+        "marker labels exceed the configured UTF-8 text limits")});
+    CHECK(history.document.charts.front().bookmarks.size() == 1);
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}

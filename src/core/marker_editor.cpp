@@ -135,12 +135,26 @@ auto span_equal(const std::optional<position_span_t>& left,
 
 
 struct marker_edit_context_t {
+    static constexpr std::string_view invalid_limits_message = "marker and event caps must be positive";
+    static auto has_valid_limits(const marker_edit_limits_t& limits) -> bool {
+        return limits.maximum_bookmarks != 0 && limits.maximum_sections != 0 &&
+            limits.maximum_kiai_events != 0 && limits.maximum_chart_objects != 0;
+    }
+
     song_document_t& proposed;
     document_command_result_t& result;
     marker_edit_limits_t limits;
-    std::string command_label;
-    chart_id_t edited_chart;
+    std::string command_label{};
+    chart_id_t edited_chart{};
     bool changed{};
+
+    auto postvalidate() -> bool {
+        const auto chart = proposed.find_chart(edited_chart);
+        if (chart != nullptr && is_marker_text_within_limit(*chart, limits)) return true;
+        reject(result, diagnostic_code_t::unsupported_feature,
+               "marker labels exceed the configured UTF-8 text limits");
+        return false;
+    }
 
     template <typename Edit> void operator()(const Edit& edit);
 
@@ -412,15 +426,9 @@ void apply_marker_action(marker_edit_context_t& context, chart_document_t& chart
 }
 
 template <typename Edit>
-auto apply_marker_operation(marker_edit_context_t& context, const Edit& edit) -> void {
-    auto target = prepare_marker_target(context, edit.chart);
-    if (target)
-        apply_marker_action(context, *target->chart, target->index, edit);
-}
-
-template <typename Edit>
 void marker_edit_context_t::operator()(const Edit& edit) {
-    apply_marker_operation(*this, edit);
+    auto target = prepare_marker_target(*this, edit.chart);
+    if (target) apply_marker_action(*this, *target->chart, target->index, edit);
 }
 
 
@@ -428,41 +436,13 @@ void marker_edit_context_t::operator()(const Edit& edit) {
 
 auto apply_marker_edit(document_history_t& history,
     const marker_edit_action_t& action, marker_edit_limits_t limits) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    return apply_marker_edit(transaction, action, limits);
+    return document_command_transaction_t::from(history).execute<marker_edit_context_t>(action, limits);
 }
 
 auto apply_marker_edit(document_command_transaction_t& transaction,
                        const marker_edit_action_t& action, marker_edit_limits_t limits)
     -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.commit({});
-    auto& result = transaction.outcome;
-    if (limits.maximum_bookmarks == 0 || limits.maximum_sections == 0 ||
-        limits.maximum_kiai_events == 0 || limits.maximum_chart_objects == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "marker and event caps must be positive");
-        return transaction.finish_without_commit();
-    }
-
-    auto& proposed = transaction.copy_document();
-    marker_edit_context_t context{.proposed = proposed,
-                                  .result = result,
-                                  .limits = limits,
-                                  .command_label = {},
-                                  .edited_chart = {},
-                                  .changed = false};
-    std::visit(context, action);
-
-    if (!result.diagnostics.empty() || !context.changed) {
-        return transaction.finish_without_commit();
-    }
-    const auto chart = proposed.find_chart(context.edited_chart);
-    if (chart == nullptr || !is_marker_text_within_limit(*chart, limits)) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "marker labels exceed the configured UTF-8 text limits");
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(std::move(context.command_label));
+    return transaction.execute<marker_edit_context_t>(action, limits);
 }
 
 } // namespace wormedit

@@ -1,14 +1,20 @@
 #include "sys/compose_actions_internal.h"
 #include "sys/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
-compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& context) {
-    using namespace wormedit;
+auto edit_selected_note_labels_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing note labels."))
         return std::move(*blocked);
     if (context.state.selected_notes.empty())
         return compose_action_outcome_t::blocked(
             "Select one or more notes before editing their label.");
+    return std::nullopt;
+}
+
+auto edit_selected_note_labels_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
     const auto label = context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL
                            ? std::optional<std::string>{context.action.compose_note_label}
                            : std::nullopt;
@@ -18,10 +24,16 @@ compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& con
     return compose_action_outcome_t::from(std::move(applied), compose_action_description_t{.success = label ? "Note label applied." : "Note labels cleared.", .unchanged = label ? "Selected notes already have that label." : "Selected notes already have no label.", .rebind_failure = "Note label changed, but workspace rebinding failed."});
 }
 
-compose_action_outcome_t search_selected_note_labels(compose_action_context_t& context) {
+auto search_selected_note_labels_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before searching labels."))
         return std::move(*blocked);
+    return std::nullopt;
+}
+
+auto search_selected_note_labels_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto step =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL
             ? label_search_step_t::next
@@ -52,11 +64,16 @@ auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<sele
     }
 }
 
-compose_action_outcome_t transform_selected_notes(compose_action_context_t& context,
-                                                  selection_transform_t transform) {
+auto transform_selected_notes_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before transforming notes."))
         return std::move(*blocked);
+    return std::nullopt;
+}
+
+auto transform_selected_notes_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     auto status = apply_selection_transform(context.environment.document.history, context.state,

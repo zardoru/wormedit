@@ -23,15 +23,15 @@ dispatch_compose_marker_action(compose_action_context_t& context) {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)
         return edit_cursor_measure(context, cursor_measure_command_t::remove_with_contents);
     if (const auto transform = selection_transform_for(context.action.compose_action))
-        return transform_selected_notes(context, *transform);
+        return run_compose_action(transform_selected_notes_action_t{.transform = *transform}, context);
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SEARCH_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_SEARCH_NEXT_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_SEARCH_PREVIOUS_NOTE_LABEL:
-        return search_selected_note_labels(context);
+        return run_compose_action(search_selected_note_labels_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL:
     case WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL:
-        return edit_selected_note_labels(context);
+        return run_compose_action(edit_selected_note_labels_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_BOOKMARK:
     case WORM_UI_COMPOSE_ACTION_SET_BEAT_BOOKMARK_POSITION:
     case WORM_UI_COMPOSE_ACTION_DELETE_BEAT_BOOKMARK:

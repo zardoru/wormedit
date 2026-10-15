@@ -311,16 +311,31 @@ compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context);
 std::optional<compose_action_outcome_t>
 dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
 
-compose_action_outcome_t edit_selected_note_labels(compose_action_context_t& context);
+struct edit_selected_note_labels_action_t {
+    auto operator==(const edit_selected_note_labels_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_selected_note_labels_action_t, compose_action_context_t>);
 
 compose_action_outcome_t navigate_audio_marker(compose_action_context_t& context);
 
-compose_action_outcome_t search_selected_note_labels(compose_action_context_t& context);
+struct search_selected_note_labels_action_t {
+    auto operator==(const search_selected_note_labels_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<search_selected_note_labels_action_t, compose_action_context_t>);
 
 auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t>;
 
-compose_action_outcome_t transform_selected_notes(compose_action_context_t& context,
-                                                  selection_transform_t transform);
+struct transform_selected_notes_action_t {
+    selection_transform_t transform;
+    auto operator==(const transform_selected_notes_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<transform_selected_notes_action_t, compose_action_context_t>);
 
 compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
                                              cursor_measure_command_t command);

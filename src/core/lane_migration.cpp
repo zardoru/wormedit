@@ -138,8 +138,6 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
     return missing(before.bindings, after.bindings) + missing(after.bindings, before.bindings);
 }
 
-
-
 auto is_preview_current(const chart_stamp_t& stamp, const lane_migration_proposal_t& proposal,
                          const lane_migration_proposal_payload_t& canonical) -> bool {
     return stamp == canonical.stamp && proposal.target == canonical.target &&
@@ -369,8 +367,6 @@ auto source_bms_note_channel(const note_t& note) -> std::optional<std::string_vi
     return std::nullopt;
 }
 
-
-
 void collect_branch_source_orders(const bms_control_node_t& node, bool inside_branch,
                                   std::unordered_set<std::size_t>& orders) {
     const auto in_branch = inside_branch || is_branch_scope(node.kind);
@@ -480,18 +476,23 @@ auto lane_migration_proposal_t::propose(const song_document_t& song, std::uint64
     -> lane_migration_proposal_outcome_t {
     auto stamp = chart_stamp_t::from(song, chart_id);
     stamp.document.revision = expected_revision;
-    if (!stamp.document.is_current(song)) {
+    auto captured = revision_policy.validate(stamp.document, song, false);
+    if (!captured) {
         lane_migration_proposal_outcome_t result;
         result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
-            stale_action_message(apply_policy.stale_label), stamp, {}));
+            std::move(captured.error().diagnostic.message), stamp, {}));
         return result;
     }
-    return prepare(song, stamp, std::move(target), requested);
+    const lane_migration_proposal_t seed;
+    const proposal_read_scope_t<chart_stamp_t> scope{song, stamp};
+    return seed.revise(scope, std::move(target), requested);
 }
 
-auto lane_migration_proposal_t::prepare(const song_document_t& song, const chart_stamp_t& stamp,
-    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested)
+auto lane_migration_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested) const
     -> lane_migration_proposal_outcome_t {
+    const auto& song = scope.source_document();
+    const auto& stamp = scope.captured_stamp();
     lane_migration_proposal_outcome_t result;
     proposal_t<lane_migration_proposal_t> pending{.stamp = stamp};
     auto& proposal = pending.payload;
@@ -565,25 +566,7 @@ auto lane_migration_proposal_t::prepare(const song_document_t& song, const chart
     return result;
 }
 
-auto lane_migration_proposal_t::revise(const chart_stamp_t& stamp, const song_document_t& song,
-    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested) const
-    -> lane_migration_proposal_outcome_t {
-    lane_migration_proposal_outcome_t result;
-    auto invalid = validate_apply(stamp, false);
-    if (invalid.has_errors()) {
-        result.diagnostics.push_back(lane_migration_diagnostic_t::from(
-            invalid.issue, std::move(invalid.message), stamp, {}));
-        return result;
-    }
-    if (!stamp.document.is_current(song)) {
-        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
-            stale_action_message(apply_policy.stale_label), stamp, {}));
-        return result;
-    }
-    return propose(song, stamp.document.revision, stamp.chart, std::move(target), requested);
-}
-
-auto lane_migration_proposal_t::validate_apply(const chart_stamp_t& stamp, bool) const
+auto lane_migration_proposal_t::validate_capture(const chart_stamp_t& stamp) const
     -> proposal_apply_payload_t<lane_migration_issue_t> {
     if (!canonical_ || !is_preview_current(stamp, *this, *canonical_))
         return {.issue = lane_migration_issue_t::invalid_mapping,
@@ -595,7 +578,7 @@ auto lane_migration_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scop
     -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<lane_migration_issue_t>> {
     auto& transaction = scope.transaction();
     const auto& canonical = *canonical_;
-    const auto verified = prepare(transaction.document(), canonical.stamp, canonical.target, canonical.mapping);
+    const auto verified = revise(scope, canonical.target, canonical.mapping);
     if (!verified.value || !is_preview_current(verified.value->stamp, verified.value->payload, canonical)) {
         const auto view = lane_migration_preview_view_t::from(verified);
         return {.diagnostics = {

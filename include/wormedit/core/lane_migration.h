@@ -78,10 +78,11 @@ using lane_migration_proposal_outcome_t =
 
 struct lane_migration_proposal_t {
     static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Lane migration"};
+    static constexpr auto revision_policy = apply_policy;
     static constexpr auto apply_stale_issue = lane_migration_issue_t::stale_revision;
     static constexpr auto apply_commit_failure_issue = lane_migration_issue_t::invalid_mapping;
     static constexpr std::string_view apply_commit_failure_message = "The migrated chart failed document validation.";
-    [[nodiscard]] auto validate_apply(const chart_stamp_t&, bool confirm_drop) const
+    [[nodiscard]] auto validate_capture(const chart_stamp_t&) const
         -> proposal_apply_payload_t<lane_migration_issue_t>;
     // Applies all layout segments, notes, bindings and retained playable events atomically.
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&, bool confirm_drop) const
@@ -89,7 +90,7 @@ struct lane_migration_proposal_t {
     [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
         chart_id_t chart, lane_input_profile_t target,
         std::span<const lane_migration_mapping_t> mapping = {}) -> lane_migration_proposal_outcome_t;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& song,
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>&,
         lane_input_profile_t target, std::span<const lane_migration_mapping_t> mapping = {}) const
         -> lane_migration_proposal_outcome_t;
 
@@ -99,15 +100,13 @@ struct lane_migration_proposal_t {
     auto operator==(const lane_migration_proposal_t&) const -> bool = default;
 
   private:
-    [[nodiscard]] static auto prepare(const song_document_t&, const chart_stamp_t&, lane_input_profile_t,
-        std::span<const lane_migration_mapping_t>) -> lane_migration_proposal_outcome_t;
     std::shared_ptr<const lane_migration_proposal_payload_t> canonical_;
 };
 
 static_assert(staged_proposal<lane_migration_proposal_t,
     std::tuple<const song_document_t&, std::uint64_t, chart_id_t, lane_input_profile_t,
                std::span<const lane_migration_mapping_t>>,
-    std::tuple<const chart_stamp_t&, const song_document_t&, lane_input_profile_t,
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&, lane_input_profile_t,
                std::span<const lane_migration_mapping_t>>,
     chart_stamp_t, lane_migration_diagnostics_t>);
 

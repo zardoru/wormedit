@@ -76,9 +76,8 @@ using task_add_outcome_t = result_t<task_id_t, error_t<task_error_code_t>>;
 // Values are immutable, runtime-type-checked shared payloads so fan-in can pass
 // large render/export buffers without copying. Keep the payload alive for as
 // long as its graph handle.
-// Compatibility boundary for existing callbacks and sys result consumers.
+// Compatibility boundary for existing callback inputs and returns.
 struct task_result_t {
-    [[nodiscard]] static auto from(task_outcome_t&& outcome) -> task_result_t;
     [[nodiscard]] static auto from(const task_outcome_t& outcome) -> task_result_t;
     [[nodiscard]] auto into_outcome() && -> task_outcome_t;
 
@@ -156,7 +155,6 @@ class task_graph_handle_t {
     [[nodiscard]] auto wait() const -> bool;
     void cancel() const;
     [[nodiscard]] auto outcome(task_id_t task) const -> std::optional<task_outcome_t>;
-    [[nodiscard]] auto result(task_id_t task) const -> std::optional<task_result_t>;
     [[nodiscard]] auto task_count() const noexcept -> std::size_t;
     [[nodiscard]] explicit operator bool() const noexcept;
 

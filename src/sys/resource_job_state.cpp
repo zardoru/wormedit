@@ -26,15 +26,15 @@ struct resource_copy_feedback_t {
     std::optional<wormedit::notification_source_t> source;
 };
 
-auto copy_task_failure(const wormedit::task_result_t& completed,
+auto copy_task_failure(const wormedit::task_outcome_t& completed,
                        const std::shared_ptr<const wormedit::project_asset_copy_result_t>& copied)
     -> std::optional<resource_copy_feedback_t> {
     using namespace wormedit;
-    if (!completed.is_successful() || !copied) {
-        const auto cancelled = completed.error &&
-                               completed.error->code == task_error_code_t::cancelled;
+    if (!completed.has_value() || !copied) {
+        const auto cancelled = !completed.has_value() &&
+                               completed.error().cause.code == task_error_code_t::cancelled;
         return resource_copy_feedback_t{
-            .message = completed.error ? completed.error->message
+            .message = !completed.has_value() ? completed.error().cause.message
                                        : "Resource copy returned no result.",
             .severity = cancelled ? notification_severity_t::info
                                   : notification_severity_t::error};
@@ -122,7 +122,7 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
     if (!pending_)
         return std::nullopt;
 
-    const auto completed = pending_->graph.result(pending_->task);
+    const auto completed = pending_->graph.outcome(pending_->task);
     if (!completed)
         return std::nullopt;
 
@@ -177,7 +177,7 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     -> std::optional<std::string> {
     if (!pending)
         return std::nullopt;
-    const auto completed = pending->graph.result(pending->task);
+    const auto completed = pending->graph.outcome(pending->task);
     if (!completed)
         return std::nullopt;
 
@@ -186,12 +186,12 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     pending.reset();
     const auto exported =
         wormedit::task_value_cast<output_group_export_task_result_t>(*completed);
-    auto status = !completed->is_successful() || !exported
-                      ? completed->error ? completed->error->message
+    auto status = !completed->has_value() || !exported
+                      ? !completed->has_value() ? completed->error().cause.message
                                          : "Output group export returned no result."
                       : exported->message;
-    auto severity = !completed->is_successful() || !exported
-                        ? completed->error && completed->error->code ==
+    auto severity = !completed->has_value() || !exported
+                        ? !completed->has_value() && completed->error().cause.code ==
                                                   wormedit::task_error_code_t::cancelled
                               ? wormedit::notification_severity_t::info
                               : wormedit::notification_severity_t::error

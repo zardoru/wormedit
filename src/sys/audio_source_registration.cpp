@@ -115,7 +115,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
     if (tasks == 0) return;
     task_graph_t graph{tasks};
     for (std::size_t index = 0; index < tasks; ++index) {
-        const auto added = graph.add_task(
+        const auto added = graph.create_task(
             {}, [&sources](std::span<const task_result_t>, std::stop_token stop) {
                 while (sources.probe_next_pending(stop)) {
                 }
@@ -123,7 +123,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
             });
         if (!added) return;
     }
-    static_cast<void>(scheduler.submit(std::move(graph)));
+    static_cast<void>(scheduler.begin(std::move(graph)));
 }
 
 auto drain_audition_probe_failures(audio::decoded_source_registry_t& sources)
@@ -367,13 +367,13 @@ void resident_sample_loader_t::set_budget_bytes(std::size_t bytes) {
     }
     const auto stop = stop_.get_token();
     task_graph_t graph{1};
-    const auto added = graph.add_task({},
+    const auto added = graph.create_task({},
         [&store = store_, state, stop, pass = pass_mutex_](std::span<const task_result_t>, std::stop_token) {
             const std::scoped_lock lock(*pass);
             if (!stop.stop_requested()) finish_resident_pass(store, *state, stop, true);
             return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
-    if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
+    if (!added || !scheduler_.begin(std::move(graph))) state->running = false;
 }
 
 void resident_sample_loader_t::prioritize(std::vector<asset_id_t> assets) {
@@ -454,7 +454,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
     auto state = state_;
     auto stop = stop_.get_token();
     task_graph_t graph{1};
-    const auto added = graph.add_task(
+    const auto added = graph.create_task(
         {}, [&store = store_, state, stop, candidates = std::move(candidates),
              &sources, head_cache = head_cache_, head_frames = head_frames_, pass = pass_mutex_](
                 std::span<const task_result_t>, std::stop_token) {
@@ -471,7 +471,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
             finish_resident_pass(store, *state, stop, false);
             return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
-    if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
+    if (!added || !scheduler_.begin(std::move(graph))) state->running = false;
 }
 
 namespace {

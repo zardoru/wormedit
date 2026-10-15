@@ -215,11 +215,11 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
         runtime.output_group_revision = doc.revision;
     }
     if (!runtime.preview_graph) return;
-    const auto result = runtime.preview_graph.result(runtime.preview_task);
+    const auto result = runtime.preview_graph.outcome(runtime.preview_task);
     if (!result) return;
     const auto text = task_value_cast<std::string>(*result);
     runtime.output_group_status[runtime.preview_index] = text ? *text :
-        (result->error ? result->error->message : "Preview failed.");
+        (!result->has_value() ? result->error().cause.message : "Preview failed.");
     runtime.preview_graph = {};
 }
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
@@ -266,17 +266,17 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
     poll_output_group_preview(runtime, doc);
     if (runtime.preview_graph) return {.status = "Wait for the current conversion preview."};
     task_graph_t graph{1};
-    const auto added = graph.add_task({}, [snapshot = doc, group = doc.output_groups[index]](
+    const auto added = graph.create_task({}, [snapshot = doc, group = doc.output_groups[index]](
         std::span<const task_result_t>, std::stop_token stop) {
         if (stop.stop_requested()) return task_result_t::failure(task_error_code_t::cancelled, "Preview cancelled.");
         return task_result_t::success(wormedit::task_value_t::from<std::string>(
             std::make_shared<const std::string>(output_preview(snapshot, group))));
     });
-    if (!added) return {.status = added.error->message};
-    auto submitted = scheduler.submit(std::move(graph));
-    if (!submitted) return {.status = submitted.error->message};
-    runtime.preview_graph = std::move(submitted.graph);
-    runtime.preview_task = *added.id;
+    if (!added) return {.status = added.error().message};
+    auto submitted = scheduler.begin(std::move(graph));
+    if (!submitted) return {.status = submitted.error().message};
+    runtime.preview_graph = std::move(submitted.value());
+    runtime.preview_task = *added;
     runtime.preview_index = index;
     runtime.output_group_status[index] = "Preview running…";
     return {.status = "Conversion preview started.", .severity = notification_severity_t::info};

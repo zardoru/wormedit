@@ -86,7 +86,7 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
     if (detail_task_) return false;
     task_graph_t graph{1};
     const auto generation = detail_generation_;
-    const auto task = graph.add_task({}, [this, asset, key, samples](
+    const auto task = graph.create_task({}, [this, asset, key, samples](
         std::span<const task_result_t>, std::stop_token stop) {
         borrow_preview_blocks(key, stop);
         auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
@@ -96,10 +96,10 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
                 audio::waveform_analysis_result_t::from(std::move(analysis)))));
     });
     if (!task) return false;
-    auto submitted = scheduler_.submit(std::move(graph));
+    auto submitted = scheduler_.begin(std::move(graph));
     if (!submitted) return false;
-    detail_worker_ = std::move(submitted.graph);
-    detail_task_ = *task.id;
+    detail_worker_ = std::move(submitted.value());
+    detail_task_ = *task;
     worker_asset_ = asset;
     // Generation travels in the completion field, and cancelled results are never installed.
     worker_generation_ = generation;
@@ -108,7 +108,7 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
 
 auto waveform_analysis_t::poll_detail_worker() -> std::optional<audio::waveform_job_completion_outcome_t> {
     if (!detail_task_) return std::nullopt;
-    const auto completed = detail_worker_.result(*detail_task_);
+    const auto completed = detail_worker_.outcome(*detail_task_);
     if (!completed) return std::nullopt;
     detail_task_.reset();
     detail_worker_ = {};

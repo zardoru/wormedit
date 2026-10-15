@@ -300,14 +300,6 @@ void worker_loop(const std::shared_ptr<scheduler_state_t>& scheduler, std::stop_
 
 } // namespace
 
-auto task_result_t::from(task_outcome_t&& outcome) -> task_result_t {
-    if (outcome)
-        return {.payload = std::move(*outcome), .error = std::nullopt};
-    return {.payload = std::move(outcome.error().payload),
-            .error = task_error_t{.code = outcome.error().cause.code,
-                                  .message = std::move(outcome.error().cause.message)}};
-}
-
 auto task_result_t::from(const task_outcome_t& outcome) -> task_result_t {
     if (outcome)
         return {.payload = *outcome, .error = std::nullopt};
@@ -340,11 +332,12 @@ auto task_submit_result_t::from(task_submit_outcome_t&& outcome) -> task_submit_
 }
 
 auto task_result_t::success(task_value_t value) -> task_result_t {
-    return from(task_outcome_t{std::move(value)});
+    return {.payload = std::move(value), .error = std::nullopt};
 }
 
 auto task_result_t::failure(task_error_code_t code, std::string message) -> task_result_t {
-    return from(task_outcome_t{std::unexpected(task_failure_t::from(code, std::move(message)))});
+    return {.payload = {},
+            .error = task_error_t{.code = code, .message = std::move(message)}};
 }
 
 task_graph_t::task_graph_t(std::size_t maximum_tasks)
@@ -604,10 +597,4 @@ auto task_scheduler_t::submit(task_graph_t graph) -> task_submit_result_t {
     return task_submit_result_t::from(begin(std::move(graph)));
 }
 
-auto task_graph_handle_t::result(task_id_t task) const -> std::optional<task_result_t> {
-    auto completed = outcome(task);
-    if (!completed)
-        return std::nullopt;
-    return task_result_t::from(std::move(*completed));
-}
 } // namespace wormedit

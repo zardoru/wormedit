@@ -80,7 +80,7 @@ auto explicit_merge(const lane_migration_proposal_outcome_t& defaults, lane_id_t
     return mapping;
 }
 
-auto parse_bmson_fixture(std::string_view name) -> bmson_parse_result_t {
+auto parse_bmson_fixture(std::string_view name) -> bmson_parse_outcome_t {
     std::ifstream stream(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name,
                          std::ios::binary);
     const std::string source{std::istreambuf_iterator<char>(stream),
@@ -476,8 +476,8 @@ TEST_CASE("lane migration handles many ordered notes without reporting collision
 TEST_CASE("lane migration keeps an imported BMSON note and retained event together",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& source = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& source = parsed.value->charts.front();
     auto* note = find_linked_note(source);
     REQUIRE(note != nullptr);
     const auto note_id = note->id;
@@ -485,7 +485,7 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
     const auto old_lane = note->lane;
     const auto target = profile_with_new_lane_ids(source, 10'000);
     const auto mapping = rank_mapping(source, target.layout);
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview.value);
@@ -502,15 +502,15 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
 TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& source = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& source = parsed.value->charts.front();
     const auto* note = find_linked_note(source);
     REQUIRE(note != nullptr);
     const auto note_id = note->id;
     const auto event_id = *note->sound_channel_event;
     const auto target = profile_with_new_lane_ids(source, 20'000);
     const auto mapping = rank_mapping(source, target.layout, note->lane);
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 source.id, target, mapping);
     REQUIRE(preview.value);
@@ -526,10 +526,10 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
 TEST_CASE("lane migration collision sweep includes unlinked playable BMSON events",
           "[unit][core][lane-migration][bmson]") {
     auto parsed = parse_bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.has_value());
+    auto& chart = parsed.value->charts.front();
     const auto fixture = add_unlinked_collision_event(chart);
-    REQUIRE(validate_document(*parsed.song).empty());
+    REQUIRE(validate_document(*parsed.value).empty());
 
     const auto target = profile_with_new_lane_ids(chart, 30'000);
     auto mapping = rank_mapping(chart, target.layout, {},
@@ -538,7 +538,7 @@ TEST_CASE("lane migration collision sweep includes unlinked playable BMSON event
                                           &lane_migration_mapping_t::source_lane);
     REQUIRE(note_mapping != mapping.end());
     note_mapping->target_lane = target.layout.lanes.front().id;
-    auto history = document_history_t::from(*parsed.song);
+    auto history = document_history_t::from(*parsed.value);
     const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 chart.id, target, mapping);
     REQUIRE(preview.value);
@@ -554,14 +554,14 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song.has_value());
-    auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.song.has_value());
+    auto& chart = parsed.value.song->charts.front();
     const auto& hold = require_branch_hold(chart);
     const auto hold_id = hold.id;
     const auto old_lane = hold.lane;
     auto target = profile_with_new_lane_ids(chart, 40'000);
     const auto safe_mapping = rank_mapping(chart, target.layout);
-    auto safe_history = document_history_t::from(*parsed.song);
+    auto safe_history = document_history_t::from(*parsed.value.song);
     const auto safe_preview = lane_migration_proposal_t::propose(
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
     REQUIRE(safe_preview.value);
@@ -583,8 +583,8 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
     options.lane_profile_id = "bme-7k-outside-scratch";
     options.branch_choices = {{2, 1}};
     auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song.has_value());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value.song.has_value());
+    const auto& chart = parsed.value.song->charts.front();
     const auto hold = std::ranges::find_if(chart.measures.front().notes, [](const auto& note) {
         return note.kind == note_kind_t::hold;
     });
@@ -603,7 +603,7 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
                                            &lane_migration_mapping_t::source_lane);
     REQUIRE(explicit_lane != mapping.end());
     explicit_lane->target_lane = destination->id;
-    check_lane_issue(lane_migration_proposal_t::propose(*parsed.song, parsed.song->revision, chart.id, target, mapping), lane_migration_issue_t::unsupported_branch_identity);
+    check_lane_issue(lane_migration_proposal_t::propose(*parsed.value.song, parsed.value.song->revision, chart.id, target, mapping), lane_migration_issue_t::unsupported_branch_identity);
 }
 
 TEST_CASE("Sealed lane migration stamp changes stay tamper errors before staleness",

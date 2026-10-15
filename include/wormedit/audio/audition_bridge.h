@@ -37,19 +37,6 @@ struct started_audition_t {
 };
 using audition_start_outcome_t = result_t<started_audition_t, audition_start_status_t>;
 
-struct audition_start_result_t {
-    [[nodiscard]] static auto from(audition_start_outcome_t&& outcome) -> audition_start_result_t;
-
-    audition_start_status_t status{audition_start_status_t::transport_start_failed};
-    std::optional<session_token_t> token;
-    std::size_t scheduled_layers{};
-    auto operator==(const audition_start_result_t&) const -> bool = default;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == audition_start_status_t::started && token.has_value();
-    }
-};
-
 // Control-thread adapter for resource and chart-object click previews. Input is
 // validated before replacing a current audition. Once replacement begins, any
 // scheduling failure stops the new generation so a partial layer set cannot
@@ -60,8 +47,6 @@ class audition_transport_bridge_t {
                                          std::size_t maximum_layers = 64)
         : transport_(transport), maximum_layers_(maximum_layers) {}
 
-    [[nodiscard]] auto start(std::span<const audition_clip_t> clips)
-        -> audition_start_result_t;
     [[nodiscard]] auto start_clips(std::span<const audition_clip_t> clips)
         -> audition_start_outcome_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;

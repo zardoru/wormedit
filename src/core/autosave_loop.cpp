@@ -27,8 +27,8 @@ void anchor_recovery_asset_paths(song_document_t& snapshot, const std::filesyste
 }
 
 void post_autosave_failure(const notification_sink_t& notifications,
-                           const native_project_autosave_result_t& result) {
-    if (notifications.is_muted() || result.status != native_project_autosave_status_t::failed)
+                           const native_project_autosave_outcome_t& result) {
+    if (notifications.is_muted() || result.value.status != native_project_autosave_status_t::failed)
         return;
     std::string message{"Autosave failed; the previous recovery backup was retained."};
     if (!result.diagnostics.empty()) {
@@ -58,10 +58,10 @@ auto native_project_autosave_target_t::from(
     return target;
 }
 
-auto native_project_recovery_session_sequence(const native_project_recovery_scan_result_t& scan,
+auto native_project_recovery_session_sequence(const native_project_recovery_scan_outcome_t& scan,
                                               song_id_t project_id) noexcept -> std::uint64_t {
     std::uint64_t sequence{};
-    for (const auto& candidate : scan.candidates) {
+    for (const auto& candidate : scan.value.candidates) {
         if (candidate.status != native_project_recovery_candidate_status_t::valid ||
             !candidate.version || candidate.version->project_id != project_id ||
             !candidate.recovery_metadata) {
@@ -118,8 +118,8 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
                                           clock_t::time_point now,
                                           const native_project_autosave_target_t& target,
                                           native_project_storage_options_t options)
-    -> std::optional<native_project_autosave_result_t> {
-    std::optional<native_project_autosave_result_t> completed;
+    -> std::optional<native_project_autosave_outcome_t> {
+    std::optional<native_project_autosave_outcome_t> completed;
     collect_completed(now, completed);
     if (is_busy() || !dirty || target.backup_path.empty() || (retry_after_ && now < *retry_after_) ||
         !coordinator_.is_due(song, now)) {
@@ -133,14 +133,14 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
     auto original_source_path = target.original_source_path;
     auto intended_project_path = target.intended_project_path;
     task_graph_t graph(1);
-    const auto added = graph.add_task(
+    const auto added = graph.create_task(
         {},
         [coordinator = std::move(coordinator), snapshot = std::move(snapshot), now, backup_path, asset_base,
          original_source_path = std::move(original_source_path),
          intended_project_path = std::move(intended_project_path), options = std::move(options)](
             std::span<const task_result_t>, std::stop_token) mutable -> task_result_t {
             anchor_recovery_asset_paths(snapshot, asset_base);
-            auto result = coordinator.maybe_autosave(
+            auto result = coordinator.create_autosave(
                 snapshot, now, backup_path, std::move(original_source_path),
                 std::move(intended_project_path), std::move(options));
             auto completion = std::make_shared<const completion_t>(
@@ -148,34 +148,34 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
             return task_result_t::success(task_value_t::from(std::move(completion)));
         });
     if (!added) {
-        native_project_autosave_result_t failed{.status = native_project_autosave_status_t::failed,
-                                                .revision = song.revision,
-                                                .session_sequence =
-                                                    coordinator_.session_sequence()};
+        native_project_autosave_outcome_t failed{
+            .value = {.status = native_project_autosave_status_t::failed,
+                      .revision = song.revision,
+                      .session_sequence = coordinator_.session_sequence()}};
         failed.diagnostics.push_back(
             {.code = native_project_storage_diagnostic_code_t::write_failure,
-             .message = added.error ? added.error->message : "could not queue autosave task",
+             .message = !added.has_value() ? added.error().message : "could not queue autosave task",
              .path = target.backup_path});
         retry_after_ = now + retry_delay_;
         post_autosave_failure(notifications_, failed);
         return failed;
     }
-    auto submitted = scheduler_.submit(std::move(graph));
+    auto submitted = scheduler_.begin(std::move(graph));
     if (!submitted) {
-        native_project_autosave_result_t failed{.status = native_project_autosave_status_t::failed,
-                                                .revision = song.revision,
-                                                .session_sequence =
-                                                    coordinator_.session_sequence()};
+        native_project_autosave_outcome_t failed{
+            .value = {.status = native_project_autosave_status_t::failed,
+                      .revision = song.revision,
+                      .session_sequence = coordinator_.session_sequence()}};
         failed.diagnostics.push_back(
             {.code = native_project_storage_diagnostic_code_t::write_failure,
              .message =
-                 submitted.error ? submitted.error->message : "could not queue autosave task",
+                 !submitted.has_value() ? submitted.error().message : "could not queue autosave task",
              .path = target.backup_path});
         retry_after_ = now + retry_delay_;
         post_autosave_failure(notifications_, failed);
         return failed;
     }
-    worker_ = worker_t{.graph = std::move(submitted.graph), .task = *added.id};
+    worker_ = worker_t{.graph = std::move(submitted.value()), .task = *added};
     retry_after_.reset();
     return completed;
 }
@@ -189,21 +189,21 @@ auto native_project_autosave_loop_t::session_sequence() const noexcept -> std::u
 }
 
 void native_project_autosave_loop_t::collect_completed(
-    clock_t::time_point now, std::optional<native_project_autosave_result_t>& result) {
+    clock_t::time_point now, std::optional<native_project_autosave_outcome_t>& result) {
     if (!worker_)
         return;
-    const auto task_result = worker_->graph.result(worker_->task);
+    const auto task_result = worker_->graph.outcome(worker_->task);
     if (!task_result)
         return;
     const auto completion = task_value_cast<completion_t>(*task_result);
     worker_.reset();
     if (!completion) {
-        native_project_autosave_result_t failed{.status = native_project_autosave_status_t::failed,
-                                                .session_sequence =
-                                                    coordinator_.session_sequence()};
+        native_project_autosave_outcome_t failed{
+            .value = {.status = native_project_autosave_status_t::failed,
+                      .session_sequence = coordinator_.session_sequence()}};
         failed.diagnostics.push_back(
             {.code = native_project_storage_diagnostic_code_t::write_failure,
-             .message = task_result->error ? task_result->error->message
+             .message = !task_result->has_value() ? task_result->error().cause.message
                                            : "autosave worker returned no result"});
         if (deferred_explicit_save_) {
             coordinator_.mark_explicit_save(*deferred_explicit_save_);
@@ -220,7 +220,7 @@ void native_project_autosave_loop_t::collect_completed(
         coordinator_.mark_explicit_save(*deferred_explicit_save_);
         deferred_explicit_save_.reset();
     }
-    if (completion->result.status == native_project_autosave_status_t::failed)
+    if (completion->result.value.status == native_project_autosave_status_t::failed)
         retry_after_ = now + retry_delay_;
     post_autosave_failure(notifications_, completion->result);
     result = completion->result;

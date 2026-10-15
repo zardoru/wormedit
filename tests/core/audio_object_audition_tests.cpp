@@ -21,8 +21,8 @@ auto fixture_song() -> wormedit::song_document_t {
                            std::istreambuf_iterator<char>()};
     const auto parsed =
         wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto binding(wormedit::asset_id_t asset) -> wormedit::audio::audition_source_binding_t {
@@ -54,7 +54,8 @@ void check_rejected_object_audition(
     REQUIRE(rejected.error().value.prepared.has_value());
     CHECK(*rejected.error().value.prepared == expected);
     REQUIRE(rejected.error().value.transport.has_value());
-    CHECK(rejected.error().value.transport->status == audition_start_status_t::invalid_clip);
+    CHECK(*rejected.error().value.transport ==
+          std::unexpected(audition_start_status_t::invalid_clip));
     CHECK(rejected.error().diagnostics.empty());
 }
 
@@ -73,28 +74,28 @@ TEST_CASE("object audition prepares before replacing transport and rejects stale
     object_audition_controller_t controller{bridge};
     const object_audition_request_t request{song.revision, chart.id, first_note_id(chart)};
 
-    auto prepared = controller.prepare(song, request, bindings);
+    auto prepared = controller.prepare_object(song, request, bindings);
     REQUIRE(prepared);
-    CHECK(prepared.status == object_audition_status_t::prepared);
+    CHECK(prepared.value().status == object_audition_status_t::prepared);
     CHECK_FALSE(bridge.session_token().has_value());
-    REQUIRE(prepared.prepared.has_value());
-    const auto started = controller.start(std::move(*prepared.prepared));
+    REQUIRE(prepared.value().prepared.has_value());
+    const auto started = controller.start_prepared(std::move(*prepared.value().prepared));
     REQUIRE(started);
-    CHECK(started.status == object_audition_status_t::started);
+    CHECK(started.value().status == object_audition_status_t::started);
     REQUIRE(bridge.session_token().has_value());
     const auto active = *bridge.session_token();
 
     const auto stale =
-        controller.prepare(song, {song.revision + 1, chart.id, request.object}, bindings);
-    CHECK_FALSE(stale);
-    CHECK(stale.status == object_audition_status_t::stale_document);
+        controller.prepare_object(song, {song.revision + 1, chart.id, request.object}, bindings);
+    require_stem_preview(!stale);
+    CHECK(stale.error().value.status == object_audition_status_t::stale_document);
     CHECK(bridge.session_token() == active);
     CHECK(transport.is_current(active));
 
     const auto missing =
-        controller.start(song, {song.revision, chart.id, wormedit::object_id_t{999'999}}, bindings);
-    CHECK_FALSE(missing);
-    CHECK(missing.status == object_audition_status_t::resolve_failed);
+        controller.start_object(song, {song.revision, chart.id, wormedit::object_id_t{999'999}}, bindings);
+    require_stem_preview(!missing);
+    CHECK(missing.error().value.status == object_audition_status_t::resolve_failed);
     CHECK(bridge.session_token() == active);
     CHECK(transport.is_current(active));
 }
@@ -114,13 +115,13 @@ TEST_CASE("object audition forwards exact BGM clips and Stop through the bridge"
     transport_t transport{cache, 2};
     audition_transport_bridge_t bridge{transport};
     object_audition_controller_t controller{bridge};
-    const auto started = controller.start(
+    const auto started = controller.start_object(
         song, {song.revision, chart.id, bgm_measure->bgm_events.front().id}, bindings);
     REQUIRE(started);
-    REQUIRE(started.prepared.has_value());
-    REQUIRE(started.prepared->clips.size() == 1);
-    CHECK(started.prepared->clips.front().source_start_frame == 88'200);
-    CHECK(started.prepared->clips.front().frame_count == 111'800);
+    REQUIRE(started.value().prepared.has_value());
+    REQUIRE(started.value().prepared->clips.size() == 1);
+    CHECK(started.value().prepared->clips.front().source_start_frame == 88'200);
+    CHECK(started.value().prepared->clips.front().frame_count == 111'800);
     CHECK(controller.stop().scheduled_voices == 1);
     CHECK_FALSE(bridge.session_token().has_value());
 }
@@ -143,7 +144,8 @@ TEST_CASE("object audition expected rejection retains prepared clips and transpo
     const auto legacy = object_audition_result_t::from(std::move(rejected));
     CHECK_FALSE(legacy);
     CHECK(legacy.prepared == expected);
-    CHECK(legacy.transport->status == audition_start_status_t::invalid_clip);
+    require_stem_preview(legacy.transport.has_value());
+    CHECK(*legacy.transport == std::unexpected(audition_start_status_t::invalid_clip));
 }
 
 TEST_CASE("Stem click audition bounds decoded frames without changing offsets or shorter clips",

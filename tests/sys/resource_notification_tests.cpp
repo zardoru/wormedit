@@ -23,7 +23,7 @@ struct resource_notification_fixture_t {
     notification_center_t center;
     notification_sink_t sink{center};
     task_scheduler_t scheduler{1, 1};
-    runtime::resource_copy_t resource_copy{sink};
+    runtime::resource_copy_t resource_copy{scheduler, sink};
     document_history_t history;
     workspace_controller_t workspace;
     std::filesystem::path root = unique_directory();
@@ -111,28 +111,29 @@ auto wait_for_export_result(runtime::output_group_export_t& exports,
     return result;
 }
 
-auto make_resource_task(task_scheduler_t& scheduler, task_result_t result)
-    -> std::pair<task_graph_handle_t, task_id_t> {
-    task_graph_t graph{1};
-    const auto added = graph.add_task({}, [result = std::move(result)](
-        std::span<const task_result_t>, std::stop_token) mutable { return std::move(result); });
-    REQUIRE(added);
-    auto submitted = scheduler.submit(std::move(graph));
-    REQUIRE(submitted);
-    return {std::move(submitted.graph), *added.id};
+auto failed_copy_worker(const resource_copy_request_t&, std::stop_token)
+    -> resource_copy_job_t::work_outcome_t {
+    return std::unexpected(wormedit::error_t<task_error_code_t>{task_error_code_t::task_failed,
+                                                                "Injected copy worker failure."});
+}
+auto cancelled_copy_worker(const resource_copy_request_t&, std::stop_token)
+    -> resource_copy_job_t::work_outcome_t {
+    return resource_copy_job_t::work_outcome_t{
+        std::in_place, std::unexpected(wormedit::error_t<project_asset_copy_status_t>{
+                           project_asset_copy_status_t::cancelled, {}})};
 }
 
 auto make_export_task(runtime::output_group_export_t& runtime,
                       output_group_export_task_result_t result) -> pending_output_group_export_t {
     task_graph_t graph{1};
     const auto value = std::make_shared<const output_group_export_task_result_t>(std::move(result));
-    const auto added = graph.add_task({}, [value](std::span<const task_result_t>, std::stop_token) {
+    const auto added = graph.create_task({}, [value](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success(task_value_t::from(value));
     });
     REQUIRE(added);
-    auto submitted = runtime.scheduler.submit(std::move(graph));
+    auto submitted = runtime.scheduler.begin(std::move(graph));
     REQUIRE(submitted);
-    return {.graph = std::move(submitted.graph), .task = *added.id,
+    return {.graph = std::move(submitted.value()), .task = *added,
             .song = song_id_t{1}, .revision = 0};
 }
 } // namespace
@@ -156,6 +157,28 @@ TEST_CASE("metadata copy inspection posts start and completion once", "[unit][sy
                         "Destination is free; copy will create it.");
     (void)fixture.assets.poll(fixture.history, fixture.workspace, fixture.project);
     CHECK(fixture.entries().size() == 2);
+}
+
+TEST_CASE("metadata inspection retains advisory feedback after invalidation and cancel",
+          "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    auto action = fixture.inspect_action();
+    require_resource_notification(fixture.assets.start_copy_preview(
+                                      action, fixture.history, fixture.workspace,
+                                      fixture.project) == "Copy destination inspection started.");
+    fixture.assets.clear_copy_preview_key();
+    ++fixture.history.document.revision;
+    fixture.assets.cancel();
+    fixture.wait_for_preview();
+    check_resource_notification(!fixture.assets.copy_preview_pending());
+    check_resource_notification(!fixture.assets.copy_preview_key());
+    const auto entries = fixture.entries();
+    require_resource_notification(entries.size() == 2);
+    check_resource_notification(entries[0].source == notification_source_t::import_);
+    check_resource_notification(entries[0].severity == notification_severity_t::info);
+    check_resource_notification(!entries[0].message.empty());
+    (void)fixture.assets.poll(fixture.history, fixture.workspace, fixture.project);
+    check_resource_notification(fixture.entries().size() == 2);
 }
 
 TEST_CASE("metadata copy inspection rejection is explicit and does not mutate document",
@@ -244,11 +267,12 @@ TEST_CASE("resource copy worker failure posts once and leaves the document uncha
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     const auto revision = fixture.history.document.revision;
-    auto [graph, task] = make_resource_task(fixture.scheduler,
-        task_result_t::failure(task_error_code_t::task_failed, "Injected copy worker failure."));
-    require_resource_notification(fixture.resource_copy.start({.graph = std::move(graph), .task = task,
-        .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = revision,
-        .source_path = fixture.source, .export_copy = false}));
+    require_resource_notification(static_cast<bool>(fixture.resource_copy.start(
+        {.target = {.asset = asset_id_t{1},
+                    .document = document_stamp_t::from(fixture.history.document),
+                    .source_path = fixture.source,
+                    .export_copy = false}},
+        failed_copy_worker)));
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 1);
     expect_notification(entries[0], notification_severity_t::info, notification_source_t::import_,
@@ -269,19 +293,14 @@ TEST_CASE("resource copy worker failure posts once and leaves the document uncha
 TEST_CASE("resource copy stale completion warns once without changing document",
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
-    auto copied = std::make_shared<const project_asset_copy_result_t>(project_asset_copy_result_t{
-        .status = project_asset_copy_status_t::copied, .relative_path = "assets/1-source.wav"});
-    task_graph_t graph{1};
-    const auto added = graph.add_task({}, [copied](std::span<const task_result_t>, std::stop_token) {
-        return task_result_t::success(task_value_t::from(copied));
-    });
-    require_resource_notification(static_cast<bool>(added));
-    auto submitted = fixture.scheduler.submit(std::move(graph));
-    require_resource_notification(static_cast<bool>(submitted));
     const auto revision = fixture.history.document.revision;
-    require_resource_notification(fixture.resource_copy.start({.graph = std::move(submitted.graph), .task = *added.id,
-        .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = revision - 1,
-        .source_path = fixture.source, .export_copy = false}));
+    require_resource_notification(static_cast<bool>(fixture.resource_copy.start(
+        {.target = {.asset = asset_id_t{1},
+                    .document = document_stamp_t{.project = fixture.history.document.id,
+                                                 .revision = revision - 1},
+                    .source_path = fixture.source,
+                    .export_copy = false},
+         .project_directory = fixture.project})));
     const auto completed = wait_for_resource_result(fixture);
     require_resource_notification(completed.has_value());
     test::check_stale_action_message(*completed, "Resource copy relink");
@@ -330,26 +349,23 @@ TEST_CASE("resource copy links a real successful copy and canceled fallback rema
     resource_notification_fixture_t fixture;
     fixture.workspace.song = fixture.history.document.id;
     fixture.history.document.audio_assets.push_back({.id = asset_id_t{1}, .source_path = fixture.source});
-    const auto copied = copy_resource_file_into_project({.project_directory = fixture.project,
-        .source_path = fixture.source, .asset = asset_id_t{1}});
-    require_resource_notification(static_cast<bool>(copied));
-    auto [graph, task] = make_resource_task(fixture.scheduler,
-        task_result_t::success(task_value_t::from(std::make_shared<const project_asset_copy_result_t>(copied))));
-    require_resource_notification(fixture.resource_copy.start({.graph = std::move(graph), .task = task,
-        .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = fixture.history.document.revision,
-        .source_path = fixture.source}));
+    require_resource_notification(static_cast<bool>(fixture.resource_copy.start(
+        {.target = {.asset = asset_id_t{1},
+                    .document = document_stamp_t::from(fixture.history.document),
+                    .source_path = fixture.source},
+         .project_directory = fixture.project})));
     const auto completed = wait_for_resource_result(fixture);
     require_resource_notification(completed == "Resource copied into the project and linked.");
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 2);
     expect_notification(entries[0], notification_severity_t::success, notification_source_t::import_, *completed);
-    check_resource_notification(fixture.history.document.audio_assets[0].source_path == copied.relative_path);
+    check_resource_notification(fixture.history.document.audio_assets[0].source_path ==
+                                "assets/1-source.wav");
     check_resource_notification(fixture.history.undo.size() == 1);
-    const auto cancelled = std::make_shared<const project_asset_copy_result_t>(project_asset_copy_result_t{
-        .status = project_asset_copy_status_t::cancelled});
-    auto next = make_resource_task(fixture.scheduler, task_result_t::success(task_value_t::from(cancelled)));
-    require_resource_notification(fixture.resource_copy.start({.graph = std::move(next.first), .task = next.second,
-        .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = fixture.history.document.revision}));
+    require_resource_notification(static_cast<bool>(fixture.resource_copy.start(
+        {.target = {.asset = asset_id_t{1},
+                    .document = document_stamp_t::from(fixture.history.document)}},
+        cancelled_copy_worker)));
     require_resource_notification(wait_for_resource_result(fixture) == "Resource copy failed.");
     entries = fixture.entries();
     expect_notification(entries[0], notification_severity_t::info, notification_source_t::import_, "Resource copy failed.");

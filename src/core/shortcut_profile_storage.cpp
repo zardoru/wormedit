@@ -128,7 +128,7 @@ auto open_shortcut_profile(const std::filesystem::path& path) -> shortcut_profil
                       "could not finish reading shortcut profile"}});
     }
 
-    auto parsed = shortcut_profile_parse_result_t::from(bytes);
+    auto parsed = shortcut_profile_t::from(bytes);
     if (!parsed.value) {
         return std::unexpected(diagnosed_t<error_t<shortcut_profile_load_status_t>>{
             .value = {shortcut_profile_load_status_t::invalid, {}},

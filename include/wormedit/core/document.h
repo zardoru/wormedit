@@ -5,6 +5,7 @@
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
 
+#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -762,6 +764,7 @@ struct bms_control_node_t {
 struct branch_selection_t {
     branch_id_t branch;
     std::int64_t selected_value{};
+    auto operator==(const branch_selection_t&) const -> bool = default;
 };
 
 struct format_metadata_t {
@@ -789,6 +792,69 @@ struct sound_layer_default_t {
     resource_id_t resource;
     std::vector<layer_id_t> layers;
     auto operator==(const sound_layer_default_t&) const -> bool = default;
+};
+
+struct chart_indices_t;
+struct document_history_t;
+
+class chart_indices_slot_t {
+    friend struct document_history_t;
+    // Only the main-loop history fills this slot. Workers copy snapshots and
+    // share already-built immutable values; they never fill their copied slots.
+    mutable std::shared_ptr<const chart_indices_t> value_;
+};
+
+// Identity domains stay typed; only the uniqueness verdict is shared. Counts may come
+// from a collection, the chart traversal, or an already built index.
+struct target_query_messages_t {
+    std::string_view missing;
+    std::string_view ambiguous;
+    // Empty means zero is an ordinary ID in this domain.
+    std::string_view reserved_zero{};
+    std::string_view domain{};
+    // Preserve the two existing diagnostic grammars, including their zero policy.
+    [[nodiscard]] static constexpr auto from_event(std::string_view domain)
+        -> target_query_messages_t {
+        return {.missing = " command refers to an unknown event",
+                .ambiguous = " event ID is ambiguous because it appears more than once",
+                .domain = domain};
+    }
+    [[nodiscard]] static constexpr auto from_object(std::string_view domain)
+        -> target_query_messages_t {
+        return {.missing = " command refers to an unknown object",
+                .ambiguous = " ID is ambiguous because it appears more than once",
+                .reserved_zero = " command uses the reserved zero object ID",
+                .domain = domain};
+    }
+    auto operator==(const target_query_messages_t&) const -> bool = default;
+};
+
+struct target_identity_query_t {
+    std::size_t count{};
+    bool is_zero{};
+    auto operator==(const target_identity_query_t&) const -> bool = default;
+
+    template <class Id>
+    [[nodiscard]] static auto from(Id id, std::size_t count) -> target_identity_query_t {
+        return {.count = count, .is_zero = !id};
+    }
+    template <class Value, class Id>
+    [[nodiscard]] static auto from(const std::vector<Value>& values, Id id)
+        -> target_identity_query_t {
+        return from(id, std::ranges::count(values, id, &Value::id));
+    }
+    [[nodiscard]] auto validate(diagnostic_list_t& diagnostics,
+                                 const target_query_messages_t& messages) const -> bool;
+};
+
+enum class target_uniqueness_scope_t { collection, chart_objects };
+enum class target_query_order_t { kind_first, identity_first };
+
+struct target_query_policy_t {
+    target_query_messages_t messages;
+    target_uniqueness_scope_t scope{target_uniqueness_scope_t::collection};
+    target_query_order_t order{target_query_order_t::kind_first};
+    auto operator==(const target_query_policy_t&) const -> bool = default;
 };
 
 struct chart_document_t {
@@ -824,6 +890,46 @@ struct chart_document_t {
     // Derived, never serialized: number of addressable measures the virtual canvas
     // exposes for non-BMS charts. Kept in sync by sync_virtual_tails().
     std::uint64_t virtual_tail_measures{};
+    // Derived, never serialized. Unchanged snapshot copies share the payload.
+    chart_indices_slot_t indices_slot{};
+    [[nodiscard]] auto query_object_id(object_id_t id) const -> target_identity_query_t;
+    template <class Value>
+    [[nodiscard]] auto unique_target(std::vector<Value> chart_document_t::*collection, decltype(Value::id) id,
+        diagnostic_list_t& diagnostics, const target_query_policy_t& policy,
+        std::string_view wrong_kind = {}) -> Value* {
+        auto& values = this->*collection;
+        auto found = values.end();
+        auto identity = target_identity_query_t::from(id, 0);
+        if constexpr (std::is_same_v<decltype(Value::id), object_id_t>) {
+            if (policy.scope == target_uniqueness_scope_t::chart_objects) {
+                if (policy.order == target_query_order_t::kind_first) {
+                    found = std::ranges::find(values, id, &Value::id);
+                    if (found == values.end()) {
+                        (void)identity.validate(diagnostics, policy.messages);
+                        return nullptr;
+                    }
+                }
+                identity = query_object_id(id);
+            } else {
+                identity = target_identity_query_t::from(values, id);
+            }
+        } else {
+            // Measures and layers retain their independent typed ID domains.
+            identity = target_identity_query_t::from(values, id);
+        }
+        if (!identity.validate(diagnostics, policy.messages)) return nullptr;
+        if (found == values.end()) found = std::ranges::find(values, id, &Value::id);
+        if (found == values.end()) {
+            const bool has_custom_message = !wrong_kind.empty();
+            const target_query_messages_t missing_kind{
+                .missing = has_custom_message ? wrong_kind : policy.messages.missing,
+                .ambiguous = {},
+                .domain = has_custom_message ? std::string_view{} : policy.messages.domain};
+            (void)target_identity_query_t::from(id, 0).validate(diagnostics, missing_kind);
+            return nullptr;
+        }
+        return &*found;
+    }
     [[nodiscard]] auto find_note(object_id_t id) const -> const note_t*;
     [[nodiscard]] auto find_note(object_id_t id) -> note_t*;
     [[nodiscard]] auto find_bgm_event(object_id_t id) const -> const bgm_event_t*;
@@ -935,6 +1041,7 @@ struct song_document_t {
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
+    void reset_chart_indices() noexcept;
 };
 
 enum class warp_encoding_t {
@@ -1058,8 +1165,10 @@ using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     std::uint64_t row) -> const lane_layout_t*;
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto build_measure_index(const chart_document_t& chart)
     -> std::variant<measure_index_t, diagnostic_list_t>;
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto absolute_row(const measure_index_t& index, local_position_t position)
     -> std::optional<std::uint64_t>;
 [[nodiscard]] auto validate_input_profile(const lane_layout_t& layout,

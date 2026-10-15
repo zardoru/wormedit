@@ -106,10 +106,10 @@ void retain_compose_minimap_start(application_command_state_t& application,
     application.project.transport.minimap_start_frame.reset();
     const bool playing = application.services.transport_preview_playing && application.services.transport_preview_playing();
     const bool paused = application.services.transport_preview_paused && application.services.transport_preview_paused();
-    const auto end = timing.seconds_at(timing.total_rows);
-    if (playing || paused || !end || !end.seconds) return;
+    const auto end = timing.query_seconds(timing.total_rows);
+    if (playing || paused || !end) return;
     if (static_cast<long double>(target.frame) / audio::output_sample_rate <=
-        wormedit::to_long_double(*end.seconds)) return;
+        wormedit::to_long_double(end->value)) return;
     application.project.transport.minimap_start_frame = application_command_state_t::minimap_start_frame_t{
         state.chart, history.document.revision, state.cursor, target.frame, state.cursor_subrow};
 }

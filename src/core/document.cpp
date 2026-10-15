@@ -1,4 +1,5 @@
 #include "text_util.h"
+#include "chart_object_ids.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/sv_recipe.h>
@@ -16,6 +17,26 @@
 #include <unordered_set>
 
 namespace wormedit {
+
+auto target_identity_query_t::validate(diagnostic_list_t& diagnostics,
+                                        const target_query_messages_t& messages) const -> bool {
+    auto message = std::string_view{};
+    auto code = diagnostic_code_t::invalid_id;
+    if (is_zero && !messages.reserved_zero.empty()) message = messages.reserved_zero;
+    else if (count == 0) message = messages.missing;
+    else if (count != 1) {
+        message = messages.ambiguous;
+        code = diagnostic_code_t::duplicate_id;
+    } else return true;
+    auto text = std::string(messages.domain);
+    text.append(message);
+    diagnostics.push_back(error(code, std::move(text)));
+    return false;
+}
+
+auto chart_document_t::query_object_id(object_id_t id) const -> target_identity_query_t {
+    return target_identity_query_t::from(id, chart_object_id_count(*this, id, 2));
+}
 
 auto resource_entry_t::has_role(resource_role_t role) const -> bool {
     return std::ranges::find(roles, role) != roles.end();
@@ -47,6 +68,10 @@ auto find_measure_object(Chart& chart, Id id, Member member)
 } // namespace
 auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
 auto song_document_t::find_chart(chart_id_t id) const -> const chart_document_t* { return find_id(charts, id); }
+
+void song_document_t::reset_chart_indices() noexcept {
+    for (auto& chart : charts) chart.indices_slot = {};
+}
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
 auto chart_document_t::find_measure(measure_id_t id) -> measure_chunk_t* { return find_id(measures, id); }
@@ -75,7 +100,7 @@ auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     const lane_layout_t* selected{};
     std::uint64_t selected_row{};
     for (const auto& segment : chart.lane_layouts) {
-        const auto candidate = absolute_row(index, segment.position);
+        const auto candidate = index.row_of(segment.position);
         if (candidate && *candidate <= row && (!selected || *candidate >= selected_row)) {
             selected = &segment.layout;
             selected_row = *candidate;
@@ -85,7 +110,7 @@ auto layout_at(const chart_document_t& chart, const measure_index_t& index,
 }
 auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     local_position_t position) -> const lane_layout_t* {
-    const auto row = absolute_row(index, position);
+    const auto row = index.row_of(position);
     return row ? layout_at(chart, index, *row) : nullptr;
 }
 
@@ -1166,13 +1191,13 @@ auto validate_chart(const chart_document_t& chart,
                        "beat-zero audio offset has a zero denominator");
     }
 
-    const auto built_index = build_measure_index(chart);
-    if (std::holds_alternative<diagnostic_list_t>(built_index)) {
-        const auto& index_diagnostics = std::get<diagnostic_list_t>(built_index);
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index) {
+        const auto& index_diagnostics = built_index.error();
         diagnostics.insert(diagnostics.end(), index_diagnostics.begin(), index_diagnostics.end());
         return;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     validate_bms_measure_projections(chart, diagnostics);
     std::unordered_set<std::uint64_t> object_ids;
 
@@ -1524,7 +1549,7 @@ auto validate_song_unique_ids(document_validation_work_t& work) -> void {
         work.diagnostics, work.song.storyboards,
         [](const auto& storyboard) { return storyboard.id; }, "storyboard");
     for (const auto& storyboard : work.song.storyboards) {
-        if (storyboard.model.has_value() && !emit_osb(*storyboard.model)) {
+        if (storyboard.model.has_value() && !emit_osb(*storyboard.model).value) {
             add_diagnostic(work.diagnostics, diagnostic_code_t::unsupported_feature,
                            "storyboard model is invalid or exceeds the bounded OSB limits");
         }
@@ -1821,7 +1846,7 @@ auto redivide_position(redivision_context_t& context, local_position_t& position
                        object_id_t object, position_role_t role) -> void {
     const auto before = position;
     const auto diagnostic_object = object ? std::optional<object_id_t>{object} : std::nullopt;
-    if (!absolute_row(context.source_index, position).has_value()) {
+    if (!context.source_index.row_of(position).has_value()) {
         add_diagnostic(context.diagnostics, diagnostic_code_t::row_out_of_range,
                        "object position is outside the source measure geometry", diagnostic_object);
         context.failed = true;
@@ -1914,12 +1939,12 @@ auto redivision_plan_t::from(const chart_document_t& chart,
         return result;
     }
 
-    const auto source_index_result = build_measure_index(chart);
-    if (std::holds_alternative<diagnostic_list_t>(source_index_result)) {
-        result.diagnostics = std::get<diagnostic_list_t>(source_index_result);
+    const auto source_index_result = measure_index_t::from(chart);
+    if (!source_index_result) {
+        result.diagnostics = source_index_result.error();
         return result;
     }
-    const auto& source_index = std::get<measure_index_t>(source_index_result);
+    const auto& source_index = *source_index_result;
 
     for (const auto& measure : chart.measures) {
         const auto validation =

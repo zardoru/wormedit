@@ -5,7 +5,7 @@
 
 namespace wormedit::sys {
 
-void populate_workspace_frame_view(flattened_workspace_t& flattened,
+void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
                                    const workspace_frame_view_args_t& args) {
     flattened.view.metadata.timing_locked = args.timing_locked;
     flattened.view.metadata.audio_waveform_has_selected_asset =

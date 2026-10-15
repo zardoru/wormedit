@@ -52,7 +52,6 @@ class video_frame_cache_t {
 };
 
 using video_job_start_status_t = ::wormedit::async_job_start_status_t;
-using video_job_start_result_t = ::wormedit::async_job_start_result_t;
 
 struct video_job_context_t {
     async_job_project_identity_t identity;
@@ -63,42 +62,24 @@ using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_fra
 using video_job_outcome_t = result_t<video_job_frame_t,
     visual_job_error_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>>;
 
-struct video_job_result_t {
-    [[nodiscard]] static auto from(video_job_result_t&& report) -> video_job_outcome_t;
-    [[nodiscard]] static auto from(video_job_outcome_t&& outcome) -> video_job_result_t;
+using video_job_completion_outcome_t =
+    async_job_completion_outcome_t<async_job_project_identity_t, video_job_outcome_t>;
+
+class video_frame_job_t;
+struct video_decode_request_t {
+    video_frame_job_t& owner;
     song_id_t project;
     std::uint64_t document_revision{};
     resolved_visual_asset_t source;
     video_preview_clock_t clock;
-    video_frame_status_t status{video_frame_status_t::decode_failed};
-    std::shared_ptr<const rgba_video_frame_t> frame;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return video_job_frame_t::can_publish(status, frame);
-    }
-};
-
-using video_job_completion_outcome_t =
-    async_job_completion_outcome_t<async_job_project_identity_t, video_job_result_t>;
-
-struct video_job_completion_t {
-    [[nodiscard]] static auto from(video_job_completion_outcome_t&& outcome) -> video_job_completion_t;
-    std::uint64_t generation{};
-    song_id_t project;
-    std::uint64_t document_revision{};
-    std::shared_ptr<const video_job_result_t> result;
-    std::optional<task_error_t> task_error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return result != nullptr && !task_error.has_value();
-    }
+    video_frame_decode_limits_t limits;
 };
 
 // Runs at most a bounded number of seek/decode requests off the UI thread.
 // Starting a request cancels older generations; only the newest generation is
 // observable, even if an interrupted FFmpeg call takes time to unwind.
-class video_frame_job_t {
+class video_frame_job_t : public async_job_t<video_decode_request_t, video_job_outcome_t,
+                                             async_job_project_identity_t> {
   public:
     video_frame_job_t(video_frame_cache_t& cache, task_scheduler_t& scheduler,
                       std::size_t maximum_in_flight_jobs = 2);
@@ -107,48 +88,21 @@ class video_frame_job_t {
     video_frame_job_t(const video_frame_job_t&) = delete;
     auto operator=(const video_frame_job_t&) -> video_frame_job_t& = delete;
 
-    [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
-                               resolved_visual_asset_t source, video_preview_clock_t clock,
-                               video_frame_decode_limits_t limits = {}) -> async_job_start_outcome_t;
     [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                resolved_visual_asset_t source, video_preview_clock_t clock,
-                               video_frame_decode_limits_t limits = {}) -> video_job_start_result_t;
-    [[nodiscard]] auto poll() -> std::optional<video_job_completion_t>;
-    [[nodiscard]] auto wait() -> std::optional<video_job_completion_t>;
-    [[nodiscard]] auto poll_completion() -> std::optional<video_job_completion_outcome_t>;
-    [[nodiscard]] auto wait_completion() -> std::optional<video_job_completion_outcome_t>;
-    void cancel() noexcept;
-    [[nodiscard]] auto is_busy() const noexcept -> bool;
+                               video_frame_decode_limits_t limits = {})
+        -> async_job_start_outcome_t;
 
   private:
-    struct decode_request_t {
-        song_id_t project;
-        std::uint64_t document_revision{};
-        resolved_visual_asset_t source;
-        video_preview_clock_t clock;
-        video_frame_decode_limits_t limits;
-    };
+    static constexpr const char* invalid_request_message_ =
+        "video frame request has invalid identity or timing";
 
-    struct worker_t {
-        std::uint64_t generation{};
-        song_id_t project;
-        std::uint64_t document_revision{};
-        task_graph_handle_t graph;
-        task_id_t task;
-    };
-
-    void discard_terminal_jobs();
-    [[nodiscard]] auto decode_uncached_frame(const decode_request_t& request,
+    [[nodiscard]] auto decode_uncached_frame(const video_decode_request_t& request,
                                              std::stop_token stop) -> video_frame_decode_result_t;
-    [[nodiscard]] auto run_decode(const decode_request_t& request, std::stop_token stop)
-        -> task_result_t;
+    [[nodiscard]] static auto run_decode(const video_decode_request_t& request,
+                                         std::stop_token stop) -> work_outcome_t;
 
     video_frame_cache_t& cache_;
-    task_scheduler_t& scheduler_;
-    std::size_t maximum_in_flight_jobs_{};
-    std::uint64_t next_generation_{};
-    std::uint64_t current_generation_{};
-    std::vector<worker_t> workers_;
     std::mutex session_mutex_;
     std::unique_ptr<video_decoder_session_t> session_;
     song_id_t session_project_;

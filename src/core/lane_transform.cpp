@@ -87,8 +87,8 @@ auto is_lanes_free_of_overlap(const chart_document_t& chart, const measure_index
         for (const auto& note : measure.notes) {
             if (!touched.contains(note.lane.value))
                 continue;
-            const auto head = absolute_row(index, note.position);
-            const auto tail = note.end ? absolute_row(index, *note.end) : head;
+            const auto head = index.row_of(note.position);
+            const auto tail = note.end ? index.row_of(*note.end) : head;
             if (head && tail)
                 lanes[note.lane.value].push_back({*head, *tail, note.id});
         }
@@ -138,12 +138,12 @@ auto apply_lane_assignment(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "lane transform refers to an unknown chart");
         return result;
     }
-    auto index = build_measure_index(*chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&index)) {
-        result.diagnostics = *diagnostics;
+    auto index = measure_index_t::from(*chart);
+    if (!index) {
+        result.diagnostics = index.error();
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(index);
+    const auto& measures = *index;
     const auto notes = collect_selected(*chart, ids, result);
     if (!notes)
         return result;

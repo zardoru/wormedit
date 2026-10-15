@@ -24,7 +24,7 @@ namespace wormedit::sys {
 auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& environment,
                           bool offer_audio_project_drop, std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
-                          std::vector<sound_drop_batch_t>& pending_resource_batches) -> bool;
+                          std::vector<sound_drop_outcome_t>& pending_resource_batches) -> bool;
 
 void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            runtime::resource_copy_t& resource_copy,

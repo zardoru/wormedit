@@ -16,8 +16,8 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry,
                       wormedit::asset_id_t asset, std::string_view name)
-    -> wormedit::audio::source_registration_result_t {
-    return registry.register_source({
+    -> wormedit::audio::source_registration_outcome_t {
+    return registry.create_source({
         .asset = asset,
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "waveform-job:v1"},
@@ -32,17 +32,16 @@ auto has_failed_analysis_in_completed_job() -> bool {
     waveform_cache_t waveforms;
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler};
-    const auto started = job.begin(asset_id_t{7}, 32);
+    const auto started = job.request(asset_id_t{7}, 32);
     if (!started) return false;
-    auto completion = job.wait_completion();
+    auto completion = job.wait();
     if (!completion || !*completion) return false;
     const auto& completed = completion->value();
     if (!completed.payload || completed.payload->status != waveform_analysis_status_t::decoder_unavailable)
         return false;
-    const auto legacy = waveform_job_completion_t::from(std::move(*completion));
-    return legacy.generation == *started && legacy.asset == asset_id_t{7} &&
-           legacy.analysis != nullptr && !legacy.task_error && !job.is_busy() &&
-           !job.poll_completion();
+    return completed.generation == *started && completed.identity == asset_id_t{7} &&
+           completed.payload != nullptr && !job.is_busy() &&
+           !job.poll();
 }
 
 } // namespace
@@ -63,15 +62,16 @@ TEST_CASE("waveform job publishes the newest bounded scheduler request",
     REQUIRE(superseded);
     const auto current = job.request(asset_id_t{2}, 32);
     REQUIRE(current);
-    CHECK(current.generation != superseded.generation);
+    CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
     const auto completion = job.wait();
-    REQUIRE(*completion);
-    CHECK(completion->generation == current.generation);
-    CHECK(completion->asset == asset_id_t{2});
-    REQUIRE(completion->analysis->waveform.has_value());
-    CHECK(completion->analysis->waveform->key.source.asset_identity == "fixture:keysound-c4.ogg");
+    const auto& completed = completion.value().value();
+    REQUIRE(completed.payload);
+    CHECK(completed.generation == *current);
+    CHECK(completed.identity == asset_id_t{2});
+    REQUIRE(completed.payload->waveform.has_value());
+    CHECK(completed.payload->waveform->key.source.asset_identity == "fixture:keysound-c4.ogg");
     CHECK_FALSE(job.is_busy());
 }
 
@@ -85,8 +85,8 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler, 0};
 
-    CHECK(job.request(asset_id_t{1}, 32).status == waveform_job_start_status_t::invalid_request);
-    CHECK(job.request({}, 32).status == waveform_job_start_status_t::invalid_request);
+    CHECK(job.request(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
+    CHECK(job.request({}, 32).error().code == waveform_job_start_status_t::invalid_request);
     CHECK_FALSE(job.poll().has_value());
     CHECK_FALSE(job.is_busy());
 }
@@ -102,25 +102,25 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     std::latch release_worker{1};
     task_scheduler_t scheduler{1, 1};
     task_graph_t blocker{1};
-    const auto blocker_task = blocker.add_task({}, [&](std::span<const task_result_t>,
+    const auto blocker_task = blocker.create_task({}, [&](std::span<const task_result_t>,
                                                        std::stop_token) {
         worker_started.count_down();
         release_worker.wait();
         return task_result_t::success();
     });
     REQUIRE(blocker_task);
-    auto blocker_submission = scheduler.submit(std::move(blocker));
+    auto blocker_submission = scheduler.begin(std::move(blocker));
     REQUIRE(blocker_submission);
     worker_started.wait();
 
     waveform_job_t job{sources, blocks, waveforms, scheduler};
     const auto rejected = job.request(asset_id_t{1}, 32);
     release_worker.count_down();
-    REQUIRE(blocker_submission.graph.wait());
+    REQUIRE(blocker_submission.value().wait());
 
     CHECK_FALSE(rejected);
-    CHECK(rejected.status == waveform_job_start_status_t::capacity_exceeded);
-    CHECK(rejected.message == "scheduler outstanding-task capacity exceeded");
+    CHECK(rejected.error().code == waveform_job_start_status_t::capacity_exceeded);
+    CHECK(rejected.error().message == "scheduler outstanding-task capacity exceeded");
     CHECK_FALSE(job.is_busy());
 }
 

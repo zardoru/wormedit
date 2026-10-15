@@ -3,6 +3,7 @@
 ## Code style
 
 - Follow [docs/chart-editor-plan/decisions/code-style.md](docs/chart-editor-plan/decisions/code-style.md): one owner per concept, construction and queries on the type (`T::from`), the naming table (`is_`/`has_`/`can_`, `build_<x>_view`, `make_`/`build_`/`create_`), the command transaction, shared result types, one table per fact, and dependencies over hand-rolled parsers. Use its review checklist before finishing a change.
+- Read [docs/architecture.md](docs/architecture.md) first: the edit pipeline (direct commands and gesture dispatch into one transaction). A chart edit contains only its validation, data change and effect; lifecycle, stamp, transaction and result plumbing belong to the shared runners.
 - Before writing a helper, search for an existing one by what it does, not just by name.
 
 ## C++ function complexity

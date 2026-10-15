@@ -11,10 +11,10 @@
 namespace wormedit::sys {
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
-    -> std::optional<wormedit::command_invocation_result_t> {
+    -> std::optional<wormedit::command_invocation_outcome_t> {
     if (command.kind != application_command_kind_t::view_notifications) return std::nullopt;
     if (!auto_repeat) (void)runtime.apply({WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0}, center);
-    return wormedit::command_invocation_result_t{.accepted = true};
+    return wormedit::command_invocation_outcome_t{.value = true};
 }
 
 namespace {
@@ -22,8 +22,8 @@ auto positioned_target(const chart_document_t& chart, local_position_t position)
     -> notification_history_target_t {
     const auto measure = chart.find_measure(position.measure);
     if (measure == nullptr) return {WORM_UI_NOTIFICATION_TARGET_MISSING};
-    const auto capacity = validate_measure(chart.divisions_per_standard_measure, measure->definition);
-    if (!capacity || position.row >= *capacity.row_capacity)
+    const auto capacity = measure_capacity_t::from(chart.divisions_per_standard_measure, measure->definition);
+    if (!capacity || position.row >= capacity->row_capacity)
         return {WORM_UI_NOTIFICATION_TARGET_MISSING};
     return {WORM_UI_NOTIFICATION_TARGET_POSITION, chart.id, position};
 }
@@ -190,10 +190,12 @@ auto go_to_notification(const notification_center_t& center, notification_id_t i
     if (!candidate) return "Target cannot be opened";
     auto next_workspace = workspace;
     const auto revision = history.document.revision;
-    if (!apply_workspace_action(next_workspace, history.document,
-                                workspace_select_chart_action_t{target.chart}) ||
-        !apply_workspace_action(next_workspace, history.document,
-                                workspace_switch_tab_action_t{workspace_tab_t::compose}))
+    auto opened = workspace_action_result_t::from(next_workspace, history.document,
+                                workspace_select_chart_action_t{target.chart});
+    if (opened.value && opened.diagnostics.empty())
+        opened = workspace_action_result_t::from(next_workspace, history.document,
+                                workspace_switch_tab_action_t{workspace_tab_t::compose});
+    if (!opened.value || !opened.diagnostics.empty())
         return "Target cannot be opened";
     if (!dispatch_editor_action(history, *candidate,
                                 jump_edit_cursor_action_t{target.position, revision}))

@@ -15,10 +15,6 @@ auto add_error(bms_branch_selection_outcome_t& result, bms_branch_selection_diag
         {diagnostic_severity_t::error, code, std::move(message), std::move(path)});
 }
 
-
-
-
-
 struct control_signature_t {
     bms_control_kind_t kind{bms_control_kind_t::root};
     std::optional<std::int64_t> value;
@@ -172,17 +168,17 @@ auto serialize_branch_source(const song_document_t& song, const chart_document_t
                                     .output_encoding = std::nullopt,
                                     .max_slots_per_line = request.max_slots_per_line});
     result.diagnostics.write = std::move(written.diagnostics);
-    if (!written.bytes.has_value() || diagnostic_queries::has_errors(result.diagnostics.write)) {
+    if (!written.value.has_value() || diagnostic_queries::has_errors(result.diagnostics.write)) {
         add_error(result, bms_branch_selection_diagnostic_code_t::write_failed,
                   "the current BMS document could not be serialized without changing policy", "$");
         return std::nullopt;
     }
-    if (written.bytes->size() > request.max_source_bytes) {
+    if (written.value->size() > request.max_source_bytes) {
         add_error(result, bms_branch_selection_diagnostic_code_t::resource_limit,
                   "serialized BMS source exceeds the configured rematerialization byte limit", "$");
         return std::nullopt;
     }
-    return std::move(written.bytes);
+    return std::move(written.value);
 }
 
 auto baseline_controls_for(std::span<const std::byte> bytes,
@@ -192,13 +188,13 @@ auto baseline_controls_for(std::span<const std::byte> bytes,
                            bms_branch_selection_outcome_t& result)
     -> std::optional<control_inventory_t> {
     auto baseline = parse_bms_bytes(bytes, make_parse_options(request, profile_id));
-    if (!baseline.song.has_value() || baseline.has_errors()) {
+    if (!baseline.value.song.has_value() || !baseline.ok()) {
         result.diagnostics.parse = std::move(baseline.diagnostics);
         add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
                   "serialized BMS source could not be reparsed for control-tree verification", "$");
         return std::nullopt;
     }
-    const auto& chart = baseline.song->charts.front();
+    const auto& chart = baseline.value.song->charts.front();
     if (!chart.bms_control_tree.has_value()) {
         add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
                   "serialized BMS source no longer contains its retained control tree",
@@ -275,12 +271,12 @@ auto parse_proposed_branch_source(std::span<const std::byte> bytes,
     auto parsed = parse_bms_bytes(bytes,
                                   make_parse_options(request, profile_id, std::move(choices)));
     result.diagnostics.parse = std::move(parsed.diagnostics);
-    if (!parsed.song.has_value() || diagnostic_queries::has_errors(result.diagnostics.parse)) {
+    if (!parsed.value.song.has_value() || diagnostic_queries::has_errors(result.diagnostics.parse)) {
         add_error(result, bms_branch_selection_diagnostic_code_t::parse_failed,
                   "serialized BMS source could not materialize the proposed branch selection", "$");
         return std::nullopt;
     }
-    auto& chart = parsed.song->charts.front();
+    auto& chart = parsed.value.song->charts.front();
     if (!chart.bms_control_tree.has_value()) {
         add_error(result, bms_branch_selection_diagnostic_code_t::control_tree_changed,
                   "rematerialized BMS source no longer contains its retained control tree",
@@ -307,7 +303,7 @@ auto parse_proposed_branch_source(std::span<const std::byte> bytes,
                   "$.charts[0].lane_layouts");
         return std::nullopt;
     }
-    return std::move(*parsed.song);
+    return std::move(*parsed.value.song);
 }
 
 auto preserve_editor_state(const song_document_t& song, const chart_document_t& chart,
@@ -339,11 +335,7 @@ auto preserve_editor_state(const song_document_t& song, const chart_document_t& 
 
 } // namespace
 
-auto bms_branch_selection_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics) || diagnostic_queries::has_errors(write_diagnostics) || diagnostic_queries::has_errors(parse_diagnostics);
-}
-
-auto bms_branch_selection_result_t::from(const song_document_t& song,
+auto rematerialize_bms_branch_selection(const song_document_t& song,
                                         const bms_branch_selection_request_t& request)
     -> bms_branch_selection_outcome_t {
     bms_branch_selection_outcome_t result{};
@@ -416,17 +408,6 @@ auto bms_branch_selection_result_t::from(const song_document_t& song,
     preserve_editor_state(song, *chart, *rematerialized);
     result.value.song = std::move(rematerialized);
     return result;
-}
-
-auto bms_branch_selection_result_t::from(bms_branch_selection_outcome_t&& outcome) -> bms_branch_selection_result_t {
-    return {.song = std::move(outcome.value.song), .preview = std::move(outcome.value.preview),
-        .diagnostics = std::move(outcome.diagnostics.selection), .write_diagnostics = std::move(outcome.diagnostics.write),
-        .parse_diagnostics = std::move(outcome.diagnostics.parse)};
-}
-
-auto rematerialize_bms_branch_selection(const song_document_t& song,
-    const bms_branch_selection_request_t& request) -> bms_branch_selection_result_t {
-    return bms_branch_selection_result_t::from(bms_branch_selection_result_t::from(song, request));
 }
 
 } // namespace wormedit

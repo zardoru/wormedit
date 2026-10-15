@@ -64,9 +64,9 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
     } else if (bookmark.audio_milliseconds) {
         row.position_label = audio_position_label(*bookmark.audio_milliseconds);
         if (timing) {
-            const auto musical = timing->row_at(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
-            if (musical.absolute_row) {
-                absolute = wormedit::to_long_double(*musical.absolute_row);
+            const auto musical = timing->query_position(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
+            if (musical) {
+                absolute = wormedit::to_long_double(musical->value);
             }
         }
     }
@@ -98,30 +98,30 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 
 } // namespace
 
-auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& document, chart_id_t chart_id,
+auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t chart_id,
                               std::size_t first_row, std::size_t row_limit, std::string_view query)
-    -> bookmark_chooser_projection_t {
-    bookmark_chooser_projection_t result{.chart = chart_id,
+    -> bookmark_chooser_view_outcome_t {
+    bookmark_chooser_view_t result{.chart = chart_id,
                                          .document_revision = document.revision,
                                          .first_row = first_row,
                                          .row_limit = row_limit};
     if (row_limit == 0) {
         result.status = "Bookmark chooser page size must be positive.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto* chart = document.find_chart(chart_id);
     if (!chart) {
         result.status = "Bookmark chooser requires an active chart.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto measure_build = build_measure_index(*chart);
     if (!std::holds_alternative<measure_index_t>(measure_build)) {
         result.status = "Bookmark positions could not be resolved.";
-        return result;
+        return std::unexpected(std::move(result));
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = build_timing_index(*chart, {.allow_bounded_clock = true});
-    const auto* timing = timing_build.index ? &*timing_build.index : nullptr;
+    const auto timing_build = timing_index_t::from(*chart, {.allow_bounded_clock = true});
+    const auto* timing = timing_build.value ? &*timing_build.value : nullptr;
     std::vector<ordered_row_t> ordered;
     ordered.reserve(chart->bookmarks.size());
     for (const auto& bookmark : chart->bookmarks) {

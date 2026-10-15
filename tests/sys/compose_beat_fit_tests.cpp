@@ -41,8 +41,8 @@ struct fit_fixture_t {
 
     explicit fit_fixture_t(bool down) : history(document_history_t::from(fit_song(down))), downscroll(down) {
         const auto bound = workspace_controller_t::from(history);
-        expect_fit(bound.workspace.has_value());
-        workspace = *bound.workspace;
+        expect_fit(bound.value.has_value());
+        workspace = *bound.value;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.transport.audio_asset = asset_id_t{6};
         const auto& chart = history.document.charts.front();

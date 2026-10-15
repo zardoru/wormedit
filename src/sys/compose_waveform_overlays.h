@@ -11,7 +11,7 @@ namespace wormedit::sys {
 // Adds the audio-offset and beat-fit drag previews to an already projected
 // Compose waveform overview.
 void populate_compose_waveform_overlays(
-    bool overview_available, flattened_workspace_t& flattened,
+    bool overview_available, frontend_workspace_view_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag,

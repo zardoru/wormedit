@@ -122,8 +122,4 @@ auto waveform_onset_index_t::from(const waveform_t& waveform, onset_request_t re
     return scan_windows(waveform, request);
 }
 
-auto detect_waveform_onsets(const waveform_t& waveform, onset_request_t request) -> onset_result_t {
-    return onset_result_t::from(waveform_onset_index_t::from(waveform, request));
-}
-
 } // namespace wormedit::audio

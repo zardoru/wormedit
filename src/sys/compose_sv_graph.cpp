@@ -6,15 +6,15 @@
 
 namespace wormedit::sys {
 
-auto build_sv_steps_view(const chart_document_t& chart, const measure_index_t& measures,
-                      std::size_t limit) -> sv_steps_t {
+auto sv_steps_view_t::from(const chart_document_t& chart, const measure_index_t& measures,
+                      std::size_t limit) -> sv_steps_view_t {
     struct placed_t {
         std::uint64_t row;
         std::size_t source_order;
         std::uint64_t id;
         double value;
     };
-    sv_steps_t result;
+    sv_steps_view_t result;
     std::vector<placed_t> placed;
     placed.reserve(chart.scrolls.size());
     for (const auto& scroll : chart.scrolls) {

@@ -90,7 +90,7 @@ auto resolve_bga_stroke_targets(const measure_index_t& index,
     resolved.reserve(targets.size());
     std::set<std::pair<std::uint64_t, std::size_t>> seen;
     for (const auto& target : targets) {
-        const auto row = absolute_row(index, target.position);
+        const auto row = index.row_of(target.position);
         const auto kind = erase ? std::optional{target.kind}
                                 : resolve_bga_stroke_kind(*asset_kind, target.kind, result);
         const auto lane = kind ? editor_bga_lane_index(*kind) : std::nullopt;
@@ -156,7 +156,7 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
     for (const auto& target : targets) cells.emplace(target.row, target.lane);
     if (erase) {
         std::erase_if(chart.bga_events, [&](const auto& event) {
-            const auto row = absolute_row(index, event.position);
+            const auto row = index.row_of(event.position);
             const auto lane = editor_bga_lane_index(event.kind);
             return row && lane && cells.contains({*row, *lane});
         });
@@ -166,7 +166,7 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
     }
     std::set<std::pair<std::uint64_t, std::size_t>> occupied;
     for (const auto& event : chart.bga_events) {
-        const auto row = absolute_row(index, event.position);
+        const auto row = index.row_of(event.position);
         const auto lane = editor_bga_lane_index(event.kind);
         if (row && lane) occupied.emplace(*row, *lane);
     }
@@ -289,7 +289,7 @@ void append_chart_reference_counts(const chart_document_t& chart,
 auto snap_placement_position(const chart_document_t& chart, const measure_index_t& index,
                              local_position_t position, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    if (!absolute_row(index, position)) {
+    if (!index.row_of(position)) {
         return std::nullopt;
     }
     if (denominator == 0) {
@@ -429,20 +429,20 @@ auto resolve_resource_placement_position(const chart_document_t& chart,
                                          local_position_t position,
                                          std::uint64_t snap_denominator)
     -> std::optional<local_position_t> {
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(chart);
+    if (!built) {
         return std::nullopt;
     }
-    return snap_placement_position(chart, std::get<measure_index_t>(built), position,
+    return snap_placement_position(chart, *built, position,
                                    snap_denominator);
 }
 
 auto translate_bgm_end(const measure_index_t& index, local_position_t old_head,
                        local_position_t new_head, local_position_t old_end)
     -> std::optional<local_position_t> {
-    const auto old_start = absolute_row(index, old_head);
-    const auto new_start = absolute_row(index, new_head);
-    const auto tail = absolute_row(index, old_end);
+    const auto old_start = index.row_of(old_head);
+    const auto new_start = index.row_of(new_head);
+    const auto tail = index.row_of(old_end);
     if (!old_start || !new_start || !tail || *tail <= *old_start) return std::nullopt;
     std::uint64_t translated{};
     if (*new_start >= *old_start) {
@@ -505,16 +505,15 @@ auto resolve_placement_target(const song_document_t& document,
         reject(result, diagnostic_code_t::invalid_id, "resource placement refers to an unknown chart");
         return std::nullopt;
     }
-    const auto built = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (!index) {
+    const auto built = measure_index_t::from(*chart);
+    if (!built) {
         reject(result, diagnostic_code_t::invalid_measure,
                "resource placement chart has no valid measure index");
         return std::nullopt;
     }
-    const auto position = snap_placement_position(*chart, *index, action.position,
+    const auto position = snap_placement_position(*chart, *built, action.position,
                                                   action.snap_denominator);
-    const auto row = position ? absolute_row(*index, *position) : std::nullopt;
+    const auto row = position ? built->row_of(*position) : std::nullopt;
     if (!row) {
         reject(result, diagnostic_code_t::row_out_of_range,
                "resource placement row is outside the chart");
@@ -527,7 +526,7 @@ auto resolve_placement_target(const song_document_t& document,
         return std::nullopt;
     }
     return resource_placement_target_t{
-        static_cast<std::size_t>(chart - document.charts.data()), *index, *position, *row, *first_id};
+        static_cast<std::size_t>(chart - document.charts.data()), *built, *position, *row, *first_id};
 }
 
 struct resource_placement_context_t {
@@ -551,7 +550,7 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
     const lane_layout_segment_t* active{};
     std::uint64_t active_row{};
     for (const auto& segment : context.chart.lane_layouts) {
-        const auto begin = absolute_row(context.index, segment.position);
+        const auto begin = context.index.row_of(segment.position);
         if (begin && *begin <= context.row && (!active || *begin >= active_row)) {
             active = &segment;
             active_row = *begin;
@@ -565,8 +564,8 @@ auto place_sample_note(resource_placement_context_t& context) -> bool {
     for (const auto& chunk : context.chart.measures)
         for (const auto& note : chunk.notes) {
             if (note.lane != action.lane) continue;
-            const auto begin = absolute_row(context.index, note.position);
-            const auto end = note.end ? absolute_row(context.index, *note.end) : begin;
+            const auto begin = context.index.row_of(note.position);
+            const auto end = note.end ? context.index.row_of(*note.end) : begin;
             if (begin && end && *begin <= context.row && context.row <= *end) {
                 reject(context.result, diagnostic_code_t::collision,
                        "Sample placement overlaps a playable note or hold");
@@ -715,17 +714,16 @@ auto run_apply_bga_stroke(document_command_transaction_t& transaction,
     const auto asset_kind = erase ? std::optional<asset_kind_t>{}
                                   : resolve_bga_stroke_resource(history.document, resource, result);
     if (!erase && !asset_kind) return result;
-    const auto built = build_measure_index(*source_chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (!index) {
+    const auto built = measure_index_t::from(*source_chart);
+    if (!built) {
         reject(result, diagnostic_code_t::invalid_measure, "BGA stroke chart index is invalid");
         return result;
     }
-    auto resolved = resolve_bga_stroke_targets(*index, targets, asset_kind, erase, result);
+    auto resolved = resolve_bga_stroke_targets(*built, targets, asset_kind, erase, result);
     if (!resolved) return result;
     if (resolved->empty()) return result;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
-    return commit_bga_stroke_targets(transaction, chart_offset, *index, *resolved, resource, erase);
+    return commit_bga_stroke_targets(transaction, chart_offset, *built, *resolved, resource, erase);
 }
 
 } // namespace
@@ -808,7 +806,7 @@ auto resolve_bgm_stroke_cells(const measure_index_t& index,
     cells.reserve(targets.size());
     std::set<std::uint64_t> seen;
     for (const auto& position : targets) {
-        const auto row = absolute_row(index, position);
+        const auto row = index.row_of(position);
         if (!row) {
             reject(result, diagnostic_code_t::row_out_of_range,
                    "BGM stroke row is outside the chart");
@@ -824,7 +822,7 @@ auto bgm_stroke_lane_events(const chart_document_t& chart, const measure_index_t
     std::map<std::uint64_t, const bgm_event_t*> occupied;
     for (const auto& measure : chart.measures)
         for (const auto& event : measure.bgm_events) {
-            const auto row = event.source_lane == lane ? absolute_row(index, event.position)
+            const auto row = event.source_lane == lane ? index.row_of(event.position)
                                                        : std::nullopt;
             if (row) occupied.emplace(*row, &event);
         }
@@ -844,7 +842,7 @@ auto commit_bgm_stroke_erase(document_command_transaction_t& transaction, std::s
     for (auto& measure : proposed.charts[chart_offset].measures)
         removed += std::erase_if(measure.bgm_events, [&](const auto& event) {
             const auto row = event.source_lane == lane && !event.sound_channel_event
-                                 ? absolute_row(index, event.position) : std::nullopt;
+                                 ? index.row_of(event.position) : std::nullopt;
             return row && rows.contains(*row);
         });
     if (!removed) return unchanged;
@@ -922,17 +920,16 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
     if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))
         return result;
-    const auto built = build_measure_index(*source_chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (!index) {
+    const auto built = measure_index_t::from(*source_chart);
+    if (!built) {
         reject(result, diagnostic_code_t::invalid_measure, "BGM stroke chart index is invalid");
         return result;
     }
-    const auto cells = resolve_bgm_stroke_cells(*index, targets, result);
+    const auto cells = resolve_bgm_stroke_cells(*built, targets, result);
     if (!cells || cells->empty()) return result;
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
-    return erase ? commit_bgm_stroke_erase(transaction, chart_offset, *index, source_lane, *cells)
-                 : commit_bgm_stroke_draw(transaction, chart_offset, *index, source_lane, *resource,
+    return erase ? commit_bgm_stroke_erase(transaction, chart_offset, *built, source_lane, *cells)
+                 : commit_bgm_stroke_draw(transaction, chart_offset, *built, source_lane, *resource,
                                           *cells);
 }
 
@@ -1006,13 +1003,13 @@ auto apply_bgm_event_move(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "BGM move chart or event is missing");
         return result;
     }
-    const auto built = build_measure_index(*source_chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(*source_chart);
+    if (!built) {
         reject(result, diagnostic_code_t::invalid_measure, "BGM move chart index is invalid");
         return result;
     }
     const auto target = snap_placement_position(*source_chart,
-                                                std::get<measure_index_t>(built),
+                                                *built,
                                                 action.position, action.snap_denominator);
     if (!target) {
         reject(result, diagnostic_code_t::row_out_of_range, "BGM move row is outside the chart");
@@ -1025,7 +1022,7 @@ auto apply_bgm_event_move(document_history_t& history,
     }
     std::optional<local_position_t> moved_end;
     if (original->end) {
-        if (!(moved_end = translate_bgm_end(std::get<measure_index_t>(built),
+        if (!(moved_end = translate_bgm_end(*built,
                                             original->position, *target, *original->end))) {
             reject(result, diagnostic_code_t::row_out_of_range,
                    "BGM move would place its end outside the chart");
@@ -1107,13 +1104,13 @@ auto apply_bga_event_move(document_history_t& history,
                "This visual event has no editable BGA lane");
         return result;
     }
-    const auto built = build_measure_index(*source_chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(*source_chart);
+    if (!built) {
         reject(result, diagnostic_code_t::invalid_measure, "BGA move chart index is invalid");
         return result;
     }
     const auto target = snap_placement_position(*source_chart,
-                                                std::get<measure_index_t>(built),
+                                                *built,
                                                 action.position, action.snap_denominator);
     if (!target) {
         reject(result, diagnostic_code_t::row_out_of_range, "BGA move row is outside the chart");

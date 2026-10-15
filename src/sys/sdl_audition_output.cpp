@@ -78,7 +78,7 @@ void sdl_audition_output_t::set_refill_enabled(bool enabled) noexcept {
 }
 
 auto sdl_audition_output_t::take_refill_result()
-    -> std::optional<audio::audition_pump_result_t> {
+    -> std::optional<audio::audition_pump_outcome_t> {
     const std::scoped_lock lock(refill_mutex_);
     return std::exchange(refill_result_, std::nullopt);
 }
@@ -91,15 +91,21 @@ void sdl_audition_output_t::refill_loop(std::stop_token stop) {
         if (stop.stop_requested()) return;
         const auto generation = refill_generation_;
         lock.unlock();
-        audio::audition_pump_result_t result;
+        audio::audition_pump_outcome_t result =
+            std::unexpected(audio::audition_pump_effect_t{});
         try { result = session_.pump(); }
-        catch (...) { result.status = audio::audition_pump_status_t::decode_failed; }
+        catch (...) {
+            auto failed = result ? std::move(*result) : std::move(result.error());
+            failed.status = audio::audition_pump_status_t::decode_failed;
+            result = std::unexpected(std::move(failed));
+        }
         lock.lock();
+        const auto& effect = result ? *result : result.error();
         if (generation == refill_generation_ && refill_enabled_ &&
             (!refill_result_ || static_cast<bool>(*refill_result_))) {
-            if (!result || result.status == audio::audition_pump_status_t::complete)
+            if (!result || effect.status == audio::audition_pump_status_t::complete)
                 refill_enabled_ = false;
-            if (result.status != audio::audition_pump_status_t::stale_generation)
+            if (effect.status != audio::audition_pump_status_t::stale_generation)
                 refill_result_ = std::move(result);
         }
         refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {
@@ -136,7 +142,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
                 .session = std::nullopt, .message = message};
     }
     set_refill_enabled(false);
-    auto started = session_.start(clips);
+    auto started = session_.start_session(clips);
     auto status = sdl_audition_start_status_t::session_failed;
     std::string message;
     const bool preserved = !started && session_.is_active();
@@ -145,7 +151,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     if (started) {
         status = cleared ? sdl_audition_start_status_t::started : sdl_audition_start_status_t::device_failed;
         if (!cleared) message = sdl_error("could not reset and resume the audio output stream");
-    } else if (started.status == audio::audition_session_start_status_t::prime_failed)
+    } else if (started.error().code == audio::audition_session_start_status_t::prime_failed)
         message = "audio preview lookahead could not be decoded";
     else message = "audio preview transport rejected the prepared clips";
     stream_lock.unlock();
@@ -158,24 +164,27 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     return {.status = status, .session = std::move(started), .message = std::move(message)};
 }
 
-auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_result_t> {
+auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outcome_t> {
     const auto callback_failure =
         callback_failure_.exchange(callback_failure_t::none, std::memory_order_acq_rel);
     if (callback_failure != callback_failure_t::none) {
-        return sdl_audition_service_result_t{
+        return std::unexpected(sdl_audition_service_result_t{
             .status = callback_failure == callback_failure_t::device
                           ? sdl_audition_service_status_t::device_failed
                           : sdl_audition_service_status_t::render_failed,
             .pump = std::nullopt,
-        };
+        });
     }
     auto pumped = take_refill_result();
     if (!pumped) return std::nullopt;
-    return sdl_audition_service_result_t{
+    sdl_audition_service_result_t result{
         .status = *pumped ? sdl_audition_service_status_t::ready
                          : sdl_audition_service_status_t::pump_failed,
         .pump = std::move(pumped),
     };
+    if (result.status != sdl_audition_service_status_t::ready)
+        return std::unexpected(std::move(result));
+    return result;
 }
 
 auto sdl_audition_output_t::stop() noexcept -> audio::transport_stop_result_t {
@@ -218,7 +227,8 @@ void sdl_audition_output_t::render_requested(SDL_AudioStream* stream,
             std::min(callback_frames, (remaining + bytes_per_frame - 1) / bytes_per_frame);
         const auto samples = requested_frames * audio::output_channel_count;
         const auto bytes = samples * sizeof(float);
-        const auto rendered = session_.render(std::span{scratch_.data(), samples});
+        const auto rendered_outcome = session_.render_frames(std::span{scratch_.data(), samples});
+        const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
         if (rendered.status == audio::audition_session_render_status_t::underrun ||
             rendered.status == audio::audition_session_render_status_t::transport_failed) {
             callback_failure_.store(callback_failure_t::render, std::memory_order_release);

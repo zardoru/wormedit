@@ -52,11 +52,11 @@ using namespace compose_projection_detail;
 
 namespace wormedit::sys::compose_projection_detail {
 void report_compose_projection(
-    flattened_workspace_t& flattened, projection_feedback_kind_t producer,
+    frontend_workspace_view_t& flattened, projection_feedback_kind_t producer,
     wormedit::notification_severity_t severity, std::string message, std::uint64_t object = 0,
     wormedit::notification_source_t source = wormedit::notification_source_t::document);
 
-void report_compose_diagnostic(flattened_workspace_t& flattened,
+void report_compose_diagnostic(frontend_workspace_view_t& flattened,
                                projection_feedback_kind_t producer,
                                const wormedit::diagnostic_list_t& diagnostics,
                                const char* fallback);
@@ -128,7 +128,7 @@ void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_
                                  wormedit::local_position_t cursor, bool virtual_cursor,
                                  std::optional<std::size_t> selected_canvas_measure);
 
-void populate_lane_layout_segments(flattened_workspace_t& flattened,
+void populate_lane_layout_segments(frontend_workspace_view_t& flattened,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::measure_index_t& measures,
                                    const wormedit::editor_interaction_view_model_t& interaction,
@@ -153,9 +153,9 @@ struct compose_scene_projection_context_t {
 
 void populate_compose_sound_labels(const compose_scene_projection_context_t& projection);
 
-auto prepare_compose_grid_rows(flattened_workspace_t& flattened, std::size_t count) -> bool;
+auto prepare_compose_grid_rows(frontend_workspace_view_t& flattened, std::size_t count) -> bool;
 
-auto append_compose_grid_row(flattened_workspace_t& flattened,
+auto append_compose_grid_row(frontend_workspace_view_t& flattened,
                              const WormUiComposeGridLineView& line,
                              const wormedit::exact_chart_row_t& row) -> bool;
 
@@ -203,7 +203,7 @@ auto compose_endpoint_snap_class(const compose_scene_projection_context_t& proje
 }
 
 template <class T>
-auto prepare_compose_geometry_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
+auto prepare_compose_geometry_rows(frontend_workspace_view_t& flattened, frame_span<T>& rows,
                                    std::size_t count) -> bool {
     if (count == 0) {
         rows = {};
@@ -225,7 +225,7 @@ void build_compose_scene_objects_view(const compose_scene_projection_context_t& 
 void build_compose_layout_and_notes_view(const compose_scene_projection_context_t& projection);
 
 void build_compose_bgm_events_view(
-    flattened_workspace_t& flattened,
+    frontend_workspace_view_t& flattened,
     const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
     WormUiComposeView& view);
 
@@ -289,7 +289,7 @@ void build_compose_marker_previews_view(const compose_scene_projection_context_t
 void publish_compose_scene(const compose_scene_projection_context_t& projection);
 
 bool initialize_compose_view_state(
-    flattened_workspace_t& flattened, compose_scene_cache_t& cache, int window_width,
+    frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,
     int window_height, bool default_bgm_bar_hidden,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state);
@@ -316,25 +316,25 @@ void populate_semantic_layer_target_state(WormUiComposeView& view,
 auto layer_assist_enabled(const application_command_state_t& app, wormedit::chart_id_t chart,
                           wormedit::layer_id_t layer) -> bool;
 
-auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+auto append_semantic_layer_row(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                                const wormedit::semantic_layer_t& layer, bool selected,
                                bool assist_tick) -> bool;
 
 void populate_semantic_membership_counts(compose_scene_cache_t& cache,
                                          const wormedit::chart_document_t& chart);
 
-void populate_note_layer_menu(flattened_workspace_t& flattened,
+void populate_note_layer_menu(frontend_workspace_view_t& flattened,
                               const wormedit::chart_document_t& chart, std::uint64_t revision,
                               application_command_state_t& app);
 
-bool populate_semantic_layer_palette(flattened_workspace_t& flattened,
+bool populate_semantic_layer_palette(frontend_workspace_view_t& flattened,
                                      const wormedit::chart_document_t& chart,
                                      compose_scene_cache_t& cache,
                                      const wormedit::document_history_t& history,
                                      application_command_state_t& application_state);
 
 template <class T> struct compose_marker_storage_t {
-    flattened_workspace_t& flattened;
+    frontend_workspace_view_t& flattened;
     frame_span<T>& rows;
     std::size_t& published_count;
     bool& truncated;
@@ -387,7 +387,7 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
                                     const wormedit::measure_index_t& measures,
                                     WormUiComposeView& view) -> bool;
 
-bool populate_compose_bookmark_storage(flattened_workspace_t& flattened,
+bool populate_compose_bookmark_storage(frontend_workspace_view_t& flattened,
                                        const wormedit::chart_document_t& chart,
                                        const wormedit::measure_index_t& measures,
                                        WormUiComposeView& view);
@@ -401,12 +401,12 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
                                    const wormedit::measure_index_t& measures,
                                    WormUiComposeView& view) -> bool;
 
-bool populate_compose_section_storage(flattened_workspace_t& flattened,
+bool populate_compose_section_storage(frontend_workspace_view_t& flattened,
                                       const wormedit::chart_document_t& chart,
                                       const wormedit::measure_index_t& measures,
                                       WormUiComposeView& view);
 
-bool populate_compose_bookmark_and_section_storage(flattened_workspace_t& flattened,
+bool populate_compose_bookmark_and_section_storage(frontend_workspace_view_t& flattened,
                                                    const wormedit::chart_document_t& chart,
                                                    const wormedit::measure_index_t& measures,
                                                    WormUiComposeView& view);
@@ -495,7 +495,7 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
                false);
 }
 
-void assign_compose_timing_marker_fractions(flattened_workspace_t& flattened);
+void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened);
 
 auto compose_marker_selection_kind(WormUiTimingLaneKind lane)
     -> wormedit::editor_selection_object_kind_t;
@@ -512,10 +512,10 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
 std::optional<double>
 build_compose_audio_marker_y_view(const compose_projection_context_t<>& input,
                                const auto& timing_index, std::int64_t milliseconds) {
-    const auto projected = timing_index.row_at(wormedit::signed_rational_t{milliseconds, 1'000});
-    if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
+    const auto projected = timing_index.query_position(wormedit::signed_rational_t{milliseconds, 1'000});
+    if (!projected || projected->value.denominator == 0)
         return std::nullopt;
-    const auto row = wormedit::to_long_double(*projected.absolute_row);
+    const auto row = wormedit::to_long_double(projected->value);
     const auto pixels_per_row =
         static_cast<long double>(input.scope.interaction_view.pixels_per_standard_measure) /
         static_cast<long double>(input.scope.chart_scope.chart.divisions_per_standard_measure);
@@ -583,7 +583,7 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
     -> const std::vector<compose_timing_marker_payload_t>&;
 
 void populate_compose_timing_markers(
-    flattened_workspace_t& flattened, const wormedit::song_document_t& document,
+    frontend_workspace_view_t& flattened, const wormedit::song_document_t& document,
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
@@ -591,12 +591,12 @@ void populate_compose_timing_markers(
 
 std::string dead_span_label(const wormedit::sys::dead_span_band_t& band);
 
-void populate_compose_dead_spans(flattened_workspace_t& flattened,
+void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
                                  const compose_scene_cache_t& cache,
                                  const wormedit::editor_interaction_view_model_t& interaction_view,
                                  WormUiComposeView& view, bool downscroll, double pixels_per_row);
 
-void populate_compose_kiai_and_sv(flattened_workspace_t& flattened,
+void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
@@ -605,13 +605,13 @@ void populate_compose_kiai_and_sv(flattened_workspace_t& flattened,
 std::string recipe_area_label(const wormedit::sys::recipe_area_t& area);
 
 void populate_compose_recipe_areas(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
     const recipe_form_outcome_t* preview);
 
-void populate_compose_speed_spans(flattened_workspace_t& flattened,
+void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row);
@@ -619,7 +619,7 @@ void populate_compose_speed_spans(flattened_workspace_t& flattened,
 void drop_stale_recipe_preview(application_command_state_t& application_state,
                                const wormedit::chart_document_t& chart, std::uint64_t revision);
 
-void populate_compose_recipe_form(flattened_workspace_t& flattened,
+void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
                                   WormUiComposeView& view);
@@ -747,7 +747,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                       WormUiComposeView& view, double pixels_per_row,
                                       bool downscroll);
 
-void populate_compose_staged_draft(flattened_workspace_t& flattened,
+void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view);
 
@@ -757,17 +757,17 @@ void populate_compose_selected_bgm(
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
 void populate_compose_selected_note(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
 void populate_compose_selected_objects_and_drafts(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const wormedit::document_history_t& history, application_command_state_t& application_state,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
-void populate_compose_staged_draft(flattened_workspace_t& flattened,
+void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view);
 
@@ -808,18 +808,18 @@ void populate_compose_selected_bgm(
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
 void populate_compose_selected_note(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
-auto cached_compose_measures(flattened_workspace_t& flattened,
+auto cached_compose_measures(frontend_workspace_view_t& flattened,
                              const wormedit::chart_document_t& chart, compose_scene_cache_t& cache)
     -> const wormedit::measure_index_t*;
 
 void discard_compose_static_source(compose_scene_cache_t& cache);
 
 const wormedit::measure_index_t*
-prepare_compose_chart_view(flattened_workspace_t& flattened,
+prepare_compose_chart_view(frontend_workspace_view_t& flattened,
                            const wormedit::chart_document_t& chart,
                            wormedit::document_history_t& history, compose_scene_cache_t& cache,
                            application_command_state_t& application_state);
@@ -852,14 +852,14 @@ template <class T> auto compose_vector_bytes(const std::vector<T>& values) -> st
     return values.capacity() * sizeof(T);
 }
 
-auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::size_t;
+auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> std::size_t;
 
 void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeView& view);
 
 auto compose_static_source_layout_matches(const WormUiComposeView& source,
                                           const WormUiComposeView& view) -> bool;
 
-void clear_static_source_selection(flattened_workspace_t& storage);
+void clear_static_source_selection(frontend_workspace_view_t& storage);
 
 auto compose_static_labels_fit(const wormedit::document_history_t& history) -> bool;
 
@@ -903,13 +903,13 @@ auto scalar_display_lane_number(const auto& record,
 }
 
 template <class T>
-auto prepare_scalar_geometry_output(flattened_workspace_t& flattened, frame_span<T>& output,
+auto prepare_scalar_geometry_output(frontend_workspace_view_t& flattened, frame_span<T>& output,
                                     std::size_t count) -> bool {
     return prepare_compose_geometry_rows(flattened, output, count);
 }
 
 template <class T>
-auto prepare_scalar_geometry_output(flattened_workspace_t&, std::vector<T>& output,
+auto prepare_scalar_geometry_output(frontend_workspace_view_t&, std::vector<T>& output,
                                     std::size_t count) -> bool {
     output.reserve(count);
     return true;
@@ -927,7 +927,7 @@ auto append_scalar_geometry_output(std::vector<T>& output, const T& record) -> b
 }
 
 template <class Records, class Transform>
-auto extract_scalar_rectangles(compose_scene_cache_t& cache, flattened_workspace_t& flattened,
+auto extract_scalar_rectangles(compose_scene_cache_t& cache, frontend_workspace_view_t& flattened,
                                unsigned pass, const Records& source, Records& output, double begin,
                                double end, double shift, Transform transform) -> bool {
     const auto indices = scalar_projection_query(cache, pass, begin - shift, end - shift);
@@ -947,18 +947,18 @@ auto extract_scalar_rectangles(compose_scene_cache_t& cache, flattened_workspace
 
 auto extract_scalar_grid(compose_scene_cache_t& cache,
                          const wormedit::editor_field_scene_view_t& scene,
-                         flattened_workspace_t& flattened, double shift) -> bool;
+                         frontend_workspace_view_t& flattened, double shift) -> bool;
 
 auto extract_scalar_objects(compose_scene_cache_t& cache,
                             const wormedit::editor_field_scene_window_metadata_view_t& metadata,
-                            flattened_workspace_t& flattened,
+                            frontend_workspace_view_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool;
 
 auto scalar_projection_fits_budget(const compose_scene_projection_context_t& projection,
                                    const wormedit::editor_field_scene_request_t& request) -> bool;
 
-void discard_scalar_projection(flattened_workspace_t& flattened);
+void discard_scalar_projection(frontend_workspace_view_t& flattened);
 
 auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComposeView& view)
     -> bool;
@@ -1015,7 +1015,7 @@ void populate_compose_bgm_mix(const compose_projection_context_t<wormedit::edito
 void populate_compose_final_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 void populate_bgm_only_compose_projection(
-    flattened_workspace_t& flattened, wormedit::document_history_t& history,
+    frontend_workspace_view_t& flattened, wormedit::document_history_t& history,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
     compose_scene_cache_t& cache, application_command_state_t& application_state,
     WormUiComposeView& view, bool downscroll,
@@ -1028,7 +1028,7 @@ void bind_branch_statement_metadata(const wormedit::bms_control_node_t& node,
                                     frame_span<WormUiComposeBranchRowView>& rows,
                                     std::size_t& row_index);
 
-void populate_branch_statement_metadata(flattened_workspace_t& flattened,
+void populate_branch_statement_metadata(frontend_workspace_view_t& flattened,
                                         const wormedit::chart_document_t& chart);
 
 void build_branch_statement_feedback_view(WormUiComposeView& view,

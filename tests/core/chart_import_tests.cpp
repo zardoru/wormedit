@@ -35,14 +35,14 @@ auto parse_sm_fixture(std::string_view name) -> song_document_t {
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_stepmania_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    return *parsed.value;
 }
 
 auto parse_bms_text(std::string_view text) -> song_document_t {
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    return *parsed.song;
+    REQUIRE(parsed.value.song.has_value());
+    return *parsed.value.song;
 }
 
 constexpr std::string_view target_bms = "#PLAYER 1\n#TITLE Target\n#BPM 150\n"

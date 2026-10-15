@@ -77,7 +77,7 @@ auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
         return rejection("Sound usage results changed; refresh Find uses.");
 
     const auto usage =
-        build_sound_usage_view(history.document, resource_id_t{action.sound_usage_resource_id});
+        sound_usage_view_t::from(history.document, resource_id_t{action.sound_usage_resource_id});
     if (!usage.valid || usage.asset.value != action.sound_usage_asset_id)
         return rejection("The selected sound is no longer available.");
     const auto found =

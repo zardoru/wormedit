@@ -66,7 +66,7 @@ auto build_workspace_frame_model(compare_scene_cache_t& cache,
                                  const wormedit::workspace_controller_t& workspace,
                                  const wormedit::song_document_t& document,
                                  std::uint64_t session_generation)
-    -> wormedit::workspace_view_result_t {
+    -> wormedit::workspace_view_outcome_t {
     cache.bind_project_session(session_generation);
     const bool compare_active = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
     if (compare_active) cache_compare_diagnostics(cache, document);
@@ -114,7 +114,7 @@ void build_diagnostics_view(compare_scene_cache_t& cache,
 
 } // namespace
 
-auto compare_local_difference_positions(const wormedit::chart_compare_result_t& comparison,
+auto compare_local_difference_positions(const wormedit::chart_comparison_t& comparison,
                                        wormedit::chart_id_t chart)
     -> std::vector<wormedit::local_position_t> {
     std::vector<wormedit::local_position_t> rows;
@@ -128,7 +128,7 @@ auto compare_local_difference_positions(const wormedit::chart_compare_result_t& 
 
 namespace {
 
-void build_pane_view(flattened_workspace_t& pane, wormedit::document_history_t& history,
+void build_pane_view(frontend_workspace_view_t& pane, wormedit::document_history_t& history,
                   const wormedit::workspace_controller_t& workspace, wormedit::chart_id_t chart,
                   compose_scene_cache_t& scene, std::optional<wormedit::editor_interaction_state_t>& state,
                   application_command_state_t& app, int width, int height,
@@ -145,8 +145,8 @@ void build_pane_view(flattened_workspace_t& pane, wormedit::document_history_t& 
 
 } // namespace
 
-void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t& first_pane,
-                           flattened_workspace_t& second_pane,
+void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace_view_t& first_pane,
+                           frontend_workspace_view_t& second_pane,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compare_scene_cache_t& cache,
@@ -206,9 +206,9 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
 
     wormedit::chart_compare_request_t request;
     request.charts = {first_id, second_id};
-    const auto compared = wormedit::compare_chart_difficulties(history.document, request);
-    const auto first_rows = compare_local_difference_positions(compared, first_id);
-    const auto second_rows = compare_local_difference_positions(compared, second_id);
+    const auto compared = wormedit::chart_comparison_t::from(history.document, request);
+    const auto first_rows = compare_local_difference_positions(compared.value, first_id);
+    const auto second_rows = compare_local_difference_positions(compared.value, second_id);
     if (cache.first_chart != first_id || cache.second_chart != second_id ||
         cache.revision != history.document.revision || cache.song != history.document.id) {
         cache.first_state.reset();

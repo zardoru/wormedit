@@ -67,9 +67,9 @@ template<class T>
     static_assert(std::is_trivially_copyable_v<T>);
     if (capacity == 0 || capacity > std::numeric_limits<std::size_t>::max() / sizeof(T))
         return {};
-    const auto allocation = arena.allocate_bytes(capacity * sizeof(T), alignof(T));
+    const auto allocation = arena.allocate(capacity * sizeof(T), alignof(T));
     if (!allocation) return {};
-    return frame_span<T>{std::span<T>{static_cast<T*>(allocation.data), capacity}};
+    return frame_span<T>{std::span<T>{static_cast<T*>(*allocation), capacity}};
 }
 // Returns null on arena exhaustion; the publishing unit sets its existing
 // truncation flag instead of exposing an unterminated or partial label.
@@ -78,9 +78,11 @@ template<class T>
 [[nodiscard]] auto arena_format(frame_arena_t& arena, const char* format, ...) noexcept
     -> const char*;
 
-struct flattened_workspace_t {
-    flattened_workspace_t() noexcept = default;
-    explicit flattened_workspace_t(frame_arena_t* arena) noexcept : arena_(arena) {}
+struct application_frame_projection_context_t;
+
+struct frontend_workspace_view_t {
+    frontend_workspace_view_t() noexcept = default;
+    explicit frontend_workspace_view_t(frame_arena_t* arena) noexcept : arena_(arena) {}
     // Application frames borrow the resettable arena. Standalone/persistent
     // projections lazily own a separate arena whose lifetime follows copies.
     [[nodiscard]] auto arena() noexcept -> frame_arena_t*;
@@ -89,7 +91,7 @@ struct flattened_workspace_t {
     }
     WormUiWorkspaceView view{};
     std::vector<projection_feedback_t> projection_feedback;
-    // Refresh pointers into inline storage after flatten_workspace returns or this object moves.
+    // Refresh pointers into inline storage after from returns or this object moves.
     void rebind_view_pointers();
 
     struct {
@@ -201,22 +203,25 @@ struct flattened_workspace_t {
         frame_span<WormUiSoundUsageRowView> usage_row;
         std::vector<WormUiAudioWaveformColumnView> waveform;
     } audio;
+
+    [[nodiscard]] static auto from(const workspace_view_t& source,
+                                   const song_document_t& document, const std::string& status,
+                                   const native_project_recovery_controller_view_t& recovery,
+                                   bool recovery_scan_configured,
+                                   const stepmania_export_policy_t& stepmania_policy,
+                                   frame_arena_t* arena = nullptr,
+                                   dock_sort_t keysound_sort = dock_sort_t::natural_name,
+                                   WormUiKeysoundDockRequest keysound_request = {},
+                                   WormUiSoundUsageRequest sound_usage_request = {},
+                                   WormUiBookmarkChooserRequest bookmark_chooser_request = {},
+                                   keysound_list_cache_t* keysound_cache = nullptr) -> frontend_workspace_view_t;
+
+    [[nodiscard]] static auto from(const application_frame_projection_context_t& context)
+        -> frontend_workspace_view_t;
   private:
     frame_arena_t* arena_{};
     std::shared_ptr<frame_arena_t> owned_arena_;
 };
-
-[[nodiscard]] auto flatten_workspace(const workspace_view_t& source,
-                                     const song_document_t& document, const std::string& status,
-                                     const native_project_recovery_controller_view_t& recovery,
-                                     bool recovery_scan_configured,
-                                     const stepmania_export_policy_t& stepmania_policy,
-                                     frame_arena_t* arena = nullptr,
-                                     dock_sort_t keysound_sort = dock_sort_t::natural_name,
-    WormUiKeysoundDockRequest keysound_request = {},
-    WormUiSoundUsageRequest sound_usage_request = {},
-    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
-    keysound_list_cache_t* keysound_cache = nullptr) -> flattened_workspace_t;
 
 // Borrowed notification strings remain valid until the center's next frame-
 // thread mutation. Project after draining, then draw before dispatching actions.

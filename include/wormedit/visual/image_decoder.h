@@ -38,6 +38,9 @@ struct image_decode_limits_t {
     std::size_t maximum_rgba_bytes{256U * 1024U * 1024U};
 };
 
+// Decodes one complete bounded source buffer to tightly packed RGBA8. The
+// decoder owns no renderer or texture state and is reusable by live and
+// offline consumers.
 struct rgba_image_t {
     [[nodiscard]] static auto from(const resolved_visual_asset_t& source,
                                    std::span<const std::byte> encoded,
@@ -57,7 +60,7 @@ using image_decode_outcome_t = result_t<rgba_image_t, error_t<image_status_t>>;
 [[nodiscard]] auto open_image_rgba(const resolved_visual_asset_t& source,
                                    image_decode_limits_t limits = {}) -> image_decode_outcome_t;
 
-// Compatibility boundary for existing sys/UI callers; migrate them before removing this adapter.
+// Compatibility boundary for the compose action handlers owned by T-630.
 struct image_decode_result_t {
     [[nodiscard]] static auto from(image_decode_outcome_t&& outcome) -> image_decode_result_t;
 
@@ -69,13 +72,6 @@ struct image_decode_result_t {
         return status == image_status_t::ready && image.has_value();
     }
 };
-
-// Decodes one complete bounded source buffer to tightly packed RGBA8. The
-// decoder owns no renderer or texture state and is reusable by live and
-// offline consumers.
-[[nodiscard]] auto decode_image_rgba(const resolved_visual_asset_t& source,
-                                     std::span<const std::byte> encoded,
-                                     image_decode_limits_t limits = {}) -> image_decode_result_t;
 
 // File loading applies the input byte cap before allocation and delegates to
 // the same memory decoder used by fixtures and future archive-backed assets.

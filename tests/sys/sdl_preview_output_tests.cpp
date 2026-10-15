@@ -61,9 +61,9 @@ auto silent_preview_advances() -> bool {
     schedule.playable = {
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const auto started = output.start(schedule, {}, {}, 0, output_sample_rate * 60U);
-    if (!started || !started.session || !started.session->materialize)
+    if (!started || !started->session || !started->session->value().detail.materialize)
         return false;
-    const bool advanced = started.session->materialize->missing_sources == 1 &&
+    const bool advanced = started->session->value().detail.materialize->value().missing_sources == 1 &&
                           wait_for_silent_preview_frame(session, output);
     static_cast<void>(output.stop());
     output.close();
@@ -81,7 +81,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = asset_id_t{1},
         .path = fixture_path("polyphonic-chord.ogg"),
         .source = {"fixture:polyphonic-chord.ogg", "chart-output-v1"},
@@ -101,13 +101,13 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{
         .object = object_id_t{1},
-        .voices = {{.source = registered.binding->source,
-                    .frame_count = registered.binding->output_frame_count}},
+        .voices = {{.source = registered->source,
+                    .frame_count = registered->output_frame_count}},
     };
     const auto started = output.start(schedule, std::span{&binding, 1});
     REQUIRE(started);
-    REQUIRE(started.session.has_value());
-    const auto first_token = *started.session->token;
+    REQUIRE(started->session.has_value());
+    const auto first_token = started->session->value().token;
 
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
@@ -120,8 +120,8 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
 
     const auto sought = output.seek(0);
     REQUIRE(sought);
-    REQUIRE(sought.session.has_value());
-    CHECK(sought.session->token != first_token);
+    REQUIRE(sought->session.has_value());
+    CHECK(sought->session->value().token != first_token);
     CHECK_FALSE(transport.is_current(first_token));
 
     const auto stopped = output.stop();
@@ -156,11 +156,11 @@ auto chart_music_preview_ignores_waveform_selection() -> bool {
                               .beats_per_minute = {120, 1}}}}}};
     wormedit::sys::project_audio_sources_t project_sources;
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
-    const auto registered_music = sources.register_source(
+    const auto registered_music = sources.create_source(
         {.asset = asset_id_t{5},
          .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-c4.ogg",
          .source = {"fixture:document-music", "music-v1"}});
-    const auto registered_inspection = sources.register_source(
+    const auto registered_inspection = sources.create_source(
         {.asset = asset_id_t{6},
          .path = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio/keysound-g4.ogg",
          .source = {"fixture:waveform-inspection", "waveform-v1"}});
@@ -301,7 +301,7 @@ auto sdl_bmson_seek_renders_pcm() -> bool {
         return false;
     const preview_audio_subsystem_t audio_subsystem;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source(
+    const auto registered = sources.create_generated_source(
         {.source = {"generated:bmson-resume", "sdl-bmson-resume-v1"},
          .interleaved_stereo = generated_sine(output_sample_rate)});
     if (!registered)
@@ -318,7 +318,7 @@ auto sdl_bmson_seek_renders_pcm() -> bool {
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{91}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{
         .object = object_id_t{91},
-        .voices = {{.source = registered.binding->source, .frame_count = output_sample_rate / 2}}};
+        .voices = {{.source = registered->source, .frame_count = output_sample_rate / 2}}};
     constexpr std::uint64_t seek_frame = output_sample_rate / 20;
     if (!output.start(schedule, std::span{&binding, 1}, {}, seek_frame))
         return false;
@@ -343,7 +343,7 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     constexpr std::uint64_t loop_begin = 1'024;
     constexpr std::uint64_t loop_end = 5'120;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:sdl-loop", "sdl-loop-v1"},
         .interleaved_stereo = generated_sine(loop_end),
     });
@@ -360,7 +360,7 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
         .resource = resource_id_t{1}, .frame_count = loop_end};
     const preview_object_source_binding_t binding{
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
-        .voices = {{.source = registered.binding->source, .frame_count = loop_end}},
+        .voices = {{.source = registered->source, .frame_count = loop_end}},
     };
     const preview_loop_region_t loop{loop_begin, loop_end};
     if (!output.set_loop_region(loop) || !output.start(schedule, std::span{&binding, 1})) {
@@ -389,8 +389,8 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     static_cast<void>(output.stop());
     std::array<float, 32> stopped{};
     stopped.fill(1.0F);
-    const auto silence = session.render(stopped);
-    const bool hard_stop = silence.status == preview_session_render_status_t::stopped &&
+    const auto silence = session.render_frames(stopped);
+    const bool hard_stop = silence.value().status == preview_session_render_status_t::stopped &&
         std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
     output.close();
     return repeated && hard_stop;
@@ -414,13 +414,13 @@ auto chart_preview_end_includes_music_tail() -> bool {
                               .beats_per_minute = {120, 1}}}}}};
     sys::project_audio_sources_t project_sources;
     auto& sources = project_sources.registry();
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = asset_id_t{2},
         .path = fixture_path("sliced-seek-source.ogg"),
         .source = {"fixture:music-tail", "chart-preview-tail-v1"},
     });
     if (!registered) return false;
-    const auto music_frames = registered.binding->output_frame_count;
+    const auto music_frames = registered->output_frame_count;
     if (music_frames <= output_sample_rate * 2U) return false;
 
     sys::runtime::chart_preview_t preview;
@@ -460,7 +460,7 @@ auto exercise_sdl_silent_tail_loop() -> bool {
     constexpr std::uint64_t source_end = 2'048;
     constexpr std::uint64_t loop_end = 5'120;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:sdl-loop-silent-tail", "sdl-loop-silent-tail-v1"},
         .interleaved_stereo = generated_sine(source_end),
     });
@@ -476,7 +476,7 @@ auto exercise_sdl_silent_tail_loop() -> bool {
         .resource = resource_id_t{1}, .frame_count = source_end};
     const preview_object_source_binding_t binding{
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
-        .voices = {{.source = registered.binding->source, .frame_count = source_end}},
+        .voices = {{.source = registered->source, .frame_count = source_end}},
     };
     const preview_loop_region_t loop{loop_begin, loop_end};
     if (!output.set_loop_region(loop) || !output.start(schedule, std::span{&binding, 1})) {
@@ -508,7 +508,7 @@ auto exercise_sdl_loop_disable_at_boundary() -> bool {
     constexpr std::uint64_t loop_end = 5'120;
     constexpr std::uint64_t source_end = loop_end + output_sample_rate;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:sdl-loop-disable", "sdl-loop-disable-v1"},
         .interleaved_stereo = generated_sine(source_end),
     });
@@ -524,7 +524,7 @@ auto exercise_sdl_loop_disable_at_boundary() -> bool {
         .resource = resource_id_t{1}, .frame_count = source_end};
     const preview_object_source_binding_t binding{
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
-        .voices = {{.source = registered.binding->source, .frame_count = source_end}},
+        .voices = {{.source = registered->source, .frame_count = source_end}},
     };
     if (!output.set_loop_region(preview_loop_region_t{loop_begin, loop_end}) ||
         !output.start(schedule, std::span{&binding, 1})) {
@@ -591,7 +591,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:440Hz", "pitch-test-v1"}, .interleaved_stereo = generated_sine(11025)});
     expect_pitch(static_cast<bool>(registered));
     decoded_block_cache_t cache;
@@ -604,7 +604,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     preview_object_source_binding_t binding{.object = object_id_t{1},
-        .voices = {{.source = registered.binding->source, .frame_count = 11025}}};
+        .voices = {{.source = registered->source, .frame_count = 11025}}};
     expect_pitch(output.set_playback_rate(rate));
     expect_pitch(output.set_keep_pitch(true));
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
@@ -688,7 +688,7 @@ void exercise_mode_transition() {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:transition440Hz", "pitch-test-v1"}, .interleaved_stereo = generated_sine(22050)});
     expect_pitch(static_cast<bool>(registered));
     decoded_block_cache_t cache;
@@ -701,7 +701,7 @@ void exercise_mode_transition() {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{.object = object_id_t{1},
-        .voices = {{.source = registered.binding->source, .frame_count = 22050}}};
+        .voices = {{.source = registered->source, .frame_count = 22050}}};
     expect_pitch(output.set_playback_rate({1, 10}));
     expect_pitch(output.set_keep_pitch(true));
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
@@ -742,7 +742,7 @@ void exercise_background_refill() {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:worker440Hz", "refill-test-v1"},
         .interleaved_stereo = generated_sine(44100 * 2)});
     expect_pitch(static_cast<bool>(registered));
@@ -756,7 +756,7 @@ void exercise_background_refill() {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{.object = object_id_t{1},
-        .voices = {{.source = registered.binding->source, .frame_count = 44100 * 2}}};
+        .voices = {{.source = registered->source, .frame_count = 44100 * 2}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
     // No frame-thread service: callback playback must cross several prime windows.
     SDL_Delay(1000);
@@ -768,19 +768,44 @@ void exercise_background_refill() {
     expect_pitch(std::abs(maximum) > 0.9);
     const auto service = output.service();
     expect_pitch(service && static_cast<bool>(*service));
-    expect_pitch(service->silenced_voices == 0);
+    expect_pitch(service->value().silenced_voices == 0);
     static_cast<void>(output.stop());
     std::array<float, 256> silence;
     silence.fill(1.0F);
-    const auto rendered = session.render(silence);
-    expect_pitch(rendered.status == preview_session_render_status_t::stopped);
+    const auto rendered = session.render_frames(silence);
+    expect_pitch(rendered.value().status == preview_session_render_status_t::stopped);
     expect_pitch(std::ranges::all_of(silence, [](float value) { return value == 0.0F; }));
 }
+void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std::uint64_t seek) {
+    using namespace wormedit::audio;
+    const auto sought = output.seek((seek % 4) * 4096);
+    const auto& sought_data = sought ? *sought : sought.error();
+    INFO("seek iteration " << seek << " status " << static_cast<int>(sought_data.status)
+         << " message " << sought_data.message);
+    const auto* detail = sought_data.session
+        ? (*sought_data.session ? &sought_data.session->value().detail : &sought_data.session->error().detail)
+        : nullptr;
+    const auto session_status = sought_data.session
+        ? static_cast<int>(*sought_data.session ? preview_session_start_status_t::started
+                                          : sought_data.session->error().code)
+        : -1;
+    const auto bridge_status = detail && detail->bridge
+        ? static_cast<int>(*detail->bridge ? preview_bridge_start_status_t::started
+                                          : detail->bridge->error())
+        : -1;
+    INFO("session status " << session_status);
+    INFO("bridge status " << bridge_status);
+    expect_pitch(static_cast<bool>(sought));
+    SDL_Delay(2);
+    const auto service = output.service();
+    expect_pitch(!service || static_cast<bool>(*service));
+}
+
 void exercise_refill_generations() {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:seek440Hz", "refill-test-v1"},
         .interleaved_stereo = generated_sine(44100)});
     expect_pitch(static_cast<bool>(registered));
@@ -795,20 +820,10 @@ void exercise_refill_generations() {
         .resource = resource_id_t{1}, .frame_count = 44100};
     const preview_object_source_binding_t binding{
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
-        .voices = {{.source = registered.binding->source, .frame_count = 44100}}};
+        .voices = {{.source = registered->source, .frame_count = 44100}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
-    for (std::uint64_t seek = 0; seek < 20; ++seek) {
-        const auto sought = output.seek((seek % 4) * 4096);
-        INFO("seek iteration " << seek << " status " << static_cast<int>(sought.status)
-             << " message " << sought.message);
-        INFO("session status " << (sought.session ? static_cast<int>(sought.session->status) : -1));
-        INFO("bridge status " << (sought.session && sought.session->bridge
-             ? static_cast<int>(sought.session->bridge->status) : -1));
-        expect_pitch(static_cast<bool>(sought));
-        SDL_Delay(2);
-        const auto service = output.service();
-        expect_pitch(!service || static_cast<bool>(*service));
-    }
+    for (std::uint64_t seek = 0; seek < 20; ++seek)
+        check_preview_seek_refill(output, seek);
     static_cast<void>(output.stop());
     expect_pitch(!session.is_active() && !output.playing());
     SDL_Delay(20);
@@ -827,7 +842,7 @@ void exercise_pending_refill_failure() {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:failure440Hz", "refill-test-v1"},
         .interleaved_stereo = generated_sine(44100 * 2)});
     expect_pitch(static_cast<bool>(registered));
@@ -840,17 +855,17 @@ void exercise_pending_refill_failure() {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{.object = object_id_t{1},
-        .voices = {{.source = registered.binding->source, .frame_count = 44100 * 2}}};
+        .voices = {{.source = registered->source, .frame_count = 44100 * 2}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
     expect_pitch(wait_for_silent_preview_frame(session, output));
-    expect_pitch(sources.remove(registered.binding->asset));
+    expect_pitch(sources.remove(registered->asset));
     // The missing next block drops the voice and completes the session; the
     // unread worker failure must survive that completion until the frame reads it.
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && failed->status == sys::sdl_preview_service_status_t::pump_failed);
-    expect_pitch(failed->pump && failed->pump->status == preview_session_pump_status_t::decode_failed);
+    expect_pitch(failed && !*failed && failed->error().status == sys::sdl_preview_service_status_t::pump_failed);
+    expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }
 
@@ -901,7 +916,7 @@ auto preview_stress_step(wormedit::sys::sdl_preview_output_t& output,
         static_cast<void>(output.stop());
         std::array<float, 64> samples;
         samples.fill(1.0F);
-        static_cast<void>(session.render(samples));
+        static_cast<void>(session.render_frames(samples));
         return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
     }
     }
@@ -911,10 +926,10 @@ auto preview_lock_order_stress() -> bool {
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = asset_id_t{1}, .path = fixture_path("polyphonic-chord.ogg"),
         .source = {"fixture:polyphonic-chord.ogg", "lock-order-stress"}});
-    if (!registered || registered.binding->output_frame_count == 0) return false;
+    if (!registered || registered->output_frame_count == 0) return false;
     decoded_block_cache_t cache;
     transport_t transport{cache};
     preview_transport_bridge_t bridge{transport};
@@ -924,8 +939,8 @@ auto preview_lock_order_stress() -> bool {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{
-        .object = object_id_t{1}, .voices = {{.source = registered.binding->source,
-            .frame_count = registered.binding->output_frame_count}}};
+        .object = object_id_t{1}, .voices = {{.source = registered->source,
+            .frame_count = registered->output_frame_count}}};
     if (!output.start(schedule, std::span{&binding, 1}) ||
         !wait_for_silent_preview_frame(session, output)) return false;
     for (unsigned iteration = 0; iteration < 2'000; ++iteration)
@@ -967,7 +982,7 @@ TEST_CASE("SDL preview repeatedly closes idle and stopped refill workers",
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:shutdown", "shutdown-v1"},
         .interleaved_stereo = generated_sine(11025)});
     REQUIRE(registered);
@@ -980,7 +995,7 @@ TEST_CASE("SDL preview repeatedly closes idle and stopped refill workers",
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{
         .object = object_id_t{1},
-        .voices = {{.source = registered.binding->source, .frame_count = 11025}}};
+        .voices = {{.source = registered->source, .frame_count = 11025}}};
     CHECK(exercise_preview_worker_closes(output, session, schedule, binding));
 }
 
@@ -1140,14 +1155,14 @@ struct seek_gap_fixture_t {
 
     explicit seek_gap_fixture_t(const std::filesystem::path& path = {}) {
         const auto source = path.empty()
-            ? sources.register_generated_source({.source = {"seek-gap", "v1"},
+            ? sources.create_generated_source({.source = {"seek-gap", "v1"},
                 .interleaved_stereo = std::vector<float>(44100 * 4, 0.5F)})
-            : sources.register_source({.asset = wormedit::asset_id_t{1}, .path = path,
+            : sources.create_source({.asset = wormedit::asset_id_t{1}, .path = path,
                 .source = {"seek-gap-ogg", "v1"}});
         expect_pitch(static_cast<bool>(source));
         binding = {.object = wormedit::object_id_t{1},
-                   .voices = {{.source = source.binding->source,
-                               .frame_count = source.binding->output_frame_count}}};
+                   .voices = {{.source = source->source,
+                               .frame_count = source->output_frame_count}}};
         schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
                          .resource = wormedit::resource_id_t{1}}};
         expect_pitch(output.open());
@@ -1259,13 +1274,13 @@ struct t276_output_fixture_t {
     bool ready{};
 
     t276_output_fixture_t() {
-        const auto source = sources.register_generated_source({
+        const auto source = sources.create_generated_source({
             .source = {"t276-generated", "playhead-generation-v1"},
             .interleaved_stereo = std::vector<float>(source_frames * 2U, 0.25F)});
         if (!source || !output.open()) return;
         binding = {.object = wormedit::object_id_t{1},
-                   .voices = {{.source = source.binding->source,
-                               .frame_count = source.binding->output_frame_count}}};
+                   .voices = {{.source = source->source,
+                               .frame_count = source->output_frame_count}}};
         schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
                          .resource = wormedit::resource_id_t{1}}};
         ready = static_cast<bool>(output.start(schedule, std::span{&binding, 1}, {}, 0,
@@ -1307,12 +1322,12 @@ auto t276_seek_snapshot_matches(wormedit::sys::sdl_preview_output_t& output,
                                 std::uint64_t frame) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto sought = output.seek(frame);
-    if (!sought || !sought.session || !sought.session->token || !access::lock_stream(output))
+    if (!sought || !sought->session || !sought->session->has_value() || !access::lock_stream(output))
         return false;
     const auto state = access::snapshot(output);
     access::unlock_stream(output);
     return state.active && state.start_frame == frame && state.timeline_frame >= frame &&
-        state.transport_generation == sought.session->token->generation;
+        state.transport_generation == sought->session->value().token.generation;
 }
 
 auto t276_stop_snapshot_is_inactive_zero(wormedit::sys::sdl_preview_output_t& output,
@@ -1330,12 +1345,12 @@ auto t276_start_snapshot_is_coherent(t276_output_fixture_t& fixture) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto started = fixture.output.start(fixture.schedule,
         std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames);
-    if (!started || !started.session || !started.session->token ||
+    if (!started || !started->session || !started->session->has_value() ||
         !access::lock_stream(fixture.output)) return false;
     const auto state = access::snapshot(fixture.output);
     access::unlock_stream(fixture.output);
     return state.active && state.timeline_frame >= state.start_frame &&
-        state.transport_generation == started.session->token->generation;
+        state.transport_generation == started->session->value().token.generation;
 }
 
 auto t276_mutate_seek_stop(t276_output_fixture_t& fixture, std::size_t iterations) -> bool {
@@ -1446,12 +1461,12 @@ auto t471_install_distinct_source(t276_output_fixture_t& fixture,
                                   std::vector<float>& source_pcm) -> bool {
     static_cast<void>(fixture.output.stop());
     source_pcm = t471_distinct_pcm(fixture.source_frames);
-    const auto registered = fixture.sources.register_generated_source({
+    const auto registered = fixture.sources.create_generated_source({
         .source = {"t471-unity-source", "exact-pcm-v1"},
         .interleaved_stereo = source_pcm});
     if (!registered) return false;
-    fixture.binding.voices = {{.source = registered.binding->source,
-        .frame_count = registered.binding->output_frame_count}};
+    fixture.binding.voices = {{.source = registered->source,
+        .frame_count = registered->output_frame_count}};
     return static_cast<bool>(fixture.output.start(fixture.schedule,
         std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames));
 }
@@ -1628,7 +1643,7 @@ auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint
     if (!SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy") || !SDL_InitSubSystem(SDL_INIT_AUDIO)) return 999'999;
     const preview_audio_subsystem_t audio_subsystem;
     decoded_source_registry_t sources;
-    const auto source = sources.register_generated_source({
+    const auto source = sources.create_generated_source({
         .source = {"t559-loop-continuity", "constant-v1"},
         .interleaved_stereo = std::vector<float>(8192 * 2, 0.25F)});
     if (!source) return 999'999;
@@ -1643,7 +1658,7 @@ auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint
     schedule.music = preview_schedule_t::music_event_t{.resource = resource_id_t{1}, .frame_count = 8192};
     const preview_object_source_binding_t binding{
         .object = object_id_t{std::numeric_limits<std::uint64_t>::max()},
-        .voices = {{.source = source.binding->source, .frame_count = 8192}}};
+        .voices = {{.source = source->source, .frame_count = 8192}}};
     if (!output.set_playback_rate(playback_rates[rate_index]) || !output.set_keep_pitch(preserve_pitch) ||
         !output.set_loop_region(preview_loop_region_t{1024, 1024 + length}) ||
         !output.start(schedule, std::span{&binding, 1})) return 999'999;
@@ -1707,16 +1722,16 @@ auto stale_loop_work_preserves_replacement() -> bool {
     if (!fixture.ready || !fixture.output.set_loop_region(preview_loop_region_t{1024, 1152}) ||
         !fixture.output.seek(1024) || !access::lock_stream(fixture.output)) return false;
     const auto old = fixture.session.playhead().generation;
-    const auto replaced = fixture.session.seek(1040);
+    const auto replaced = fixture.session.seek_session(1040);
     std::array<float, 32> samples;
     samples.fill(1.0F);
-    const auto rendered = fixture.session.render(samples, old);
+    const auto rendered = fixture.session.render_frames(samples, old);
     static_cast<void>(fixture.session.stop(old));
-    const auto wrapped = fixture.session.restart_loop(old);
+    const auto wrapped = fixture.session.restart_session_loop(old);
     const auto hidden = access::snapshot(fixture.output);
     const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
-        rendered.status == preview_session_render_status_t::stale_generation &&
+        !rendered && rendered.error().status == preview_session_render_status_t::stale_generation &&
         std::ranges::all_of(samples, [](float sample) { return sample == 0; });
     access::unlock_stream(fixture.output);
     SDL_Delay(30);
@@ -1747,7 +1762,7 @@ TEST_CASE("SDL BGM lane mixing mutes and resumes a live stem without restarting 
     expect_pitch(SDL_InitSubSystem(SDL_INIT_AUDIO));
     const preview_audio_subsystem_t audio_subsystem;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_generated_source({
+    const auto registered = sources.create_generated_source({
         .source = {"generated:lane-mix", "lane-mix-v1"},
         .interleaved_stereo = generated_sine(output_sample_rate * 2)});
     expect_pitch(static_cast<bool>(registered));
@@ -1761,7 +1776,7 @@ TEST_CASE("SDL BGM lane mixing mutes and resumes a live stem without restarting 
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const preview_object_source_binding_t binding{.object = object_id_t{1}, .voices = {{
-        .source = registered.binding->source, .frame_count = output_sample_rate * 2, .mix_group = 77}}};
+        .source = registered->source, .frame_count = output_sample_rate * 2, .mix_group = 77}}};
     sys::runtime::chart_preview_t preview;
     const std::array<std::uint64_t, 1> muted{77};
     preview.set_bgm_mix(chart_id_t{1}, muted, session);

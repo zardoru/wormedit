@@ -38,6 +38,9 @@ struct external_player_launch_result_t {
     std::filesystem::path preview_path;
 };
 
+using external_player_launch_outcome_t =
+    result_t<external_player_launch_result_t, external_player_launch_result_t>;
+
 class external_player_t {
 public:
     external_player_t() = default;
@@ -47,7 +50,7 @@ public:
     [[nodiscard]] auto launch(const external_player_definition_t& player,
         external_player_action_t action, const song_document_t& song, chart_id_t chart,
         const std::filesystem::path& source_path, std::uint64_t source_measure,
-        const std::filesystem::path& application_path) -> external_player_launch_result_t;
+        const std::filesystem::path& application_path) -> external_player_launch_outcome_t;
     void cleanup() noexcept;
 private:
     struct temporary_file_t {

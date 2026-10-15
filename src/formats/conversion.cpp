@@ -315,17 +315,17 @@ auto append_slice_resource(song_document_t& song, const slice_span_t& span) -> r
     return id;
 }
 
-auto append_slice_resources(song_document_t& song, slice_span_plan_t& plan,
-    shared_slices_t& shared, slice_span_plan_t& render_plan) -> std::vector<resource_id_t> {
+auto append_slice_resources(song_document_t& song, slice_span_plan_outcome_t& plan,
+    shared_slices_t& shared, slice_span_plan_outcome_t& render_plan) -> std::vector<resource_id_t> {
     std::vector<resource_id_t> resources;
-    render_plan.sources = plan.sources;
-    for (auto& span : plan.spans) {
+    render_plan.value.sources = plan.value.sources;
+    for (auto& span : plan.value.spans) {
         const slice_identity_t identity{span.asset.value, span.begin_frame, span.end_frame};
         auto found = shared.find(identity);
         if (found == shared.end()) {
             const auto resource = append_slice_resource(song, span);
             found = shared.emplace(identity, shared_slice_resource_t{resource, span.filename}).first;
-            render_plan.spans.push_back(span);
+            render_plan.value.spans.push_back(span);
         }
         span.filename = found->second.filename;
         resources.push_back(found->second.resource);
@@ -334,10 +334,10 @@ auto append_slice_resources(song_document_t& song, slice_span_plan_t& plan,
 }
 
 using slice_bindings_t = std::unordered_map<std::uint64_t, std::optional<resource_id_t>>;
-auto slice_bindings(const slice_span_plan_t& plan, const std::vector<resource_id_t>& resources,
+auto slice_bindings(const slice_span_plan_outcome_t& plan, const std::vector<resource_id_t>& resources,
                     slice_span_event_kind_t kind) -> slice_bindings_t {
     slice_bindings_t result;
-    for (const auto& mapping : plan.mappings) {
+    for (const auto& mapping : plan.value.mappings) {
         if (mapping.kind != kind) continue;
         result.emplace(mapping.event.value, mapping.span_index
             ? std::optional{resources.at(*mapping.span_index)} : std::nullopt);
@@ -351,7 +351,7 @@ void bind_slice_event(Event& event, const slice_bindings_t& bindings) {
     event.sound_channel_event.reset();
 }
 
-void apply_slice_bindings(chart_document_t& chart, const slice_span_plan_t& plan,
+void apply_slice_bindings(chart_document_t& chart, const slice_span_plan_outcome_t& plan,
                          const std::vector<resource_id_t>& resources) {
     const auto notes = slice_bindings(plan, resources, slice_span_event_kind_t::note);
     const auto bgm = slice_bindings(plan, resources, slice_span_event_kind_t::bgm_event);
@@ -419,16 +419,16 @@ void prepare_retained_slice_assets(song_document_t& song, const std::vector<char
 }
 
 auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
-    const auto timing = build_timing_index(chart);
+    const auto timing = timing_index_t::from(chart);
     const auto measures = build_measure_index(chart);
-    if (!timing || !std::holds_alternative<measure_index_t>(measures)) return 0;
+    if (!timing.value || !std::holds_alternative<measure_index_t>(measures)) return 0;
     long double maximum{};
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
             if (!event.sound) continue;
-            const auto time = timing_at(*timing.index, std::get<measure_index_t>(measures), event.position);
+            const auto time = timing.value->query_seconds(std::get<measure_index_t>(measures), event.position);
             if (!time) continue;
-            const auto milliseconds = to_long_double(*time.seconds) * 1000;
+            const auto milliseconds = to_long_double(time->value) * 1000;
             maximum = std::max(maximum, std::abs(std::round(milliseconds) - milliseconds));
         }
     }
@@ -566,8 +566,8 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
     for (const auto id : charts) {
         auto chart = prepared.find_chart(id);
         if (chart->source_family != format_family_t::bmson) continue;
-        auto plan = plan_slice_spans(prepared, id, context.request.slice_sources, options);
-        if (!plan) {
+        auto plan = slice_span_plan_payload_t::from(prepared, id, context.request.slice_sources, options);
+        if (!plan.ok()) {
             for (const auto& diagnostic : plan.diagnostics)
                 add_diagnostic(context.result, diagnostic_severity_t::error,
                                conversion_diagnostic_code_t::transform_failed,
@@ -577,14 +577,14 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
         }
         const auto available = std::numeric_limits<std::uint64_t>::max() -
             std::max(next_slice_asset(prepared), next_slice_resource(prepared));
-        if (plan.spans.size() > available) {
+        if (plan.value.spans.size() > available) {
             add_diagnostic(context.result, diagnostic_severity_t::error,
                            conversion_diagnostic_code_t::transform_failed,
                            conversion_stage_t::transform, context.request.target, id,
                            "Generated slice asset/resource ID capacity exceeded");
             return false;
         }
-        slice_span_plan_t render_plan;
+        slice_span_plan_outcome_t render_plan;
         const auto resources = append_slice_resources(prepared, plan, shared, render_plan);
         apply_slice_bindings(*chart, plan, resources);
         if (context.request.target == format_family_t::osu_mania ||
@@ -593,8 +593,8 @@ auto prepare_slice_exports(conversion_context_t& context, song_document_t& prepa
         else if (!prepare_bms_slice_layout(context, *chart))
             return false;
         report_slice_timestamp_loss(context, *chart);
-        for (const auto& span : plan.spans) options.occupied_filenames.push_back(span.filename);
-        if (!render_plan.spans.empty())
+        for (const auto& span : plan.value.spans) options.occupied_filenames.push_back(span.filename);
+        if (!render_plan.value.spans.empty())
             context.result.value.slice_plans.push_back(std::move(render_plan));
     }
     if (std::ranges::any_of(charts, [&](const auto id) {
@@ -616,11 +616,11 @@ auto has_bms_tree(const song_document_t& song, const std::vector<chart_id_t>& ch
 }
 
 auto validate_reimport(conversion_context_t& context, const conversion_output_t& output,
-                       const stepmania_export_policy_result_t* stepmania_options) -> bool {
+                       const stepmania_export_policy_outcome_t* stepmania_options) -> bool {
     switch (output.target) {
     case format_family_t::native_project: {
         const auto parsed = parse_native_project(output.bytes);
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -636,22 +636,22 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
             *context.request.encoding != text_encoding_t::utf8)
             options.encoding_override = context.request.encoding;
         const auto parsed = parse_bms_bytes(byte_span(output.bytes), std::move(options));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value.song && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
         break;
     }
     case format_family_t::stepmania: {
-        if (!stepmania_options || !stepmania_options->options)
+        if (!stepmania_options || !(*stepmania_options))
             break;
-        const auto& write = *stepmania_options->options;
+        const auto& write = **stepmania_options;
         const auto parsed = parse_stepmania_bytes(
             byte_span(output.bytes),
             {.profile = write.profile,
              .source_timing_syntax = write.target_timing_syntax,
              .source_implementation_profile = write.target_implementation_profile});
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -659,7 +659,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     }
     case format_family_t::osu_mania: {
         const auto parsed = parse_osu_mania_bytes(byte_span(output.bytes));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -667,7 +667,7 @@ auto validate_reimport(conversion_context_t& context, const conversion_output_t&
     }
     case format_family_t::bmson: {
         const auto parsed = parse_bmson_bytes(byte_span(output.bytes));
-        if (parsed.song && !parsed.has_errors())
+        if (parsed.value && parsed.ok())
             return true;
         append_target_diagnostics(context.result, parsed.diagnostics, output.target, output.chart,
                                   loss_policy_t::warn);
@@ -797,7 +797,7 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
     const auto written = write_native_project(prepared);
     append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                               std::nullopt, context.request.loss_policy);
-    append_conversion_output(context, prepared, std::nullopt, ".wormedit", written.bytes, nullptr);
+    append_conversion_output(context, prepared, std::nullopt, ".wormedit", written.value, nullptr);
 }
 
 void write_bms_outputs(conversion_context_t& context, const song_document_t& prepared,
@@ -824,12 +824,12 @@ void write_bms_outputs(conversion_context_t& context, const song_document_t& pre
                                  ? chart->lane_layouts.front().layout.profile_id
                                  : context.request.target_profile;
         append_conversion_output(context, prepared, chart_id, std::string(bms_extension(profile)),
-                                 written.bytes, chart);
+                                 written.value, chart);
     }
 }
 
 auto resolve_stepmania_options(conversion_context_t& context)
-    -> std::optional<stepmania_export_policy_result_t> {
+    -> std::optional<stepmania_export_policy_outcome_t> {
     if (!context.request.target_profile.empty()) {
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
@@ -845,24 +845,24 @@ auto resolve_stepmania_options(conversion_context_t& context)
                        "choices");
         return std::nullopt;
     }
-    auto resolved = resolve_stepmania_export_policy(*context.request.stepmania);
+    auto resolved = stepmania_export_policy_result_t::from(*context.request.stepmania);
     if (!resolved) {
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,
                        conversion_stage_t::request, context.request.target, context.request.chart,
-                       resolved.message);
+                       resolved.error().message);
         return std::nullopt;
     }
     return resolved;
 }
 
 auto write_stepmania_output(conversion_context_t& context, const song_document_t& prepared)
-    -> std::optional<stepmania_export_policy_result_t> {
+    -> std::optional<stepmania_export_policy_outcome_t> {
     auto resolved = resolve_stepmania_options(context);
     if (!resolved.has_value()) {
         return std::nullopt;
     }
-    auto options = *resolved->options;
+    auto options = resolved->value();
     options.chart = context.request.chart;
     const auto written = write_stepmania(prepared, std::move(options));
     append_target_diagnostics(context.result, written.diagnostics, context.request.target,
@@ -870,7 +870,7 @@ auto write_stepmania_output(conversion_context_t& context, const song_document_t
     const auto extension =
         context.request.stepmania->file_profile == stepmania_profile_t::sm ? ".sm" : ".ssc";
     append_conversion_output(
-        context, prepared, context.request.chart, extension, written.text,
+        context, prepared, context.request.chart, extension, written.value,
         context.request.chart ? selected_chart(prepared, *context.request.chart) : nullptr);
     return resolved;
 }
@@ -902,7 +902,7 @@ void write_osu_outputs(conversion_context_t& context, const song_document_t& pre
         const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".osu", written.text,
+        append_conversion_output(context, prepared, chart_id, ".osu", written.value,
                                  selected_chart(prepared, chart_id));
     }
 }
@@ -920,14 +920,14 @@ void write_bmson_outputs(conversion_context_t& context, const song_document_t& p
         const auto written = write_bmson(prepared, {.chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
-        append_conversion_output(context, prepared, chart_id, ".bmson", written.json,
+        append_conversion_output(context, prepared, chart_id, ".bmson", written.value,
                                  selected_chart(prepared, chart_id));
     }
 }
 
 auto serialize_conversion(conversion_context_t& context, const song_document_t& prepared,
                           const std::vector<chart_id_t>& charts)
-    -> std::optional<stepmania_export_policy_result_t> {
+    -> std::optional<stepmania_export_policy_outcome_t> {
     switch (context.request.target) {
     case format_family_t::native_project:
         write_native_output(context, prepared);
@@ -951,7 +951,7 @@ auto serialize_conversion(conversion_context_t& context, const song_document_t& 
 }
 
 auto validate_conversion_outputs(conversion_context_t& context,
-                                 const stepmania_export_policy_result_t* stepmania_options)
+                                 const stepmania_export_policy_outcome_t* stepmania_options)
     -> bool {
     if (!context.result.ok()) {
         context.result.value.outputs.clear();
@@ -1009,11 +1009,6 @@ auto conversion_result_t::has_errors() const -> bool {
 
 conversion_result_t::operator bool() const noexcept {
     return !outputs.empty() && !has_errors();
-}
-
-auto plan_conversion_slice_spans(const song_document_t& song, chart_id_t chart,
-    std::span<const slice_span_source_t> sources, const slice_span_options_t& options) -> slice_span_plan_t {
-    return plan_slice_spans(song, chart, sources, options);
 }
 
 auto is_conversion_needs_slice_spans(const song_document_t& song, const conversion_request_t& request) -> bool {

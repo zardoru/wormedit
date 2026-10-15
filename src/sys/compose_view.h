@@ -260,7 +260,7 @@ struct compose_scene_cache_t {
         std::optional<wormedit::editor_field_scene_index_t> index;
         wormedit::editor_field_scene_window_t scene_window;
         std::uint64_t static_scene_style_generation{};
-        std::shared_ptr<flattened_workspace_t> static_scene_storage;
+        std::shared_ptr<frontend_workspace_view_t> static_scene_storage;
         std::size_t static_scene_rebuild_count{};
         std::uint64_t static_scene_source_generation{}, static_scene_source_style{};
         std::size_t static_scene_accounted_bytes{};
@@ -298,11 +298,11 @@ struct compose_scene_cache_t {
         std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
         std::optional<timing_index_t> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
-        std::optional<dead_span_projection_t> dead_spans;
-        std::optional<kiai_projection_t> kiai_spans;
-        std::optional<sv_steps_t> sv_steps;
-        std::optional<recipe_areas_t> recipe_areas;
-        std::optional<speed_spans_t> speed_spans;
+        std::optional<dead_spans_view_t> dead_spans;
+        std::optional<kiai_spans_view_t> kiai_spans;
+        std::optional<sv_steps_view_t> sv_steps;
+        std::optional<recipe_areas_view_t> recipe_areas;
+        std::optional<speed_spans_view_t> speed_spans;
         std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
         std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
         std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;
@@ -779,13 +779,13 @@ auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
     std::optional<wormedit::workspace_tab_t>& drag_tab) -> std::string;
 
 // Projects the audio fallback outcome of missing sounds into the compose view (arena-backed).
-void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
+void populate_compose_keysound_fallbacks(frontend_workspace_view_t& flattened,
                                          const wormedit::document_history_t& history,
                                          const std::filesystem::path& asset_base);
 
 // References to the live synchronous projection inputs; never retained by caches.
 struct compose_frame_inputs_t {
-    flattened_workspace_t& flattened;
+    frontend_workspace_view_t& flattened;
     wormedit::document_history_t& history;
     compose_scene_cache_t& cache;
     std::optional<wormedit::editor_interaction_state_t>& retained_state;
@@ -797,7 +797,7 @@ struct compose_frame_inputs_t {
     auto view() const -> WormUiComposeView& {
         return flattened.view.compose;
     }
-    [[nodiscard]] auto for_output(flattened_workspace_t& output) const -> compose_frame_inputs_t {
+    [[nodiscard]] auto for_output(frontend_workspace_view_t& output) const -> compose_frame_inputs_t {
         return {output, history, cache, retained_state, application_state, timing_stage,
                 comparison_rows, bga_move_preview};
     }
@@ -849,7 +849,7 @@ inline auto compose_pixels_per_row(const wormedit::chart_document_t& chart,
            static_cast<double>(chart.divisions_per_standard_measure);
 }
 
-void populate_compose_view(flattened_workspace_t& flattened,
+void populate_compose_view(frontend_workspace_view_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,

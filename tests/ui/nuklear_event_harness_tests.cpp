@@ -2573,7 +2573,7 @@ struct t422_fixture_t {
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     notification_center_t notifications;
@@ -2584,9 +2584,9 @@ struct t422_fixture_t {
         : history(document_history_t::from(std::move(song))),
           binding(workspace_controller_t::from(history)) {
         expect_t422(harness.ready());
-        expect_t422(binding.workspace.has_value());
-        binding.workspace->active_tab = workspace_tab_t::compose;
-        binding.workspace->selected_chart = chart_id_t{1};
+        expect_t422(binding.value.has_value());
+        binding.value->active_tab = workspace_tab_t::compose;
+        binding.value->selected_chart = chart_id_t{1};
         project();
         if (interaction) {
             interaction->selected_notes = {object_id_t{103}, object_id_t{101}, object_id_t{102}};
@@ -2602,7 +2602,7 @@ struct t422_fixture_t {
     void project() {
         flattened = {};
         flattened.view.compose.visible = true;
-        populate_compose_view(flattened, history, *binding.workspace, cache, 1800, 1400,
+        populate_compose_view(flattened, history, *binding.value, cache, 1800, 1400,
                               interaction, application, nullptr);
         CAPTURE(flattened.projection_feedback.size(), cache.frame.projection_error,
                 history.document.revision, interaction.has_value());
@@ -2625,7 +2625,7 @@ struct t422_fixture_t {
     }
 
     auto dispatch_action(WormUiWorkspaceAction& action) -> std::string {
-        return dispatch_compose_input_action(action, history, *binding.workspace, *interaction,
+        return dispatch_compose_input_action(action, history, *binding.value, *interaction,
                                              viewport, navigation, application, cache, 0.0, &sink);
     }
 };
@@ -2686,9 +2686,9 @@ void t422_check_selection(const t422_fixture_t& fixture,
 
 auto t422_native_bytes(const song_document_t& song) -> std::string {
     const auto encoded = write_native_project(song);
-    if (!encoded.bytes)
+    if (!encoded.value)
         throw std::runtime_error("T422 native snapshot serialization failed");
-    return *encoded.bytes;
+    return *encoded.value;
 }
 
 void t422_check_unmodified(const t422_fixture_t& fixture, std::string_view bytes,
@@ -3588,7 +3588,7 @@ namespace {
 
 auto route_harness_shortcut(const WormUiWorkspaceAction& action,
                             const wormedit::command_registry_t& registry)
-    -> wormedit::command_dispatch_result_t {
+    -> wormedit::command_dispatch_outcome_t {
     if (action.shortcut_event_count != 1) {
         return {};
     }
@@ -3621,8 +3621,8 @@ auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scanco
                         const wormedit::command_registry_t& registry) -> bool {
     const auto dispatched = route_harness_shortcut(action, registry);
     return harness_tool_chord(action, scancode) &&
-           dispatched.status == wormedit::command_dispatch_status_t::invoked &&
-           dispatched.command == wormedit::command_id_t{std::string(expected)} &&
+           dispatched.value.status == wormedit::command_dispatch_status_t::invoked &&
+           dispatched.value.command == wormedit::command_id_t{std::string(expected)} &&
            action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
            action.compose_input_count == 0;
 }
@@ -3633,7 +3633,7 @@ TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         });
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
@@ -3655,10 +3655,10 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         });
     REQUIRE(wormedit::update_command_state(registry, {"edit.tool_draw"}, false,
-                                            std::nullopt).applied);
+                                            std::nullopt).value);
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     (void)harness.frame();
@@ -3666,8 +3666,8 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
     const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
     const auto dispatched = route_harness_shortcut(action.get(), registry);
     expect_draw(harness_tool_chord(action.get(), SDL_SCANCODE_2) &&
-          dispatched.status == wormedit::command_dispatch_status_t::disabled &&
-          dispatched.command == wormedit::command_id_t{"edit.tool_draw"});
+          dispatched.value.status == wormedit::command_dispatch_status_t::disabled &&
+          dispatched.value.command == wormedit::command_id_t{"edit.tool_draw"});
 }
 
 namespace {
@@ -4612,14 +4612,14 @@ TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy in
     std::string invoked;
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return wormedit::command_invocation_result_t{.accepted = true};
+        return wormedit::command_invocation_outcome_t{.value = true};
     });
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     for (const auto mods : {SDL_KMOD_NONE, SDL_KMOD_SHIFT}) {
         const auto frame = harness.frame(std::span{&press, 1}, mods);
         expect_t422(frame.get().compose_input_count == 0);
-        expect_t422(route_harness_shortcut(frame.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+        expect_t422(route_harness_shortcut(frame.get(), registry).value.status == wormedit::command_dispatch_status_t::invoked);
         expect_t422(invoked == (mods == SDL_KMOD_NONE ? "edit.move_to_bgm" : "edit.move_next_to_bgm"));
         (void)harness.frame(std::span{&release, 1});
     }
@@ -4909,13 +4909,13 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         ++calls;
         check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
-        return wormedit::command_invocation_result_t{.accepted = true};
+        return wormedit::command_invocation_outcome_t{.value = true};
     });
     (void)harness.frame();
     const std::array keys{key_event(SDL_EVENT_KEY_DOWN, SDLK_SPACE, SDL_SCANCODE_SPACE)};
     const auto action = harness.frame(keys, SDL_KMOD_SHIFT);
     check_layer_menu(action.get().compose_input_count == 0);
-    check_layer_menu(route_harness_shortcut(action.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+    check_layer_menu(route_harness_shortcut(action.get(), registry).value.status == wormedit::command_dispatch_status_t::invoked);
     check_layer_menu(calls == 1);
 }
 
@@ -6741,7 +6741,7 @@ TEST_CASE("A production lane chord survives its own revision refresh but cancels
     // Stale captures can temporarily make scene projection unavailable; pass that real view
     // through the frontend rather than requiring a healthy scene before cancellation.
     f.flattened = {};
-    populate_compose_view(f.flattened, f.history, *f.binding.workspace, f.cache, 1800, 1400,
+    populate_compose_view(f.flattened, f.history, *f.binding.value, f.cache, 1800, 1400,
                           f.interaction, f.application, nullptr);
     f.harness.view().compose = f.flattened.view.compose;
     f.harness.view().document_revision = f.history.document.revision;
@@ -6816,7 +6816,7 @@ TEST_CASE("Area Quantize activates the registered verb instead of a fallback gri
             auto action = frame.get();
             auto history = wormedit::document_history_t::from(t422_song());
             const auto binding = wormedit::workspace_controller_t::from(history);
-            auto workspace = *binding.workspace;
+            auto workspace = *binding.value;
             workspace.active_tab = wormedit::workspace_tab_t::compose;
             check_layer_menu(action.compose_menu_command);
             check_layer_menu(wormedit::sys::compose_menu_command_is_current(action, history, workspace));
@@ -7868,10 +7868,10 @@ TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects comman
     std::string invoked;
     const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked = context.command.value;
-        return command_invocation_result_t{.accepted = true};
+        return command_invocation_outcome_t{.value = true};
     });
     const auto result = route_harness_shortcut(frame.get(), registry);
-    expect_t422(result.command == command_id_t{"selection.select_all_objects"});
+    expect_t422(result.value.command == command_id_t{"selection.select_all_objects"});
     expect_t422(invoked == "selection.select_all_objects");
 }
 
@@ -7940,10 +7940,11 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     event.drop.data = nullptr;
     const auto result = handle_resource_drop(event, origin, transaction);
     expect_t422(result.consumed && result.completed.has_value());
-    expect_t422(result.completed->accepted() == !changed_project);
-    expect_t422(result.completed->origin.project_id == 1);
-    expect_t422(result.completed->origin.target == resource_drop_target_t::bga);
-    expect_t422(result.completed->paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});
+    expect_t422(result.completed->has_value() == !changed_project);
+    const auto& batch = *result.completed ? result.completed->value() : result.completed->error();
+    expect_t422(batch.origin.project_id == 1);
+    expect_t422(batch.origin.target == resource_drop_target_t::bga);
+    expect_t422(batch.paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});
     expect_t422(!transaction.is_active());
 }
 
@@ -8014,14 +8015,14 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
         expect_t422(static_cast<bool>(apply_resource_sound_metadata(f.history,
             {.resource = resource_id_t{1}, .kind = sound_kind_t::keysound, .name = "Concurrent change"})));
         const auto revision = f.history.document.revision;
-        expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+        expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.value,
             chart_id_t{1}, f.application, f.sink).has_value());
         expect_t422(f.history.document.revision == revision && f.history.undo.size() == 1);
         expect_t422(f.history.document.resources.front().name == "Concurrent change");
         expect_t422(f.history.document.resources.front().asset == asset_id_t{1});
         return;
     }
-    expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.workspace,
+    expect_t422(dispatch_compose_sound_action(emitted->get(), f.history, *f.binding.value,
         chart_id_t{1}, f.application, f.sink).has_value());
     expect_t422(f.history.undo.size() == 1);
     expect_t422(f.history.document.resources.front().id == resource_id_t{1});
@@ -8060,7 +8061,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
           "[frontend-state][event-harness][resource-import-consolidation]") {
     auto history = document_history_t::from(t422_song());
     auto binding = workspace_controller_t::from(history);
-    expect_t422(binding.workspace.has_value());
+    expect_t422(binding.value.has_value());
     task_scheduler_t scheduler{1, 1};
     runtime::metadata_asset_t assets;
     metadata_drop_state_t drop;
@@ -8097,7 +8098,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     const auto up = harness.frame(std::array{motion, press});
     const auto& action = down.get().metadata_edit != WORM_UI_METADATA_EDIT_NONE ? down.get() : up.get();
     expect_t422(action.metadata_edit == WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE);
-    expect_t422(dispatch_metadata_action(action, history, *binding.workspace, false,
+    expect_t422(dispatch_metadata_action(action, history, *binding.value, false,
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(drop.lane_profile_preview.has_value());
     history.document.id = song_id_t{2};
@@ -8111,7 +8112,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
         return frame.get().metadata_edit == WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
     });
     expect_t422(apply != apply_frames.end());
-    expect_t422(dispatch_metadata_action(apply->get(), history, *binding.workspace, false,
+    expect_t422(dispatch_metadata_action(apply->get(), history, *binding.value, false,
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(!drop.lane_profile_preview.has_value());
     expect_t422(history.undo.empty());

@@ -184,20 +184,20 @@ struct transport_t::mix_operation_t {
 struct transport_t::snapshot_operation_t {
     transport_t& owner;
     std::size_t maximum_voices;
-    active_voice_snapshot_t& result;
+    active_voice_snapshot_outcome_t& result;
 
     void operator()() {
         const std::scoped_lock lock(owner.mutex_);
         if (owner.active_scheduled_voices_ > maximum_voices) {
-            result.status = active_voice_snapshot_status_t::capacity_exceeded;
+            result = std::unexpected(active_voice_snapshot_status_t::capacity_exceeded);
             return;
         }
-        result.voices.reserve(owner.active_scheduled_voices_);
+        auto& voices = result.emplace();
+        voices.reserve(owner.active_scheduled_voices_);
         for (const auto& entry : owner.scheduled_voices_) {
             if (entry.active)
-                result.voices.push_back(entry.voice);
+                voices.push_back(entry.voice);
         }
-        result.status = active_voice_snapshot_status_t::ready;
     }
 };
 
@@ -205,17 +205,6 @@ auto transport_mix_result_t::from(transport_mix_result_t&& report) -> transport_
     if (report.status != transport_mix_status_t::mixed)
         return std::unexpected(std::move(report));
     return std::move(report);
-}
-
-auto transport_mix_result_t::from(transport_mix_outcome_t&& outcome) -> transport_mix_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
-}
-
-auto active_voice_snapshot_t::from(active_voice_snapshot_outcome_t&& outcome)
-    -> active_voice_snapshot_t {
-    if (!outcome)
-        return {.status = outcome.error(), .voices = {}};
-    return {.status = active_voice_snapshot_status_t::ready, .voices = std::move(*outcome)};
 }
 
 transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum_scheduled_voices)
@@ -296,11 +285,6 @@ auto transport_t::decode_source_block(decoder_t& decoder, session_token_t token,
     // scheduled ranges and can now find the block directly in the shared LRU.
     static_cast<void>(decode_session_.take_ready(token));
     return result;
-}
-
-auto transport_t::decode_block(decoder_t& decoder, session_token_t token, audio_block_key_t key)
-    -> block_decode_result_t {
-    return block_decode_result_t::from(decode_source_block(decoder, token, std::move(key)));
 }
 
 void transport_t::set_resident_snapshot(resident_snapshot_ptr_t snapshot) {
@@ -414,12 +398,6 @@ auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline
     return transport_mix_result_t::from(std::move(result));
 }
 
-auto transport_t::mix(session_token_t token, std::uint64_t first_timeline_frame,
-                      std::span<float> interleaved_stereo) -> transport_mix_result_t {
-    return transport_mix_result_t::from(
-        mix_frames(token, first_timeline_frame, interleaved_stereo));
-}
-
 auto transport_t::scheduled_voice_count() const -> std::size_t {
     const std::scoped_lock lock(mutex_);
     return active_scheduled_voices_;
@@ -431,23 +409,13 @@ auto transport_t::block_cache_limits() const noexcept -> block_cache_limits_t {
 
 auto transport_t::snapshot_voices(session_token_t token, std::size_t maximum_voices)
     -> active_voice_snapshot_outcome_t {
-    auto result = active_voice_snapshot_t{
-        .status = active_voice_snapshot_status_t::stale_generation, .voices = {}};
+    active_voice_snapshot_outcome_t result{
+        std::unexpected(active_voice_snapshot_status_t::stale_generation)};
     snapshot_operation_t operation{
         .owner = *this, .maximum_voices = maximum_voices, .result = result};
-    const auto current = decode_session_.with_current(token, operation);
-    if (!current) {
-        result.status = active_voice_snapshot_status_t::stale_generation;
-        result.voices.clear();
-    }
-    if (result.status != active_voice_snapshot_status_t::ready)
-        return std::unexpected(result.status);
-    return std::move(result.voices);
-}
-
-auto transport_t::snapshot_active_voices(session_token_t token, std::size_t maximum_voices)
-    -> active_voice_snapshot_t {
-    return active_voice_snapshot_t::from(snapshot_voices(token, maximum_voices));
+    if (!decode_session_.with_current(token, operation))
+        result = std::unexpected(active_voice_snapshot_status_t::stale_generation);
+    return result;
 }
 
 } // namespace wormedit::audio

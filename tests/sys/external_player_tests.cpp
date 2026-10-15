@@ -23,8 +23,8 @@ auto parse(std::string_view source, wormedit::bms_parse_options_t options = {})
     -> wormedit::song_document_t {
     if (!options.lane_profile_id) options.lane_profile_id = "bme-7k-outside-scratch";
     const auto parsed = wormedit::parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}), options);
-    REQUIRE(parsed.song);
-    return *parsed.song;
+    REQUIRE(parsed.value.song);
+    return *parsed.value.song;
 }
 auto simple_song() -> wormedit::song_document_t {
     return parse("#TITLE Preview\n#BPM 120\n#WAV01 sound file.wav\n#00111:01\n");
@@ -96,9 +96,9 @@ TEST_CASE("external_player defaults match iBMSC and preferences round trip atomi
 TEST_CASE("external_player missing path opens preferences before export", "[external_player]") {
     external_player_t player;
     const auto result = player.launch({}, external_player_action_t::play_here, {}, {}, {}, 12, {});
-    CHECK(result.open_preferences);
-    CHECK_FALSE(result.launched);
-    CHECK(result.preview_path.empty());
+    REQUIRE_FALSE(result);
+    CHECK(result.error().open_preferences);
+    CHECK(result.error().preview_path.empty());
 }
 
 TEST_CASE("external_player rejects export and launch errors without leaving temporary files", "[external_player]") {
@@ -108,9 +108,9 @@ TEST_CASE("external_player rejects export and launch errors without leaving temp
     const external_player_definition_t definition{"Missing", "/nonexistent/wormedit-player", "\"<filename>\"", "", ""};
     const auto source = directory.path / "original.bms";
     { std::ofstream original(source); original << "original untouched"; }
-    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, {999999}, source, 0, {}).launched);
+    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, {999999}, source, 0, {}));
     CHECK_FALSE(std::filesystem::exists(directory.path / "___wormedit_preview.bms"));
-    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, song.charts[0].id, source, 0, {}).launched);
+    CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song, song.charts[0].id, source, 0, {}));
     CHECK_FALSE(std::filesystem::exists(directory.path / "___wormedit_preview.bms"));
     CHECK(read(source) == "original untouched");
 }
@@ -125,12 +125,17 @@ TEST_CASE("external_player never overwrites or cleans up an existing preview col
         const external_player_definition_t definition{"Missing", "/nonexistent/player", "", "", ""};
         const auto result = player.launch(definition, external_player_action_t::play_start, song,
             song.charts[0].id, directory.path / "original.bms", 0, {});
-        CHECK_FALSE(result.launched);
+        CHECK_FALSE(result);
     }
     CHECK(read(path) == "belongs to someone else");
 }
 
 namespace {
+void require_player_launch(const external_player_launch_outcome_t& result) {
+    INFO((result ? std::string_view{} : std::string_view{result.error().error}));
+    REQUIRE(result);
+}
+
 void check_stub_preview(const external_player_launch_result_t& result,
     const std::filesystem::path& directory, const std::filesystem::path& log,
     const std::filesystem::path& source) {
@@ -147,7 +152,7 @@ namespace {
 void check_stop_stub(external_player_t& player, const external_player_definition_t& definition,
                      const std::filesystem::path& log) {
     std::filesystem::remove(log);
-    REQUIRE(player.launch(definition, external_player_action_t::stop, {}, {}, {}, 0, {}).launched);
+    require_player_launch(player.launch(definition, external_player_action_t::stop, {}, {}, {}, 0, {}));
     REQUIRE(wait_for_log(log));
     CHECK(read(log) == "-t");
     std::this_thread::sleep_for(std::chrono::milliseconds{500});
@@ -161,7 +166,10 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     const auto log = directory.path / "arguments.txt";
     { std::ofstream script(stub); script <<
         "import sys,pathlib,time\n"
-        "pathlib.Path(sys.argv[1]).write_text('\\n'.join(sys.argv[2:]))\n"
+        "log = pathlib.Path(sys.argv[1])\n"
+        "staged = log.with_suffix('.staged')\n"
+        "staged.write_text('\\n'.join(sys.argv[2:]))\n"
+        "staged.replace(log)\n"
         "time.sleep(0.4)\n"; }
     const std::string template_text = "\"" + stub.string() + "\" \"" + log.string() +
         "\" -s <measure> \"<filename>\" \"<apppath>/player exe\"";
@@ -175,23 +183,22 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     external_player_t player;
     const auto result = player.launch(definition, external_player_action_t::play_here, song,
         song.charts[0].id, source, 37, directory.path / "app directory");
-    INFO(result.error);
-    REQUIRE(result.launched);
+    require_player_launch(result);
     REQUIRE(wait_for_log(log));
-    check_stub_preview(result, directory.path, log, source);
+    check_stub_preview(*result, directory.path, log, source);
     CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song,
-        song.charts[0].id, source, 0, {}).launched);
+        song.charts[0].id, source, 0, {}));
     std::this_thread::sleep_for(std::chrono::milliseconds{500});
     const auto second = player.launch(definition, external_player_action_t::play_start, song,
         song.charts[0].id, source, 0, {});
-    REQUIRE(second.launched);
+    require_player_launch(second);
     std::this_thread::sleep_for(std::chrono::milliseconds{500});
     // Replacing the owned path must prevent cleanup from deleting a foreign file.
     const auto moved = directory.path / "old owned.bme";
-    std::filesystem::rename(second.preview_path, moved);
-    { std::ofstream replacement(second.preview_path); replacement << "foreign replacement"; }
+    std::filesystem::rename(second->preview_path, moved);
+    { std::ofstream replacement(second->preview_path); replacement << "foreign replacement"; }
     player.cleanup();
-    CHECK(read(second.preview_path) == "foreign replacement");
+    CHECK(read(second->preview_path) == "foreign replacement");
     check_stop_stub(player, definition, log);
 }
 #endif
@@ -205,7 +212,7 @@ TEST_CASE("external_player accepts BML source extension through the shared catal
     const external_player_definition_t definition{"Missing", "/nonexistent/wormedit-player", "", "", ""};
     const auto result = player.launch(definition, external_player_action_t::play_start,
         song, song.charts.front().id, directory.path / "source.BML", 0, {});
-    CHECK(result.preview_path == preview);
-    CHECK_FALSE(result.launched);
+    REQUIRE_FALSE(result);
+    CHECK(result.error().preview_path == preview);
     CHECK(read(preview) == "foreign preview");
 }

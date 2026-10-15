@@ -19,8 +19,8 @@ void check_mode(bool condition, std::source_location at = std::source_location::
 auto fixture() -> song_document_t {
     constexpr std::string_view json = R"({"version":"1.0.0","info":{"title":"Modes","artist":"test","init_bpm":120,"resolution":240,"mode_hint":"beat-7k"},"lines":[{"y":960},{"y":1920}],"sound_channels":[{"name":"kick.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":240,"l":120,"c":false},{"x":1,"y":480,"c":false}]},{"name":"snare.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":720,"c":false}]},{"name":"vox.wav","notes":[{"x":0,"y":0,"c":false},{"x":0,"y":960,"c":true},{"x":2,"y":1200,"c":true}]}]})";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{json.data(), json.size()}));
-    require_mode(parsed.song.has_value());
-    return *parsed.song;
+    require_mode(parsed.value.has_value());
+    return *parsed.value;
 }
 auto change(document_history_t& history, std::size_t channel, bmson_channel_lane_mode_t mode,
             bool restart = false, note_to_bgm_policy_t policy = {}) -> document_command_result_t {
@@ -30,8 +30,8 @@ auto change(document_history_t& history, std::size_t channel, bmson_channel_lane
 }
 auto snapshot(const document_history_t& history) -> std::string {
     const auto written = write_native_project(history.document);
-    require_mode(written.bytes.has_value());
-    return *written.bytes;
+    require_mode(written.value.has_value());
+    return *written.value;
 }
 }
 
@@ -39,19 +39,19 @@ TEST_CASE("BMSON lane_mode Make stem and Pack preserve channels and round trip",
     using namespace wormedit;
     auto history = document_history_t::from(fixture());
     const auto before = history.document;
-    const auto json = write_bmson(before).json;
+    const auto json = write_bmson(before).value;
     require_mode(json.has_value());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
     check_mode(history.undo.size() == 1);
     check_mode(history.document.resources.front().sound_kind == sound_kind_t::stem);
-    check_mode(write_bmson(history.document).json == json);
+    check_mode(write_bmson(history.document).value == json);
     check_mode(validate_document(history.document).empty());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::packed).applied);
     check_mode(history.undo.size() == 2);
-    check_mode(write_bmson(history.document).json == json);
+    check_mode(write_bmson(history.document).value == json);
     auto restored = history.document;
     restored.revision = before.revision;
-    check_mode(write_native_project(restored).bytes == write_native_project(before).bytes);
+    check_mode(write_native_project(restored).value == write_native_project(before).value);
     require_mode(undo_document_command(history));
     check_mode(history.document.resources.front().sound_kind == sound_kind_t::stem);
     require_mode(redo_document_command(history));
@@ -71,11 +71,11 @@ TEST_CASE("BMSON lane_mode continuation refusal is atomic and conversion is undo
     check_mode(std::ranges::none_of(history.document.charts.front().sound_channels.back().events,
         [](const auto& event) { return event.continuation; }));
     check_mode(validate_document(history.document).empty());
-    check_mode(write_bmson(history.document).json != write_bmson(history.undo.front().before).json);
+    check_mode(write_bmson(history.document).value != write_bmson(history.undo.front().before).value);
     require_mode(undo_document_command(history));
     auto restored = history.document;
     restored.revision = history.undo.empty() ? history.redo.back().before.revision : restored.revision;
-    check_mode(write_native_project(restored).bytes == before);
+    check_mode(write_native_project(restored).value == before);
 }
 
 TEST_CASE("BMSON lane_mode format unknown and capacity failures change nothing", "[core][bmson][lane_mode]") {
@@ -128,7 +128,7 @@ TEST_CASE("BMSON lane_mode empty and playable-only channels round trip", "[core]
         require_mode(change(history, 0, bmson_channel_lane_mode_t::packed).applied);
         auto after = history.document;
         after.revision = before.revision;
-        check_mode(write_native_project(after).bytes == write_native_project(before).bytes);
+        check_mode(write_native_project(after).value == write_native_project(before).value);
     }
 }
 
@@ -176,11 +176,11 @@ TEST_CASE("BMSON lane_mode packs a whole channel beyond the interactive selectio
     }
     json += "]}]}";
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{json.data(), json.size()}));
-    require_mode(parsed.song.has_value());
-    auto history = document_history_t::from(*parsed.song);
-    const auto before = write_bmson(history.document).json;
+    require_mode(parsed.value.has_value());
+    auto history = document_history_t::from(*parsed.value);
+    const auto before = write_bmson(history.document).value;
     require_mode(before.has_value());
     require_mode(change(history, 0, bmson_channel_lane_mode_t::stem).applied);
     require_mode(change(history, 0, bmson_channel_lane_mode_t::packed).applied);
-    check_mode(write_bmson(history.document).json == before && history.undo.size() == 2);
+    check_mode(write_bmson(history.document).value == before && history.undo.size() == 2);
 }

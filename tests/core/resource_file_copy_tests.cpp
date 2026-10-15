@@ -42,6 +42,15 @@ auto read_text(const std::filesystem::path& path) -> std::string {
 
 } // namespace
 
+namespace {
+void require_copy_status(const wormedit::project_asset_copy_outcome_t& copy,
+                         wormedit::project_asset_copy_status_t status) {
+    REQUIRE(copy);
+    REQUIRE(copy->status == status);
+}
+
+} // namespace
+
 TEST_CASE("project asset copy publishes bytes once and reuses an identical destination",
           "[unit][core][resources]") {
     temporary_directory_t directory;
@@ -82,25 +91,26 @@ TEST_CASE("unlinked copy cleanup removes only its own intact publication",
     const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
                                                          .source_path = source,
                                                          .asset = wormedit::asset_id_t{21}};
-    const auto copied = wormedit::copy_resource_file_into_project(request);
-    REQUIRE(copied.status == wormedit::project_asset_copy_status_t::copied);
-    REQUIRE(copied.published_identity);
-    CHECK(wormedit::discard_unlinked_project_asset_copy(request, copied));
-    CHECK_FALSE(std::filesystem::exists(copied.absolute_path));
-    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, copied));
+    const auto copied = wormedit::create_project_asset_copy(request);
+    require_copy_status(copied, wormedit::project_asset_copy_status_t::copied);
+    REQUIRE(copied->published_identity);
+    CHECK(wormedit::discard_unlinked_project_asset_copy(request, *copied));
+    CHECK_FALSE(std::filesystem::exists(copied->absolute_path));
+    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *copied));
 
-    const auto again = wormedit::copy_resource_file_into_project(request);
-    REQUIRE(again.status == wormedit::project_asset_copy_status_t::copied);
-    const auto reused = wormedit::copy_resource_file_into_project(request);
-    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, reused));
-    CHECK(std::filesystem::exists(again.absolute_path));
-    write_text(again.absolute_path, "modified audio");
-    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, again));
-    CHECK(read_text(again.absolute_path) == "modified audio");
-    std::filesystem::remove(again.absolute_path);
-    write_text(again.absolute_path, "audio bytes");
-    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, again));
-    CHECK(read_text(again.absolute_path) == "audio bytes");
+    const auto again = wormedit::create_project_asset_copy(request);
+    require_copy_status(again, wormedit::project_asset_copy_status_t::copied);
+    const auto reused = wormedit::create_project_asset_copy(request);
+    require_copy_status(reused, wormedit::project_asset_copy_status_t::reused);
+    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *reused));
+    CHECK(std::filesystem::exists(again->absolute_path));
+    write_text(again->absolute_path, "modified audio");
+    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *again));
+    CHECK(read_text(again->absolute_path) == "modified audio");
+    std::filesystem::remove(again->absolute_path);
+    write_text(again->absolute_path, "audio bytes");
+    CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *again));
+    CHECK(read_text(again->absolute_path) == "audio bytes");
 }
 
 TEST_CASE("unlinked export copy cleanup preserves a symlinked destination directory",
@@ -112,19 +122,19 @@ TEST_CASE("unlinked export copy cleanup preserves a symlinked destination direct
                                                         .source_path = source,
                                                         .relative_output_path = "charts/song.bmson",
                                                         .asset = wormedit::asset_id_t{22}};
-    const auto copied = wormedit::copy_resource_file_into_export(request);
-    REQUIRE(copied.status == wormedit::project_asset_copy_status_t::copied);
-    CHECK(wormedit::discard_unlinked_export_asset_copy(request, copied));
-    const auto again = wormedit::copy_resource_file_into_export(request);
-    REQUIRE(again.status == wormedit::project_asset_copy_status_t::copied);
+    const auto copied = wormedit::create_export_asset_copy(request);
+    require_copy_status(copied, wormedit::project_asset_copy_status_t::copied);
+    CHECK(wormedit::discard_unlinked_export_asset_copy(request, *copied));
+    const auto again = wormedit::create_export_asset_copy(request);
+    require_copy_status(again, wormedit::project_asset_copy_status_t::copied);
     const auto assets = directory.path / "charts/assets";
     const auto moved = directory.path / "elsewhere";
     std::filesystem::rename(assets, moved);
     std::error_code error;
     std::filesystem::create_directory_symlink(moved, assets, error);
     if (!error) {
-        CHECK_FALSE(wormedit::discard_unlinked_export_asset_copy(request, again));
-        CHECK(std::filesystem::exists(moved / again.relative_path.filename()));
+        CHECK_FALSE(wormedit::discard_unlinked_export_asset_copy(request, *again));
+        CHECK(std::filesystem::exists(moved / again->relative_path.filename()));
     }
 }
 

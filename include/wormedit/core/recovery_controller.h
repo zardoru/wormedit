@@ -87,23 +87,11 @@ struct native_project_recovery_controller_view_t {
 struct native_project_recovery_controller_effect_t {
     bool accepted{};
     bool diagnostics_truncated{};
-    std::optional<native_project_recovery_action_result_t> action_result;
+    std::optional<native_project_recovery_action_outcome_t> action_result;
 };
 using native_project_recovery_controller_dispatch_outcome_t =
     diagnosed_t<native_project_recovery_controller_effect_t,
                 std::vector<native_project_storage_diagnostic_t>>;
-
-struct native_project_recovery_controller_dispatch_result_t {
-    [[nodiscard]] static auto from(native_project_recovery_controller_dispatch_outcome_t&& outcome)
-        -> native_project_recovery_controller_dispatch_result_t;
-
-    bool accepted{};
-    bool diagnostics_truncated{};
-    std::optional<native_project_recovery_action_result_t> action_result;
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Headless state adapter for recovery UI. It owns one bounded scanner result at
 // a time; every row action carries the generation and indices from that view.
@@ -114,7 +102,7 @@ class native_project_recovery_controller_t {
 
     // Replaces the active scan and invalidates every action token issued for
     // the previous scan. The scanner result is moved into controller ownership.
-    [[nodiscard]] auto replace_scan(native_project_recovery_scan_result_t scan)
+    [[nodiscard]] auto replace_scan(native_project_recovery_scan_outcome_t scan)
         -> const native_project_recovery_controller_view_t&;
 
     [[nodiscard]] auto view() const noexcept -> const native_project_recovery_controller_view_t&;
@@ -122,15 +110,13 @@ class native_project_recovery_controller_t {
     [[nodiscard]] auto dispatch_action(const native_project_recovery_controller_action_t& action)
         -> native_project_recovery_controller_dispatch_outcome_t;
 
-    [[nodiscard]] auto dispatch(const native_project_recovery_controller_action_t& action)
-        -> native_project_recovery_controller_dispatch_result_t;
 
   private:
     void append_dispatch_error(native_project_recovery_controller_dispatch_outcome_t& result,
                                native_project_storage_diagnostic_code_t code, std::string message);
     native_project_recovery_controller_options_t options_;
     native_project_recovery_controller_view_t view_;
-    std::optional<native_project_recovery_scan_result_t> scan_;
+    std::optional<native_project_recovery_scan_outcome_t> scan_;
     std::uint64_t generation_{};
     bool generation_exhausted_{};
 };

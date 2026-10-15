@@ -238,7 +238,7 @@ auto local_position_at(const measure_index_t& index, std::uint64_t row)
 
 auto shifted_position(const measure_index_t& index, local_position_t position,
                       std::int64_t row_delta) -> std::optional<local_position_t> {
-    const auto source = absolute_row(index, position);
+    const auto source = index.row_of(position);
     const auto target_row = source ? shifted_row(*source, row_delta, index.total_rows)
                                    : std::nullopt;
     return target_row ? local_position_at(index, *target_row) : std::nullopt;
@@ -282,7 +282,7 @@ auto prepare_timing_group_moves(const document_history_t& history, const chart_d
                                         "the initial BPM cannot move with a timing group")};
             return false;
         }
-        const auto source = absolute_row(index, preview.report()->position);
+        const auto source = index.row_of(preview.report()->position);
         const auto target = shifted_position(index, preview.report()->position, row_delta);
         const auto warp_end = event.kind == timing_lane_kind_t::warp
                                   ? shifted_warp_end(chart, index, event.event, row_delta)
@@ -321,13 +321,13 @@ auto validate_warp_value(const chart_document_t& chart, local_position_t positio
         diagnostics = std::move(position_diagnostics);
         return false;
     }
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
-        diagnostics = std::get<diagnostic_list_t>(measures);
+    const auto measures = measure_index_t::from(chart);
+    if (!measures) {
+        diagnostics = measures.error();
         return false;
     }
-    const auto begin_row = absolute_row(std::get<measure_index_t>(measures), position);
-    const auto end_row = absolute_row(std::get<measure_index_t>(measures), warp.end);
+    const auto begin_row = measures->row_of(position);
+    const auto end_row = measures->row_of(warp.end);
     if (!begin_row || !end_row || *end_row <= *begin_row) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold, "warp end must be after its start"));
@@ -438,9 +438,8 @@ void timing_lane_pseudonote_state_t::set_value(timing_lane_value_t&& next) {
 
 auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
     -> std::optional<signed_rational_t> {
-    const auto measures_result = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&measures_result);
-    const auto target = measures ? absolute_row(*measures, position) : std::nullopt;
+    const auto measures_result = measure_index_t::from(chart);
+    const auto target = measures_result ? measures_result->row_of(position) : std::nullopt;
     if (!target) {
         return std::nullopt;
     }
@@ -450,7 +449,7 @@ auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
         if (bpm.beats_per_minute.numerator <= 0 || bpm.beats_per_minute.denominator == 0) {
             continue;
         }
-        const auto row = absolute_row(*measures, bpm.position);
+        const auto row = measures_result->row_of(bpm.position);
         if (!row || *row > *target) {
             continue;
         }
@@ -601,14 +600,14 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
                                     "timing group move refers to an unknown chart")};
         return result;
     }
-    const auto indexed = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(indexed)) {
-        result.diagnostics = std::get<diagnostic_list_t>(indexed);
+    const auto indexed = measure_index_t::from(*chart);
+    if (!indexed) {
+        result.diagnostics = indexed.error();
         return result;
     }
     std::vector<prepared_timing_move_t> moves;
     moves.reserve(events.size());
-    if (!prepare_timing_group_moves(history, *chart, std::get<measure_index_t>(indexed), events,
+    if (!prepare_timing_group_moves(history, *chart, *indexed, events,
                                     row_delta, moves, result)) {
         return result;
     }

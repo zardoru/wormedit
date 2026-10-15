@@ -35,7 +35,7 @@ auto make_thumbnail(const visual::rgba_image_t& source, std::uint64_t content) -
 #endif
 }
 struct bga_dock_runtime_t::state_t {
-    bga_list_t list;
+    bga_list_view_t list;
     std::vector<WormUiComposeBgaRowView> rows;
     std::vector<std::uint64_t> ids;
     std::vector<std::uint64_t> all_ids;
@@ -56,25 +56,25 @@ void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
                                               const std::filesystem::path& base) {
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     if (auto completion = job.poll(); completion && *completion &&
-        completion->project == document.id && completion->document_revision == document.revision) {
-        for (const auto& item : completion->result->items) {
+        completion->value().identity.project == document.id && completion->value().identity.document_revision == document.revision) {
+        for (const auto& item : completion->value().payload->items) {
             if (item) {
                 if (thumbnails.size() >= 512) thumbnails.erase(thumbnails.begin());
-                thumbnails[item.source.resource.value] = make_thumbnail(*item.image, next_content++);
+                thumbnails[item->context.resource.value] = make_thumbnail(*item->payload, next_content++);
             }
-            else failed.insert(item.source.resource.value);
+            else failed.insert(item.error().context.resource.value);
         }
     }
     std::vector<visual::resolved_visual_asset_t> request;
     for (const auto& row : list.rows) {
         if (row.video || row.missing || failed.contains(row.resource.value)) continue;
-        const auto source = visual::resolve_visual_asset(document, row.resource, base);
+        const auto source = visual::resolved_visual_asset_t::from(document, row.resource, base);
         if (!source) { failed.insert(row.resource.value); continue; }
         const auto cached = thumbnails.find(row.resource.value);
-        if (cached != thumbnails.end() && cached->second.asset == source.source->asset &&
-            cached->second.path == source.source->path) continue;
+        if (cached != thumbnails.end() && cached->second.asset == source->asset &&
+            cached->second.path == source->path) continue;
         thumbnails.erase(row.resource.value);
-        request.push_back(*source.source);
+        request.push_back(*source);
         if (request.size() == 4) break;
     }
     if (!job.is_busy() && !request.empty()) (void)job.request(document.id, document.revision, request);
@@ -96,7 +96,7 @@ void bga_dock_runtime_t::project(const song_document_t& document, const std::fil
     if (state.revision != document.revision) { state.failed.clear(); state.revision = document.revision; }
     if (!request.visible) return;
     state.search.assign(request.search, std::find(request.search, request.search + sizeof(request.search), '\0'));
-    state.list = build_bga_list_view(document, {state.search, request.first_row,
+    state.list = bga_list_view_t::from(document, {state.search, request.first_row,
         std::min<std::size_t>(64, request.row_limit),
         request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
         request.ids_available, static_cast<resource_use_filter_t>(request.use_filter)});

@@ -58,20 +58,6 @@ auto audition_transport_bridge_t::start_clips(std::span<const audition_clip_t> c
     return started_audition_t{.token = *token, .scheduled_layers = clips.size()};
 }
 
-auto audition_start_result_t::from(audition_start_outcome_t&& outcome)
-    -> audition_start_result_t {
-    if (!outcome)
-        return {.status = outcome.error(), .token = std::nullopt, .scheduled_layers = 0};
-    return {.status = audition_start_status_t::started,
-            .token = outcome->token,
-            .scheduled_layers = outcome->scheduled_layers};
-}
-
-auto audition_transport_bridge_t::start(std::span<const audition_clip_t> clips)
-    -> audition_start_result_t {
-    return audition_start_result_t::from(start_clips(clips));
-}
-
 auto audition_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
     auto result = transport_stop_result_t{};
     if (token_.has_value() && transport_.is_current(*token_)) {

@@ -245,7 +245,8 @@ auto read_analysis_block(waveform_analysis_work_t& work, std::uint64_t block_ind
     const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
         work.stream_info.output_frame_count - start_frame, maximum_read_frames));
     std::vector<float> samples(maximum_read_frames * output_channel_count);
-    const auto read = work.decoder.read_at(start_frame, samples, requested_frames);
+    const auto read_outcome = work.decoder.read_frames_at(start_frame, samples, requested_frames);
+    const auto& read = read_outcome ? *read_outcome : read_outcome.error();
     if (read.status == read_status_t::seek_error) {
         return std::unexpected(waveform_analysis_error_t{
             .code = waveform_analysis_status_t::decode_failed, .failed_block_index = block_index,
@@ -611,8 +612,8 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
     return best;
 }
 
-auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection_request_t request)
-    -> waveform_projection_outcome_t {
+auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_request_t request)
+    -> waveform_view_outcome_t {
     if (!is_valid_waveform_geometry(waveform)) {
         return std::unexpected(waveform_projection_status_t::invalid_waveform);
     }
@@ -636,7 +637,7 @@ auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection
         return std::unexpected(waveform_projection_status_t::invalid_waveform);
     }
 
-    waveform_projection_t result{
+    waveform_view_t result{
         .level_frames_per_bin = level->frames_per_bin,
     };
     result.columns.reserve(column_count);
@@ -683,19 +684,6 @@ auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection
     return result;
 }
 
-auto waveform_projection_result_t::from(waveform_projection_outcome_t&& outcome)
-    -> waveform_projection_result_t {
-    if (!outcome)
-        return {.status = outcome.error()};
-    return {.status = waveform_projection_status_t::projected,
-            .level_frames_per_bin = outcome->level_frames_per_bin, .columns = std::move(outcome->columns)};
-}
-
-auto build_waveform_view(const waveform_t& waveform, waveform_projection_request_t request)
-    -> waveform_projection_result_t {
-    return waveform_projection_result_t::from(waveform_projection_t::from(waveform, request));
-}
-
 auto waveform_analysis_result_t::from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t {
     if (!outcome) {
         auto& error = outcome.error();
@@ -705,12 +693,11 @@ auto waveform_analysis_result_t::from(waveform_analysis_outcome_t&& outcome) -> 
     return {.status = outcome->status, .waveform = std::move(outcome->waveform)};
 }
 
-auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
-                      waveform_cache_t& waveform_cache, audio_source_identity_t source,
-                      std::uint32_t frames_per_bin, waveform_analysis_options_t options,
-                      std::stop_token stop) -> waveform_analysis_result_t {
-    return waveform_analysis_result_t::from(waveform_analysis_t::from(
-        decoder, block_cache, waveform_cache, std::move(source), frames_per_bin, options, stop));
+auto waveform_analysis_t::find_waveform(const waveform_analysis_outcome_t& outcome) noexcept
+    -> const waveform_t* {
+    if (outcome) return &outcome->waveform;
+    const auto& retained = outcome.error().waveform;
+    return retained ? &*retained : nullptr;
 }
 
 } // namespace wormedit::audio

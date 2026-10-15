@@ -102,26 +102,22 @@ struct program_preferences_t {
     auto operator==(const program_preferences_t&) const -> bool = default;
 };
 struct preferences_parse_effect_t {
+    [[nodiscard]] static auto from(std::string_view bytes)
+        -> result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
+
     program_preferences_t preferences;
     std::vector<std::string> warnings;
     auto operator==(const preferences_parse_effect_t&) const -> bool = default;
 };
 using preferences_parse_outcome_t = result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
-struct preferences_parse_result_t {
-    [[nodiscard]] static auto from(std::string_view bytes) -> preferences_parse_outcome_t;
-    [[nodiscard]] static auto from(preferences_parse_outcome_t&& outcome) -> preferences_parse_result_t;
-    program_preferences_t preferences;
-    std::vector<std::string> warnings;
-    bool parsed{};
-};
 struct preferences_load_result_t {
-    preferences_parse_result_t contents;
+    preferences_parse_outcome_t contents{std::unexpected(preferences_parse_effect_t{
+        .preferences = program_preferences_t::with_defaults(), .warnings = {}})};
     bool missing{};
     bool migrated{};
 };
 
 [[nodiscard]] auto is_valid_external_player_preferences(const external_player_preferences_t&) -> bool;
-[[nodiscard]] auto parse_program_preferences(std::string_view bytes) -> preferences_parse_result_t;
 // Invalid typed values reject serialization; no project data or shortcut bindings are serialized.
 [[nodiscard]] auto serialize_program_preferences(const program_preferences_t& preferences)
     -> std::optional<std::string>;

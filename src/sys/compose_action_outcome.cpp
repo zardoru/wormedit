@@ -30,11 +30,47 @@ auto compose_action_outcome_t::from(std::string message, notification_severity_t
     return outcome;
 }
 
+auto compose_action_outcome_t::from(std::string_view message, notification_severity_t severity,
+                                    notification_source_t source,
+                                    compose_message_lifetime_t lifetime)
+    -> compose_action_outcome_t {
+    if (lifetime == compose_message_lifetime_t::owned)
+        return from(std::string{message}, severity, source);
+    return {.severity = severity, .source = source, .borrowed_message = message};
+}
+
+auto compose_action_outcome_t::from(std::string message, notification_severity_t severity,
+                                    notification_source_t source, diagnostic_code_t code)
+    -> compose_action_outcome_t {
+    return {.severity = severity,
+            .source = source,
+            .accepted = false,
+            .diagnostics = {error(code, std::move(message))},
+            .delivery = compose_feedback_delivery_t::diagnostic_message};
+}
+
+auto compose_action_outcome_t::from(const editor_interaction_result_t& result,
+                                    std::string_view accepted,
+                                    notification_severity_t accepted_severity,
+                                    notification_source_t source) -> compose_action_outcome_t {
+    auto outcome = from(result.accepted ? accepted : "Compose action was rejected.",
+                        result.accepted ? accepted_severity : notification_severity_t::warning,
+                        source, compose_message_lifetime_t::borrowed);
+    outcome.accepted = result.accepted;
+    outcome.diagnostics = result.diagnostics;
+    if (!result.accepted && !outcome.diagnostics.empty()) {
+        outcome.severity = to_notification_severity(outcome.diagnostics.front().severity);
+        outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
+    }
+    return outcome;
+}
+
 auto compose_action_outcome_t::from(document_command_result_t&& command,
-                                    const compose_action_description_t& description)
+                                    const compose_action_description_t& description,
+                                    compose_message_lifetime_t lifetime)
     -> compose_action_outcome_t {
     const auto is_success = command.applied;
-    return from(std::move(command), is_success, description);
+    return from(std::move(command), is_success, description, lifetime);
 }
 
 void compose_action_outcome_t::apply_description(compose_action_outcome_t& outcome,
@@ -48,7 +84,8 @@ void compose_action_outcome_t::apply_description(compose_action_outcome_t& outco
 }
 
 auto compose_action_outcome_t::from(document_command_result_t&& command, bool is_success,
-                                    const compose_action_description_t& description)
+                                    const compose_action_description_t& description,
+                                    compose_message_lifetime_t lifetime)
     -> compose_action_outcome_t {
     auto outcome =
         from({}, is_success ? notification_severity_t::success : description.unchanged_severity,
@@ -59,11 +96,17 @@ auto compose_action_outcome_t::from(document_command_result_t&& command, bool is
     if (!outcome.diagnostics.empty() &&
         (description.diagnostic_policy == compose_diagnostic_feedback_policy_t::first ||
          !is_success)) {
-        outcome.message = outcome.diagnostics.front().message;
+        if (lifetime == compose_message_lifetime_t::borrowed)
+            outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
+        else
+            outcome.message = outcome.diagnostics.front().message;
         outcome.severity = to_notification_severity(outcome.diagnostics.front().severity,
                                                     description.unknown_severity);
     } else {
-        outcome.message = is_success ? description.success : description.unchanged;
+        if (lifetime == compose_message_lifetime_t::borrowed)
+            outcome.borrowed_message = is_success ? description.success : description.unchanged;
+        else
+            outcome.message = is_success ? description.success : description.unchanged;
     }
     return outcome;
 }
@@ -115,17 +158,21 @@ void post_compose_outcome(const notification_sink_t& feedback,
                           const compose_action_outcome_t& outcome) {
     if (outcome.delivery == compose_feedback_delivery_t::none)
         return;
+    if (outcome.delivery == compose_feedback_delivery_t::transient_hint) {
+        feedback.post_transient_hint(outcome.source, outcome.message_text());
+        return;
+    }
     if (outcome.delivery == compose_feedback_delivery_t::first_diagnostic &&
         !outcome.diagnostics.empty())
         feedback.post_diagnostic(outcome.source, outcome.diagnostics.front());
     else if (outcome.delivery == compose_feedback_delivery_t::notification)
-        feedback.post(outcome.severity, outcome.source, outcome.message);
+        feedback.post(outcome.severity, outcome.source, outcome.message_text());
     else if (outcome.delivery == compose_feedback_delivery_t::diagnostic_message &&
              !outcome.diagnostics.empty())
         feedback.post_feedback(outcome.severity, outcome.source,
                                outcome.diagnostics.front().message);
     else
-        feedback.post_feedback(outcome.severity, outcome.source, outcome.message);
+        feedback.post_feedback(outcome.severity, outcome.source, outcome.message_text());
 }
 void post_compose_mutation_before_failure(const notification_sink_t& feedback,
                                           const compose_action_outcome_t& outcome) {
@@ -140,6 +187,8 @@ void post_compose_mutation_before_failure(const notification_sink_t& feedback,
 void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
                                    workspace_action_result_t&& rebound) {
     outcome.accepted = false;
+    outcome.has_rebind_failed = true;
+    outcome.borrowed_message = {};
     if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::action_only)
         outcome.source = notification_source_t::document;
     outcome.delivery = compose_feedback_delivery_t::message;
@@ -164,10 +213,15 @@ void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
 auto finish_compose_outcome(const document_edit_inputs_t& document,
                             const notification_sink_t& feedback, compose_action_outcome_t outcome,
                             application_command_state_t* application) -> compose_action_outcome_t {
+    const bool posted_before_rebind =
+        outcome.feedback_order == compose_feedback_order_t::before_rebind;
+    if (posted_before_rebind)
+        post_compose_outcome(feedback, outcome);
     if (outcome.mutated || outcome.is_workspace_refresh_required) {
         auto rebound = rebind_workspace(document.workspace, document.history);
         if (!rebound) {
-            post_compose_mutation_before_failure(feedback, outcome);
+            if (!posted_before_rebind)
+                post_compose_mutation_before_failure(feedback, outcome);
             auto retained_message = outcome.is_message_retained_on_rebind_failure
                                         ? std::move(outcome.message)
                                         : std::string{};
@@ -183,7 +237,8 @@ auto finish_compose_outcome(const document_edit_inputs_t& document,
     if (outcome.asset_selection)
         static_cast<void>(apply_workspace_action(document.workspace, document.history.document,
                                                  *outcome.asset_selection));
-    post_compose_outcome(feedback, outcome);
+    if (!posted_before_rebind)
+        post_compose_outcome(feedback, outcome);
     return outcome;
 }
 } // namespace
@@ -199,6 +254,22 @@ auto finish_compose_action(const notification_sink_t& feedback, compose_action_o
     assert(!outcome.mutated && !outcome.is_workspace_refresh_required);
     post_compose_outcome(feedback, outcome);
     return outcome;
+}
+
+auto finish_application_command(const notification_sink_t& feedback,
+                                compose_action_outcome_t outcome,
+                                const document_edit_inputs_t* document)
+    -> command_invocation_outcome_t {
+    auto finished = document ? finish_compose_action(*document, feedback, std::move(outcome))
+                             : finish_compose_action(feedback, std::move(outcome));
+    if (finished.has_rebind_failed) {
+        finished.diagnostics.resize(1);
+        finished.diagnostics.front() =
+            error(diagnostic_code_t::invalid_id, std::move(finished.message));
+    } else if (!finished.are_command_diagnostics_retained) {
+        finished.diagnostics.clear();
+    }
+    return {.value = finished.accepted, .diagnostics = std::move(finished.diagnostics)};
 }
 
 namespace compose_action_detail {

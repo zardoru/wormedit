@@ -54,21 +54,6 @@ struct bms_branch_selection_diagnostics_t {
     auto operator==(const bms_branch_selection_diagnostics_t&) const -> bool = default;
 };
 using bms_branch_selection_outcome_t = diagnosed_t<bms_branch_selection_payload_t, bms_branch_selection_diagnostics_t>;
-struct bms_branch_selection_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song,
-        const bms_branch_selection_request_t& request) -> bms_branch_selection_outcome_t;
-    [[nodiscard]] static auto from(bms_branch_selection_outcome_t&& outcome) -> bms_branch_selection_result_t;
-    std::optional<song_document_t> song;
-    bms_branch_preview_view_t preview;
-    std::vector<bms_branch_selection_diagnostic_t> diagnostics;
-    std::vector<bms_write_diagnostic_t> write_diagnostics;
-    std::vector<bms_parse_diagnostic_t> parse_diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return song.has_value();
-    }
-};
 
 // Serializes the current BMS projection into its retained full branch tree and
 // reparses that tree with the proposed choices. No partial document is returned:
@@ -76,6 +61,6 @@ struct bms_branch_selection_result_t {
 // Editor-only state that the BMS round trip cannot currently preserve is rejected.
 [[nodiscard]] auto rematerialize_bms_branch_selection(const song_document_t& song,
                                                       const bms_branch_selection_request_t& request)
-    -> bms_branch_selection_result_t;
+    -> bms_branch_selection_outcome_t;
 
 } // namespace wormedit

@@ -214,9 +214,9 @@ auto make_renumbered_bms_fixture() -> std::optional<renumbered_bms_fixture_t> {
         "#PLAYER 1\n#TITLE IDs\n#WAV01 snd10.wav\n#WAV02 snd2.wav\n#00011:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
         {.lane_profile_id = "bme-7k-outside-scratch"});
-    if (!parsed.song || parsed.song->charts.empty() || parsed.song->charts.front().measures.empty() ||
-        parsed.song->charts.front().measures.front().notes.empty()) return std::nullopt;
-    auto history = document_history_t::from(*parsed.song);
+    if (!parsed.value.song || parsed.value.song->charts.empty() || parsed.value.song->charts.front().measures.empty() ||
+        parsed.value.song->charts.front().measures.front().notes.empty()) return std::nullopt;
+    auto history = document_history_t::from(*parsed.value.song);
     const auto& note = history.document.charts.front().measures.front().notes.front();
     if (!note.sound) return std::nullopt;
     const auto resource = *note.sound;
@@ -326,9 +326,9 @@ TEST_CASE("BGM head movement rejects translated tails outside the chart without 
     check_wav_slot(!result);
     const auto before_bytes = write_native_project(before);
     const auto after_bytes = write_native_project(history.document);
-    check_wav_slot(before_bytes.bytes.has_value());
-    check_wav_slot(after_bytes.bytes.has_value());
-    check_wav_slot(*after_bytes.bytes == *before_bytes.bytes);
+    check_wav_slot(before_bytes.value.has_value());
+    check_wav_slot(after_bytes.value.has_value());
+    check_wav_slot(*after_bytes.value == *before_bytes.value);
     check_wav_slot(history.undo.empty());
 }
 
@@ -426,10 +426,10 @@ TEST_CASE("BMS export writes the natural renumbered resource IDs",
     const auto fixture = make_renumbered_bms_fixture();
     REQUIRE(fixture);
     const auto exported = write_bms(fixture->history.document);
-    REQUIRE(exported.bytes);
-    CHECK(exported.bytes->find("#WAV01 snd2.wav") != std::string::npos);
-    CHECK(exported.bytes->find("#WAV02 snd10.wav") != std::string::npos);
-    CHECK(exported.bytes->find("#00011:02") != std::string::npos);
+    REQUIRE(exported.value);
+    CHECK(exported.value->find("#WAV01 snd2.wav") != std::string::npos);
+    CHECK(exported.value->find("#WAV02 snd10.wav") != std::string::npos);
+    CHECK(exported.value->find("#00011:02") != std::string::npos);
 }
 
 TEST_CASE("BMS renumber rejects unknown and duplicate selections atomically",
@@ -1822,7 +1822,7 @@ void check_sound_note_assignment(bool overwrite) {
 
 void check_sound_note_assignment_undo_and_paint() {
     auto history = sound_note_layers_history();
-    const auto original = write_native_project(history.document).bytes;
+    const auto original = write_native_project(history.document).value;
     REQUIRE(apply_sound_layer_membership(
         history,
         {.chart = chart_id_t{2}, .resources = {resource_id_t{1}}, .layer = layer_id_t{7}}));
@@ -1831,7 +1831,7 @@ void check_sound_note_assignment_undo_and_paint() {
           std::vector{layer_id_t{7}});
     REQUIRE(undo_document_command(history));
     REQUIRE(undo_document_command(history));
-    CHECK(write_native_project(history.document).bytes == original);
+    CHECK(write_native_project(history.document).value == original);
 }
 } // namespace
 
@@ -1846,12 +1846,12 @@ TEST_CASE("sound layer overwrite rejects locked note memberships atomically",
           "[unit][core][resources][sound-note-layers]") {
     auto history = sound_note_layers_history();
     history.document.charts.front().measures.front().notes[1].semantic_layers = {layer_id_t{9}};
-    const auto original = write_native_project(history.document).bytes;
+    const auto original = write_native_project(history.document).value;
     CHECK_FALSE(apply_sound_layer_membership(history, {.chart = chart_id_t{2},
                                                        .resources = {resource_id_t{1}},
                                                        .layer = layer_id_t{7},
                                                        .overwrite_note_layers = true}));
-    CHECK(write_native_project(history.document).bytes == original);
+    CHECK(write_native_project(history.document).value == original);
     CHECK(history.undo.empty());
 }
 

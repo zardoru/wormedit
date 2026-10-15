@@ -4,20 +4,20 @@
 namespace wormedit::sys {
 
 
-auto build_speed_spans_view(const chart_document_t& chart, const timing_index_t& timing,
-                         std::size_t limit) -> speed_spans_t {
-    speed_spans_t result;
+auto speed_spans_view_t::from(const chart_document_t& chart, const timing_index_t& timing,
+                         std::size_t limit) -> speed_spans_view_t {
+    speed_spans_view_t result;
     if (chart.speeds.empty()) return result;
-    const auto built = build_scroll_speed_index(chart, timing);
-    if (!built.index) {
+    const auto built = scroll_speed_index_t::from(chart, timing);
+    if (!built.value) {
         result.truncated = true;
         return result;
     }
-    const auto spans = scroll_speed_transition_spans(*built.index, timing, {.maximum_spans = limit});
-    result.truncated = spans.truncated || !spans;
-    const auto& segments = built.index->speed_segments;
-    for (std::size_t index = 0; index < spans.spans.size() && index < segments.size(); ++index) {
-        const auto& span = spans.spans[index];
+    const auto spans = scroll_speed_transition_spans_t::from(*built.value, timing, {.maximum_spans = limit});
+    result.truncated = spans.value.truncated || !spans.ok();
+    const auto& segments = built.value->speed_segments;
+    for (std::size_t index = 0; index < spans.value.spans.size() && index < segments.size(); ++index) {
+        const auto& span = spans.value.spans[index];
         const auto& segment = segments[index];
         result.spans.push_back({.object = segment.source_event,
                                 .begin_row = to_double(span.begin_row),

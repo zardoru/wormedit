@@ -48,8 +48,8 @@ auto bga_matches(const resource_entry_t& resource, const visual_asset_t* asset,
 }
 
 }
-auto build_bga_list_view(const song_document_t& document, const bga_list_request_t& request) -> bga_list_t {
-    bga_list_t result;
+auto bga_list_view_t::from(const song_document_t& document, const bga_list_request_t& request) -> bga_list_view_t {
+    bga_list_view_t result;
     result.bms_capacity = bms_identifier_capacity(document, "BMP");
     const auto uses = count_resource_references(document);
     std::unordered_map<std::uint64_t, const visual_asset_t*> assets;

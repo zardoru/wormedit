@@ -64,22 +64,9 @@ enum class active_voice_snapshot_status_t {
 using active_voice_snapshot_outcome_t =
     result_t<std::vector<transport_voice_t>, active_voice_snapshot_status_t>;
 
-struct active_voice_snapshot_t {
-    [[nodiscard]] static auto from(active_voice_snapshot_outcome_t&& outcome)
-        -> active_voice_snapshot_t;
-    active_voice_snapshot_status_t status{active_voice_snapshot_status_t::stale_generation};
-    std::vector<transport_voice_t> voices;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == active_voice_snapshot_status_t::ready;
-    }
-};
-
 struct transport_mix_result_t {
     [[nodiscard]] static auto from(transport_mix_result_t&& report)
         -> result_t<transport_mix_result_t, transport_mix_result_t>;
-    [[nodiscard]] static auto from(result_t<transport_mix_result_t, transport_mix_result_t>&& outcome)
-        -> transport_mix_result_t;
     transport_mix_status_t status{transport_mix_status_t::stale_generation};
     std::size_t frames{};
     std::size_t voices_mixed{};
@@ -121,8 +108,6 @@ class transport_t {
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
     [[nodiscard]] auto is_current(session_token_t token) const noexcept -> bool;
 
-    [[nodiscard]] auto decode_block(decoder_t& decoder, session_token_t token,
-                                    audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto decode_source_block(decoder_t& decoder, session_token_t token,
                                          audio_block_key_t key) -> block_decode_outcome_t;
     // Control/worker threads only. The mixer reads the published snapshot under
@@ -140,17 +125,12 @@ class transport_t {
     [[nodiscard]] auto schedule_voices(session_token_t token,
                                        std::span<const transport_voice_t> voices)
         -> voice_schedule_status_t;
-    [[nodiscard]] auto mix(session_token_t token, std::uint64_t first_timeline_frame,
-                           std::span<float> interleaved_stereo) -> transport_mix_result_t;
     [[nodiscard]] auto mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
                                  std::span<float> interleaved_stereo) -> transport_mix_outcome_t;
 
     // Control-thread snapshot for bounded decoder lookahead. Realtime mixing
     // never calls this allocating API.
-    [[nodiscard]] auto snapshot_active_voices(session_token_t token,
-                                              std::size_t maximum_voices = 256)
-        -> active_voice_snapshot_t;
-    [[nodiscard]] auto snapshot_voices(session_token_t token, std::size_t maximum_voices)
+    [[nodiscard]] auto snapshot_voices(session_token_t token, std::size_t maximum_voices = 256)
         -> active_voice_snapshot_outcome_t;
 
     [[nodiscard]] auto block_cache_limits() const noexcept -> block_cache_limits_t;

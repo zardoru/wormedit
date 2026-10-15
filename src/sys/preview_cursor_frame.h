@@ -38,12 +38,12 @@ namespace wormedit::sys {
     if (!measures) return std::string{"Chart cursor has invalid measure geometry."};
     const auto row = preview_cursor_row(*measures, cursor, subrow);
     if (!row) return std::string{"Chart cursor has an invalid fractional position."};
-    const auto at = timing.seconds_at(*row);
+    const auto at = timing.query_seconds(*row);
     if (!at) return std::string{"Chart cursor has no playable timing position."};
-    if (at.seconds->numerator < 0) return std::uint64_t{0};
-    const auto frame = sample_frame_at(*at.seconds, audio::output_sample_rate);
+    if (at->value.numerator < 0) return std::uint64_t{0};
+    const auto frame = sample_frame_t::from(at->value, audio::output_sample_rate);
     if (!frame) return std::string{"Chart cursor time cannot be converted to audio frames."};
-    return *frame.frame;
+    return frame->value.frame;
 }
 
 } // namespace wormedit::sys

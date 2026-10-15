@@ -1,6 +1,7 @@
 #include "sys/compose_sound_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
+#include "sys/compose_action_routes.h"
 #include "sys/metadata_commands.h"
 #include "sys/resource_action_context.h"
 #include <wormedit/core/proposal.h>
@@ -662,6 +663,9 @@ struct renumber_sound_ids_action_t {
 static_assert(compose_action<renumber_sound_ids_action_t, const resource_action_context_t>);
 
 struct audition_compose_sound_action_t {
+    static auto from(application_command_state_t* application) -> audition_compose_sound_action_t {
+        return {.application_state = application};
+    }
     application_command_state_t* application_state{};
     resource_id_t resource{};
     const resource_entry_t* selected{};
@@ -976,68 +980,6 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
     return true;
 }
 
-auto dispatch_sound_edit_outcome(const resource_action_context_t& context,
-                                 application_command_state_t& application_state)
-    -> std::optional<compose_action_outcome_t> {
-    const auto& action = context.action;
-    auto& history = context.document.history;
-
-    const auto source =
-        action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND
-            ? notification_source_t::audio
-        : action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES ||
-                action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT ||
-                action.compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT ||
-                action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH
-            ? notification_source_t::import_
-            : notification_source_t::edit;
-    std::optional<compose_action_outcome_t> outcome;
-    switch (action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
-        outcome = run_compose_action(import_compose_sounds_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT:
-        outcome = run_compose_action(confirm_compose_sound_import_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
-        outcome = run_compose_action(assign_sound_slot_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
-        outcome = run_compose_action(assign_sound_slot_batch_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
-        outcome = run_compose_action(delete_compose_sounds_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
-        outcome = run_compose_action(group_compose_sounds_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
-        outcome = run_compose_action(ungroup_compose_sounds_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
-        outcome = run_compose_action(
-            audition_compose_sound_action_t{.application_state = &application_state}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
-    case WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS:
-        if (auto rejected = metadata_command_detail::stale_rejection(
-                history, action.compose_input_document_revision, "Sound layer edit"))
-            return compose_action_outcome_t::from(rejected->diagnostics.front(),
-                                                  notification_source_t::edit,
-                                                  notification_severity_t::info);
-        outcome = run_compose_action(change_compose_sound_layers_action_t{}, context);
-        break;
-    case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
-        outcome = run_compose_action(renumber_sound_ids_action_t{}, context);
-        break;
-    default:
-        return std::nullopt;
-    }
-    outcome->source = source;
-    return outcome;
-}
-
 auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
                                    workspace_controller_t& workspace, chart_id_t chart,
                                    application_command_state_t& application_state,
@@ -1045,11 +987,48 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document
     -> std::optional<std::string> {
     const document_edit_inputs_t document{history, workspace, notifications};
     const resource_action_context_t context{action, document, chart};
-    auto outcome = dispatch_sound_edit_outcome(context, application_state);
-    if (!outcome)
+    const auto* route = compose_action_detail::compose_action_route_t::find(
+        action.compose_action, compose_action_detail::compose_sound_routes);
+    if (!route)
         return std::nullopt;
-    auto finished = finish_compose_action(document, notifications, std::move(*outcome));
+    auto finished = finish_compose_action(document, notifications,
+                                          route->resource_operation(context, &application_state));
     return std::move(finished.message);
 }
 
+namespace compose_action_detail {
+namespace {
+constexpr auto sound_route_entries = std::array{
+    compose_action_route_t::from<import_compose_sounds_action_t, notification_source_t::import_>(
+        WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES),
+    compose_action_route_t::from<confirm_compose_sound_import_action_t,
+                                 notification_source_t::import_>(
+        WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT, true /* standalone only */),
+    compose_action_route_t::from<assign_sound_slot_action_t, notification_source_t::import_>(
+        WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT),
+    compose_action_route_t::from<assign_sound_slot_batch_action_t, notification_source_t::import_>(
+        WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH, true /* standalone only */),
+    compose_action_route_t::from<delete_compose_sounds_action_t, notification_source_t::edit>(
+        WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS),
+    compose_action_route_t::from<group_compose_sounds_action_t, notification_source_t::edit>(
+        WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS),
+    compose_action_route_t::from<ungroup_compose_sounds_action_t, notification_source_t::edit>(
+        WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS),
+    compose_action_route_t::from<audition_compose_sound_action_t, notification_source_t::audio>(
+        WORM_UI_COMPOSE_ACTION_AUDITION_SOUND),
+    compose_action_route_t::from<change_compose_sound_layers_action_t, notification_source_t::edit,
+                                 resource_route_policy_t::sound_layer_edit>(
+        WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER),
+    compose_action_route_t::from<change_compose_sound_layers_action_t, notification_source_t::edit,
+                                 resource_route_policy_t::sound_layer_edit>(
+        WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER),
+    compose_action_route_t::from<change_compose_sound_layers_action_t, notification_source_t::edit,
+                                 resource_route_policy_t::sound_layer_edit>(
+        WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS),
+    compose_action_route_t::from<renumber_sound_ids_action_t, notification_source_t::edit>(
+        WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS),
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_sound_routes{sound_route_entries};
+} // namespace compose_action_detail
 } // namespace wormedit::sys

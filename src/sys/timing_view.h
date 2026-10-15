@@ -31,7 +31,7 @@ struct timing_scene_cache_t {
 };
 
 void populate_timing_view_for_compose(
-    flattened_workspace_t& flattened, const wormedit::document_history_t& history,
+    frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, timing_scene_cache_t& cache,
     int window_width, int window_height,
     const timing_grid_state_t& timing_grid,

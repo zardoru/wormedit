@@ -55,7 +55,7 @@ void sound_drop_transaction_t::append_path(const char* path) {
         reason_ = "A resource file appears more than once in the drop.";
 }
 
-auto sound_drop_transaction_t::finish(const sound_drop_origin_t& origin) -> sound_drop_batch_t {
+auto sound_drop_transaction_t::finish(const sound_drop_origin_t& origin) -> sound_drop_outcome_t {
     note_origin(origin);
     sound_drop_batch_t result{.origin = origin_, .paths = std::move(paths_),
                               .reason = std::move(reason_)};
@@ -64,17 +64,18 @@ auto sound_drop_transaction_t::finish(const sound_drop_origin_t& origin) -> soun
     if (result.paths.empty() && result.reason.empty())
         result.reason = "The resource drop did not contain any files.";
     reset();
+    if (!result.reason.empty()) return std::unexpected(std::move(result));
     return result;
 }
 
 auto sound_drop_transaction_t::handle_begin(const SDL_Event& event,
                                            const sound_drop_origin_t& origin)
     -> sound_drop_event_result_t {
-    std::optional<sound_drop_batch_t> interrupted;
+    std::optional<sound_drop_outcome_t> interrupted;
     if (active_ && claimed_) {
-        interrupted = sound_drop_batch_t{
+        interrupted = std::unexpected(sound_drop_batch_t{
             .origin = origin_, .paths = std::move(paths_),
-            .reason = "A new file drop began before the previous drop completed."};
+            .reason = "A new file drop began before the previous drop completed."});
     }
     begin(origin);
     if (!event_window_matches(event.drop.windowID, origin_)) origin_changed_ = true;
@@ -149,7 +150,7 @@ auto sound_drop_transaction_t::handle(const SDL_Event& event,
     return {};
 }
 
-auto sound_drop_transaction_t::cancel() -> std::optional<sound_drop_batch_t> {
+auto sound_drop_transaction_t::cancel() -> std::optional<sound_drop_outcome_t> {
     if (!active_ || !claimed_) {
         reset();
         return std::nullopt;
@@ -157,7 +158,7 @@ auto sound_drop_transaction_t::cancel() -> std::optional<sound_drop_batch_t> {
     sound_drop_batch_t result{.origin = origin_, .paths = std::move(paths_),
                               .reason = "The resource file drop was cancelled."};
     reset();
-    return result;
+    return std::unexpected(std::move(result));
 }
 
 } // namespace wormedit::sys

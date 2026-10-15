@@ -15,13 +15,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry, std::string_view name,
                       std::uint64_t asset) -> wormedit::audio::decoded_source_binding_t {
-    const auto added = registry.register_source({
+    const auto added = registry.create_source({
         .asset = wormedit::asset_id_t{asset},
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "preview-v1:" + std::string(name)},
     });
     REQUIRE(added);
-    return *added.binding;
+    return *added;
 }
 
 } // namespace
@@ -52,18 +52,18 @@ TEST_CASE("preview lookahead decodes only active timeline overlaps and reuses sh
     REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
 
     const auto first =
-        pump_preview_lookahead(sources, transport, *token, 0, {.lookahead_frames = 512});
+        pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
     REQUIRE(first);
-    CHECK(first.active_voices == 3);
-    CHECK(first.overlapping_voices == 2);
-    CHECK(first.requested_blocks == 2);
-    CHECK(first.decoded_blocks == 2);
+    CHECK(first.value().active_voices == 3);
+    CHECK(first.value().overlapping_voices == 2);
+    CHECK(first.value().requested_blocks == 2);
+    CHECK(first.value().decoded_blocks == 2);
 
     const auto repeated =
-        pump_preview_lookahead(sources, transport, *token, 0, {.lookahead_frames = 512});
+        pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
     REQUIRE(repeated);
-    CHECK(repeated.decoded_blocks == 0);
-    CHECK(repeated.cached_blocks == 2);
+    CHECK(repeated.value().decoded_blocks == 0);
+    CHECK(repeated.value().cached_blocks == 2);
 }
 
 TEST_CASE("preview lookahead rejects bounds and stale generations before cache publication",
@@ -85,23 +85,23 @@ TEST_CASE("preview lookahead rejects bounds and stale generations before cache p
     };
     REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
 
-    const auto voice_bound = pump_preview_lookahead(sources, transport, *token, 0,
+    const auto voice_bound = pump_preview_blocks(sources, transport, *token, 0,
                                                     {.lookahead_frames = 128, .maximum_voices = 1});
-    CHECK_FALSE(voice_bound);
-    CHECK(voice_bound.status == preview_pump_status_t::capacity_exceeded);
+    REQUIRE_FALSE(voice_bound);
+    CHECK(voice_bound.error().status == preview_pump_status_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     const auto block_bound =
-        pump_preview_lookahead(sources, transport, *token, 0,
+        pump_preview_blocks(sources, transport, *token, 0,
                                {.lookahead_frames = 128, .maximum_voices = 2, .maximum_blocks = 1});
-    CHECK_FALSE(block_bound);
-    CHECK(block_bound.status == preview_pump_status_t::capacity_exceeded);
+    REQUIRE_FALSE(block_bound);
+    CHECK(block_bound.error().status == preview_pump_status_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     static_cast<void>(transport.stop());
-    const auto stale = pump_preview_lookahead(sources, transport, *token, 0);
-    CHECK_FALSE(stale);
-    CHECK(stale.status == preview_pump_status_t::stale_generation);
+    const auto stale = pump_preview_blocks(sources, transport, *token, 0);
+    REQUIRE_FALSE(stale);
+    CHECK(stale.error().status == preview_pump_status_t::stale_generation);
 }
 
 namespace {
@@ -118,7 +118,7 @@ auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
     const std::vector<float> samples(maximum_read_frames * output_channel_count, 0.125F);
     for (std::size_t index = 0; index < overlapping_source_count; ++index) {
         const auto identity = "generated:preview-overlap:" + std::to_string(index);
-        const auto generated = sources.register_generated_source({
+        const auto generated = sources.create_generated_source({
             .source = {identity, "preview-overlap-v1"},
             .interleaved_stereo = samples,
         });
@@ -127,7 +127,7 @@ auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
         }
         voices.push_back({
             .id = index + 1U,
-            .source = generated.binding->source,
+            .source = generated->source,
             .frame_count = maximum_read_frames,
         });
     }
@@ -161,20 +161,20 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
             voice_schedule_status_t::scheduled);
 
-    const auto pumped = pump_preview_lookahead(
+    const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    REQUIRE(pumped.status == preview_pump_status_t::ready);
-    CHECK(pumped.requested_blocks == overlapping_source_count);
-    CHECK(pumped.decoded_blocks == overlapping_source_count);
+    REQUIRE(pumped.value().status == preview_pump_status_t::ready);
+    CHECK(pumped.value().requested_blocks == overlapping_source_count);
+    CHECK(pumped.value().decoded_blocks == overlapping_source_count);
 
     constexpr std::size_t render_chunk_frames = 4'096;
     static_assert(maximum_read_frames % render_chunk_frames == 0);
     std::vector<float> chunk(render_chunk_frames * output_channel_count);
     for (std::size_t frame = 0; frame < maximum_read_frames; frame += render_chunk_frames) {
-        const auto mixed = transport.mix(*token, frame, chunk);
+        const auto mixed = transport.mix_frames(*token, frame, chunk);
         INFO("render chunk starts at frame " << frame);
-        CHECK(mixed.status == transport_mix_status_t::mixed);
-        CHECK(mixed.missing_blocks == 0);
+        CHECK(mixed.value().status == transport_mix_status_t::mixed);
+        CHECK(mixed.value().missing_blocks == 0);
     }
 }
 
@@ -189,10 +189,11 @@ TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
             voice_schedule_status_t::scheduled);
 
-    const auto pumped = pump_preview_lookahead(
+    const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    CHECK(pumped.status == preview_pump_status_t::capacity_exceeded);
-    CHECK(pumped.requested_blocks == overlapping_source_count);
+    REQUIRE_FALSE(pumped.has_value());
+    CHECK(pumped.error().status == preview_pump_status_t::capacity_exceeded);
+    CHECK(pumped.error().requested_blocks == overlapping_source_count);
     CHECK(cache.stats().entries == 0);
 }
 

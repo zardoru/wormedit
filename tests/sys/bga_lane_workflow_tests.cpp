@@ -365,10 +365,10 @@ TEST_CASE("All discoverable BGA lane kinds survive save and reopen", "[unit][sys
             .resource = resource_id_t{31}, .kind = kinds[index],
             .provenance = {.family = format_family_t::bms, .source_field = "retained BGA source"}});
     const auto serialized = write_native_project(history.document);
-    REQUIRE(serialized.bytes);
-    const auto reopened = parse_native_project(*serialized.bytes);
-    REQUIRE(reopened.song);
-    const auto& restored = reopened.song->charts.front().bga_events;
+    REQUIRE(serialized.value);
+    const auto reopened = parse_native_project(*serialized.value);
+    REQUIRE(reopened.value);
+    const auto& restored = reopened.value->charts.front().bga_events;
     REQUIRE(restored.size() == kinds.size());
     for (std::size_t index = 0; index < kinds.size(); ++index) {
         CHECK(restored[index].kind == kinds[index]);

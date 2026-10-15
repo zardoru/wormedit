@@ -23,9 +23,4 @@ auto apply_compose_quantize_selection(wormedit::document_history_t& history,
                                       application_command_state_t& application,
                                       const WormUiWorkspaceAction& action)
     -> compose_action_outcome_t;
-namespace compose_action_detail {
-struct compose_action_context_t;
-auto dispatch_compose_area_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t>;
-} // namespace compose_action_detail
 } // namespace wormedit::sys

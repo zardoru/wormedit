@@ -110,7 +110,7 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
     expect_audition(SDL_InitSubSystem(SDL_INIT_AUDIO));
     audio_lifetime_t lifetime;
     audition_fixture_t fixture;
-    const auto registration = fixture.sources.register_source({.asset = asset_id_t{1},
+    const auto registration = fixture.sources.create_source({.asset = asset_id_t{1},
         .path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio/keysound-c4.ogg",
         .source = {"fixture:keysound-c4.ogg", "notification-test"}});
     expect_audition(static_cast<bool>(registration));
@@ -135,7 +135,7 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
 
 namespace {
 auto wait_audition_failure(sdl_audition_output_t& output)
-    -> std::optional<sdl_audition_service_result_t> {
+    -> std::optional<sdl_audition_service_outcome_t> {
     const auto deadline = SDL_GetTicks() + 2000;
     while (SDL_GetTicks() < deadline) {
         auto result = output.service();
@@ -156,9 +156,11 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(static_cast<bool>(fixture.output.start(std::span{&missing, 1})));
     const auto failed = wait_audition_failure(fixture.output);
     expect_audition(failed.has_value());
-    expect_audition(failed->status == sdl_audition_service_status_t::pump_failed);
-    expect_audition(failed->pump.has_value());
-    expect_audition(failed->pump->status == audio::audition_pump_status_t::source_unavailable);
+    expect_audition(!*failed);
+    expect_audition(failed->error().status == sdl_audition_service_status_t::pump_failed);
+    expect_audition(failed->error().pump.has_value());
+    expect_audition(!*failed->error().pump);
+    expect_audition(failed->error().pump->error().status == audio::audition_pump_status_t::source_unavailable);
     static_cast<void>(fixture.output.stop());
     post_audition_service_notifications(*failed, fixture.sink);
     const auto entries = fixture.entries();

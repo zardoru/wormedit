@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <utility>
 #include <numeric>
 #include <optional>
 
@@ -172,65 +173,65 @@ auto build_channel_slice_view(const channel_slice_context_t& context, const deri
     const auto begin = std::max(*first_frame, *slice_begin);
     const auto end = std::min(*last_frame, *slice_end);
     if (begin >= end) return aligned_waveform_status_t::projected;
-    const auto projection = build_waveform_view(
+    const auto projection = waveform_view_t::from(
         context.waveform, {.begin_frame = begin, .end_frame = end,
                            .pixel_width = std::min(context.height * 2U, maximum_aligned_waveform_rows),
                            .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection)
-        return projection.status == waveform_projection_status_t::capacity_exceeded
+        return projection.error() == waveform_projection_status_t::capacity_exceeded
                    ? aligned_waveform_status_t::capacity_exceeded
                    : aligned_waveform_status_t::invalid_waveform;
     const channel_row_context_t row_context{context.waveform, context.timing, context.request, *origin.seconds,
                                             *slice_begin, context.rows_per_pixel, context.height};
-    rasterize_channel_columns(row_context, projection.columns, pixels, occupied);
+    rasterize_channel_columns(row_context, projection->columns, pixels, occupied);
     return aligned_waveform_status_t::projected;
 }
 
 } // namespace
 
-auto build_channel_waveform_view(const waveform_t& waveform, const chart_document_t& chart,
+auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const chart_document_t& chart,
                               const sound_channel_t& channel, const timing_index_t& timing,
                               aligned_waveform_request_t request,
                               channel_waveform_source_geometry_t source)
-    -> aligned_waveform_result_t {
+    -> aligned_waveform_view_outcome_t {
     const auto slices =
         derive_sound_channel_slices(chart, channel, source.sample_rate, source.total_frames);
-    return build_channel_waveform_view(waveform, channel, timing, request, slices, source);
+    return aligned_waveform_view_result_t::from(waveform, channel, timing, request, slices, source);
 }
 
-auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel_t& channel,
+auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const sound_channel_t& channel,
                               const timing_index_t& timing, aligned_waveform_request_t request,
                               const sound_slice_result_t& slices,
                               channel_waveform_source_geometry_t source)
-    -> aligned_waveform_result_t {
-    aligned_waveform_result_t result;
+    -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
     if (!is_valid_channel_waveform_request(request))
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
         timing.rows.empty()) {
         result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     }
     if (!is_valid_channel_source(waveform, channel, source)) {
         result.status = aligned_waveform_status_t::invalid_waveform;
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     }
     if (!is_channel_window_within_capacity(request)) {
         result.status = aligned_waveform_status_t::capacity_exceeded;
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     }
     if (!slices) {
         result.status = aligned_waveform_status_t::invalid_timing;
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     }
     result.status = aligned_waveform_status_t::projected;
     if (slices.slices.empty())
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     const auto source_begin =
         output_frame(channel.source_clip.begin_frame, source.sample_rate, waveform);
     if (!source_begin || *source_begin >= waveform.total_frames) {
         result.status = aligned_waveform_status_t::invalid_waveform;
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     }
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                 request.pixels_per_standard_measure;
@@ -243,7 +244,7 @@ auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel
                              rows_per_pixel),
                    0.0L, static_cast<long double>(timing.total_rows));
     if (first_row >= last_row || last_row < slices.slices.front().absolute_row)
-        return result;
+        return aligned_waveform_view_result_t::from(std::move(result));
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
@@ -258,7 +259,7 @@ auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel
             {first_row, last_row}, pixels, occupied);
         if (status != aligned_waveform_status_t::projected) {
             result.status = status;
-            return result;
+            return aligned_waveform_view_result_t::from(std::move(result));
         }
     }
     result.rows.reserve(height);
@@ -266,7 +267,7 @@ auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel
         if (occupied[pixel])
             result.rows.push_back(pixels[pixel]);
     }
-    return result;
+    return aligned_waveform_view_result_t::from(std::move(result));
 }
 
 namespace {
@@ -335,7 +336,7 @@ auto display_slice_column(const waveform_t& waveform,
 }
 auto build_display_channel_row_view(const waveform_t& waveform,
     const display_row_time_t& row, std::span<const display_channel_slice_t> slices,
-    std::size_t& cursor, aligned_waveform_result_t& result) -> std::optional<aligned_waveform_row_t> {
+    std::size_t& cursor, aligned_waveform_view_result_t& result) -> std::optional<aligned_waveform_row_t> {
     while (cursor < slices.size() && slices[cursor].end_seconds <= row.begin_seconds) ++cursor;
     bool occupied = false;
     aligned_waveform_row_t output;
@@ -353,18 +354,18 @@ auto build_display_channel_row_view(const waveform_t& waveform,
 }
 } // namespace
 
-auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel_t& channel,
+auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const sound_channel_t& channel,
     const display_row_table_t& table, aligned_waveform_request_t request,
-    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_result_t {
-    aligned_waveform_result_t result;
-    if (!is_valid_channel_waveform_request(request)) return result;
-    if (!table.valid || !slices) { result.status = aligned_waveform_status_t::invalid_timing; return result; }
-    if (table.zoom != request.pixels_per_standard_measure) return result;
+    const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
+    if (!is_valid_channel_waveform_request(request)) return aligned_waveform_view_result_t::from(std::move(result));
+    if (!table.valid || !slices) { result.status = aligned_waveform_status_t::invalid_timing; return aligned_waveform_view_result_t::from(std::move(result)); }
+    if (table.zoom != request.pixels_per_standard_measure) return aligned_waveform_view_result_t::from(std::move(result));
     if (!is_valid_channel_source(waveform, channel, source)) {
-        result.status = aligned_waveform_status_t::invalid_waveform; return result;
+        result.status = aligned_waveform_status_t::invalid_waveform; return aligned_waveform_view_result_t::from(std::move(result));
     }
     if (!is_channel_window_within_capacity(request)) {
-        result.status = aligned_waveform_status_t::capacity_exceeded; return result;
+        result.status = aligned_waveform_status_t::capacity_exceeded; return aligned_waveform_view_result_t::from(std::move(result));
     }
     const auto visible = visible_display_slices(waveform, table, slices, source);
     std::size_t cursor = 0;
@@ -378,7 +379,7 @@ auto build_channel_waveform_view(const waveform_t& waveform, const sound_channel
         }
     }
     result.status = aligned_waveform_status_t::projected;
-    return result;
+    return aligned_waveform_view_result_t::from(std::move(result));
 }
 
 } // namespace wormedit::audio

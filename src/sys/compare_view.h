@@ -50,7 +50,7 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
 [[nodiscard]] auto build_workspace_frame_model(
     compare_scene_cache_t& cache, const wormedit::workspace_controller_t& workspace,
     const wormedit::song_document_t& document, std::uint64_t session_generation = 0)
-    -> wormedit::workspace_view_result_t;
+    -> wormedit::workspace_view_outcome_t;
 
 [[nodiscard]] inline auto choose_compare_chart_pair(
     std::span<const wormedit::chart_id_t> available,
@@ -75,12 +75,12 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
 }
 
 [[nodiscard]] auto compare_local_difference_positions(
-    const wormedit::chart_compare_result_t& comparison, wormedit::chart_id_t chart)
+    const wormedit::chart_comparison_t& comparison, wormedit::chart_id_t chart)
     -> std::vector<wormedit::local_position_t>;
 
-void populate_compare_view(flattened_workspace_t& result,
-                           flattened_workspace_t& first_pane,
-                           flattened_workspace_t& second_pane,
+void populate_compare_view(frontend_workspace_view_t& result,
+                           frontend_workspace_view_t& first_pane,
+                           frontend_workspace_view_t& second_pane,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compare_scene_cache_t& cache,

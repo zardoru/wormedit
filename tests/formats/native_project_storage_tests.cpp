@@ -66,24 +66,24 @@ TEST_CASE("native project storage validates before atomically replacing a primar
     temporary_directory_t directory;
     const auto primary = directory.path / "chart.wormedit";
     const auto old_song = valid_song(2);
-    const auto initial = wormedit::publish_native_project_atomic(primary, old_song);
-    REQUIRE(initial.published);
+    const auto initial = wormedit::create_native_project_file(primary, old_song);
+    REQUIRE(initial.value);
     const auto old_bytes = read_text(primary);
 
-    const auto updated = wormedit::publish_native_project_atomic(primary, valid_song(3));
-    REQUIRE(updated.published);
+    const auto updated = wormedit::create_native_project_file(primary, valid_song(3));
+    REQUIRE(updated.value);
     const auto parsed = wormedit::parse_native_project(read_text(primary));
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->id == wormedit::song_id_t{417});
-    CHECK(parsed.song->revision == 3);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->id == wormedit::song_id_t{417});
+    CHECK(parsed.value->revision == 3);
     CHECK_FALSE(read_text(primary) == old_bytes);
 
     auto invalid_song = valid_song(4);
     invalid_song.id = {};
-    const auto rejected = wormedit::publish_native_project_atomic(primary, invalid_song);
-    CHECK_FALSE(rejected.published);
-    CHECK(rejected.has_errors());
-    CHECK(read_text(primary) == *wormedit::write_native_project(valid_song(3)).bytes);
+    const auto rejected = wormedit::create_native_project_file(primary, invalid_song);
+    CHECK_FALSE(rejected.value);
+    CHECK(!rejected.ok());
+    CHECK(read_text(primary) == *wormedit::write_native_project(valid_song(3)).value);
 }
 
 TEST_CASE("temporary native-project files are unique and share the destination directory",
@@ -99,9 +99,9 @@ TEST_CASE("temporary native-project files are unique and share the destination d
             }
             return true;
         };
-        REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(index + 1),
+        REQUIRE(wormedit::create_native_project_file(primary, valid_song(index + 1),
                                                         std::move(options))
-                    .published);
+                    .value);
     }
     CHECK(temporaries[0].parent_path() == primary.parent_path());
     CHECK(temporaries[1].parent_path() == primary.parent_path());
@@ -117,24 +117,24 @@ TEST_CASE("recovery snapshots carry a validated SHA-256 envelope and exact docum
     const auto backup = directory.path / "chart.wormedit.bak";
     const auto song = valid_song(11);
     const auto time = std::chrono::system_clock::time_point{123456789ms};
-    const auto stored = wormedit::publish_native_project_recovery_atomic(
+    const auto stored = wormedit::create_native_project_recovery_file(
         backup, song,
         {.original_source_path = directory.path / "imported.bmson",
          .intended_project_path = directory.path / "chart.wormedit",
          .last_explicit_save_revision = 9,
          .utc_write_time = time,
          .session_sequence = 4});
-    REQUIRE(stored.published);
+    REQUIRE(stored.value);
 
     const auto bytes = read_text(backup);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(bytes);
-    REQUIRE(parsed.snapshot.has_value());
-    CHECK(parsed.snapshot->song.id == song.id);
-    CHECK(parsed.snapshot->song.revision == song.revision);
-    CHECK(parsed.snapshot->metadata.last_explicit_save_revision == 9);
-    CHECK(parsed.snapshot->metadata.session_sequence == 4);
-    CHECK(parsed.snapshot->metadata.original_source_path == directory.path / "imported.bmson");
-    CHECK(parsed.snapshot->metadata.utc_write_time == time);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->song.id == song.id);
+    CHECK(parsed.value->song.revision == song.revision);
+    CHECK(parsed.value->metadata.last_explicit_save_revision == 9);
+    CHECK(parsed.value->metadata.session_sequence == 4);
+    CHECK(parsed.value->metadata.original_source_path == directory.path / "imported.bmson");
+    CHECK(parsed.value->metadata.utc_write_time == time);
 
     auto corrupted = bytes;
     const auto payload_position = corrupted.find("\"payload\":");
@@ -144,8 +144,8 @@ TEST_CASE("recovery snapshots carry a validated SHA-256 envelope and exact docum
     REQUIRE(revision_position != std::string::npos);
     corrupted[revision_position + payload_revision.size() - 2] = '2';
     const auto bad_checksum = wormedit::parse_native_project_recovery_snapshot(corrupted);
-    CHECK_FALSE(bad_checksum.snapshot.has_value());
-    CHECK(bad_checksum.has_errors());
+    CHECK_FALSE(bad_checksum.value.has_value());
+    CHECK(!bad_checksum.ok());
     CHECK(std::ranges::any_of(bad_checksum.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::checksum_mismatch;
@@ -155,7 +155,7 @@ TEST_CASE("recovery snapshots carry a validated SHA-256 envelope and exact docum
     inconsistent_save_json["last_explicit_save_revision"] = 12;
     const auto inconsistent_save =
         wormedit::parse_native_project_recovery_snapshot(inconsistent_save_json.dump());
-    CHECK_FALSE(inconsistent_save.snapshot.has_value());
+    CHECK_FALSE(inconsistent_save.value.has_value());
     CHECK(std::ranges::any_of(inconsistent_save.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::validation_failure;
@@ -165,14 +165,14 @@ TEST_CASE("recovery snapshots carry a validated SHA-256 envelope and exact docum
     narrow_limits.maximum_source_bytes = 16;
     const auto oversized_payload =
         wormedit::parse_native_project_recovery_snapshot(bytes, narrow_limits);
-    CHECK_FALSE(oversized_payload.snapshot.has_value());
+    CHECK_FALSE(oversized_payload.value.has_value());
     CHECK(std::ranges::any_of(oversized_payload.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::resource_limit;
     }));
 
     const auto nested_input = wormedit::parse_native_project_recovery_snapshot("[[[[0]]]]");
-    CHECK_FALSE(nested_input.snapshot.has_value());
+    CHECK_FALSE(nested_input.value.has_value());
     CHECK(std::ranges::any_of(nested_input.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::resource_limit;
@@ -184,16 +184,16 @@ TEST_CASE("failed recovery publication preserves primary and last-known-good bac
     temporary_directory_t directory;
     const auto primary = directory.path / "chart.wormedit";
     const auto backup = wormedit::native_project_adjacent_backup_path(primary);
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(6)).published);
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(6)).value);
     const auto original_primary = read_text(primary);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(7),
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(7),
                                                              {.session_sequence = 1})
-                .published);
+                .value);
     const auto original_backup = read_text(backup);
 
-    const auto inconsistent_saved_revision = wormedit::publish_native_project_recovery_atomic(
+    const auto inconsistent_saved_revision = wormedit::create_native_project_recovery_file(
         backup, valid_song(8), {.last_explicit_save_revision = 9, .session_sequence = 2});
-    CHECK_FALSE(inconsistent_saved_revision.published);
+    CHECK_FALSE(inconsistent_saved_revision.value);
     CHECK(read_text(primary) == original_primary);
     CHECK(read_text(backup) == original_backup);
 
@@ -209,34 +209,34 @@ TEST_CASE("failed recovery publication preserves primary and last-known-good bac
         wormedit::native_project_storage_stage_t::replace_destination,
     };
     for (const auto stage : failure_stages) {
-        const auto failed = wormedit::publish_native_project_recovery_atomic(
+        const auto failed = wormedit::create_native_project_recovery_file(
             backup, valid_song(8), {.session_sequence = 2}, fails_at(stage));
-        CHECK_FALSE(failed.published);
-        CHECK(failed.has_errors());
+        CHECK_FALSE(failed.value);
+        CHECK(!failed.ok());
         CHECK(read_text(primary) == original_primary);
         CHECK(read_text(backup) == original_backup);
     }
 
-    const auto preflight_failure = wormedit::publish_native_project_recovery_atomic(
+    const auto preflight_failure = wormedit::create_native_project_recovery_file(
         backup, valid_song(8), {.session_sequence = 2},
         fails_at(wormedit::native_project_storage_stage_t::preflight_validate));
-    CHECK_FALSE(preflight_failure.published);
+    CHECK_FALSE(preflight_failure.value);
     CHECK(read_text(primary) == original_primary);
     CHECK(read_text(backup) == original_backup);
 
-    const auto post_rename_sync_warning = wormedit::publish_native_project_recovery_atomic(
+    const auto post_rename_sync_warning = wormedit::create_native_project_recovery_file(
         backup, valid_song(9), {.session_sequence = 3},
         fails_at(wormedit::native_project_storage_stage_t::sync_destination_directory));
-    CHECK(post_rename_sync_warning.published);
-    CHECK_FALSE(post_rename_sync_warning.has_errors());
+    CHECK(post_rename_sync_warning.value);
+    CHECK(post_rename_sync_warning.ok());
     CHECK(std::ranges::any_of(post_rename_sync_warning.diagnostics, [](const auto& diagnostic) {
         return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
                diagnostic.message.find("destination was replaced") != std::string::npos;
     }));
     const auto replaced_backup =
         wormedit::parse_native_project_recovery_snapshot(read_text(backup));
-    REQUIRE(replaced_backup.snapshot.has_value());
-    CHECK(replaced_backup.snapshot->song.revision == 9);
+    REQUIRE(replaced_backup.value.has_value());
+    CHECK(replaced_backup.value->song.revision == 9);
 }
 
 TEST_CASE(
@@ -253,17 +253,17 @@ TEST_CASE(
     const auto missing_entry = directory.path / "untitled-session.bak";
     const auto write_recovery = [](const auto& path, const auto& song, auto time,
                                    std::uint64_t sequence = 1) {
-        return wormedit::publish_native_project_recovery_atomic(
+        return wormedit::create_native_project_recovery_file(
             path, song, {.utc_write_time = time, .session_sequence = sequence});
     };
     const auto find_candidate = [](const auto& scan, const auto& path) -> const auto& {
-        return *std::ranges::find_if(scan.candidates,
+        return *std::ranges::find_if(scan.value.candidates,
                                      [&](const auto& candidate) { return candidate.path == path; });
     };
 
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(5)).published);
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(5)).value);
     REQUIRE(write_recovery(backup, valid_song(4), std::chrono::system_clock::time_point{999999h})
-                .published);
+                .value);
     auto scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary,
          .caller_supplied_entries = {missing_entry},
@@ -277,7 +277,7 @@ TEST_CASE(
     CHECK(find_candidate(scan, backup).recommended_action == action_t::discard);
 
     REQUIRE(write_recovery(missing_entry, valid_song(3), std::chrono::system_clock::time_point{2ms})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary,
          .caller_supplied_entries = {missing_entry},
@@ -287,31 +287,31 @@ TEST_CASE(
     CHECK(find_candidate(scan, missing_entry).available_actions.size() == 4);
 
     REQUIRE(write_recovery(backup, valid_song(5), std::chrono::system_clock::time_point{999999h})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
     CHECK(find_candidate(scan, backup).comparison == comparison_t::equal_revision);
     CHECK(find_candidate(scan, backup).recommended_action == action_t::discard);
 
     REQUIRE(write_recovery(backup, valid_song(6), std::chrono::system_clock::time_point{1ms})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
     const auto& newer_backup = find_candidate(scan, backup);
     CHECK(newer_backup.comparison == comparison_t::newer_revision);
     CHECK(newer_backup.recommended_action == action_t::inspect_read_only);
-    REQUIRE(scan.preferred_recovery_candidate.has_value());
-    CHECK(scan.candidates[*scan.preferred_recovery_candidate].path == backup);
+    REQUIRE(scan.value.preferred_recovery_candidate.has_value());
+    CHECK(scan.value.candidates[*scan.value.preferred_recovery_candidate].path == backup);
     CHECK(newer_backup.available_actions.size() == 4);
 
     auto unrelated_song = valid_song(99);
     unrelated_song.id = wormedit::song_id_t{9001};
     REQUIRE(write_recovery(backup, unrelated_song, std::chrono::system_clock::time_point{999999h})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
     CHECK(find_candidate(scan, backup).comparison == comparison_t::different_project);
-    CHECK_FALSE(scan.preferred_recovery_candidate.has_value());
+    CHECK_FALSE(scan.value.preferred_recovery_candidate.has_value());
 
     write_text(backup, "{ corrupt recovery data");
     scan = wormedit::scan_native_project_recovery_candidates(
@@ -320,7 +320,7 @@ TEST_CASE(
     CHECK(find_candidate(scan, backup).quarantine == quarantine_t::recommend_quarantine_corrupt);
 
     REQUIRE(write_recovery(backup, valid_song(8), std::chrono::system_clock::time_point{2ms})
-                .published);
+                .value);
     std::filesystem::remove(primary);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
@@ -348,58 +348,58 @@ TEST_CASE("startup scan validates stale temporaries and never lets their timesta
     primary_temporary += ".wormedit-tmp-interrupted-primary";
     auto temporary = backup;
     temporary += ".wormedit-tmp-leftover";
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(10)).published);
-    REQUIRE(wormedit::publish_native_project_atomic(primary_temporary, valid_song(10)).published);
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(10)).value);
+    REQUIRE(wormedit::create_native_project_file(primary_temporary, valid_song(10)).value);
     REQUIRE(
-        wormedit::publish_native_project_recovery_atomic(
+        wormedit::create_native_project_recovery_file(
             backup, valid_song(11),
             {.utc_write_time = std::chrono::system_clock::time_point{1ms}, .session_sequence = 1})
-            .published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+            .value);
+    REQUIRE(wormedit::create_native_project_recovery_file(
                 temporary, valid_song(11),
                 {.utc_write_time = std::chrono::system_clock::time_point{999999h},
                  .session_sequence = 100})
-                .published);
+                .value);
 
     const auto scan = wormedit::scan_native_project_recovery_candidates({.primary_path = primary});
     const auto completed = std::ranges::find_if(
-        scan.candidates, [&](const auto& candidate) { return candidate.path == backup; });
+        scan.value.candidates, [&](const auto& candidate) { return candidate.path == backup; });
     const auto stale = std::ranges::find_if(
-        scan.candidates, [&](const auto& candidate) { return candidate.path == temporary; });
-    const auto stale_primary = std::ranges::find_if(scan.candidates, [&](const auto& candidate) {
+        scan.value.candidates, [&](const auto& candidate) { return candidate.path == temporary; });
+    const auto stale_primary = std::ranges::find_if(scan.value.candidates, [&](const auto& candidate) {
         return candidate.path == primary_temporary;
     });
-    REQUIRE(completed != scan.candidates.end());
-    REQUIRE(stale != scan.candidates.end());
-    REQUIRE(stale_primary != scan.candidates.end());
+    REQUIRE(completed != scan.value.candidates.end());
+    REQUIRE(stale != scan.value.candidates.end());
+    REQUIRE(stale_primary != scan.value.candidates.end());
     CHECK(stale->kind == candidate_kind_t::stale_recovery_temporary);
     CHECK(stale->status == candidate_status_t::valid);
     CHECK(stale->quarantine == quarantine_t::recommend_quarantine_superseded_temporary);
     CHECK(stale_primary->kind == candidate_kind_t::stale_primary_temporary);
     CHECK(stale_primary->status == candidate_status_t::valid);
     CHECK(stale_primary->quarantine == quarantine_t::recommend_quarantine_superseded_temporary);
-    REQUIRE(scan.preferred_recovery_candidate.has_value());
-    CHECK(scan.candidates[*scan.preferred_recovery_candidate].path == backup);
+    REQUIRE(scan.value.preferred_recovery_candidate.has_value());
+    CHECK(scan.value.candidates[*scan.value.preferred_recovery_candidate].path == backup);
     CHECK(std::filesystem::exists(temporary));
 
     REQUIRE(
-        wormedit::publish_native_project_recovery_atomic(
+        wormedit::create_native_project_recovery_file(
             temporary, valid_song(12),
             {.utc_write_time = std::chrono::system_clock::time_point{1ms}, .session_sequence = 2})
-            .published);
+            .value);
     const auto newer_temporary_scan =
         wormedit::scan_native_project_recovery_candidates({.primary_path = primary});
-    REQUIRE(newer_temporary_scan.preferred_recovery_candidate.has_value());
+    REQUIRE(newer_temporary_scan.value.preferred_recovery_candidate.has_value());
     CHECK(
-        newer_temporary_scan.candidates[*newer_temporary_scan.preferred_recovery_candidate].path ==
+        newer_temporary_scan.value.candidates[*newer_temporary_scan.value.preferred_recovery_candidate].path ==
         temporary);
 
-    REQUIRE(wormedit::publish_native_project_atomic(primary_temporary, valid_song(13)).published);
+    REQUIRE(wormedit::create_native_project_file(primary_temporary, valid_song(13)).value);
     const auto newer_primary_temporary_scan =
         wormedit::scan_native_project_recovery_candidates({.primary_path = primary});
-    REQUIRE(newer_primary_temporary_scan.preferred_recovery_candidate.has_value());
+    REQUIRE(newer_primary_temporary_scan.value.preferred_recovery_candidate.has_value());
     CHECK(newer_primary_temporary_scan
-              .candidates[*newer_primary_temporary_scan.preferred_recovery_candidate]
+              .value.candidates[*newer_primary_temporary_scan.value.preferred_recovery_candidate]
               .path == primary_temporary);
 }
 
@@ -415,23 +415,23 @@ TEST_CASE("stale temporary quarantine uses matching project identity and complet
     auto stale_recovery = unrelated_entry;
     stale_recovery += ".wormedit-tmp-interrupted";
 
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(10)).published);
-    REQUIRE(wormedit::publish_native_project_atomic(stale_primary, valid_song(10)).published);
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(10)).value);
+    REQUIRE(wormedit::create_native_project_file(stale_primary, valid_song(10)).value);
     auto unrelated_song = valid_song(99);
     unrelated_song.id = wormedit::song_id_t{9001};
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+    REQUIRE(wormedit::create_native_project_recovery_file(
                 unrelated_entry, unrelated_song,
                 {.utc_write_time = std::chrono::system_clock::time_point{999999h}})
-                .published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+                .value);
+    REQUIRE(wormedit::create_native_project_recovery_file(
                 stale_recovery, valid_song(11),
                 {.utc_write_time = std::chrono::system_clock::time_point{1ms}})
-                .published);
+                .value);
 
     auto scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .caller_supplied_entries = {unrelated_entry}});
     const auto find_candidate = [&](const auto& path) -> const auto& {
-        return *std::ranges::find_if(scan.candidates,
+        return *std::ranges::find_if(scan.value.candidates,
                                      [&](const auto& candidate) { return candidate.path == path; });
     };
     CHECK(find_candidate(stale_primary).kind == candidate_kind_t::stale_primary_temporary);
@@ -440,10 +440,10 @@ TEST_CASE("stale temporary quarantine uses matching project identity and complet
     CHECK(find_candidate(stale_recovery).kind == candidate_kind_t::stale_recovery_temporary);
     CHECK(find_candidate(stale_recovery).quarantine == quarantine_t::retain);
 
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(
+    REQUIRE(wormedit::create_native_project_recovery_file(
                 unrelated_entry, valid_song(11),
                 {.utc_write_time = std::chrono::system_clock::time_point{2ms}})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .caller_supplied_entries = {unrelated_entry}});
     CHECK(find_candidate(stale_recovery).quarantine ==
@@ -457,53 +457,53 @@ TEST_CASE("recovery actions revalidate scan identity and save-as never replaces 
     const auto primary = directory.path / "chart.wormedit";
     const auto backup = wormedit::native_project_adjacent_backup_path(primary);
     const auto save_as = directory.path / "recovered-copy.wormedit";
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(5)).published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(6),
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(5)).value);
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(6),
                                                              {.session_sequence = 2})
-                .published);
+                .value);
     const auto primary_before = read_text(primary);
     const auto scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
     const auto candidate = std::ranges::find_if(
-        scan.candidates, [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
-    const auto candidate_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+        scan.value.candidates, [&](const auto& item) { return item.path == backup; });
+    REQUIRE(candidate != scan.value.candidates.end());
+    const auto candidate_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
     CHECK(candidate->scanned_size_bytes.has_value());
     CHECK(candidate->scanned_sha256.size() == 64);
 
-    const auto inspected = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::inspect_read_only);
-    REQUIRE(inspected.applied);
-    REQUIRE(inspected.document.has_value());
-    CHECK((inspected.version == wormedit::native_project_document_version_t{
+    const auto inspected = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::inspect_read_only);
+    REQUIRE(inspected.value.applied);
+    REQUIRE(inspected.value.document.has_value());
+    CHECK((inspected.value.version == wormedit::native_project_document_version_t{
                                     .project_id = valid_song(1).id, .revision = 6}));
 
-    const auto unguarded_recovery = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::recover_into_session);
-    CHECK_FALSE(unguarded_recovery.applied);
+    const auto unguarded_recovery = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::recover_into_session);
+    CHECK_FALSE(unguarded_recovery.value.applied);
 
     wormedit::native_project_recovery_action_options_t recovery_options;
     recovery_options.expected_session.is_set = true;
     recovery_options.expected_session.version =
         wormedit::native_project_document_version_t{.project_id = valid_song(1).id, .revision = 5};
-    const auto recovered = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::recover_into_session, recovery_options);
-    REQUIRE(recovered.applied);
-    REQUIRE(recovered.document.has_value());
-    CHECK(recovered.document->revision == 6);
+    const auto recovered = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::recover_into_session, recovery_options);
+    REQUIRE(recovered.value.applied);
+    REQUIRE(recovered.value.document.has_value());
+    CHECK(recovered.value.document->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
     recovery_options.expected_session.version->revision = 4;
-    const auto stale_session = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::recover_into_session, recovery_options);
-    CHECK_FALSE(stale_session.applied);
-    CHECK(stale_session.has_errors());
+    const auto stale_session = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::recover_into_session, recovery_options);
+    CHECK_FALSE(stale_session.value.applied);
+    CHECK(!stale_session.ok());
 
     wormedit::native_project_recovery_action_options_t limited_options;
     limited_options.maximum_candidate_file_bytes = 1;
-    const auto limited_read = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::inspect_read_only, limited_options);
-    CHECK_FALSE(limited_read.applied);
+    const auto limited_read = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::inspect_read_only, limited_options);
+    CHECK_FALSE(limited_read.value.applied);
     CHECK(std::ranges::any_of(limited_read.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::resource_limit;
@@ -511,26 +511,26 @@ TEST_CASE("recovery actions revalidate scan identity and save-as never replaces 
 
     wormedit::native_project_recovery_action_options_t save_options;
     save_options.save_as_destination = save_as;
-    const auto saved_as = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::save_as_new_project, save_options);
-    REQUIRE(saved_as.applied);
+    const auto saved_as = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::save_as_new_project, save_options);
+    REQUIRE(saved_as.value.applied);
     const auto reopened = wormedit::parse_native_project(read_text(save_as));
-    REQUIRE(reopened.song.has_value());
-    CHECK(reopened.song->revision == 6);
+    REQUIRE(reopened.value.has_value());
+    CHECK(reopened.value->revision == 6);
     CHECK(read_text(primary) == primary_before);
 
-    const auto existing_destination = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::save_as_new_project, save_options);
-    CHECK_FALSE(existing_destination.applied);
+    const auto existing_destination = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::save_as_new_project, save_options);
+    CHECK_FALSE(existing_destination.value.applied);
     CHECK(std::ranges::any_of(existing_destination.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::recovery_target_exists;
     }));
 
     save_options.save_as_destination = primary;
-    const auto primary_target = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::save_as_new_project, save_options);
-    CHECK_FALSE(primary_target.applied);
+    const auto primary_target = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::save_as_new_project, save_options);
+    CHECK_FALSE(primary_target.value.applied);
     CHECK(read_text(primary) == primary_before);
 
     const auto raced_destination = directory.path / "appeared-during-save-as.wormedit";
@@ -541,9 +541,9 @@ TEST_CASE("recovery actions revalidate scan identity and save-as never replaces 
         }
         return true;
     };
-    const auto save_as_race = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::save_as_new_project, save_options);
-    CHECK_FALSE(save_as_race.applied);
+    const auto save_as_race = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::save_as_new_project, save_options);
+    CHECK_FALSE(save_as_race.value.applied);
     CHECK(read_text(raced_destination) == "preexisting concurrent file");
     CHECK(read_text(primary) == primary_before);
 }
@@ -553,23 +553,23 @@ TEST_CASE("recovery into an empty session validates a recovery with no primary f
     temporary_directory_t directory;
     const auto primary = directory.path / "missing-primary.wormedit";
     const auto backup = wormedit::native_project_adjacent_backup_path(primary);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(2),
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(2),
                                                              {.session_sequence = 1})
-                .published);
+                .value);
     const auto scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
     const auto candidate = std::ranges::find_if(
-        scan.candidates, [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
-    const auto candidate_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+        scan.value.candidates, [&](const auto& item) { return item.path == backup; });
+    REQUIRE(candidate != scan.value.candidates.end());
+    const auto candidate_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
     wormedit::native_project_recovery_action_options_t options;
     options.expected_session.is_set = true;
-    const auto recovered = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, wormedit::native_project_recovery_action_t::recover_into_session,
+    const auto recovered = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, wormedit::native_project_recovery_action_t::recover_into_session,
         options);
-    REQUIRE(recovered.applied);
-    REQUIRE(recovered.document.has_value());
-    CHECK(recovered.document->revision == 2);
+    REQUIRE(recovered.value.applied);
+    REQUIRE(recovered.value.document.has_value());
+    CHECK(recovered.value.document->revision == 2);
     CHECK_FALSE(std::filesystem::exists(primary));
 }
 
@@ -586,51 +586,51 @@ TEST_CASE("platform recovery directories are scanned deterministically for an em
     const auto quarantined =
         recovery_directory / "newest-project.bak.wormedit-quarantine-123-456-1";
     const auto nested = nested_directory / "ignored.bak";
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(first, valid_song(2), {}).published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(second, valid_song(4), {}).published);
+    REQUIRE(wormedit::create_native_project_recovery_file(first, valid_song(2), {}).value);
+    REQUIRE(wormedit::create_native_project_recovery_file(second, valid_song(4), {}).value);
     REQUIRE(
-        wormedit::publish_native_project_recovery_atomic(interrupted, valid_song(3), {}).published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(quarantined, valid_song(100), {})
-                .published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(nested, valid_song(99), {}).published);
+        wormedit::create_native_project_recovery_file(interrupted, valid_song(3), {}).value);
+    REQUIRE(wormedit::create_native_project_recovery_file(quarantined, valid_song(100), {})
+                .value);
+    REQUIRE(wormedit::create_native_project_recovery_file(nested, valid_song(99), {}).value);
 
     const auto scan = wormedit::scan_native_project_recovery_candidates(
         {.caller_supplied_directories = {recovery_directory}, .discover_stale_temporaries = false});
-    REQUIRE(scan.candidates.size() == 3);
-    CHECK(scan.candidates[0].path == first);
-    CHECK(scan.candidates[1].path == interrupted);
-    CHECK(scan.candidates[2].path == second);
-    CHECK(scan.candidates[0].kind == candidate_kind_t::caller_supplied_entry);
-    CHECK(scan.candidates[1].kind == candidate_kind_t::stale_recovery_temporary);
-    CHECK(scan.candidates[2].kind == candidate_kind_t::caller_supplied_entry);
-    CHECK(std::ranges::none_of(scan.candidates,
+    REQUIRE(scan.value.candidates.size() == 3);
+    CHECK(scan.value.candidates[0].path == first);
+    CHECK(scan.value.candidates[1].path == interrupted);
+    CHECK(scan.value.candidates[2].path == second);
+    CHECK(scan.value.candidates[0].kind == candidate_kind_t::caller_supplied_entry);
+    CHECK(scan.value.candidates[1].kind == candidate_kind_t::stale_recovery_temporary);
+    CHECK(scan.value.candidates[2].kind == candidate_kind_t::caller_supplied_entry);
+    CHECK(std::ranges::none_of(scan.value.candidates,
                                [&](const auto& candidate) { return candidate.path == nested; }));
     CHECK(std::ranges::none_of(
-        scan.candidates, [&](const auto& candidate) { return candidate.path == quarantined; }));
-    REQUIRE(scan.preferred_recovery_candidate.has_value());
-    CHECK(scan.candidates[*scan.preferred_recovery_candidate].path == second);
+        scan.value.candidates, [&](const auto& candidate) { return candidate.path == quarantined; }));
+    REQUIRE(scan.value.preferred_recovery_candidate.has_value());
+    CHECK(scan.value.candidates[*scan.value.preferred_recovery_candidate].path == second);
 
     wormedit::native_project_recovery_action_options_t options;
     options.expected_session.is_set = true;
-    const auto recovered = wormedit::apply_native_project_recovery_action(
-        scan, *scan.preferred_recovery_candidate,
+    const auto recovered = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, *scan.value.preferred_recovery_candidate,
         wormedit::native_project_recovery_action_t::recover_into_session, options);
-    REQUIRE(recovered.applied);
-    REQUIRE(recovered.document.has_value());
-    CHECK(recovered.document->revision == 4);
+    REQUIRE(recovered.value.applied);
+    REQUIRE(recovered.value.document.has_value());
+    CHECK(recovered.value.document->revision == 4);
 
     options.expected_session.version =
         wormedit::native_project_document_version_t{.project_id = valid_song(1).id, .revision = 1};
-    const auto nonempty_session = wormedit::apply_native_project_recovery_action(
-        scan, *scan.preferred_recovery_candidate,
+    const auto nonempty_session = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, *scan.value.preferred_recovery_candidate,
         wormedit::native_project_recovery_action_t::recover_into_session, options);
-    CHECK_FALSE(nonempty_session.applied);
-    CHECK(nonempty_session.has_errors());
+    CHECK_FALSE(nonempty_session.value.applied);
+    CHECK(!nonempty_session.ok());
 
     const auto limited_scan = wormedit::scan_native_project_recovery_candidates(
         {.caller_supplied_directories = {recovery_directory}, .discover_stale_temporaries = false},
         {.maximum_candidates = 2});
-    CHECK(limited_scan.candidates.size() == 2);
+    CHECK(limited_scan.value.candidates.size() == 2);
     CHECK(std::ranges::any_of(limited_scan.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::resource_limit;
@@ -644,7 +644,7 @@ TEST_CASE("platform recovery directories are scanned deterministically for an em
     const auto oversized_scan = wormedit::scan_native_project_recovery_candidates(
         {.caller_supplied_directories = {oversized_directory}, .discover_stale_temporaries = false},
         {.maximum_candidates = 1});
-    CHECK(oversized_scan.candidates.empty());
+    CHECK(oversized_scan.value.candidates.empty());
     CHECK(std::ranges::any_of(oversized_scan.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::native_project_storage_diagnostic_code_t::resource_limit;
@@ -658,16 +658,16 @@ TEST_CASE("recovery actions reject changed artifacts and quarantine by recoverab
     temporary_directory_t directory;
     const auto primary = directory.path / "chart.wormedit";
     const auto backup = wormedit::native_project_adjacent_backup_path(primary);
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(4)).published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(3),
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(4)).value);
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(3),
                                                              {.session_sequence = 1})
-                .published);
+                .value);
     auto scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
-    auto candidate = std::ranges::find_if(scan.candidates,
+    auto candidate = std::ranges::find_if(scan.value.candidates,
                                           [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
-    const auto candidate_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+    REQUIRE(candidate != scan.value.candidates.end());
+    const auto candidate_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
 
     wormedit::native_project_recovery_action_options_t raced_options;
     raced_options.allow_stage = [&](auto stage, const auto&) {
@@ -676,69 +676,69 @@ TEST_CASE("recovery actions reject changed artifacts and quarantine by recoverab
         }
         return true;
     };
-    const auto changed = wormedit::apply_native_project_recovery_action(
-        scan, candidate_index, action_t::discard, raced_options);
-    CHECK_FALSE(changed.applied);
+    const auto changed = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, candidate_index, action_t::discard, raced_options);
+    CHECK_FALSE(changed.value.applied);
     CHECK(read_text(backup) == "replacement after scan");
     CHECK(std::ranges::any_of(changed.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::recovery_candidate_changed;
     }));
 
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(3),
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(3),
                                                              {.session_sequence = 2})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
-    candidate = std::ranges::find_if(scan.candidates,
+    candidate = std::ranges::find_if(scan.value.candidates,
                                      [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
-    const auto primary_race_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+    REQUIRE(candidate != scan.value.candidates.end());
+    const auto primary_race_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
     raced_options.allow_stage = [&](auto stage, const auto&) {
         if (stage == wormedit::native_project_recovery_action_stage_t::before_mutation) {
-            REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(5)).published);
+            REQUIRE(wormedit::create_native_project_file(primary, valid_song(5)).value);
         }
         return true;
     };
-    const auto changed_primary = wormedit::apply_native_project_recovery_action(
-        scan, primary_race_index, action_t::discard, raced_options);
-    CHECK_FALSE(changed_primary.applied);
+    const auto changed_primary = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, primary_race_index, action_t::discard, raced_options);
+    CHECK_FALSE(changed_primary.value.applied);
     CHECK(std::filesystem::exists(backup));
     CHECK(std::ranges::any_of(changed_primary.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::recovery_candidate_changed;
     }));
 
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(4)).published);
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(3),
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(4)).value);
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(3),
                                                              {.session_sequence = 2})
-                .published);
+                .value);
     write_text(backup, "corrupt recovery payload");
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
-    candidate = std::ranges::find_if(scan.candidates,
+    candidate = std::ranges::find_if(scan.value.candidates,
                                      [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
+    REQUIRE(candidate != scan.value.candidates.end());
     CHECK(candidate->quarantine ==
           wormedit::native_project_recovery_quarantine_t::recommend_quarantine_corrupt);
     CHECK(std::ranges::find(candidate->available_actions, action_t::quarantine) !=
           candidate->available_actions.end());
-    const auto corrupt_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+    const auto corrupt_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
     const auto quarantined_bytes = read_text(backup);
     const auto quarantined =
-        wormedit::apply_native_project_recovery_action(scan, corrupt_index, action_t::quarantine);
-    REQUIRE(quarantined.applied);
-    REQUIRE(quarantined.quarantined_path.has_value());
+        wormedit::perform_native_project_recovery_action(scan.value.candidates, corrupt_index, action_t::quarantine);
+    REQUIRE(quarantined.value.applied);
+    REQUIRE(quarantined.value.quarantined_path.has_value());
     CHECK_FALSE(std::filesystem::exists(backup));
-    CHECK(read_text(*quarantined.quarantined_path) == quarantined_bytes);
+    CHECK(read_text(*quarantined.value.quarantined_path) == quarantined_bytes);
 
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(3),
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(3),
                                                              {.session_sequence = 3})
-                .published);
+                .value);
     scan = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false});
-    candidate = std::ranges::find_if(scan.candidates,
+    candidate = std::ranges::find_if(scan.value.candidates,
                                      [&](const auto& item) { return item.path == backup; });
-    REQUIRE(candidate != scan.candidates.end());
-    const auto valid_index = static_cast<std::size_t>(candidate - scan.candidates.begin());
+    REQUIRE(candidate != scan.value.candidates.end());
+    const auto valid_index = static_cast<std::size_t>(candidate - scan.value.candidates.begin());
     wormedit::native_project_recovery_action_options_t after_move_options;
     after_move_options.allow_stage = [&](auto stage, const auto& path) {
         if (stage == wormedit::native_project_recovery_action_stage_t::after_quarantine_move) {
@@ -746,12 +746,12 @@ TEST_CASE("recovery actions reject changed artifacts and quarantine by recoverab
         }
         return true;
     };
-    const auto failed_move = wormedit::apply_native_project_recovery_action(
-        scan, valid_index, action_t::discard, after_move_options);
-    CHECK_FALSE(failed_move.applied);
+    const auto failed_move = wormedit::perform_native_project_recovery_action(
+        scan.value.candidates, valid_index, action_t::discard, after_move_options);
+    CHECK_FALSE(failed_move.value.applied);
     CHECK(std::filesystem::exists(backup));
     CHECK(read_text(backup) == "changed during move");
-    CHECK_FALSE(failed_move.quarantined_path.has_value());
+    CHECK_FALSE(failed_move.value.quarantined_path.has_value());
 }
 
 TEST_CASE("startup recovery scan enforces candidate, file-byte, and diagnostic caps",
@@ -761,7 +761,7 @@ TEST_CASE("startup recovery scan enforces candidate, file-byte, and diagnostic c
     const auto primary = directory.path / "chart.wormedit";
     const auto first = directory.path / "first.bak";
     const auto second = directory.path / "second.bak";
-    REQUIRE(wormedit::publish_native_project_atomic(primary, valid_song(1)).published);
+    REQUIRE(wormedit::create_native_project_file(primary, valid_song(1)).value);
     write_text(first, "bad one");
     write_text(second, "bad two");
 
@@ -770,7 +770,7 @@ TEST_CASE("startup recovery scan enforces candidate, file-byte, and diagnostic c
     candidate_options.maximum_diagnostics = 1;
     const auto candidate_limited = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false}, candidate_options);
-    CHECK(candidate_limited.candidates.size() == 1);
+    CHECK(candidate_limited.value.candidates.size() == 1);
     CHECK(candidate_limited.diagnostics.size() == 1);
 
     wormedit::native_project_recovery_scan_options_t byte_options;
@@ -778,7 +778,7 @@ TEST_CASE("startup recovery scan enforces candidate, file-byte, and diagnostic c
     byte_options.maximum_total_bytes = 1;
     const auto byte_limited = wormedit::scan_native_project_recovery_candidates(
         {.primary_path = primary, .discover_stale_temporaries = false}, byte_options);
-    CHECK(byte_limited.candidates.front().status == candidate_status_t::resource_limited);
+    CHECK(byte_limited.value.candidates.front().status == candidate_status_t::resource_limited);
     CHECK(byte_limited.diagnostics.size() == 1);
 
     wormedit::native_project_recovery_scan_options_t diagnostic_options;
@@ -787,7 +787,7 @@ TEST_CASE("startup recovery scan enforces candidate, file-byte, and diagnostic c
     const auto diagnostics_limited = wormedit::scan_native_project_recovery_candidates(
         {.caller_supplied_entries = {first, second}, .discover_stale_temporaries = false},
         diagnostic_options);
-    CHECK(diagnostics_limited.candidates.size() == 2);
+    CHECK(diagnostics_limited.value.candidates.size() == 2);
     CHECK(diagnostics_limited.diagnostics.size() == 1);
 }
 
@@ -802,32 +802,32 @@ TEST_CASE("autosave waits five minutes and writes only new dirty revisions",
         start, wormedit::native_project_document_version_t{wormedit::song_id_t{417}, 1});
 
     const auto clean_at_deadline =
-        autosave.maybe_autosave(valid_song(1), start + 5min, recovery_path);
-    CHECK(clean_at_deadline.status == wormedit::native_project_autosave_status_t::not_due);
+        autosave.create_autosave(valid_song(1), start + 5min, recovery_path);
+    CHECK(clean_at_deadline.value.status == wormedit::native_project_autosave_status_t::not_due);
 
     auto song = valid_song(2);
-    const auto before_deadline = autosave.maybe_autosave(song, start + 5min - 1ms, recovery_path,
+    const auto before_deadline = autosave.create_autosave(song, start + 5min - 1ms, recovery_path,
                                                          directory.path / "source.bms");
-    CHECK(before_deadline.status == wormedit::native_project_autosave_status_t::not_due);
+    CHECK(before_deadline.value.status == wormedit::native_project_autosave_status_t::not_due);
     const auto at_deadline =
-        autosave.maybe_autosave(song, start + 5min, recovery_path, directory.path / "source.bms");
-    REQUIRE(at_deadline.status == wormedit::native_project_autosave_status_t::published);
-    CHECK(at_deadline.session_sequence == 1);
+        autosave.create_autosave(song, start + 5min, recovery_path, directory.path / "source.bms");
+    REQUIRE(at_deadline.value.status == wormedit::native_project_autosave_status_t::published);
+    CHECK(at_deadline.value.session_sequence == 1);
     CHECK(std::filesystem::exists(recovery_path));
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
-    REQUIRE(parsed.snapshot.has_value());
-    CHECK(parsed.snapshot->metadata.original_source_path == directory.path / "source.bms");
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->metadata.original_source_path == directory.path / "source.bms");
 
-    const auto same_revision = autosave.maybe_autosave(song, start + 10min, recovery_path);
-    CHECK(same_revision.status == wormedit::native_project_autosave_status_t::not_due);
+    const auto same_revision = autosave.create_autosave(song, start + 10min, recovery_path);
+    CHECK(same_revision.value.status == wormedit::native_project_autosave_status_t::not_due);
     song.revision = 3;
-    const auto next_revision = autosave.maybe_autosave(song, start + 10min, recovery_path);
-    REQUIRE(next_revision.status == wormedit::native_project_autosave_status_t::published);
-    CHECK(next_revision.session_sequence == 2);
+    const auto next_revision = autosave.create_autosave(song, start + 10min, recovery_path);
+    REQUIRE(next_revision.value.status == wormedit::native_project_autosave_status_t::published);
+    CHECK(next_revision.value.session_sequence == 2);
 
     autosave.mark_explicit_save({.project_id = song.id, .revision = song.revision});
-    const auto now_clean = autosave.maybe_autosave(song, start + 15min, recovery_path);
-    CHECK(now_clean.status == wormedit::native_project_autosave_status_t::not_due);
+    const auto now_clean = autosave.create_autosave(song, start + 15min, recovery_path);
+    CHECK(now_clean.value.status == wormedit::native_project_autosave_status_t::not_due);
 }
 
 TEST_CASE("autosave retries a failed revision without advancing its cadence or sequence",
@@ -836,22 +836,22 @@ TEST_CASE("autosave retries a failed revision without advancing its cadence or s
     temporary_directory_t directory;
     const auto start = clock_t::time_point{};
     const auto backup = directory.path / "recovery.bak";
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(backup, valid_song(4),
+    REQUIRE(wormedit::create_native_project_recovery_file(backup, valid_song(4),
                                                              {.session_sequence = 3})
-                .published);
+                .value);
     const auto original_backup = read_text(backup);
     wormedit::native_project_autosave_coordinator_t autosave(start, {}, 5min, 3);
 
-    const auto failed = autosave.maybe_autosave(
+    const auto failed = autosave.create_autosave(
         valid_song(5), start + 5min, backup, {}, {},
         fails_at(wormedit::native_project_storage_stage_t::replace_destination));
-    CHECK(failed.status == wormedit::native_project_autosave_status_t::failed);
+    CHECK(failed.value.status == wormedit::native_project_autosave_status_t::failed);
     CHECK(autosave.session_sequence() == 3);
     CHECK(read_text(backup) == original_backup);
 
-    const auto retried = autosave.maybe_autosave(valid_song(5), start + 5min, backup);
-    REQUIRE(retried.status == wormedit::native_project_autosave_status_t::published);
-    CHECK(retried.session_sequence == 4);
+    const auto retried = autosave.create_autosave(valid_song(5), start + 5min, backup);
+    REQUIRE(retried.value.status == wormedit::native_project_autosave_status_t::published);
+    CHECK(retried.value.session_sequence == 4);
 }
 
 TEST_CASE("autosave rejects nonpositive intervals explicitly",
@@ -863,8 +863,8 @@ TEST_CASE("autosave rejects nonpositive intervals explicitly",
                                std::chrono::duration_cast<clock_t::duration>(-1ms)};
     for (const auto interval : intervals) {
         wormedit::native_project_autosave_coordinator_t autosave(start, {}, interval);
-        const auto result = autosave.maybe_autosave(valid_song(1), start + 1h, backup);
-        CHECK(result.status == wormedit::native_project_autosave_status_t::failed);
+        const auto result = autosave.create_autosave(valid_song(1), start + 1h, backup);
+        CHECK(result.value.status == wormedit::native_project_autosave_status_t::failed);
         CHECK(std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code ==
                    wormedit::native_project_storage_diagnostic_code_t::invalid_interval;
@@ -885,26 +885,26 @@ TEST_CASE("schema-4 autosave preserves quantization presets through recovery",
          .holds = wormedit::quantization_hold_t::start_only},
         {.name = "Sixteenths", .divisions = 16}};
     wormedit::native_project_autosave_coordinator_t autosave(clock_t::time_point{});
-    const auto saved = autosave.maybe_autosave(song, clock_t::time_point{} + 5min, recovery_path);
-    REQUIRE(saved.status == wormedit::native_project_autosave_status_t::published);
+    const auto saved = autosave.create_autosave(song, clock_t::time_point{} + 5min, recovery_path);
+    REQUIRE(saved.value.status == wormedit::native_project_autosave_status_t::published);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
-    REQUIRE(parsed.snapshot);
-    CHECK(parsed.snapshot->song.schema_version == 6);
-    CHECK(parsed.snapshot->song.quantization_presets == song.quantization_presets);
+    REQUIRE(parsed.value);
+    CHECK(parsed.value->song.schema_version == 6);
+    CHECK(parsed.value->song.quantization_presets == song.quantization_presets);
 }
 
 TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown versions",
           "[unit][format][native-project][recovery][negative]") {
     temporary_directory_t directory;
     const auto recovery_path = directory.path / "schemas.bak";
-    REQUIRE(wormedit::publish_native_project_recovery_atomic(
-                recovery_path, valid_song(2), {.session_sequence = 1}).published);
+    REQUIRE(wormedit::create_native_project_recovery_file(
+                recovery_path, valid_song(2), {.session_sequence = 1}).value);
     auto envelope = nlohmann::json::parse(read_text(recovery_path));
     for (const auto schema : std::array<std::uint64_t, 8>{0, 1, 2, 3, 4, 5, 6, 7}) {
         INFO(schema);
         envelope["schema_version"] = schema;
         const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
-        CHECK(parsed.snapshot.has_value() == (schema >= 1 && schema <= 6));
+        CHECK(parsed.value.has_value() == (schema >= 1 && schema <= 6));
     }
 }
 
@@ -922,13 +922,13 @@ TEST_CASE("schema 6 autosave recovery preserves a BGM tail",
         .bgm_source_lanes = {{.id = wormedit::object_id_t{3}, .name = "BGM"}}}};
     wormedit::native_project_autosave_coordinator_t autosave(clock_t::time_point{});
     const auto path = directory.path / "schema6.bak";
-    REQUIRE(autosave.maybe_autosave(song, clock_t::time_point{} + 5min, path).status ==
+    REQUIRE(autosave.create_autosave(song, clock_t::time_point{} + 5min, path).value.status ==
             wormedit::native_project_autosave_status_t::published);
     const auto recovered =
         wormedit::parse_native_project_recovery_snapshot(read_text(path));
-    REQUIRE(recovered.snapshot);
-    REQUIRE(recovered.snapshot->song.schema_version == 6);
-    CHECK(recovered.snapshot->song.charts.front().measures.front().bgm_events.front().end ==
+    REQUIRE(recovered.value);
+    REQUIRE(recovered.value->song.schema_version == 6);
+    CHECK(recovered.value->song.charts.front().measures.front().bgm_events.front().end ==
           wormedit::local_position_t{wormedit::measure_id_t{1}, 1});
 }
 
@@ -937,9 +937,9 @@ TEST_CASE("native publication outcomes keep warning severity independent of publ
     native_project_storage_outcome_t outcome{.value = false,
         .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning", .path = "marker"}}};
     CHECK(outcome.ok());
-    const auto legacy = native_project_storage_result_t::from(std::move(outcome));
-    CHECK_FALSE(legacy.published);
-    CHECK_FALSE(legacy.has_errors());
+    const auto legacy = std::move(outcome);
+    CHECK_FALSE(legacy.value);
+    CHECK(legacy.ok());
     CHECK(legacy.diagnostics.front().path == "marker");
 }
 
@@ -947,13 +947,13 @@ TEST_CASE("native recovery parse outcomes retain warnings without a snapshot", "
     using namespace wormedit;
     native_project_recovery_parse_outcome_t outcome{.diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
     CHECK(outcome.ok());
-    const auto legacy = native_project_recovery_parse_result_t::from(std::move(outcome));
-    CHECK_FALSE(legacy.snapshot);
-    CHECK_FALSE(legacy.has_errors());
+    const auto legacy = std::move(outcome);
+    CHECK_FALSE(legacy.value);
+    CHECK(legacy.ok());
     CHECK(legacy.diagnostics.front().message == "warning");
 }
 
-TEST_CASE("native primary byte publication writes and adapts the publication flag", "[unit][native-storage][results]") {
+TEST_CASE("native primary byte publication retains the publication flag", "[unit][native-storage][results]") {
     using namespace wormedit;
     temporary_directory_t directory;
     const auto path = directory.path / "marker";
@@ -961,9 +961,9 @@ TEST_CASE("native primary byte publication writes and adapts the publication fla
     REQUIRE(outcome.ok());
     CHECK(outcome.value);
     CHECK(read_text(path) == "payload");
-    const auto legacy = native_project_storage_result_t::from(std::move(outcome));
-    CHECK(legacy.published);
-    CHECK_FALSE(legacy.has_errors());
+    const auto legacy = std::move(outcome);
+    CHECK(legacy.value);
+    CHECK(legacy.ok());
 }
 
 TEST_CASE("native shared recovery scan retains candidate selection beside warnings", "[unit][native-storage][results]") {
@@ -971,10 +971,10 @@ TEST_CASE("native shared recovery scan retains candidate selection beside warnin
     native_project_recovery_scan_outcome_t outcome{.value = {.candidates = {{.path = "candidate"}}, .preferred_recovery_candidate = 0},
         .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
     CHECK(outcome.ok());
-    const auto legacy = native_project_recovery_scan_result_t::from(std::move(outcome));
-    REQUIRE(legacy.candidates.size() == 1);
-    CHECK(legacy.candidates.front().path == "candidate");
-    CHECK(legacy.preferred_recovery_candidate == 0);
+    const auto legacy = std::move(outcome);
+    REQUIRE(legacy.value.candidates.size() == 1);
+    CHECK(legacy.value.candidates.front().path == "candidate");
+    CHECK(legacy.value.preferred_recovery_candidate == 0);
     CHECK(legacy.diagnostics.front().message == "warning");
 }
 
@@ -985,11 +985,11 @@ TEST_CASE("native shared recovery action retains failure metadata", "[unit][nati
     native_project_recovery_action_outcome_t outcome{.value = {.version = version, .quarantined_path = path},
         .diagnostics = {{.severity = diagnostic_severity_t::error, .message = "error"}}};
     CHECK_FALSE(outcome.ok());
-    const auto legacy = native_project_recovery_action_result_t::from(std::move(outcome));
-    CHECK_FALSE(legacy.applied);
-    CHECK(legacy.version == version);
-    CHECK(legacy.quarantined_path == path);
-    CHECK(legacy.has_errors());
+    const auto legacy = std::move(outcome);
+    CHECK_FALSE(legacy.value.applied);
+    CHECK(legacy.value.version == version);
+    CHECK(legacy.value.quarantined_path == path);
+    CHECK(!legacy.ok());
 }
 
 TEST_CASE("native shared autosave retains quiet status and counters beside warnings", "[unit][native-storage][results]") {
@@ -997,21 +997,21 @@ TEST_CASE("native shared autosave retains quiet status and counters beside warni
     native_project_autosave_outcome_t outcome{.value = {.revision = 31, .session_sequence = 7},
         .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
     CHECK(outcome.ok());
-    const auto legacy = native_project_autosave_result_t::from(std::move(outcome));
-    CHECK(legacy.status == native_project_autosave_status_t::not_due);
-    CHECK(legacy.revision == 31);
-    CHECK(legacy.session_sequence == 7);
+    const auto legacy = std::move(outcome);
+    CHECK(legacy.value.status == native_project_autosave_status_t::not_due);
+    CHECK(legacy.value.revision == 31);
+    CHECK(legacy.value.session_sequence == 7);
     CHECK(legacy.diagnostics.front().message == "warning");
 }
 
 TEST_CASE("native primary recovery scan handles an empty request", "[unit][native-storage][results]") {
     using namespace wormedit;
-    auto outcome = native_project_recovery_scan_result_t::from(native_project_recovery_scan_request_t{});
+    auto outcome = scan_native_project_recovery_candidates(native_project_recovery_scan_request_t{});
     REQUIRE(outcome.ok());
     CHECK(outcome.value.candidates.empty());
     CHECK_FALSE(outcome.value.preferred_recovery_candidate);
-    const auto legacy = native_project_recovery_scan_result_t::from(std::move(outcome));
-    CHECK(legacy.candidates.empty());
+    const auto legacy = std::move(outcome);
+    CHECK(legacy.value.candidates.empty());
 }
 
 TEST_CASE("native primary autosave rejects invalid intervals before publication", "[unit][native-storage][results]") {

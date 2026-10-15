@@ -146,7 +146,7 @@ auto append_scene_layouts(const chart_document_t& chart, editor_field_scene_inde
                 break;
             }
         }
-        const auto row = absolute_row(index.measures, segment.position);
+        const auto row = index.measures.row_of(segment.position);
         if (!row) {
             diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                         "field-scene layout starts outside chart geometry",
@@ -182,8 +182,8 @@ template <typename ColorForNote>
 auto append_scene_note(const measure_chunk_t& measure, const note_t& note,
                        scene_note_index_context_t& context, ColorForNote&& semantic_color_for_note)
     -> void {
-    const auto begin = absolute_row(context.index.measures, note.position);
-    const auto end = note.end ? absolute_row(context.index.measures, *note.end) : begin;
+    const auto begin = context.index.measures.row_of(note.position);
+    const auto end = note.end ? context.index.measures.row_of(*note.end) : begin;
     if (!note.id || !context.note_ids.insert(note.id.value).second) {
         context.diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
                                             "field-scene note identity is missing or duplicated",
@@ -281,8 +281,8 @@ struct scene_bgm_index_context_t {
 
 auto append_scene_bgm_event(const measure_chunk_t& measure, const bgm_event_t& event,
                             scene_bgm_index_context_t& context) -> void {
-    const auto row = absolute_row(context.index.measures, event.position);
-    const auto end = event.end ? absolute_row(context.index.measures, *event.end) : row;
+    const auto row = context.index.measures.row_of(event.position);
+    const auto end = event.end ? context.index.measures.row_of(*event.end) : row;
     if (!event.id) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                                             "field-scene BGM event has invalid source geometry",
@@ -367,7 +367,7 @@ auto append_scene_bgm_events(const chart_document_t& chart, editor_field_scene_i
             std::vector<std::pair<object_id_t, std::uint64_t>> channel_events;
             channel_events.reserve(channel.events.size());
             for (const auto& event : channel.events) {
-                const auto row = absolute_row(index.measures, event.position);
+                const auto row = index.measures.row_of(event.position);
                 if (!row) {
                     diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                                 "BMSON source event is outside chart geometry",
@@ -423,7 +423,7 @@ auto append_scene_bga_events(const chart_document_t& chart, editor_field_scene_i
             return false;
         }
         ++supported_count;
-        const auto row = absolute_row(index.measures, event.position);
+        const auto row = index.measures.row_of(event.position);
         if (!row) {
             diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                         "field-scene BGA event is outside chart geometry", event.id));
@@ -671,7 +671,7 @@ auto append_duration_proposal(scene_geometry_context_t& context,
                       "field-scene hold duration preview is missing its tail"));
             return false;
         }
-        end_row = absolute_row(context.index.measures, *preview.end);
+        end_row = context.index.measures.row_of(*preview.end);
         if (!end_row || *end_row <= context.index.notes[found->second].begin_row) {
             context.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_hold,
@@ -813,8 +813,8 @@ auto append_placed_hold(scene_geometry_context_t& context, hold_proposals_t& hol
                         const pending_hold_t& pending, regular_hold_rows_t rows, Operate&& operate)
     -> bool {
     const auto& preview = *pending.placement_preview;
-    const auto head = absolute_row(context.index.measures, preview.head);
-    const auto tail = preview.tail ? absolute_row(context.index.measures, *preview.tail)
+    const auto head = context.index.measures.row_of(preview.head);
+    const auto tail = preview.tail ? context.index.measures.row_of(*preview.tail)
                                    : std::optional<std::uint64_t>{};
     if (!is_valid_regular_hold_placement(preview, rows, head, tail)) {
         context.diagnostics.push_back(
@@ -845,7 +845,7 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
     if (pending.anchor_canvas_row || pending.preview_canvas_row) {
         return true;
     }
-    const auto anchor = absolute_row(context.index.measures, pending.position);
+    const auto anchor = context.index.measures.row_of(pending.position);
     if (!anchor ||
         !has_lane(layout_at_row(context.index, *anchor), pending.lane)) {
         context.diagnostics.push_back(
@@ -859,7 +859,7 @@ auto append_regular_hold(scene_geometry_context_t& context, hold_proposals_t& ho
     }
     std::optional<std::uint64_t> moving;
     if (pending.preview_end) {
-        moving = absolute_row(context.index.measures, *pending.preview_end);
+        moving = context.index.measures.row_of(*pending.preview_end);
         if (!moving || !has_lane(layout_at_row(context.index, *moving), pending.lane)) {
             context.diagnostics.push_back(
                 error(diagnostic_code_t::invalid_hold,
@@ -1005,7 +1005,7 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
         return false;
     }
     const auto found = context.index.note_indices_by_id.find(preview.note.value);
-    const auto begin_row = absolute_row(context.index.measures, preview.position);
+    const auto begin_row = context.index.measures.row_of(preview.position);
     const auto invalid_lane_preview = (preview.conflict == note_move_conflict_t::out_of_lane ||
                                        preview.conflict == note_move_conflict_t::out_of_chart) &&
                                       preview.display_column && preview.display_columns != 0;
@@ -1038,7 +1038,7 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
                       "field-scene moved hold preview is missing its tail"));
             return false;
         }
-        end_row = absolute_row(context.index.measures, *preview.end);
+        end_row = context.index.measures.row_of(*preview.end);
         if (!end_row || (!preview.display_begin_row && *end_row <= *begin_row) ||
             (!invalid_lane_preview &&
              !has_lane(layout_at_row(context.index, *end_row), preview.lane))) {
@@ -1663,7 +1663,7 @@ auto append_visible_paint_target(scene_geometry_context_t& context, scene_paint_
                   "field-scene paint preview exceeds its configured operation cap"));
         return false;
     }
-    const auto row = absolute_row(context.index.measures, target.position);
+    const auto row = context.index.measures.row_of(target.position);
     if (!row || *row >= context.index.measures.total_rows) {
         context.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                             "field-scene paint target is outside chart geometry"));
@@ -1824,7 +1824,7 @@ auto compose_comparison_rows(scene_geometry_context_t& context, Operate&& operat
     std::vector<std::pair<std::uint64_t, local_position_t>> rows;
     rows.reserve(context.request.comparison_difference_rows.size());
     for (const auto position : context.request.comparison_difference_rows) {
-        const auto row = absolute_row(context.index.measures, position);
+        const auto row = context.index.measures.row_of(position);
         if (!row) {
             context.diagnostics.push_back(
                 error(diagnostic_code_t::row_out_of_range,
@@ -1905,7 +1905,7 @@ auto scene_cursor_row(const scene_geometry_context_t& context) -> std::optional<
     const auto anchor = context.request.fixed_cursor_screen_y_pixels
         ? context.request.fixed_cursor_screen_y_pixels : context.view.fixed_cursor_screen_y_pixels;
     if (!anchor) return context.view.virtual_bms_cursor_row
-        ? context.view.virtual_bms_cursor_row : absolute_row(context.index.measures, context.view.cursor);
+        ? context.view.virtual_bms_cursor_row : context.index.measures.row_of(context.view.cursor);
     const auto source = context.request.scroll_direction == editor_field_scroll_direction_t::down
         ? context.view.viewport_height_pixels - *anchor : *anchor;
     const auto row = (context.view.viewport_scroll_pixels + source) *
@@ -2088,9 +2088,9 @@ auto append_bgm_move_previews(scene_geometry_context_t& context, const visible_b
     const auto& pending = *context.view.gesture<pending_note_move_gesture_t>();
     for (const auto& preview : pending.bgm_preview) {
         if (!operate()) return false;
-        const auto begin = preview.canvas_begin_row ? preview.canvas_begin_row : absolute_row(context.index.measures, preview.position);
+        const auto begin = preview.canvas_begin_row ? preview.canvas_begin_row : context.index.measures.row_of(preview.position);
         const auto end = preview.canvas_end_row ? preview.canvas_end_row
-            : preview.end ? absolute_row(context.index.measures, *preview.end) : begin;
+            : preview.end ? context.index.measures.row_of(*preview.end) : begin;
         if (!begin || !end) return false;
         const auto count = context.scene.bgm_events.size();
         const editor_field_scene_bgm_source_t source{.event = preview.note, .source_lane = preview.lane,

@@ -132,9 +132,4 @@ auto create_bmson_sound_channel_layers(chart_document_t& chart)
     return true;
 }
 
-auto initialize_bmson_sound_channel_layers(chart_document_t& chart)
-    -> bmson_layer_defaults_result_t {
-    return bmson_layer_defaults_result_t::from(create_bmson_sound_channel_layers(chart));
-}
-
 } // namespace wormedit

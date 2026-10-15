@@ -129,18 +129,18 @@ TEST_CASE("wormedit-convert turns a StepMania chart into osu!mania and re-import
     REQUIRE(run.result["artifacts"].size() == 1);
     const auto written = read_file(run.result["artifacts"][0]["path"].get<std::string>());
     const auto reparsed = wormedit::parse_osu_mania_bytes(bytes_of(written));
-    REQUIRE(reparsed.song);
+    REQUIRE(reparsed.value);
     const auto source = wormedit::parse_stepmania_bytes(bytes_of(plain_sm));
-    REQUIRE(source.song);
-    CHECK(reparsed.song->metadata.title == source.song->metadata.title);
-    CHECK(reparsed.song->metadata.artist == source.song->metadata.artist);
+    REQUIRE(source.value);
+    CHECK(reparsed.value->metadata.title == source.value->metadata.title);
+    CHECK(reparsed.value->metadata.artist == source.value->metadata.artist);
     const auto count_notes = [](const wormedit::song_document_t& song) {
         std::size_t notes{};
         for (const auto& measure : song.charts.front().measures) notes += measure.notes.size();
         return notes;
     };
-    CHECK(count_notes(*reparsed.song) == count_notes(*source.song));
-    CHECK(count_notes(*reparsed.song) == 4);
+    CHECK(count_notes(*reparsed.value) == count_notes(*source.value));
+    CHECK(count_notes(*reparsed.value) == 4);
 }
 
 TEST_CASE("wormedit-convert reports import quantization without rejecting the chart",
@@ -265,14 +265,14 @@ void check_cli(bool value) { CHECK(value); }
 auto write_two_silent_bmson_charts(const scratch_directory_t& scratch) -> std::filesystem::path {
     constexpr std::string_view text = R"({"version":"1.0.0","info":{"title":"silent","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
     auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    require_cli(parsed.song.has_value());
-    auto second = parsed.song->charts.front();
+    require_cli(parsed.value.has_value());
+    auto second = parsed.value->charts.front();
     second.id = wormedit::chart_id_t{second.id.value + 1000};
-    parsed.song->charts.push_back(second);
-    const auto saved = wormedit::write_native_project(*parsed.song);
-    require_cli(saved.bytes.has_value());
+    parsed.value->charts.push_back(second);
+    const auto saved = wormedit::write_native_project(*parsed.value);
+    require_cli(saved.value.has_value());
     const auto input = scratch.path() / "multi.wormedit";
-    std::ofstream(input) << *saved.bytes;
+    std::ofstream(input) << *saved.value;
     return input;
 }
 }
@@ -302,8 +302,8 @@ namespace {
 auto write_overcapacity_silent_bmson(const scratch_directory_t& scratch) -> std::filesystem::path {
     const auto input = write_two_silent_bmson_charts(scratch);
     auto parsed = wormedit::parse_native_project(read_file(input));
-    require_cli(parsed.song.has_value());
-    auto& song = *parsed.song;
+    require_cli(parsed.value.has_value());
+    auto& song = *parsed.value;
     song.charts.resize(1);
     auto& chart = song.charts.front();
     chart.measures.front().notes.push_back({.id = wormedit::object_id_t{10000},
@@ -314,8 +314,8 @@ auto write_overcapacity_silent_bmson(const scratch_directory_t& scratch) -> std:
             .name = "missing.wav", .asset = song.audio_assets.front().id,
             .roles = {wormedit::resource_role_t::music}});
     const auto saved = wormedit::write_native_project(song);
-    require_cli(saved.bytes.has_value());
-    std::ofstream(input) << *saved.bytes;
+    require_cli(saved.value.has_value());
+    std::ofstream(input) << *saved.value;
     return input;
 }
 }

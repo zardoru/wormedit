@@ -856,7 +856,6 @@ struct channel_builder_t {
     }
 };
 
-
 auto channels_for_chart(const song_document_t& song, const chart_document_t& chart,
                         const measure_index_t& index, const bmson_grid_t& grid,
                         const lane_map_t& lanes,
@@ -900,11 +899,11 @@ auto bake_selected_chart(const song_document_t& song, const chart_document_t& se
         fail(bmson_write_diagnostic_code_t::invalid_document,
              "document failed core validation: " + validation.front().message, "$");
     const auto baked = bake_sv_recipes_for_export(selected);
-    if (!baked)
+    if (!baked.value || !baked.diagnostics.empty())
         fail(bmson_write_diagnostic_code_t::unrepresentable_number,
              "SV recipe export bake failed: " + baked.diagnostics.front().message,
              "$.scroll_events");
-    return *baked.chart;
+    return *baked.value;
 }
 
 void report_bmson_chart_losses(const chart_document_t& chart,
@@ -1315,17 +1314,7 @@ auto write_impl(const song_document_t& song, bmson_write_options_t options,
 
 } // namespace
 
-auto bmson_write_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
-
-auto bmson_write_result_t::from(bmson_write_outcome_t&& outcome) -> bmson_write_result_t {
-    return {.json = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto bmson_write_result_t::from(const song_document_t& song, bmson_write_options_t options)
+auto write_bmson(const song_document_t& song, bmson_write_options_t options)
     -> bmson_write_outcome_t {
     bmson_write_outcome_t result{};
     try {
@@ -1339,12 +1328,6 @@ auto bmson_write_result_t::from(const song_document_t& song, bmson_write_options
                                       error.what(), "$"});
     }
     return result;
-}
-
-
-
-auto write_bmson(const song_document_t& song, bmson_write_options_t options) -> bmson_write_result_t {
-    return bmson_write_result_t::from(bmson_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

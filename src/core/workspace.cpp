@@ -16,6 +16,48 @@
 #include <utility>
 
 namespace wormedit {
+auto workspace_document_cache_key_t::from(const workspace_document_cache_query_t& query)
+    -> workspace_document_cache_key_t {
+    workspace_document_cache_key_t key;
+    key.assign(query);
+    return key;
+}
+
+void workspace_document_cache_key_t::assign(const workspace_document_cache_query_t& query) {
+    document_identity = &query.document;
+    stamp = document_stamp_t::from(query.document);
+    limits = query.limits;
+}
+
+auto workspace_document_cache_key_t::operator==(const workspace_document_cache_query_t& query) const
+    -> bool {
+    return document_identity == &query.document && stamp.is_current(query.document) &&
+           limits == query.limits;
+}
+
+auto workspace_bms_branch_outline_cache_key_t::from(
+    const workspace_bms_branch_outline_cache_query_t& query)
+    -> workspace_bms_branch_outline_cache_key_t {
+    workspace_bms_branch_outline_cache_key_t key;
+    key.assign(query);
+    return key;
+}
+
+void workspace_bms_branch_outline_cache_key_t::assign(
+    const workspace_bms_branch_outline_cache_query_t& query) {
+    document.assign(query.document);
+    chart_identity = &query.chart;
+    chart = query.chart.id;
+    choices.assign(query.chart.active_branch_selection.begin(),
+                   query.chart.active_branch_selection.end());
+}
+
+auto workspace_bms_branch_outline_cache_key_t::operator==(
+    const workspace_bms_branch_outline_cache_query_t& query) const -> bool {
+    return document == query.document && chart_identity == &query.chart && chart == query.chart.id &&
+           std::ranges::equal(choices, query.chart.active_branch_selection);
+}
+
 auto workspace_chart_option_t::from(const chart_document_t& chart) -> workspace_chart_option_t {
     return {
         .id = chart.id,
@@ -133,17 +175,9 @@ auto validate_binding_bounds(const song_document_t& document, const workspace_li
 auto binding_diagnostics(const song_document_t& document, const workspace_limits_t& limits,
                          workspace_binding_validation_cache_t* cache) -> diagnostic_list_t {
     if (!cache) return validate_binding_bounds(document, limits);
-    if (!cache->valid || cache->document_identity != &document || cache->song != document.id ||
-        cache->revision != document.revision || cache->limits != limits) {
-        cache->diagnostics = validate_binding_bounds(document, limits);
-        cache->document_identity = &document;
-        cache->song = document.id;
-        cache->revision = document.revision;
-        cache->limits = limits;
-        cache->valid = true;
-        ++cache->build_count;
-    }
-    return cache->diagnostics;
+    const workspace_document_cache_query_t key{.document = document, .limits = limits};
+    return cache->get_or_build(key, std::bind_front(validate_binding_bounds,
+        std::cref(key.document), std::cref(key.limits)));
 }
 
 
@@ -737,14 +771,6 @@ auto report_unmatched_branch_selections(branch_outline_context_t& context) -> vo
     }
 }
 
-auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t& cache,
-                                 const chart_document_t& chart) -> bool {
-    return std::ranges::equal(cache.choices, chart.active_branch_selection,
-        [](const auto& retained, const auto& active) {
-            return retained.first == active.branch && retained.second == active.selected_value;
-        });
-}
-
 } // namespace
 
 auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
@@ -756,27 +782,13 @@ auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
     if (!chart.bms_control_tree) return {};
     if (!cache)
         return workspace_bms_branch_outline_view_t::from(chart, limits);
-    if (cache->valid && cache->document_identity == &document &&
-        cache->chart_identity == &chart && cache->song == document.id &&
-        cache->chart == chart.id && cache->revision == document.revision &&
-        cache->limits == limits && is_branch_cache_choices_current(*cache, chart))
-        return cache->outline;
-    auto outline = workspace_bms_branch_outline_view_t::from(chart, limits);
-    cache->valid = false;
-    cache->choices.clear();
-    cache->choices.reserve(chart.active_branch_selection.size());
-    for (const auto& choice : chart.active_branch_selection)
-        cache->choices.emplace_back(choice.branch, choice.selected_value);
-    cache->outline = std::move(outline);
-    cache->document_identity = &document;
-    cache->chart_identity = &chart;
-    cache->song = document.id;
-    cache->chart = chart.id;
-    cache->revision = document.revision;
-    cache->limits = limits;
-    cache->valid = true;
-    ++cache->build_count;
-    return cache->outline;
+    const workspace_bms_branch_outline_cache_query_t key{
+        .document = {.document = document, .limits = limits}, .chart = chart};
+    return cache->get_or_build(key, std::bind_front(
+        static_cast<workspace_bms_branch_outline_view_t (*)(const chart_document_t&,
+                                                           const workspace_limits_t&)>(
+            &workspace_bms_branch_outline_view_t::from),
+        std::cref(key.chart), std::cref(key.document.limits)));
 }
 
 auto workspace_bms_branch_outline_view_t::from(const chart_document_t& chart,
@@ -800,7 +812,7 @@ auto is_workspace_tab_enabled(workspace_tab_t tab) noexcept -> bool {
            tab != workspace_tab_t::timing;
 }
 
-auto workspace_bind_result_t::from(const song_document_t& document, const workspace_limits_t& limits)
+auto workspace_controller_t::from(const song_document_t& document, const workspace_limits_t& limits)
     -> workspace_bind_outcome_t {
     workspace_bind_outcome_t result{};
     result.diagnostics = validate_binding_bounds(document, limits);
@@ -826,9 +838,9 @@ auto workspace_bind_result_t::from(const song_document_t& document, const worksp
     return result;
 }
 
-auto workspace_bind_result_t::from(const document_history_t& history,
+auto workspace_controller_t::from(const document_history_t& history,
                                   const workspace_limits_t& limits) -> workspace_bind_outcome_t {
-    auto result = workspace_bind_result_t::from(history.document, limits);
+    auto result = workspace_controller_t::from(history.document, limits);
     if (result.value.has_value()) {
         result.value->history = {.available = true,
                                      .undo_depth = history.undo.size(),
@@ -836,20 +848,6 @@ auto workspace_bind_result_t::from(const document_history_t& history,
                                      .dirty = is_document_dirty(history)};
     }
     return result;
-}
-
-auto workspace_bind_result_t::from(workspace_bind_outcome_t&& outcome) -> workspace_bind_result_t {
-    return {.workspace = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto workspace_controller_t::from(const song_document_t& document, const workspace_limits_t& limits)
-    -> workspace_bind_result_t {
-    return workspace_bind_result_t::from(workspace_bind_result_t::from(document, limits));
-}
-
-auto workspace_controller_t::from(const document_history_t& history, const workspace_limits_t& limits)
-    -> workspace_bind_result_t {
-    return workspace_bind_result_t::from(workspace_bind_result_t::from(history, limits));
 }
 
 auto rebind_transport(workspace_transport_t& transport, const song_document_t& document) -> void {
@@ -1472,12 +1470,12 @@ auto build_requested_workspace_tab(workspace_view_build_context_t& context, work
     return true;
 }
 
-auto workspace_view_result_t::from(const workspace_controller_t& workspace,
+auto workspace_view_t::from(const workspace_controller_t& workspace,
                             const song_document_t& document) -> workspace_view_outcome_t {
-    return workspace_view_result_t::from(workspace, document, workspace.active_tab);
+    return workspace_view_t::from(workspace, document, workspace.active_tab);
 }
 
-auto workspace_view_result_t::from(const workspace_controller_t& workspace,
+auto workspace_view_t::from(const workspace_controller_t& workspace,
                             const song_document_t& document, workspace_tab_t requested_tab,
                             const diagnostic_list_t* cached_diagnostics,
                             workspace_bms_branch_outline_cache_t* branch_cache,
@@ -1543,23 +1541,6 @@ auto workspace_view_result_t::from(const workspace_controller_t& workspace,
         return result;
     result.value = std::move(view);
     return result;
-}
-
-auto workspace_view_result_t::from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t {
-    return {.view = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto workspace_view_t::from(const workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_view_result_t {
-    return workspace_view_result_t::from(workspace_view_result_t::from(workspace, document));
-}
-
-auto workspace_view_t::from(const workspace_controller_t& workspace, const song_document_t& document,
-    workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics,
-    workspace_bms_branch_outline_cache_t* branch_cache, workspace_binding_validation_cache_t* binding_cache)
-    -> workspace_view_result_t {
-    return workspace_view_result_t::from(workspace_view_result_t::from(
-        workspace, document, tab, cached_diagnostics, branch_cache, binding_cache));
 }
 
 } // namespace wormedit

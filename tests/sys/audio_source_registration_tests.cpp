@@ -14,7 +14,7 @@ void check_large_inventory_pending(wormedit::audio::decoded_source_registry_t& s
                                    std::uint64_t sound_count) {
     CHECK(sources.pending_count() == sound_count);
     CHECK(sources.open_decoder_count() == 0);
-    REQUIRE(sources.probe(wormedit::asset_id_t{sound_count}));
+    REQUIRE(sources.open_source_binding(wormedit::asset_id_t{sound_count}));
 }
 
 void check_large_inventory_binding(const wormedit::audio::decoded_source_registry_t& sources,
@@ -505,9 +505,11 @@ struct budget_loader_fixture_t {
     void start() { loader.start(document, directory, 1, sources); }
     void wait() {
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
-        while (loader.progress().running && std::chrono::steady_clock::now() < deadline)
+        while ((loader.progress().running || scheduler.outstanding_tasks() != 0) &&
+               std::chrono::steady_clock::now() < deadline)
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
         expect_registration(!loader.progress().running);
+        expect_registration(scheduler.outstanding_tasks() == 0);
     }
 };
 void check_budget_snapshot(budget_loader_fixture_t& fixture,
@@ -584,15 +586,15 @@ auto occupy_budget_scheduler(wormedit::task_scheduler_t& scheduler, std::atomic<
     -> wormedit::task_graph_handle_t {
     wormedit::task_graph_t graph{4};
     for (int index = 0; index < 4; ++index) {
-        const auto added = graph.add_task({}, [&release](std::span<const wormedit::task_result_t>, std::stop_token) {
+        const auto added = graph.create_task({}, [&release](std::span<const wormedit::task_result_t>, std::stop_token) {
             while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return wormedit::task_result_t::success(wormedit::task_value_t::from(std::make_shared<const int>(0)));
         });
         expect_registration(static_cast<bool>(added));
     }
-    auto submitted = scheduler.submit(std::move(graph));
+    auto submitted = scheduler.begin(std::move(graph));
     expect_registration(static_cast<bool>(submitted));
-    return std::move(submitted.graph);
+    return std::move(*submitted);
 }
 }
 TEST_CASE("an unchanged budget retries deferred keysounds after scheduler capacity returns", "[resident][budget]") {
@@ -637,7 +639,7 @@ TEST_CASE("same-frame asset edit is visible to object audition", "[sys][audio-so
     audio::audition_transport_bridge_t bridge{transport};
     audio::object_audition_controller_t controller{bridge};
     sources.await_pending();
-    const auto prepared = controller.prepare(document, {document.revision, chart_id_t{1}, object_id_t{1}}, project_sources.bindings(document));
+    const auto prepared = controller.prepare_object(document, {document.revision, chart_id_t{1}, object_id_t{1}}, project_sources.bindings(document));
     REQUIRE(prepared);
-    REQUIRE(prepared.prepared->clips.size() == 1);
+    REQUIRE(prepared.value().prepared->clips.size() == 1);
 }

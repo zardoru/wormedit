@@ -34,7 +34,7 @@ struct defaults_t {
     metadata_drop_state_t metadata_drop{};
     runtime::metadata_asset_t metadata_asset_runtime{};
     task_scheduler_t resource_copy_scheduler{1, 1};
-    runtime::resource_copy_t resource_copy_runtime{};
+    runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler};
     runtime::output_group_export_t export_runtime{};
     timing_grid_state_t timing_grid{};
     runtime::timing_edit_t timing_edit{};
@@ -118,7 +118,7 @@ invoke_application_command(application_command_t command, wormedit::document_his
                            std::optional<wormedit::editor_interaction_state_t>& compose_state,
                            std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage,
                            application_command_state_t& application_state,
-                           notification_sink_t& sink) -> wormedit::command_invocation_result_t {
+                           notification_sink_t& sink) -> wormedit::command_invocation_outcome_t {
     test_dispatch::defaults_t defaults;
     const command_dispatch_inputs_t environment{{history, workspace, sink},
                                                 {application_state, compose_state, timing_stage}};

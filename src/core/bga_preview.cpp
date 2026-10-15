@@ -139,39 +139,6 @@ auto bga_preview_queue_t::advance_events(bga_preview_token_t token,
     return events;
 }
 
-auto bga_preview_position_result_t::from(const bga_preview_position_outcome_t& outcome,
-                                         const bga_layer_state_t& layers)
-    -> bga_preview_position_result_t {
-    if (!outcome)
-        return {.status = outcome.error()};
-    return {.status = bga_preview_status_t::ready, .token = *outcome, .layers = layers};
-}
-
-auto bga_preview_advance_result_t::from(const bga_preview_advance_outcome_t& outcome,
-                                        const bga_layer_state_t& layers)
-    -> bga_preview_advance_result_t {
-    if (outcome)
-        return {.status = bga_preview_status_t::ready, .events = *outcome, .layers = layers};
-    if (outcome.error() == bga_preview_status_t::non_monotonic_window)
-        return {.status = outcome.error(), .layers = layers};
-    return {.status = outcome.error()};
-}
-
-auto bga_preview_queue_t::start(const preview_schedule_t& schedule, std::uint64_t sample_frame)
-    -> bga_preview_position_result_t {
-    return bga_preview_position_result_t::from(begin(schedule, sample_frame), layers_);
-}
-
-auto bga_preview_queue_t::seek(bga_preview_token_t token, std::uint64_t sample_frame)
-    -> bga_preview_position_result_t {
-    return bga_preview_position_result_t::from(reposition(token, sample_frame), layers_);
-}
-
-auto bga_preview_queue_t::advance(bga_preview_token_t token, std::uint64_t exclusive_end_frame)
-    -> bga_preview_advance_result_t {
-    return bga_preview_advance_result_t::from(advance_events(token, exclusive_end_frame), layers_);
-}
-
 auto bga_preview_queue_t::current_layers(bga_preview_token_t token) const noexcept
     -> std::optional<bga_layer_state_t> {
     if (schedule_ == nullptr || !is_current(token)) {

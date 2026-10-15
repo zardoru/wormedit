@@ -438,25 +438,6 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
     return *token;
 }
 
-auto preview_bridge_start_result_t::from(preview_bridge_start_outcome_t&& outcome)
-    -> preview_bridge_start_result_t {
-    if (!outcome)
-        return {.status = outcome.error(), .token = std::nullopt};
-    return {.status = preview_bridge_start_status_t::started, .token = *outcome};
-}
-
-auto preview_transport_bridge_t::start(
-    const preview_schedule_t& schedule, std::span<const preview_object_source_binding_t> objects,
-    std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
-    -> preview_bridge_start_result_t {
-    return preview_bridge_start_result_t::from(
-        start_preview(schedule, objects, metronome, seek_frame));
-}
-
-auto preview_transport_bridge_t::seek(std::uint64_t sample_frame) -> preview_bridge_start_result_t {
-    return preview_bridge_start_result_t::from(seek_preview(sample_frame));
-}
-
 auto preview_transport_bridge_t::stop() noexcept -> transport_stop_result_t {
     auto result = transport_stop_result_t{};
     if (token_.has_value() && transport_.is_current(*token_)) {
@@ -653,21 +634,6 @@ void preview_transport_bridge_t::advance_voice_ids(std::size_t source_count) {
     const auto last_voice_id = next_voice_id_ + source_count - 1;
     next_voice_id_ =
         last_voice_id == std::numeric_limits<std::uint64_t>::max() ? 0 : last_voice_id + 1;
-}
-
-auto preview_bridge_pump_result_t::from(preview_bridge_pump_outcome_t&& outcome)
-    -> preview_bridge_pump_result_t {
-    const auto& effect = outcome ? *outcome : outcome.error();
-    return {.status = effect.status,
-            .scheduled_events = effect.scheduled_events,
-            .missing_sources = effect.missing_sources};
-}
-
-auto preview_transport_bridge_t::materialize_until(std::uint64_t exclusive_end_frame,
-                                                   std::uint64_t current_frame)
-    -> preview_bridge_pump_result_t {
-    return preview_bridge_pump_result_t::from(
-        materialize_preview(exclusive_end_frame, current_frame));
 }
 
 auto preview_transport_bridge_t::is_exhausted() const noexcept -> bool {

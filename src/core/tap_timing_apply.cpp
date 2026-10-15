@@ -180,7 +180,7 @@ auto tap_timing_apply_proposal_t::prepare_document(const proposal_read_scope_t<c
         !extend_native_charts_to_audio_end(proposed)) return std::nullopt;
     const auto diagnostics = validate_document(proposed);
     if (diagnostic_queries::has_errors(diagnostics)) return std::nullopt;
-    if (!build_timing_index(*chart)) return std::nullopt;
+    if (!timing_index_t::from(*chart).value) return std::nullopt;
     return proposed;
 }
 

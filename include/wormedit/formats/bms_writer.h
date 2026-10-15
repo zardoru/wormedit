@@ -53,14 +53,6 @@ struct bms_write_options_t {
 };
 
 using bms_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bms_write_diagnostic_t>>;
-struct bms_write_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song, bms_write_options_t options = {}) -> bms_write_outcome_t;
-    [[nodiscard]] static auto from(bms_write_outcome_t&& outcome) -> bms_write_result_t;
-    std::optional<std::string> bytes;
-    std::vector<bms_write_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
 // BMS in the requested encoding for metadata, resources, measure lengths, initial
@@ -80,6 +72,6 @@ struct bms_write_result_t {
 // exact-provenance deletion of one raw statement directly inside an inactive leaf,
 // updating the retained source bytes and all later source identities atomically.
 [[nodiscard]] auto write_bms(const song_document_t& song, bms_write_options_t options = {})
-    -> bms_write_result_t;
+    -> bms_write_outcome_t;
 
 } // namespace wormedit

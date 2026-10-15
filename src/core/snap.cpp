@@ -14,7 +14,7 @@ auto fitting_snap_denominator(const chart_document_t& chart, const measure_index
     if (positions.empty() || !chart.divisions_per_standard_measure) return std::nullopt;
     auto divisor = chart.divisions_per_standard_measure;
     for (const auto position : positions) {
-        if (!absolute_row(index, position)) return std::nullopt;
+        if (!index.row_of(position)) return std::nullopt;
         divisor = std::gcd(divisor, position.row);
     }
     return chart.divisions_per_standard_measure / divisor;
@@ -112,9 +112,8 @@ auto snap_absolute_row(const chart_document_t& chart, const measure_index_t& ind
 
 auto snap_absolute_row(const chart_document_t& chart, std::uint64_t row,
     std::uint64_t denominator) -> std::optional<std::uint64_t> {
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    return index ? snap_absolute_row(chart, *index, row, denominator) : std::nullopt;
+    const auto built = measure_index_t::from(chart);
+    return built ? snap_absolute_row(chart, *built, row, denominator) : std::nullopt;
 }
 
 auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolute)
@@ -125,11 +124,11 @@ auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolu
 auto snap_position(const chart_document_t& chart, const measure_index_t& index,
                    local_position_t position, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = absolute_row(index, position);
+    const auto absolute = index.row_of(position);
     if (!absolute) return std::nullopt;
     const auto snapped = snap_absolute_row(chart, index, *absolute, denominator);
     if (!snapped) return std::nullopt;
-    return position_at_absolute_row(index, *snapped);
+    return index.position_at(*snapped);
 }
 
 } // namespace wormedit

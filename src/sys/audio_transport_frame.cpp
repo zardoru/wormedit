@@ -42,7 +42,7 @@ void service_chart_preview(sdl_preview_output_t& output,
     if (*serviced) return;
     const auto failed_frame = output.timeline_frame();
     static_cast<void>(output.stop());
-    if (serviced->status == sdl_preview_service_status_t::pump_failed)
+    if (serviced->error().status == sdl_preview_service_status_t::pump_failed)
         state.pause_at(failed_frame);
     else
         state.reset_transport();
@@ -53,11 +53,12 @@ auto audition_failure_message(const sdl_audition_service_result_t& result) -> co
         return "Audio preview stopped after an output-device failure.";
     else if (result.status == sdl_audition_service_status_t::render_failed)
         return "Audio preview stopped after a realtime cache underrun.";
-    else if (result.pump &&
-             result.pump->status == audio::audition_pump_status_t::source_unavailable)
-        return "Audio preview stopped because its decoded source is unavailable.";
-    else
-        return "Audio preview stopped after a bounded lookahead failure.";
+    else if (result.pump) {
+        const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
+        if (pumped.status == audio::audition_pump_status_t::source_unavailable)
+            return "Audio preview stopped because its decoded source is unavailable.";
+    }
+    return "Audio preview stopped after a bounded lookahead failure.";
 }
 
 auto preview_failure_message(const sdl_preview_service_result_t& result) -> const char* {
@@ -65,11 +66,15 @@ auto preview_failure_message(const sdl_preview_service_result_t& result) -> cons
         return "Chart preview stopped after an output-device failure.";
     else if (result.status == sdl_preview_service_status_t::render_failed)
         return "Chart preview stopped after a realtime mix failure.";
-    else if (result.pump && result.pump->decode &&
-             result.pump->decode->status == audio::preview_pump_status_t::source_unavailable)
-        return "Chart preview stopped because a decoded source is unavailable.";
-    else
-        return "Chart preview stopped after a bounded refill failure.";
+    else if (result.pump) {
+        const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
+        if (pumped.decode) {
+            const auto& decoded = *pumped.decode ? pumped.decode->value() : pumped.decode->error();
+            if (decoded.status == audio::preview_pump_status_t::source_unavailable)
+                return "Chart preview stopped because a decoded source is unavailable.";
+        }
+    }
+    return "Chart preview stopped after a bounded refill failure.";
 }
 
 auto preview_playhead_row(const runtime::chart_preview_t& state,
@@ -82,28 +87,29 @@ auto preview_playhead_row(const runtime::chart_preview_t& state,
 
 } // namespace
 
-void post_audition_service_notifications(const sdl_audition_service_result_t& result,
+void post_audition_service_notifications(const sdl_audition_service_outcome_t& result,
                                          const notification_sink_t& notifications) {
     if (result) return;
     notifications.post(notification_severity_t::error, notification_source_t::audio,
-                       audition_failure_message(result));
+                       audition_failure_message(result.error()));
 }
 
-void post_preview_service_notifications(const sdl_preview_service_result_t& result,
+void post_preview_service_notifications(const sdl_preview_service_outcome_t& result,
                                         const notification_sink_t& notifications) {
-    if (result.rate_unavailable)
+    const auto& effect = result ? *result : result.error();
+    if (effect.rate_unavailable)
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
             "Playback mode change is unavailable; preview keeps its previous mode.");
-    if (result.silenced_voices > 0) {
+    if (effect.silenced_voices > 0) {
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
-            "Silenced " + std::to_string(result.silenced_voices) +
-                (result.silenced_music_voices > 0
+            "Silenced " + std::to_string(effect.silenced_voices) +
+                (effect.silenced_music_voices > 0
                     ? " preview voice(s), including music, that were not decoded in time."
                     : " preview voice(s) that were not decoded in time."));
     }
     if (!result)
         notifications.post(notification_severity_t::error, notification_source_t::audio,
-                           preview_failure_message(result));
+                           preview_failure_message(effect));
 }
 
 void service_audio_transport_frame(

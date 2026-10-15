@@ -22,7 +22,7 @@ namespace wormedit::sys {
 namespace {
 
 template<class T>
-auto allocate_timing_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
+auto allocate_timing_rows(frontend_workspace_view_t& flattened, frame_span<T>& rows,
                           std::size_t count, std::size_t limit) -> bool {
     auto* arena = flattened.arena();
     rows = arena ? arena_array<T>(*arena, std::min(count, limit)) : frame_span<T>{};
@@ -33,7 +33,7 @@ auto allocate_timing_rows(flattened_workspace_t& flattened, frame_span<T>& rows,
     return true;
 }
 
-auto timing_display_text(flattened_workspace_t& flattened, std::string_view text)
+auto timing_display_text(frontend_workspace_view_t& flattened, std::string_view text)
     -> const char* {
     auto* arena = flattened.arena();
     if (const auto* owned = arena ? arena_string(*arena, text) : nullptr) return owned;
@@ -210,7 +210,7 @@ void build_timing_stage_value_view(timing_stage_value_context_t& context, const 
 
 template <typename RowToPixels>
 void populate_timing_stage_view(
-    flattened_workspace_t& flattened, WormUiTimingView& view,
+    frontend_workspace_view_t& flattened, WormUiTimingView& view,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t* measures,
     const wormedit::timing_lane_pseudonote_outcome_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
@@ -250,13 +250,13 @@ auto compose_total_rows(timing_scene_cache_t& cache, const wormedit::chart_docum
     if (cache.compose_rows_attempted) return cache.compose_total_rows;
     cache.compose_rows_attempted = true;
     for (const auto& measure : chart.measures) {
-        const auto valid = wormedit::validate_measure(chart.divisions_per_standard_measure,
+        const auto valid = wormedit::measure_capacity_t::from(chart.divisions_per_standard_measure,
                                                      measure.definition);
-        if (!valid || *valid.row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
+        if (!valid || valid->row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
             cache.compose_total_rows = 0;
             return 0;
         }
-        cache.compose_total_rows += *valid.row_capacity;
+        cache.compose_total_rows += valid->row_capacity;
     }
     return cache.compose_total_rows;
 }
@@ -290,7 +290,7 @@ void populate_initial_bpm(WormUiTimingView& view, const wormedit::chart_document
 } // namespace
 
 void populate_timing_view_for_compose(
-    flattened_workspace_t& flattened, const wormedit::document_history_t& history,
+    frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, timing_scene_cache_t& cache,
     int window_width, int window_height,
     const timing_grid_state_t& timing_grid,

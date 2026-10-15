@@ -20,20 +20,20 @@ TEST_CASE("task graph waits for fan-in dependencies and preserves input order",
     std::vector<int> execution_order;
     std::mutex order_mutex;
 
-    const auto first = graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token) {
+    const auto first = graph.create_task({}, [&](std::span<const task_result_t>, std::stop_token) {
         std::lock_guard lock(order_mutex);
         execution_order.push_back(1);
         return task_result_t::success(task_value_t::from(std::make_shared<const int>(17)));
     });
-    const auto second = graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token) {
+    const auto second = graph.create_task({}, [&](std::span<const task_result_t>, std::stop_token) {
         std::lock_guard lock(order_mutex);
         execution_order.push_back(2);
         return task_result_t::success(task_value_t::from(std::make_shared<const int>(25)));
     });
     REQUIRE(first);
     REQUIRE(second);
-    const task_id_t dependencies[] = {*first.id, *second.id};
-    const auto joined = graph.add_task(dependencies, [&](std::span<const task_result_t> inputs,
+    const task_id_t dependencies[] = {*first, *second};
+    const auto joined = graph.create_task(dependencies, [&](std::span<const task_result_t> inputs,
                                                          std::stop_token) {
         if (inputs.size() != 2) {
             return task_result_t::failure(task_error_code_t::task_failed,
@@ -51,12 +51,12 @@ TEST_CASE("task graph waits for fan-in dependencies and preserves input order",
     });
     REQUIRE(joined);
 
-    auto submitted = scheduler.submit(std::move(graph));
+    auto submitted = scheduler.begin(std::move(graph));
     REQUIRE(submitted);
-    REQUIRE(submitted.graph.wait());
-    const auto result = submitted.graph.result(*joined.id);
+    REQUIRE(submitted.value().wait());
+    const auto result = submitted.value().outcome(*joined);
     REQUIRE(result.has_value());
-    REQUIRE(result->is_successful());
+    REQUIRE(result->has_value());
     CHECK(*task_value_cast<int>(*result) == 42);
     CHECK_FALSE(task_value_cast<std::string>(*result));
     CHECK(execution_order == std::vector<int>{1, 2, 3});
@@ -68,37 +68,37 @@ TEST_CASE("task errors and cancellation propagate through dependent continuation
     task_graph_t failed_graph(3);
     std::atomic_int dependent_runs{};
     const auto root =
-        failed_graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+        failed_graph.create_task({}, [](std::span<const task_result_t>, std::stop_token) {
             return task_result_t::failure(task_error_code_t::task_failed, "decode failed");
         });
     REQUIRE(root);
-    const task_id_t root_dependency[] = {*root.id};
-    const auto child = failed_graph.add_task(root_dependency,
+    const task_id_t root_dependency[] = {*root};
+    const auto child = failed_graph.create_task(root_dependency,
                                              [&](std::span<const task_result_t>, std::stop_token) {
                                                  ++dependent_runs;
                                                  return task_result_t::success();
                                              });
     REQUIRE(child);
-    const task_id_t child_dependency[] = {*child.id};
-    const auto grandchild = failed_graph.add_task(
+    const task_id_t child_dependency[] = {*child};
+    const auto grandchild = failed_graph.create_task(
         child_dependency, [&](std::span<const task_result_t>, std::stop_token) {
             ++dependent_runs;
             return task_result_t::success();
         });
     REQUIRE(grandchild);
 
-    auto failed = scheduler.submit(std::move(failed_graph));
+    auto failed = scheduler.begin(std::move(failed_graph));
     REQUIRE(failed);
-    REQUIRE(failed.graph.wait());
-    CHECK(failed.graph.result(*root.id)->error->code == task_error_code_t::task_failed);
-    CHECK(failed.graph.result(*child.id)->error->code == task_error_code_t::dependency_failed);
-    CHECK(failed.graph.result(*grandchild.id)->error->code == task_error_code_t::dependency_failed);
+    REQUIRE(failed.value().wait());
+    CHECK(failed.value().outcome(*root)->error().cause.code == task_error_code_t::task_failed);
+    CHECK(failed.value().outcome(*child)->error().cause.code == task_error_code_t::dependency_failed);
+    CHECK(failed.value().outcome(*grandchild)->error().cause.code == task_error_code_t::dependency_failed);
     CHECK(dependent_runs == 0);
 
     task_graph_t cancellable_graph(2);
     std::atomic_bool started{};
     const auto running =
-        cancellable_graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
+        cancellable_graph.create_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
             started.store(true, std::memory_order_release);
             while (!stop.stop_requested()) {
                 std::this_thread::yield();
@@ -106,44 +106,44 @@ TEST_CASE("task errors and cancellation propagate through dependent continuation
             return task_result_t::success();
         });
     REQUIRE(running);
-    const task_id_t running_dependency[] = {*running.id};
-    const auto waiting = cancellable_graph.add_task(
+    const task_id_t running_dependency[] = {*running};
+    const auto waiting = cancellable_graph.create_task(
         running_dependency,
         [](std::span<const task_result_t>, std::stop_token) { return task_result_t::success(); });
     REQUIRE(waiting);
-    auto cancelled = scheduler.submit(std::move(cancellable_graph));
+    auto cancelled = scheduler.begin(std::move(cancellable_graph));
     REQUIRE(cancelled);
     while (!started.load(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
-    cancelled.graph.cancel();
-    REQUIRE(cancelled.graph.wait());
-    CHECK(cancelled.graph.result(*running.id)->error->code == task_error_code_t::cancelled);
-    CHECK(cancelled.graph.result(*waiting.id)->error->code == task_error_code_t::cancelled);
+    cancelled.value().cancel();
+    REQUIRE(cancelled.value().wait());
+    CHECK(cancelled.value().outcome(*running)->error().cause.code == task_error_code_t::cancelled);
+    CHECK(cancelled.value().outcome(*waiting)->error().cause.code == task_error_code_t::cancelled);
 }
 
 TEST_CASE("task scheduler rejects graphs beyond its outstanding capacity",
           "[unit][core][task-graph]") {
     task_scheduler_t scheduler(2, 1);
     task_graph_t oversized(2);
-    REQUIRE(oversized.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+    REQUIRE(oversized.create_task({}, [](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success();
     }));
-    REQUIRE(oversized.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+    REQUIRE(oversized.create_task({}, [](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success();
     }));
 
-    const auto rejected = scheduler.submit(std::move(oversized));
+    const auto rejected = scheduler.begin(std::move(oversized));
     CHECK_FALSE(rejected);
-    REQUIRE(rejected.error.has_value());
-    CHECK(rejected.error->code == task_error_code_t::capacity_exceeded);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().code == task_error_code_t::capacity_exceeded);
     CHECK(scheduler.outstanding_tasks() == 0);
 
     task_scheduler_t one_slot_scheduler(1, 1);
     task_graph_t active_graph(1);
     std::atomic_bool started{};
     const auto active_task =
-        active_graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
+        active_graph.create_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
             started.store(true, std::memory_order_release);
             while (!stop.stop_requested()) {
                 std::this_thread::yield();
@@ -151,39 +151,39 @@ TEST_CASE("task scheduler rejects graphs beyond its outstanding capacity",
             return task_result_t::success();
         });
     REQUIRE(active_task);
-    auto active = one_slot_scheduler.submit(std::move(active_graph));
+    auto active = one_slot_scheduler.begin(std::move(active_graph));
     REQUIRE(active);
     while (!started.load(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
     task_graph_t second_graph(1);
-    REQUIRE(second_graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+    REQUIRE(second_graph.create_task({}, [](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success();
     }));
-    const auto second = one_slot_scheduler.submit(std::move(second_graph));
+    const auto second = one_slot_scheduler.begin(std::move(second_graph));
     CHECK_FALSE(second);
-    REQUIRE(second.error.has_value());
-    CHECK(second.error->code == task_error_code_t::capacity_exceeded);
-    active.graph.cancel();
-    REQUIRE(active.graph.wait());
+    REQUIRE_FALSE(second);
+    CHECK(second.error().code == task_error_code_t::capacity_exceeded);
+    active.value().cancel();
+    REQUIRE(active.value().wait());
 }
 
 TEST_CASE("task callback exceptions become typed task errors", "[unit][core][task-graph]") {
     task_scheduler_t scheduler(1, 2);
     task_graph_t graph(1);
     const auto task =
-        graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) -> task_result_t {
+        graph.create_task({}, [](std::span<const task_result_t>, std::stop_token) -> task_result_t {
             throw std::runtime_error("unexpected decode error");
         });
     REQUIRE(task);
-    const auto submitted = scheduler.submit(std::move(graph));
+    const auto submitted = scheduler.begin(std::move(graph));
     REQUIRE(submitted);
-    REQUIRE(submitted.graph.wait());
-    const auto result = submitted.graph.result(*task.id);
+    REQUIRE(submitted.value().wait());
+    const auto result = submitted.value().outcome(*task);
     REQUIRE(result.has_value());
-    REQUIRE(result->error.has_value());
-    CHECK(result->error->code == task_error_code_t::task_threw);
-    CHECK(result->error->message == "unexpected decode error");
+    REQUIRE_FALSE(result->has_value());
+    CHECK(result->error().cause.code == task_error_code_t::task_threw);
+    CHECK(result->error().cause.message == "unexpected decode error");
 }
 
 TEST_CASE("generation guard rejects stale async publication", "[unit][core][task-graph]") {
@@ -207,7 +207,7 @@ TEST_CASE("scheduler shutdown requests cancellation and completes waiting graph 
     task_graph_t graph(2);
     std::atomic_bool started{};
     const auto active =
-        graph.add_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
+        graph.create_task({}, [&](std::span<const task_result_t>, std::stop_token stop) {
             started.store(true, std::memory_order_release);
             while (!stop.stop_requested()) {
                 std::this_thread::yield();
@@ -215,22 +215,22 @@ TEST_CASE("scheduler shutdown requests cancellation and completes waiting graph 
             return task_result_t::success();
         });
     REQUIRE(active);
-    const task_id_t active_dependency[] = {*active.id};
+    const task_id_t active_dependency[] = {*active};
     const auto blocked =
-        graph.add_task(active_dependency, [](std::span<const task_result_t>, std::stop_token) {
+        graph.create_task(active_dependency, [](std::span<const task_result_t>, std::stop_token) {
             return task_result_t::success();
         });
     REQUIRE(blocked);
-    auto submitted = scheduler.submit(std::move(graph));
+    auto submitted = scheduler.begin(std::move(graph));
     REQUIRE(submitted);
     while (!started.load(std::memory_order_acquire)) {
         std::this_thread::yield();
     }
 
     scheduler.shutdown();
-    REQUIRE(submitted.graph.wait());
-    CHECK(submitted.graph.result(*active.id)->error->code == task_error_code_t::scheduler_stopped);
-    CHECK(submitted.graph.result(*blocked.id)->error->code == task_error_code_t::scheduler_stopped);
+    REQUIRE(submitted.value().wait());
+    CHECK(submitted.value().outcome(*active)->error().cause.code == task_error_code_t::scheduler_stopped);
+    CHECK(submitted.value().outcome(*blocked)->error().cause.code == task_error_code_t::scheduler_stopped);
     CHECK(scheduler.outstanding_tasks() == 0);
 }
 
@@ -256,14 +256,14 @@ TEST_CASE("task scheduler runs the worker start hook once per worker and survive
     task_scheduler_t throwing(1, 2,
                               {.on_worker_start = [] { throw std::runtime_error("denied"); }});
     task_graph_t graph(1);
-    const auto added = graph.add_task({}, [](std::span<const task_result_t>, std::stop_token) {
+    const auto added = graph.create_task({}, [](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success(task_value_t::from(std::make_shared<const int>(7)));
     });
     REQUIRE(added);
-    auto submitted = throwing.submit(std::move(graph));
+    auto submitted = throwing.begin(std::move(graph));
     REQUIRE(submitted);
-    REQUIRE(submitted.graph.wait());
-    CHECK(*task_value_cast<int>(*submitted.graph.result(*added.id)) == 7);
+    REQUIRE(submitted.value().wait());
+    CHECK(*task_value_cast<int>(*submitted.value().outcome(*added)) == 7);
 }
 
 TEST_CASE("canonical task outcomes retain failure payloads across legacy callbacks",
@@ -292,7 +292,7 @@ TEST_CASE("legacy and canonical task casts share the payload type query",
     task_outcome_t result = task_value_t::from(value);
     CHECK(task_value_cast<int>(result) == value);
     CHECK_FALSE(task_value_cast<double>(result));
-    const auto legacy = task_result_t::from(std::move(result));
+    const auto legacy = task_result_t::from(result);
     CHECK(task_value_cast<int>(legacy) == value);
     CHECK_FALSE(task_value_cast<double>(legacy));
 }

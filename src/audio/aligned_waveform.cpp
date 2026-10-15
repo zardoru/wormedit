@@ -221,7 +221,7 @@ auto composed_pixel_column(const composed_waveform_context_t& context, double fi
     return coarse ? std::optional<composed_column_t>{{*coarse, 256}} : std::nullopt;
 }
 
-void append_composed_rows(aligned_waveform_result_t& result, const waveform_column_t& column,
+void append_composed_rows(aligned_waveform_view_result_t& result, const waveform_column_t& column,
                           double first_pixel, double last_pixel, bool samples) {
     if (samples) {
         const auto span = last_pixel - first_pixel;
@@ -507,31 +507,23 @@ auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& t
         static_cast<double>((*end - *begin) / visible_pixels)};
 }
 
-auto aligned_waveform_result_t::from(aligned_waveform_result_t&& report)
-    -> aligned_waveform_outcome_t {
-    if (!report)
+auto aligned_waveform_view_result_t::from(aligned_waveform_view_result_t&& report)
+    -> aligned_waveform_view_outcome_t {
+    if (report.status != aligned_waveform_status_t::projected)
         return std::unexpected(std::move(report));
     return std::move(report);
 }
-auto aligned_waveform_result_t::from(aligned_waveform_outcome_t&& outcome)
-    -> aligned_waveform_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
-}
-auto waveform_overview_result_t::from(waveform_overview_result_t&& report)
-    -> waveform_overview_outcome_t {
-    if (!report)
+auto waveform_overview_view_result_t::from(waveform_overview_view_result_t&& report)
+    -> waveform_overview_view_outcome_t {
+    if (report.status != aligned_waveform_status_t::projected)
         return std::unexpected(std::move(report));
     return std::move(report);
-}
-auto waveform_overview_result_t::from(waveform_overview_outcome_t&& outcome)
-    -> waveform_overview_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
 }
 
-auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
+auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
                                      aligned_waveform_request_t request,
-                                     decoded_block_cache_t& cache) -> aligned_waveform_outcome_t {
-    aligned_waveform_result_t result;
+                                     decoded_block_cache_t& cache) -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window || window->frames_per_pixel >= 1.0 || request.maximum_rows == 0 ||
         request.maximum_rows > maximum_aligned_waveform_rows)
@@ -560,10 +552,10 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     return from(std::move(result));
 }
 
-auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
+auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
                                      aligned_waveform_request_t request)
-    -> aligned_waveform_outcome_t {
-    aligned_waveform_result_t result;
+    -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
     if (!std::isfinite(request.viewport_scroll_pixels) ||
         !std::isfinite(request.viewport_height_pixels) ||
         !std::isfinite(request.pixels_per_standard_measure) ||
@@ -594,13 +586,13 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window)
         return from(std::move(result));
-    const auto projection = build_waveform_view(
+    const auto projection = waveform_view_t::from(
         waveform, {.begin_frame = window->begin_frame,
                    .end_frame = window->end_frame,
                    .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
                    .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
@@ -608,7 +600,7 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     std::vector<aligned_waveform_row_t> pixels(height);
     std::vector<bool> occupied(height);
     const aligned_row_context_t row_context{waveform, timing, request, rows_per_pixel, height};
-    for (const auto& column : projection.columns) {
+    for (const auto& column : projection->columns) {
         const auto pixel = pixel_for_column(row_context, column);
         if (!pixel.has_value()) {
             continue;
@@ -625,12 +617,12 @@ auto aligned_waveform_result_t::from(const waveform_t& waveform, const timing_in
     return from(std::move(result));
 }
 
-auto aligned_waveform_result_t::from(const waveform_t& overview, const waveform_t* detail,
+auto aligned_waveform_view_result_t::from(const waveform_t& overview, const waveform_t* detail,
                                      const timing_index_t& timing,
                                      aligned_waveform_request_t request,
                                      decoded_block_cache_t* blocks, aligned_waveform_style_t style)
-    -> aligned_waveform_outcome_t {
-    aligned_waveform_result_t result;
+    -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
     if (!aligned_waveform_window(overview, timing, request) || request.maximum_rows == 0 ||
         request.maximum_rows > maximum_aligned_waveform_rows)
         return from(std::move(result));
@@ -643,12 +635,12 @@ auto aligned_waveform_result_t::from(const waveform_t& overview, const waveform_
     }
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
     if (style.sample_points && blocks) {
-        auto samples = build_aligned_waveform_samples_view(overview, timing, request, *blocks);
-        if (samples && !samples.rows.empty()) {
-            samples.chosen_frames_per_bin = result.chosen_frames_per_bin;
-            samples.pcm_spans =
+        auto samples = aligned_waveform_view_result_t::from(overview, timing, request, *blocks);
+        if (samples && !samples->rows.empty()) {
+            samples->chosen_frames_per_bin = result.chosen_frames_per_bin;
+            samples->pcm_spans =
                 1; // One fully cache-resident span; keep exact source-frame vertices.
-            return from(std::move(samples));
+            return samples;
         }
     }
     const auto stride = std::max<std::size_t>(1, (height * points + request.maximum_rows - 1U) /
@@ -683,7 +675,7 @@ auto aligned_waveform_result_t::from(const waveform_t& overview, const waveform_
 namespace {
 auto display_song_column(const waveform_t& overview, const waveform_t* detail,
     const display_row_time_t& row, decoded_block_cache_t* blocks,
-    aligned_waveform_style_t style, aligned_waveform_result_t& result)
+    aligned_waveform_style_t style, aligned_waveform_view_result_t& result)
     -> std::optional<composed_column_t> {
     const auto first = std::clamp(std::floor(row.begin_seconds * overview.sample_rate),
         0.0, static_cast<double>(overview.total_frames));
@@ -704,12 +696,12 @@ auto display_song_column(const waveform_t& overview, const waveform_t* detail,
 }
 } // namespace
 
-auto aligned_waveform_result_t::from(const waveform_t& overview, const waveform_t* detail,
+auto aligned_waveform_view_result_t::from(const waveform_t& overview, const waveform_t* detail,
                                      const display_row_table_t& table,
                                      aligned_waveform_request_t request,
                                      decoded_block_cache_t* blocks, aligned_waveform_style_t style)
-    -> aligned_waveform_outcome_t {
-    aligned_waveform_result_t result;
+    -> aligned_waveform_view_outcome_t {
+    aligned_waveform_view_result_t result;
     if (!table.valid || !is_valid_display_request(request, false) ||
         table.zoom != request.pixels_per_standard_measure)
         return from(std::move(result));
@@ -738,10 +730,10 @@ auto aligned_waveform_result_t::from(const waveform_t& overview, const waveform_
     return from(std::move(result));
 }
 
-auto waveform_overview_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
+auto waveform_overview_view_result_t::from(const waveform_t& waveform, const timing_index_t& timing,
                                       aligned_waveform_request_t viewport, std::size_t maximum_rows)
-    -> waveform_overview_outcome_t {
-    waveform_overview_result_t result;
+    -> waveform_overview_view_outcome_t {
+    waveform_overview_view_result_t result;
     if (!std::isfinite(viewport.viewport_scroll_pixels) ||
         !std::isfinite(viewport.viewport_height_pixels) ||
         !std::isfinite(viewport.pixels_per_standard_measure) ||
@@ -803,18 +795,18 @@ auto waveform_overview_result_t::from(const waveform_t& waveform, const timing_i
         beat_zero_fraction <= 1.0L) {
         result.beat_zero_fraction = static_cast<double>(beat_zero_fraction);
     }
-    const auto projection = build_waveform_view(waveform, {.begin_frame = 0,
+    const auto projection = waveform_view_t::from(waveform, {.begin_frame = 0,
                                                            .end_frame = waveform.total_frames,
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
-    result.rows.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    result.rows.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});
@@ -823,10 +815,10 @@ auto waveform_overview_result_t::from(const waveform_t& waveform, const timing_i
     return from(std::move(result));
 }
 
-auto waveform_overview_result_t::from(const waveform_t& waveform, double begin_fraction,
+auto waveform_overview_view_result_t::from(const waveform_t& waveform, double begin_fraction,
                                       double end_fraction, std::size_t maximum_rows)
-    -> waveform_overview_outcome_t {
-    waveform_overview_result_t result;
+    -> waveform_overview_view_outcome_t {
+    waveform_overview_view_result_t result;
     if (!std::isfinite(begin_fraction) || !std::isfinite(end_fraction) || begin_fraction < 0.0 ||
         end_fraction > 1.0 || begin_fraction >= end_fraction || maximum_rows == 0)
         return from(std::move(result));
@@ -846,74 +838,26 @@ auto waveform_overview_result_t::from(const waveform_t& waveform, double begin_f
         result.status = aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
-    const auto projection = build_waveform_view(waveform, {.begin_frame = begin_frame,
+    const auto projection = waveform_view_t::from(waveform, {.begin_frame = begin_frame,
                                                            .end_frame = end_frame,
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.status == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
     }
     result.visible_begin_fraction = begin_fraction;
     result.visible_end_fraction = end_fraction;
-    result.rows.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    result.rows.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         const auto midpoint = column.begin_frame + (column.end_frame - column.begin_frame) / 2U;
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});
     }
     result.status = aligned_waveform_status_t::projected;
     return from(std::move(result));
-}
-
-auto build_aligned_waveform_samples_view(const waveform_t& waveform, const timing_index_t& timing,
-                                         aligned_waveform_request_t request,
-                                         decoded_block_cache_t& cache)
-    -> aligned_waveform_result_t {
-    return aligned_waveform_result_t::from(
-        aligned_waveform_result_t::from(waveform, timing, request, cache));
-}
-
-auto build_aligned_waveform_view(const waveform_t& waveform, const timing_index_t& timing,
-                                 aligned_waveform_request_t request) -> aligned_waveform_result_t {
-    return aligned_waveform_result_t::from(
-        aligned_waveform_result_t::from(waveform, timing, request));
-}
-
-auto build_composed_aligned_waveform_view(const waveform_t& overview, const waveform_t* detail,
-                                          const timing_index_t& timing,
-                                          aligned_waveform_request_t request,
-                                          decoded_block_cache_t* blocks,
-                                          aligned_waveform_style_t style)
-    -> aligned_waveform_result_t {
-    return aligned_waveform_result_t::from(
-        aligned_waveform_result_t::from(overview, detail, timing, request, blocks, style));
-}
-
-auto build_composed_aligned_waveform_view(const waveform_t& overview, const waveform_t* detail,
-                                          const display_row_table_t& table,
-                                          aligned_waveform_request_t request,
-                                          decoded_block_cache_t* blocks,
-                                          aligned_waveform_style_t style)
-    -> aligned_waveform_result_t {
-    return aligned_waveform_result_t::from(
-        aligned_waveform_result_t::from(overview, detail, table, request, blocks, style));
-}
-
-auto build_waveform_overview_view(const waveform_t& waveform, const timing_index_t& timing,
-                                  aligned_waveform_request_t viewport, std::size_t maximum_rows)
-    -> waveform_overview_result_t {
-    return waveform_overview_result_t::from(
-        waveform_overview_result_t::from(waveform, timing, viewport, maximum_rows));
-}
-
-auto build_waveform_range_view(const waveform_t& waveform, double begin_fraction,
-                               double end_fraction, std::size_t maximum_rows)
-    -> waveform_overview_result_t {
-    return waveform_overview_result_t::from(
-        waveform_overview_result_t::from(waveform, begin_fraction, end_fraction, maximum_rows));
 }
 
 } // namespace wormedit::audio

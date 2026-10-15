@@ -23,15 +23,15 @@ auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
                                           std::int64_t milliseconds)
     -> std::optional<local_position_t> {
     const auto measures = build_measure_index(chart);
-    const auto timing = build_timing_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures) || !timing.index)
+    const auto timing = timing_index_t::from(chart);
+    if (!std::holds_alternative<measure_index_t>(measures) || !timing.value)
         return std::nullopt;
-    const auto query = timing.index->row_at(signed_rational_t{milliseconds, 1'000});
-    if (!query.absolute_row || query.absolute_row->numerator < 0 ||
-        query.absolute_row->denominator == 0)
+    const auto query = timing.value->query_position(signed_rational_t{milliseconds, 1'000});
+    if (!query || query->value.numerator < 0 ||
+        query->value.denominator == 0)
         return std::nullopt;
-    const auto row = static_cast<std::uint64_t>(query.absolute_row->numerator) /
-                     query.absolute_row->denominator;
+    const auto row = static_cast<std::uint64_t>(query->value.numerator) /
+                     query->value.denominator;
     return (std::get<measure_index_t>(measures)).position_at(row);
 }
 
@@ -49,10 +49,10 @@ auto nearest_snap_row(const chart_document_t& chart, const measure_index_t& inde
 auto bookmark_preview_frame(const timing_index_t& timing, const measure_index_t& measures,
                             local_position_t position, std::optional<std::uint64_t> end_frame)
     -> std::optional<std::uint64_t> {
-    const auto at = timing.seconds_at(measures, position);
-    if (!at.seconds || at.seconds->denominator == 0) return std::nullopt;
-    const auto frames = std::llround(static_cast<long double>(at.seconds->numerator) *
-                                     audio::output_sample_rate / at.seconds->denominator);
+    const auto at = timing.query_seconds(measures, position);
+    if (!at || at->value.denominator == 0) return std::nullopt;
+    const auto frames = std::llround(static_cast<long double>(at->value.numerator) *
+                                     audio::output_sample_rate / at->value.denominator);
     auto frame = static_cast<std::uint64_t>(std::max<long long>(frames, 0));
     if (end_frame) frame = std::min(frame, *end_frame);
     return frame;

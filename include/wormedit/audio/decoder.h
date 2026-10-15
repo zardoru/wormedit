@@ -74,8 +74,6 @@ class decoder_t {
     [[nodiscard]] auto is_open() const noexcept -> bool;
     [[nodiscard]] auto info() const noexcept -> std::optional<stream_info_t>;
     [[nodiscard]] auto seek(std::uint64_t output_frame) noexcept -> bool;
-    [[nodiscard]] auto read(std::span<float> interleaved_stereo,
-                            std::size_t requested_frames) noexcept -> read_result_t;
     // Seeks and reads under one decoder lock so independent background jobs
     // cannot interleave positions on a shared decoder instance.
     [[nodiscard]] auto read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,

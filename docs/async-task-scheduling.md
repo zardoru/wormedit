@@ -53,3 +53,43 @@ RMS/render workloads help within their interaction and memory budgets. Determini
 clamp/start-hook tests cover wiring and exception tolerance; actual OS priority
 effectiveness and concurrent preload/playback without dropouts still need manual
 validation on the target platform.
+
+
+`async_job_t<Request, Payload, Identity>` owns bounded, latest-only requests on
+this scheduler. Its request capture runs synchronously once, after admission, and
+returns the worker-owned inputs. A named work function returns a typed payload or
+task error; the shell publishes one identity-bearing completion through `poll()`.
+It reaps every terminal handle, discards superseded generations, and cancels old
+work only after a replacement has submitted successfully. `wait()` is for tests
+and shutdown, not the frame loop. Owners retain validation and UI publication.
+
+The default cancellation policy discards the current completion immediately;
+advisory owners can explicitly retain it to collect cancellation feedback. Default
+teardown cancels and waits, protecting workers that borrow owner state. Owners
+whose requests own all their inputs can explicitly release handles on destruction
+without cancelling or waiting, preserving nonblocking session reset. Their existing
+scheduler shutdown remains
+responsible for joining workers. These policies do not change scheduler capacity,
+priorities, cooperative stop points, or domain cleanup/publication rules.
+
+
+Single-flight handle records live inline; larger bounds reserve vector storage at
+construction. Lazy single-flight owners construct the shell in place without a
+heap allocation for the shell or its handle list. Moves transfer outstanding
+handles and generations. Referenced resources must still outlive the receiving
+job.
+
+These existing services retain explicit scheduler orchestration and domain policy:
+
+- Playing waveform detail (`waveform_analysis_runtime.cpp`) remains busy after
+  cancellation until terminal collection, with its existing null-payload failure handling.
+- Published output export (`output_group_export_t`) reports files even if the
+  editor document changes after publication.
+- Metadata import-copy (`metadata_asset_t`) retains receipts for orphan cleanup
+  after the shared copy scheduler joins.
+- Autosave (`native_project_autosave_loop_t`) serializes coordinator progress,
+  deferred explicit saves, retry and session changes.
+- Audition source probes drain a registry queue with fan-out and synchronized
+  failure exchange.
+- Resident loading (`resident_sample_loader_t`) owns progress, priorities and
+  budget retries; it cancels old work before attempting replacement submission.

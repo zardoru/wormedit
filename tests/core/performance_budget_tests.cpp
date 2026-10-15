@@ -118,10 +118,10 @@ void verify_waveform_geometry(const audio::waveform_t& waveform) {
     CHECK(waveform.bins.front().absolute_peak[0] == 0.25F);
 }
 
-void verify_waveform(const audio::waveform_analysis_result_t& result) {
-    REQUIRE(result.status == audio::waveform_analysis_status_t::generated);
-    REQUIRE(result.waveform);
-    verify_waveform_geometry(*result.waveform);
+void verify_waveform(const audio::waveform_analysis_outcome_t& result) {
+    REQUIRE(result.value().status == audio::waveform_analysis_status_t::generated);
+    REQUIRE(audio::waveform_analysis_t::find_waveform(result));
+    verify_waveform_geometry(*audio::waveform_analysis_t::find_waveform(result));
 }
 
 void check_waveform_budget() {
@@ -141,7 +141,7 @@ void check_waveform_budget() {
             // Fresh caches force complete decoding/analysis on every run.
             audio::decoded_block_cache_t blocks;
             audio::waveform_cache_t waveforms;
-            return audio::analyze_waveform(decoder, blocks, waveforms,
+            return audio::waveform_analysis_t::from(decoder, blocks, waveforms,
                                            {"performance:600s", "generated-square-v1"}, 256);
         },
         verify_waveform);

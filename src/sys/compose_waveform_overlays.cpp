@@ -30,17 +30,17 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
         std::clamp(static_cast<long double>((scroll + height) / pixels_per_row), 0.0L,
                    static_cast<long double>(original.total_rows));
     const auto first_time =
-        original.seconds_at(static_cast<std::uint64_t>(std::floor(first_visible)),
+        original.query_seconds(static_cast<std::uint64_t>(std::floor(first_visible)),
                             wormedit::timing_boundary_side_t::before_delays);
     const auto last_time =
-        original.seconds_at(static_cast<std::uint64_t>(std::ceil(last_visible)),
+        original.query_seconds(static_cast<std::uint64_t>(std::ceil(last_visible)),
                             wormedit::timing_boundary_side_t::after_stops);
     if (!first_time || !last_time)
         return std::nullopt;
     const auto source_row = [&](wormedit::signed_rational_t seconds) -> std::optional<long double> {
-        const auto position = proposed.row_at(seconds);
+        const auto position = proposed.query_position(seconds);
         if (position)
-            return to_long_double(*position.absolute_row);
+            return to_long_double(position->value);
         const auto time = to_long_double(seconds);
         if (time < to_long_double(proposed.rows.front().before_delays_seconds))
             return 0.0L;
@@ -48,8 +48,8 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
             return static_cast<long double>(proposed.total_rows);
         return std::nullopt;
     };
-    const auto first = source_row(*first_time.seconds);
-    const auto last = source_row(*last_time.seconds);
+    const auto first = source_row(first_time->value);
+    const auto last = source_row(last_time->value);
     if (!first || !last)
         return std::nullopt;
     const auto padding = std::ceil(16.0 / pixels_per_row) + 2.0;
@@ -63,7 +63,7 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
 
 struct proposed_grid_context_t {
     const compose_chart_scope_t<>& scope;
-    flattened_workspace_t& flattened;
+    frontend_workspace_view_t& flattened;
     const compose_scene_cache_t& cache;
     const wormedit::timing_index_t& original;
     const wormedit::timing_index_t& proposed;
@@ -363,7 +363,7 @@ void build_proposed_sections_view(proposed_grid_context_t& projection) {
         build_proposed_section_view(projection, index);
 }
 
-void build_compose_proposed_grid_view(flattened_workspace_t& flattened,
+void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
                                    const compose_scene_cache_t& cache,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::timing_index_t& original,
@@ -389,16 +389,16 @@ void build_compose_proposed_grid_view(flattened_workspace_t& flattened,
     source_view.viewport_height_pixels = std::max(
         1.0, std::min(remaining_height,
                       static_cast<double>(rows->second - rows->first) * pixels_per_row + 32.0));
-    const auto composed = wormedit::editor_field_scene_view_t::from(
+    const auto composed = wormedit::editor_field_scene_view_result_t::from(
         chart, *cache.scene.index, source_view, cache.frame.preview_scene_request);
-    if (!composed) {
+    if (!composed.value || !composed.ok()) {
         view.truncated = true;
         return;
     }
     const auto scope = compose_chart_scope_t<>::from(
         {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row);
     proposed_grid_context_t projection{scope,    flattened,   cache,           original,
-                                       proposed, interaction, *composed.scene, *rows};
+                                       proposed, interaction, *composed.value, *rows};
     append_proposed_grid_lines(projection);
     append_note_and_bgm_preview_rects(projection);
     append_hold_preview_rects(projection);
@@ -431,11 +431,11 @@ void rebuild_offset_timing_index(compose_scene_cache_t& cache,
     if (chart == nullptr) return;
     auto candidate = *chart;
     candidate.beat_zero_audio_offset_seconds = proposed_offset;
-    auto built = build_timing_index(candidate);
-    if (built) cache.timing.proposed_offset_timing_index = std::move(*built.index);
+    auto built = timing_index_t::from(candidate);
+    if (built.value) cache.timing.proposed_offset_timing_index = std::move(*built.value);
 }
 
-void build_offset_grid_view(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void build_offset_grid_view(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                          const document_history_t& history,
                          const workspace_controller_t& workspace,
                          const editor_interaction_state_t* interaction) {
@@ -447,7 +447,7 @@ void build_offset_grid_view(flattened_workspace_t& flattened, compose_scene_cach
                                       *cache.timing.proposed_offset_timing_index, *interaction);
 }
 
-void update_proposed_beat_zero(flattened_workspace_t& flattened,
+void update_proposed_beat_zero(frontend_workspace_view_t& flattened,
                                const audio_offset_drag_t& drag,
                                const audio::waveform_analysis_result_t* waveform_analysis) {
     auto& compose = flattened.view.compose;
@@ -466,7 +466,7 @@ void update_proposed_beat_zero(flattened_workspace_t& flattened,
         compose.waveform_proposed_beat_zero_fraction = static_cast<double>(fraction);
 }
 
-void populate_audio_offset_overlay(flattened_workspace_t& flattened,
+void populate_audio_offset_overlay(frontend_workspace_view_t& flattened,
                                    document_history_t& history,
                                    const workspace_controller_t& workspace,
                                    compose_scene_cache_t& cache,
@@ -518,8 +518,8 @@ void rebuild_beat_fit_timing_index(compose_scene_cache_t& cache,
     const auto event = std::ranges::find(candidate.bpms, drag.bpm_event, &bpm_event_t::id);
     if (event == candidate.bpms.end()) return;
     event->beats_per_minute = drag.proposed_bpm;
-    auto built = build_timing_index(candidate);
-    if (built) cache.timing.proposed_beat_timing_index = std::move(*built.index);
+    auto built = timing_index_t::from(candidate);
+    if (built.value) cache.timing.proposed_beat_timing_index = std::move(*built.value);
 }
 
 void build_beat_fit_positions_view(WormUiComposeView& compose,
@@ -540,9 +540,9 @@ void build_beat_fit_positions_view(WormUiComposeView& compose,
     compose.beat_fit_beat_y_pixels = compose_project_y(
         compose.beat_fit_chart_row, pixels_per_row, interaction.viewport_scroll_pixels,
         compose.viewport_height_pixels, downscroll);
-    const auto target = timing.row_at({static_cast<std::int64_t>(drag.proposed_sample_frame), drag.sample_rate});
+    const auto target = timing.query_position({static_cast<std::int64_t>(drag.proposed_sample_frame), drag.sample_rate});
     if (!target) return;
-    const auto& row = *target.absolute_row;
+    const auto& row = target->value;
     const auto source_y = static_cast<double>(
         wormedit::to_long_double(row) *
         compose.pixels_per_standard_measure / timing.divisions_per_standard_measure -
@@ -551,7 +551,7 @@ void build_beat_fit_positions_view(WormUiComposeView& compose,
         source_y, compose.viewport_height_pixels, downscroll);
 }
 
-void populate_beat_fit_overlay(flattened_workspace_t& flattened,
+void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,
                                document_history_t& history,
                                const workspace_controller_t& workspace,
                                compose_scene_cache_t& cache,
@@ -575,7 +575,7 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
 } // namespace
 
 namespace {
-void populate_tap_apply_overlay(flattened_workspace_t& flattened,
+void populate_tap_apply_overlay(frontend_workspace_view_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const audio::waveform_analysis_result_t* analysis) {
@@ -598,8 +598,8 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
         cache.timing.tap_preview_timing.reset();
         const auto candidate = make_tap_timing_preview(history.document, proposal);
         if (!candidate) return;
-        auto timing = build_timing_index(*candidate);
-        if (timing) cache.timing.tap_preview_timing = std::move(timing.index);
+        auto timing = timing_index_t::from(*candidate);
+        if (timing.value) cache.timing.tap_preview_timing = std::move(timing.value);
     }
     if (!cache.timing.tap_preview_timing) return;
     const auto chart = history.document.find_chart(proposal.stamp.chart);
@@ -614,7 +614,7 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
 } // namespace
 
 void populate_compose_waveform_overlays(
-    bool overview_available, flattened_workspace_t& flattened,
+    bool overview_available, frontend_workspace_view_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag,

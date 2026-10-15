@@ -175,13 +175,13 @@ auto prepare_shift(const document_history_t& history,
                "time shift is not supported on a chart with retained BMS control flow");
         return std::nullopt;
     }
-    auto index = build_measure_index(*chart);
-    if (auto* diagnostics = std::get_if<diagnostic_list_t>(&index)) {
-        result.command.diagnostics = std::move(*diagnostics);
+    auto index = measure_index_t::from(*chart);
+    if (!index) {
+        result.command.diagnostics = std::move(index.error());
         return std::nullopt;
     }
     prepared.chart = &*chart;
-    prepared.index = std::move(std::get<measure_index_t>(index));
+    prepared.index = std::move(*index);
     return prepared;
 }
 

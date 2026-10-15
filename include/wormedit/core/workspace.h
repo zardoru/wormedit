@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/catalogs.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/result.h>
 
 #include <array>
@@ -14,8 +15,6 @@
 
 namespace wormedit {
 
-struct workspace_bind_result_t;
-struct workspace_view_result_t;
 
 // UI-independent tabs for the song workspace. Storyboard is intentionally
 // present in the navigation model while its editor is not implemented yet.
@@ -102,10 +101,10 @@ struct workspace_history_summary_t {
 struct workspace_controller_t {
     [[nodiscard]] static auto from(const song_document_t& document,
                                    const workspace_limits_t& limits = {})
-        -> workspace_bind_result_t;
+        -> diagnosed_t<std::optional<workspace_controller_t>>;
     [[nodiscard]] static auto from(const document_history_t& history,
                                    const workspace_limits_t& limits = {})
-        -> workspace_bind_result_t;
+        -> diagnosed_t<std::optional<workspace_controller_t>>;
 
     song_id_t song;
     std::uint64_t document_revision{};
@@ -121,21 +120,6 @@ struct workspace_controller_t {
 
 using workspace_bind_outcome_t = diagnosed_t<std::optional<workspace_controller_t>>;
 using workspace_action_outcome_t = diagnosed_t<bool>;
-
-struct workspace_bind_result_t {
-    [[nodiscard]] static auto from(const song_document_t& document, const workspace_limits_t& limits = {})
-        -> workspace_bind_outcome_t;
-    [[nodiscard]] static auto from(const document_history_t& history, const workspace_limits_t& limits = {})
-        -> workspace_bind_outcome_t;
-    [[nodiscard]] static auto from(workspace_bind_outcome_t&& outcome) -> workspace_bind_result_t;
-    std::optional<workspace_controller_t> workspace;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return workspace.has_value() && diagnostics.empty();
-    }
-};
-
 
 struct workspace_switch_tab_action_t {
     workspace_tab_t tab{workspace_tab_t::setup};
@@ -280,7 +264,10 @@ struct workspace_bms_branch_choice_t {
     bool can_clear{};
 };
 
-struct workspace_bms_branch_outline_cache_t;
+struct workspace_bms_branch_outline_cache_key_t;
+struct workspace_bms_branch_outline_view_t;
+using workspace_bms_branch_outline_cache_t = keyed_cache_t<
+    workspace_bms_branch_outline_cache_key_t, workspace_bms_branch_outline_view_t>;
 
 struct workspace_bms_branch_outline_view_t {
     [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart,
@@ -301,31 +288,45 @@ struct workspace_bms_branch_outline_view_t {
     diagnostic_list_t diagnostics;
 };
 
-// Optional application-lifetime cache. Document mutations must advance revision,
-// as required by the workspace binding contract. Per-frame workspace guards
-// (focus, selected chart, comparisons and tab) are never cached.
-struct workspace_binding_validation_cache_t {
-    const song_document_t* document_identity{};
-    song_id_t song;
-    std::uint64_t revision{};
-    workspace_limits_t limits;
-    diagnostic_list_t diagnostics;
-    bool valid{};
-    std::size_t build_count{};
+struct workspace_document_cache_query_t {
+    const song_document_t& document;
+    const workspace_limits_t& limits;
 };
 
-// One owned outline; branch choices and limits participate even between revisions.
-struct workspace_bms_branch_outline_cache_t {
-    const void* document_identity{};
-    const void* chart_identity{};
-    song_id_t song;
-    chart_id_t chart;
-    std::uint64_t revision{};
+struct workspace_document_cache_key_t {
+    const song_document_t* document_identity{};
+    document_stamp_t stamp;
     workspace_limits_t limits;
-    std::vector<std::pair<branch_id_t, std::int64_t>> choices;
-    workspace_bms_branch_outline_view_t outline;
-    bool valid{};
-    std::size_t build_count{};
+
+    [[nodiscard]] static auto from(const workspace_document_cache_query_t& query)
+        -> workspace_document_cache_key_t;
+    void assign(const workspace_document_cache_query_t& query);
+    [[nodiscard]] auto operator==(const workspace_document_cache_query_t& query) const -> bool;
+    auto operator==(const workspace_document_cache_key_t&) const -> bool = default;
+};
+
+// Document mutations advance revision. Per-frame focus/chart/tab guards remain uncached.
+using workspace_binding_validation_cache_t =
+    keyed_cache_t<workspace_document_cache_key_t, diagnostic_list_t>;
+
+struct workspace_bms_branch_outline_cache_query_t {
+    workspace_document_cache_query_t document;
+    const chart_document_t& chart;
+};
+
+// Choice ownership is captured only on misses; repeated fills reuse its storage.
+struct workspace_bms_branch_outline_cache_key_t {
+    workspace_document_cache_key_t document;
+    const chart_document_t* chart_identity{};
+    chart_id_t chart;
+    std::vector<branch_selection_t> choices;
+
+    [[nodiscard]] static auto from(const workspace_bms_branch_outline_cache_query_t& query)
+        -> workspace_bms_branch_outline_cache_key_t;
+    void assign(const workspace_bms_branch_outline_cache_query_t& query);
+    [[nodiscard]] auto operator==(const workspace_bms_branch_outline_cache_query_t& query) const
+        -> bool;
+    auto operator==(const workspace_bms_branch_outline_cache_key_t&) const -> bool = default;
 };
 
 struct workspace_compose_view_t {
@@ -364,10 +365,8 @@ using workspace_tab_view_t =
                  workspace_audio_slices_view_t, workspace_compare_validate_view_t>;
 
 struct workspace_view_t {
-    // Temporary: removed by T-642 after sys callers migrate to the diagnosed factory.
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
-                                   const song_document_t& document) -> workspace_view_result_t;
-    // Temporary: removed by T-642 after sys callers migrate to the diagnosed factory.
+                                   const song_document_t& document) -> diagnosed_t<std::optional<workspace_view_t>>;
     // Also builds a non-active tab's view. This lets the shell display the
     // storyboard placeholder while navigation/actions continue to reject it.
     // Compare diagnostics may be supplied from a cache keyed to this document's
@@ -377,7 +376,7 @@ struct workspace_view_t {
                                    const diagnostic_list_t* cached_diagnostics = nullptr,
                                    workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
                                    workspace_binding_validation_cache_t* binding_cache = nullptr)
-        -> workspace_view_result_t;
+        -> diagnosed_t<std::optional<workspace_view_t>>;
 
     song_id_t song;
     std::uint64_t document_revision{};
@@ -392,22 +391,5 @@ struct workspace_view_t {
 };
 
 using workspace_view_outcome_t = diagnosed_t<std::optional<workspace_view_t>>;
-
-struct workspace_view_result_t {
-    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document)
-        -> workspace_view_outcome_t;
-    [[nodiscard]] static auto from(const workspace_controller_t& workspace, const song_document_t& document,
-        workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics = nullptr,
-        workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
-        workspace_binding_validation_cache_t* binding_cache = nullptr) -> workspace_view_outcome_t;
-    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
-    [[nodiscard]] static auto from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t;
-    std::optional<workspace_view_t> view;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return view.has_value() && diagnostics.empty();
-    }
-};
 
 } // namespace wormedit

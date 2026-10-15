@@ -28,7 +28,7 @@ auto decimal_value(signed_rational_t value, unsigned precision) -> std::string {
     return stream.str();
 }
 
-void build_project_chart_mode_view(const chart_document_t& chart, project_chart_row_t& row) {
+void build_project_chart_mode_view(const chart_document_t& chart, project_chart_row_view_t& row) {
     if (chart.lane_layouts.empty()) { row.mode = "No lane layout"; return; }
     const auto& layout = chart.lane_layouts.front().layout;
     row.mode = display_text(layout.display_name.empty() ? layout.profile_id : layout.display_name);
@@ -37,7 +37,7 @@ void build_project_chart_mode_view(const chart_document_t& chart, project_chart_
     }));
 }
 
-void build_project_chart_groups_view(const song_document_t& document, project_chart_row_t& row) {
+void build_project_chart_groups_view(const song_document_t& document, project_chart_row_view_t& row) {
     std::string names;
     for (const auto& group : document.output_groups) {
         if (std::ranges::find(group.charts, row.chart) == group.charts.end()) continue;
@@ -49,28 +49,30 @@ void build_project_chart_groups_view(const song_document_t& document, project_ch
     row.output_groups = names.empty() ? "Unassigned" : display_text(names);
 }
 
-void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_t& row) {
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!built) {
+void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_view_t& row) {
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    if (!built.value) {
         row.length = "Unavailable";
         row.diagnostic = built.diagnostics.empty() ? "Chart timing is unavailable."
             : display_text(built.diagnostics.front().message);
         return;
     }
-    const auto begin = built.index->seconds_at(0, timing_boundary_side_t::before_delays);
+    const auto begin = built.value->query_seconds(0, timing_boundary_side_t::before_delays);
     const auto end =
-        built.index->seconds_at(built.index->total_rows, timing_boundary_side_t::after_stops);
+        built.value->query_seconds(built.value->total_rows, timing_boundary_side_t::after_stops);
     if (!begin || !end) { row.length = "Unavailable"; row.diagnostic = "Chart length query failed."; return; }
-    const auto seconds = to_long_double(*end.seconds) - to_long_double(*begin.seconds);
+    const auto seconds = to_long_double(end->value) - to_long_double(begin->value);
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
     stream << std::fixed << std::setprecision(2) << seconds << " s";
     row.length = stream.str();
 }
 
-auto build_project_chart_row_view(const song_document_t& document, const chart_document_t& chart)
-    -> project_chart_row_t {
-    project_chart_row_t row{.chart = chart.id, .name = display_text(chart.metadata.name),
+} // namespace
+
+auto project_chart_row_view_t::from(const song_document_t& document, const chart_document_t& chart)
+    -> project_chart_row_view_t {
+    project_chart_row_view_t row{.chart = chart.id, .name = display_text(chart.metadata.name),
         .author = display_text(chart.metadata.author),
         .rating = chart.metadata.rating ? decimal_value(*chart.metadata.rating, 2) : "Unset"};
     build_project_chart_mode_view(chart, row);
@@ -79,7 +81,6 @@ auto build_project_chart_row_view(const song_document_t& document, const chart_d
     build_project_chart_length_view(chart, row);
     return row;
 }
-} // namespace
 
 namespace {
 auto reorder_project_chart(document_history_t& history, const project_chart_command_t& action)
@@ -138,23 +139,23 @@ auto apply_project_chart_command(document_history_t& history,
                 apply_reorder_chart_command(history, action.chart, up ? index - 1 : index + 1)};
 }
 
-auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t {
+auto project_chart_table_view_t::from(const song_document_t& document) -> project_chart_table_view_t {
     const auto count = std::min(document.charts.size(), maximum_project_chart_rows);
-    project_chart_table_t table{.total_charts = document.charts.size(),
+    project_chart_table_view_t table{.total_charts = document.charts.size(),
         .rows_truncated = document.charts.size() > count};
     table.rows.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-        table.rows.push_back(build_project_chart_row_view(document, document.charts[index]));
+        table.rows.push_back(project_chart_row_view_t::from(document, document.charts[index]));
     return table;
 }
 
-auto build_project_chart_table_view(project_chart_table_cache_t& cache,
+auto project_chart_table_view_t::from(project_chart_table_cache_t& cache,
                                     const song_document_t& document,
                                     std::uint64_t session_generation)
-    -> const project_chart_table_t& {
+    -> const project_chart_table_view_t& {
     if (!cache.populated || cache.song != document.id || cache.session_generation != session_generation ||
         cache.revision != document.revision) {
-        cache.table = build_project_chart_table(document);
+        cache.table = project_chart_table_view_t::from(document);
         cache.song = document.id;
         cache.session_generation = session_generation;
         cache.revision = document.revision;
@@ -205,22 +206,37 @@ void publish_row_error(project_chart_runtime_t& runtime, const WormUiProjectChar
 }
 } // namespace
 
+auto project_chart_runtime_t::preview_job(task_scheduler_t& scheduler) -> output_preview_job_t& {
+    if (!preview_job_ || (!preview_job_->is_busy() && !preview_job_->is_bound_to(scheduler)))
+        preview_job_.emplace(scheduler, 1, "Preview failed.",
+                             "scheduler outstanding-task capacity exceeded", "Preview failed.",
+                             async_job_destruction_policy_t::release);
+    return *preview_job_;
+}
+
+void project_chart_runtime_t::cancel_preview() {
+    if (preview_job_) {
+        preview_job_->cancel();
+        preview_job_.reset();
+    }
+}
+
 namespace {
 void poll_output_group_preview(project_chart_runtime_t& runtime, const song_document_t& doc) {
     if (runtime.output_group_song != doc.id || runtime.output_group_revision != doc.revision) {
-        runtime.preview_graph.cancel();
-        runtime.preview_graph = {};
+        runtime.cancel_preview();
         runtime.output_group_status.assign(doc.output_groups.size(), "Preview not run");
         runtime.output_group_song = doc.id;
         runtime.output_group_revision = doc.revision;
     }
-    if (!runtime.preview_graph) return;
-    const auto result = runtime.preview_graph.result(runtime.preview_task);
+    if (!runtime.preview_job())
+        return;
+    const auto result = runtime.preview_job()->poll();
     if (!result) return;
-    const auto text = task_value_cast<std::string>(*result);
-    runtime.output_group_status[runtime.preview_index] = text ? *text :
-        (result->error ? result->error->message : "Preview failed.");
-    runtime.preview_graph = {};
+    const auto index =
+        result->has_value() ? result->value().identity.index : result->error().identity.index;
+    runtime.output_group_status[index] =
+        result->has_value() ? *result->value().payload : result->error().cause.message;
 }
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
                              WormUiSetupView& view) {
@@ -261,23 +277,26 @@ auto output_preview(const song_document_t& doc, const output_group_t& group) -> 
     return "Preview: " + std::to_string(result.outputs.size()) + " file(s), " +
         std::to_string(losses) + " conversion warning(s).";
 }
+auto run_output_preview(const output_preview_request_t& request, std::stop_token stop)
+    -> output_preview_job_t::work_outcome_t {
+    if (stop.stop_requested())
+        return std::unexpected(
+            error_t<task_error_code_t>{task_error_code_t::cancelled, "Preview cancelled."});
+    return output_preview(request.document, request.group);
+}
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
     size_t index, task_scheduler_t& scheduler) -> project_chart_ui_result_t {
     poll_output_group_preview(runtime, doc);
-    if (runtime.preview_graph) return {.status = "Wait for the current conversion preview."};
-    task_graph_t graph{1};
-    const auto added = graph.add_task({}, [snapshot = doc, group = doc.output_groups[index]](
-        std::span<const task_result_t>, std::stop_token stop) {
-        if (stop.stop_requested()) return task_result_t::failure(task_error_code_t::cancelled, "Preview cancelled.");
-        return task_result_t::success(wormedit::task_value_t::from<std::string>(
-            std::make_shared<const std::string>(output_preview(snapshot, group))));
-    });
-    if (!added) return {.status = added.error->message};
-    auto submitted = scheduler.submit(std::move(graph));
-    if (!submitted) return {.status = submitted.error->message};
-    runtime.preview_graph = std::move(submitted.graph);
-    runtime.preview_task = *added.id;
-    runtime.preview_index = index;
+    if (runtime.preview_job() && runtime.preview_job()->is_busy())
+        return {.status = "Wait for the current conversion preview."};
+    const auto started = runtime.preview_job(scheduler).request(
+        [&doc, index] {
+            return output_preview_request_t{.document = doc, .group = doc.output_groups[index]};
+        },
+        {.document = {.project = doc.id, .document_revision = doc.revision}, .index = index},
+        run_output_preview);
+    if (!started)
+        return {.status = started.error().message};
     runtime.output_group_status[index] = "Preview running…";
     return {.status = "Conversion preview started.", .severity = notification_severity_t::info};
 }
@@ -324,7 +343,7 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
             });
         });
     const auto& table =
-        build_project_chart_table_view(runtime.cache, document, runtime.session_generation);
+        project_chart_table_view_t::from(runtime.cache, document, runtime.session_generation);
     runtime.rows.clear();
     runtime.rows.reserve(table.rows.size());
     for (const auto& row : table.rows) {

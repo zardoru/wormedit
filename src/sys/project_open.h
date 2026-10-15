@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 #include <wormedit/formats/native_project_storage.h>
 
 #include <filesystem>
@@ -10,7 +11,7 @@
 
 namespace wormedit::sys {
 
-struct project_chart_runtime_t;
+class project_chart_runtime_t;
 
 struct pending_import_t {
     std::string audio_project_path;
@@ -49,9 +50,8 @@ struct project_open_result_t {
     std::string error;
     // Nonfatal osu import quantization and asset-resolution diagnostics.
     std::vector<std::string> warnings;
-
-    [[nodiscard]] explicit operator bool() const noexcept { return document.has_value(); }
 };
+using project_open_outcome_t = result_t<project_open_result_t, project_open_result_t>;
 
 // Refreshes exact audio file availability for documents loaded through startup,
 // recovery or session replacement. Decoder support does not affect missing state;
@@ -70,6 +70,6 @@ void validate_opened_document(project_open_result_t& result);
 [[nodiscard]] auto open_project_file(
     const std::filesystem::path& selected_path,
     std::optional<text_encoding_t> encoding_override = {})
-    -> project_open_result_t;
+    -> project_open_outcome_t;
 
 } // namespace wormedit::sys

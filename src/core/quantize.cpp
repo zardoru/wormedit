@@ -565,12 +565,12 @@ auto quantization_plan_t::from(const chart_document_t& chart, const quantize_req
     }
     auto working = std::move(*prepared);
 
-    const auto built_index = build_measure_index(working);
-    if (std::holds_alternative<diagnostic_list_t>(built_index)) {
-        result.diagnostics = std::get<diagnostic_list_t>(built_index);
+    const auto built_index = measure_index_t::from(working);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const detail::quantize_geometry_t index{std::get<measure_index_t>(built_index)};
+    const detail::quantize_geometry_t index{*built_index};
     const auto before_quantization = working;
     quantization_position_context_t position_context{
         index, working.divisions_per_standard_measure, request, result.diagnostics};

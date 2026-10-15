@@ -16,7 +16,7 @@
 
 namespace {
 
-auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
+auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_outcome_t {
     std::ifstream stream(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / name,
                          std::ios::binary);
     const std::string text{std::istreambuf_iterator<char>(stream),
@@ -24,7 +24,7 @@ auto bmson_fixture(std::string_view name) -> wormedit::bmson_parse_result_t {
     return wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
 }
 
-auto published_fixture() -> wormedit::bmson_parse_result_t {
+auto published_fixture() -> wormedit::bmson_parse_outcome_t {
     return bmson_fixture("published-vox-slicing.bmson");
 }
 
@@ -33,10 +33,10 @@ auto cropped_continuation_is_normalized(const wormedit::song_document_t& song,
                                        wormedit::object_id_t note,
                                        std::span<const wormedit::audio::audition_source_binding_t> bindings)
     -> bool {
-    const auto resolved = wormedit::audio::resolve_object_audition(song, chart, note, bindings);
-    return resolved && resolved.clips.size() == 1 &&
-           resolved.clips.front().source_start_frame == 55'125 &&
-           resolved.clips.front().frame_count == 33'075;
+    const auto resolved = wormedit::audio::audition_resolution_t::from(song, chart, note, bindings);
+    return resolved.diagnostics.empty() && resolved.value.clips.size() == 1 &&
+           resolved.value.clips.front().source_start_frame == 55'125 &&
+           resolved.value.clips.front().frame_count == 33'075;
 }
 
 auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
@@ -52,7 +52,7 @@ auto runtime_binding(wormedit::asset_id_t asset, std::uint64_t frames = 200'000)
 auto is_silent_audition(const wormedit::song_document_t& song, wormedit::chart_id_t chart,
                        wormedit::object_id_t object,
                        std::span<const wormedit::audio::audition_source_binding_t> bindings,
-                       const wormedit::audio::preview_bindings_resolve_result_t& preview) -> bool {
+                       const wormedit::audio::preview_bindings_resolve_outcome_t& preview) -> bool {
     auto outcome = wormedit::audio::audition_resolution_t::from(song, chart, object, bindings);
     const auto is_silent = outcome.ok() && outcome.value.clips.empty();
     const auto legacy = wormedit::audio::audition_resolve_result_t::from(std::move(outcome));
@@ -64,8 +64,8 @@ auto is_silent_audition(const wormedit::song_document_t& song, wormedit::chart_i
 TEST_CASE("audition resolver maps published BMSON slices into normalized transport frames",
           "[unit][audio][audition-resolver][bmson]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(chart.sound_channels.size() == 1);
     const auto asset = chart.sound_channels.front().source_clip.source;
@@ -90,12 +90,12 @@ TEST_CASE("audition resolver maps published BMSON slices into normalized transpo
     REQUIRE(note != chart.measures.front().notes.end());
 
     const auto resolved =
-        wormedit::audio::resolve_object_audition(song, chart.id, note->id, bindings);
-    REQUIRE(resolved);
-    REQUIRE(resolved.clips.size() == 1);
-    CHECK(resolved.document_revision == song.revision);
-    CHECK(resolved.clips.front().source_start_frame == 0);
-    CHECK(resolved.clips.front().frame_count == 11'025);
+        wormedit::audio::audition_resolution_t::from(song, chart.id, note->id, bindings);
+    REQUIRE(resolved.diagnostics.empty());
+    REQUIRE(resolved.value.clips.size() == 1);
+    CHECK(resolved.value.document_revision == song.revision);
+    CHECK(resolved.value.clips.front().source_start_frame == 0);
+    CHECK(resolved.value.clips.front().frame_count == 11'025);
 
     const auto retained_shared = event_at(360, true);
     REQUIRE(retained_shared != chart.sound_channels.front().events.end());
@@ -105,28 +105,28 @@ TEST_CASE("audition resolver maps published BMSON slices into normalized transpo
         });
     REQUIRE(shared_note != chart.measures.front().notes.end());
     const auto shared =
-        wormedit::audio::resolve_object_audition(song, chart.id, shared_note->id, bindings);
-    REQUIRE(shared);
-    REQUIRE(shared.clips.size() == 1);
-    CHECK(shared.clips.front().source_start_frame == 11'025);
-    CHECK(shared.clips.front().frame_count == 33'075);
+        wormedit::audio::audition_resolution_t::from(song, chart.id, shared_note->id, bindings);
+    REQUIRE(shared.diagnostics.empty());
+    REQUIRE(shared.value.clips.size() == 1);
+    CHECK(shared.value.clips.front().source_start_frame == 11'025);
+    CHECK(shared.value.clips.front().frame_count == 33'075);
 
     chart.sound_channels.front().source_clip.begin_frame = 48'000;
     chart.sound_channels.front().source_clip.end_frame = 240'000;
-    const auto cropped = wormedit::audio::resolve_object_audition(
+    const auto cropped = wormedit::audio::audition_resolution_t::from(
         song, chart.id, chart.measures.front().notes.front().id, bindings);
-    REQUIRE(cropped);
-    REQUIRE(cropped.clips.size() == 1);
-    CHECK(cropped.clips.front().source_start_frame == 44'100);
-    CHECK(cropped.clips.front().frame_count == 11'025);
+    REQUIRE(cropped.diagnostics.empty());
+    REQUIRE(cropped.value.clips.size() == 1);
+    CHECK(cropped.value.clips.front().source_start_frame == 44'100);
+    CHECK(cropped.value.clips.front().frame_count == 11'025);
     CHECK(cropped_continuation_is_normalized(song, chart.id, shared_note->id, bindings));
 }
 
 TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinked resources",
           "[unit][audio][audition-resolver][fallback]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     const auto audio_asset =
@@ -139,27 +139,27 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     const auto bgm_measure = std::ranges::find_if(
         chart.measures, [](const auto& measure) { return !measure.bgm_events.empty(); });
     REQUIRE(bgm_measure != chart.measures.end());
-    const auto bgm = wormedit::audio::resolve_object_audition(
+    const auto bgm = wormedit::audio::audition_resolution_t::from(
         song, chart.id, bgm_measure->bgm_events.front().id, bindings);
-    REQUIRE(bgm);
-    REQUIRE(bgm.clips.size() == 1);
+    REQUIRE(bgm.diagnostics.empty());
+    REQUIRE(bgm.value.clips.size() == 1);
     // Pulse 1680 is two source seconds after the restart at pulse 720.
-    CHECK(bgm.clips.front().source_start_frame == 88'200);
-    CHECK(bgm.clips.front().frame_count == 111'800);
+    CHECK(bgm.value.clips.front().source_start_frame == 88'200);
+    CHECK(bgm.value.clips.front().frame_count == 111'800);
 
     auto& note = chart.measures.front().notes.front();
     note.sound_channel_event.reset();
-    const auto whole = wormedit::audio::resolve_object_audition(song, chart.id, note.id, bindings);
-    REQUIRE(whole);
-    REQUIRE(whole.clips.size() == 1);
-    CHECK(whole.clips.front().source_start_frame == 0);
-    CHECK(whole.clips.front().frame_count == 200'000);
+    const auto whole = wormedit::audio::audition_resolution_t::from(song, chart.id, note.id, bindings);
+    REQUIRE(whole.diagnostics.empty());
+    REQUIRE(whole.value.clips.size() == 1);
+    CHECK(whole.value.clips.front().source_start_frame == 0);
+    CHECK(whole.value.clips.front().frame_count == 200'000);
 
     const std::array duplicate_bindings{bindings.front(), bindings.front()};
     const auto duplicate =
-        wormedit::audio::resolve_object_audition(song, chart.id, note.id, duplicate_bindings);
-    CHECK_FALSE(duplicate);
-    CHECK(duplicate.clips.empty());
+        wormedit::audio::audition_resolution_t::from(song, chart.id, note.id, duplicate_bindings);
+    CHECK_FALSE(duplicate.diagnostics.empty());
+    CHECK(duplicate.value.clips.empty());
     REQUIRE(duplicate.diagnostics.size() == 1);
     CHECK(duplicate.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::duplicate_source_binding);
@@ -167,9 +167,9 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     auto mismatched = bindings.front();
     mismatched.source_sample_rate = 44'100;
     const std::array mismatched_bindings{mismatched};
-    const auto invalid_geometry = wormedit::audio::resolve_object_audition(
+    const auto invalid_geometry = wormedit::audio::audition_resolution_t::from(
         song, chart.id, bgm_measure->bgm_events.front().id, mismatched_bindings);
-    CHECK_FALSE(invalid_geometry);
+    CHECK_FALSE(invalid_geometry.diagnostics.empty());
     REQUIRE(invalid_geometry.diagnostics.size() == 1);
     CHECK(invalid_geometry.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
@@ -177,9 +177,9 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     auto wrong_output_rate = bindings.front();
     wrong_output_rate.output_sample_rate = 48'000;
     const std::array wrong_output_bindings{wrong_output_rate};
-    const auto invalid_output = wormedit::audio::resolve_object_audition(
+    const auto invalid_output = wormedit::audio::audition_resolution_t::from(
         song, chart.id, bgm_measure->bgm_events.front().id, wrong_output_bindings);
-    CHECK_FALSE(invalid_output);
+    CHECK_FALSE(invalid_output.diagnostics.empty());
     REQUIRE(invalid_output.diagnostics.size() == 1);
     CHECK(invalid_output.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
@@ -188,9 +188,9 @@ TEST_CASE("audition resolver isolates BGM slices and falls back to whole unlinke
     mismatched_length.source_frame_count = 240'000;
     audio_asset->stream.frame_count = 240'001;
     const std::array mismatched_length_bindings{mismatched_length};
-    const auto invalid_length = wormedit::audio::resolve_object_audition(
+    const auto invalid_length = wormedit::audio::audition_resolution_t::from(
         song, chart.id, bgm_measure->bgm_events.front().id, mismatched_length_bindings);
-    CHECK_FALSE(invalid_length);
+    CHECK_FALSE(invalid_length.diagnostics.empty());
     REQUIRE(invalid_length.diagnostics.size() == 1);
     CHECK(invalid_length.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::invalid_source_geometry);
@@ -216,8 +216,8 @@ TEST_CASE("BMSON draft audition separates stale revision from unknown marker rej
 TEST_CASE("BMSON draft audition resolves a staged region without editing the song",
           "[unit][audio][audition-resolver][bmson]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     const auto& chart = song.charts.front();
     const auto& channel = chart.sound_channels.front();
     const auto asset = channel.source_clip.source;
@@ -297,8 +297,8 @@ TEST_CASE("BMSON draft audition resolves a staged region without editing the son
 TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer bound",
           "[unit][audio][audition-resolver][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(chart.sound_channels.size() == 2);
     for (auto& asset : song.audio_assets) {
@@ -329,15 +329,15 @@ TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer 
     second_note->kind = first_note->kind;
 
     const auto layered =
-        wormedit::audio::resolve_object_audition(song, chart.id, first_note->id, bindings);
-    REQUIRE(layered);
-    REQUIRE(layered.clips.size() == 2);
-    CHECK(layered.clips[0].source != layered.clips[1].source);
+        wormedit::audio::audition_resolution_t::from(song, chart.id, first_note->id, bindings);
+    REQUIRE(layered.diagnostics.empty());
+    REQUIRE(layered.value.clips.size() == 2);
+    CHECK(layered.value.clips[0].source != layered.value.clips[1].source);
 
-    const auto bounded = wormedit::audio::resolve_object_audition(song, chart.id, first_note->id,
+    const auto bounded = wormedit::audio::audition_resolution_t::from(song, chart.id, first_note->id,
                                                                   bindings, {.maximum_layers = 1});
-    CHECK_FALSE(bounded);
-    CHECK(bounded.clips.empty());
+    CHECK_FALSE(bounded.diagnostics.empty());
+    CHECK(bounded.value.clips.empty());
     REQUIRE(bounded.diagnostics.size() == 1);
     CHECK(bounded.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::capacity_exceeded);
@@ -346,8 +346,8 @@ TEST_CASE("audition resolver layers fused BMSON channels and enforces its layer 
 TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule batch",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     auto audio_asset = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id);
@@ -384,14 +384,14 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
     schedule.bgm = {{.sample_frame = 30, .object = bgm.id, .resource = *bgm.sound}};
 
     const auto resolved =
-        wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
-    REQUIRE(resolved);
-    REQUIRE(resolved.bindings.size() == 3);
+        wormedit::audio::preview_bindings_resolution_t::from(song, chart.id, schedule, bindings);
+    REQUIRE(resolved.diagnostics.empty());
+    REQUIRE(resolved.value.bindings.size() == 3);
     const auto voice_for =
         [&](wormedit::object_id_t object) -> const wormedit::audio::preview_voice_source_t& {
         const auto found = std::ranges::find(
-            resolved.bindings, object, &wormedit::audio::preview_object_source_binding_t::object);
-        REQUIRE(found != resolved.bindings.end());
+            resolved.value.bindings, object, &wormedit::audio::preview_object_source_binding_t::object);
+        REQUIRE(found != resolved.value.bindings.end());
         REQUIRE(found->voices.size() == 1);
         return found->voices.front();
     };
@@ -404,9 +404,9 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
 
     schedule.playable.front().resource = wormedit::resource_id_t{999'999};
     const auto stale =
-        wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
-    CHECK_FALSE(stale);
-    CHECK(stale.bindings.empty());
+        wormedit::audio::preview_bindings_resolution_t::from(song, chart.id, schedule, bindings);
+    CHECK_FALSE(stale.diagnostics.empty());
+    CHECK(stale.value.bindings.empty());
     REQUIRE(stale.diagnostics.size() == 1);
     CHECK(stale.diagnostics.front().code == wormedit::audio::audition_resolve_code_t::invalid_link);
 }
@@ -414,8 +414,8 @@ TEST_CASE("preview binding resolver indexes exact BMSON slices for one schedule 
 TEST_CASE("preview points past the end of a short sample stay silent while the rest still plays",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto asset = chart.sound_channels.front().source_clip.source;
     const auto audio_asset = std::ranges::find(song.audio_assets, asset, &wormedit::audio_asset_t::id);
@@ -442,10 +442,10 @@ TEST_CASE("preview points past the end of a short sample stay silent while the r
     wormedit::preview_schedule_t schedule{.sample_rate = wormedit::audio::output_sample_rate};
     schedule.playable = {{.sample_frame = 20, .object = restart.id, .resource = *restart.sound}};
     schedule.bgm = {{.sample_frame = 30, .object = bgm.id, .resource = *bgm.sound}};
-    const auto resolved = wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
+    const auto resolved = wormedit::audio::preview_bindings_resolution_t::from(song, chart.id, schedule, bindings);
     CHECK(is_silent_audition(song, chart.id, bgm.id, bindings, resolved));
     const auto has = [&](wormedit::object_id_t object) {
-        return std::ranges::any_of(resolved.bindings, [&](const auto& item) { return item.object == object; });
+        return std::ranges::any_of(resolved.value.bindings, [&](const auto& item) { return item.object == object; });
     };
     CHECK(has(restart.id));
     CHECK_FALSE(has(bgm.id));
@@ -454,8 +454,8 @@ TEST_CASE("preview points past the end of a short sample stay silent while the r
 TEST_CASE("preview binding resolver can leave unavailable audio silent without losing the chart",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = published_fixture();
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     const auto& chart = song.charts.front();
     const auto& note = chart.measures.front().notes.front();
     REQUIRE(note.sound.has_value());
@@ -464,17 +464,17 @@ TEST_CASE("preview binding resolver can leave unavailable audio silent without l
     schedule.playable = {{.sample_frame = 24'000,
                           .object = note.id,
                           .resource = *note.sound}};
-    const auto strict = wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, {});
+    const auto strict = wormedit::audio::preview_bindings_resolution_t::from(song, chart.id, schedule, {});
     REQUIRE(strict.diagnostics.size() == 1);
 
-    const auto permissive = wormedit::audio::resolve_preview_bindings(
+    const auto permissive = wormedit::audio::preview_bindings_resolution_t::from(
         song, chart.id, schedule, {}, {.skip_unavailable_preview_sources = true});
     const std::array checks{
-        !static_cast<bool>(strict),
+        !strict.diagnostics.empty(),
         strict.diagnostics.front().code ==
             wormedit::audio::audition_resolve_code_t::missing_source_binding,
-        static_cast<bool>(permissive), permissive.bindings.empty(),
-        permissive.skipped_unavailable_objects == 1, permissive.diagnostics.empty(),
+        permissive.diagnostics.empty(), permissive.value.bindings.empty(),
+        permissive.value.skipped_unavailable_objects == 1, permissive.diagnostics.empty(),
         schedule.playable.front().sample_frame == 24'000,
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
@@ -483,8 +483,8 @@ TEST_CASE("preview binding resolver can leave unavailable audio silent without l
 TEST_CASE("preview binding resolver keeps available audio alongside silent chart objects",
           "[unit][audio][audition-resolver][preview]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(song.audio_assets.size() >= 2);
     for (auto& asset : song.audio_assets) {
@@ -505,12 +505,12 @@ TEST_CASE("preview binding resolver keeps available audio alongside silent chart
     }
     REQUIRE(schedule.playable.size() >= 2);
 
-    const auto resolved = wormedit::audio::resolve_preview_bindings(
+    const auto resolved = wormedit::audio::preview_bindings_resolution_t::from(
         song, chart.id, schedule, bindings, {.skip_unavailable_preview_sources = true});
     const std::array checks{
-        static_cast<bool>(resolved), resolved.skipped_unavailable_objects > 0,
-        !resolved.bindings.empty(),
-        resolved.bindings.size() + resolved.skipped_unavailable_objects ==
+        resolved.diagnostics.empty(), resolved.value.skipped_unavailable_objects > 0,
+        !resolved.value.bindings.empty(),
+        resolved.value.bindings.size() + resolved.value.skipped_unavailable_objects ==
             schedule.playable.size(),
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
@@ -519,8 +519,8 @@ TEST_CASE("preview binding resolver keeps available audio alongside silent chart
 TEST_CASE("preview binding resolver expands one canonical fused object atomically",
           "[unit][audio][audition-resolver][preview][polyphony]") {
     auto parsed = bmson_fixture("slicing-and-mixed-sounds.bmson");
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     std::vector<wormedit::audio::audition_source_binding_t> bindings;
     for (std::size_t index = 0; index < song.audio_assets.size(); ++index) {
@@ -551,17 +551,17 @@ TEST_CASE("preview binding resolver expands one canonical fused object atomicall
     schedule.playable = {{.object = first.id, .resource = *first.sound}};
 
     const auto resolved =
-        wormedit::audio::resolve_preview_bindings(song, chart.id, schedule, bindings);
-    REQUIRE(resolved);
-    REQUIRE(resolved.bindings.size() == 1);
-    CHECK(resolved.bindings.front().object == first.id);
-    REQUIRE(resolved.bindings.front().voices.size() == 2);
-    CHECK(resolved.bindings.front().voices[0].source != resolved.bindings.front().voices[1].source);
+        wormedit::audio::preview_bindings_resolution_t::from(song, chart.id, schedule, bindings);
+    REQUIRE(resolved.diagnostics.empty());
+    REQUIRE(resolved.value.bindings.size() == 1);
+    CHECK(resolved.value.bindings.front().object == first.id);
+    REQUIRE(resolved.value.bindings.front().voices.size() == 2);
+    CHECK(resolved.value.bindings.front().voices[0].source != resolved.value.bindings.front().voices[1].source);
 
-    const auto bounded = wormedit::audio::resolve_preview_bindings(
+    const auto bounded = wormedit::audio::preview_bindings_resolution_t::from(
         song, chart.id, schedule, bindings, {.maximum_total_clips = 1});
-    CHECK_FALSE(bounded);
-    CHECK(bounded.bindings.empty());
+    CHECK_FALSE(bounded.diagnostics.empty());
+    CHECK(bounded.value.bindings.empty());
     REQUIRE(bounded.diagnostics.size() == 1);
     CHECK(bounded.diagnostics.front().code ==
           wormedit::audio::audition_resolve_code_t::capacity_exceeded);

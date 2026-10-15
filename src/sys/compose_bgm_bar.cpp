@@ -11,11 +11,11 @@ namespace {
 auto measure_fraction(const wormedit::measure_index_entry_t& entry,
                       const wormedit::timing_index_t& timing, std::uint32_t sample_rate,
                       std::uint64_t total_frames) -> std::optional<double> {
-    const auto time = timing.seconds_at(entry.absolute_begin_row,
+    const auto time = timing.query_seconds(entry.absolute_begin_row,
                                           wormedit::timing_boundary_side_t::before_delays);
-    if (!time.seconds || time.seconds->denominator == 0) return std::nullopt;
-    const auto frames = static_cast<long double>(time.seconds->numerator) * sample_rate /
-                        time.seconds->denominator;
+    if (!time || time->value.denominator == 0) return std::nullopt;
+    const auto frames = static_cast<long double>(time->value.numerator) * sample_rate /
+                        time->value.denominator;
     return static_cast<double>(frames / static_cast<long double>(total_frames));
 }
 

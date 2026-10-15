@@ -75,28 +75,30 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
         short_voice.voices.front().frame_count = 2;
         objects.push_back(std::move(short_voice));
     }
-    const auto started = bridge.start(chart, objects);
+    const auto started = bridge.start_preview(chart, objects);
     REQUIRE(started);
 
     std::size_t scheduled{};
-    auto pumped = bridge.materialize_until(event_count * 10);
-    scheduled += pumped.scheduled_events;
-    CHECK(pumped.status == preview_bridge_pump_status_t::capacity_limited);
-    CHECK(pumped.scheduled_events == 256);
-    CHECK(transport.scheduled_voice_count() == 256);
+    auto pumped = bridge.materialize_preview(event_count * 10);
+    require_audio_condition(!pumped);
+    scheduled += pumped.error().scheduled_events;
+    check_audio_condition(pumped.error().status == preview_bridge_pump_status_t::capacity_limited);
+    check_audio_condition(pumped.error().scheduled_events == 256);
+    check_audio_condition(transport.scheduled_voice_count() == 256);
 
     std::array<float, 8> output{};
     for (std::uint64_t frame = 0; frame < event_count * 10; frame += 4) {
-        pumped = bridge.materialize_until(event_count * 10);
-        scheduled += pumped.scheduled_events;
-        const auto mixed = transport.mix(*started.token, frame, output);
-        REQUIRE(mixed.status == transport_mix_status_t::mixed);
-        CHECK((pumped.status == preview_bridge_pump_status_t::ready ||
-               pumped.status == preview_bridge_pump_status_t::capacity_limited));
+        pumped = bridge.materialize_preview(event_count * 10);
+        const auto& effect = pumped ? *pumped : pumped.error();
+        scheduled += effect.scheduled_events;
+        const auto mixed = transport.mix_frames(started.value(), frame, output);
+        REQUIRE(mixed.value().status == transport_mix_status_t::mixed);
+        CHECK((effect.status == preview_bridge_pump_status_t::ready ||
+               effect.status == preview_bridge_pump_status_t::capacity_limited));
     }
 
     CHECK(scheduled == event_count);
-    CHECK(bridge.materialize_until(event_count * 10).scheduled_events == 0);
+    CHECK(bridge.materialize_preview(event_count * 10).value().scheduled_events == 0);
     CHECK(transport.scheduled_voice_count() == 0);
 }
 
@@ -121,32 +123,32 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
                              binding(object_id_t{3}), binding(object_id_t{4}),
                              binding(object_id_t{5})};
     const std::array clicks{click_binding(metronome_accent_t::measure)};
-    const auto started = bridge.start(chart, objects, clicks);
+    const auto started = bridge.start_preview(chart, objects, clicks);
     REQUIRE(started);
 
-    const auto pumped = bridge.materialize_until(1);
-    CHECK(pumped.status == preview_bridge_pump_status_t::ready);
-    CHECK(pumped.scheduled_events == 6);
+    const auto pumped = bridge.materialize_preview(1);
+    CHECK(pumped.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(pumped.value().scheduled_events == 6);
     CHECK(transport.scheduled_voice_count() == 6);
 
     std::array<float, 64 * output_channel_count> output{};
-    const auto mixed = transport.mix(*started.token, 0, output);
-    CHECK(mixed.status == transport_mix_status_t::mixed);
-    CHECK(mixed.voices_mixed == 6);
-    CHECK(mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(started.value(), 0, output);
+    CHECK(mixed.value().status == transport_mix_status_t::mixed);
+    CHECK(mixed.value().voices_mixed == 6);
+    CHECK(mixed.value().missing_blocks == 0);
     CHECK(transport.scheduled_voice_count() == 0);
     CHECK(output.front() == Catch::Approx(0.15F));
 }
 
-auto snapshot_has_voice_count(const std::optional<active_voice_snapshot_t>& snapshot,
+auto snapshot_has_voice_count(const std::optional<active_voice_snapshot_outcome_t>& snapshot,
                               std::size_t count) -> bool {
-    return snapshot && snapshot->voices.size() == count;
+    return snapshot && (snapshot->has_value() ? snapshot->value().size() : 0) == count;
 }
 
-auto has_scheduled_voice(const std::optional<active_voice_snapshot_t>& snapshot,
+auto has_scheduled_voice(const std::optional<active_voice_snapshot_outcome_t>& snapshot,
                          std::uint64_t source_frame, std::uint64_t frame_count,
                          std::uint64_t timeline_frame) -> bool {
-    return snapshot && std::ranges::any_of(snapshot->voices, [&](const auto& voice) {
+    return snapshot && snapshot->has_value() && std::ranges::any_of(snapshot->value(), [&](const auto& voice) {
         return voice.source_start_frame == source_frame && voice.frame_count == frame_count &&
                voice.timeline_start_frame == timeline_frame;
     });
@@ -178,23 +180,25 @@ TEST_CASE("preview bridge resumes active BMSON slices at the sought source frame
     playable.voices.front().source_start_frame = 200;
     playable.voices.front().frame_count = 10;
     const std::array objects{first, exact, ended, middle, playable};
-    const auto started = bridge.start(chart, objects, {}, 5);
+    const auto started = bridge.start_preview(chart, objects, {}, 5);
     require_audio_condition(static_cast<bool>(started));
-    check_audio_condition(bridge.materialize_until(6).scheduled_events == 3);
-    const auto active = transport.snapshot_active_voices(*started.token);
+    check_audio_condition(bridge.materialize_preview(6).value().scheduled_events == 3);
+    const auto active = transport.snapshot_voices(started.value());
     check_audio_condition(snapshot_has_voice_count(active, 3));
     check_audio_condition(has_scheduled_voice(active, 103, 3, 5));
     check_audio_condition(has_scheduled_voice(active, 205, 5, 5));
     check_audio_condition(has_scheduled_voice(active, 0, 20, 5));
 
-    const auto reseek = bridge.seek(10);
+    const auto reseek = bridge.seek_preview(10);
     require_audio_condition(static_cast<bool>(reseek));
-    check_audio_condition(bridge.materialize_until(11).scheduled_events == 1);
-    const auto after_end = transport.snapshot_active_voices(*reseek.token);
+    check_audio_condition(bridge.materialize_preview(11).value().scheduled_events == 1);
+    const auto after_end = transport.snapshot_voices(reseek.value());
     check_audio_condition(snapshot_has_voice_count(after_end, 1));
     check_audio_condition(has_scheduled_voice(after_end, 5, 15, 10));
     check_audio_condition(bridge.stop().scheduled_voices == 1);
-    check_audio_condition(bridge.materialize_until(11).status == preview_bridge_pump_status_t::not_started);
+    const auto after_stop = bridge.materialize_preview(11);
+    require_audio_condition(!after_stop);
+    check_audio_condition(after_stop.error().status == preview_bridge_pump_status_t::not_started);
 }
 
 TEST_CASE("preview bridge seeks and restarts with fresh session generations",
@@ -206,34 +210,38 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     chart.playable = {audio_event(10, 1), audio_event(20, 2), audio_event(30, 3)};
     const std::array objects{binding(object_id_t{1}), binding(object_id_t{2}),
                              binding(object_id_t{3})};
-    const auto first = bridge.start(chart, objects, {}, 20);
+    const auto first = bridge.start_preview(chart, objects, {}, 20);
     require_audio_condition(static_cast<bool>(first));
-    check_audio_condition(bridge.materialize_until(40).scheduled_events == 3);
-    const auto at_first_seek = transport.snapshot_active_voices(*first.token);
+    check_audio_condition(bridge.materialize_preview(40).value().scheduled_events == 3);
+    const auto at_first_seek = transport.snapshot_voices(first.value());
     check_audio_condition(has_scheduled_voice(at_first_seek, 10, 54, 20));
     check_audio_condition(has_scheduled_voice(at_first_seek, 0, 64, 20));
 
-    const auto sought = bridge.seek(30);
+    const auto sought = bridge.seek_preview(30);
     require_audio_condition(static_cast<bool>(sought));
-    check_audio_condition(sought.token != first.token);
+    check_audio_condition(sought.value() != first.value());
     check_audio_condition(transport.scheduled_voice_count() == 0);
-    check_audio_condition(bridge.materialize_until(40).scheduled_events == 3);
-    const auto at_second_seek = transport.snapshot_active_voices(*sought.token);
+    check_audio_condition(bridge.materialize_preview(40).value().scheduled_events == 3);
+    const auto at_second_seek = transport.snapshot_voices(sought.value());
     check_audio_condition(has_scheduled_voice(at_second_seek, 20, 44, 30));
     check_audio_condition(has_scheduled_voice(at_second_seek, 10, 54, 30));
     std::array<float, 2> stale_output{1.0F, 1.0F};
-    check_audio_condition(transport.mix(*first.token, 20, stale_output).status ==
+    const auto stale_mix = transport.mix_frames(first.value(), 20, stale_output);
+    require_audio_condition(!stale_mix);
+    check_audio_condition(stale_mix.error().status ==
           transport_mix_status_t::stale_generation);
     check_audio_condition(stale_output[0] == 0.0F);
 
-    const auto restarted = bridge.restart();
+    const auto restarted = bridge.seek_preview(0);
     require_audio_condition(static_cast<bool>(restarted));
-    check_audio_condition(restarted.token != sought.token);
-    check_audio_condition(bridge.materialize_until(11).scheduled_events == 1);
-    check_audio_condition(has_scheduled_voice(transport.snapshot_active_voices(*restarted.token), 0, 64, 10));
+    check_audio_condition(restarted.value() != sought.value());
+    check_audio_condition(bridge.materialize_preview(11).value().scheduled_events == 1);
+    check_audio_condition(has_scheduled_voice(transport.snapshot_voices(restarted.value()), 0, 64, 10));
     check_audio_condition(bridge.stop().scheduled_voices == 1);
     std::array<float, 2> stopped_output{1.0F, 1.0F};
-    check_audio_condition(transport.mix(*restarted.token, 0, stopped_output).status ==
+    const auto stopped_mix = transport.mix_frames(restarted.value(), 0, stopped_output);
+    require_audio_condition(!stopped_mix);
+    check_audio_condition(stopped_mix.error().status ==
           transport_mix_status_t::stale_generation);
     check_audio_condition(std::ranges::all_of(stopped_output, [](float sample) { return sample == 0.0F; }));
 }
@@ -246,22 +254,26 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
     auto chart = schedule();
     chart.playable = {audio_event(0, 1), audio_event(10, 2)};
     const std::array objects{binding(object_id_t{1}), binding(object_id_t{2})};
-    const auto started = bridge.start(chart, objects);
+    const auto started = bridge.start_preview(chart, objects);
     REQUIRE(started);
-    REQUIRE(bridge.materialize_until(20).scheduled_events == 2);
+    REQUIRE(bridge.materialize_preview(20).value().scheduled_events == 2);
 
     const auto stopped = bridge.stop();
     CHECK(stopped.scheduled_voices == 2);
     CHECK(transport.scheduled_voice_count() == 0);
-    CHECK(bridge.materialize_until(20).status == preview_bridge_pump_status_t::not_started);
+    const auto after_stop = bridge.materialize_preview(20);
+    require_audio_condition(!after_stop);
+    CHECK(after_stop.error().status == preview_bridge_pump_status_t::not_started);
     std::array<float, 8> output{1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F};
-    CHECK(transport.mix(*started.token, 0, output).status ==
+    const auto stopped_mix = transport.mix_frames(started.value(), 0, output);
+    require_audio_condition(!stopped_mix);
+    CHECK(stopped_mix.error().status ==
           transport_mix_status_t::stale_generation);
     CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 
-    const auto new_session = bridge.start(chart, objects);
+    const auto new_session = bridge.start_preview(chart, objects);
     REQUIRE(new_session);
-    CHECK(new_session.token != started.token);
+    CHECK(new_session.value() != started.value());
 }
 
 TEST_CASE("preview bridge skips missing sources and advances only consumed queue heads",
@@ -272,20 +284,21 @@ TEST_CASE("preview bridge skips missing sources and advances only consumed queue
     auto chart = schedule();
     chart.playable = {audio_event(10, 1, resource_id_t{2}), audio_event(11, 2, resource_id_t{1})};
     const std::array objects{binding(object_id_t{2})};
-    const auto started = bridge.start(chart, objects);
+    const auto started = bridge.start_preview(chart, objects);
     REQUIRE(started);
 
-    const auto first = bridge.materialize_until(11);
-    CHECK(first.status == preview_bridge_pump_status_t::ready);
-    CHECK(first.missing_sources == 1);
-    CHECK(first.scheduled_events == 0);
-    const auto second = bridge.materialize_until(12);
-    CHECK(second.status == preview_bridge_pump_status_t::ready);
-    CHECK(second.missing_sources == 0);
-    CHECK(second.scheduled_events == 1);
+    const auto first = bridge.materialize_preview(11);
+    CHECK(first.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(first.value().missing_sources == 1);
+    CHECK(first.value().scheduled_events == 0);
+    const auto second = bridge.materialize_preview(12);
+    CHECK(second.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(second.value().missing_sources == 0);
+    CHECK(second.value().scheduled_events == 1);
 
-    const auto backwards = bridge.materialize_until(11);
-    CHECK(backwards.status == preview_bridge_pump_status_t::non_monotonic_window);
+    const auto backwards = bridge.materialize_preview(11);
+    require_audio_condition(!backwards);
+    CHECK(backwards.error().status == preview_bridge_pump_status_t::non_monotonic_window);
 }
 
 TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue head",
@@ -302,7 +315,7 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     second_voice.voices.front().frame_count = 2;
     third_voice.voices.front().frame_count = 2;
     const std::array objects{first_voice, second_voice, third_voice};
-    const auto started = bridge.start(chart, objects);
+    const auto started = bridge.start_preview(chart, objects);
     REQUIRE(started);
 
     const auto initial = bridge.materialize_preview(11);
@@ -311,10 +324,10 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     CHECK(initial.error().scheduled_events == 2);
     CHECK(transport.scheduled_voice_count() == 2);
     std::array<float, 8> output{};
-    REQUIRE(transport.mix(*started.token, 0, output).status == transport_mix_status_t::mixed);
-    const auto resumed = bridge.materialize_until(11);
-    CHECK(resumed.status == preview_bridge_pump_status_t::ready);
-    CHECK(resumed.scheduled_events == 1);
+    REQUIRE(transport.mix_frames(started.value(), 0, output).value().status == transport_mix_status_t::mixed);
+    const auto resumed = bridge.materialize_preview(11);
+    CHECK(resumed.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(resumed.value().scheduled_events == 1);
     CHECK(transport.scheduled_voice_count() == 1);
 }
 
@@ -331,14 +344,17 @@ TEST_CASE("preview bridge schedules every layer of one object atomically",
     layered.voices.push_back(
         {.source = {"asset:third", "revision:1"}, .frame_count = 64, .gain = 0.1F});
     const std::array objects{layered};
-    const auto started = bridge.start(chart, objects);
+    const auto started = bridge.start_preview(chart, objects);
     REQUIRE(started);
 
-    const auto pumped = bridge.materialize_until(1);
-    CHECK(pumped.status == preview_bridge_pump_status_t::capacity_limited);
-    CHECK(pumped.scheduled_events == 0);
+    const auto pumped = bridge.materialize_preview(1);
+    require_audio_condition(!pumped);
+    CHECK(pumped.error().status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(pumped.error().scheduled_events == 0);
     CHECK(transport.scheduled_voice_count() == 0);
-    CHECK(bridge.materialize_until(1).status == preview_bridge_pump_status_t::capacity_limited);
+    const auto still_blocked = bridge.materialize_preview(1);
+    require_audio_condition(!still_blocked);
+    CHECK(still_blocked.error().status == preview_bridge_pump_status_t::capacity_limited);
 }
 
 TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings",
@@ -350,15 +366,15 @@ TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings"
 
     const std::array duplicates{binding(object_id_t{1}), binding(object_id_t{1})};
     preview_transport_bridge_t bridge{transport};
-    CHECK(bridge.start(chart, duplicates).status ==
-          preview_bridge_start_status_t::duplicate_source_binding);
+    CHECK(bridge.start_preview(chart, duplicates) ==
+          std::unexpected(preview_bridge_start_status_t::duplicate_source_binding));
 
     auto layered = binding(object_id_t{1});
     layered.voices.push_back({.source = {"asset:layer", "revision:1"}, .frame_count = 64});
     const std::array objects{layered};
     preview_transport_bridge_t bounded{transport, 1, 1, 1};
-    CHECK(bounded.start(chart, objects).status ==
-          preview_bridge_start_status_t::source_binding_capacity_exceeded);
+    CHECK(bounded.start_preview(chart, objects) ==
+          std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded));
     CHECK(transport.scheduled_voice_count() == 0);
 }
 
@@ -387,16 +403,16 @@ TEST_CASE("preview bridge disabled metronome skips four measures and enables at 
     auto chart = four_measure_clicks();
     const std::array clicks{click_binding(metronome_accent_t::regular)};
     bridge.set_metronome_enabled(false, 0);
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
-    require_metronome(bridge.materialize_until(1'600).scheduled_events == 0);
+    require_metronome(bridge.materialize_preview(1'600).value().scheduled_events == 0);
     require_metronome(transport.scheduled_voice_count() == 0);
     bridge.set_metronome_enabled(true, 450);
-    require_metronome(bridge.materialize_until(1'600).scheduled_events == 11);
-    const auto voices = transport.snapshot_active_voices(*started.token);
+    require_metronome(bridge.materialize_preview(1'600).value().scheduled_events == 11);
+    const auto voices = transport.snapshot_voices(started.value());
     require_metronome(static_cast<bool>(voices));
-    require_metronome(voices.voices.front().timeline_start_frame == 500);
-    require_metronome(voices.voices.back().timeline_start_frame == 1'500);
+    require_metronome(voices.value().front().timeline_start_frame == 500);
+    require_metronome(voices.value().back().timeline_start_frame == 1'500);
 }
 
 TEST_CASE("preview bridge volume scales chart and assist clicks through one click control",
@@ -420,20 +436,20 @@ TEST_CASE("preview bridge volume scales chart and assist clicks through one clic
     REQUIRE(bridge.set_metronome_volume(50));
     CHECK(bridge.metronome_volume() == 50);
     CHECK_FALSE(bridge.set_metronome_volume(101));
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     REQUIRE(started);
-    REQUIRE(bridge.materialize_until(32).scheduled_events == 1);
+    REQUIRE(bridge.materialize_preview(32).value().scheduled_events == 1);
     std::array<float, 16> chart_mix{};
-    REQUIRE(transport.mix(*started.token, 0, chart_mix).status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(started.value(), 0, chart_mix).value().status == transport_mix_status_t::mixed);
     CHECK(chart_mix.front() == 0.125F);
 
     REQUIRE(bridge.set_assist_grid(true, assist_grid(32.0), 32));
-    REQUIRE(bridge.materialize_until(96, 32).scheduled_events == 1);
+    REQUIRE(bridge.materialize_preview(96, 32).value().scheduled_events == 1);
     std::array<float, 16> assist_mix{};
-    REQUIRE(transport.mix(*started.token, 32, assist_mix).status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(started.value(), 32, assist_mix).value().status == transport_mix_status_t::mixed);
     CHECK(assist_mix.front() == 0.125F);
 
-    const auto sought = bridge.seek(0);
+    const auto sought = bridge.seek_preview(0);
     REQUIRE(sought);
     CHECK(bridge.metronome_volume() == 50);
 }
@@ -448,28 +464,28 @@ TEST_CASE("preview bridge disabling retires queued clicks while preserving music
     preview_transport_bridge_t bridge{transport};
     auto chart = four_measure_clicks();
     const std::array clicks{click_binding(metronome_accent_t::regular)};
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
-    require_metronome(bridge.materialize_until(128).scheduled_events == 2);
-    require_metronome(transport.schedule_voice(*started.token,
+    require_metronome(bridge.materialize_preview(128).value().scheduled_events == 2);
+    require_metronome(transport.schedule_voice(started.value(),
         {.id = 999, .kind = voice_kind_t::music,
          .source = {"asset:key", "revision:1"}, .frame_count = 64}) ==
         voice_schedule_status_t::scheduled);
     bridge.set_metronome_enabled(false, 0);
-    const auto voices = transport.snapshot_active_voices(*started.token);
+    const auto voices = transport.snapshot_voices(started.value());
     require_metronome(static_cast<bool>(voices));
-    require_metronome(voices.voices.size() == 1);
-    require_metronome(voices.voices.front().kind == voice_kind_t::music);
+    require_metronome(voices.value().size() == 1);
+    require_metronome(voices.value().front().kind == voice_kind_t::music);
     std::array<float, 32 * output_channel_count> output{};
-    const auto mixed = transport.mix(*started.token, 0, output);
-    require_metronome(mixed.status == transport_mix_status_t::mixed);
-    require_metronome(mixed.voices_mixed == 1 && mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(started.value(), 0, output);
+    require_metronome(mixed.value().status == transport_mix_status_t::mixed);
+    require_metronome(mixed.value().voices_mixed == 1 && mixed.value().missing_blocks == 0);
     require_metronome(output.front() == 0.25F);
     bridge.set_metronome_enabled(true, 32);
-    require_metronome(bridge.materialize_until(128).scheduled_events == 1);
-    const auto resumed = transport.snapshot_active_voices(*started.token);
-    require_metronome(resumed.voices.size() == 2);
-    require_metronome(std::any_of(resumed.voices.begin(), resumed.voices.end(), [](const auto& voice) {
+    require_metronome(bridge.materialize_preview(128).value().scheduled_events == 1);
+    const auto resumed = transport.snapshot_voices(started.value());
+    require_metronome(resumed.value().size() == 2);
+    require_metronome(std::any_of(resumed.value().begin(), resumed.value().end(), [](const auto& voice) {
         return voice.kind == voice_kind_t::click_preview && voice.timeline_start_frame == 100;
     }));
 }
@@ -493,20 +509,20 @@ TEST_CASE("preview bridge assist grid predicts exact 120 BPM frames and meter ac
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
     require_metronome(bridge.set_assist_grid(true, assist_grid(), 0));
-    require_metronome(bridge.materialize_until(44'100, 0).scheduled_events == 1);
-    require_metronome(bridge.materialize_until(44'100, 20'000).scheduled_events == 1);
-    require_metronome(bridge.materialize_until(70'000, 60'000).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(static_cast<bool>(voices) && voices.voices.size() == 3);
-    require_metronome(voices.voices[0].timeline_start_frame == 0);
-    require_metronome(voices.voices[0].source.asset_identity == "assist:downbeat");
-    require_metronome(voices.voices[1].timeline_start_frame == 22'050);
-    require_metronome(voices.voices[1].source.asset_identity == "assist:regular");
-    require_metronome(voices.voices[2].timeline_start_frame == 66'150);
-    require_metronome(voices.voices[2].source.asset_identity == "assist:downbeat");
+    require_metronome(bridge.materialize_preview(44'100, 0).value().scheduled_events == 1);
+    require_metronome(bridge.materialize_preview(44'100, 20'000).value().scheduled_events == 1);
+    require_metronome(bridge.materialize_preview(70'000, 60'000).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(static_cast<bool>(voices) && voices.value().size() == 3);
+    require_metronome(voices.value()[0].timeline_start_frame == 0);
+    require_metronome(voices.value()[0].source.asset_identity == "assist:downbeat");
+    require_metronome(voices.value()[1].timeline_start_frame == 22'050);
+    require_metronome(voices.value()[1].source.asset_identity == "assist:regular");
+    require_metronome(voices.value()[2].timeline_start_frame == 66'150);
+    require_metronome(voices.value()[2].source.asset_identity == "assist:downbeat");
 }
 
 TEST_CASE("preview bridge assist source phase maps through music origin and rounds fractional frames",
@@ -519,16 +535,16 @@ TEST_CASE("preview bridge assist source phase maps through music origin and roun
     chart.music->sample_frame = 500;
     chart.music->source_start_frame = 2'000;
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
     require_metronome(bridge.set_assist_grid(true, assist_grid(2'000.25), 450));
-    require_metronome(bridge.materialize_until(10'000, 450).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 500);
+    require_metronome(bridge.materialize_preview(10'000, 450).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 500);
     require_metronome(bridge.set_assist_grid(true, assist_grid(2'099.7), 600));
-    require_metronome(bridge.materialize_until(10'000, 600).scheduled_events == 1);
-    const auto rounded = transport.snapshot_active_voices(*started.token);
-    require_metronome(rounded.voices.back().timeline_start_frame == 600);
+    require_metronome(bridge.materialize_preview(10'000, 600).value().scheduled_events == 1);
+    const auto rounded = transport.snapshot_voices(started.value());
+    require_metronome(rounded.value().back().timeline_start_frame == 600);
 }
 
 TEST_CASE("preview bridge assist estimate updates keep handed voices and replace blocked predictions",
@@ -542,20 +558,24 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
     chart.playable = {audio_event(0, 1)};
     const std::array objects{binding()};
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, objects, clicks);
+    const auto started = bridge.start_preview(chart, objects, clicks);
     require_metronome(static_cast<bool>(started));
     require_metronome(bridge.set_assist_grid(true, assist_grid(100), 0));
-    require_metronome(bridge.materialize_until(10'000, 0).status == preview_bridge_pump_status_t::capacity_limited);
+    const auto blocked = bridge.materialize_preview(10'000, 0);
+    require_metronome(!blocked);
+    require_metronome(blocked.error().status == preview_bridge_pump_status_t::capacity_limited);
     require_metronome(bridge.set_assist_grid(true, assist_grid(200), 0));
     std::array<float, 64 * output_channel_count> output{};
-    require_metronome(transport.mix(*started.token, 0, output).status == transport_mix_status_t::mixed);
-    require_metronome(bridge.materialize_until(10'000, 64).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 200);
+    require_metronome(transport.mix_frames(started.value(), 0, output).value().status == transport_mix_status_t::mixed);
+    require_metronome(bridge.materialize_preview(10'000, 64).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 200);
     require_metronome(bridge.set_assist_grid(true, assist_grid(300), 64));
-    require_metronome(bridge.materialize_until(10'000, 64).status == preview_bridge_pump_status_t::capacity_limited);
-    const auto retained = transport.snapshot_active_voices(*started.token);
-    require_metronome(retained.voices.front() == voices.voices.front());
+    const auto replaced = bridge.materialize_preview(10'000, 64);
+    require_metronome(!replaced);
+    require_metronome(replaced.error().status == preview_bridge_pump_status_t::capacity_limited);
+    const auto retained = transport.snapshot_voices(started.value());
+    require_metronome(retained.value().front() == voices.value().front());
 }
 
 TEST_CASE("preview bridge assist mode silences chart grid without estimate and obeys metronome toggle",
@@ -567,22 +587,22 @@ TEST_CASE("preview bridge assist mode silences chart grid without estimate and o
     chart.metronome = {{.sample_frame = 0, .accent = metronome_accent_t::regular},
                        {.sample_frame = 100, .accent = metronome_accent_t::regular}};
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
-    require_metronome(bridge.materialize_until(10'000).scheduled_events == 2);
+    require_metronome(bridge.materialize_preview(10'000).value().scheduled_events == 2);
     require_metronome(bridge.set_assist_grid(true, std::nullopt, 50));
     require_metronome(transport.scheduled_voice_count() == 0);
-    require_metronome(bridge.materialize_until(10'000, 50).scheduled_events == 0);
+    require_metronome(bridge.materialize_preview(10'000, 50).value().scheduled_events == 0);
     require_metronome(bridge.set_assist_grid(true, assist_grid(150), 100));
     bridge.set_metronome_enabled(false, 100);
-    require_metronome(bridge.materialize_until(10'000, 100).scheduled_events == 0);
+    require_metronome(bridge.materialize_preview(10'000, 100).value().scheduled_events == 0);
     bridge.set_metronome_enabled(true, 100);
-    require_metronome(bridge.materialize_until(10'000, 100).scheduled_events == 1);
+    require_metronome(bridge.materialize_preview(10'000, 100).value().scheduled_events == 1);
     require_metronome(bridge.set_assist_grid(false, std::nullopt, 100));
     require_metronome(transport.scheduled_voice_count() == 0);
-    require_metronome(bridge.materialize_until(10'000, 100).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(voices.voices.front().timeline_start_frame == 100);
+    require_metronome(bridge.materialize_preview(10'000, 100).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(voices.value().front().timeline_start_frame == 100);
 }
 
 TEST_CASE("preview bridge assist slow rate bounds output horizon with an exclusive source endpoint",
@@ -592,16 +612,16 @@ TEST_CASE("preview bridge assist slow rate bounds output horizon with an exclusi
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
     auto grid = assist_grid(882);
     grid.playback_rate = rational_t{1, 10};
     require_metronome(bridge.set_assist_grid(true, grid, 0));
-    require_metronome(bridge.materialize_until(10'000, 0).scheduled_events == 0);
+    require_metronome(bridge.materialize_preview(10'000, 0).value().scheduled_events == 0);
     require_metronome(transport.scheduled_voice_count() == 0);
-    require_metronome(bridge.materialize_until(10'000, 1).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 882);
+    require_metronome(bridge.materialize_preview(10'000, 1).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 882);
 }
 
 TEST_CASE("preview bridge assist rejects invalid estimates without changing handed or pending clicks",
@@ -611,19 +631,19 @@ TEST_CASE("preview bridge assist rejects invalid estimates without changing hand
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
     require_metronome(bridge.set_assist_grid(true, assist_grid(100), 0));
-    require_metronome(bridge.materialize_until(10'000, 0).scheduled_events == 1);
-    const auto before = transport.snapshot_active_voices(*started.token);
+    require_metronome(bridge.materialize_preview(10'000, 0).value().scheduled_events == 1);
+    const auto before = transport.snapshot_voices(started.value());
     auto invalid = assist_grid(200);
     invalid.bpm = 0;
     require_metronome(!bridge.set_assist_grid(true, invalid, 0));
-    const auto after = transport.snapshot_active_voices(*started.token);
-    require_metronome(after.voices == before.voices);
-    require_metronome(bridge.materialize_until(30'000, 20'000).scheduled_events == 1);
-    const auto continued = transport.snapshot_active_voices(*started.token);
-    require_metronome(continued.voices.back().timeline_start_frame == 22'150);
+    const auto after = transport.snapshot_voices(started.value());
+    require_metronome(after.value() == before.value());
+    require_metronome(bridge.materialize_preview(30'000, 20'000).value().scheduled_events == 1);
+    const auto continued = transport.snapshot_voices(started.value());
+    require_metronome(continued.value().back().timeline_start_frame == 22'150);
 }
 
 TEST_CASE("preview bridge assist excludes music EOF and cannot extend completed playback",
@@ -634,15 +654,15 @@ TEST_CASE("preview bridge assist excludes music EOF and cannot extend completed 
     auto chart = schedule();
     chart.music = preview_schedule_t::music_event_t::from(resource_id_t{1}, 22'050);
     const auto clicks = assist_bindings();
-    const auto started = bridge.start(chart, {}, clicks);
+    const auto started = bridge.start_preview(chart, {}, clicks);
     require_metronome(static_cast<bool>(started));
     require_metronome(bridge.set_assist_grid(true, assist_grid(), 0));
-    require_metronome(bridge.materialize_until(30'000, 0).scheduled_events == 1);
-    require_metronome(bridge.materialize_until(30'000, 20'000).scheduled_events == 0);
+    require_metronome(bridge.materialize_preview(30'000, 0).value().scheduled_events == 1);
+    require_metronome(bridge.materialize_preview(30'000, 20'000).value().scheduled_events == 0);
     require_metronome(bridge.is_exhausted());
-    require_metronome(bridge.materialize_until(40'000, 22'050).scheduled_events == 0);
-    const auto voices = transport.snapshot_active_voices(*started.token);
-    require_metronome(voices.voices.size() == 1 && voices.voices.front().timeline_start_frame == 0);
+    require_metronome(bridge.materialize_preview(40'000, 22'050).value().scheduled_events == 0);
+    const auto voices = transport.snapshot_voices(started.value());
+    require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 0);
 }
 
 TEST_CASE("Layer assist queue toggles independently and seeks without replacing other voices",
@@ -657,25 +677,25 @@ TEST_CASE("Layer assist queue toggles independently and seeks without replacing 
     const auto click = click_binding(metronome_accent_t::regular);
     require_audio_condition(bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{10, 20}, 0));
     bridge.set_metronome_enabled(false, 0);
-    const auto started = bridge.start(chart, std::span{&key, 1}, std::span{&click, 1});
+    const auto started = bridge.start_preview(chart, std::span{&key, 1}, std::span{&click, 1});
     require_audio_condition(static_cast<bool>(started));
-    check_audio_condition(bridge.materialize_until(64).scheduled_events == 3);
-    auto active = transport.snapshot_active_voices(*started.token);
+    check_audio_condition(bridge.materialize_preview(64).value().scheduled_events == 3);
+    auto active = transport.snapshot_voices(started.value());
     require_audio_condition(static_cast<bool>(active));
-    check_audio_condition(active.voices.size() == 3);
+    check_audio_condition(active.value().size() == 3);
     require_audio_condition(bridge.set_layer_tick_frames({}, 0));
-    active = transport.snapshot_active_voices(*started.token);
-    check_audio_condition(active.voices.size() == 1);
-    check_audio_condition(transport.is_current(*started.token));
+    active = transport.snapshot_voices(started.value());
+    check_audio_condition(active.value().size() == 1);
+    check_audio_condition(transport.is_current(started.value()));
     require_audio_condition(bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{10, 20}, 15));
-    check_audio_condition(bridge.materialize_until(64, 15).scheduled_events == 1);
+    check_audio_condition(bridge.materialize_preview(64, 15).value().scheduled_events == 1);
     check_audio_condition(!bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{20, 10}, 15));
     check_audio_condition(!bridge.set_layer_tick_frames(std::array<std::uint64_t, 2>{20, 20}, 15));
-    const auto sought = bridge.seek(10);
+    const auto sought = bridge.seek_preview(10);
     require_audio_condition(static_cast<bool>(sought));
-    check_audio_condition(bridge.materialize_until(64, 10).scheduled_events == 3);
-    active = transport.snapshot_active_voices(*sought.token);
-    check_audio_condition(std::ranges::count(active.voices, voice_kind_t::layer_assist,
+    check_audio_condition(bridge.materialize_preview(64, 10).value().scheduled_events == 3);
+    active = transport.snapshot_voices(sought.value());
+    check_audio_condition(std::ranges::count(active.value(), voice_kind_t::layer_assist,
                                             &transport_voice_t::kind) == 2);
 }
 
@@ -690,13 +710,13 @@ TEST_CASE("Preview seek preserves every layer's stable BGM mix group",
     layered.voices.front().mix_group = 77;
     layered.voices.push_back(layered.voices.front());
     const std::array objects{layered};
-    const auto started = bridge.start(chart, objects, {}, 5);
+    const auto started = bridge.start_preview(chart, objects, {}, 5);
     require_audio_condition(static_cast<bool>(started));
-    check_audio_condition(bridge.materialize_until(6).scheduled_events == 1);
-    const auto voices = transport.snapshot_active_voices(*started.token);
+    check_audio_condition(bridge.materialize_preview(6).value().scheduled_events == 1);
+    const auto voices = transport.snapshot_voices(started.value());
     require_audio_condition(static_cast<bool>(voices));
-    require_audio_condition(voices.voices.size() == 2);
-    for (const auto& voice : voices.voices) {
+    require_audio_condition(voices.value().size() == 2);
+    for (const auto& voice : voices.value()) {
         check_audio_condition(voice.mix_group == 77);
         check_audio_condition(voice.source_start_frame == 5);
     }

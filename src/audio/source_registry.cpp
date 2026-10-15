@@ -390,46 +390,6 @@ auto decoded_source_registry_t::create_generated_source(
     return binding;
 }
 
-auto source_registration_result_t::from(source_registration_outcome_t&& outcome)
-    -> source_registration_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .binding = std::nullopt,
-                .message = std::move(outcome.error().message)};
-    return {.status = source_registration_status_t::registered,
-            .binding = std::move(*outcome),
-            .message = {}};
-}
-
-auto source_registration_result_t::from(pending_source_registration_outcome_t&& outcome)
-    -> source_registration_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .binding = std::nullopt,
-                .message = std::move(outcome.error().message)};
-    return {
-        .status = source_registration_status_t::pending, .binding = std::nullopt, .message = {}};
-}
-
-auto decoded_source_registry_t::register_source(decoded_source_registration_t registration)
-    -> source_registration_result_t {
-    return source_registration_result_t::from(create_source(std::move(registration)));
-}
-
-auto decoded_source_registry_t::register_source_pending(decoded_source_registration_t registration)
-    -> source_registration_result_t {
-    return source_registration_result_t::from(create_pending_source(std::move(registration)));
-}
-
-auto decoded_source_registry_t::probe(asset_id_t asset) -> source_registration_result_t {
-    return source_registration_result_t::from(open_source_binding(asset));
-}
-
-auto decoded_source_registry_t::register_generated_source(
-    generated_source_registration_t registration) -> source_registration_result_t {
-    return source_registration_result_t::from(create_generated_source(std::move(registration)));
-}
-
 void decoded_source_registry_t::detach(const std::shared_ptr<entry_t>& entry) {
     const std::scoped_lock lifecycle(entry->lifecycle);
     entry->detached = true;
@@ -516,11 +476,6 @@ auto decoded_source_registry_t::decode_source_block(transport_t& transport, sess
     return transport.decode_source_block(lease.decoder(), token, std::move(key));
 }
 
-auto decoded_source_registry_t::decode_block(transport_t& transport, session_token_t token,
-                                             audio_block_key_t key) -> block_decode_result_t {
-    return block_decode_result_t::from(decode_source_block(transport, token, std::move(key)));
-}
-
 auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cache_t& block_cache,
                                              std::uint64_t frames, std::stop_token stop)
     -> std::size_t {
@@ -566,19 +521,19 @@ auto decoded_source_registry_t::load_resident(asset_id_t asset, resident_sample_
 auto decoded_source_registry_t::analyze_waveform(
     asset_id_t asset, decoded_block_cache_t& block_cache, waveform_cache_t& waveform_cache,
     std::uint32_t frames_per_bin, waveform_analysis_options_t options, std::stop_token stop)
-    -> waveform_analysis_result_t {
+    -> waveform_analysis_outcome_t {
     if (!asset || frames_per_bin == 0) {
-        return {.status = waveform_analysis_status_t::invalid_request};
+        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::invalid_request});
     }
     const auto entry = find_entry(asset);
     if (!entry) {
-        return {.status = waveform_analysis_status_t::decoder_unavailable};
+        return std::unexpected(waveform_analysis_error_t{});
     }
     const auto lease = acquire_lease(entry);
     if (!lease) {
-        return {.status = waveform_analysis_status_t::decoder_unavailable};
+        return std::unexpected(waveform_analysis_error_t{});
     }
-    return wormedit::audio::analyze_waveform(lease.decoder(), block_cache, waveform_cache,
+    return waveform_analysis_t::from(lease.decoder(), block_cache, waveform_cache,
                                              lease.source(), frames_per_bin, options, stop);
 }
 

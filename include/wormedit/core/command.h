@@ -3,6 +3,9 @@
 #include <wormedit/core/quantize.h>
 #include <wormedit/core/result.h>
 
+#include <algorithm>
+#include <array>
+#include <ranges>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -10,6 +13,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -187,6 +191,9 @@ struct document_history_t {
                                   std::size_t maximum_undo_entries = 128,
                                   bool initially_saved = true) -> document_history_t;
 
+    // Main-loop-only lazy read. The returned value belongs to the committed snapshot.
+    [[nodiscard]] auto indices(chart_id_t chart) const -> const chart_indices_t*;
+
     song_document_t document;
     std::vector<document_command_record_t> undo;
     std::vector<document_command_record_t> redo;
@@ -276,6 +283,22 @@ struct document_command_options_t {
     bool preserve_retained_source_flags{false};
 };
 
+// Domain operations share execution state; chart identity, limits and completion belong
+// to the transaction. The operation itself supplies validation, mutation and effect.
+template <class Limits> struct chart_edit_context_t {
+    document_command_result_t& result;
+    const Limits& limits;
+    std::string command_label{};
+    bool changed{};
+};
+
+struct chart_event_cap_t {
+    std::size_t count;
+    std::size_t maximum;
+    std::string_view message;
+    auto operator==(const chart_event_cap_t&) const -> bool = default;
+};
+
 // A synchronous command owns its working document only after the first edit.
 // Captured proposals use the stamped factory; synchronous commands use from(history).
 struct document_command_transaction_t {
@@ -315,6 +338,78 @@ struct document_command_transaction_t {
         -> document_command_result_t;
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_list_t diagnostics)
         -> document_command_result_t;
+    // Operations declare chart/cap policy and overload operator()(chart, edit).
+    // This visitor is the single chart lookup, cap check and execution boundary.
+    template <class Operation, class Limits> struct edit_execution_t {
+        document_command_transaction_t& transaction;
+        const Limits& limits;
+
+        template <class Edit> auto operator()(const Edit& edit) const -> document_command_result_t {
+            auto& proposed = transaction.copy_document();
+            auto* chart = proposed.find_chart(edit.chart);
+            bool invalid_chart = !edit.chart || chart == nullptr;
+            if constexpr (requires { Operation::requires_unique_chart; }) {
+                invalid_chart = invalid_chart || std::ranges::count(proposed.charts, edit.chart,
+                                                                    &chart_document_t::id) != 1;
+            }
+            if (invalid_chart) {
+                wormedit::reject(transaction.outcome, diagnostic_code_t::invalid_id,
+                                 std::string(Operation::unknown_chart_message));
+                return transaction.finish_without_commit();
+            }
+            Operation operation{{transaction.outcome, limits}};
+            for (const auto& cap : operation.event_caps(*chart, edit)) {
+                if (cap.count > cap.maximum) {
+                    wormedit::reject(transaction.outcome, diagnostic_code_t::invalid_resolution,
+                                     std::string(cap.message));
+                    return transaction.finish_without_commit();
+                }
+            }
+            if constexpr (requires { operation.prepare(*chart); }) {
+                if (!operation.prepare(*chart))
+                    return transaction.finish_without_commit();
+            }
+            if constexpr (std::is_void_v<decltype(operation(*chart, edit))>) {
+                operation(*chart, edit);
+                return transaction.finish_execution(operation, operation, *chart);
+            } else {
+                auto effect = operation(*chart, edit);
+                return transaction.finish_execution(operation, std::move(effect), *chart);
+            }
+        }
+    };
+
+    template <class Operation, class Action, class Limits>
+    [[nodiscard]] auto execute(const Action& action, const Limits& limits)
+        -> document_command_result_t {
+        if (!is_ready())
+            return commit({});
+        if (!Operation::has_valid_limits(limits)) {
+            wormedit::reject(outcome, diagnostic_code_t::invalid_resolution,
+                             std::string(Operation::invalid_limits_message));
+            return finish_without_commit();
+        }
+        return std::visit(edit_execution_t<Operation, Limits>{*this, limits}, action);
+    }
+
+    template <class Operation, class Effect>
+    [[nodiscard]] auto finish_execution(Operation& operation, Effect&& effect,
+                                        chart_document_t& chart) -> document_command_result_t {
+        if constexpr (requires { effect.has_value(); }) {
+            if (!effect)
+                return finish_without_commit();
+            return finish_execution(operation, std::move(*effect), chart);
+        } else {
+            if (!outcome.diagnostics.empty() || !effect.changed)
+                return finish_without_commit();
+            if constexpr (requires { operation.postvalidate(chart, copy_document()); }) {
+                if (!operation.postvalidate(chart, copy_document()))
+                    return finish_without_commit();
+            }
+            return commit(std::move(effect.command_label));
+        }
+    }
+
     [[nodiscard]] auto commit_outcome(std::string label, document_command_options_t options = {})
         -> document_command_outcome_t;
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})

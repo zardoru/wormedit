@@ -17,15 +17,11 @@ namespace {
 using namespace wormedit;
 using namespace wormedit::visual;
 
-auto has_item_error(const image_job_item_t& item, image_status_t status) -> bool {
-    auto outcome = image_job_item_t::from(item.source, item.status, item.image, item.message);
-    if (outcome) return false;
-    const auto& error = outcome.error();
-    const auto is_expected = error.cause.code == status && error.context.resource == item.source.resource &&
-                             error.context.asset == item.source.asset && error.cause.message == item.message &&
-                             error.payload == item.image;
-    const auto legacy = image_job_item_t::from(std::move(outcome));
-    return is_expected && !legacy;
+auto has_item_error(const image_job_item_outcome_t& item, image_status_t status,
+                    const resolved_visual_asset_t& requested) -> bool {
+    return !item && item.error().cause.code == status && !item.error().cause.message.empty() &&
+           item.error().context.resource == requested.resource &&
+           item.error().context.asset == requested.asset && item.error().context.path == requested.path;
 }
 
 constexpr std::array<std::uint8_t, 62> two_pixel_bmp{
@@ -112,18 +108,18 @@ TEST_CASE("image job publishes only the newest revision-bound request",
     REQUIRE(superseded);
     const auto current = job.request(song_id_t{3}, 11, std::span{&source_b, 1U});
     REQUIRE(current);
-    CHECK(current.generation != superseded.generation);
+    CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
     const auto completion = job.wait();
     REQUIRE(completion);
     REQUIRE(*completion);
-    CHECK(completion->generation == current.generation);
-    CHECK(completion->project == song_id_t{3});
-    CHECK(completion->document_revision == 11);
-    REQUIRE(completion->result->items.size() == 1);
-    REQUIRE(completion->result->items.front());
-    CHECK(completion->result->items.front().image->pixels.size() == 8);
+    CHECK(completion->value().generation == *current);
+    CHECK(completion->value().identity.project == song_id_t{3});
+    CHECK(completion->value().identity.document_revision == 11);
+    REQUIRE(completion->value().payload->items.size() == 1);
+    REQUIRE(completion->value().payload->items.front());
+    CHECK(completion->value().payload->items.front()->payload->pixels.size() == 8);
     CHECK_FALSE(job.is_busy());
 }
 
@@ -143,20 +139,20 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     const auto completion = job.wait();
     REQUIRE(completion);
     REQUIRE(*completion);
-    REQUIRE(completion->result->items.size() == 2);
-    CHECK(has_item_error(completion->result->items[0], image_status_t::byte_limit_exceeded));
-    CHECK(has_item_error(completion->result->items[1], image_status_t::read_failed));
+    REQUIRE(completion->value().payload->items.size() == 2);
+    CHECK(has_item_error(completion->value().payload->items[0], image_status_t::byte_limit_exceeded, valid));
+    CHECK(has_item_error(completion->value().payload->items[1], image_status_t::read_failed, missing));
     CHECK(cache.size() == 0);
 
-    CHECK(job.request(song_id_t{}, 20, sources).status ==
+    CHECK(job.request(song_id_t{}, 20, sources).error().code ==
           image_job_start_status_t::invalid_request);
-    CHECK(job.request(song_id_t{3}, 0, sources).status ==
+    CHECK(job.request(song_id_t{3}, 0, sources).error().code ==
           image_job_start_status_t::invalid_request);
-    CHECK(job.request(song_id_t{3}, 20, std::span<const resolved_visual_asset_t>{}).status ==
+    CHECK(job.request(song_id_t{3}, 20, std::span<const resolved_visual_asset_t>{}).error().code ==
           image_job_start_status_t::invalid_request);
 
     image_job_t disabled{cache, scheduler, 5, 0};
-    CHECK(disabled.request(song_id_t{3}, 20, sources).status ==
+    CHECK(disabled.request(song_id_t{3}, 20, sources).error().code ==
           image_job_start_status_t::invalid_request);
 }
 
@@ -169,6 +165,24 @@ TEST_CASE("visual job publication requires a payload and preserves success messa
     auto present = image_job_item_value_t::from(item_source, image_status_t::ready,
         std::make_shared<const rgba_image_t>(), "cached image");
     REQUIRE(present.has_value());
-    const auto legacy = image_job_item_t::from(std::move(present));
-    CHECK(legacy.message == "cached image");
+    CHECK(present->message == "cached image");
+    const auto failed = image_job_item_value_t::from(
+        item_source, image_status_t::decode_failed, present->payload, "failed image");
+    REQUIRE_FALSE(failed);
+    CHECK(failed.error().payload == present->payload);
+}
+
+TEST_CASE("image batch lookup preserves the first source result",
+          "[unit][visual][image-job][negative]") {
+    const auto first = source(resource_id_t{4}, asset_id_t{5}, "first.bmp");
+    const auto other = source(resource_id_t{6}, asset_id_t{7}, "other.bmp");
+    const auto image = std::make_shared<const rgba_image_t>();
+    const image_job_result_t batch{.project = song_id_t{1}, .document_revision = 2, .items = {
+        image_job_item_value_t::from(first, image_status_t::read_failed, {}, "unreadable"),
+        image_job_item_value_t::from(first, image_status_t::ready, image),
+        image_job_item_value_t::from(other, image_status_t::ready, image)}};
+    CHECK(batch.find(first.resource) == nullptr);
+    REQUIRE(batch.find(other.resource));
+    CHECK(batch.find(other.resource)->payload == image);
+    CHECK(batch.find(resource_id_t{99}) == nullptr);
 }

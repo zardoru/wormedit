@@ -65,13 +65,6 @@ struct native_project_storage_options_t {
 };
 
 using native_project_storage_outcome_t = diagnosed_t<bool, std::vector<native_project_storage_diagnostic_t>>;
-struct native_project_storage_result_t {
-    [[nodiscard]] static auto from(native_project_storage_outcome_t&& outcome) -> native_project_storage_result_t;
-    bool published{};
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 struct native_project_document_version_t {
     song_id_t project_id;
@@ -94,14 +87,6 @@ struct native_project_recovery_snapshot_t {
 };
 
 using native_project_recovery_parse_outcome_t = diagnosed_t<std::optional<native_project_recovery_snapshot_t>, std::vector<native_project_storage_diagnostic_t>>;
-struct native_project_recovery_parse_result_t {
-    [[nodiscard]] static auto from(std::string_view bytes, native_project_limits_t limits = {}) -> native_project_recovery_parse_outcome_t;
-    [[nodiscard]] static auto from(native_project_recovery_parse_outcome_t&& outcome) -> native_project_recovery_parse_result_t;
-    std::optional<native_project_recovery_snapshot_t> snapshot;
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 enum class native_project_recovery_candidate_kind_t {
     primary,
@@ -186,60 +171,42 @@ struct native_project_recovery_scan_payload_t {
     std::optional<std::size_t> preferred_recovery_candidate{};
 };
 using native_project_recovery_scan_outcome_t = diagnosed_t<native_project_recovery_scan_payload_t, std::vector<native_project_storage_diagnostic_t>>;
-struct native_project_recovery_scan_result_t {
-    [[nodiscard]] static auto from(const native_project_recovery_scan_request_t& request,
-        native_project_recovery_scan_options_t options = {}) -> native_project_recovery_scan_outcome_t;
-    [[nodiscard]] static auto from(native_project_recovery_scan_outcome_t&& outcome) -> native_project_recovery_scan_result_t;
-    std::vector<native_project_recovery_candidate_t> candidates;
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-    // Set only when the scan can choose a best recovery without crossing project IDs.
-    std::optional<std::size_t> preferred_recovery_candidate;
-};
 
 // Uses the documented adjacent name `<project-filename>.bak`.
 [[nodiscard]] auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     -> std::filesystem::path;
 
-// Canonical publication outcomes retain the publication flag independently of severity.
-[[nodiscard]] auto create_native_project_file(const std::filesystem::path& destination,
-    const song_document_t& song, native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
-[[nodiscard]] auto create_native_project_recovery_file(const std::filesystem::path& destination,
-    const song_document_t& song, native_project_recovery_metadata_t metadata,
-    native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
-[[nodiscard]] auto create_native_bytes_file(const std::filesystem::path& destination,
-    std::string_view bytes, native_project_storage_options_t options = {}) -> native_project_storage_outcome_t;
-
 // Atomically publish the native project JSON after a semantic re-open check.
 // Serialization and preflight validation finish before a temporary is created.
 // For both atomic publishers below, a directory-sync failure after replacement
-// is reported as a warning with published=true; rolling back that replacement
+// is reported as a warning with value=true; rolling back that replacement
 // is not reliable.
-[[nodiscard]] auto publish_native_project_atomic(const std::filesystem::path& destination,
+[[nodiscard]] auto create_native_project_file(const std::filesystem::path& destination,
                                                  const song_document_t& song,
                                                  native_project_storage_options_t options = {})
-    -> native_project_storage_result_t;
+    -> native_project_storage_outcome_t;
 
 // Atomically publish a checksummed recovery envelope containing a complete
 // native-project payload. The destination (including an untitled-session
 // recovery path) is always supplied by the caller.
-[[nodiscard]] auto publish_native_project_recovery_atomic(
+[[nodiscard]] auto create_native_project_recovery_file(
     const std::filesystem::path& destination, const song_document_t& song,
     native_project_recovery_metadata_t metadata, native_project_storage_options_t options = {})
-    -> native_project_storage_result_t;
+    -> native_project_storage_outcome_t;
 
 // Publishes small caller-owned bytes (for example a session crash marker) through the same
 // temporary, flush, reopen, and rename path. The reopened file must equal `bytes` exactly; an
 // existing destination is replaced.
-[[nodiscard]] auto publish_native_bytes_atomic(const std::filesystem::path& destination,
+[[nodiscard]] auto create_native_bytes_file(const std::filesystem::path& destination,
                                                std::string_view bytes,
                                                native_project_storage_options_t options = {})
-    -> native_project_storage_result_t;
+    -> native_project_storage_outcome_t;
 
 // Decode and validate an envelope independently of filesystem scanning. The
 // payload checksum, native schema, project ID, and revision must all agree.
 [[nodiscard]] auto parse_native_project_recovery_snapshot(std::string_view bytes,
                                                           native_project_limits_t limits = {})
-    -> native_project_recovery_parse_result_t;
+    -> native_project_recovery_parse_outcome_t;
 
 // Validate each supplied artifact independently. The scanner recognizes the
 // adjacent `.bak`, caller-owned untitled recovery entries, immediate regular
@@ -249,7 +216,7 @@ struct native_project_recovery_scan_result_t {
 [[nodiscard]] auto
 scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
                                         native_project_recovery_scan_options_t options = {})
-    -> native_project_recovery_scan_result_t;
+    -> native_project_recovery_scan_outcome_t;
 
 enum class native_project_recovery_action_stage_t {
     before_revalidate,
@@ -284,31 +251,16 @@ struct native_project_recovery_action_payload_t {
     std::optional<std::filesystem::path> quarantined_path{};
 };
 using native_project_recovery_action_outcome_t = diagnosed_t<native_project_recovery_action_payload_t, std::vector<native_project_storage_diagnostic_t>>;
-struct native_project_recovery_action_result_t {
-    [[nodiscard]] static auto from(native_project_recovery_action_outcome_t&& outcome) -> native_project_recovery_action_result_t;
-    bool applied{};
-    std::optional<song_document_t> document;
-    std::optional<native_project_document_version_t> version;
-    std::optional<std::filesystem::path> quarantined_path;
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
-
-// Borrows immutable captured tickets for this synchronous filesystem operation.
-[[nodiscard]] auto perform_native_project_recovery_action(
-    std::span<const native_project_recovery_candidate_t> candidates, std::size_t candidate_index,
-    native_project_recovery_action_t action, native_project_recovery_action_options_t options = {})
-    -> native_project_recovery_action_outcome_t;
 
 // Revalidate a candidate against its scan ticket before returning a read-only
 // or session-recovery document. Save-as uses create-only publication. Discard
 // and quarantine are recoverable same-directory moves of only the scanned
 // artifact; no action writes the primary implicitly.
-[[nodiscard]] auto apply_native_project_recovery_action(
-    const native_project_recovery_scan_result_t& scan, std::size_t candidate_index,
+// Borrows immutable captured tickets for this synchronous filesystem operation.
+[[nodiscard]] auto perform_native_project_recovery_action(
+    std::span<const native_project_recovery_candidate_t> candidates, std::size_t candidate_index,
     native_project_recovery_action_t action, native_project_recovery_action_options_t options = {})
-    -> native_project_recovery_action_result_t;
+    -> native_project_recovery_action_outcome_t;
 
 enum class native_project_autosave_status_t {
     not_due,
@@ -323,13 +275,6 @@ struct native_project_autosave_payload_t {
     auto operator==(const native_project_autosave_payload_t&) const -> bool = default;
 };
 using native_project_autosave_outcome_t = diagnosed_t<native_project_autosave_payload_t, std::vector<native_project_storage_diagnostic_t>>;
-struct native_project_autosave_result_t {
-    [[nodiscard]] static auto from(native_project_autosave_outcome_t&& outcome) -> native_project_autosave_result_t;
-    native_project_autosave_status_t status{native_project_autosave_status_t::not_due};
-    std::uint64_t revision{};
-    std::uint64_t session_sequence{};
-    std::vector<native_project_storage_diagnostic_t> diagnostics;
-};
 
 // A session-clocked, headless coordinator. It writes at most once for a given
 // project revision and only when dirty and due. Recovery destinations and the
@@ -358,12 +303,6 @@ class native_project_autosave_coordinator_t {
                                       native_project_storage_options_t options = {})
         -> native_project_autosave_outcome_t;
 
-    [[nodiscard]] auto maybe_autosave(const song_document_t& song, clock_t::time_point now,
-                                      const std::filesystem::path& caller_supplied_backup_path,
-                                      std::filesystem::path original_source_path = {},
-                                      std::filesystem::path intended_project_path = {},
-                                      native_project_storage_options_t options = {})
-        -> native_project_autosave_result_t;
 
     [[nodiscard]] auto last_autosaved_version() const noexcept
         -> std::optional<native_project_document_version_t>;

@@ -46,20 +46,4 @@ auto resolved_visual_asset_t::from(const song_document_t& document, resource_id_
                                    .declared_height = asset->height};
 }
 
-auto visual_asset_resolution_result_t::from(visual_asset_resolution_outcome_t&& outcome)
-    -> visual_asset_resolution_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .source = std::nullopt,
-                .message = std::move(outcome.error().message)};
-    return {.status = visual_asset_status_t::ready, .source = std::move(*outcome), .message = {}};
-}
-
-auto resolve_visual_asset(const song_document_t& document, resource_id_t resource,
-                          const std::filesystem::path& project_directory)
-    -> visual_asset_resolution_result_t {
-    return visual_asset_resolution_result_t::from(
-        resolved_visual_asset_t::from(document, resource, project_directory));
-}
-
 } // namespace wormedit::visual

@@ -26,7 +26,7 @@ namespace wormedit::sys::runtime {
 
 // Completion metadata is determined from the native result, never message text.
 [[nodiscard]] auto waveform_completion_notification(
-    const audio::waveform_job_completion_t& completed, const char* failure_message = nullptr)
+    const audio::waveform_job_completion_outcome_t& completed, const char* failure_message = nullptr)
     -> std::optional<notification_post_t>;
 
 struct stem_waveform_cache_stats_t {
@@ -111,7 +111,7 @@ private:
     void request_selected_waveform(std::optional<asset_id_t> asset,
         audio::waveform_job_t& job, std::optional<asset_id_t>& accepted,
         std::optional<asset_id_t>& attempted, const char* failure_message);
-    void report_waveform_completion(const audio::waveform_job_completion_t& completed,
+    void report_waveform_completion(const audio::waveform_job_completion_outcome_t& completed,
                                     const char* failure_message = nullptr);
     void service_idle_detail(std::optional<asset_id_t> asset,
         std::optional<audio::aligned_waveform_window_t> window);
@@ -120,7 +120,7 @@ private:
     [[nodiscard]] auto cached_detail_window(const audio::waveform_key_t& key,
         audio::aligned_waveform_window_t window) -> bool;
     void cancel_detail_worker() noexcept;
-    [[nodiscard]] auto poll_detail_worker() -> std::optional<audio::waveform_job_completion_t>;
+    [[nodiscard]] auto poll_detail_worker() -> std::optional<audio::waveform_job_completion_outcome_t>;
     [[nodiscard]] auto request_detail_worker(asset_id_t asset, audio::waveform_key_t key, bool samples) -> bool;
     void borrow_preview_blocks(const audio::waveform_key_t& key, std::stop_token stop);
     bool playing_detail_{};

@@ -78,12 +78,13 @@ auto read_fixture(const std::filesystem::path& path) -> std::string {
     return {std::istreambuf_iterator<char>{input}, {}};
 }
 
-template <typename Parsed>
-auto checked_fixture_document(Parsed parsed) -> wormedit::song_document_t {
-    for (const auto& diagnostic : parsed.diagnostics) INFO(diagnostic.message);
-    REQUIRE_FALSE(parsed.has_errors());
-    REQUIRE(parsed.song);
-    return std::move(*parsed.song);
+template <typename Diagnostics>
+auto checked_fixture_document(std::optional<wormedit::song_document_t>&& document,
+                              const Diagnostics& diagnostics) -> wormedit::song_document_t {
+    for (const auto& diagnostic : diagnostics) INFO(diagnostic.message);
+    REQUIRE_FALSE(wormedit::diagnostic_queries::has_errors(diagnostics));
+    REQUIRE(document);
+    return std::move(*document);
 }
 
 auto parse_positive_fixture(const std::filesystem::path& path) -> wormedit::song_document_t {
@@ -95,16 +96,19 @@ auto parse_positive_fixture(const std::filesystem::path& path) -> wormedit::song
         options.file_extension = extension;
         options.encoding_override = explicit_fixture_encoding(path);
         options.lane_profile_id = explicit_fixture_profile(path);
-        return checked_fixture_document(wormedit::parse_bms_bytes(bytes, options));
+        auto parsed = wormedit::parse_bms_bytes(bytes, options);
+        return checked_fixture_document(std::move(parsed.value.song), parsed.diagnostics);
     }
     if (path.filename().string().starts_with("legacy-negative-")) {
         wormedit::stepmania_parse_options_t options;
         options.source_timing_syntax = path.filename() == "legacy-negative-stop.sm"
             ? wormedit::stepmania_timing_syntax_t::legacy_negative_stop
             : wormedit::stepmania_timing_syntax_t::legacy_negative_bpm;
-        return checked_fixture_document(wormedit::parse_stepmania_bytes(bytes, options));
+        auto parsed = wormedit::parse_stepmania_bytes(bytes, options);
+        return checked_fixture_document(std::move(parsed.value), parsed.diagnostics);
     }
-    auto opened = wormedit::sys::open_project_file(path);
+    auto opened_outcome = wormedit::sys::open_project_file(path);
+    auto& opened = opened_outcome ? *opened_outcome : opened_outcome.error();
     INFO(opened.error);
     REQUIRE(opened.document);
     return std::move(*opened.document);

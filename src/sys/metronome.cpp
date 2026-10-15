@@ -11,7 +11,7 @@ void metronome_t::register_into(audio::decoded_source_registry_t& registry, std:
     source_bindings.clear();
     auto clicks = audio::make_metronome_clicks();
     for (std::size_t accent = 0; accent < clicks.size(); ++accent) {
-        const auto generated = registry.register_generated_source({
+        const auto generated = registry.create_generated_source({
             .source = {"internal:metronome:" + std::to_string(accent),
                        "binding:" + std::to_string(generation)},
             .interleaved_stereo = std::move(clicks[accent])});
@@ -20,8 +20,8 @@ void metronome_t::register_into(audio::decoded_source_registry_t& registry, std:
             return;
         }
         source_bindings.push_back({.accent = static_cast<metronome_accent_t>(accent),
-            .voice = {.source = generated.binding->source, .source_start_frame = 0,
-                      .frame_count = generated.binding->output_frame_count, .gain = 1.0F}});
+            .voice = {.source = generated->source, .source_start_frame = 0,
+                      .frame_count = generated->output_frame_count, .gain = 1.0F}});
     }
 }
 }

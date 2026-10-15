@@ -83,31 +83,29 @@ auto stored_color(semantic_layer_rgba_t color) -> color_rgba_t {
             .alpha = color_channel(color.alpha)};
 }
 
-auto unique_layer(chart_document_t& chart, layer_id_t id, document_command_result_t& result)
-    -> semantic_layer_t* {
-    if (!id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer command uses the reserved zero layer ID");
-        return nullptr;
-    }
-    const auto found = std::ranges::find(chart.semantic_layers, id, &semantic_layer_t::id);
-    if (found == chart.semantic_layers.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer command refers to an unknown layer");
-        return nullptr;
-    }
-    if (std::ranges::count(chart.semantic_layers, id, &semantic_layer_t::id) != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "semantic layer ID is ambiguous because it appears more than once");
-        return nullptr;
-    }
-    return &*found;
-}
+constexpr target_query_policy_t layer_target_policy{
+    .messages = {"semantic layer command refers to an unknown layer",
+                 "semantic layer ID is ambiguous because it appears more than once",
+                 "semantic layer command uses the reserved zero layer ID"}};
+constexpr target_query_messages_t note_target_messages{
+    "semantic layer selection refers to an unknown note",
+    "note ID is ambiguous because it appears more than once in the chart",
+    "semantic layer selection uses the reserved zero note ID"};
+constexpr std::string_view unknown_bgm_target_message =
+    "semantic layer selection refers to an unknown BGM event";
+constexpr target_query_messages_t bgm_target_messages{
+    unknown_bgm_target_message,
+    "BGM event ID is ambiguous because it appears more than once in the chart",
+    unknown_bgm_target_message};
 
 struct chart_note_index_t {
     std::unordered_map<std::uint64_t, std::size_t> object_id_counts;
     std::unordered_map<std::uint64_t, note_t*> notes;
     std::unordered_map<std::uint64_t, bgm_event_t*> bgm_events;
+
+    auto unique_note(object_id_t id, document_command_result_t& result) -> note_t*;
+    auto unique_bgm_event(object_id_t id, document_command_result_t& result) -> bgm_event_t*;
+
 };
 
 void index_bgm_event_pointers(chart_document_t& chart, chart_note_index_t& index) {
@@ -176,26 +174,14 @@ auto build_chart_note_index(chart_document_t& chart, std::size_t maximum_chart_o
     return index;
 }
 
-auto unique_note(chart_note_index_t& index, object_id_t id, document_command_result_t& result)
+auto chart_note_index_t::unique_note(object_id_t id, document_command_result_t& result)
     -> note_t* {
-    if (!id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer selection uses the reserved zero note ID");
-        return nullptr;
-    }
-    const auto count = index.object_id_counts.find(id.value);
-    if (count == index.object_id_counts.end() || count->second == 0) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer selection refers to an unknown note");
-        return nullptr;
-    }
-    if (count->second != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "note ID is ambiguous because it appears more than once in the chart");
-        return nullptr;
-    }
-    const auto note = index.notes.find(id.value);
-    if (note == index.notes.end()) {
+    const auto count = object_id_counts.find(id.value);
+    if (!target_identity_query_t::from(id,
+            count == object_id_counts.end() ? 0 : count->second)
+             .validate(result.diagnostics, note_target_messages)) return nullptr;
+    const auto note = notes.find(id.value);
+    if (note == notes.end()) {
         reject(result, diagnostic_code_t::invalid_id,
                "semantic layer selection ID does not identify a note");
         return nullptr;
@@ -237,7 +223,8 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
                "semantic layer note selection exceeds the configured cap");
         return false;
     }
-    auto* layer = unique_layer(chart, layer_id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, layer_id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }
@@ -264,7 +251,7 @@ auto apply_membership(chart_document_t& chart, layer_id_t layer_id,
         return false;
     }
     for (const auto note_id : note_ids) {
-        auto* note = unique_note(*note_index, note_id, result);
+        auto* note = note_index->unique_note(note_id, result);
         if (note == nullptr) {
             return false;
         }
@@ -353,21 +340,13 @@ auto validate_bgm_layers(const membership_layer_index_t& layers, const bgm_event
     return true;
 }
 
-auto unique_bgm_event(chart_note_index_t& index, object_id_t id,
-                      document_command_result_t& result) -> bgm_event_t* {
-    const auto count = index.object_id_counts.find(id.value);
-    if (!id || count == index.object_id_counts.end() || count->second == 0) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "semantic layer selection refers to an unknown BGM event");
-        return nullptr;
-    }
-    if (count->second != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "BGM event ID is ambiguous because it appears more than once in the chart");
-        return nullptr;
-    }
-    const auto event = index.bgm_events.find(id.value);
-    if (event == index.bgm_events.end()) {
+auto chart_note_index_t::unique_bgm_event(object_id_t id, document_command_result_t& result) -> bgm_event_t* {
+    const auto count = object_id_counts.find(id.value);
+    if (!target_identity_query_t::from(id,
+            count == object_id_counts.end() ? 0 : count->second)
+             .validate(result.diagnostics, bgm_target_messages)) return nullptr;
+    const auto event = bgm_events.find(id.value);
+    if (event == bgm_events.end()) {
         reject(result, diagnostic_code_t::invalid_id,
                "semantic layer selection ID does not identify a BGM event");
         return nullptr;
@@ -397,7 +376,7 @@ auto collect_replacement_notes(chart_document_t& chart, const std::vector<object
                    "semantic layer note selection contains a duplicate note ID");
             return std::nullopt;
         }
-        auto* note = unique_note(*note_index, note_id, result);
+        auto* note = note_index->unique_note(note_id, result);
         if (!note || !validate_clear_note_layers(layers, *note, result)) return std::nullopt;
         selected_notes.push_back(note);
     }
@@ -439,7 +418,7 @@ auto collect_bgm_memberships(chart_document_t& chart, const std::vector<object_i
                    "semantic layer BGM selection contains a duplicate event ID");
             return std::nullopt;
         }
-        auto* match = unique_bgm_event(*indexed, id, result);
+        auto* match = indexed->unique_bgm_event(id, result);
         if (!match || !validate_bgm_layers(layers, *match, result)) return std::nullopt;
         selected.push_back(match);
     }
@@ -561,7 +540,8 @@ auto update_semantic_layer(
     chart_document_t& chart,
     const wormedit::update_edit_t<wormedit::semantic_layer_edit_value_t>& edit,
     const semantic_layer_edit_limits_t& limits, document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, edit.id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }
@@ -600,7 +580,8 @@ auto delete_semantic_layer(
     chart_document_t& chart,
     const wormedit::delete_edit_t<wormedit::semantic_layer_edit_value_t>& edit,
     const semantic_layer_edit_limits_t& limits, document_command_result_t& result) -> bool {
-    auto* layer = unique_layer(chart, edit.id, result);
+    auto* layer = chart.unique_target(&chart_document_t::semantic_layers, edit.id,
+                                      result.diagnostics, layer_target_policy);
     if (layer == nullptr) {
         return false;
     }
@@ -1101,11 +1082,11 @@ auto selected_sound_resources(chart_document_t& chart,
         }
         std::optional<resource_id_t> sound;
         if (bgm) {
-            const auto* event = unique_bgm_event(*index, id, result);
+            const auto* event = index->unique_bgm_event(id, result);
             if (!event) return false;
             sound = event->sound;
         } else {
-            const auto* note = unique_note(*index, id, result);
+            const auto* note = index->unique_note(id, result);
             if (!note) return false;
             sound = note->sound;
         }

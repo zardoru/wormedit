@@ -29,28 +29,28 @@ auto chooser_document() -> song_document_t {
     };
     return {.id = song_id_t{1}, .revision = 7, .charts = {std::move(chart)}};
 }
-void check_projection_header(const bookmark_chooser_projection_t& projection) {
+void check_projection_header(const bookmark_chooser_view_t& projection) {
     CHECK(projection.document_revision == 7);
     CHECK(projection.total_count == 3);
     REQUIRE(projection.rows.size() == 3);
 }
-void check_first_beat_row(const bookmark_chooser_projection_t& projection) {
+void check_first_beat_row(const bookmark_chooser_view_t& projection) {
     CHECK(projection.rows[0].bookmark_id == object_id_t{101});
     CHECK(projection.rows[0].position_label == "Measure 001 · row 240");
     CHECK(projection.rows[0].name == "same");
 }
-void check_second_audio_row(const bookmark_chooser_projection_t& projection) {
+void check_second_audio_row(const bookmark_chooser_view_t& projection) {
     CHECK(projection.rows[1].bookmark_id == object_id_t{102});
     CHECK(projection.rows[1].anchor == marker_anchor_t::audio_time);
     CHECK(projection.rows[1].position_label == "Audio 00:00.500");
     CHECK(projection.rows[0].display_label != projection.rows[1].display_label);
 }
-void check_unnamed_row(const bookmark_chooser_projection_t& projection) {
+void check_unnamed_row(const bookmark_chooser_view_t& projection) {
     CHECK(projection.rows[2].bookmark_id == object_id_t{103});
     CHECK(projection.rows[2].name == "(unnamed)");
     CHECK(projection.rows[2].display_label.find("#103") != std::string::npos);
 }
-void check_page_endpoints(const bookmark_chooser_projection_t& page) {
+void check_page_endpoints(const bookmark_chooser_view_t& page) {
     CHECK(page.total_count == 70);
     CHECK(page.first_row == 64);
     REQUIRE(page.rows.size() == 6);
@@ -62,12 +62,12 @@ void check_page_endpoints(const bookmark_chooser_projection_t& page) {
 TEST_CASE("bookmark chooser orders beat and audio anchors with disambiguated labels",
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
-    const auto result = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 16);
+    const auto result = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 16);
     REQUIRE(result);
-    check_projection_header(result);
-    check_first_beat_row(result);
-    check_second_audio_row(result);
-    check_unnamed_row(result);
+    check_projection_header(result.value());
+    check_first_beat_row(result.value());
+    check_second_audio_row(result.value());
+    check_unnamed_row(result.value());
 }
 
 TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-four rows",
@@ -80,20 +80,20 @@ TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-f
             .anchor = marker_anchor_t::beat,
             .position = local_position_t{measure_id_t{10}, 0}});
     }
-    const auto page = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 64, 8);
+    const auto page = bookmark_chooser_view_t::from(document, chart_id_t{2}, 64, 8);
     REQUIRE(page);
-    check_page_endpoints(page);
-    const auto empty = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 70, 8);
+    check_page_endpoints(page.value());
+    const auto empty = bookmark_chooser_view_t::from(document, chart_id_t{2}, 70, 8);
     REQUIRE(empty);
-    CHECK(empty.rows.empty());
-    CHECK(empty.total_count == 70);
+    CHECK(empty.value().rows.empty());
+    CHECK(empty.value().total_count == 70);
 }
 
 TEST_CASE("bookmark chooser rejects invalid paging and missing charts",
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
-    CHECK_FALSE(bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 0));
-    CHECK_FALSE(bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{99}, 0, 8));
+    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 0));
+    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{99}, 0, 8));
 }
 
 TEST_CASE("bookmark chooser searches every bookmark before paging with case insensitive labels",
@@ -104,16 +104,16 @@ TEST_CASE("bookmark chooser searches every bookmark before paging with case inse
         bookmarks.push_back({.id = object_id_t{id}, .label = id == 279 ? "Final Bridge 東京" : "other",
             .anchor = marker_anchor_t::beat,
             .position = local_position_t{measure_id_t{12}, id}});
-    const auto bridge = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "BRIDGE");
-    REQUIRE(bridge.rows.size() == 1);
-    CHECK(bridge.total_count == 1);
-    CHECK(bridge.rows.front().bookmark_id == object_id_t{279});
-    const auto cjk = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "東京");
-    REQUIRE(cjk.rows.size() == 1);
-    CHECK(cjk.rows.front().bookmark_id == object_id_t{279});
-    const auto position = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "Measure 001");
-    CHECK(position.total_count == 2);
-    const auto missing = bookmark_navigation_t::build_bookmark_chooser_view(document, chart_id_t{2}, 0, 12, "not present");
-    CHECK(missing.total_count == 0);
-    CHECK(missing.rows.empty());
+    const auto bridge = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "BRIDGE");
+    REQUIRE(bridge.value().rows.size() == 1);
+    CHECK(bridge.value().total_count == 1);
+    CHECK(bridge.value().rows.front().bookmark_id == object_id_t{279});
+    const auto cjk = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "東京");
+    REQUIRE(cjk.value().rows.size() == 1);
+    CHECK(cjk.value().rows.front().bookmark_id == object_id_t{279});
+    const auto position = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "Measure 001");
+    CHECK(position.value().total_count == 2);
+    const auto missing = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "not present");
+    CHECK(missing.value().total_count == 0);
+    CHECK(missing.value().rows.empty());
 }

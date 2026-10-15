@@ -27,7 +27,6 @@ struct sv_recipe_edit_t {
         -> diagnosed_t<std::optional<std::string>>;
 };
 
-
 constexpr long double maximum_parameter_magnitude = 1'000'000.0L;
 constexpr long double maximum_curve_output = 1'000'000'000.0L;
 constexpr std::uint64_t maximum_parameter_denominator = 1'000'000'000ULL;
@@ -46,27 +45,15 @@ auto is_valid_bounded_rational(signed_rational_t value, long double maximum) -> 
     return std::isfinite(number) && std::abs(number) <= maximum;
 }
 
-auto position_at_row(const measure_index_t& index, std::uint64_t row, bool allow_chart_end = false)
-    -> std::optional<local_position_t> {
-    return index.position_at(row, allow_chart_end ? measure_chart_end_policy_t::allow
-                                                : measure_chart_end_policy_t::reject);
-}
-
-auto position_row(const measure_index_t& index, local_position_t position,
-                  bool allow_chart_end = false) -> std::optional<std::uint64_t> {
-    return index.row_of(position, allow_chart_end ? measure_chart_end_policy_t::allow
-                                                : measure_chart_end_policy_t::reject);
-}
-
 auto snapped_position(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t target, std::uint64_t denominator)
     -> std::optional<local_position_t> {
-    const auto absolute = position_row(index, target, true);
+    const auto absolute = index.row_of(target, measure_chart_end_policy_t::allow);
     if (!absolute || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0) {
         return std::nullopt;
     }
     if (*absolute == index.total_rows) {
-        return position_at_row(index, index.total_rows, true);
+        return index.position_at(index.total_rows, measure_chart_end_policy_t::allow);
     }
     const auto rounded = snap_absolute_row(chart, index, *absolute, denominator);
     if (!rounded) {
@@ -82,7 +69,7 @@ auto snapped_position(const chart_document_t& chart, const measure_index_t& inde
     if (distance_to_chart_end < distance_to_snapped) {
         snapped = index.total_rows;
     }
-    return position_at_row(index, snapped, true);
+    return index.position_at(snapped, measure_chart_end_policy_t::allow);
 }
 
 auto multiply_divide_exact(std::uint64_t value, std::uint64_t numerator, std::uint64_t denominator)
@@ -147,8 +134,8 @@ auto offset_for_fraction_sum(std::uint64_t span, signed_rational_t left, signed_
 auto recipe_range(const chart_document_t& chart, const sv_recipe_t& recipe,
                   const measure_index_t& index)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    const auto begin = position_row(index, recipe.range.begin);
-    const auto end = position_row(index, recipe.range.end, true);
+    const auto begin = index.row_of(recipe.range.begin);
+    const auto end = index.row_of(recipe.range.end, measure_chart_end_policy_t::allow);
     if (!begin || !end || *end <= *begin) {
         return std::nullopt;
     }
@@ -219,7 +206,7 @@ auto base_events_for(const chart_document_t& chart, sv_recipe_output_t output,
         ordered.reserve(chart.speeds.size());
         for (std::size_t i = 0; i < chart.speeds.size(); ++i) {
             const auto& event = chart.speeds[i];
-            if (const auto row = absolute_row(index, event.position)) {
+            if (const auto row = index.row_of(event.position)) {
                 ordered.emplace_back(*row, event.provenance.source_order, i,
                                      to_long_double(event.multiplier));
             }
@@ -228,7 +215,7 @@ auto base_events_for(const chart_document_t& chart, sv_recipe_output_t output,
         ordered.reserve(chart.scrolls.size());
         for (std::size_t i = 0; i < chart.scrolls.size(); ++i) {
             const auto& event = chart.scrolls[i];
-            if (const auto row = absolute_row(index, event.position)) {
+            if (const auto row = index.row_of(event.position)) {
                 ordered.emplace_back(*row, event.provenance.source_order, i,
                                      to_long_double(event.multiplier));
             }
@@ -467,11 +454,11 @@ auto validate_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe
         return diagnostics;
     }
 
-    const auto index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(index_result)) {
-        return std::get<diagnostic_list_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    if (!index_result) {
+        return index_result.error();
     }
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto& index = *index_result;
     const auto range = recipe_range(chart, recipe, index);
     if (!range) {
         reject(diagnostics, diagnostic_code_t::invalid_hold,
@@ -636,7 +623,7 @@ auto materialize_sample_points(const chart_document_t&, const sv_recipe_t& recip
     }
     result.value.points.reserve(sampled.size());
     for (const auto& [row, value] : sampled) {
-        const auto position = position_at_row(index, row);
+        const auto position = index.position_at(row);
         if (!position) {
             reject(result.diagnostics, diagnostic_code_t::row_out_of_range,
                    "sampled SV recipe point is outside chart geometry");
@@ -668,8 +655,8 @@ auto sv_recipe_samples_t::from(const chart_document_t& chart, const sv_recipe_t&
                "Lua expression SV recipes are stored but not evaluated yet");
         return result;
     }
-    const auto index_result = build_measure_index(chart);
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    const auto& index = *index_result;
     const auto range = *recipe_range(chart, recipe, index);
     std::map<std::uint64_t, long double> sampled;
     if (!add_bump_sample_points(sampled, recipe, range, result.diagnostics)) {
@@ -704,13 +691,13 @@ struct recipe_sample_set_t {
 auto append_recipe_sample(const chart_document_t& chart, const sv_recipe_t& recipe,
                           recipe_sample_set_t& samples,
                           diagnostic_list_t& diagnostics) -> bool {
-    const auto sample = sample_sv_recipe(chart, recipe);
-    if (!sample) {
+    const auto sample = sv_recipe_samples_t::from(chart, recipe);
+    if (!sample.diagnostics.empty()) {
         diagnostics.insert(diagnostics.end(), sample.diagnostics.begin(), sample.diagnostics.end());
         return false;
     }
     samples.recipes.push_back(&recipe);
-    for (const auto& point : sample.points) {
+    for (const auto& point : sample.value.points) {
         samples.rows.insert(point.absolute_row);
     }
     return true;
@@ -747,7 +734,7 @@ auto has_overlapping_speed_transition(const chart_document_t& chart,
         }
     }
     return std::ranges::any_of(chart.speeds, [&](const auto& event) {
-        const auto row = absolute_row(index, event.position);
+        const auto row = index.row_of(event.position);
         return event.transition_beats.numerator != 0 && row && *row < last_recipe_end;
     });
 }
@@ -795,7 +782,7 @@ auto compose_recipe_point(const recipe_composition_context_t& context, std::uint
                "composed SV recipe value is non-finite, oversized, or target-invalid");
         return std::nullopt;
     }
-    const auto position = position_at_row(context.index, row);
+    const auto position = context.index.position_at(row);
     if (!position) {
         reject(diagnostics, diagnostic_code_t::row_out_of_range,
                "compiled SV point is outside chart geometry");
@@ -846,12 +833,12 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
                "SV recipe replacement preview refers to a missing or ambiguous recipe");
         return result;
     }
-    const auto index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(index_result)) {
-        result.diagnostics = std::get<diagnostic_list_t>(index_result);
+    const auto index_result = measure_index_t::from(chart);
+    if (!index_result) {
+        result.diagnostics = index_result.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(index_result);
+    const auto& index = *index_result;
     auto samples = collect_recipe_samples(chart, output, candidate, replacing_recipe,
                                           result.diagnostics);
     if (!result.diagnostics.empty() || samples.recipes.empty()) {
@@ -987,16 +974,18 @@ auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
     auto& draft = *this;
     auto& diagnostics = scope.diagnostics();
     const auto* chart = scope.target();
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        diagnostics = std::move(built_index.error());
         return false;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto snapped_begin = snapped_position(*chart, index, pointer_hits.begin, active_snap_denominator);
     const auto snapped_end = snapped_position(*chart, index, pointer_hits.end, active_snap_denominator);
-    const auto begin_row = snapped_begin ? position_row(index, *snapped_begin, true) : std::nullopt;
-    const auto end_row = snapped_end ? position_row(index, *snapped_end, true) : std::nullopt;
+    const auto begin_row = snapped_begin
+        ? index.row_of(*snapped_begin, measure_chart_end_policy_t::allow) : std::nullopt;
+    const auto end_row = snapped_end
+        ? index.row_of(*snapped_end, measure_chart_end_policy_t::allow) : std::nullopt;
     if (!begin_row || !end_row) {
         diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                      "SV recipe draft range cannot be represented on the active grid"));
@@ -1009,8 +998,8 @@ auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
     }
     const auto first_row = std::min(*begin_row, *end_row);
     const auto last_row = std::max(*begin_row, *end_row);
-    const auto begin_position = position_at_row(index, first_row);
-    const auto end_position = position_at_row(index, last_row, true);
+    const auto begin_position = index.position_at(first_row);
+    const auto end_position = index.position_at(last_row, measure_chart_end_policy_t::allow);
     if (!begin_position || !end_position) {
         diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                      "SV recipe draft range exceeds the chart grid"));
@@ -1094,13 +1083,13 @@ auto allocate_transient_id(std::uint64_t& next_id) -> std::optional<object_id_t>
 auto compiled_points_for_export(chart_document_t& chart, sv_recipe_output_t output,
                                 diagnostic_list_t& diagnostics)
     -> std::optional<std::vector<sv_recipe_point_t>> {
-    const auto compiled = compile_sv_recipes(chart, output);
-    if (!compiled) {
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, output);
+    if (!compiled.diagnostics.empty()) {
         diagnostics.insert(diagnostics.end(), compiled.diagnostics.begin(),
                            compiled.diagnostics.end());
         return std::nullopt;
     }
-    return compiled.points;
+    return compiled.value.points;
 }
 
 auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
@@ -1114,7 +1103,7 @@ auto bake_scroll_events(chart_document_t& chart, const measure_index_t& index,
         return false;
     }
     std::erase_if(chart.scrolls, [&](const auto& event) {
-        const auto row = absolute_row(index, event.position);
+        const auto row = index.row_of(event.position);
         return row && is_row_in_ranges(*row, ranges);
     });
     for (std::size_t order = 0; order < points->size(); ++order) {
@@ -1148,7 +1137,7 @@ auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
         return false;
     }
     std::erase_if(chart.speeds, [&](const auto& event) {
-        const auto row = absolute_row(index, event.position);
+        const auto row = index.row_of(event.position);
         return row && is_row_in_ranges(*row, ranges);
     });
     for (std::size_t order = 0; order < points->size(); ++order) {
@@ -1175,10 +1164,7 @@ auto bake_speed_events(chart_document_t& chart, const measure_index_t& index,
 
 } // namespace
 
-auto sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_outcome_t&& outcome) -> sv_recipe_export_bake_result_t {
-    return {.chart = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t {
+auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_outcome_t {
     sv_recipe_export_bake_outcome_t result{};
     auto baked = chart;
     if (std::ranges::none_of(baked.sv_recipes, &sv_recipe_t::enabled)) {
@@ -1200,12 +1186,12 @@ auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_r
     if (!result.diagnostics.empty()) {
         return result;
     }
-    const auto built_index = build_measure_index(baked);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        result.diagnostics = std::get<diagnostic_list_t>(built_index);
+    const auto built_index = measure_index_t::from(baked);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto first_id = next_chart_object_id(baked, std::numeric_limits<std::size_t>::max()).id;
     if (!first_id) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1222,10 +1208,6 @@ auto sv_recipe_export_bake_result_t::from(const chart_document_t& chart) -> sv_r
     baked.sv_recipes.clear();
     result.value = std::move(baked);
     return result;
-}
-
-auto bake_sv_recipes_for_export(const chart_document_t& chart) -> sv_recipe_export_bake_result_t {
-    return sv_recipe_export_bake_result_t::from(sv_recipe_export_bake_result_t::from(chart));
 }
 
 auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id_t chart_id,
@@ -1255,12 +1237,12 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
             "SV recipe range drag refers to a missing or ambiguous recipe"));
         return outcome;
     }
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        outcome.diagnostics = std::move(built_index.error());
         return outcome;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = *built_index;
     const auto snapped = snapped_position(*chart, index, pointer_position, active_snap_denominator);
     if (!snapped) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -1280,10 +1262,11 @@ auto prepare_sv_recipe_range(const chart_document_t& chart, const sv_recipe_t& r
     local_position_t pointer_position) -> diagnosed_t<std::optional<position_span_t>> {
     diagnosed_t<std::optional<position_span_t>> outcome;
     const auto snapped = snapped_position(chart, index, pointer_position, drag.active_snap_denominator);
-    const auto original_begin = position_row(index, drag.original_range.begin);
-    const auto original_end = position_row(index, drag.original_range.end, true);
-    const auto anchor = position_row(index, drag.snapped_pointer_anchor, true);
-    const auto target = snapped ? position_row(index, *snapped, true) : std::nullopt;
+    const auto original_begin = index.row_of(drag.original_range.begin);
+    const auto original_end = index.row_of(drag.original_range.end, measure_chart_end_policy_t::allow);
+    const auto anchor = index.row_of(drag.snapped_pointer_anchor, measure_chart_end_policy_t::allow);
+    const auto target = snapped
+        ? index.row_of(*snapped, measure_chart_end_policy_t::allow) : std::nullopt;
     if (!snapped || !original_begin || !original_end || !anchor || !target) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
             "SV recipe range drag is outside the chart grid"));
@@ -1299,8 +1282,8 @@ auto prepare_sv_recipe_range(const chart_document_t& chart, const sv_recipe_t& r
             "SV recipe range drag cannot produce a valid interval"));
         return outcome;
     }
-    const auto begin_position = position_at_row(index, manipulated->begin);
-    const auto end_position = position_at_row(index, manipulated->end, true);
+    const auto begin_position = index.position_at(manipulated->begin);
+    const auto end_position = index.position_at(manipulated->end, measure_chart_end_policy_t::allow);
     if (!begin_position || !end_position) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
             "SV recipe range drag exceeds the chart grid"));
@@ -1338,14 +1321,14 @@ auto sv_recipe_range_drag_t::revise(proposal_revision_scope_t<chart_stamp_t>& sc
         diagnostics.push_back(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
         return false;
     }
-    auto built_index = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(built_index)) {
-        diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+    auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        diagnostics = std::move(built_index.error());
         scope.invalidate_target();
         return false;
     }
     auto prepared = prepare_sv_recipe_range(*chart, *target_recipe,
-        std::get<measure_index_t>(built_index), *this, pointer_position);
+        *built_index, *this, pointer_position);
     diagnostics = std::move(prepared.diagnostics);
     if (!prepared.value) return false;
     preview_range = *prepared.value;
@@ -1552,7 +1535,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     scratch.sv_recipes = {*recipe};
     scratch.sv_recipes.front().enabled = true;
     auto baked = bake_sv_recipes_for_export(scratch);
-    if (!baked) {
+    if (!baked.value || !baked.diagnostics.empty()) {
         context.transaction.outcome.diagnostics.insert(context.transaction.outcome.diagnostics.end(),
                                           baked.diagnostics.begin(), baked.diagnostics.end());
         if (context.transaction.outcome.diagnostics.empty())
@@ -1560,10 +1543,10 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
                    "SV recipe could not be materialized");
         return;
     }
-    mark_materialized_events(baked.chart->scrolls, next_event_source_order(chart.scrolls));
-    mark_materialized_events(baked.chart->speeds, next_event_source_order(chart.speeds));
-    chart.scrolls = std::move(baked.chart->scrolls);
-    chart.speeds = std::move(baked.chart->speeds);
+    mark_materialized_events(baked.value->scrolls, next_event_source_order(chart.scrolls));
+    mark_materialized_events(baked.value->speeds, next_event_source_order(chart.speeds));
+    chart.scrolls = std::move(baked.value->scrolls);
+    chart.speeds = std::move(baked.value->speeds);
     std::erase_if(chart.sv_recipes, [&](const auto& item) { return item.id == edit.id; });
     context.label = "Materialize SV recipe";
     context.changed = true;

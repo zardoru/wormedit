@@ -85,28 +85,26 @@ enum class waveform_projection_status_t {
     capacity_exceeded,
 };
 
-struct waveform_projection_t {
+// Projects one visible source-frame interval into bounded implicit pixel
+// columns. Each column retains its exact frame interval while peak/RMS values
+// come from the closest cached pyramid level.
+struct waveform_viewport_t;
+
+struct waveform_view_t {
     [[nodiscard]] static auto from(const waveform_t& waveform, waveform_projection_request_t request)
-        -> result_t<waveform_projection_t, waveform_projection_status_t>;
+        -> result_t<waveform_view_t, waveform_projection_status_t>;
 
     std::uint64_t level_frames_per_bin{};
     std::vector<waveform_column_t> columns;
-    auto operator==(const waveform_projection_t&) const -> bool = default;
-};
-using waveform_projection_outcome_t = result_t<waveform_projection_t, waveform_projection_status_t>;
+    auto operator==(const waveform_view_t&) const -> bool = default;
 
-// Compatibility boundary for existing waveform views.
-struct waveform_projection_result_t {
-    [[nodiscard]] static auto from(waveform_projection_outcome_t&& outcome)
-        -> waveform_projection_result_t;
-    waveform_projection_status_t status{waveform_projection_status_t::invalid_waveform};
-    std::uint64_t level_frames_per_bin{};
-    std::vector<waveform_column_t> columns;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == waveform_projection_status_t::projected;
-    }
+    // Projects the visible window through the closest pyramid level. An invalid
+    // viewport or waveform yields a non-projected result.
+    [[nodiscard]] static auto from(const waveform_t& waveform,
+                                   const waveform_viewport_t& viewport)
+        -> result_t<waveform_view_t, waveform_projection_status_t>;
 };
+using waveform_view_outcome_t = result_t<waveform_view_t, waveform_projection_status_t>;
 
 struct waveform_cache_limits_t {
     std::size_t maximum_entries{32};
@@ -189,6 +187,9 @@ struct waveform_analysis_error_t {
     auto operator==(const waveform_analysis_error_t&) const -> bool = default;
 };
 
+// Generates one complete per-channel min/max/absolute-peak waveform. PCM is
+// requested through the decoded-block cache and consumed one block at a time,
+// so analysis of a long source remains bounded by both cache policies.
 struct waveform_analysis_t {
     [[nodiscard]] static auto from(decoder_t& decoder, decoded_block_cache_t& block_cache,
                                   waveform_cache_t& waveform_cache, audio_source_identity_t source,
@@ -196,13 +197,18 @@ struct waveform_analysis_t {
                                   std::stop_token stop = {})
         -> result_t<waveform_analysis_t, waveform_analysis_error_t>;
 
+    // A complete usable waveform can survive a cache-publication failure.
+    [[nodiscard]] static auto find_waveform(
+        const result_t<waveform_analysis_t, waveform_analysis_error_t>& outcome) noexcept
+        -> const waveform_t*;
+
     waveform_t waveform;
     waveform_analysis_status_t status{waveform_analysis_status_t::generated};
     auto operator==(const waveform_analysis_t&) const -> bool = default;
 };
 using waveform_analysis_outcome_t = result_t<waveform_analysis_t, waveform_analysis_error_t>;
 
-// Compatibility boundary for source registry, jobs and sys waveform analysis.
+// Retained for the beat-fit cache/gesture snapshot contract (T-630/T-632).
 struct waveform_analysis_result_t {
     [[nodiscard]] static auto from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t;
     waveform_analysis_status_t status{waveform_analysis_status_t::decoder_unavailable};
@@ -210,15 +216,6 @@ struct waveform_analysis_result_t {
     std::optional<std::uint64_t> failed_block_index;
     block_decode_status_t block_status{block_decode_status_t::decoder_unavailable};
 };
-
-// Generates one complete per-channel min/max/absolute-peak waveform. PCM is
-// requested through the decoded-block cache and consumed one block at a time,
-// so analysis of a long source remains bounded by both cache policies.
-[[nodiscard]] auto analyze_waveform(decoder_t& decoder, decoded_block_cache_t& block_cache,
-                                    waveform_cache_t& waveform_cache,
-                                    audio_source_identity_t source, std::uint32_t frames_per_bin,
-                                    waveform_analysis_options_t options = {},
-                                    std::stop_token stop = {}) -> waveform_analysis_result_t;
 
 struct waveform_sample_t {
     std::uint64_t frame{};
@@ -236,12 +233,5 @@ struct waveform_sample_t {
 [[nodiscard]] auto waveform_level_for_zoom(const waveform_t& waveform,
                                            double source_frames_per_pixel)
     -> std::optional<waveform_level_view_t>;
-
-// Projects one visible source-frame interval into bounded implicit pixel
-// columns. Each column retains its exact frame interval while peak/RMS values
-// come from the closest cached pyramid level.
-[[nodiscard]] auto build_waveform_view(const waveform_t& waveform,
-                                    waveform_projection_request_t request)
-    -> waveform_projection_result_t;
 
 } // namespace wormedit::audio

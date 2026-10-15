@@ -41,8 +41,8 @@ auto crash_marker_path(const std::filesystem::path& recovery_directory) -> std::
 auto write_crash_marker(const std::filesystem::path& marker, song_id_t project_id) -> std::string {
     const auto text = "pid=" + std::to_string(current_process_id()) + "\nproject_id=" +
                       std::to_string(project_id.value) + "\n";
-    const auto result = publish_native_bytes_atomic(marker, text);
-    if (result.published) return {};
+    const auto result = create_native_bytes_file(marker, text);
+    if (result.value) return {};
     const auto detail = result.diagnostics.empty() ? std::string{"unknown failure"}
                                                    : result.diagnostics.front().message;
     return "could not write the crash marker: " + detail;

@@ -137,16 +137,16 @@ auto sound_slice_index_t::from(const chart_document_t& chart,
     }
     if (channel.events.empty()) return result;
 
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures)) {
+    const auto measures = measure_index_t::from(chart);
+    if (!measures) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::invalid_document,
             "sound-slice derivation requires valid measure geometry", channel.id));
         return result;
     }
-    const auto& measure_index = std::get<measure_index_t>(measures);
-    const auto timing = build_timing_index(chart);
-    if (!timing) {
+    const auto& measure_index = *measures;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::timing_failure,
             "sound-slice derivation requires a valid timing index", channel.id));
@@ -156,7 +156,7 @@ auto sound_slice_index_t::from(const chart_document_t& chart,
     std::vector<indexed_event_t> events;
     events.reserve(channel.events.size());
     for (const auto& event : channel.events) {
-        const auto row = absolute_row(measure_index, event.position);
+        const auto row = measure_index.row_of(event.position);
         if (!row.has_value()) {
             result.diagnostics.push_back(diagnostic(
                 sound_slice_error_code_t::invalid_document,
@@ -171,7 +171,7 @@ auto sound_slice_index_t::from(const chart_document_t& chart,
                std::tie(right.row, right.event->provenance.source_order, right.event->id.value);
     });
 
-    const auto first_time = (*timing.index).seconds_at(events.front().row);
+    const auto first_time = timing.value->seconds_at(events.front().row);
     if (!first_time) {
         result.diagnostics.push_back(diagnostic(
             sound_slice_error_code_t::timing_failure,
@@ -179,7 +179,7 @@ auto sound_slice_index_t::from(const chart_document_t& chart,
         return result;
     }
 
-    sound_slice_build_context_t context{channel, events, *timing.index,
+    sound_slice_build_context_t context{channel, events, *timing.value,
                                        *first_time.seconds, sample_rate, source_end, options};
     for (std::size_t begin = 0; begin < events.size();) {
         auto end = begin + 1;

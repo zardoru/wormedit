@@ -19,14 +19,14 @@ struct recovery_fixture_t {
     recovery_fixture_t() {
         std::filesystem::create_directories(directory);
         const auto binding = workspace_controller_t::from(history);
-        expect_recovery(static_cast<bool>(binding));
-        workspace = *binding.workspace;
+        expect_recovery(static_cast<bool>((binding.value && binding.diagnostics.empty())));
+        workspace = *binding.value;
         const auto primary = directory / "chart.wormedit";
-        expect_recovery(publish_native_project_atomic(primary, history.document).published);
+        expect_recovery(create_native_project_file(primary, history.document).value);
         auto backup = history.document;
         backup.revision = 6;
-        expect_recovery(publish_native_project_recovery_atomic(native_project_adjacent_backup_path(primary),
-            backup, {.session_sequence = 2}).published);
+        expect_recovery(create_native_project_recovery_file(native_project_adjacent_backup_path(primary),
+            backup, {.session_sequence = 2}).value);
         (void)controller.replace_scan(scan_native_project_recovery_candidates(
             {.primary_path = primary, .discover_stale_temporaries = false}));
     }

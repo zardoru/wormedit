@@ -59,17 +59,17 @@ TEST_CASE("adjacent MP3 read_at blocks agree with continuous reads across interv
     std::vector<float> expected(maximum_read_frames * output_channel_count);
     std::vector<float> actual(expected.size());
     for (std::size_t block = 0; block < 10; ++block) {
-        const auto before = continuous.read(expected, maximum_read_frames);
-        const auto after = positioned.read_at(block * maximum_read_frames, actual, maximum_read_frames);
-        check_mp3_continuity(before.status == read_status_t::success);
-        check_mp3_continuity(after.status == read_status_t::success);
-        check_mp3_continuity(before.frames_read == after.frames_read);
+        const auto before = continuous.read_frames(expected, maximum_read_frames);
+        const auto after = positioned.read_frames_at(block * maximum_read_frames, actual, maximum_read_frames);
+        check_mp3_continuity(before.value().status == read_status_t::success);
+        check_mp3_continuity(after.value().status == read_status_t::success);
+        check_mp3_continuity(before.value().frames_read == after.value().frames_read);
         check_mp3_continuity(actual == expected);
     }
     check_mp3_continuity(positioned.seek(0));
     check_mp3_continuity(continuous.seek(0));
-    check_mp3_continuity(positioned.read_at(0, actual, maximum_read_frames).status == read_status_t::success);
-    check_mp3_continuity(continuous.read(expected, maximum_read_frames).status == read_status_t::success);
+    check_mp3_continuity(positioned.read_frames_at(0, actual, maximum_read_frames).value().status == read_status_t::success);
+    check_mp3_continuity(continuous.read_frames(expected, maximum_read_frames).value().status == read_status_t::success);
     check_mp3_continuity(actual == expected);
 }
 
@@ -201,14 +201,14 @@ TEST_CASE("MP3 and Ogg fixtures decode completely to normalized stereo PCM",
                 wormedit::audio::output_channel_count);
             std::uint64_t frames_decoded{};
             for (std::size_t iteration = 0; iteration < 128; ++iteration) {
-                const auto read = decoder.read(block,
+                const auto read = decoder.read_frames(block,
                                                wormedit::audio::maximum_read_frames);
-                CHECK(read.frames_read <= wormedit::audio::maximum_read_frames);
-                frames_decoded += read.frames_read;
-                if (read.status == wormedit::audio::read_status_t::end_of_stream) {
+                CHECK(read.value().frames_read <= wormedit::audio::maximum_read_frames);
+                frames_decoded += read.value().frames_read;
+                if (read.value().status == wormedit::audio::read_status_t::end_of_stream) {
                     break;
                 }
-                REQUIRE(read.status == wormedit::audio::read_status_t::success);
+                REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
                 REQUIRE(iteration < 127);
             }
             CHECK(frames_decoded == stream_info->output_frame_count);
@@ -226,11 +226,11 @@ TEST_CASE("decoder enforces the 16384-frame request and stereo output buffer bou
 
     std::vector<float> buffer(
         wormedit::audio::maximum_read_frames * wormedit::audio::output_channel_count);
-    CHECK(decoder.read(buffer, wormedit::audio::maximum_read_frames + 1).status ==
-          wormedit::audio::read_status_t::request_too_large);
-    CHECK(decoder.read(std::span<float>(buffer.data(), buffer.size() - 1),
+    CHECK(decoder.read_frames(buffer, wormedit::audio::maximum_read_frames + 1) ==
+          std::unexpected(wormedit::audio::read_result_t{.status = wormedit::audio::read_status_t::request_too_large}));
+    CHECK(decoder.read_frames(std::span<float>(buffer.data(), buffer.size() - 1),
                        wormedit::audio::maximum_read_frames)
-              .status == wormedit::audio::read_status_t::insufficient_output_space);
+              == std::unexpected(wormedit::audio::read_result_t{.status = wormedit::audio::read_status_t::insufficient_output_space}));
 }
 
 TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
@@ -250,9 +250,9 @@ TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
                 center_seconds * wormedit::audio::output_sample_rate));
             const auto first_frame = center_frame - window_frames / 2;
             REQUIRE(decoder.seek(first_frame));
-            const auto read = decoder.read(window, window_frames);
-            REQUIRE(read.status == wormedit::audio::read_status_t::success);
-            REQUIRE(read.frames_read == window_frames);
+            const auto read = decoder.read_frames(window, window_frames);
+            REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
+            REQUIRE(read.value().frames_read == window_frames);
 
             const auto rms = window_rms(window);
             const auto dbfs = 20.0 * std::log10(std::max(rms, 1.0e-12));
@@ -271,9 +271,9 @@ TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
                 center_seconds * wormedit::audio::output_sample_rate));
             const auto first_frame = center_frame - window_frames / 2;
             REQUIRE(decoder.seek(first_frame));
-            const auto read = decoder.read(window, window_frames);
-            REQUIRE(read.status == wormedit::audio::read_status_t::success);
-            REQUIRE(read.frames_read == window_frames);
+            const auto read = decoder.read_frames(window, window_frames);
+            REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
+            REQUIRE(read.value().frames_read == window_frames);
             const auto rms = window_rms(window);
             const auto dbfs = 20.0 * std::log10(std::max(rms, 1.0e-12));
             CHECK(dbfs < -45.0);
@@ -292,10 +292,10 @@ auto expected_decoder_reads_keep_eof_and_positioned_counts() -> bool {
     if (!first) return false;
     const auto positioned = decoder.read_frames_at(1, output, 4);
     if (!positioned) return false;
-    const auto remaining = decoder.read(output, 1);
+    const auto remaining = decoder.read_frames(output, 1);
     return first->status == read_status_t::end_of_stream && first->frames_read == 2 &&
            positioned->status == read_status_t::end_of_stream && positioned->frames_read == 1 &&
-           remaining.status == read_status_t::end_of_stream && remaining.frames_read == 0;
+           remaining.value().status == read_status_t::end_of_stream && remaining.value().frames_read == 0;
 }
 } // namespace
 

@@ -659,7 +659,7 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
     auto parsed = parse_osb(source, {.maximum_input_bytes = options.max_source_bytes,
                                      .maximum_lines = line_limit,
                                      .maximum_nodes = node_limit});
-    if (!parsed.document) {
+    if (!parsed.value) {
         const auto index = parsed.diagnostics.empty() || parsed.diagnostics.front().line == 0
                                ? std::size_t{0}
                                : std::min(parsed.diagnostics.front().line - 1, orders.size() - 1);
@@ -679,7 +679,7 @@ auto parse_embedded_storyboard(const std::vector<source_line_t>& lines,
         return order == 0 || order > orders.size() ? std::size_t{}
                                                    : orders[static_cast<std::size_t>(order - 1)];
     };
-    auto& model = *parsed.document;
+    auto& model = *parsed.value;
     for (const auto& sprite : model.sprites)
         validate_storyboard_indentation(sprite.nodes, lines, 1, fail);
     for (auto& sprite : model.sprites) {
@@ -1572,15 +1572,7 @@ auto append_osu_event_resources(chart_document_t& chart,
 
 } // namespace
 
-auto osu_mania_parse_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto osu_mania_parse_result_t::from(osu_mania_parse_outcome_t&& outcome) -> osu_mania_parse_result_t {
-    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto osu_mania_parse_result_t::from(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
+auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options)
     -> osu_mania_parse_outcome_t {
     osu_mania_parse_outcome_t result{};
     const auto fail = [&](osu_mania_parse_diagnostic_code_t code, std::string message,
@@ -2179,7 +2171,7 @@ auto select_osu_chart(const song_document_t& song, const osu_mania_write_options
 
 template <typename fail_t>
 auto validate_and_bake_osu_chart(const song_document_t& song, const chart_document_t& chart,
-                                 fail_t&& fail) -> sv_recipe_export_bake_result_t {
+                                 fail_t&& fail) -> sv_recipe_export_bake_outcome_t {
     const auto validation = validate_document(song);
     const auto invalid = std::ranges::find_if(validation, [](const auto& diagnostic) {
         return diagnostic.severity == diagnostic_severity_t::error;
@@ -2188,7 +2180,7 @@ auto validate_and_bake_osu_chart(const song_document_t& song, const chart_docume
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "document failed core validation: " + invalid->message, "chart");
     auto baked = bake_sv_recipes_for_export(chart);
-    if (!baked)
+    if (!baked.value || !baked.diagnostics.empty())
         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
              "SV recipe export bake failed: " + baked.diagnostics.front().message, "scrolls");
     return baked;
@@ -2261,7 +2253,7 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                                       const osu_mania_write_options_t& options, fail_t&& fail)
     -> std::optional<std::string> {
     const auto emitted = emit_osb(model, options.max_output_bytes);
-    if (!emitted) {
+    if (!emitted.value) {
         const bool bounded = std::ranges::any_of(emitted.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code == storyboard_diagnostic_code_t::capacity_exceeded ||
                    diagnostic.code == storyboard_diagnostic_code_t::node_limit ||
@@ -2271,12 +2263,12 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                      : osu_mania_write_diagnostic_code_t::unsupported_feature,
              "structured storyboard cannot be emitted within the OSB limits", "storyboards");
     }
-    const auto reparsed = parse_osb(*emitted.text,
+    const auto reparsed = parse_osb(*emitted.value,
                                     {.maximum_input_bytes = options.max_output_bytes,
                                      .maximum_lines = options.max_lines,
                                      .maximum_nodes =
                                          std::min<std::size_t>(options.max_events, 250'000)});
-    if (!reparsed.document) {
+    if (!reparsed.value) {
         const bool bounded = std::ranges::any_of(reparsed.diagnostics, [](const auto& diagnostic) {
             return diagnostic.code == storyboard_diagnostic_code_t::input_too_large ||
                    diagnostic.code == storyboard_diagnostic_code_t::line_limit ||
@@ -2288,11 +2280,11 @@ auto emit_and_validate_osu_storyboard(const storyboard_document_model_t& model,
                      : osu_mania_write_diagnostic_code_t::unsupported_feature,
              "emitted storyboard exceeds the configured re-import bounds", "storyboards");
     }
-    if (!storyboard_semantically_equal(model, *reparsed.document))
+    if (!storyboard_semantically_equal(model, *reparsed.value))
         fail(osu_mania_write_diagnostic_code_t::unsupported_feature,
              "structured storyboard does not semantically re-import from emitted OSB",
              "storyboards");
-    return *emitted.text;
+    return *emitted.value;
 }
 
 template <typename fail_t>
@@ -3285,15 +3277,7 @@ auto serialize_osu_bookmarks(const chart_document_t& chart, const measure_index_
 
 } // namespace
 
-auto osu_mania_write_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto osu_mania_write_result_t::from(osu_mania_write_outcome_t&& outcome) -> osu_mania_write_result_t {
-    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write_options_t options)
+auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options)
     -> osu_mania_write_outcome_t {
     osu_mania_write_outcome_t result{};
     const auto fail = [&](osu_mania_write_diagnostic_code_t code, std::string message,
@@ -3317,7 +3301,7 @@ auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write
         const bool lazer_profile = output_profile == osu_mania_file_profile_t::lazer_v128;
 
         auto baked_chart = validate_and_bake_osu_chart(song, *chart, fail);
-        chart = &*baked_chart.chart;
+        chart = &*baked_chart.value;
         auto storyboard_output = prepare_osu_storyboard(song, options, fail);
         validate_osu_chart_features(*chart, options, fail, warn);
         auto geometry = build_osu_export_geometry(*chart, options, fail);
@@ -3452,14 +3436,6 @@ auto osu_mania_write_result_t::from(const song_document_t& song, osu_mania_write
                                       .field = "document"});
     }
     return result;
-}
-
-auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_options_t options) -> osu_mania_parse_result_t {
-    return osu_mania_parse_result_t::from(osu_mania_parse_result_t::from(bytes, std::move(options)));
-}
-
-auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t options) -> osu_mania_write_result_t {
-    return osu_mania_write_result_t::from(osu_mania_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

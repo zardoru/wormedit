@@ -90,19 +90,7 @@ struct storyboard_frame_effect_t {
     storyboard_arena_error_t arena_error{storyboard_arena_error_t::none};
 };
 using storyboard_frame_outcome_t = result_t<storyboard_frame_effect_t, storyboard_frame_effect_t>;
-struct storyboard_frame_result_t {
-    [[nodiscard]] static auto from(const storyboard_document_model_t& document,
-        const storyboard_preview_index_t& index, std::int64_t time_ms, storyboard_frame_arena_t& arena,
-        storyboard_frame_options_t options = {}) -> storyboard_frame_outcome_t;
-    [[nodiscard]] static auto from(storyboard_frame_outcome_t&& outcome) -> storyboard_frame_result_t;
-    std::span<const storyboard_draw_instance_t> instances;
-    std::optional<storyboard_diagnostic_t> diagnostic;
-    storyboard_arena_error_t arena_error{storyboard_arena_error_t::none};
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return !diagnostic.has_value() && arena_error == storyboard_arena_error_t::none;
-    }
-};
 
 // Resets the supplied arena and returns draw data valid until its next reset.
 // The document and index must outlive the returned string views.
@@ -110,6 +98,6 @@ struct storyboard_frame_result_t {
                                              const storyboard_preview_index_t& index,
                                              std::int64_t time_ms, storyboard_frame_arena_t& arena,
                                              storyboard_frame_options_t options = {})
-    -> storyboard_frame_result_t;
+    -> storyboard_frame_outcome_t;
 
 } // namespace wormedit

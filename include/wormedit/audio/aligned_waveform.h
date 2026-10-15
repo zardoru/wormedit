@@ -9,7 +9,11 @@
 #include <optional>
 #include <vector>
 
+namespace wormedit { struct sound_slice_result_t; }
+
 namespace wormedit::audio {
+
+struct channel_waveform_source_geometry_t;
 
 inline constexpr std::size_t maximum_aligned_waveform_rows = 4'096;
 inline constexpr std::size_t maximum_waveform_overview_rows = 512;
@@ -121,25 +125,23 @@ enum class aligned_waveform_status_t {
     capacity_exceeded,
 };
 
-struct aligned_waveform_result_t {
-    [[nodiscard]] static auto from(aligned_waveform_result_t&& report)
-        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
-    [[nodiscard]] static auto from(result_t<aligned_waveform_result_t, aligned_waveform_result_t>&& outcome)
-        -> aligned_waveform_result_t;
+struct aligned_waveform_view_result_t {
+    [[nodiscard]] static auto from(aligned_waveform_view_result_t&& report)
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
                                    aligned_waveform_request_t request)
-        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
                                    aligned_waveform_request_t request, decoded_block_cache_t& cache)
-        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& overview, const waveform_t* detail,
                                    const timing_index_t& timing, aligned_waveform_request_t request,
                                    decoded_block_cache_t* blocks, aligned_waveform_style_t style)
-        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& overview, const waveform_t* detail,
                                    const display_row_table_t& table, aligned_waveform_request_t request,
                                    decoded_block_cache_t* blocks, aligned_waveform_style_t style)
-        -> result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
     std::vector<aligned_waveform_row_t> rows;
     // Composition diagnostics distinguish drawing mode from per-span data availability.
@@ -150,23 +152,34 @@ struct aligned_waveform_result_t {
     // Display work counters, independent of source length/zoom when pyramids are available.
     std::size_t sampled_bins{};
     std::size_t visited_slices{};
-    auto operator==(const aligned_waveform_result_t&) const -> bool = default;
+    auto operator==(const aligned_waveform_view_result_t&) const -> bool = default;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == aligned_waveform_status_t::projected;
-    }
+    // Display path: shared forward clock and bounded row/slice pyramid reads.
+    // The timing_index_t overloads remain the exact inverse reference path.
+    [[nodiscard]] static auto from(const waveform_t& waveform,
+                                   const sound_channel_t& channel, const display_row_table_t& table,
+                                   aligned_waveform_request_t request, const sound_slice_result_t& slices,
+                                   channel_waveform_source_geometry_t source)
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
+
+    // Projects one retained BMSON sound channel into the chart viewport. Source
+    // peaks stay in source-frame space; the exact channel cuts select the frames
+    // that may appear and timing maps them to musical rows.
+    [[nodiscard]] static auto from(const waveform_t& waveform, const chart_document_t& chart,
+                                   const sound_channel_t& channel, const timing_index_t& timing,
+                                   aligned_waveform_request_t request,
+                                   channel_waveform_source_geometry_t source)
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
+
+    // Accepts a revision-bound slice derivation so interactive scrolling and zoom
+    // need only reproject peaks, not rebuild all channel cuts.
+    [[nodiscard]] static auto from(const waveform_t& waveform, const sound_channel_t& channel,
+                                   const timing_index_t& timing, aligned_waveform_request_t request,
+                                   const sound_slice_result_t& slices,
+                                   channel_waveform_source_geometry_t source)
+        -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
 };
-using aligned_waveform_outcome_t = result_t<aligned_waveform_result_t, aligned_waveform_result_t>;
-
-// Each pixel span uses PCM, then available detail bins, then overview bins.
-// Drawing style is supplied independently of availability.
-[[nodiscard]] auto build_composed_aligned_waveform_view(const waveform_t& overview,
-    const waveform_t* detail, const timing_index_t& timing, aligned_waveform_request_t request,
-    decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
-
-[[nodiscard]] auto build_composed_aligned_waveform_view(const waveform_t& overview,
-    const waveform_t* detail, const display_row_table_t& table, aligned_waveform_request_t request,
-    decoded_block_cache_t* blocks, aligned_waveform_style_t style) -> aligned_waveform_result_t;
+using aligned_waveform_view_outcome_t = result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
 
 struct waveform_overview_row_t {
     double audio_fraction{};
@@ -174,51 +187,24 @@ struct waveform_overview_row_t {
     auto operator==(const waveform_overview_row_t&) const -> bool = default;
 };
 
-struct waveform_overview_result_t {
-    [[nodiscard]] static auto from(waveform_overview_result_t&& report)
-        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
-    [[nodiscard]] static auto from(result_t<waveform_overview_result_t, waveform_overview_result_t>&& outcome)
-        -> waveform_overview_result_t;
+struct waveform_overview_view_result_t {
+    [[nodiscard]] static auto from(waveform_overview_view_result_t&& report)
+        -> result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
-                                   aligned_waveform_request_t viewport, std::size_t maximum_rows)
-        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
+                                   aligned_waveform_request_t viewport,
+                                   std::size_t maximum_rows = maximum_waveform_overview_rows)
+        -> result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, double begin_fraction,
-                                   double end_fraction, std::size_t maximum_rows)
-        -> result_t<waveform_overview_result_t, waveform_overview_result_t>;
+                                   double end_fraction,
+                                   std::size_t maximum_rows = maximum_waveform_range_rows)
+        -> result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
     aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
     double visible_begin_fraction{};
     double visible_end_fraction{};
     std::optional<double> beat_zero_fraction;
     std::vector<waveform_overview_row_t> rows;
-    auto operator==(const waveform_overview_result_t&) const -> bool = default;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == aligned_waveform_status_t::projected;
-    }
+    auto operator==(const waveform_overview_view_result_t&) const -> bool = default;
 };
-using waveform_overview_outcome_t = result_t<waveform_overview_result_t, waveform_overview_result_t>;
-
-[[nodiscard]] auto build_waveform_overview_view(
-    const waveform_t& waveform, const timing_index_t& timing, aligned_waveform_request_t viewport,
-    std::size_t maximum_rows = maximum_waveform_overview_rows) -> waveform_overview_result_t;
-
-// Projects the audio span [begin_fraction, end_fraction] of the whole source into at most
-// `maximum_rows` rows, each placed by its absolute audio fraction. The visible fractions of the
-// result echo the requested span; beat zero is not reported.
-[[nodiscard]] auto build_waveform_range_view(const waveform_t& waveform, double begin_fraction,
-                                          double end_fraction,
-                                          std::size_t maximum_rows = maximum_waveform_range_rows)
-    -> waveform_overview_result_t;
-
-[[nodiscard]] auto build_aligned_waveform_samples_view(const waveform_t& waveform,
-    const timing_index_t& timing, aligned_waveform_request_t request, decoded_block_cache_t& cache)
-    -> aligned_waveform_result_t;
-
-// Projects normalized source peaks through the exact chart timing inverse onto
-// the shared vertical musical viewport. It reads only derived waveform data.
-[[nodiscard]] auto build_aligned_waveform_view(const waveform_t& waveform,
-                                            const timing_index_t& timing,
-                                            aligned_waveform_request_t request)
-    -> aligned_waveform_result_t;
+using waveform_overview_view_outcome_t = result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
 
 } // namespace wormedit::audio

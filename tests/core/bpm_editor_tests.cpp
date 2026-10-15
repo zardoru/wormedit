@@ -608,3 +608,203 @@ TEST_CASE("Beat fit frame revision keeps timing lock before captured expiry",
     CHECK_FALSE(rejected.value);
     CHECK(history.undo.empty());
 }
+
+namespace {
+
+void check_target_query(target_identity_query_t query, const target_query_messages_t& messages,
+                        const diagnostic_list_t& expected = {}) {
+    diagnostic_list_t diagnostics;
+    CHECK(query.validate(diagnostics, messages) == expected.empty());
+    CHECK(diagnostics == expected);
+}
+
+template <class Value>
+void check_chart_target(chart_document_t& chart,
+                        std::vector<Value> chart_document_t::*collection, decltype(Value::id) id,
+                        const target_query_policy_t& policy, bool is_expected,
+                        const diagnostic_list_t& expected = {}) {
+    diagnostic_list_t diagnostics;
+    const auto* target = chart.unique_target(collection, id, diagnostics, policy);
+    CHECK((target != nullptr) == is_expected);
+    CHECK(diagnostics == expected);
+    if (target) CHECK(target->id == id);
+}
+
+} // namespace
+
+TEST_CASE("BPM deletion rejects a cross-kind ID collision before changing the chart",
+          "[unit][core][bpm-editor][target-policy]") {
+    auto song = bpm_song();
+    song.charts.front().bookmarks.push_back({.id = object_id_t{10},
+        .label = "collision", .position = local_position_t{measure_id_t{3}, 0}});
+    auto history = document_history_t::from(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = apply_bpm_edit(history, delete_edit_t<bpm_edit_value_t>{
+        .chart = chart_id_t{2}, .id = object_id_t{10}});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
+          "BPM event ID is ambiguous because it appears more than once")});
+    CHECK(history.document.charts.front().bpms.size() == 1);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("target identity queries preserve collection chart and preindexed policies",
+          "[unit][core][bpm-editor][target-policy]") {
+    auto chart = bpm_song().charts.front();
+    chart.measures.front().id = measure_id_t{10};
+    chart.semantic_layers.push_back({.id = layer_id_t{10}});
+    const target_query_messages_t messages{"missing", "ambiguous", "zero"};
+    const target_query_policy_t local{.messages = messages};
+    const target_query_policy_t global{.messages = messages,
+        .scope = target_uniqueness_scope_t::chart_objects};
+    const target_query_policy_t identity_first{.messages = messages,
+        .scope = target_uniqueness_scope_t::chart_objects,
+        .order = target_query_order_t::identity_first};
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{10}, local, true);
+    check_chart_target(chart, &chart_document_t::measures, measure_id_t{10}, local, true);
+    check_chart_target(chart, &chart_document_t::semantic_layers, layer_id_t{10}, local, true);
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{10}, global, true);
+    chart.bookmarks.push_back({.id = object_id_t{10}});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{10}, global, false,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{99}, global, false,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+    chart.bookmarks.push_back({.id = object_id_t{99}});
+    chart.bookmarks.push_back({.id = object_id_t{99}});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{99}, global, false,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{99}, identity_first, false,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    chart.bookmarks.pop_back();
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{99}, identity_first, false,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+    chart.bpms.push_back(chart.bpms.front());
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{10}, local, false,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    chart.bpms.push_back({.id = object_id_t{}});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{}, local, false,
+        {error(diagnostic_code_t::invalid_id, "zero")});
+    check_chart_target(chart, &chart_document_t::bpms, object_id_t{},
+        {.messages = {.missing = "missing", .ambiguous = "ambiguous"}}, true);
+    check_target_query(target_identity_query_t::from(object_id_t{}, 2), messages,
+        {error(diagnostic_code_t::invalid_id, "zero")});
+    check_target_query(target_identity_query_t::from(object_id_t{}, 1),
+        {.missing = "missing", .ambiguous = "ambiguous"});
+    check_target_query(target_identity_query_t::from(object_id_t{10}, 0), messages,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+}
+
+TEST_CASE("target kind diagnostics follow global identity checks",
+          "[unit][core][bpm-editor][target-policy]") {
+    auto chart = bpm_song().charts.front();
+    chart.bookmarks.push_back({.id = object_id_t{99},
+        .position = local_position_t{measure_id_t{3}, 0}});
+    const target_query_policy_t policy{.messages = {"missing", "ambiguous", "zero"},
+        .scope = target_uniqueness_scope_t::chart_objects,
+        .order = target_query_order_t::identity_first};
+    diagnostic_list_t diagnostics;
+    CHECK(chart.unique_target(&chart_document_t::bpms, object_id_t{99}, diagnostics,
+                              policy, "wrong kind") == nullptr);
+    CHECK(diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_id, "wrong kind")});
+    diagnostics.clear();
+    chart.bookmarks.push_back(chart.bookmarks.back());
+    CHECK(chart.unique_target(&chart_document_t::bpms, object_id_t{99}, diagnostics,
+                              policy, "wrong kind") == nullptr);
+    CHECK(diagnostics == diagnostic_list_t{error(diagnostic_code_t::duplicate_id, "ambiguous")});
+}
+
+namespace {
+
+auto make_bpm_execution_update() -> bpm_edit_action_t {
+    return update_edit_t<bpm_edit_value_t>{.chart = chart_id_t{2}, .id = object_id_t{10},
+        .value = bpm_edit_value_t::from({measure_id_t{3}, 0}, timing_bpm_value_t{{180, 1}})};
+}
+
+void check_bpm_unchanged(const document_history_t& history) {
+    CHECK(history.undo.empty());
+    CHECK(history.document.revision == 4);
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute == signed_rational_t{120, 1});
+}
+
+} // namespace
+
+TEST_CASE("BPM execution rejects invalid caps without publishing a document",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    CHECK_FALSE(transaction.has_copy());
+    const auto result = apply_bpm_edit(transaction, make_bpm_execution_update(),
+                                      {.maximum_bpm_events = 0});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+        "BPM event cap must be positive")});
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(transaction.finished);
+    check_bpm_unchanged(history);
+}
+
+TEST_CASE("BPM execution preserves warning rejection after the edit",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    const diagnostic_list_t warnings{{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::unsupported_feature, .message = "retained warning"}};
+    transaction.outcome.diagnostics = warnings;
+    const auto result = apply_bpm_edit(transaction, make_bpm_execution_update());
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == warnings);
+    CHECK(transaction.finished);
+    CHECK_FALSE(transaction.has_copy());
+    check_bpm_unchanged(history);
+}
+
+TEST_CASE("BPM execution retains adopted documents and publishes only once",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    auto prepared = history.document;
+    prepared.charts.front().bpms.front().provenance.source_order = 99;
+    transaction.adopt_document(std::move(prepared));
+    REQUIRE(apply_bpm_edit(transaction, make_bpm_execution_update()).applied);
+    CHECK(history.document.charts.front().bpms.front().provenance.source_order == 99);
+    CHECK(history.undo.size() == 1);
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_bpm_edit(transaction, make_bpm_execution_update()).applied);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("BPM extension postvalidation rejects without publishing the mutated copy",
+          "[unit][core][bpm-editor][execution][audio-extent]") {
+    auto song = bpm_song();
+    song.audio_assets.push_back({.id = asset_id_t{1}, .source_path = "long-track.wav",
+        .stream = {48'000, 2, 48'000ULL * 10'000'000, true}});
+    song.resources.push_back({.id = resource_id_t{1}, .asset = asset_id_t{1},
+        .roles = {resource_role_t::music}});
+    auto history = document_history_t::from(std::move(song));
+    const auto result = apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{
+        .chart = chart_id_t{2}, .id = object_id_t{10},
+        .value = bpm_edit_value_t::from({measure_id_t{3}, 0}, timing_bpm_value_t{{240, 1}})});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_measure,
+        "BPM edit would exceed the audio chart measure limits")});
+    CHECK(history.document.charts.front().measures.size() == 1);
+    check_bpm_unchanged(history);
+}
+
+TEST_CASE("BPM execution resolves chart before checking its event cap and edit target",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    history.document.charts.front().bpms.push_back(history.document.charts.front().bpms.front());
+    auto edit = update_edit_t<bpm_edit_value_t>{.chart = chart_id_t{99}, .id = object_id_t{999}};
+    const auto missing = apply_bpm_edit(history, edit, {.maximum_bpm_events = 1});
+    CHECK(missing.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+        "BPM edit refers to an unknown chart")});
+    edit.chart = chart_id_t{2};
+    const auto capped = apply_bpm_edit(history, edit, {.maximum_bpm_events = 1});
+    CHECK(capped.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+        "selected chart exceeds the BPM event cap")});
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}

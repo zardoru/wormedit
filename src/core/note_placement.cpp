@@ -69,7 +69,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
         if (!hold.anchor_canvas_row && !hold.preview_canvas_row)
             continue;
         const auto anchor =
-            hold.anchor_canvas_row ? hold.anchor_canvas_row : absolute_row(index, hold.position);
+            hold.anchor_canvas_row ? hold.anchor_canvas_row : index.row_of(hold.position);
         const auto end = hold.preview_canvas_row ? hold.preview_canvas_row : anchor;
         if (!has_chart_virtual_tail(chart) || !anchor || !end || *anchor >= canvas_rows || *end >= canvas_rows) {
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -172,8 +172,8 @@ auto paint_note_intervals(const chart_document_t& chart, const measure_index_t& 
     intervals.reserve(count);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            const auto begin = absolute_row(index, note.position);
-            const auto end = note.end ? absolute_row(index, *note.end) : begin;
+            const auto begin = index.row_of(note.position);
+            const auto end = note.end ? index.row_of(*note.end) : begin;
             if (begin && end)
                 intervals.push_back(
                     {note.lane, *begin, *end, note.id, note.kind, note.end.has_value()});
@@ -198,7 +198,7 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
     std::vector<paint_row_t> rows;
     rows.reserve(targets.size());
     for (const auto& target : targets) {
-        const auto row = absolute_row(index, target.position);
+        const auto row = index.row_of(target.position);
         if (!row)
             return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                            "paint target lies outside chart geometry")};
@@ -266,7 +266,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
             return diagnostic_list_t{*failure};
     }
     for (const auto& addition : plan.additions) {
-        const auto row = absolute_row(index, addition.position);
+        const auto row = index.row_of(addition.position);
         if (row && is_head_blocked_by_warp(chart, index, *row, kind))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "playable note heads cannot sit inside a warp")};
@@ -402,10 +402,10 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
         return editor_interaction_result_t{.diagnostics = *failure};
-    const auto built = build_measure_index(*chart);
-    if (const auto* failure = std::get_if<diagnostic_list_t>(&built))
-        return editor_interaction_result_t{.diagnostics = *failure};
-    const auto& index = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(*chart);
+    if (!built)
+        return editor_interaction_result_t{.diagnostics = built.error()};
+    const auto& index = *built;
     const auto anchor = position_at(index, rows.anchor);
     const auto end = position_at(index, rows.end);
     if (!anchor || !end)

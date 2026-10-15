@@ -79,6 +79,15 @@ it in new code even before the card lands.
 
 ## Commands, revisions and results
 
+- **A chart edit is only its data change** (owner, 2026-10-15): the [edit pipeline](../../architecture.md)
+  is the one model to learn. Two paths come in, direct commands and gesture dispatch, and one
+  transaction changes the document. Adding a chart edit means writing its validation, the data it
+  changes and its effect, plus one route entry or gesture kind. The stamp, copy, ready/no-op checks,
+  commit, Undo record, stale message, exclusivity and result construction belong to the shared
+  runners, which keep every one of these safeguards. The goal is that the right way is also the
+  least work, not a restriction; when an edit needs a safeguard the runner lacks, add it to the
+  runner so every edit gets it. Keep `docs/architecture.md` true
+  when a runner changes. No scripting layer or reified command objects: undo is snapshots.
 - **Document commands run through `document_command_transaction_t`:** build it with
   `::from(history)`, reject through it, copy the document lazily and only once, commit through it.
   Never hand-write the stamp/copy/commit sequence. Staged edits are orchestration around it.
@@ -158,4 +167,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the ABI? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`?

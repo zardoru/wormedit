@@ -9,17 +9,6 @@
 
 namespace wormedit::audio {
 
-auto preview_pump_result_t::from(preview_pump_outcome_t&& outcome) -> preview_pump_result_t {
-    auto& effect = outcome ? *outcome : outcome.error();
-    return {.status = effect.status,
-            .active_voices = effect.active_voices,
-            .overlapping_voices = effect.overlapping_voices,
-            .requested_blocks = effect.requested_blocks,
-            .decoded_blocks = effect.decoded_blocks,
-            .cached_blocks = effect.cached_blocks,
-            .failure = std::move(effect.failure)};
-}
-
 namespace {
 
 auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std::uint64_t> {
@@ -141,7 +130,8 @@ auto decode_preview_plan(decoded_source_registry_t& sources, transport_t& transp
                          preview_pump_effect_t result) -> preview_pump_outcome_t {
     result.requested_blocks = plan.keys.size();
     for (const auto& key : plan.keys) {
-        const auto decoded = sources.decode_block(transport, token, key);
+        const auto decoded_outcome = sources.decode_source_block(transport, token, key);
+        const auto& decoded = decoded_outcome ? *decoded_outcome : decoded_outcome.error();
         if (decoded.status == block_decode_status_t::decoded) {
             ++result.decoded_blocks;
             continue;
@@ -173,22 +163,23 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::invalid_request});
 
-    auto snapshot = transport.snapshot_active_voices(token, options.maximum_voices);
-    if (snapshot.status == active_voice_snapshot_status_t::stale_generation)
+    auto snapshot = transport.snapshot_voices(token, options.maximum_voices);
+    const auto snapshot_status = snapshot ? active_voice_snapshot_status_t::ready : snapshot.error();
+    if (snapshot_status == active_voice_snapshot_status_t::stale_generation)
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::stale_generation});
-    if (snapshot.status == active_voice_snapshot_status_t::capacity_exceeded) {
+    if (snapshot_status == active_voice_snapshot_status_t::capacity_exceeded) {
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::capacity_exceeded,
                                   .active_voices = options.maximum_voices + 1});
     }
 
     const auto planned =
-        plan_preview_keys(snapshot.voices, timeline_frame, *window_end, options.maximum_blocks);
+        plan_preview_keys(snapshot.value(), timeline_frame, *window_end, options.maximum_blocks);
     if (!planned) {
         const auto& plan = planned.error();
         preview_pump_effect_t result{.status = plan.status};
-        result.active_voices = snapshot.voices.size();
+        result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         if (plan.status == preview_pump_status_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
@@ -198,22 +189,15 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
     const auto& plan = *planned;
     if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
         preview_pump_effect_t result{.status = preview_pump_status_t::capacity_exceeded};
-        result.active_voices = snapshot.voices.size();
+        result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         result.requested_blocks = plan.keys.size();
         return std::unexpected(std::move(result));
     }
     preview_pump_effect_t result{.status = preview_pump_status_t::ready};
-    result.active_voices = snapshot.voices.size();
+    result.active_voices = snapshot.value().size();
     result.overlapping_voices = plan.overlapping_voices;
     return decode_preview_plan(sources, transport, token, plan, std::move(result));
-}
-
-auto pump_preview_lookahead(decoded_source_registry_t& sources, transport_t& transport,
-                            session_token_t token, std::uint64_t timeline_frame,
-                            preview_pump_options_t options) -> preview_pump_result_t {
-    return preview_pump_result_t::from(
-        pump_preview_blocks(sources, transport, token, timeline_frame, options));
 }
 
 } // namespace wormedit::audio

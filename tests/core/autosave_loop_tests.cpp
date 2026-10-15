@@ -50,7 +50,7 @@ auto wait_for_result(wormedit::native_project_autosave_loop_t& loop,
                      const wormedit::song_document_t& document,
                      wormedit::native_project_autosave_loop_t::clock_t::time_point now,
                      const wormedit::native_project_autosave_target_t& target)
-    -> std::optional<wormedit::native_project_autosave_result_t> {
+    -> std::optional<wormedit::native_project_autosave_outcome_t> {
     for (auto attempt = 0; attempt < 2000; ++attempt) {
         if (auto result = loop.tick(document, true, now, target))
             return result;
@@ -112,16 +112,16 @@ TEST_CASE(
     CHECK_FALSE(loop.tick(document, true, start + 5min, target));
     const auto completed = wait_for_result(loop, document, start + 5min + 1ms, target);
     REQUIRE(completed.has_value());
-    REQUIRE(completed->status == native_project_autosave_status_t::published);
-    CHECK(completed->revision == document.revision);
-    CHECK(completed->session_sequence == 5);
+    REQUIRE(completed->value.status == native_project_autosave_status_t::published);
+    CHECK(completed->value.revision == document.revision);
+    CHECK(completed->value.session_sequence == 5);
     CHECK(loop.session_sequence() == 5);
     const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
-    REQUIRE(parsed.snapshot.has_value());
-    CHECK(parsed.snapshot->song.id == document.id);
-    CHECK(parsed.snapshot->song.revision == document.revision);
-    CHECK(parsed.snapshot->metadata.last_explicit_save_revision == 1);
-    CHECK(parsed.snapshot->metadata.session_sequence == 5);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->song.id == document.id);
+    CHECK(parsed.value->song.revision == document.revision);
+    CHECK(parsed.value->metadata.last_explicit_save_revision == 1);
+    CHECK(parsed.value->metadata.session_sequence == 5);
 }
 
 TEST_CASE("autosave loop resumes existing sequence and backs off after publication failures",
@@ -133,9 +133,9 @@ TEST_CASE("autosave loop resumes existing sequence and backs off after publicati
     std::filesystem::create_directories(recovery);
     const auto document = song(71, 2);
     const auto target = native_project_autosave_target_t::from(document.id, false, {}, recovery);
-    REQUIRE(publish_native_project_recovery_atomic(target.backup_path, song(71, 1),
+    REQUIRE(create_native_project_recovery_file(target.backup_path, song(71, 1),
                                                    {.session_sequence = 8})
-                .published);
+                .value);
     const auto previous_good_backup = read_text(target.backup_path);
     const auto scan =
         scan_native_project_recovery_candidates({.caller_supplied_directories = {recovery}});
@@ -153,8 +153,8 @@ TEST_CASE("autosave loop resumes existing sequence and backs off after publicati
     CHECK_FALSE(loop.tick(document, true, start + 5min, target, std::move(fail_replace)));
     const auto failed = wait_for_result(loop, document, start + 5min + 1ms, target);
     REQUIRE(failed.has_value());
-    CHECK(failed->status == native_project_autosave_status_t::failed);
-    CHECK(failed->session_sequence == 8);
+    CHECK(failed->value.status == native_project_autosave_status_t::failed);
+    CHECK(failed->value.session_sequence == 8);
     CHECK(read_text(target.backup_path) == previous_good_backup);
 
     CHECK_FALSE(loop.tick(document, true, start + 5min + 5s, target));
@@ -164,8 +164,8 @@ TEST_CASE("autosave loop resumes existing sequence and backs off after publicati
     CHECK_FALSE(loop.tick(document, true, start + 5min + 11s, target));
     const auto retried = wait_for_result(loop, document, start + 5min + 12s, target);
     REQUIRE(retried.has_value());
-    CHECK(retried->status == native_project_autosave_status_t::published);
-    CHECK(retried->session_sequence == 9);
+    CHECK(retried->value.status == native_project_autosave_status_t::published);
+    CHECK(retried->value.session_sequence == 9);
 }
 
 TEST_CASE("autosave loop permits one in-flight snapshot and refuses session replacement",
@@ -216,8 +216,8 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
         loop.reset_session(start + 6min, native_project_document_version_t{song_id_t{72}, 1}, 20));
     const auto completed = loop.tick(document, true, start + 5min + 2s, target);
     REQUIRE(completed.has_value());
-    CHECK(completed->status == native_project_autosave_status_t::published);
-    CHECK(completed->revision == 2);
+    CHECK(completed->value.status == native_project_autosave_status_t::published);
+    CHECK(completed->value.revision == 2);
     CHECK_FALSE(loop.is_busy());
     CHECK(scheduler.outstanding_tasks() == 0);
 
@@ -225,10 +225,10 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     CHECK_FALSE(loop.tick(next_revision, true, start + 10min, target));
     const auto next = wait_for_result(loop, next_revision, start + 10min + 1s, target);
     REQUIRE(next.has_value());
-    CHECK(next->status == native_project_autosave_status_t::published);
+    CHECK(next->value.status == native_project_autosave_status_t::published);
     const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
-    REQUIRE(parsed.snapshot.has_value());
-    CHECK(parsed.snapshot->metadata.last_explicit_save_revision == 2);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->metadata.last_explicit_save_revision == 2);
 
     const auto recovered = song(72, 5);
     const auto recovered_target =
@@ -239,19 +239,19 @@ TEST_CASE("autosave loop permits one in-flight snapshot and refuses session repl
     const auto recovered_result =
         wait_for_result(loop, recovered, start + 16min + 1s, recovered_target);
     REQUIRE(recovered_result.has_value());
-    CHECK(recovered_result->status == native_project_autosave_status_t::published);
-    CHECK(recovered_result->session_sequence == 21);
+    CHECK(recovered_result->value.status == native_project_autosave_status_t::published);
+    CHECK(recovered_result->value.session_sequence == 21);
     const auto recovered_snapshot =
         parse_native_project_recovery_snapshot(read_text(recovered_target.backup_path));
-    REQUIRE(recovered_snapshot.snapshot.has_value());
-    CHECK(recovered_snapshot.snapshot->metadata.last_explicit_save_revision == 4);
+    REQUIRE(recovered_snapshot.value.has_value());
+    CHECK(recovered_snapshot.value->metadata.last_explicit_save_revision == 4);
 }
 
 TEST_CASE("recovery sequence resumes only from valid artifacts for the same project",
           "[unit][core][autosave]") {
     using namespace wormedit;
-    native_project_recovery_scan_result_t scan;
-    scan.candidates = {
+    native_project_recovery_scan_outcome_t scan;
+    scan.value.candidates = {
         {.status = native_project_recovery_candidate_status_t::valid,
          .version = native_project_document_version_t{song_id_t{71}, 2},
          .recovery_metadata = native_project_recovery_metadata_t{.session_sequence = 12}},
@@ -288,16 +288,16 @@ TEST_CASE("autosave worker errors retain an explicit-save baseline deferred duri
     loop.mark_explicit_save({.project_id = document.id, .revision = document.revision});
     const auto failed = wait_for_result(loop, document, start + 5min + 1ms, target);
     REQUIRE(failed.has_value());
-    CHECK(failed->status == native_project_autosave_status_t::failed);
+    CHECK(failed->value.status == native_project_autosave_status_t::failed);
 
     auto next_revision = song(71, 3);
     CHECK_FALSE(loop.tick(next_revision, true, start + 5min + 11s, target));
     const auto recovered = wait_for_result(loop, next_revision, start + 5min + 12s, target);
     REQUIRE(recovered.has_value());
-    REQUIRE(recovered->status == native_project_autosave_status_t::published);
+    REQUIRE(recovered->value.status == native_project_autosave_status_t::published);
     const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
-    REQUIRE(parsed.snapshot.has_value());
-    CHECK(parsed.snapshot->metadata.last_explicit_save_revision == document.revision);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->metadata.last_explicit_save_revision == document.revision);
 }
 
 TEST_CASE("autosave interval changes preserve successful cadence and survive pending workers", "[unit][core][autosave]") {
@@ -317,7 +317,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     require_autosave_interval(loop.set_interval(10min));
     const auto first = wait_for_result(loop, document, start + 1min, target);
     require_autosave_interval(first.has_value());
-    require_autosave_interval(first->status == native_project_autosave_status_t::published);
+    require_autosave_interval(first->value.status == native_project_autosave_status_t::published);
     expect_autosave_interval(loop.session_sequence() == 5);
     ++document.revision;
     expect_autosave_interval(!loop.tick(document, true, start + 6min, target));
@@ -325,7 +325,7 @@ TEST_CASE("autosave interval changes preserve successful cadence and survive pen
     expect_autosave_interval(!loop.tick(document, true, start + 11min, target));
     const auto second = wait_for_result(loop, document, start + 11min, target);
     require_autosave_interval(second.has_value());
-    require_autosave_interval(second->status == native_project_autosave_status_t::published);
+    require_autosave_interval(second->value.status == native_project_autosave_status_t::published);
     expect_autosave_interval(loop.session_sequence() == 6);
     require_autosave_interval(loop.set_interval(1min));
     expect_autosave_interval(!loop.tick(document, true, start + 20min, target));
@@ -369,7 +369,7 @@ auto first_failure_posts_once(autosave_notification_fixture_t& fixture) -> bool 
         return false;
     const auto failed = wait_for_result(fixture.loop, fixture.document,
                                         fixture.start + 5min + 1ms, fixture.target);
-    if (!failed || failed->status != wormedit::native_project_autosave_status_t::failed)
+    if (!failed || failed->value.status != wormedit::native_project_autosave_status_t::failed)
         return false;
     const auto entries = drain_notifications(fixture.center);
     if (entries.size() != 1 || entries[0].message != "Autosave failed: " + failed->diagnostics.front().message +
@@ -395,7 +395,7 @@ auto retry_merges_then_success_stays_quiet(autosave_notification_fixture_t& fixt
         return false;
     const auto retried_failure = wait_for_result(fixture.loop, fixture.document,
         fixture.start + 5min + 12s, fixture.target);
-    if (!retried_failure || retried_failure->status != wormedit::native_project_autosave_status_t::failed)
+    if (!retried_failure || retried_failure->value.status != wormedit::native_project_autosave_status_t::failed)
         return false;
     const auto entries = drain_notifications(fixture.center);
     if (entries.size() != 1 || entries[0].count != 2)
@@ -404,7 +404,7 @@ auto retry_merges_then_success_stays_quiet(autosave_notification_fixture_t& fixt
         return false;
     const auto recovered = wait_for_result(fixture.loop, fixture.document,
         fixture.start + 5min + 24s, fixture.target);
-    if (!recovered || recovered->status != wormedit::native_project_autosave_status_t::published)
+    if (!recovered || recovered->value.status != wormedit::native_project_autosave_status_t::published)
         return false;
     const auto after_success = drain_notifications(fixture.center);
     return after_success.size() == 1 && after_success[0].count == 2;
@@ -422,7 +422,7 @@ auto stopped_queue_failure_is_single_and_missing_target_is_quiet() -> bool {
     native_project_autosave_loop_t loop(start, scheduler, {}, 0, 5min, 10s, sink);
     const native_project_autosave_target_t target{.backup_path = "stopped/project.bak"};
     const auto failed = loop.tick(document, true, start + 5min, target);
-    if (!failed || failed->status != native_project_autosave_status_t::failed)
+    if (!failed || failed->value.status != native_project_autosave_status_t::failed)
         return false;
     auto entries = drain_notifications(center);
     if (entries.size() != 1 || entries[0].message != "Autosave failed: " + failed->diagnostics.front().message +
@@ -458,7 +458,7 @@ auto throwing_notification_clock_does_not_change_failed_result() -> bool {
     if (loop.tick(document, true, start + 5min, target, std::move(fail_replace)))
         return false;
     const auto failed = wait_for_result(loop, document, start + 5min + 1ms, target);
-    if (!failed || failed->status != native_project_autosave_status_t::failed)
+    if (!failed || failed->value.status != native_project_autosave_status_t::failed)
         return false;
     const auto quiet_poll = loop.tick(document, true, start + 5min + 5s, target);
     return !quiet_poll && !loop.is_busy();
@@ -505,10 +505,10 @@ TEST_CASE("Recovery snapshots anchor imported assets without changing the live d
     (void)loop.tick(document, true, start + 5min, target);
     const auto completed = wait_for_result(loop, document, start + 5min + 1ms, target);
     require_autosave_interval(completed.has_value());
-    require_autosave_interval(completed->status == native_project_autosave_status_t::published);
+    require_autosave_interval(completed->value.status == native_project_autosave_status_t::published);
     const auto parsed = parse_native_project_recovery_snapshot(read_text(target.backup_path));
-    require_autosave_interval(parsed.snapshot.has_value());
-    const auto& asset = parsed.snapshot->song.audio_assets.front();
+    require_autosave_interval(parsed.value.has_value());
+    const auto& asset = parsed.value->song.audio_assets.front();
     expect_autosave_interval(asset.source_path == source / "stem.wav");
     expect_autosave_interval(std::filesystem::is_regular_file(asset.source_path));
     expect_autosave_interval(asset.waveform_cache_path == source / "stem.waveform");

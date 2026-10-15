@@ -52,23 +52,6 @@ struct bgm_column_assignment_t {
 };
 using bgm_packing_outcome_t = result_t<bgm_column_assignment_t, bgm_packing_error_t>;
 
-struct bgm_packing_result_t {
-    [[nodiscard]] static auto from(bgm_packing_outcome_t&& outcome) -> bgm_packing_result_t {
-        if (!outcome)
-            return {.lanes = {},
-                    .lane_count = outcome.error().initial_lane_count,
-                    .error = std::move(outcome.error().message)};
-        return {.lanes = std::move(outcome->lanes), .lane_count = outcome->lane_count, .error = {}};
-    }
-
-    std::vector<std::size_t> lanes;
-    std::size_t lane_count{};
-    std::string error;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return error.empty();
-    }
-};
-
 namespace bgm_packing_detail {
 
 struct group_t {
@@ -238,14 +221,6 @@ inline auto bgm_column_assignment_t::from(std::span<const bgm_packing_request_t>
         return std::unexpected(
             bgm_packing_error_t{state.initial_lane_count, std::move(processed.error())});
     return std::move(state.result);
-}
-
-[[nodiscard]] inline auto allocate_bgm_columns(
-    std::span<const bgm_packing_request_t> requests,
-    std::span<const bgm_packing_existing_t> existing = {}, std::size_t existing_lane_count = 0,
-    std::size_t maximum_lanes = std::numeric_limits<std::size_t>::max()) -> bgm_packing_result_t {
-    return bgm_packing_result_t::from(
-        bgm_column_assignment_t::from(requests, existing, existing_lane_count, maximum_lanes));
 }
 
 } // namespace wormedit

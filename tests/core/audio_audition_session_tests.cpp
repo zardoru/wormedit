@@ -27,7 +27,7 @@ struct audition_session_test_access_t {
     }
 
     static auto complete(audition_session_t& session, session_token_t token,
-                         audition_pump_result_t result) -> audition_pump_result_t {
+                         audition_pump_outcome_t result) -> audition_pump_outcome_t {
         return session.complete_pump(token, std::move(result));
     }
 };
@@ -42,13 +42,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry, std::string_view name,
                       wormedit::asset_id_t asset = wormedit::asset_id_t{1})
     -> wormedit::audio::decoded_source_binding_t {
-    const auto added = registry.register_source({
+    const auto added = registry.create_source({
         .asset = asset,
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "generated-v1:" + std::string(name)},
     });
     REQUIRE(added);
-    return *added.binding;
+    return *added;
 }
 
 auto all_zero(const std::vector<float>& samples) -> bool {
@@ -104,8 +104,10 @@ struct captured_pump_gate_t {
     bool decoded{};
     bool release{};
     wormedit::audio::session_token_t old_token;
-    wormedit::audio::audition_pump_result_t pump_result;
-    wormedit::audio::audition_pump_result_t completion_result;
+    wormedit::audio::audition_pump_outcome_t pump_result =
+        std::unexpected(wormedit::audio::audition_pump_effect_t{});
+    wormedit::audio::audition_pump_outcome_t completion_result =
+        std::unexpected(wormedit::audio::audition_pump_effect_t{});
     std::thread worker;
 
     template <typename start_t>
@@ -115,7 +117,7 @@ struct captured_pump_gate_t {
         if (captured.token) old_token = *captured.token;
         worker = std::thread([this, &session, &sources, &transport,
                               captured = std::move(captured)]() mutable {
-            auto result = wormedit::audio::pump_audition_lookahead(
+            auto result = wormedit::audio::pump_audition_blocks(
                 sources, transport, *captured.token, captured.clips, captured.timeline_frame);
             {
                 const std::scoped_lock lock(mutex);
@@ -163,13 +165,13 @@ auto resident_first_pcm_is_exact() -> bool {
     constexpr std::size_t frames = 128;
     constexpr float gain = 0.375F;
     const audition_clip_t clip{binding.source, source_offset, frames, gain};
-    const auto started = session.start(std::span{&clip, 1});
-    if (!started || !started.prime || started.prime->cached_blocks != 1) return false;
+    const auto started = session.start_session(std::span{&clip, 1});
+    if (!started || !started.value().prime || started.value().prime->value().cached_blocks != 1) return false;
     const auto snapshot = store.snapshot();
     std::vector<float> rendered(frames * output_channel_count);
-    const auto result = session.render(rendered);
-    return result.status == audition_session_render_status_t::complete &&
-        result.first_timeline_frame == 0 && matches_resident_clip(
+    const auto result = session.render_frames(rendered);
+    return result.value().status == audition_session_render_status_t::complete &&
+        result.value().first_timeline_frame == 0 && matches_resident_clip(
             rendered, *snapshot, binding.source, source_offset, gain) &&
         session.timeline_frame() == 0 && snapshot->find(binding.source) != nullptr;
 }
@@ -190,15 +192,15 @@ auto resident_replacements_keep_only_latest_pcm() -> bool {
     for (std::uint32_t attempt = 1; attempt <= 10; ++attempt) {
         const auto gain = static_cast<float>(attempt) / 10.0F;
         const audition_clip_t clip{binding.source, source_offset, frames, gain};
-        const auto started = session.start(std::span{&clip, 1});
-        if (!started || !started.prime || !started.token ||
-            started.token->generation <= prior_generation) return false;
-        prior_generation = started.token->generation;
+        const auto started = session.start_session(std::span{&clip, 1});
+        if (!started || !started.value().prime ||
+            started.value().token.generation <= prior_generation) return false;
+        prior_generation = started.value().token.generation;
     }
     const auto snapshot = store.snapshot();
     std::vector<float> rendered(frames * output_channel_count);
-    const auto result = session.render(rendered);
-    return result.status == audition_session_render_status_t::complete &&
+    const auto result = session.render_frames(rendered);
+    return result.value().status == audition_session_render_status_t::complete &&
         matches_resident_clip(rendered, *snapshot, binding.source, source_offset, 1.0F) &&
         transport.scheduled_voice_count() == 0;
 }
@@ -217,7 +219,7 @@ auto old_pump_cannot_clear_replacement() -> bool {
     audition_transport_bridge_t bridge{transport};
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t old_clip{old_source.source, 0, 512, 0.25F};
-    if (!session.start(std::span{&old_clip, 1})) return false;
+    if (!session.start_session(std::span{&old_clip, 1})) return false;
     captured_pump_gate_t gate;
     gate.start(session, sources, transport);
     if (!gate.wait_decoded()) {
@@ -225,25 +227,26 @@ auto old_pump_cannot_clear_replacement() -> bool {
         return false;
     }
     const audition_clip_t new_clip{new_source.source, 64, 128, 0.75F};
-    const auto replacement = session.start(std::span{&new_clip, 1});
-    if (!replacement || replacement.prime) {
+    const auto replacement = session.start_session(std::span{&new_clip, 1});
+    if (!replacement || replacement.value().prime) {
         gate.release_and_join();
         return false;
     }
     gate.release_and_join();
-    if (gate.pump_result.status != audition_pump_status_t::ready ||
-        gate.completion_result.status != audition_pump_status_t::stale_generation) return false;
+    if (!gate.pump_result || gate.pump_result->status != audition_pump_status_t::ready ||
+        gate.completion_result ||
+        gate.completion_result.error().status != audition_pump_status_t::stale_generation) return false;
     const auto stale_failure = audition_session_test_access_t::complete(session, gate.old_token,
-        {.status = audition_pump_status_t::source_unavailable});
-    if (stale_failure.status != audition_pump_status_t::stale_generation) return false;
+        std::unexpected(audition_pump_effect_t{.status = audition_pump_status_t::source_unavailable}));
+    if (stale_failure || stale_failure.error().status != audition_pump_status_t::stale_generation) return false;
     std::vector<float> waiting(32 * output_channel_count, 1.0F);
-    if (session.render(waiting).status != audition_session_render_status_t::priming ||
+    if (session.render_frames(waiting).value().status != audition_session_render_status_t::priming ||
         !all_zero(waiting) || session.timeline_frame() != 0) return false;
-    if (session.pump().status != audition_pump_status_t::ready) return false;
+    if (session.pump().value().status != audition_pump_status_t::ready) return false;
     std::vector<float> rendered(128 * output_channel_count);
-    const auto mixed = session.render(rendered);
+    const auto mixed = session.render_frames(rendered);
     const auto decoded = cache.find({new_source.source, 0});
-    return mixed.status == audition_session_render_status_t::complete && decoded &&
+    return mixed.value().status == audition_session_render_status_t::complete && decoded &&
         matches_cached_clip(rendered, *decoded, new_clip.source_start_frame, new_clip.gain);
 }
 
@@ -256,7 +259,7 @@ auto old_pump_cannot_publish_after_stop() -> bool {
     audition_transport_bridge_t bridge{transport};
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t clip{source.source, 0, 512, 1.0F};
-    if (!session.start(std::span{&clip, 1})) return false;
+    if (!session.start_session(std::span{&clip, 1})) return false;
     captured_pump_gate_t gate;
     gate.start(session, sources, transport);
     if (!gate.wait_decoded()) {
@@ -266,10 +269,11 @@ auto old_pump_cannot_publish_after_stop() -> bool {
     static_cast<void>(session.stop());
     gate.release_and_join();
     std::vector<float> output(64 * output_channel_count, 1.0F);
-    return gate.pump_result.status == audition_pump_status_t::ready &&
-        gate.completion_result.status == audition_pump_status_t::stale_generation &&
+    return gate.pump_result && gate.pump_result->status == audition_pump_status_t::ready &&
+        !gate.completion_result &&
+        gate.completion_result.error().status == audition_pump_status_t::stale_generation &&
         !session.playhead().active && transport.scheduled_voice_count() == 0 &&
-        session.render(output).status == audition_session_render_status_t::stopped && all_zero(output);
+        session.render_frames(output).value().status == audition_session_render_status_t::stopped && all_zero(output);
 }
 
 } // namespace
@@ -285,42 +289,42 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t clip{binding.source, maximum_read_frames - 128, 640, 1.0F};
 
-    const auto started = session.start(std::span{&clip, 1});
+    const auto started = session.start_session(std::span{&clip, 1});
     require_audition_session(started);
-    expect_audition_session(!started.prime.has_value());
+    expect_audition_session(!started.value().prime.has_value());
     expect_audition_session(session.is_active());
     expect_audition_session(session.timeline_frame() == 0);
 
     std::vector<float> first(512 * output_channel_count);
-    const auto waiting = session.render(first);
-    expect_audition_session(waiting.status == audition_session_render_status_t::priming);
-    expect_audition_session(waiting.first_timeline_frame == 0);
+    const auto waiting = session.render_frames(first);
+    expect_audition_session(waiting.value().status == audition_session_render_status_t::priming);
+    expect_audition_session(waiting.value().first_timeline_frame == 0);
     expect_audition_session(all_zero(first));
     expect_audition_session(session.timeline_frame() == 0);
 
-    audition_pump_result_t pumped;
+    audition_pump_outcome_t pumped = std::unexpected(audition_pump_effect_t{});
     std::thread worker([&] { pumped = session.pump(); });
     worker.join();
-    expect_audition_session(pumped.status == audition_pump_status_t::ready);
-    expect_audition_session(pumped.requested_blocks == 2);
-    const auto first_render = session.render(first);
-    expect_audition_session(first_render.status == audition_session_render_status_t::mixed);
-    expect_audition_session(first_render.first_timeline_frame == 0);
-    expect_audition_session(first_render.mix.missing_blocks == 0);
+    expect_audition_session(pumped.value().status == audition_pump_status_t::ready);
+    expect_audition_session(pumped.value().requested_blocks == 2);
+    const auto first_render = session.render_frames(first);
+    expect_audition_session(first_render.value().status == audition_session_render_status_t::mixed);
+    expect_audition_session(first_render.value().first_timeline_frame == 0);
+    expect_audition_session(first_render.value().mix.missing_blocks == 0);
     expect_audition_session(!all_zero(first));
     expect_audition_session(session.timeline_frame() == 512);
-    expect_audition_session(session.pump().status == audition_pump_status_t::ready);
+    expect_audition_session(session.pump().value().status == audition_pump_status_t::ready);
 
     std::vector<float> tail(128 * output_channel_count);
-    const auto final_render = session.render(tail);
-    expect_audition_session(final_render.status == audition_session_render_status_t::complete);
-    expect_audition_session(final_render.first_timeline_frame == 512);
-    expect_audition_session(final_render.mix.missing_blocks == 0);
+    const auto final_render = session.render_frames(tail);
+    expect_audition_session(final_render.value().status == audition_session_render_status_t::complete);
+    expect_audition_session(final_render.value().first_timeline_frame == 512);
+    expect_audition_session(final_render.value().mix.missing_blocks == 0);
     expect_audition_session(!all_zero(tail));
     expect_audition_session(!session.is_active());
 
     std::ranges::fill(tail, 1.0F);
-    expect_audition_session(session.render(tail).status == audition_session_render_status_t::stopped);
+    expect_audition_session(session.render_frames(tail).value().status == audition_session_render_status_t::stopped);
     expect_audition_session(all_zero(tail));
 }
 
@@ -334,11 +338,11 @@ TEST_CASE("audition session hard Stop silences the next render and invalidates r
     audition_transport_bridge_t bridge{transport};
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t clip{binding.source, 0, binding.output_frame_count, 1.0F};
-    require_audition_session(session.start(std::span{&clip, 1}));
+    require_audition_session(session.start_session(std::span{&clip, 1}));
     require_audition_session(session.pump());
 
     std::vector<float> before(256 * output_channel_count);
-    expect_audition_session(session.render(before).status == audition_session_render_status_t::mixed);
+    expect_audition_session(session.render_frames(before).value().status == audition_session_render_status_t::mixed);
     expect_audition_session(!all_zero(before));
     const auto stopped = session.stop();
     expect_audition_session(stopped.scheduled_voices == 1);
@@ -346,7 +350,7 @@ TEST_CASE("audition session hard Stop silences the next render and invalidates r
     expect_audition_session(!session.pump());
 
     std::ranges::fill(before, 1.0F);
-    expect_audition_session(session.render(before).status == audition_session_render_status_t::stopped);
+    expect_audition_session(session.render_frames(before).value().status == audition_session_render_status_t::stopped);
     expect_audition_session(all_zero(before));
 }
 
@@ -360,26 +364,28 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     audition_transport_bridge_t bridge{transport};
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t clip{binding.source, 0, binding.output_frame_count, 1.0F};
-    const auto first = session.start(std::span{&clip, 1});
+    const auto first = session.start_session(std::span{&clip, 1});
     require_audition_session(first);
 
     const audition_clip_t invalid{binding.source, 0, 0, 1.0F};
-    const auto rejected = session.start(std::span{&invalid, 1});
+    const auto rejected = session.start_session(std::span{&invalid, 1});
     expect_audition_session(!rejected);
-    expect_audition_session(rejected.status == audition_session_start_status_t::transport_failed);
+    require_audition_session(!rejected);
+    expect_audition_session(rejected.error().code == audition_session_start_status_t::transport_failed);
     expect_audition_session(session.is_active());
-    expect_audition_session(transport.is_current(*first.token));
+    expect_audition_session(transport.is_current(first.value().token));
 
     const audition_clip_t unavailable{{"fixture:missing", "unknown:v1"}, 0, 512, 1.0F};
-    const auto unprimed = session.start(std::span{&unavailable, 1});
+    const auto unprimed = session.start_session(std::span{&unavailable, 1});
     require_audition_session(unprimed);
-    expect_audition_session(!unprimed.prime.has_value());
+    expect_audition_session(!unprimed.value().prime.has_value());
     std::vector<float> pending(64 * output_channel_count, 1.0F);
-    expect_audition_session(session.render(pending).status == audition_session_render_status_t::priming);
+    expect_audition_session(session.render_frames(pending).value().status == audition_session_render_status_t::priming);
     expect_audition_session(all_zero(pending));
     expect_audition_session(session.timeline_frame() == 0);
     const auto failed_pump = session.pump();
-    expect_audition_session(failed_pump.status == audition_pump_status_t::source_unavailable);
+    require_audition_session(!failed_pump);
+    expect_audition_session(failed_pump.error().status == audition_pump_status_t::source_unavailable);
     expect_audition_session(session.playhead().active);
     expect_audition_session(session.timeline_frame() == 0);
     static_cast<void>(session.stop());
@@ -387,7 +393,9 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     expect_audition_session(transport.scheduled_voice_count() == 0);
 
     std::vector<float> malformed(output_channel_count + 1, 1.0F);
-    expect_audition_session(session.render(malformed).status == audition_session_render_status_t::invalid_buffer);
+    const auto malformed_render = session.render_frames(malformed);
+    require_audition_session(!malformed_render);
+    expect_audition_session(malformed_render.error().status == audition_session_render_status_t::invalid_buffer);
     expect_audition_session(all_zero(malformed));
 }
 
@@ -401,15 +409,15 @@ auto audition_playhead_rejects_external_generation() -> bool {
     audition_transport_bridge_t bridge{transport};
     audition_session_t session{sources, transport, bridge};
     const audition_clip_t clip{source.source, 0, 512, 1.0F};
-    const auto started = session.start(std::span{&clip, 1});
+    const auto started = session.start_session(std::span{&clip, 1});
     if (!started) return false;
     const auto prior = session.playhead();
     static_cast<void>(transport.stop());
     if (session.is_active() || session.timeline_frame() != 0 || session.playhead().active) return false;
-    const auto restarted = session.start(std::span{&clip, 1});
+    const auto restarted = session.start_session(std::span{&clip, 1});
     const auto current = session.playhead();
     return restarted && current.active && current.generation > prior.generation &&
-           current.transport_generation == restarted.token->generation;
+           current.transport_generation == restarted.value().token.generation;
 }
 }
 

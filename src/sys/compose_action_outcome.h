@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/command_registry.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>
@@ -19,8 +20,13 @@ enum class compose_feedback_delivery_t {
     message,
     notification,
     first_diagnostic,
-    diagnostic_message
+    diagnostic_message,
+    transient_hint
 };
+
+// Borrowed text remains alive until completion; static command messages need no allocation.
+enum class compose_message_lifetime_t { owned, borrowed };
+enum class compose_feedback_order_t { after_rebind, before_rebind };
 
 enum class compose_interaction_message_policy_t { rejection_diagnostic, supplied };
 
@@ -71,6 +77,24 @@ struct compose_action_outcome_t {
     std::optional<notification_source_t> rebind_failure_source;
     bool is_message_retained_on_rebind_failure{};
     bool is_workspace_refresh_required{};
+    compose_feedback_order_t feedback_order{compose_feedback_order_t::after_rebind};
+    std::string_view borrowed_message;
+    bool has_rebind_failed{};
+    bool are_command_diagnostics_retained{true};
+
+    [[nodiscard]] auto message_text() const -> std::string_view {
+        return borrowed_message.empty() ? std::string_view{message} : borrowed_message;
+    }
+    [[nodiscard]] static auto from(std::string_view message, notification_severity_t severity,
+                                   notification_source_t source,
+                                   compose_message_lifetime_t lifetime) -> compose_action_outcome_t;
+    [[nodiscard]] static auto from(std::string message, notification_severity_t severity,
+                                   notification_source_t source, diagnostic_code_t code)
+        -> compose_action_outcome_t;
+    [[nodiscard]] static auto from(const editor_interaction_result_t& result,
+                                   std::string_view accepted,
+                                   notification_severity_t accepted_severity,
+                                   notification_source_t source) -> compose_action_outcome_t;
 
     [[nodiscard]] static auto
     blocked(std::string message, notification_source_t source = notification_source_t::edit,
@@ -106,11 +130,14 @@ struct compose_action_outcome_t {
                                    compose_interaction_message_policy_t message_policy =
                                        compose_interaction_message_policy_t::rejection_diagnostic)
         -> compose_action_outcome_t;
-    [[nodiscard]] static auto from(document_command_result_t&& command,
-                                   const compose_action_description_t& description)
+    [[nodiscard]] static auto
+    from(document_command_result_t&& command, const compose_action_description_t& description,
+         compose_message_lifetime_t lifetime = compose_message_lifetime_t::owned)
         -> compose_action_outcome_t;
-    [[nodiscard]] static auto from(document_command_result_t&& command, bool is_success,
-                                   const compose_action_description_t& description)
+    [[nodiscard]] static auto
+    from(document_command_result_t&& command, bool is_success,
+         const compose_action_description_t& description,
+         compose_message_lifetime_t lifetime = compose_message_lifetime_t::owned)
         -> compose_action_outcome_t;
     [[nodiscard]] static auto from(document_command_result_t&& command,
                                    const compose_action_description_t& description,
@@ -162,6 +189,12 @@ struct compose_action_outcome_t {
 auto finish_compose_action(const document_edit_inputs_t& document,
                            const notification_sink_t& feedback, compose_action_outcome_t outcome)
     -> compose_action_outcome_t;
+
+// Registered commands retain their diagnostic contract while sharing Compose completion.
+auto finish_application_command(const notification_sink_t& feedback,
+                                compose_action_outcome_t outcome,
+                                const document_edit_inputs_t* document = nullptr)
+    -> command_invocation_outcome_t;
 
 // Transport and navigation outcomes do not mutate documents.
 auto finish_compose_action(const notification_sink_t& feedback, compose_action_outcome_t outcome)

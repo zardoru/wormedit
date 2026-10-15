@@ -20,8 +20,8 @@ auto analysis_fixture() -> wormedit::audio::waveform_analysis_result_t {
     }
     return {.waveform = std::move(waveform)};
 }
-auto frame_fixture() -> wormedit::sys::flattened_workspace_t {
-    wormedit::sys::flattened_workspace_t frame;
+auto frame_fixture() -> wormedit::sys::frontend_workspace_view_t {
+    wormedit::sys::frontend_workspace_view_t frame;
     frame.view.audio_slices.visible = true;
     frame.view.audio_slices.has_selected_asset = true;
     frame.view.audio_slices.selected_asset_id = 7;

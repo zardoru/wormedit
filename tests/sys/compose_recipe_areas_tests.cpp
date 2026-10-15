@@ -27,10 +27,10 @@ auto linear_recipe(std::uint64_t id, local_position_t begin, local_position_t en
     return recipe;
 }
 
-auto project(const chart_document_t& chart, std::size_t limit = 16) -> recipe_areas_t {
+auto project(const chart_document_t& chart, std::size_t limit = 16) -> recipe_areas_view_t {
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    return build_recipe_areas_view(chart, std::get<measure_index_t>(measures), limit);
+    return recipe_areas_view_t::from(chart, std::get<measure_index_t>(measures), limit);
 }
 
 auto y_of(std::uint64_t row) { return static_cast<double>(row); }

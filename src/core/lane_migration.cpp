@@ -120,8 +120,8 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
 auto absolute_range(const measure_index_t& index, local_position_t begin_position,
                     std::optional<local_position_t> end_position)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    const auto begin = absolute_row(index, begin_position);
-    const auto end = end_position ? absolute_row(index, *end_position) : begin;
+    const auto begin = index.row_of(begin_position);
+    const auto end = end_position ? index.row_of(*end_position) : begin;
     if (!begin || !end) return std::nullopt;
     return std::pair{*begin, *end};
 }
@@ -155,13 +155,13 @@ struct migration_item_t {
 auto chart_measure_index(const chart_document_t& chart, proposal_t<lane_migration_proposal_t>& pending)
     -> result_t<measure_index_t, lane_migration_diagnostic_t> {
     auto& proposal = pending.payload;
-    auto built = build_measure_index(chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built)) {
+    auto built = measure_index_t::from(chart);
+    if (!built) {
         return std::unexpected(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
-                diagnostics->empty() ? "The chart measure geometry is invalid."
-                                  : diagnostics->front().message, pending.stamp, std::move(proposal.report)));
+                built.error().empty() ? "The chart measure geometry is invalid."
+                                  : built.error().front().message, pending.stamp, std::move(proposal.report)));
     }
-    return std::get<measure_index_t>(std::move(built));
+    return std::move(*built);
 }
 
 auto append_mapped_note_items(const chart_document_t& chart, const measure_index_t& index,

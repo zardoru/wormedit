@@ -28,24 +28,24 @@ struct dead_span_t {
     auto operator==(const dead_span_t&) const -> bool = default;
 };
 
-struct dead_span_projection_t {
+struct dead_spans_view_t {
     // Ordered by begin_row, then stop before delay before warp, then source object id.
     std::vector<dead_span_t> spans;
     // True when the limit cut the list or an event could not be resolved.
     bool truncated{false};
-};
 
-// Projects every Stop, Delay and Warp of the chart. Stops and delays take their time from the
-// timing index, so units, BPM and warp suppression are already resolved; zero-time pauses and
-// unresolvable positions are omitted. Never mutates the chart.
-[[nodiscard]] auto build_dead_spans_view(const chart_document_t& chart,
-                                      const measure_index_t& measures,
-                                      const timing_index_t& timing, std::size_t limit)
-    -> dead_span_projection_t;
+    // Projects every Stop, Delay and Warp of the chart. Stops and delays take their time from the
+    // timing index, so units, BPM and warp suppression are already resolved; zero-time pauses and
+    // unresolvable positions are omitted. Never mutates the chart.
+    [[nodiscard]] static auto from(const chart_document_t& chart,
+                                   const measure_index_t& measures,
+                                   const timing_index_t& timing, std::size_t limit)
+        -> dead_spans_view_t;
+};
 
 // True when `row` lies in a warp's half-open range [begin_row, end_row). Stops and delays are
 // not rows to skip: whether a note at their row is valid depends on the discontinuity profile.
-[[nodiscard]] auto row_is_in_warp(const dead_span_projection_t& projection, std::uint64_t row)
+[[nodiscard]] auto row_is_in_warp(const dead_spans_view_t& projection, std::uint64_t row)
     -> bool;
 
 // Height of the band a stop or delay gets beside its row.
@@ -65,7 +65,7 @@ struct dead_span_band_t {
 };
 
 // Bands intersecting [0, viewport_height], in span order.
-[[nodiscard]] auto build_dead_span_bands_view(const dead_span_projection_t& projection,
+[[nodiscard]] auto build_dead_span_bands_view(const dead_spans_view_t& projection,
                                            double pixels_per_row, double scroll_pixels,
                                            double viewport_height, bool downscroll,
                                            double pause_band_pixels)

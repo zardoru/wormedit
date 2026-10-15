@@ -45,7 +45,7 @@ namespace detail {
     const auto separation = detail::ceil_to_multiple((rate * 4U + 99U) / 100U, *window);
     if (!separation) return captured;
 
-    const auto detected = audio::detect_waveform_onsets(waveform,
+    const auto detected = audio::waveform_onset_index_t::from(waveform,
         {.begin_frame = begin_frame,
          .end_frame = end_frame,
          .window_frames = *window,
@@ -54,7 +54,7 @@ namespace detail {
          .minimum_separation_frames = *separation,
          .maximum_onsets = 4'096});
     if (!detected) return captured;
-    captured.frames = detected.frames;
+    captured.frames = detected->frames;
     return captured;
 }
 

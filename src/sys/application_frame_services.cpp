@@ -61,7 +61,7 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
                            const workspace_controller_t& workspace,
                            const document_history_t& history,
                            sound_drop_transaction_t& transaction,
-                           std::vector<sound_drop_batch_t>& batches) -> bool {
+                           std::vector<sound_drop_outcome_t>& batches) -> bool {
     WormUiKeysoundDockRequest dock{};
     worm_ui_frontend_keysound_dock_request(&dock);
     const sound_drop_origin_t origin{
@@ -83,7 +83,7 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
 auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& environment,
                           bool offer_audio_project_drop, std::string& pending_chart_project_path,
                           sound_drop_transaction_t& sound_drop_transaction,
-                          std::vector<sound_drop_batch_t>& pending_resource_batches) -> bool {
+                          std::vector<sound_drop_outcome_t>& pending_resource_batches) -> bool {
     auto& metadata_drop = environment.metadata_drop;
     auto& workspace = environment.document.workspace;
     auto& history = environment.document.history;
@@ -148,9 +148,9 @@ void tick_application_autosave(native_project_autosave_loop_t& autosave_loop,
     if (const auto result = autosave_loop.tick(
             history.document, is_document_dirty(history),
             native_project_autosave_loop_t::clock_t::now(), target)) {
-        if (result->status == native_project_autosave_status_t::published)
+        if (result->value.status == native_project_autosave_status_t::published)
             notifications.post(notification_severity_t::success, notification_source_t::recovery,
-                "Autosaved revision " + std::to_string(result->revision) + ".");
+                "Autosaved revision " + std::to_string(result->value.revision) + ".");
     }
 }
 

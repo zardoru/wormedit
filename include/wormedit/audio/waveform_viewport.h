@@ -48,10 +48,4 @@ inline constexpr double minimum_waveform_frames_per_pixel = 1.0 / 16.0;
 [[nodiscard]] auto pan_waveform_viewport(const waveform_viewport_t& viewport,
                                          double delta_pixels) noexcept -> waveform_viewport_t;
 
-// Projects the visible window through the closest pyramid level. An invalid
-// viewport or waveform yields a non-projected result.
-[[nodiscard]] auto build_waveform_viewport_view(const waveform_t& waveform,
-                                             const waveform_viewport_t& viewport)
-    -> waveform_projection_result_t;
-
 } // namespace wormedit::audio

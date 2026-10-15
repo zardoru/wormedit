@@ -19,9 +19,9 @@ auto recipe_row(const measure_index_t& measures, local_position_t position, bool
 
 } // namespace
 
-auto build_recipe_areas_view(const chart_document_t& chart, const measure_index_t& measures,
-                          std::size_t limit) -> recipe_areas_t {
-    recipe_areas_t result;
+auto recipe_areas_view_t::from(const chart_document_t& chart, const measure_index_t& measures,
+                          std::size_t limit) -> recipe_areas_view_t {
+    recipe_areas_view_t result;
     for (const auto& recipe : chart.sv_recipes) {
         const auto begin = recipe_row(measures, recipe.range.begin, false);
         const auto end = recipe_row(measures, recipe.range.end, true);
@@ -40,10 +40,10 @@ auto build_recipe_areas_view(const chart_document_t& chart, const measure_index_
                            .enabled = recipe.enabled,
                            .begin_row = *begin,
                            .end_row = *end};
-        const auto sampled = sample_sv_recipe(chart, recipe);
-        area.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+        const auto sampled = sv_recipe_samples_t::from(chart, recipe);
+        area.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
         if (area.evaluable) {
-            for (const auto& point : sampled.points)
+            for (const auto& point : sampled.value.points)
                 area.points.push_back({point.absolute_row, point.value});
         }
         result.areas.push_back(std::move(area));

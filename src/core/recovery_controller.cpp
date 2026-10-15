@@ -141,10 +141,6 @@ auto bounded_actions(std::span<const native_project_recovery_action_t> actions)
 
 } // namespace
 
-auto native_project_recovery_controller_dispatch_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
 native_project_recovery_controller_t::native_project_recovery_controller_t(
     native_project_recovery_controller_options_t options)
     : options_(options) {
@@ -158,7 +154,7 @@ native_project_recovery_controller_t::native_project_recovery_controller_t(
         options_.maximum_path_label_bytes, std::size_t{3}, maximum_storage_diagnostic_path_bytes);
 }
 
-auto native_project_recovery_controller_t::replace_scan(native_project_recovery_scan_result_t scan)
+auto native_project_recovery_controller_t::replace_scan(native_project_recovery_scan_outcome_t scan)
     -> const native_project_recovery_controller_view_t& {
     view_ = {};
     scan_.reset();
@@ -176,7 +172,7 @@ auto native_project_recovery_controller_t::replace_scan(native_project_recovery_
 
     ++generation_;
     view_.scan_generation = generation_;
-    if (scan.candidates.size() > options_.maximum_candidates) {
+    if (scan.value.candidates.size() > options_.maximum_candidates) {
         const auto diagnostic =
             controller_diagnostic(native_project_storage_diagnostic_code_t::resource_limit,
                                   "recovery scan exceeds the controller candidate limit");
@@ -194,14 +190,14 @@ auto native_project_recovery_controller_t::replace_scan(native_project_recovery_
     }
     view_.diagnostics_truncated =
         view_.diagnostics_truncated || scan.diagnostics.size() > diagnostic_count;
-    view_.banner_visible = std::ranges::any_of(scan.candidates, [](const auto& candidate) {
+    view_.banner_visible = std::ranges::any_of(scan.value.candidates, [](const auto& candidate) {
         return candidate.kind != native_project_recovery_candidate_kind_t::primary &&
                !bounded_actions(candidate.available_actions).empty();
     });
-    const auto row_count = std::min(scan.candidates.size(), options_.maximum_rows);
+    const auto row_count = std::min(scan.value.candidates.size(), options_.maximum_rows);
     view_.rows.reserve(row_count);
     for (std::size_t candidate_index = 0; candidate_index < row_count; ++candidate_index) {
-        const auto& candidate = scan.candidates[candidate_index];
+        const auto& candidate = scan.value.candidates[candidate_index];
         const auto row_index = view_.rows.size();
         const auto path_label = encode_path(candidate.path, options_.maximum_path_label_bytes);
         native_project_recovery_banner_row_t row{
@@ -225,11 +221,11 @@ auto native_project_recovery_controller_t::replace_scan(native_project_recovery_
                 candidate.recovery_metadata->last_explicit_save_revision;
         }
         view_.rows.push_back(std::move(row));
-        if (scan.preferred_recovery_candidate == candidate_index) {
+        if (scan.value.preferred_recovery_candidate == candidate_index) {
             view_.preferred_recovery_row = row_index;
         }
     }
-    if (row_count < scan.candidates.size()) {
+    if (row_count < scan.value.candidates.size()) {
         view_.rows_truncated = true;
         const auto diagnostic = controller_diagnostic(
             native_project_storage_diagnostic_code_t::resource_limit,
@@ -242,7 +238,7 @@ auto native_project_recovery_controller_t::replace_scan(native_project_recovery_
     }
 
     std::vector<native_project_storage_diagnostic_t>{}.swap(scan.diagnostics);
-    for (auto& candidate : scan.candidates) {
+    for (auto& candidate : scan.value.candidates) {
         auto actions = bounded_actions(candidate.available_actions);
         candidate.available_actions.swap(actions);
         candidate.document.reset();
@@ -297,7 +293,7 @@ auto native_project_recovery_controller_t::dispatch_action(
         return result;
     }
     const auto& row = view_.rows[target.row_index];
-    if (row.target != target || target.candidate_index >= scan_->candidates.size()) {
+    if (row.target != target || target.candidate_index >= scan_->value.candidates.size()) {
         append_dispatch_error(result,
                               native_project_storage_diagnostic_code_t::recovery_identity_mismatch,
                               "recovery action target does not match its displayed row");
@@ -327,8 +323,8 @@ auto native_project_recovery_controller_t::dispatch_action(
     }
 
     result.value.accepted = true;
-    result.value.action_result = apply_native_project_recovery_action(
-        *scan_, target.candidate_index, requested_action, std::move(options));
+    result.value.action_result = perform_native_project_recovery_action(
+        scan_->value.candidates, target.candidate_index, requested_action, std::move(options));
     for (auto& diagnostic : result.value.action_result->diagnostics) {
         auto diagnostic_truncated = false;
         diagnostic =
@@ -343,7 +339,7 @@ auto native_project_recovery_controller_t::dispatch_action(
                                   options_.maximum_diagnostics, diagnostic,
                                   options_.maximum_path_label_bytes);
     }
-    if (result.value.action_result->applied &&
+    if (result.value.action_result->value.applied &&
         (requested_action == native_project_recovery_action_t::discard ||
          requested_action == native_project_recovery_action_t::quarantine)) {
         scan_.reset();
@@ -358,21 +354,6 @@ auto native_project_recovery_controller_t::dispatch_action(
         view_.scan_generation = generation_;
     }
     return result;
-}
-
-auto native_project_recovery_controller_dispatch_result_t::from(
-    native_project_recovery_controller_dispatch_outcome_t&& outcome)
-    -> native_project_recovery_controller_dispatch_result_t {
-    return {.accepted = outcome.value.accepted,
-            .diagnostics_truncated = outcome.value.diagnostics_truncated,
-            .action_result = std::move(outcome.value.action_result),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto native_project_recovery_controller_t::dispatch(
-    const native_project_recovery_controller_action_t& action)
-    -> native_project_recovery_controller_dispatch_result_t {
-    return native_project_recovery_controller_dispatch_result_t::from(dispatch_action(action));
 }
 
 } // namespace wormedit

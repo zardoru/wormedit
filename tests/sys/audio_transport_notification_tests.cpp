@@ -29,7 +29,7 @@ TEST_CASE("Audio service producer preserves fallbacks before the terminal device
     const sdl_preview_service_result_t result{
         .status = sdl_preview_service_status_t::device_failed,
         .rate_unavailable = true, .silenced_voices = 3, .silenced_music_voices = 1};
-    post_preview_service_notifications(result, sink);
+    post_preview_service_notifications(std::unexpected(result), sink);
     const auto rows = drained(center);
     verify_audio_notification(rows.size() == 3);
     check_audio_error(rows[0], "Chart preview stopped after an output-device failure.");
@@ -47,8 +47,8 @@ TEST_CASE("Audio underruns dedupe while ready service results stay quiet",
     post_preview_service_notifications({}, sink);
     verify_audio_notification(drained(center).empty());
     const sdl_audition_service_result_t underrun{.status = sdl_audition_service_status_t::render_failed};
-    post_audition_service_notifications(underrun, sink);
-    post_audition_service_notifications(underrun, sink);
+    post_audition_service_notifications(std::unexpected(underrun), sink);
+    post_audition_service_notifications(std::unexpected(underrun), sink);
     const auto rows = drained(center);
     verify_audio_notification(rows.size() == 1);
     verify_audio_notification(rows.front().count == 2);
@@ -60,23 +60,25 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
     notification_center_t center{[] { return notification_time_t{}; }};
     notification_sink_t sink{center};
     sdl_audition_service_result_t audition{.status = sdl_audition_service_status_t::pump_failed,
-        .pump = audio::audition_pump_result_t{.status = audio::audition_pump_status_t::source_unavailable}};
-    post_audition_service_notifications(audition, sink);
+        .pump = std::unexpected(audio::audition_pump_effect_t{
+            .status = audio::audition_pump_status_t::source_unavailable})};
+    post_audition_service_notifications(std::unexpected(audition), sink);
     auto rows = drained(center);
     check_audio_error(rows[0], "Audio preview stopped because its decoded source is unavailable.");
     sdl_preview_service_result_t preview{.status = sdl_preview_service_status_t::pump_failed,
-        .pump = audio::preview_session_pump_result_t{
+        .pump = std::unexpected(audio::preview_session_pump_effect_t{
             .status = audio::preview_session_pump_status_t::decode_failed,
-            .decode = audio::preview_pump_result_t{.status = audio::preview_pump_status_t::source_unavailable}}};
-    post_preview_service_notifications(preview, sink);
+            .decode = std::unexpected(audio::preview_pump_effect_t{
+                .status = audio::preview_pump_status_t::source_unavailable})})};
+    post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped because a decoded source is unavailable.");
     preview.pump.reset();
-    post_preview_service_notifications(preview, sink);
+    post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a bounded refill failure.");
     preview.status = sdl_preview_service_status_t::render_failed;
-    post_preview_service_notifications(preview, sink);
+    post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a realtime mix failure.");
 }
@@ -136,7 +138,7 @@ TEST_CASE("Preview audio tail retains the final editable playhead row", "[audio]
 namespace {
 auto deferred_seek_failure_preserves_position() -> bool {
     audio::decoded_source_registry_t sources;
-    const auto source = sources.register_generated_source({
+    const auto source = sources.create_generated_source({
         .source = {"notification-seek", "v1"}, .interleaved_stereo = std::vector<float>(88'200, 0.5F)});
     if (!source) return false;
     audio::decoded_block_cache_t blocks;
@@ -151,7 +153,7 @@ auto deferred_seek_failure_preserves_position() -> bool {
     preview_schedule_t schedule{.sample_rate = audio::output_sample_rate};
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const audio::preview_object_source_binding_t binding{
-        .object = object_id_t{1}, .voices = {{.source = source.binding->source, .frame_count = 44'100}}};
+        .object = object_id_t{1}, .voices = {{.source = source->source, .frame_count = 44'100}}};
     if (!output.start(schedule, std::span{&binding, 1})) return false;
     sources.clear();
     if (!output.seek(1'234)) return false;

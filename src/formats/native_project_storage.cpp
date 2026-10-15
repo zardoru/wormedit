@@ -330,7 +330,7 @@ auto validate_native_payload(std::string_view bytes, expected_document_t expecte
                              std::vector<native_project_storage_diagnostic_t>& diagnostics,
                              const std::filesystem::path& path = {}) -> bool {
     const auto parsed = parse_native_project(bytes, limits);
-    if (!parsed.song.has_value() || parsed.has_errors()) {
+    if (!parsed.value.has_value() || !parsed.ok()) {
         for (const auto& diagnostic : parsed.diagnostics) {
             if (diagnostics.size() == maximum_diagnostics) {
                 break;
@@ -346,7 +346,7 @@ auto validate_native_payload(std::string_view bytes, expected_document_t expecte
         }
         return false;
     }
-    if (!is_document_current(*parsed.song, expected)) {
+    if (!is_document_current(*parsed.value, expected)) {
         add_diagnostic(
             diagnostics, native_project_storage_diagnostic_code_t::identity_mismatch,
             "validated native project ID or revision differs from the requested snapshot", path);
@@ -529,7 +529,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
             return std::nullopt;
         }
         auto parsed_song = parse_native_project(payload, limits);
-        if (!parsed_song.song.has_value() || parsed_song.has_errors()) {
+        if (!parsed_song.value.has_value() || !parsed_song.ok()) {
             for (const auto& diagnostic : parsed_song.diagnostics) {
                 if (diagnostics.size() == maximum_diagnostics) {
                     break;
@@ -541,7 +541,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
             return std::nullopt;
         }
         const expected_document_t expected{.id = song_id_t{project_id}, .revision = revision};
-        if (!is_document_current(*parsed_song.song, expected)) {
+        if (!is_document_current(*parsed_song.value, expected)) {
             add_diagnostic(
                 diagnostics, native_project_storage_diagnostic_code_t::identity_mismatch,
                 "recovery envelope ID or revision differs from its native-project payload", path);
@@ -574,7 +574,7 @@ auto parse_recovery_impl(std::string_view bytes, native_project_limits_t limits,
         }
         return parsed_recovery_t{
             .snapshot = {
-                .song = std::move(*parsed_song.song),
+                .song = std::move(*parsed_song.value),
                 .metadata =
                     {
                         .original_source_path = path_from_utf8(source_path),
@@ -1161,39 +1161,6 @@ auto publish_prevalidated_bytes(const std::filesystem::path& destination, std::s
 
 } // namespace
 
-auto native_project_storage_result_t::from(native_project_storage_outcome_t&& outcome) -> native_project_storage_result_t {
-    return {.published = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-auto native_project_recovery_parse_result_t::from(native_project_recovery_parse_outcome_t&& outcome) -> native_project_recovery_parse_result_t {
-    return {.snapshot = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto native_project_storage_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto native_project_recovery_parse_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto native_project_recovery_scan_result_t::from(native_project_recovery_scan_outcome_t&& outcome) -> native_project_recovery_scan_result_t {
-    return {.candidates = std::move(outcome.value.candidates), .diagnostics = std::move(outcome.diagnostics),
-        .preferred_recovery_candidate = outcome.value.preferred_recovery_candidate};
-}
-auto native_project_recovery_action_result_t::from(native_project_recovery_action_outcome_t&& outcome) -> native_project_recovery_action_result_t {
-    return {.applied = outcome.value.applied, .document = std::move(outcome.value.document),
-        .version = std::move(outcome.value.version), .quarantined_path = std::move(outcome.value.quarantined_path),
-        .diagnostics = std::move(outcome.diagnostics)};
-}
-auto native_project_autosave_result_t::from(native_project_autosave_outcome_t&& outcome) -> native_project_autosave_result_t {
-    return {.status = outcome.value.status, .revision = outcome.value.revision,
-        .session_sequence = outcome.value.session_sequence, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto native_project_recovery_action_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
 auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     -> std::filesystem::path {
     auto filename = primary.filename();
@@ -1201,7 +1168,7 @@ auto native_project_adjacent_backup_path(const std::filesystem::path& primary)
     return primary.has_parent_path() ? primary.parent_path() / filename : filename;
 }
 
-auto native_project_recovery_parse_result_t::from(std::string_view bytes, native_project_limits_t limits)
+auto parse_native_project_recovery_snapshot(std::string_view bytes, native_project_limits_t limits)
     -> native_project_recovery_parse_outcome_t {
     native_project_recovery_parse_outcome_t result{};
     const auto parsed = parse_recovery_impl(bytes, limits, result.diagnostics);
@@ -1209,10 +1176,6 @@ auto native_project_recovery_parse_result_t::from(std::string_view bytes, native
         result.value = parsed->snapshot;
     }
     return result;
-}
-
-auto parse_native_project_recovery_snapshot(std::string_view bytes, native_project_limits_t limits) -> native_project_recovery_parse_result_t {
-    return native_project_recovery_parse_result_t::from(native_project_recovery_parse_result_t::from(bytes, limits));
 }
 
 namespace {
@@ -1514,10 +1477,10 @@ void parse_recovery_candidate(native_project_recovery_candidate_t& candidate,
         spec.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
     if (primary_file) {
         const auto parsed = parse_native_project(bytes, limits);
-        if (parsed.song && !parsed.has_errors()) {
-            candidate.document = *parsed.song;
+        if (parsed.value && parsed.ok()) {
+            candidate.document = *parsed.value;
             candidate.version = native_project_document_version_t{
-                .project_id = parsed.song->id, .revision = parsed.song->revision};
+                .project_id = parsed.value->id, .revision = parsed.value->revision};
             candidate.status = native_project_recovery_candidate_status_t::valid;
         } else {
             const auto limited = std::ranges::any_of(parsed.diagnostics, [](const auto& item) {
@@ -1696,7 +1659,7 @@ void finalize_recovery_candidates(native_project_recovery_scan_outcome_t& result
 
 } // namespace
 
-auto native_project_recovery_scan_result_t::from(const native_project_recovery_scan_request_t& request,
+auto scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
                                              native_project_recovery_scan_options_t options)
     -> native_project_recovery_scan_outcome_t {
     native_project_recovery_scan_outcome_t result{};
@@ -1732,11 +1695,6 @@ auto native_project_recovery_scan_result_t::from(const native_project_recovery_s
     return result;
 }
 
-auto scan_native_project_recovery_candidates(const native_project_recovery_scan_request_t& request,
-    native_project_recovery_scan_options_t options) -> native_project_recovery_scan_result_t {
-    return native_project_recovery_scan_result_t::from(native_project_recovery_scan_result_t::from(request, options));
-}
-
 namespace {
 
 auto publish_native_project_create_only(const std::filesystem::path& destination,
@@ -1750,7 +1708,7 @@ auto publish_native_project_create_only(const std::filesystem::path& destination
         return result;
     }
     auto serialized = write_native_project(song, limits);
-    if (!serialized.bytes.has_value() || serialized.has_errors()) {
+    if (!serialized.value.has_value() || !serialized.ok()) {
         copy_codec_diagnostics(result.diagnostics, serialized.diagnostics);
         if (result.diagnostics.empty()) {
             add_diagnostic(result.diagnostics,
@@ -1760,13 +1718,13 @@ auto publish_native_project_create_only(const std::filesystem::path& destination
         return result;
     }
     const expected_document_t expected{.id = song.id, .revision = song.revision};
-    if (!validate_native_payload(*serialized.bytes, expected, limits, result.diagnostics,
+    if (!validate_native_payload(*serialized.value, expected, limits, result.diagnostics,
                                  destination)) {
         return result;
     }
     native_project_storage_options_t options{.codec_limits = limits};
     return publish_prevalidated_bytes(
-        destination, *serialized.bytes, options,
+        destination, *serialized.value, options,
         [expected, limits](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics, const std::filesystem::path& path) {
             return validate_native_payload(reopened, expected, limits, diagnostics, path);
         },
@@ -1860,8 +1818,8 @@ auto parse_scanned_artifact(const native_project_recovery_candidate_t& candidate
         candidate.kind == native_project_recovery_candidate_kind_t::stale_primary_temporary;
     if (raw_native) {
         const auto parsed = parse_native_project(bytes, limits);
-        if (parsed.song.has_value() && !parsed.has_errors()) {
-            return parsed.song;
+        if (parsed.value.has_value() && parsed.ok()) {
+            return parsed.value;
         }
         add_action_error(result, native_project_storage_diagnostic_code_t::validation_failure,
                          "scanned native project no longer validates", candidate.path);
@@ -2169,7 +2127,7 @@ auto create_native_project_file(const std::filesystem::path& destination,
         return result;
     }
     auto serialized = write_native_project(song, options.codec_limits);
-    if (!serialized.bytes.has_value() || serialized.has_errors()) {
+    if (!serialized.value.has_value() || !serialized.ok()) {
         copy_codec_diagnostics(result.diagnostics, serialized.diagnostics);
         if (result.diagnostics.empty()) {
             add_diagnostic(result.diagnostics,
@@ -2184,13 +2142,13 @@ auto create_native_project_file(const std::filesystem::path& destination,
             stage_failure(native_project_storage_stage_t::preflight_validate), destination);
         return result;
     }
-    if (!validate_native_payload(*serialized.bytes, {.id = song.id, .revision = song.revision},
+    if (!validate_native_payload(*serialized.value, {.id = song.id, .revision = song.revision},
                                  options.codec_limits, result.diagnostics, destination)) {
         return result;
     }
     const expected_document_t expected{.id = song.id, .revision = song.revision};
     return publish_prevalidated_bytes(
-        destination, *serialized.bytes, options,
+        destination, *serialized.value, options,
         [expected, limits = options.codec_limits](std::string_view reopened, std::vector<native_project_storage_diagnostic_t>& diagnostics,
                                                   const std::filesystem::path& path) {
             return validate_native_payload(reopened, expected, limits, diagnostics, path);
@@ -2231,7 +2189,7 @@ auto create_native_project_recovery_file(const std::filesystem::path& destinatio
         return result;
     }
     auto serialized = write_native_project(song, options.codec_limits);
-    if (!serialized.bytes.has_value() || serialized.has_errors()) {
+    if (!serialized.value.has_value() || !serialized.ok()) {
         copy_codec_diagnostics(result.diagnostics, serialized.diagnostics);
         if (result.diagnostics.empty()) {
             add_diagnostic(result.diagnostics,
@@ -2247,12 +2205,12 @@ auto create_native_project_recovery_file(const std::filesystem::path& destinatio
         return result;
     }
     const expected_document_t expected{.id = song.id, .revision = song.revision};
-    if (!validate_native_payload(*serialized.bytes, expected, options.codec_limits,
+    if (!validate_native_payload(*serialized.value, expected, options.codec_limits,
                                  result.diagnostics, destination)) {
         return result;
     }
     auto envelope =
-        recovery_envelope(song, *serialized.bytes, metadata, options, result.diagnostics);
+        recovery_envelope(song, *serialized.value, metadata, options, result.diagnostics);
     if (!envelope.has_value()) {
         return result;
     }
@@ -2268,20 +2226,6 @@ auto create_native_project_recovery_file(const std::filesystem::path& destinatio
             const auto parsed = parse_recovery_impl(reopened, limits, diagnostics, path);
             return parsed.has_value() && is_document_current(parsed->snapshot.song, expected);
         });
-}
-
-auto publish_native_project_atomic(const std::filesystem::path& destination, const song_document_t& song,
-    native_project_storage_options_t options) -> native_project_storage_result_t {
-    return native_project_storage_result_t::from(create_native_project_file(destination, song, std::move(options)));
-}
-auto publish_native_project_recovery_atomic(const std::filesystem::path& destination, const song_document_t& song,
-    native_project_recovery_metadata_t metadata, native_project_storage_options_t options) -> native_project_storage_result_t {
-    return native_project_storage_result_t::from(create_native_project_recovery_file(destination, song,
-        std::move(metadata), std::move(options)));
-}
-auto publish_native_bytes_atomic(const std::filesystem::path& destination, std::string_view bytes,
-    native_project_storage_options_t options) -> native_project_storage_result_t {
-    return native_project_storage_result_t::from(create_native_bytes_file(destination, bytes, std::move(options)));
 }
 
 auto perform_native_project_recovery_action(std::span<const native_project_recovery_candidate_t> scan,
@@ -2369,13 +2313,6 @@ auto perform_native_project_recovery_action(std::span<const native_project_recov
     return result;
 }
 
-auto apply_native_project_recovery_action(const native_project_recovery_scan_result_t& scan,
-    std::size_t candidate_index, native_project_recovery_action_t action,
-    native_project_recovery_action_options_t options) -> native_project_recovery_action_result_t {
-    return native_project_recovery_action_result_t::from(perform_native_project_recovery_action(scan.candidates,
-        candidate_index, action, std::move(options)));
-}
-
 native_project_autosave_coordinator_t::native_project_autosave_coordinator_t(
     clock_t::time_point session_started_at,
     std::optional<native_project_document_version_t> last_explicit_save,
@@ -2452,14 +2389,6 @@ auto native_project_autosave_coordinator_t::create_autosave(
     result.value.session_sequence = session_sequence_;
     result.value.status = native_project_autosave_status_t::published;
     return result;
-}
-
-auto native_project_autosave_coordinator_t::maybe_autosave(const song_document_t& song,
-    clock_t::time_point now, const std::filesystem::path& caller_supplied_backup_path,
-    std::filesystem::path original_source_path, std::filesystem::path intended_project_path,
-    native_project_storage_options_t options) -> native_project_autosave_result_t {
-    return native_project_autosave_result_t::from(create_autosave(song, now, caller_supplied_backup_path,
-        std::move(original_source_path), std::move(intended_project_path), std::move(options)));
 }
 
 auto native_project_autosave_coordinator_t::last_autosaved_version() const noexcept

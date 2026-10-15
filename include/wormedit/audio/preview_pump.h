@@ -50,23 +50,6 @@ struct preview_pump_effect_t {
 };
 using preview_pump_outcome_t = result_t<preview_pump_effect_t, preview_pump_effect_t>;
 
-struct preview_pump_result_t {
-    [[nodiscard]] static auto from(preview_pump_outcome_t&& outcome) -> preview_pump_result_t;
-
-    preview_pump_status_t status{preview_pump_status_t::invalid_request};
-    std::size_t active_voices{};
-    std::size_t overlapping_voices{};
-    std::size_t requested_blocks{};
-    std::size_t decoded_blocks{};
-    std::size_t cached_blocks{};
-    std::optional<block_decode_result_t> failure;
-    auto operator==(const preview_pump_result_t&) const -> bool = default;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == preview_pump_status_t::ready;
-    }
-};
-
 [[nodiscard]] auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transport,
                                        session_token_t token, std::uint64_t timeline_frame,
                                        preview_pump_options_t options = {})
@@ -76,10 +59,4 @@ struct preview_pump_result_t {
 // preview transport generation. The active voice snapshot and every distinct
 // cache key are bounded before decoding begins, so capacity rejection has no
 // partial cache side effect.
-[[nodiscard]] auto pump_preview_lookahead(decoded_source_registry_t& sources,
-                                          transport_t& transport, session_token_t token,
-                                          std::uint64_t timeline_frame,
-                                          preview_pump_options_t options = {})
-    -> preview_pump_result_t;
-
 } // namespace wormedit::audio

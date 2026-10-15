@@ -376,10 +376,10 @@ auto generic_osu_roundtrip(bool explicit_class) -> song_document_t {
     for (auto& lane : layout.lanes) lane.key_color = lane_key_color_t::generic;
     if (explicit_class) layout.lanes.front().key_color = lane_key_color_t::pms_green;
     const auto written = write_native_project(song);
-    require_profile(written.bytes.has_value());
-    const auto loaded = parse_native_project(*written.bytes);
-    require_profile(loaded.song.has_value());
-    return *loaded.song;
+    require_profile(written.value.has_value());
+    const auto loaded = parse_native_project(*written.value);
+    require_profile(loaded.value.has_value());
+    return *loaded.value;
 }
 }
 
@@ -418,10 +418,10 @@ TEST_CASE("Unknown seven-key profiles switch by compatible lanes with one undo a
     check_profile(chart.measures.front().notes.front().lane == lane_id_t{3});
     check_profile(history.undo.size() == 1);
     const auto bytes = write_native_project(history.document);
-    require_profile(bytes.bytes.has_value());
-    const auto loaded = parse_native_project(*bytes.bytes);
-    require_profile(loaded.song.has_value());
-    check_profile(loaded.song->charts.front().lane_layouts.front().layout.profile_id == "osu-mania-7k");
+    require_profile(bytes.value.has_value());
+    const auto loaded = parse_native_project(*bytes.value);
+    require_profile(loaded.value.has_value());
+    check_profile(loaded.value->charts.front().lane_layouts.front().layout.profile_id == "osu-mania-7k");
     require_profile(static_cast<bool>(undo_document_command(history)));
     check_profile(history.document.charts.front().lane_layouts.front().layout.profile_id == "created-7k");
     check_profile(lane_identity_matches(history.document.charts.front().lane_layouts.front().layout, original));

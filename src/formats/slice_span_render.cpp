@@ -53,7 +53,8 @@ auto verify_decoding(audio::decoder_t& decoder, const slice_span_t& span,
     while (cursor < span.end_frame) {
         if (options.stop.stop_requested()) return std::unexpected(slice_span_render_payload_t::from("Slice rendering cancelled", span.asset));
         const auto requested = static_cast<std::size_t>(std::min<std::uint64_t>(audio::maximum_read_frames, span.end_frame - cursor));
-        const auto read = decoder.read_at(cursor, buffer, requested);
+        const auto read_outcome = decoder.read_frames_at(cursor, buffer, requested);
+        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
         if (read.status != audio::read_status_t::success || read.frames_read != requested)
             return std::unexpected(slice_span_render_payload_t::from("Cannot decode span for asset " + std::to_string(span.asset.value), span.asset));
         cursor += read.frames_read;
@@ -132,13 +133,13 @@ auto render_staged(const song_document_t& song, const slice_span_render_input_t&
         auto opened = open_source(song, plan, span.asset, options, decoders);
         if (!opened) return opened;
         const std::array<audio_slice_range_t, 1> range{{{span.begin_frame, span.end_frame}}};
-        auto rendered = audio::render_audio_slices(*decoders.at(span.asset.value), range,
+        auto rendered = audio::rendered_audio_slices_t::from(*decoders.at(span.asset.value), range,
             {.directory = publication.staging, .base_name = "span" + std::to_string(index), .stop = options.stop, .progress = {},
              .maximum_slice_frames = options.maximum_span_frames,
              .encoding = options.preserve_float_samples ? audio::slice_wav_encoding_t::float32
                                                         : audio::slice_wav_encoding_t::pcm16});
-        if (!rendered) return std::unexpected(slice_span_render_payload_t::from("Cannot render asset " + std::to_string(span.asset.value) + ": " + rendered.error, span.asset));
-        staged.push_back(std::move(rendered.files.front()));
+        if (!rendered) return std::unexpected(slice_span_render_payload_t::from("Cannot render asset " + std::to_string(span.asset.value) + ": " + rendered.error().message, span.asset));
+        staged.push_back(std::move(rendered->files.front()));
     }
     return {};
 }
@@ -162,13 +163,6 @@ auto publish(const slice_span_render_input_t& plan, const slice_span_render_opti
 
 } // namespace
 
-auto slice_span_render_result_t::from(slice_span_render_outcome_t&& outcome) -> slice_span_render_result_t {
-    const auto completed = outcome.has_value();
-    auto payload = completed ? std::move(*outcome) : std::move(outcome.error());
-    return {.completed = completed, .files = std::move(payload.files),
-        .error = std::move(payload.error), .asset = payload.asset};
-}
-
 auto create_slice_span_files(const song_document_t& song, const slice_span_render_input_t& plan,
     const slice_span_render_options_t& options) -> slice_span_render_outcome_t {
     decoders_t decoders;
@@ -184,11 +178,6 @@ auto create_slice_span_files(const song_document_t& song, const slice_span_rende
     auto rendered = render_staged(song, plan, options, decoders, publication, staged);
     if (!rendered) return std::unexpected(std::move(rendered.error()));
     return publish(plan, options, staged, publication);
-}
-
-auto render_slice_span_plan(const song_document_t& song, const slice_span_plan_t& plan,
-    const slice_span_render_options_t& options) -> slice_span_render_result_t {
-    return slice_span_render_result_t::from(create_slice_span_files(song, slice_span_render_input_t::from(plan), options));
 }
 
 namespace {
@@ -275,8 +264,9 @@ auto render_conversion_slice_plans(const song_document_t& song, const conversion
     auto rendering = options;
     rendering.preserve_float_samples = true;
     for (const auto& plan : converted.slice_plans) {
-        const auto rendered = render_slice_span_plan(song, plan, rendering);
-        if (!rendered) return rendered.error;
+        const auto rendered = create_slice_span_files(song, slice_span_render_input_t::from(plan),
+                                                       rendering);
+        if (!rendered) return rendered.error().error;
     }
     return std::nullopt;
 }

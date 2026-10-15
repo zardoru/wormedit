@@ -31,24 +31,24 @@ struct speed_span_t {
     auto operator==(const speed_span_t&) const -> bool = default;
 };
 
-struct speed_spans_t {
+struct speed_spans_view_t {
     // In compiled SPEEDS order.
     std::vector<speed_span_t> spans;
     // True when the limit cut the list or the evaluator rejected part of the chart.
     bool truncated{false};
-};
 
-// Evaluates the chart's SPEEDS through the exact core evaluator. Never mutates the chart; a chart
-// whose SPEEDS cannot be evaluated yields no spans.
-[[nodiscard]] auto build_speed_spans_view(const chart_document_t& chart, const timing_index_t& timing,
-                                       std::size_t limit) -> speed_spans_t;
+    // Evaluates the chart's SPEEDS through the exact core evaluator. Never mutates the chart; a chart
+    // whose SPEEDS cannot be evaluated yields no spans.
+    [[nodiscard]] static auto from(const chart_document_t& chart, const timing_index_t& timing,
+                                   std::size_t limit) -> speed_spans_view_t;
+};
 
 // The speed multiplier as a continuous curve over the viewport's source rows [first_row,
 // last_row]: 1.0 before the first event, then each span interpolates linearly from the value in
 // force at its begin to its target, which then stays latched. Zero-length spans jump. The point
 // format and normalization match build_sv_graph (x in [0, 1], y from `row_to_y`).
 template <typename RowToY>
-[[nodiscard]] auto build_speed_graph(const speed_spans_t& spans, double first_row, double last_row,
+[[nodiscard]] auto build_speed_graph(const speed_spans_view_t& spans, double first_row, double last_row,
                                      RowToY&& row_to_y) -> sv_graph_t {
     sv_graph_t graph;
     if (!(last_row > first_row)) return graph;

@@ -77,7 +77,7 @@ struct beat_interval_drag_t {
     [[nodiscard]] auto validate_apply(const chart_stamp_t&, bool timing_locked = false) const -> diagnostic_list_t;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
                              bool timing_locked = false) const
-        -> diagnosed_t<std::optional<std::string>>;
+        -> document_command_result_t;
 
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   object_id_t bpm_event, local_position_t beat,

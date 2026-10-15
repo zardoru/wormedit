@@ -73,7 +73,7 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
 
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = wormedit::asset_id_t{1},
         .path = fixture_path("keysound-c4.ogg"),
         .source = {"fixture:keysound-c4.ogg", "generated-v1:keysound-c4.ogg"},
@@ -88,8 +88,8 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
     std::string error;
     REQUIRE(output.open(&error));
 
-    const audition_clip_t clip{registered.binding->source, 0,
-                               registered.binding->output_frame_count, 1.0F};
+    const audition_clip_t clip{registered->source, 0,
+                               registered->output_frame_count, 1.0F};
     REQUIRE(output.start(std::span{&clip, 1}));
 
     const auto deadline = SDL_GetTicks() + 2'000;
@@ -112,7 +112,7 @@ namespace {
 auto audition_lock_order_stress() -> bool {
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = wormedit::asset_id_t{1}, .path = fixture_path("keysound-c4.ogg"),
         .source = {"fixture:keysound-c4.ogg", "lock-order-stress"}});
     if (!registered) return false;
@@ -122,7 +122,7 @@ auto audition_lock_order_stress() -> bool {
     audition_session_t session{sources, transport, bridge};
     wormedit::sys::sdl_audition_output_t output{session};
     if (!output.open()) return false;
-    const audition_clip_t clip{registered.binding->source, 0, registered.binding->output_frame_count, 1.0F};
+    const audition_clip_t clip{registered->source, 0, registered->output_frame_count, 1.0F};
     if (!output.start(std::span{&clip, 1})) return false;
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);
@@ -135,7 +135,7 @@ auto audition_lock_order_stress() -> bool {
     }
     std::array<float, 64> samples;
     samples.fill(1.0F);
-    static_cast<void>(session.render(samples));
+    static_cast<void>(session.render_frames(samples));
     return !session.is_active() && std::ranges::all_of(samples, [](float value) { return value == 0.0F; });
 }
 } // namespace
@@ -152,7 +152,7 @@ namespace {
 auto rejected_audition_continues_previous_session() -> bool {
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto registered = sources.register_source({
+    const auto registered = sources.create_source({
         .asset = wormedit::asset_id_t{1}, .path = fixture_path("polyphonic-chord.ogg"),
         .source = {"fixture:polyphonic-chord.ogg", "rejected-audition"}});
     if (!registered) return false;
@@ -162,7 +162,7 @@ auto rejected_audition_continues_previous_session() -> bool {
     audition_session_t session{sources, transport, bridge};
     wormedit::sys::sdl_audition_output_t output{session};
     if (!output.open()) return false;
-    const audition_clip_t clip{registered.binding->source, 0, registered.binding->output_frame_count, 1.0F};
+    const audition_clip_t clip{registered->source, 0, registered->output_frame_count, 1.0F};
     if (!output.start(std::span{&clip, 1})) return false;
     const auto token = bridge.session_token();
     const auto before = session.timeline_frame();
@@ -189,7 +189,7 @@ void audition_expect(bool value) { REQUIRE(value); }
 auto streamed_audition_without_service() -> bool {
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto source = sources.register_source({.asset = wormedit::asset_id_t{1},
+    const auto source = sources.create_source({.asset = wormedit::asset_id_t{1},
         .path = fixture_path("polyphonic-chord.ogg"),
         .source = {"fixture:polyphonic-chord.ogg", "worker-only"}});
     if (!source) return false;
@@ -199,7 +199,7 @@ auto streamed_audition_without_service() -> bool {
     audition_session_t session{sources, transport, bridge};
     wormedit::sys::sdl_audition_output_t output{session};
     if (!output.open()) return false;
-    const audition_clip_t clip{source.binding->source, 0, source.binding->output_frame_count, 1};
+    const audition_clip_t clip{source->source, 0, source->output_frame_count, 1};
     if (!output.start(std::span{&clip, 1})) return false;
     const auto deadline = SDL_GetTicks() + 2000;
     while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) SDL_Delay(2);

@@ -88,10 +88,8 @@ auto register_one_asset(const song_document_t& document, const audio_asset_t& as
                         std::filesystem::path resolved_path, std::uint64_t generation,
                         audio::decoded_source_registry_t& sources, bool defer) -> bool {
     auto registration = asset_registration(document, asset, std::move(resolved_path), generation);
-    const auto registered = defer ? sources.register_source_pending(std::move(registration))
-                                  : sources.register_source(std::move(registration));
-    return defer ? registered.status == audio::source_registration_status_t::pending
-                 : static_cast<bool>(registered);
+    return defer ? sources.create_pending_source(std::move(registration)).has_value()
+                 : sources.create_source(std::move(registration)).has_value();
 }
 
 
@@ -117,7 +115,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
     if (tasks == 0) return;
     task_graph_t graph{tasks};
     for (std::size_t index = 0; index < tasks; ++index) {
-        const auto added = graph.add_task(
+        const auto added = graph.create_task(
             {}, [&sources](std::span<const task_result_t>, std::stop_token stop) {
                 while (sources.probe_next_pending(stop)) {
                 }
@@ -125,7 +123,7 @@ void start_audition_source_probes(audio::decoded_source_registry_t& sources,
             });
         if (!added) return;
     }
-    static_cast<void>(scheduler.submit(std::move(graph)));
+    static_cast<void>(scheduler.begin(std::move(graph)));
 }
 
 auto drain_audition_probe_failures(audio::decoded_source_registry_t& sources)
@@ -216,16 +214,16 @@ auto resident_requests(const std::vector<resident_candidate_t>& candidates,
     std::vector<resident_wanted_t> wanted;
     for (const auto& candidate : candidates) {
         if (stop.stop_requested()) break;
-        const auto probed = sources.probe(candidate.asset);
+        const auto probed = sources.open_source_binding(candidate.asset);
         const auto key = resident_content_key(candidate.path);
-        if (!probed.binding || !key ||
-            probed.binding->output_frame_count > options.maximum_frames_per_sample) {
+        if (!probed || !key ||
+            probed->output_frame_count > options.maximum_frames_per_sample) {
             continue;
         }
         wanted.push_back({candidate.asset,
-                          {.source = probed.binding->source,
+                          {.source = probed->source,
                            .content_key = *key,
-                           .frame_count = probed.binding->output_frame_count}});
+                           .frame_count = probed->output_frame_count}});
     }
     return wanted;
 }
@@ -369,13 +367,13 @@ void resident_sample_loader_t::set_budget_bytes(std::size_t bytes) {
     }
     const auto stop = stop_.get_token();
     task_graph_t graph{1};
-    const auto added = graph.add_task({},
+    const auto added = graph.create_task({},
         [&store = store_, state, stop, pass = pass_mutex_](std::span<const task_result_t>, std::stop_token) {
             const std::scoped_lock lock(*pass);
             if (!stop.stop_requested()) finish_resident_pass(store, *state, stop, true);
             return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
-    if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
+    if (!added || !scheduler_.begin(std::move(graph))) state->running = false;
 }
 
 void resident_sample_loader_t::prioritize(std::vector<asset_id_t> assets) {
@@ -456,7 +454,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
     auto state = state_;
     auto stop = stop_.get_token();
     task_graph_t graph{1};
-    const auto added = graph.add_task(
+    const auto added = graph.create_task(
         {}, [&store = store_, state, stop, candidates = std::move(candidates),
              &sources, head_cache = head_cache_, head_frames = head_frames_, pass = pass_mutex_](
                 std::span<const task_result_t>, std::stop_token) {
@@ -473,7 +471,7 @@ void resident_sample_loader_t::start(const song_document_t& document,
             finish_resident_pass(store, *state, stop, false);
             return task_result_t::success(task_value_t::from(std::make_shared<const int>(0)));
         });
-    if (!added || !scheduler_.submit(std::move(graph))) state->running = false;
+    if (!added || !scheduler_.begin(std::move(graph))) state->running = false;
 }
 
 namespace {

@@ -72,10 +72,10 @@ void sync_virtual_tails(song_document_t& document) {
 
 auto build_virtual_canvas(const chart_document_t& chart)
     -> std::variant<virtual_canvas_t, diagnostic_list_t> {
-    auto built = build_measure_index(chart);
-    if (std::holds_alternative<diagnostic_list_t>(built))
-        return std::get<diagnostic_list_t>(std::move(built));
-    auto index = std::get<measure_index_t>(std::move(built));
+    auto built = measure_index_t::from(chart);
+    if (!built)
+        return std::move(built.error());
+    auto index = std::move(*built);
     const auto count = std::max(chart.measures.size(), virtual_tail_measure_limit(chart));
     const auto tail = count - index.entries.size();
     const auto default_rows = chart.divisions_per_standard_measure;

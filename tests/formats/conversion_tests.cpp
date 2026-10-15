@@ -44,9 +44,9 @@ auto stepmania_song() -> wormedit::song_document_t {
                       "matched-timing.ssc";
     const auto parsed = wormedit::parse_stepmania_bytes(
         read_binary(path), {.profile = wormedit::stepmania_profile_t::ssc});
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.has_errors());
-    return *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    REQUIRE(parsed.ok());
+    return *parsed.value;
 }
 
 } // namespace
@@ -70,8 +70,8 @@ auto sliced_bmson_song() -> std::optional<wormedit::song_document_t> {
       ]
     })";
     auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{json.data(), json.size()}));
-    if (!parsed.song || parsed.has_errors()) return std::nullopt;
-    return std::move(parsed.song);
+    if (!parsed.value || !parsed.ok()) return std::nullopt;
+    return std::move(parsed.value);
 }
 
 auto sliced_conversion_request(const wormedit::song_document_t& song,
@@ -101,7 +101,7 @@ auto has_transform_error(const wormedit::conversion_result_t& result,
 
 auto spans_are_written(const wormedit::conversion_result_t& result) -> bool {
     if (result.outputs.size() != 1 || result.slice_plans.size() != 1) return false;
-    for (const auto& span : result.slice_plans.front().spans)
+    for (const auto& span : result.slice_plans.front().value.spans)
         if (result.outputs.front().bytes.find(span.filename) == std::string::npos) return false;
     return true;
 }
@@ -118,7 +118,7 @@ auto sample_filenames_are_in_target_sections(const wormedit::song_document_t& so
     const auto stem_asset = song.charts.front().sound_channels.front().source_clip.source;
     bool stem_sample{};
     bool packed_sample{};
-    for (const auto& span : result.slice_plans.front().spans) {
+    for (const auto& span : result.slice_plans.front().value.spans) {
         if (span.asset == stem_asset)
             stem_sample = stem_sample || bytes.find(span.filename, hit_begin) != std::string::npos;
         else {
@@ -136,15 +136,15 @@ auto same_span_plans(const wormedit::conversion_result_t& lhs,
                      const wormedit::conversion_result_t& rhs) -> bool {
     if (lhs.slice_plans.size() != rhs.slice_plans.size()) return false;
     for (std::size_t index = 0; index < lhs.slice_plans.size(); ++index)
-        if (lhs.slice_plans[index].spans != rhs.slice_plans[index].spans) return false;
+        if (lhs.slice_plans[index].value.spans != rhs.slice_plans[index].value.spans) return false;
     return true;
 }
 
 auto has_silent_mapping(const wormedit::song_document_t& song,
                         const wormedit::conversion_request_t& request) -> bool {
-    const auto plan = wormedit::plan_conversion_slice_spans(
+    const auto plan = wormedit::slice_span_plan_payload_t::from(
         song, request.chart.value(), request.slice_sources, request.slice_options);
-    return std::ranges::any_of(plan.mappings, [](const auto& mapping) {
+    return std::ranges::any_of(plan.value.mappings, [](const auto& mapping) {
         return !mapping.span_index.has_value();
     });
 }
@@ -174,20 +174,20 @@ TEST_CASE("BMSON conversion exports deduplicated slice samples and preserves sil
     auto song = sliced_bmson_song();
     REQUIRE(song.has_value());
     const auto original_bmson = wormedit::write_bmson(*song);
-    REQUIRE(original_bmson.json.has_value());
+    REQUIRE(original_bmson.value.has_value());
     const auto request = sliced_conversion_request(*song, song->charts.front().id);
     const auto converted = wormedit::convert_document(*song, request);
     REQUIRE(converted);
     REQUIRE(spans_are_written(converted));
-    check_conversion(converted.slice_plans.front().spans.size() == 4);
+    check_conversion(converted.slice_plans.front().value.spans.size() == 4);
     check_conversion(has_silent_mapping(*song, request));
     check_conversion(sample_filenames_are_in_target_sections(*song, converted));
     const auto parsed = wormedit::parse_osu_mania_bytes(std::as_bytes(std::span{
         converted.outputs.front().bytes.data(), converted.outputs.front().bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    check_conversion(has_sounded_and_silent_notes(*parsed.song));
+    REQUIRE(parsed.value.has_value());
+    check_conversion(has_sounded_and_silent_notes(*parsed.value));
     const auto after_bmson = wormedit::write_bmson(*song);
-    check_conversion(after_bmson.json == original_bmson.json);
+    check_conversion(after_bmson.value == original_bmson.value);
 }
 
 TEST_CASE("BMSON slice conversion is deterministic and shares spans across charts",
@@ -210,7 +210,7 @@ TEST_CASE("BMSON slice conversion is deterministic and shares spans across chart
     check_conversion(first.outputs.front().bytes == again.outputs.front().bytes);
     check_conversion(first.outputs.back().bytes == again.outputs.back().bytes);
     check_conversion(same_span_plans(first, again));
-    check_conversion(first.slice_plans.front().spans.size() == 4);
+    check_conversion(first.slice_plans.front().value.spans.size() == 4);
 }
 
 TEST_CASE("BMSON slice conversion rejects missing geometry without partial output",
@@ -274,8 +274,8 @@ TEST_CASE("conversion prepares grouped StepMania output and validates reimport",
                                 converted.outputs.front().bytes.size()}),
         {.profile = wormedit::stepmania_profile_t::ssc,
          .source_timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps});
-    REQUIRE(parsed.song.has_value());
-    CHECK(parsed.song->charts.size() == 2);
+    REQUIRE(parsed.value.has_value());
+    CHECK(parsed.value->charts.size() == 2);
 }
 
 TEST_CASE("conversion limits grouped StepMania output to an ordered chart subset",
@@ -297,9 +297,9 @@ TEST_CASE("conversion limits grouped StepMania output to an ordered chart subset
             std::span{result.outputs.front().bytes.data(), result.outputs.front().bytes.size()}),
         {.profile = wormedit::stepmania_profile_t::ssc,
          .source_timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps});
-    REQUIRE(parsed.song.has_value());
-    REQUIRE(parsed.song->charts.size() == 1);
-    CHECK(parsed.song->charts.front().metadata.name == "Selected second chart");
+    REQUIRE(parsed.value.has_value());
+    REQUIRE(parsed.value->charts.size() == 1);
+    CHECK(parsed.value->charts.front().metadata.name == "Selected second chart");
 }
 
 TEST_CASE("conversion rejects ambiguous chart-set selection", "[unit][format][conversion]") {
@@ -362,16 +362,16 @@ TEST_CASE("conversion writes a staged BMSON asset path without changing the sour
           "[unit][format][conversion]") {
     const auto parsed = wormedit::parse_bmson_bytes(read_binary(
         std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "zero-resolution-default.bmson"));
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.song->audio_assets.empty());
-    const auto original_path = parsed.song->audio_assets.front().source_path;
+    REQUIRE(parsed.value.has_value());
+    REQUIRE_FALSE(parsed.value->audio_assets.empty());
+    const auto original_path = parsed.value->audio_assets.front().source_path;
     const wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bmson,
-        .chart = parsed.song->charts.front().id,
+        .chart = parsed.value->charts.front().id,
         .loss_policy = wormedit::loss_policy_t::warn,
-        .staged_assets = {{.asset = parsed.song->audio_assets.front().id,
+        .staged_assets = {{.asset = parsed.value->audio_assets.front().id,
                            .relative_path = "assets/12-tone.wav"}}};
-    const auto converted = wormedit::convert_document(*parsed.song, request);
+    const auto converted = wormedit::convert_document(*parsed.value, request);
     std::string diagnostics;
     for (const auto& diagnostic : converted.diagnostics)
         diagnostics += diagnostic.message + "\n";
@@ -379,39 +379,39 @@ TEST_CASE("conversion writes a staged BMSON asset path without changing the sour
     REQUIRE(converted);
     REQUIRE(converted.outputs.size() == 1);
     CHECK(converted.outputs.front().bytes.find("assets/12-tone.wav") != std::string::npos);
-    CHECK(parsed.song->audio_assets.front().source_path == original_path);
+    CHECK(parsed.value->audio_assets.front().source_path == original_path);
 }
 
 TEST_CASE("conversion rejects invalid staged asset mappings before serialization",
           "[unit][format][conversion]") {
     const auto parsed = wormedit::parse_bmson_bytes(read_binary(
         std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "zero-resolution-default.bmson"));
-    REQUIRE(parsed.song.has_value());
+    REQUIRE(parsed.value.has_value());
     wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bmson,
-        .chart = parsed.song->charts.front().id,
+        .chart = parsed.value->charts.front().id,
         .staged_assets = {
-            {.asset = parsed.song->audio_assets.front().id, .relative_path = "../outside.wav"}}};
-    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+            {.asset = parsed.value->audio_assets.front().id, .relative_path = "../outside.wav"}}};
+    CHECK_FALSE(wormedit::convert_document(*parsed.value, request));
     request.staged_assets.front().relative_path = "assets/";
-    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+    CHECK_FALSE(wormedit::convert_document(*parsed.value, request));
     request.staged_assets.front().relative_path = "assets/tone.wav";
     request.staged_assets.front().asset = wormedit::asset_id_t{999'999};
-    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
-    request.staged_assets.front().asset = parsed.song->audio_assets.front().id;
+    CHECK_FALSE(wormedit::convert_document(*parsed.value, request));
+    request.staged_assets.front().asset = parsed.value->audio_assets.front().id;
     request.target = wormedit::format_family_t::native_project;
-    CHECK_FALSE(wormedit::convert_document(*parsed.song, request));
+    CHECK_FALSE(wormedit::convert_document(*parsed.value, request));
 
     const auto multiple = wormedit::parse_bmson_bytes(read_binary(
         std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bmson" / "slicing-and-mixed-sounds.bmson"));
-    REQUIRE(multiple.song.has_value());
-    REQUIRE(multiple.song->audio_assets.size() >= 2);
+    REQUIRE(multiple.value.has_value());
+    REQUIRE(multiple.value->audio_assets.size() >= 2);
     request.target = wormedit::format_family_t::bmson;
-    request.chart = multiple.song->charts.front().id;
+    request.chart = multiple.value->charts.front().id;
     request.staged_assets = {
-        {.asset = multiple.song->audio_assets[0].id, .relative_path = "assets/shared.wav"},
-        {.asset = multiple.song->audio_assets[1].id, .relative_path = "assets/shared.wav"}};
-    CHECK_FALSE(wormedit::convert_document(*multiple.song, request));
+        {.asset = multiple.value->audio_assets[0].id, .relative_path = "assets/shared.wav"},
+        {.asset = multiple.value->audio_assets[1].id, .relative_path = "assets/shared.wav"}};
+    CHECK_FALSE(wormedit::convert_document(*multiple.value, request));
 }
 
 TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
@@ -420,17 +420,17 @@ TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
         wormedit::parse_bms_bytes(read_binary(std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "bms" /
                                               "profiles" / "bms-5k-foot-pedal.bms"),
                                   {.file_extension = ".bms"});
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.song->audio_assets.empty());
-    const auto original = parsed.song->resources.front().name;
+    REQUIRE(parsed.value.song.has_value());
+    REQUIRE_FALSE(parsed.value.song->audio_assets.empty());
+    const auto original = parsed.value.song->resources.front().name;
     const wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::bms,
         .target_profile = "bms-5k-outside-scratch-foot-pedal",
-        .chart = parsed.song->charts.front().id,
+        .chart = parsed.value.song->charts.front().id,
         .loss_policy = wormedit::loss_policy_t::warn,
         .staged_assets = {
-            {.asset = parsed.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
-    const auto converted = wormedit::convert_document(*parsed.song, request);
+            {.asset = parsed.value.song->audio_assets.front().id, .relative_path = "assets/5-lane.wav"}}};
+    const auto converted = wormedit::convert_document(*parsed.value.song, request);
     std::string diagnostics;
     for (const auto& diagnostic : converted.diagnostics)
         diagnostics += diagnostic.message + "\n";
@@ -439,24 +439,24 @@ TEST_CASE("conversion rewrites a BMS WAV declaration from a staged asset",
     REQUIRE(converted.outputs.size() == 1);
     INFO(converted.outputs.front().bytes.substr(0, 500));
     CHECK(converted.outputs.front().bytes.find("#WAV01 assets/5-lane.wav") != std::string::npos);
-    CHECK(parsed.song->resources.front().name == original);
+    CHECK(parsed.value.song->resources.front().name == original);
 }
 
 TEST_CASE("conversion rewrites an osu!mania music path from a staged asset",
           "[unit][format][conversion]") {
     const auto parsed = wormedit::parse_osu_mania_bytes(read_binary(
         std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "osu" / "mania-tags-bookmarks-kiai.osu"));
-    REQUIRE(parsed.song.has_value());
-    const auto music = std::ranges::find_if(parsed.song->audio_assets, [](const auto& asset) {
+    REQUIRE(parsed.value.has_value());
+    const auto music = std::ranges::find_if(parsed.value->audio_assets, [](const auto& asset) {
         return asset.source_path == "fixture.mp3";
     });
-    REQUIRE(music != parsed.song->audio_assets.end());
+    REQUIRE(music != parsed.value->audio_assets.end());
     const wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::osu_mania,
-        .chart = parsed.song->charts.front().id,
+        .chart = parsed.value->charts.front().id,
         .loss_policy = wormedit::loss_policy_t::warn,
         .staged_assets = {{.asset = music->id, .relative_path = "assets/7-fixture.mp3"}}};
-    const auto converted = wormedit::convert_document(*parsed.song, request);
+    const auto converted = wormedit::convert_document(*parsed.value, request);
     std::string diagnostics;
     for (const auto& diagnostic : converted.diagnostics)
         diagnostics += diagnostic.message + "\n";
@@ -483,7 +483,7 @@ TEST_CASE("StepMania conversion writes a staged music path for SM and SSC",
                               .name = "music.ogg",
                               .asset = wormedit::asset_id_t{900001},
                               .roles = {wormedit::resource_role_t::music}});
-    CHECK_FALSE(wormedit::write_stepmania(song, {.profile = wormedit::stepmania_profile_t::ssc}).text);
+    CHECK_FALSE(wormedit::write_stepmania(song, {.profile = wormedit::stepmania_profile_t::ssc}).value);
     for (const auto profile : {wormedit::stepmania_profile_t::sm,
                                wormedit::stepmania_profile_t::ssc}) {
         const wormedit::conversion_request_t request{
@@ -510,8 +510,8 @@ TEST_CASE("soundless BMSON conversion needs no decoder geometry",
           "[unit][format][conversion][osu]") {
     constexpr std::string_view text = R"({"version":"1.0.0","info":{"title":"silent","artist":"test","mode_hint":"beat-7k","resolution":240,"init_bpm":120},"lines":[{"y":0},{"y":960}],"sound_channels":[]})";
     const auto parsed = wormedit::parse_bmson_bytes(std::as_bytes(std::span{text.data(), text.size()}));
-    REQUIRE(parsed.song.has_value());
-    const auto converted = wormedit::convert_document(*parsed.song,
+    REQUIRE(parsed.value.has_value());
+    const auto converted = wormedit::convert_document(*parsed.value,
         {.target = wormedit::format_family_t::osu_mania, .target_profile = "lazer-v128",
          .loss_policy = wormedit::loss_policy_t::warn});
     REQUIRE(converted);
@@ -548,16 +548,16 @@ TEST_CASE("BMSON BMS slicing preserves silent gameplay with one shared binding",
           "[unit][format][conversion][bms_writer]") {
     auto song = sliced_bmson_song();
     require_conversion(song.has_value());
-    const auto original = wormedit::write_bmson(*song).json;
+    const auto original = wormedit::write_bmson(*song).value;
     const auto result = wormedit::convert_document(*song, bms_slice_request(*song));
     for (const auto& diagnostic : result.diagnostics) INFO(diagnostic.message);
     require_conversion(static_cast<bool>(result));
     check_conversion(result.silent_files.size() == 1);
-    check_conversion(result.slice_plans.front().spans.size() == 4);
+    check_conversion(result.slice_plans.front().value.spans.size() == 4);
     check_conversion(occurrence_count(result.outputs.front().bytes, "#WAV") == 5);
     check_conversion(result.outputs.front().bytes.find("conversion-silence.wav") != std::string::npos);
     check_conversion(result.outputs.front().bytes.find("packed-one.wav") == std::string::npos);
-    check_conversion(wormedit::write_bmson(*song).json == original);
+    check_conversion(wormedit::write_bmson(*song).value == original);
 }
 
 TEST_CASE("BMSON BMS capacity counts retained sounds and silence before publication",
@@ -670,28 +670,28 @@ TEST_CASE("BMSON slice conversion writes StepMania keysounds with one file per d
     require_conversion(static_cast<bool>(converted));
     require_conversion(converted.outputs.size() == 1 && converted.slice_plans.size() == 1);
     const auto& bytes = converted.outputs.front().bytes;
-    const auto& spans = converted.slice_plans.front().spans;
+    const auto& spans = converted.slice_plans.front().value.spans;
     check_conversion(spans.size() == 4);
     // The stem plays one span twice; every distinct span is listed exactly once.
     for (const auto& span : spans) check_conversion(occurrence_count(bytes, span.filename) == 1);
     const auto parsed = wormedit::parse_stepmania_bytes(
         std::as_bytes(std::span{bytes.data(), bytes.size()}),
         {.profile = wormedit::stepmania_profile_t::ssc});
-    require_conversion(parsed.song.has_value());
-    check_conversion(!parsed.has_errors());
+    require_conversion(parsed.value.has_value());
+    check_conversion(parsed.ok());
     // Every voice/onset binding the osu!mania path keeps survives the StepMania export.
     const auto osu = wormedit::convert_document(*song, sliced_conversion_request(*song, song->charts.front().id));
     require_conversion(static_cast<bool>(osu));
     const auto osu_parsed = wormedit::parse_osu_mania_bytes(std::as_bytes(std::span{
         osu.outputs.front().bytes.data(), osu.outputs.front().bytes.size()}));
-    require_conversion(osu_parsed.song.has_value());
-    const auto expected = keysound_index_count(*osu_parsed.song);
-    const auto actual = keysound_index_count(*parsed.song);
+    require_conversion(osu_parsed.value.has_value());
+    const auto expected = keysound_index_count(*osu_parsed.value);
+    const auto actual = keysound_index_count(*parsed.value);
     check_conversion(actual.second == expected.second);
     check_conversion(actual.first + actual.second > 0);
     check_conversion(actual.first == expected.first);
     check_conversion(actual.first + actual.second > spans.size());
-    check_conversion(wormedit::write_bmson(*song).json == original_bmson.json);
+    check_conversion(wormedit::write_bmson(*song).value == original_bmson.value);
 }
 
 TEST_CASE("conversion canonical warnings retain output and atomic metadata", "[format][conversion][results]") {
@@ -721,11 +721,11 @@ TEST_CASE("conversion empty successful report keeps the legacy output requiremen
 TEST_CASE("conversion primary prepares a reimported output atomically", "[format][conversion][results]") {
     using namespace wormedit;
     const auto song = stepmania_song();
-    const auto before = native_project_write_result_t::from(song).value;
+    const auto before = write_native_project(song).value;
     require_conversion(before.has_value());
     const auto outcome = conversion_result_t::from(song, {.target = format_family_t::native_project});
     require_conversion(outcome.ok());
     require_conversion(outcome.value.outputs.size() == 1);
     check_conversion(outcome.value.outputs.front().reimport_validated);
-    check_conversion(native_project_write_result_t::from(song).value == before);
+    check_conversion(write_native_project(song).value == before);
 }

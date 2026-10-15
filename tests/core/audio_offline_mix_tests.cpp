@@ -20,12 +20,12 @@ auto register_tone(decoded_source_registry_t& registry, std::uint64_t id,
         pcm[frame * output_channel_count] = left;
         pcm[frame * output_channel_count + 1] = right;
     }
-    const auto registered = registry.register_generated_source({
+    const auto registered = registry.create_generated_source({
         .source = {"offline-generated:" + std::to_string(id), "offline-mix-test-v1"},
         .interleaved_stereo = std::move(pcm),
     });
     if (!registered) return {};
-    return *registered.binding;
+    return *registered;
 }
 
 auto make_music_schedule(std::uint64_t frames) -> preview_schedule_t {

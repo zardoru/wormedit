@@ -271,13 +271,13 @@ auto plan_allocation(const chart_document_t& chart, std::span<const resource_ent
             error(diagnostic_code_t::invalid_id, "note move to BGM needs 1 to 1000000 notes"));
         return result;
     }
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(chart);
+    if (!built) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_measure,
                                            "BGM allocation requires valid measure geometry"));
         return result;
     }
-    const auto& geometry = std::get<measure_index_t>(built);
+    const auto& geometry = *built;
     const auto measure_entries = measure_lookup_t::from(geometry);
     const auto resource_keys = make_resource_keys(resources);
     auto collected = collect_candidates(chart, ids, resource_keys, measure_entries);
@@ -466,8 +466,8 @@ auto is_blocked_by_note(const chart_document_t& chart, const measure_index_t& in
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (note.lane != lane) continue;
-            const auto other_begin = absolute_row(index, note.position);
-            const auto other_end = note.end ? absolute_row(index, *note.end) : other_begin;
+            const auto other_begin = index.row_of(note.position);
+            const auto other_end = note.end ? index.row_of(*note.end) : other_begin;
             if (!other_begin || !other_end || (*other_begin <= finish && begin <= *other_end))
                 return true;
         }
@@ -490,7 +490,7 @@ auto is_layout_covering_hold(const chart_document_t& chart, const measure_index_
     if (!event.end || !is_editable_lane_at(chart, event.position, lane) ||
         !is_editable_lane_at(chart, *event.end, lane)) return false;
     for (const auto& segment : chart.lane_layouts) {
-        const auto row = absolute_row(index, segment.position);
+        const auto row = index.row_of(segment.position);
         if (row && *row > begin && *row <= finish && !is_editable_lane_at(chart, segment.position, lane))
             return false;
     }
@@ -507,11 +507,11 @@ auto is_valid_restore_span(const chart_document_t& chart, const bgm_event_t& eve
             });
         });
     }
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) return false;
-    const auto& index = std::get<measure_index_t>(built);
-    const auto begin = absolute_row(index, event.position);
-    const auto finish = absolute_row(index, *event.end);
+    const auto built = measure_index_t::from(chart);
+    if (!built) return false;
+    const auto& index = *built;
+    const auto begin = index.row_of(event.position);
+    const auto finish = index.row_of(*event.end);
     return begin && finish && *finish > *begin &&
            !is_blocked_by_note(chart, index, lane, *begin, *finish) &&
            is_layout_covering_hold(chart, index, event, lane, *begin, *finish);

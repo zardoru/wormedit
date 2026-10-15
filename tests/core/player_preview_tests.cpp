@@ -82,6 +82,11 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
 }
 
+void require_preview_scene(const player_preview_scene_view_outcome_t& result) {
+    REQUIRE(result.diagnostics.empty());
+    REQUIRE(result.value);
+}
+
 void check_preview_stage_order(const player_preview_scene_view_t& scene) {
     for (std::size_t i = 0; i < 4; ++i) {
         CHECK(scene.lanes[i].lane == lane_id_t{i + 1});
@@ -96,31 +101,30 @@ TEST_CASE("player preview composes lanes receptors notes and holds from one tran
     const auto chart = preview_chart();
     const auto built = player_preview_index_result_t::from(player_preview_index_t::from(chart, 9));
     REQUIRE(built);
-    const auto scene = player_preview_scene_view_result_t::from(
-        player_preview_scene_view_result_t::from(*built.index, request()));
-    REQUIRE(scene);
-    CHECK(scene.scene->chart == chart_id_t{7});
-    CHECK(scene.scene->document_revision == 9);
-    CHECK(scene.scene->absolute_row == signed_rational_t{0, 1});
-    CHECK(scene.scene->split_stage);
-    REQUIRE(scene.scene->lanes.size() == 4);
-    REQUIRE(scene.scene->receptors.size() == 4);
-    check_preview_stage_order(*scene.scene);
-    CHECK(scene.scene->lanes[0].bounds.left == 0.0);
-    CHECK(scene.scene->lanes[1].bounds.right == 200.0);
-    CHECK(scene.scene->lanes[2].bounds.left == 212.0);
-    CHECK(scene.scene->lanes[3].bounds.right == 412.0);
-    CHECK(scene.scene->receptors[0].glyph == lane_glyph_t::arrow_left);
+    const auto scene = player_preview_scene_view_t::from(*built.index, request());
+    require_preview_scene(scene);
+    CHECK(scene.value->chart == chart_id_t{7});
+    CHECK(scene.value->document_revision == 9);
+    CHECK(scene.value->absolute_row == signed_rational_t{0, 1});
+    CHECK(scene.value->split_stage);
+    REQUIRE(scene.value->lanes.size() == 4);
+    REQUIRE(scene.value->receptors.size() == 4);
+    check_preview_stage_order(*scene.value);
+    CHECK(scene.value->lanes[0].bounds.left == 0.0);
+    CHECK(scene.value->lanes[1].bounds.right == 200.0);
+    CHECK(scene.value->lanes[2].bounds.left == 212.0);
+    CHECK(scene.value->lanes[3].bounds.right == 412.0);
+    CHECK(scene.value->receptors[0].glyph == lane_glyph_t::arrow_left);
 
-    const auto tap = std::ranges::find(scene.scene->note_endpoints, object_id_t{10},
+    const auto tap = std::ranges::find(scene.value->note_endpoints, object_id_t{10},
                                        &player_preview_note_geometry_t::note);
-    REQUIRE(tap != scene.scene->note_endpoints.end());
+    REQUIRE(tap != scene.value->note_endpoints.end());
     CHECK(tap->bounds.top == Catch::Approx(153.0));
     CHECK(tap->bounds.bottom == Catch::Approx(167.0));
-    REQUIRE(scene.scene->hold_bodies.size() == 1);
-    CHECK(scene.scene->hold_bodies[0].bounds.top == Catch::Approx(256.0));
-    CHECK(scene.scene->hold_bodies[0].bounds.bottom == Catch::Approx(448.0));
-    CHECK(scene.scene->visible_note_count == 2);
+    REQUIRE(scene.value->hold_bodies.size() == 1);
+    CHECK(scene.value->hold_bodies[0].bounds.top == Catch::Approx(256.0));
+    CHECK(scene.value->hold_bodies[0].bounds.bottom == Catch::Approx(448.0));
+    CHECK(scene.value->visible_note_count == 2);
 }
 
 TEST_CASE("player preview skins share geometry and change presentation only",
@@ -129,35 +133,35 @@ TEST_CASE("player preview skins share geometry and change presentation only",
     REQUIRE(built);
     auto arrows_request = request(frame_at(*built.index, 240));
     const auto arrows = player_preview_scene_view_t::from(*built.index, arrows_request);
-    REQUIRE(arrows);
+    require_preview_scene(arrows);
     auto neutral_request = arrows_request;
     neutral_request.skin = player_preview_skin_t::neutral;
     const auto neutral = player_preview_scene_view_t::from(*built.index, neutral_request);
-    REQUIRE(neutral);
+    require_preview_scene(neutral);
     auto mania_request = arrows_request;
     mania_request.skin = player_preview_skin_t::mania;
     const auto mania = player_preview_scene_view_t::from(*built.index, mania_request);
-    REQUIRE(mania);
+    require_preview_scene(mania);
 
-    REQUIRE(arrows.scene->note_endpoints.size() == neutral.scene->note_endpoints.size());
-    REQUIRE(arrows.scene->note_endpoints.size() == mania.scene->note_endpoints.size());
-    for (std::size_t index = 0; index < arrows.scene->note_endpoints.size(); ++index) {
-        CHECK(arrows.scene->note_endpoints[index].bounds ==
-              neutral.scene->note_endpoints[index].bounds);
-        CHECK(arrows.scene->note_endpoints[index].bounds ==
-              mania.scene->note_endpoints[index].bounds);
-        CHECK(neutral.scene->note_endpoints[index].glyph == lane_glyph_t::square);
-        CHECK(mania.scene->note_endpoints[index].glyph == lane_glyph_t::bar);
+    REQUIRE(arrows.value->note_endpoints.size() == neutral.value->note_endpoints.size());
+    REQUIRE(arrows.value->note_endpoints.size() == mania.value->note_endpoints.size());
+    for (std::size_t index = 0; index < arrows.value->note_endpoints.size(); ++index) {
+        CHECK(arrows.value->note_endpoints[index].bounds ==
+              neutral.value->note_endpoints[index].bounds);
+        CHECK(arrows.value->note_endpoints[index].bounds ==
+              mania.value->note_endpoints[index].bounds);
+        CHECK(neutral.value->note_endpoints[index].glyph == lane_glyph_t::square);
+        CHECK(mania.value->note_endpoints[index].glyph == lane_glyph_t::bar);
     }
-    const auto tap = std::ranges::find(arrows.scene->note_endpoints, object_id_t{10},
+    const auto tap = std::ranges::find(arrows.value->note_endpoints, object_id_t{10},
                                        &player_preview_note_geometry_t::note);
-    REQUIRE(tap != arrows.scene->note_endpoints.end());
+    REQUIRE(tap != arrows.value->note_endpoints.end());
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(64.0));
 }
 
 namespace {
-void check_layer2_rejected(const player_preview_scene_view_result_t& result) {
-    CHECK_FALSE(result);
+void check_preview_scene_rejected(const player_preview_scene_view_outcome_t& result) {
+    CHECK_FALSE((result.value && result.diagnostics.empty()));
 }
 }
 
@@ -168,20 +172,20 @@ TEST_CASE("player preview validates Layer 2 identities, kind and frame bounds", 
     layer_request.visual_layers.layer2 = {.sample_frame = 80, .object = object_id_t{80},
         .resource = resource_id_t{180}, .kind = visual_event_kind_t::layer2};
     const auto valid = player_preview_scene_view_t::from(*built.index, layer_request);
-    REQUIRE(valid);
-    CHECK(valid.scene->visual_layers.layer2 == layer_request.visual_layers.layer2);
+    require_preview_scene(valid);
+    CHECK(valid.value->visual_layers.layer2 == layer_request.visual_layers.layer2);
     auto invalid = layer_request;
     invalid.visual_layers.layer2->kind = visual_event_kind_t::layer;
-    check_layer2_rejected(player_preview_scene_view_t::from(*built.index, invalid));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, invalid));
     invalid = layer_request;
     invalid.visual_layers.layer2->object = {};
-    check_layer2_rejected(player_preview_scene_view_t::from(*built.index, invalid));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, invalid));
     invalid = layer_request;
     invalid.visual_layers.layer2->resource = {};
-    check_layer2_rejected(player_preview_scene_view_t::from(*built.index, invalid));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, invalid));
     invalid = layer_request;
     invalid.visual_layers.layer2->sample_frame = 101;
-    check_layer2_rejected(player_preview_scene_view_t::from(*built.index, invalid));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, invalid));
 }
 
 TEST_CASE("player preview carries validated visual layers in the deterministic scene",
@@ -202,32 +206,32 @@ TEST_CASE("player preview carries validated visual layers in the deterministic s
         .kind = visual_event_kind_t::video,
     };
     const auto scene = player_preview_scene_view_t::from(*built.index, visual_request);
-    REQUIRE(scene);
-    CHECK(scene.scene->visual_layers == visual_request.visual_layers);
-    REQUIRE(scene.scene->video_clock.has_value());
-    CHECK(scene.scene->video_clock->event == object_id_t{81});
-    CHECK(scene.scene->video_clock->elapsed_sample_frames == 0);
-    CHECK(scene.scene->video_clock->media_time_numerator == 0);
-    CHECK(scene.scene->video_clock->media_time_denominator == 1);
-    CHECK(scene.scene->visual_fit == visual_fit_policy_t::contain);
+    require_preview_scene(scene);
+    CHECK(scene.value->visual_layers == visual_request.visual_layers);
+    REQUIRE(scene.value->video_clock.has_value());
+    CHECK(scene.value->video_clock->event == object_id_t{81});
+    CHECK(scene.value->video_clock->elapsed_sample_frames == 0);
+    CHECK(scene.value->video_clock->media_time_numerator == 0);
+    CHECK(scene.value->video_clock->media_time_denominator == 1);
+    CHECK(scene.value->visual_fit == visual_fit_policy_t::contain);
 
     auto covered = visual_request;
     covered.visual_fit = visual_fit_policy_t::cover;
     const auto cover_scene = player_preview_scene_view_t::from(*built.index, covered);
-    REQUIRE(cover_scene);
-    CHECK(cover_scene.scene->visual_fit == visual_fit_policy_t::cover);
+    require_preview_scene(cover_scene);
+    CHECK(cover_scene.value->visual_fit == visual_fit_policy_t::cover);
 
     auto future = visual_request;
     future.visual_layers.background->sample_frame = 101;
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, future));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, future));
 
     auto wrong_slot = visual_request;
     wrong_slot.visual_layers.background->kind = visual_event_kind_t::layer;
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, wrong_slot));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, wrong_slot));
 
     auto invalid_fit = visual_request;
     invalid_fit.visual_fit = static_cast<visual_fit_policy_t>(255);
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, invalid_fit));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, invalid_fit));
 }
 
 TEST_CASE("player preview carries bounded evaluated storyboard instances",
@@ -255,21 +259,21 @@ TEST_CASE("player preview carries bounded evaluated storyboard instances",
     auto scene_request = request(100);
     scene_request.storyboard_instances = sprites;
     const auto scene = player_preview_scene_view_t::from(*built.index, scene_request);
-    REQUIRE(scene);
-    CHECK(scene.scene->storyboard_instances ==
+    require_preview_scene(scene);
+    CHECK(scene.value->storyboard_instances ==
           std::vector<storyboard_draw_instance_t>{sprites.begin(), sprites.end()});
 
     scene_request.maximum_storyboard_instances = 1;
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, scene_request));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, scene_request));
     scene_request.maximum_storyboard_instances = 2;
     auto invalid = sprites;
     invalid.front().stable_id = 0;
     scene_request.storyboard_instances = invalid;
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, scene_request));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, scene_request));
     invalid.front() = sprites.front();
     invalid.front().layer_order = 5;
     scene_request.storyboard_instances = invalid;
-    CHECK_FALSE(player_preview_scene_view_t::from(*built.index, scene_request));
+    check_preview_scene_rejected(player_preview_scene_view_t::from(*built.index, scene_request));
 }
 
 TEST_CASE("player preview uses scroll displacement and remains still through a stop",
@@ -288,10 +292,10 @@ TEST_CASE("player preview uses scroll displacement and remains still through a s
     auto reverse_request = request();
     reverse_request.pixels_per_beat = 32.0;
     const auto before = player_preview_scene_view_t::from(*built.index, reverse_request);
-    REQUIRE(before);
-    const auto tap_before = std::ranges::find(before.scene->note_endpoints, object_id_t{10},
+    require_preview_scene(before);
+    const auto tap_before = std::ranges::find(before.value->note_endpoints, object_id_t{10},
                                               &player_preview_note_geometry_t::note);
-    REQUIRE(tap_before != before.scene->note_endpoints.end());
+    REQUIRE(tap_before != before.value->note_endpoints.end());
     CHECK((tap_before->bounds.top + tap_before->bounds.bottom) / 2.0 == Catch::Approx(32.0));
 
     const auto event_time = timing_at(built.index->timing, 240);
@@ -309,11 +313,11 @@ TEST_CASE("player preview uses scroll displacement and remains still through a s
     const auto at_event = player_preview_scene_view_t::from(*built.index, reverse_request);
     reverse_request.sample_frame = *middle_frame.frame;
     const auto during_stop = player_preview_scene_view_t::from(*built.index, reverse_request);
-    REQUIRE(at_event);
-    REQUIRE(during_stop);
-    CHECK(at_event.scene->absolute_row == during_stop.scene->absolute_row);
-    CHECK(at_event.scene->note_endpoints == during_stop.scene->note_endpoints);
-    CHECK(at_event.scene->hold_bodies == during_stop.scene->hold_bodies);
+    require_preview_scene(at_event);
+    require_preview_scene(during_stop);
+    CHECK(at_event.value->absolute_row == during_stop.value->absolute_row);
+    CHECK(at_event.value->note_endpoints == during_stop.value->note_endpoints);
+    CHECK(at_event.value->hold_bodies == during_stop.value->hold_bodies);
 }
 
 TEST_CASE(
@@ -324,27 +328,26 @@ TEST_CASE(
     const auto built = build_player_preview_index(chart, 11);
     REQUIRE(built);
     const auto before_chart = player_preview_scene_view_t::from(*built.index, request());
-    REQUIRE(before_chart);
-    CHECK(before_chart.scene->pre_zero);
-    CHECK(before_chart.scene->absolute_row == signed_rational_t{-480, 1});
-    const auto tap = std::ranges::find(before_chart.scene->note_endpoints, object_id_t{10},
+    require_preview_scene(before_chart);
+    CHECK(before_chart.value->pre_zero);
+    CHECK(before_chart.value->absolute_row == signed_rational_t{-480, 1});
+    const auto tap = std::ranges::find(before_chart.value->note_endpoints, object_id_t{10},
                                        &player_preview_note_geometry_t::note);
-    REQUIRE(tap != before_chart.scene->note_endpoints.end());
+    REQUIRE(tap != before_chart.value->note_endpoints.end());
     CHECK((tap->bounds.top + tap->bounds.bottom) / 2.0 == Catch::Approx(352.0));
 
     auto bounded_request = request(frame_at(*built.index, 0));
     bounded_request.maximum_visible_notes = 1;
     const auto over_note_cap = player_preview_scene_view_t::from(*built.index, bounded_request);
-    CHECK_FALSE(over_note_cap);
-    CHECK_FALSE(over_note_cap.scene.has_value());
+    check_preview_scene_rejected(over_note_cap);
+    CHECK_FALSE(over_note_cap.value.has_value());
     CHECK(has_code(over_note_cap.diagnostics, diagnostic_code_t::invalid_resolution));
 
     bounded_request.maximum_visible_notes = 10;
     bounded_request.maximum_composition_operations = 1;
-    const auto over_operation_cap =
-        player_preview_scene_view_t::from(*built.index, bounded_request);
-    CHECK_FALSE(over_operation_cap);
-    CHECK_FALSE(over_operation_cap.scene.has_value());
+    const auto over_operation_cap = player_preview_scene_view_t::from(*built.index, bounded_request);
+    check_preview_scene_rejected(over_operation_cap);
+    CHECK_FALSE(over_operation_cap.value.has_value());
 }
 
 TEST_CASE("player preview interval tree narrows a dense immutable visual schedule",
@@ -368,9 +371,9 @@ TEST_CASE("player preview interval tree narrows a dense immutable visual schedul
     narrow.note_head_height_pixels = 1.0;
     narrow.receptor_height_pixels = 2.0;
     const auto scene = player_preview_scene_view_t::from(*built.index, narrow);
-    REQUIRE(scene);
-    CHECK(scene.scene->composition_operations < 256);
-    CHECK(scene.scene->visible_note_count < 16);
+    require_preview_scene(scene);
+    CHECK(scene.value->composition_operations < 256);
+    CHECK(scene.value->visible_note_count < 16);
 }
 
 namespace {
@@ -380,13 +383,11 @@ auto has_warning_player_adapters() -> bool {
     player_preview_index_outcome_t index{.value = player_preview_index_t{}, .diagnostics = {warning}};
     if (!index.ok()) return false;
     const auto raw_index = player_preview_index_result_t::from(std::move(index));
-    player_preview_scene_view_outcome_t scene{.value = player_preview_scene_view_t{},
-                                              .diagnostics = {warning}};
+    player_preview_scene_view_outcome_t scene{.value = player_preview_scene_view_t{}, .diagnostics = {warning}};
     if (!scene.ok()) return false;
-    const auto raw_scene = player_preview_scene_view_result_t::from(std::move(scene));
-    return raw_index.index.has_value() && !raw_index && raw_scene.scene.has_value() && !raw_scene &&
-        raw_index.diagnostics.size() == 1 && raw_scene.diagnostics.size() == 1 &&
-        raw_index.diagnostics.front().message == "warning" && raw_scene.diagnostics.front().message == "warning";
+    return raw_index.index.has_value() && !raw_index && scene.value.has_value() && !scene.diagnostics.empty() &&
+        raw_index.diagnostics.size() == 1 && scene.diagnostics.size() == 1 &&
+        raw_index.diagnostics.front().message == "warning" && scene.diagnostics.front().message == "warning";
 }
 } // namespace
 TEST_CASE("player-preview adapters preserve warning-bearing values and strict rejection", "[core][player-preview][results]") {

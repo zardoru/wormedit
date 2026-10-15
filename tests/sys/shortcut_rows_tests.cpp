@@ -35,7 +35,7 @@ auto command(std::string id, std::vector<shortcut_chord_t> shortcuts) -> command
                            .default_shortcuts = std::move(shortcuts),
                            .enabled = true,
                            .invoke = [](const command_invocation_context_t&) {
-                               return command_invocation_result_t{.accepted = true};
+                               return command_invocation_outcome_t{.value = true};
                            }}};
 }
 
@@ -65,9 +65,9 @@ TEST_CASE("chord text is empty for a key the projection cannot name", "[sys][sho
 }
 
 auto register_unbound_and_bound(command_registry_t& registry) -> void {
-    REQUIRE(register_command(registry, command("test.unbound", {})).applied);
+    REQUIRE(register_command(registry, command("test.unbound", {})).value);
     REQUIRE(register_command(registry, command("test.bound",
-        {shortcut_chord_t{.key = shortcut_key_t::s, .modifiers = control_modifier()}})).applied);
+        {shortcut_chord_t{.key = shortcut_key_t::s, .modifiers = control_modifier()}})).value);
 }
 
 void check_unbound_and_bound_rows(const shortcut_rows_projection_t& projection) {
@@ -89,10 +89,10 @@ TEST_CASE("projection shows unbound commands and labels from ids", "[sys][shortc
 
 auto register_conflicting_trio(command_registry_t& registry) -> void {
     const shortcut_chord_t shared{.key = shortcut_key_t::q, .modifiers = 0};
-    REQUIRE(register_command(registry, command("test.one", {shared})).applied);
-    REQUIRE(register_command(registry, command("test.two", {shared})).applied);
+    REQUIRE(register_command(registry, command("test.one", {shared})).value);
+    REQUIRE(register_command(registry, command("test.two", {shared})).value);
     REQUIRE(register_command(registry, command("test.three",
-        {shortcut_chord_t{.key = shortcut_key_t::w, .modifiers = 0}})).applied);
+        {shortcut_chord_t{.key = shortcut_key_t::w, .modifiers = 0}})).value);
 }
 
 void check_conflicting_trio_rows(const shortcut_rows_projection_t& projection) {

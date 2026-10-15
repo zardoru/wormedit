@@ -27,7 +27,7 @@ void populate_compose_sound_labels(const compose_scene_projection_context_t& pro
     }
 }
 
-auto prepare_compose_grid_rows(flattened_workspace_t& flattened, std::size_t count) -> bool {
+auto prepare_compose_grid_rows(frontend_workspace_view_t& flattened, std::size_t count) -> bool {
     auto& grid = flattened.compose.grid;
     grid.line = {};
     grid.row = {};
@@ -45,7 +45,7 @@ auto prepare_compose_grid_rows(flattened_workspace_t& flattened, std::size_t cou
     return true;
 }
 
-auto append_compose_grid_row(flattened_workspace_t& flattened,
+auto append_compose_grid_row(frontend_workspace_view_t& flattened,
                              const WormUiComposeGridLineView& line,
                              const wormedit::exact_chart_row_t& row) -> bool {
     auto& grid = flattened.compose.grid;
@@ -269,7 +269,7 @@ void build_compose_layout_and_notes_view(const compose_scene_projection_context_
 }
 
 void build_compose_bgm_events_view(
-    flattened_workspace_t& flattened,
+    frontend_workspace_view_t& flattened,
     const std::vector<wormedit::editor_field_bgm_event_geometry_t>& events,
     WormUiComposeView& view) {
     const auto event_count =
@@ -594,7 +594,7 @@ void publish_compose_scene(const compose_scene_projection_context_t& projection)
 }
 
 bool initialize_compose_view_state(
-    flattened_workspace_t& flattened, compose_scene_cache_t& cache, int window_width,
+    frontend_workspace_view_t& flattened, compose_scene_cache_t& cache, int window_width,
     int window_height, bool default_bgm_bar_hidden,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     const application_command_state_t& application_state) {

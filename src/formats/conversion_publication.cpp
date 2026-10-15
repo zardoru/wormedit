@@ -125,7 +125,7 @@ auto append_generated_files(const std::filesystem::path& project_directory,
     const auto directory = (!destination_is_directory && group.relative_output_path.has_extension())
         ? group.relative_output_path.parent_path() : group.relative_output_path;
     for (const auto& slice_plan : converted.slice_plans)
-        for (const auto& span : slice_plan.spans)
+        for (const auto& span : slice_plan.value.spans)
             if (auto failure = append_generated_file(span.filename, project_directory, directory,
                     request.overwrite, plan, destinations)) return failure;
     for (const auto& name : converted.silent_files)
@@ -227,7 +227,7 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
     return mappings;
 }
 
-auto conversion_publication_plan_t::from(const std::filesystem::path& project_directory,
+auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
                                  const conversion_result_t& converted, bool destination_is_directory)
     -> conversion_publication_plan_outcome_t {
@@ -266,27 +266,9 @@ auto staged_asset_discovery_t::from(staged_asset_discovery_outcome_t&& outcome) 
     return {.mappings = std::move(*outcome), .errors = {}};
 }
 
-auto conversion_publication_plan_t::from(conversion_publication_plan_outcome_t&& outcome) -> conversion_publication_plan_t {
-    if (!outcome) {
-        conversion_publication_plan_t result{.files = std::move(outcome.error().plan.files),
-            .assets = std::move(outcome.error().plan.assets), .generated_files = std::move(outcome.error().plan.generated_files), .errors = {}};
-        result.errors.push_back(std::move(outcome.error().message));
-        return result;
-    }
-    return {.files = std::move(outcome->files), .assets = std::move(outcome->assets),
-        .generated_files = std::move(outcome->generated_files), .errors = {}};
-}
-
 auto discover_staged_export_assets(const song_document_t& song, const output_group_t& group,
     const std::filesystem::path& project_directory, std::stop_token stop) -> staged_asset_discovery_t {
     return staged_asset_discovery_t::from(staged_asset_discovery_t::from(song, group, project_directory, stop));
-}
-
-auto plan_conversion_publication(const std::filesystem::path& project_directory, const output_group_t& group,
-    const conversion_request_t& request, const conversion_result_t& converted, bool destination_is_directory)
-    -> conversion_publication_plan_t {
-    return conversion_publication_plan_t::from(conversion_publication_plan_t::from(
-        project_directory, group, request, converted, destination_is_directory));
 }
 
 } // namespace wormedit

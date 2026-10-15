@@ -19,6 +19,7 @@ if(UNIX)
 endif()
 
 add_executable(wormedit_core_tests
+    core/async_job_tests.cpp
     ../src/common/static_interval_index.cpp
     sys/bga_lane_workflow_tests.cpp
     sys/stem_window_tests.cpp
@@ -100,6 +101,8 @@ add_executable(wormedit_core_tests
     sys/project_open_tests.cpp
     sys/project_save_paths_tests.cpp
     core/document_tests.cpp
+    core/chart_indices_tests.cpp
+    core/keyed_cache_tests.cpp
     core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp
     core/editor_scene_bgm_layers_tests.cpp

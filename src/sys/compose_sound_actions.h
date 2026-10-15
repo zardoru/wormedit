@@ -16,10 +16,6 @@
 #include <vector>
 
 namespace wormedit::sys {
-struct resource_action_context_t;
-[[nodiscard]] auto dispatch_sound_edit_outcome(const resource_action_context_t& context,
-                                               application_command_state_t& application_state)
-    -> std::optional<compose_action_outcome_t>;
 
 struct prepared_keysound_import_t {
     std::vector<bulk_sound_import_entry_t> entries;

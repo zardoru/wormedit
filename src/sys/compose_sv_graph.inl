@@ -5,7 +5,7 @@
 namespace wormedit::sys {
 
 template <typename RowToY>
-auto build_sv_graph(const sv_steps_t& steps, std::uint64_t first_row, std::uint64_t last_row,
+auto build_sv_graph(const sv_steps_view_t& steps, std::uint64_t first_row, std::uint64_t last_row,
                     RowToY&& row_to_y) -> sv_graph_t {
     sv_graph_t graph;
     if (last_row <= first_row) return graph;

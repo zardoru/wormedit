@@ -65,15 +65,15 @@ void bga_scene_projection_is_ordered() {
     using namespace wormedit::sys;
     auto history = bga_history();
     auto binding = workspace_controller_t::from(history);
-    if (!binding.workspace) { check_projection(false); return; }
-    binding.workspace->active_tab = workspace_tab_t::compose;
-    binding.workspace->selected_chart = chart_id_t{7};
+    if (!binding.value) { check_projection(false); return; }
+    binding.value->active_tab = workspace_tab_t::compose;
+    binding.value->selected_chart = chart_id_t{7};
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
-    populate_compose_view(flattened, history, *binding.workspace, cache, 900, 600,
+    populate_compose_view(flattened, history, *binding.value, cache, 900, 600,
                           interaction, application, nullptr);
     const auto& view = flattened.view.compose;
     check_projection(view.scene_available);

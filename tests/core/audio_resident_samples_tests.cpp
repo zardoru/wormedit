@@ -97,18 +97,18 @@ TEST_CASE("resident blocks are served without decoding or touching the block cac
     REQUIRE(token.has_value());
     decoded_source_registry_t registry;
     for (int index = 0; index < 100; ++index) {
-        const auto hit = registry.decode_block(transport, *token, {wanted.source, 0});
-        REQUIRE(hit.status == block_decode_status_t::cache_hit);
-        CHECK(hit.frames == sample_frames);
+        const auto hit = registry.decode_source_block(transport, *token, {wanted.source, 0});
+        REQUIRE(hit.value().status == block_decode_status_t::cache_hit);
+        CHECK(hit.value().frames == sample_frames);
     }
     CHECK(store.stats().decode_count == 1);
     CHECK(cache.stats().entries == 0);
     CHECK(registry.open_decoder_count() == 0);
 
     // Not resident: falls through to the registry, which does not know the source.
-    const auto unknown = registry.decode_block(
+    const auto unknown = registry.decode_source_block(
         transport, *token, {.source = {"asset:other", "binding:1:other"}, .block_index = 0});
-    CHECK(unknown.status == block_decode_status_t::invalid_key);
+    CHECK(unknown == std::unexpected(block_decode_result_t{.status = block_decode_status_t::invalid_key}));
 }
 
 TEST_CASE("the mixer reads resident samples and prefers them over the block cache",
@@ -129,8 +129,8 @@ TEST_CASE("the mixer reads resident samples and prefers them over the block cach
                                               .gain = 0.5F}) ==
             voice_schedule_status_t::scheduled);
     std::vector<float> output(sample_frames * output_channel_count);
-    const auto mixed = transport.mix(*token, 0, output);
-    CHECK(mixed.missing_blocks == 0);
+    const auto mixed = transport.mix_frames(*token, 0, output);
+    CHECK(mixed.value().missing_blocks == 0);
     const auto pcm = make_pcm(sample_frames, 0.25F);
     for (std::size_t index = 0; index < output.size(); ++index) {
         REQUIRE(output[index] == std::clamp(pcm[index] * 0.5F, -1.0F, 1.0F));

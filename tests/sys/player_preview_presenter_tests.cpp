@@ -212,13 +212,13 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
     latch_release_t release{release_blocker};
 
     task_graph_t blocker_graph{1};
-    const auto blocker_task = blocker_graph.add_task(
+    const auto blocker_task = blocker_graph.create_task(
         {}, [&](std::span<const task_result_t>, std::stop_token) -> task_result_t {
             release_blocker.wait();
             return task_result_t::success();
         });
     REQUIRE(blocker_task);
-    auto blocker = video_scheduler.submit(std::move(blocker_graph));
+    auto blocker = video_scheduler.begin(std::move(blocker_graph));
     REQUIRE(blocker);
 
     sys::player_preview_presenter_t presenter;

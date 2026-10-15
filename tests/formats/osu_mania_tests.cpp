@@ -37,11 +37,11 @@ auto read_fixture(std::string_view name) -> std::vector<std::byte> {
     return bytes(source);
 }
 
-auto fixture(std::string_view name) -> wormedit::osu_mania_parse_result_t {
+auto fixture(std::string_view name) -> wormedit::osu_mania_parse_outcome_t {
     return wormedit::parse_osu_mania_bytes(read_fixture(name));
 }
 
-auto parse_inline(std::string_view source) -> wormedit::osu_mania_parse_result_t {
+auto parse_inline(std::string_view source) -> wormedit::osu_mania_parse_outcome_t {
     return wormedit::parse_osu_mania_bytes(bytes(source));
 }
 
@@ -86,10 +86,10 @@ void check_core_note_time(const wormedit::chart_document_t& chart, std::string_v
 
 auto native_reopen(const wormedit::song_document_t& song) -> wormedit::song_document_t {
     const auto written = wormedit::write_native_project(song);
-    REQUIRE(written.bytes);
-    auto parsed = wormedit::parse_native_project(*written.bytes);
-    REQUIRE(parsed.song);
-    return std::move(*parsed.song);
+    REQUIRE(written.value);
+    auto parsed = wormedit::parse_native_project(*written.value);
+    REQUIRE(parsed.value);
+    return std::move(*parsed.value);
 }
 
 void check_hold_endpoint(const wormedit::note_t& note, const wormedit::measure_index_t& measures,
@@ -118,8 +118,8 @@ void check_simple_bpm(std::string_view beat, std::int64_t expected) {
     const auto source = timing_fixture("0," + std::string(beat) + ",4,0,0,100,1,0\n",
                                       "64,192,1000,1,0,0:0:0:0:\n");
     const auto parsed = parse_inline(source);
-    REQUIRE(parsed.song);
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    const auto& chart = parsed.value->charts.front();
     REQUIRE(chart.bpms.size() == 1);
     CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{expected, 1}));
     CHECK(wormedit::build_timing_index(chart));
@@ -127,7 +127,7 @@ void check_simple_bpm(std::string_view beat, std::int64_t expected) {
 
 auto write_inline(const wormedit::song_document_t& song,
                   wormedit::osu_mania_write_options_t options = {})
-    -> wormedit::osu_mania_write_result_t {
+    -> wormedit::osu_mania_write_outcome_t {
     return wormedit::write_osu_mania(song, options);
 }
 
@@ -136,23 +136,23 @@ void check_origin_roundtrip(int origin) {
     const auto source = timing_fixture(time + ",500,4,0,0,100,1,0\n",
         "64,192," + time + ",1,0,0:0:0:0:\n");
     const auto parsed = parse_inline(source);
-    REQUIRE(parsed.song);
-    check_core_note_time(parsed.song->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
-    const auto reopened = native_reopen(*parsed.song);
+    REQUIRE(parsed.value);
+    check_core_note_time(parsed.value->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
+    const auto reopened = native_reopen(*parsed.value);
     CHECK(reopened.charts.front().beat_zero_audio_offset_seconds ==
-          parsed.song->charts.front().beat_zero_audio_offset_seconds);
+          parsed.value->charts.front().beat_zero_audio_offset_seconds);
     const auto written = write_inline(reopened);
-    REQUIRE(written.text);
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song);
-    check_core_note_time(reimported.song->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
+    REQUIRE(written.value);
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value);
+    check_core_note_time(reimported.value->charts.front(), "64,192," + time + ",", origin, 1.0e-9L);
 }
 
 void check_zero_origin_output(const std::string& text) {
     const auto reimported = parse_inline(text);
-    REQUIRE(reimported.song);
-    CHECK(reimported.song->charts.front().beat_zero_audio_offset_seconds.numerator == 0);
-    check_core_note_time(reimported.song->charts.front(), "64,192,0,", 0, 1.0e-9L);
+    REQUIRE(reimported.value);
+    CHECK(reimported.value->charts.front().beat_zero_audio_offset_seconds.numerator == 0);
+    check_core_note_time(reimported.value->charts.front(), "64,192,0,", 0, 1.0e-9L);
 }
 
 constexpr std::string_view rewiring_source = R"osu(osu file format v14
@@ -199,7 +199,7 @@ Video,1000,"background.mp4",0,0
 384,192,2500,1,0,0:0:0:0:
 )osu";
 
-auto has_code(const wormedit::osu_mania_parse_result_t& result,
+auto has_code(const wormedit::osu_mania_parse_outcome_t& result,
               wormedit::osu_mania_parse_diagnostic_code_t code) -> bool {
     return std::ranges::any_of(result.diagnostics, [code](const auto& diagnostic) {
         return diagnostic.code == code &&
@@ -320,10 +320,10 @@ auto position_near_source_time(const wormedit::chart_document_t& chart, std::int
 TEST_CASE("osu!mania import rewires measures at effective timing points only",
           "[unit][format][osu-mania]") {
     const auto result = wormedit::parse_osu_mania_bytes(bytes(rewiring_source));
-    REQUIRE(result.song.has_value());
-    CHECK_FALSE(result.has_errors());
-    REQUIRE(result.song->charts.size() == 1);
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    CHECK(result.ok());
+    REQUIRE(result.value->charts.size() == 1);
+    const auto& chart = result.value->charts.front();
     CHECK(chart.source_family == wormedit::format_family_t::osu_mania);
     CHECK(chart.divisions_per_standard_measure >= 960);
     REQUIRE(chart.measures.size() == 4);
@@ -383,9 +383,9 @@ TEST_CASE("osu!mania import rewires measures at effective timing points only",
     CHECK(chart.bookmarks[0].anchor == wormedit::marker_anchor_t::audio_time);
     CHECK(chart.bookmarks[0].audio_milliseconds == 1000);
     CHECK(chart.bookmarks[1].audio_milliseconds == 2500);
-    CHECK(result.song->metadata.ordered_search_tags ==
+    CHECK(result.value->metadata.ordered_search_tags ==
           std::vector<std::string>{"one", "two-three"});
-    CHECK(result.song->metadata.title == "Rewiring check");
+    CHECK(result.value->metadata.title == "Rewiring check");
     CHECK(chart.metadata.name == "Timing reset fixture");
     REQUIRE(chart.lane_layouts.size() == 1);
     CHECK(chart.lane_layouts.front().layout.lanes.size() == 4);
@@ -401,10 +401,10 @@ TEST_CASE("osu!mania import rewires measures at effective timing points only",
                               [](const auto& field) {
                                   return field.first.ends_with(".time") && field.second == "1000";
                               }));
-    CHECK(result.song->resources.size() == 3);
-    CHECK(result.song->visual_assets.size() == 2);
+    CHECK(result.value->resources.size() == 3);
+    CHECK(result.value->visual_assets.size() == 2);
     CHECK(chart.bga_events.size() == 2);
-    const auto diagnostics = wormedit::validate_document(*result.song);
+    const auto diagnostics = wormedit::validate_document(*result.value);
     CHECK(diagnostics.empty());
 }
 
@@ -424,16 +424,16 @@ CircleSize:4
 64,192,1000.1,128,0,1000.2:0:0:0:
 )osu";
     const auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    CHECK_FALSE(imported.has_errors());
+    REQUIRE(imported.value.has_value());
+    CHECK(imported.ok());
     CHECK(std::ranges::any_of(imported.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_parse_diagnostic_code_t::timing_quantization &&
                diagnostic.severity == wormedit::diagnostic_severity_t::warning;
     }));
-    const auto& chart = imported.song->charts.front();
+    const auto& chart = imported.value->charts.front();
     CHECK(chart.divisions_per_standard_measure == 960);
     check_positive_holds(chart, 1);
-    CHECK(wormedit::validate_document(*imported.song).empty());
+    CHECK(wormedit::validate_document(*imported.value).empty());
 }
 
 TEST_CASE("osu!mania preserves colliding positive holds including the last editable row",
@@ -442,15 +442,15 @@ TEST_CASE("osu!mania preserves colliding positive holds including the last edita
         "64,192,20.1,128,0,20.2:0:0:0:\n"
         "128,192,1999.8,128,0,1999.9:0:0:0:\n", "128");
     const auto parsed = parse_inline(source);
-    REQUIRE(parsed.song);
-    CHECK(wormedit::validate_document(*parsed.song).empty());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    CHECK(wormedit::validate_document(*parsed.value).empty());
+    const auto& chart = parsed.value->charts.front();
     REQUIRE(chart.measures.size() == 2);
     check_positive_holds(chart, 2);
     check_core_note_time(chart, "64,192,20.1,", 20.1L, 3.0L);
     check_core_note_time(chart, "128,192,1999.8,", 1999.8L, 3.0L);
     const auto limited = wormedit::parse_osu_mania_bytes(bytes(source), {.max_measures = 1});
-    CHECK_FALSE(limited.song);
+    CHECK_FALSE(limited.value);
     CHECK(has_code(limited, wormedit::osu_mania_parse_diagnostic_code_t::measure_limit));
 }
 
@@ -459,8 +459,8 @@ TEST_CASE("osu!mania retains source origin and initializes a prefix with the sou
     const auto source = timing_fixture("1000,400,4,0,0,100,1,0\n",
         "64,192,0,1,0,0:0:0:0:\n128,192,1000,1,0,0:0:0:0:\n");
     const auto parsed = parse_inline(source);
-    REQUIRE(parsed.song);
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    const auto& chart = parsed.value->charts.front();
     CHECK((chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{-3, 5}));
     const auto initial = std::ranges::find_if(chart.bpms, [&](const auto& bpm) {
         return bpm.position == wormedit::local_position_t{chart.measures.front().id, 0};
@@ -469,7 +469,7 @@ TEST_CASE("osu!mania retains source origin and initializes a prefix with the sou
     CHECK((initial->beats_per_minute == wormedit::signed_rational_t{150, 1}));
     check_core_note_time(chart, "64,192,0,", 0, 1.0e-9L);
     check_core_note_time(chart, "128,192,1000,", 1000, 1.0e-9L);
-    const auto reopened = native_reopen(*parsed.song);
+    const auto reopened = native_reopen(*parsed.value);
     check_core_note_time(reopened.charts.front(), "64,192,0,", 0, 1.0e-9L);
 }
 
@@ -493,11 +493,11 @@ TEST_CASE("osu!mania bounds many short decimal measures without losing a positiv
                   std::to_string(500.0 + index * 0.0003) + ",4,0,0,100,1,0\n";
     const auto parsed = parse_inline(timing_fixture(timing,
         "64,192,0,1,0,0:0:0:0:\n192,192,2000,128,0,2001:0:0:0:\n"));
-    REQUIRE(parsed.song);
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    const auto& chart = parsed.value->charts.front();
     CHECK(chart.divisions_per_standard_measure == 960);
     CHECK(chart.measures.size() >= 256);
-    CHECK(wormedit::validate_document(*parsed.song).empty());
+    CHECK(wormedit::validate_document(*parsed.value).empty());
     check_core_note_time(chart, "64,192,0,", 0, 1.0e-9L);
     check_core_note_time(chart, "192,192,2000,", 2000, 3.0L);
 }
@@ -514,18 +514,18 @@ TEST_CASE("osu!mania fast and near-stop reset geometry has bounded playback timi
         "64,192,82223,1,0,0:0:0:0:\n"
         "128,192,106716,1,0,0:0:0:0:\n"
         "192,192,106715,128,0,107660:0:0:0:\n"));
-    REQUIRE(parsed.song);
-    CHECK(wormedit::validate_document(*parsed.song).empty());
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    CHECK(wormedit::validate_document(*parsed.value).empty());
+    const auto& chart = parsed.value->charts.front();
     CHECK(chart.divisions_per_standard_measure == 960);
     check_core_note_time(chart, "64,192,82223,", 82223, 0.001L);
     check_core_note_time(chart, "128,192,106716,", 106716, 6.0L);
     check_core_note_time(chart, "192,192,106715,", 106715, 6.0L);
-    const auto written = write_inline(*parsed.song);
-    REQUIRE(written.text);
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song);
-    CHECK(wormedit::build_timing_index(reimported.song->charts.front()));
+    const auto written = write_inline(*parsed.value);
+    REQUIRE(written.value);
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value);
+    CHECK(wormedit::build_timing_index(reimported.value->charts.front()));
 }
 
 TEST_CASE("osu!mania keeps zero source origin after a BPM edit with retained provenance",
@@ -533,15 +533,15 @@ TEST_CASE("osu!mania keeps zero source origin after a BPM edit with retained pro
     auto parsed = parse_inline(timing_fixture(
         "0,500,4,0,0,100,1,0\n1000,500,4,0,0,100,1,0\n",
         "64,192,0,1,0,0:0:0:0:\n192,192,1000,1,0,0:0:0:0:\n"));
-    REQUIRE(parsed.song);
-    auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    auto& chart = parsed.value->charts.front();
     REQUIRE(chart.bpms.size() == 2);
     chart.bpms.front().beats_per_minute = {240, 1};
-    const auto written = write_inline(*parsed.song);
-    REQUIRE(written.text);
-    CHECK(written.text->find("64,192,0,1,") != std::string::npos);
-    CHECK(written.text->find("192,192,500,1,") != std::string::npos);
-    check_zero_origin_output(*written.text);
+    const auto written = write_inline(*parsed.value);
+    REQUIRE(written.value);
+    CHECK(written.value->find("64,192,0,1,") != std::string::npos);
+    CHECK(written.value->find("192,192,500,1,") != std::string::npos);
+    check_zero_origin_output(*written.value);
 }
 
 TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline measure",
@@ -552,13 +552,13 @@ TEST_CASE("osu!mania keeps near-stop timing distinct inside a suppressed-barline
         "1759.493,500,4,0,0,100,1,8\n",
         "64,192,1005,1,0,0:0:0:0:\n"
         "192,192,1004,128,0,1800:0:0:0:\n"));
-    REQUIRE(parsed.song);
-    const auto& chart = parsed.song->charts.front();
+    REQUIRE(parsed.value);
+    const auto& chart = parsed.value->charts.front();
     REQUIRE(chart.bpms.size() == 3);
     CHECK(chart.bpms[1].position != chart.bpms[2].position);
     check_core_note_time(chart, "64,192,1005,", 1005, 6.0L);
     check_core_note_time(chart, "192,192,1004,", 1004, 6.0L);
-    CHECK(wormedit::validate_document(*parsed.song).empty());
+    CHECK(wormedit::validate_document(*parsed.value).empty());
 }
 
 TEST_CASE("osu!mania rejects source-grid bounds and effective timing product overflow",
@@ -566,13 +566,13 @@ TEST_CASE("osu!mania rejects source-grid bounds and effective timing product ove
     for (const auto time : {"9223372036854776", "-9223372036854776"}) {
         INFO(time);
         const auto parsed = parse_inline(timing_fixture(std::string(time) + ",500,4,0,0,100,1,0\n", ""));
-        CHECK_FALSE(parsed.song);
+        CHECK_FALSE(parsed.value);
         CHECK(has_code(parsed, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
     }
     const auto large_span = parse_inline(timing_fixture(
         "-9223372036854774,10000000000000000,4,0,0,100,1,0\n"
         "9223372036854774,10000000000000000,4,0,0,100,1,0\n", ""));
-    CHECK_FALSE(large_span.song);
+    CHECK_FALSE(large_span.value);
     CHECK(has_code(large_span, wormedit::osu_mania_parse_diagnostic_code_t::invalid_timing_point));
 }
 
@@ -587,10 +587,10 @@ TEST_CASE("osu!mania preserves exact source origins near both microsecond grid b
         INFO(milliseconds);
         const auto parsed = parse_inline(timing_fixture(
             std::to_string(milliseconds) + ",0.5,4,0,0,100,1,0\n", ""));
-        REQUIRE(parsed.song);
-        const auto& chart = parsed.song->charts.front();
+        REQUIRE(parsed.value);
+        const auto& chart = parsed.value->charts.front();
         CHECK(chart.beat_zero_audio_offset_seconds == expected);
-        CHECK(wormedit::validate_document(*parsed.song).empty());
+        CHECK(wormedit::validate_document(*parsed.value).empty());
     }
 }
 
@@ -609,27 +609,27 @@ TEST_CASE("osu!mania source origins keep fractional microsecond half ties away f
         INFO(milliseconds);
         const auto parsed = parse_inline(timing_fixture(
             std::string(milliseconds) + ",500,4,0,0,100,1,0\n", ""));
-        REQUIRE(parsed.song);
-        CHECK(parsed.song->charts.front().beat_zero_audio_offset_seconds == expected);
+        REQUIRE(parsed.value);
+        CHECK(parsed.value->charts.front().beat_zero_audio_offset_seconds == expected);
     }
 }
 
 TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and samples",
           "[unit][format][osu-mania]") {
     const auto result = fixture("mania-tags-bookmarks-kiai.osu");
-    REQUIRE(result.song.has_value());
-    CHECK_FALSE(result.has_errors());
-    REQUIRE(result.song->metadata.format_groups.size() == 1);
-    CHECK(result.song->metadata.format_groups.front().encoding.detected ==
+    REQUIRE(result.value.has_value());
+    CHECK(result.ok());
+    REQUIRE(result.value->metadata.format_groups.size() == 1);
+    CHECK(result.value->metadata.format_groups.front().encoding.detected ==
           wormedit::text_encoding_t::utf8);
-    CHECK(result.song->metadata.format_groups.front().encoding.unchanged_since_import);
-    REQUIRE(result.song->metadata.format_groups.front().encoding.original_bytes);
-    CHECK_FALSE(result.song->metadata.format_groups.front().encoding.original_bytes->empty());
-    REQUIRE(result.song->charts.size() == 1);
-    const auto& chart = result.song->charts.front();
+    CHECK(result.value->metadata.format_groups.front().encoding.unchanged_since_import);
+    REQUIRE(result.value->metadata.format_groups.front().encoding.original_bytes);
+    CHECK_FALSE(result.value->metadata.format_groups.front().encoding.original_bytes->empty());
+    REQUIRE(result.value->charts.size() == 1);
+    const auto& chart = result.value->charts.front();
     CHECK(chart.metadata.name == "4K fixture");
     CHECK(chart.metadata.author == "Wormedit");
-    CHECK(result.song->metadata.ordered_search_tags ==
+    CHECK(result.value->metadata.ordered_search_tags ==
           std::vector<std::string>{"fixture", "semantic-roundtrip", "tags-with-hyphen"});
     REQUIRE(chart.bookmarks.size() == 3);
     CHECK(chart.bookmarks[0].audio_milliseconds == 1000);
@@ -637,7 +637,7 @@ TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and s
     CHECK(std::ranges::any_of(chart.kiai, [](const auto& event) {
         return event.enabled && event.retained_effect_bits == 9;
     }));
-    CHECK(std::ranges::any_of(result.song->resources, [](const auto& resource) {
+    CHECK(std::ranges::any_of(result.value->resources, [](const auto& resource) {
         return resource.name == "custom-hit.wav" &&
                std::ranges::find(resource.roles, wormedit::resource_role_t::sample) !=
                    resource.roles.end();
@@ -648,27 +648,27 @@ TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and s
             return note.kind == wormedit::note_kind_t::hold && note.end.has_value();
         });
     }));
-    const auto diagnostics = wormedit::validate_document(*result.song);
+    const auto diagnostics = wormedit::validate_document(*result.value);
     CHECK(diagnostics.empty());
 }
 
 TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time semantics",
           "[unit][format][osu-mania][version]") {
     const auto stable = fixture("versioned-stable-v14.osu");
-    REQUIRE(stable.song.has_value());
-    REQUIRE_FALSE(stable.has_errors());
-    const auto& fields = stable.song->metadata.format_groups.front().ordered_fields;
+    REQUIRE(stable.value.has_value());
+    REQUIRE_FALSE(!stable.ok());
+    const auto& fields = stable.value->metadata.format_groups.front().ordered_fields;
     CHECK(std::ranges::find(fields, std::pair{std::string{"osu.file_format"}, std::string{"14"}}) !=
           fields.end());
 
-    const auto written = write_inline(*stable.song);
-    REQUIRE(written.text.has_value());
-    CHECK(written.text->starts_with("osu file format v14\n"));
+    const auto written = write_inline(*stable.value);
+    REQUIRE(written.value.has_value());
+    CHECK(written.value->starts_with("osu file format v14\n"));
 
     const auto lazer = fixture("lazer-v128-fractional.osu");
-    REQUIRE(lazer.song.has_value());
-    REQUIRE_FALSE(lazer.has_errors());
-    const auto& lazer_fields = lazer.song->metadata.format_groups.front().ordered_fields;
+    REQUIRE(lazer.value.has_value());
+    REQUIRE_FALSE(!lazer.ok());
+    const auto& lazer_fields = lazer.value->metadata.format_groups.front().ordered_fields;
     CHECK(std::ranges::find(lazer_fields, std::pair{std::string{"osu.file_format"},
                                                     std::string{"128"}}) != lazer_fields.end());
     constexpr std::array expected_lazer_fields{
@@ -701,10 +701,10 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
         CHECK(field_index >= previous_field_index);
         previous_field_index = field_index;
     }
-    REQUIRE(lazer.song->charts.front().measures.size() >= 1);
+    REQUIRE(lazer.value->charts.front().measures.size() >= 1);
     std::size_t lazer_note_count{};
     bool found_hold{};
-    for (const auto& measure : lazer.song->charts.front().measures) {
+    for (const auto& measure : lazer.value->charts.front().measures) {
         lazer_note_count += measure.notes.size();
         found_hold = found_hold || std::ranges::any_of(measure.notes, [](const auto& note) {
                          return note.kind == wormedit::note_kind_t::hold && note.end.has_value();
@@ -713,50 +713,50 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
     CHECK(lazer_note_count == 2);
     CHECK(found_hold);
 
-    const auto lazer_written = write_inline(*lazer.song);
-    REQUIRE(lazer_written.text.has_value());
-    CHECK(lazer_written.text->starts_with("osu file format v128\n"));
-    CHECK(lazer_written.text->find(",192,1000.5,1,") != std::string::npos);
-    CHECK(lazer_written.text->find(",192,1200.5,128,0,\"1400.5:") != std::string::npos);
-    CHECK(lazer_written.text->find("VelocityPresets:0.5,1,2") != std::string::npos);
-    CHECK(lazer_written.text->find("SamplesMatchPlaybackRate:1") != std::string::npos);
+    const auto lazer_written = write_inline(*lazer.value);
+    REQUIRE(lazer_written.value.has_value());
+    CHECK(lazer_written.value->starts_with("osu file format v128\n"));
+    CHECK(lazer_written.value->find(",192,1000.5,1,") != std::string::npos);
+    CHECK(lazer_written.value->find(",192,1200.5,128,0,\"1400.5:") != std::string::npos);
+    CHECK(lazer_written.value->find("VelocityPresets:0.5,1,2") != std::string::npos);
+    CHECK(lazer_written.value->find("SamplesMatchPlaybackRate:1") != std::string::npos);
     CHECK_FALSE(std::ranges::any_of(lazer_written.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
     }));
-    const auto lazer_reparsed = parse_inline(*lazer_written.text);
-    REQUIRE(lazer_reparsed.song.has_value());
-    REQUIRE_FALSE(lazer_reparsed.has_errors());
-    const auto& reparsed_fields = lazer_reparsed.song->metadata.format_groups.front().ordered_fields;
+    const auto lazer_reparsed = parse_inline(*lazer_written.value);
+    REQUIRE(lazer_reparsed.value.has_value());
+    REQUIRE_FALSE(!lazer_reparsed.ok());
+    const auto& reparsed_fields = lazer_reparsed.value->metadata.format_groups.front().ordered_fields;
     for (const auto& expected : expected_lazer_fields) {
         CAPTURE(expected.first, expected.second);
         CHECK(std::ranges::find(reparsed_fields, std::pair<std::string, std::string>{expected}) != reparsed_fields.end());
     }
 
-    auto edited_lazer = *lazer.song;
+    auto edited_lazer = *lazer.value;
     auto& edited_note = edited_lazer.charts.front().measures.front().notes.front();
     ++edited_note.position.row;
     const auto edited_lazer_written = write_inline(edited_lazer);
-    REQUIRE(edited_lazer_written.text.has_value());
-    CHECK(edited_lazer_written.text->starts_with("osu file format v128\n"));
-    CHECK(edited_lazer_written.text->find(",192,1002.5,1,") != std::string::npos);
-    const auto edited_lazer_reparsed = parse_inline(*edited_lazer_written.text);
-    REQUIRE(edited_lazer_reparsed.song.has_value());
-    REQUIRE_FALSE(edited_lazer_reparsed.has_errors());
+    REQUIRE(edited_lazer_written.value.has_value());
+    CHECK(edited_lazer_written.value->starts_with("osu file format v128\n"));
+    CHECK(edited_lazer_written.value->find(",192,1002.5,1,") != std::string::npos);
+    const auto edited_lazer_reparsed = parse_inline(*edited_lazer_written.value);
+    REQUIRE(edited_lazer_reparsed.value.has_value());
+    REQUIRE_FALSE(!edited_lazer_reparsed.ok());
 
     const auto stable_conversion =
-        write_inline(*lazer.song, {.profile = wormedit::osu_mania_file_profile_t::stable_v14});
-    REQUIRE(stable_conversion.text.has_value());
-    CHECK(stable_conversion.text->starts_with("osu file format v14\n"));
-    CHECK(stable_conversion.text->find(",192,1001,1,") != std::string::npos);
-    CHECK(stable_conversion.text->find(",192,1201,128,0,\"1401:") != std::string::npos);
+        write_inline(*lazer.value, {.profile = wormedit::osu_mania_file_profile_t::stable_v14});
+    REQUIRE(stable_conversion.value.has_value());
+    CHECK(stable_conversion.value->starts_with("osu file format v14\n"));
+    CHECK(stable_conversion.value->find(",192,1001,1,") != std::string::npos);
+    CHECK(stable_conversion.value->find(",192,1201,128,0,\"1401:") != std::string::npos);
     CHECK(std::ranges::any_of(stable_conversion.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
     }));
 
     const auto future = parse_inline("osu file format v129\n");
-    CHECK_FALSE(future.song.has_value());
+    CHECK_FALSE(future.value.has_value());
     CHECK(has_code(future, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
 
     constexpr std::string_view fractional_v14 =
@@ -764,7 +764,7 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
         "[TimingPoints]\n0,500,4,0,0,100,1,0\n"
         "[HitObjects]\n64,192,1000.5,1,0,0:0:0:0:\n";
     const auto stable_fraction = parse_inline(fractional_v14);
-    CHECK_FALSE(stable_fraction.song.has_value());
+    CHECK_FALSE(stable_fraction.value.has_value());
     CHECK(
         has_code(stable_fraction, wormedit::osu_mania_parse_diagnostic_code_t::invalid_hit_object));
 
@@ -773,27 +773,27 @@ TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time se
         "[TimingPoints]\n0,500,4,0,0,100,1,0\n"
         "[HitObjects]\n64,192,nan,1,0,0:0:0:0:\n";
     const auto lazer_nonfinite = parse_inline(nonfinite_v128);
-    CHECK_FALSE(lazer_nonfinite.song.has_value());
+    CHECK_FALSE(lazer_nonfinite.value.has_value());
     CHECK(
         has_code(lazer_nonfinite, wormedit::osu_mania_parse_diagnostic_code_t::invalid_hit_object));
 
     const auto legacy = parse_inline("osu file format v4\n");
-    CHECK_FALSE(legacy.song.has_value());
+    CHECK_FALSE(legacy.value.has_value());
     CHECK(has_code(legacy, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_version));
 
     const auto malformed = parse_inline("osu file format vfuture\n");
-    CHECK_FALSE(malformed.song.has_value());
+    CHECK_FALSE(malformed.value.has_value());
     CHECK(has_code(malformed, wormedit::osu_mania_parse_diagnostic_code_t::malformed_field));
 
     const auto missing = parse_inline("[General]\nMode:3\n");
-    CHECK_FALSE(missing.song.has_value());
+    CHECK_FALSE(missing.value.has_value());
     CHECK(has_code(missing, wormedit::osu_mania_parse_diagnostic_code_t::malformed_field));
 }
 
 TEST_CASE("osu!mania reader rejects non-mania and malformed sources atomically",
           "[unit][format][osu-mania][negative]") {
     const auto non_mania = fixture("negative-non-mania.osu");
-    CHECK_FALSE(non_mania.song.has_value());
+    CHECK_FALSE(non_mania.value.has_value());
     CHECK(has_code(non_mania, wormedit::osu_mania_parse_diagnostic_code_t::unsupported_mode));
 
     constexpr std::string_view malformed = R"osu(osu file format v14
@@ -807,8 +807,8 @@ CircleSize:4
 64,192,1000,1,0
 )osu";
     const auto invalid = wormedit::parse_osu_mania_bytes(bytes(malformed));
-    CHECK_FALSE(invalid.song.has_value());
-    CHECK(invalid.has_errors());
+    CHECK_FALSE(invalid.value.has_value());
+    CHECK(!invalid.ok());
 }
 
 TEST_CASE("osu!mania reader enforces caller-provided source and event bounds",
@@ -816,17 +816,17 @@ TEST_CASE("osu!mania reader enforces caller-provided source and event bounds",
     const auto source = bytes(rewiring_source);
     const auto byte_limited =
         wormedit::parse_osu_mania_bytes(source, {.max_source_bytes = source.size() - 1});
-    CHECK_FALSE(byte_limited.song.has_value());
+    CHECK_FALSE(byte_limited.value.has_value());
     CHECK(has_code(byte_limited, wormedit::osu_mania_parse_diagnostic_code_t::source_limit));
 
     const auto event_limited = wormedit::parse_osu_mania_bytes(source, {.max_events = 1});
-    CHECK_FALSE(event_limited.song.has_value());
+    CHECK_FALSE(event_limited.value.has_value());
     CHECK(has_code(event_limited, wormedit::osu_mania_parse_diagnostic_code_t::event_limit));
 
     // The source has thirteen timing, hit-object and event rows. Its two expanded
     // bookmarks must be included in the same caller-provided event budget.
     const auto bookmark_limited = wormedit::parse_osu_mania_bytes(source, {.max_events = 13});
-    CHECK_FALSE(bookmark_limited.song.has_value());
+    CHECK_FALSE(bookmark_limited.value.has_value());
     CHECK(has_code(bookmark_limited, wormedit::osu_mania_parse_diagnostic_code_t::event_limit));
 }
 
@@ -845,8 +845,8 @@ CircleSize:4
 256,192,2001,1,0,0:0:0:0:
 )osu";
     const auto result = wormedit::parse_osu_mania_bytes(bytes(source));
-    REQUIRE(result.song.has_value());
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    const auto& chart = result.value->charts.front();
     REQUIRE(chart.measures.size() == 3);
     const auto before_reset = position_for_source(chart, "128,192,2000,");
     const auto at_reset = position_for_source(chart, "256,192,2001,");
@@ -872,8 +872,8 @@ CircleSize:4
 0,192,2000,1,0,0:0:0:0:
 )osu";
     const auto result = wormedit::parse_osu_mania_bytes(bytes(source));
-    REQUIRE(result.song.has_value());
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    const auto& chart = result.value->charts.front();
     REQUIRE(chart.measures.size() == 2);
     const auto at_omitted_barline = position_for_source(chart, "512,192,0,");
     const auto at_next_barline = position_for_source(chart, "0,192,2000,");
@@ -909,8 +909,8 @@ CircleSize:4
 320,192,2000,1,0,0:0:0:0:
 )osu";
     const auto result = wormedit::parse_osu_mania_bytes(bytes(source));
-    REQUIRE(result.song.has_value());
-    const auto& chart = result.song->charts.front();
+    REQUIRE(result.value.has_value());
+    const auto& chart = result.value->charts.front();
     REQUIRE(chart.measures.size() == 2);
     CHECK((chart.measures[0].definition.length == wormedit::rational_t{3, 2}));
     CHECK_FALSE(chart.measures[0].definition.meter.has_value());
@@ -929,12 +929,12 @@ CircleSize:4
     CHECK(at_next_boundary->measure == chart.measures[1].id);
     CHECK(at_next_boundary->row == 0);
 
-    const auto written = write_inline(*result.song);
-    REQUIRE(written.text.has_value());
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song.has_value());
-    const auto& round_tripped = reimported.song->charts.front();
-    INFO(*written.text);
+    const auto written = write_inline(*result.value);
+    REQUIRE(written.value.has_value());
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value.has_value());
+    const auto& round_tripped = reimported.value->charts.front();
+    INFO(*written.value);
     REQUIRE(round_tripped.measures.size() == chart.measures.size());
     CHECK(round_tripped.measures[0].definition.length == chart.measures[0].definition.length);
     CHECK(note_source_times(round_tripped) == note_source_times(chart));
@@ -952,12 +952,12 @@ TEST_CASE("osu!mania supports every layout from 1K through 18K",
         CAPTURE(keys);
         const auto source = source_for_keys(keys);
         const auto result = wormedit::parse_osu_mania_bytes(bytes(source));
-        REQUIRE(result.song.has_value());
+        REQUIRE(result.value.has_value());
 
-        const auto& chart = result.song->charts.front();
+        const auto& chart = result.value->charts.front();
         REQUIRE(chart.lane_layouts.size() == 1);
         REQUIRE(chart.lane_layouts.front().layout.lanes.size() == static_cast<std::size_t>(keys));
-        CHECK(wormedit::validate_document(*result.song).empty());
+        CHECK(wormedit::validate_document(*result.value).empty());
         const auto first = lane_for_source(chart, "0,192,0,");
         const auto last = lane_for_source(chart, "512,192,500,");
         REQUIRE(first.has_value());
@@ -975,7 +975,7 @@ TEST_CASE("osu!mania rejects key counts outside 1K through 18K",
             std::string{"osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:"} +
             std::to_string(keys) + "\n[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n";
         const auto result = parse_inline(source);
-        CHECK_FALSE(result.song.has_value());
+        CHECK_FALSE(result.value.has_value());
         CHECK(has_code(result, wormedit::osu_mania_parse_diagnostic_code_t::invalid_difficulty));
     }
 }
@@ -995,17 +995,17 @@ TEST_CASE("osu!mania writer preserves every lane from 1K through 18K",
             source += std::to_string(x) + ",192," + std::to_string(2000 + lane * 100) + ",1,0,\n";
         }
         const auto imported = parse_inline(source);
-        REQUIRE(imported.song.has_value());
-        CHECK(wormedit::validate_document(*imported.song).empty());
-        const auto written = write_inline(*imported.song);
-        REQUIRE(written.text.has_value());
-        CHECK_FALSE(written.has_errors());
-        CHECK(written.text->find("CircleSize:" + std::to_string(keys)) != std::string::npos);
+        REQUIRE(imported.value.has_value());
+        CHECK(wormedit::validate_document(*imported.value).empty());
+        const auto written = write_inline(*imported.value);
+        REQUIRE(written.value.has_value());
+        CHECK(written.ok());
+        CHECK(written.value->find("CircleSize:" + std::to_string(keys)) != std::string::npos);
 
-        const auto reimported = parse_inline(*written.text);
-        REQUIRE(reimported.song.has_value());
-        CHECK(wormedit::validate_document(*reimported.song).empty());
-        const auto& chart = reimported.song->charts.front();
+        const auto reimported = parse_inline(*written.value);
+        REQUIRE(reimported.value.has_value());
+        CHECK(wormedit::validate_document(*reimported.value).empty());
+        const auto& chart = reimported.value->charts.front();
         REQUIRE(chart.lane_layouts.size() == 1);
         REQUIRE(chart.lane_layouts.front().layout.lanes.size() == static_cast<std::size_t>(keys));
         const auto first_boundary = lane_for_source_time(chart, 0);
@@ -1050,22 +1050,22 @@ TEST_CASE("osu!mania key counts 1 through 18 preserve rewired measure geometry",
         source.insert(hit_objects + std::string_view{"[HitObjects]\n"}.size(), lane_objects);
 
         const auto imported = parse_inline(source);
-        REQUIRE(imported.song.has_value());
-        CHECK_FALSE(imported.has_errors());
-        CHECK(wormedit::validate_document(*imported.song).empty());
-        const auto& source_chart = imported.song->charts.front();
+        REQUIRE(imported.value.has_value());
+        CHECK(imported.ok());
+        CHECK(wormedit::validate_document(*imported.value).empty());
+        const auto& source_chart = imported.value->charts.front();
         REQUIRE(source_chart.lane_layouts.size() == 1);
         REQUIRE(source_chart.lane_layouts.front().layout.lanes.size() ==
                 static_cast<std::size_t>(keys));
 
-        const auto written = write_inline(*imported.song);
-        REQUIRE(written.text.has_value());
-        CHECK_FALSE(written.has_errors());
-        const auto reimported = parse_inline(*written.text);
-        REQUIRE(reimported.song.has_value());
-        CHECK_FALSE(reimported.has_errors());
-        CHECK(wormedit::validate_document(*reimported.song).empty());
-        const auto& round_tripped = reimported.song->charts.front();
+        const auto written = write_inline(*imported.value);
+        REQUIRE(written.value.has_value());
+        CHECK(written.ok());
+        const auto reimported = parse_inline(*written.value);
+        REQUIRE(reimported.value.has_value());
+        CHECK(reimported.ok());
+        CHECK(wormedit::validate_document(*reimported.value).empty());
+        const auto& round_tripped = reimported.value->charts.front();
         REQUIRE(round_tripped.lane_layouts.size() == 1);
         REQUIRE(round_tripped.lane_layouts.front().layout.lanes.size() ==
                 static_cast<std::size_t>(keys));
@@ -1119,19 +1119,19 @@ CircleSize:1
 256,192,0,1,0,
 )osu";
     const auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
+    REQUIRE(imported.value.has_value());
 
-    auto empty_layout = *imported.song;
+    auto empty_layout = *imported.value;
     empty_layout.charts.front().lane_layouts.front().layout.lanes.clear();
     empty_layout.charts.front().input_profile = {};
     empty_layout.charts.front().measures.front().notes.clear();
     const auto empty_result = write_inline(empty_layout);
-    CHECK_FALSE(empty_result.text.has_value());
+    CHECK_FALSE(empty_result.value.has_value());
     CHECK(std::ranges::any_of(empty_result.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_layout;
     }));
 
-    auto nineteen_keys = *imported.song;
+    auto nineteen_keys = *imported.value;
     auto& layout = nineteen_keys.charts.front().lane_layouts.front().layout;
     for (std::uint32_t order = 1; order < 19; ++order) {
         layout.lanes.push_back({.id = wormedit::lane_id_t{10'000 + order},
@@ -1141,7 +1141,7 @@ CircleSize:1
     }
     CHECK(wormedit::validate_document(nineteen_keys).empty());
     const auto nineteen_result = write_inline(nineteen_keys);
-    CHECK_FALSE(nineteen_result.text.has_value());
+    CHECK_FALSE(nineteen_result.value.has_value());
     CHECK(std::ranges::any_of(nineteen_result.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_layout;
     }));
@@ -1180,14 +1180,14 @@ Sample,2300,0,"clap.wav",100
 512,192,2500,1,0,
 )osu";
     auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    auto& imported_chart = imported.song->charts.front();
+    REQUIRE(imported.value.has_value());
+    auto& imported_chart = imported.value->charts.front();
     const auto hold_resource = std::ranges::find_if(
-        imported.song->resources, [](const auto& item) { return item.name == "hold.wav"; });
-    REQUIRE(hold_resource != imported.song->resources.end());
-    const auto hold_asset = std::ranges::find(imported.song->audio_assets, hold_resource->asset,
+        imported.value->resources, [](const auto& item) { return item.name == "hold.wav"; });
+    REQUIRE(hold_resource != imported.value->resources.end());
+    const auto hold_asset = std::ranges::find(imported.value->audio_assets, hold_resource->asset,
                                               &wormedit::audio_asset_t::id);
-    REQUIRE(hold_asset != imported.song->audio_assets.end());
+    REQUIRE(hold_asset != imported.value->audio_assets.end());
     const auto hold_note = std::ranges::find_if(imported_chart.measures, [](const auto& measure) {
         return std::ranges::any_of(measure.notes, [](const auto& note) {
             return note.kind == wormedit::note_kind_t::hold;
@@ -1211,27 +1211,27 @@ Sample,2300,0,"clap.wav",100
                      .position = projected_note->position,
                      .lane = wormedit::lane_id_t{},
                      .playable = false}}});
-    const auto written = write_inline(*imported.song);
-    REQUIRE(written.text.has_value());
-    CHECK_FALSE(written.has_errors());
-    CHECK(written.text->find("Title:Writer roundtrip") != std::string::npos);
-    CHECK(written.text->find("Artist:Wormedit") != std::string::npos);
-    CHECK(written.text->find("Creator:Codec tests") != std::string::npos);
-    CHECK(written.text->find("Version:Layered fixture") != std::string::npos);
-    CHECK(written.text->find("Tags:one two-three") != std::string::npos);
-    CHECK(written.text->find("BeatmapID:57") != std::string::npos);
-    CHECK(written.text->find("Bookmarks: -1000,2500") != std::string::npos);
-    CHECK(written.text->find("PreviewTime:12500") != std::string::npos);
-    CHECK(written.text->find(",3,2,1,70,1,1") != std::string::npos);
-    CHECK(written.text->find("4500:0:0:0:0:hold.wav") != std::string::npos);
-    CHECK(written.text->find("Sample,1000,1,\"hold.wav\",100") != std::string::npos);
-    CHECK(written.text->find("\"0:0:0:0:tap,custom.wav\"") != std::string::npos);
-    CHECK(written.text->find("\"background,one.jpg\"") != std::string::npos);
+    const auto written = write_inline(*imported.value);
+    REQUIRE(written.value.has_value());
+    CHECK(written.ok());
+    CHECK(written.value->find("Title:Writer roundtrip") != std::string::npos);
+    CHECK(written.value->find("Artist:Wormedit") != std::string::npos);
+    CHECK(written.value->find("Creator:Codec tests") != std::string::npos);
+    CHECK(written.value->find("Version:Layered fixture") != std::string::npos);
+    CHECK(written.value->find("Tags:one two-three") != std::string::npos);
+    CHECK(written.value->find("BeatmapID:57") != std::string::npos);
+    CHECK(written.value->find("Bookmarks: -1000,2500") != std::string::npos);
+    CHECK(written.value->find("PreviewTime:12500") != std::string::npos);
+    CHECK(written.value->find(",3,2,1,70,1,1") != std::string::npos);
+    CHECK(written.value->find("4500:0:0:0:0:hold.wav") != std::string::npos);
+    CHECK(written.value->find("Sample,1000,1,\"hold.wav\",100") != std::string::npos);
+    CHECK(written.value->find("\"0:0:0:0:tap,custom.wav\"") != std::string::npos);
+    CHECK(written.value->find("\"background,one.jpg\"") != std::string::npos);
 
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song.has_value());
-    CHECK_FALSE(reimported.has_errors());
-    const auto& song = *reimported.song;
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value.has_value());
+    CHECK(reimported.ok());
+    const auto& song = *reimported.value;
     const auto& chart = song.charts.front();
     CHECK(song.metadata.title == "Writer roundtrip");
     CHECK(song.metadata.artist == "Wormedit");
@@ -1273,9 +1273,9 @@ Sample,2300,0,"clap.wav",100
             count += measure.notes.size();
         return count;
     };
-    CHECK(count_notes(imported.song->charts.front()) == 3);
+    CHECK(count_notes(imported.value->charts.front()) == 3);
     CHECK(count_notes(chart) == 3);
-    CHECK(note_source_times(chart) == note_source_times(imported.song->charts.front()));
+    CHECK(note_source_times(chart) == note_source_times(imported.value->charts.front()));
 }
 
 TEST_CASE("osu!mania writer uses nearest integer milliseconds with ties away from zero",
@@ -1291,8 +1291,8 @@ CircleSize:1
 256,192,0,1,0,
 )osu";
     auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    auto song = *imported.song;
+    REQUIRE(imported.value.has_value());
+    auto song = *imported.value;
     auto& chart = song.charts.front();
     chart.source_family = wormedit::format_family_t::native_project;
     chart.metadata.format_groups.clear();
@@ -1304,8 +1304,8 @@ CircleSize:1
     chart.bpms.front().beats_per_minute = {120, 1};
 
     const auto positive_tie = write_inline(song);
-    REQUIRE(positive_tie.text.has_value());
-    CHECK(positive_tie.text->find(",1,1,0,") != std::string::npos);
+    REQUIRE(positive_tie.value.has_value());
+    CHECK(positive_tie.value->find(",1,1,0,") != std::string::npos);
     CHECK(std::ranges::any_of(positive_tie.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                wormedit::osu_mania_write_diagnostic_code_t::timestamp_quantization;
@@ -1313,8 +1313,8 @@ CircleSize:1
 
     chart.beat_zero_audio_offset_seconds = {-1, 1000};
     const auto negative_tie = write_inline(song);
-    REQUIRE(negative_tie.text.has_value());
-    CHECK(negative_tie.text->find(",-1,1,0,") != std::string::npos);
+    REQUIRE(negative_tie.value.has_value());
+    CHECK(negative_tie.value->find(",-1,1,0,") != std::string::npos);
 }
 
 TEST_CASE("osu!mania embeds structured sprites and nested OSB loops beside ordinary events",
@@ -1347,9 +1347,9 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
 256,192,1000,1,0,
 )osu";
     const auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    CHECK_FALSE(imported.has_errors());
-    const auto& song = *imported.song;
+    REQUIRE(imported.value.has_value());
+    CHECK(imported.ok());
+    const auto& song = *imported.value;
     REQUIRE(song.storyboards.size() == 1);
     CHECK(song.storyboards.front().name == "Storyboard difficulty");
     REQUIRE(song.storyboards.front().model.has_value());
@@ -1391,8 +1391,8 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
     CHECK(panel_asset->kind == wormedit::asset_kind_t::image);
 
     const auto written = write_inline(song);
-    REQUIRE(written.text.has_value());
-    CHECK_FALSE(written.has_errors());
+    REQUIRE(written.value.has_value());
+    CHECK(written.ok());
     const auto count_text = [](std::string_view text, std::string_view needle) {
         std::size_t count{};
         std::size_t offset{};
@@ -1402,31 +1402,31 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
         }
         return count;
     };
-    CHECK(count_text(*written.text, "Sprite,Foreground,Centre") == 2);
-    CHECK(count_text(*written.text, " L,100,2") == 1);
-    CHECK(count_text(*written.text, "UnknownDirective,keep-me") == 1);
-    CHECK(count_text(*written.text, "Sample,12,0,\"nested.wav\",80") == 1);
-    CHECK(count_text(*written.text, "[Events]") == 1);
-    CHECK(written.text->find("0,0,\"background.jpg\",0,0") != std::string::npos);
-    CHECK(written.text->find("Video,2000,\"preview.mp4\",0,0") != std::string::npos);
-    CHECK(written.text->find("Sample,500,0,\"clap.wav\",100") != std::string::npos);
+    CHECK(count_text(*written.value, "Sprite,Foreground,Centre") == 2);
+    CHECK(count_text(*written.value, " L,100,2") == 1);
+    CHECK(count_text(*written.value, "UnknownDirective,keep-me") == 1);
+    CHECK(count_text(*written.value, "Sample,12,0,\"nested.wav\",80") == 1);
+    CHECK(count_text(*written.value, "[Events]") == 1);
+    CHECK(written.value->find("0,0,\"background.jpg\",0,0") != std::string::npos);
+    CHECK(written.value->find("Video,2000,\"preview.mp4\",0,0") != std::string::npos);
+    CHECK(written.value->find("Sample,500,0,\"clap.wav\",100") != std::string::npos);
     const auto written_again = write_inline(song);
-    REQUIRE(written_again.text.has_value());
-    CHECK(*written_again.text == *written.text);
+    REQUIRE(written_again.value.has_value());
+    CHECK(*written_again.value == *written.value);
 
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song.has_value());
-    CHECK_FALSE(reimported.has_errors());
-    REQUIRE(reimported.song->storyboards.size() == 1);
-    REQUIRE(reimported.song->storyboards.front().model.has_value());
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value.has_value());
+    CHECK(reimported.ok());
+    REQUIRE(reimported.value->storyboards.size() == 1);
+    REQUIRE(reimported.value->storyboards.front().model.has_value());
     CHECK(wormedit::storyboard_semantically_equal(model,
-                                                  *reimported.song->storyboards.front().model));
-    CHECK(std::ranges::count_if(reimported.song->charts.front().bga_events, [](const auto& event) {
+                                                  *reimported.value->storyboards.front().model));
+    CHECK(std::ranges::count_if(reimported.value->charts.front().bga_events, [](const auto& event) {
               return event.kind == wormedit::visual_event_kind_t::background ||
                      event.kind == wormedit::visual_event_kind_t::video;
           }) == 2);
 
-    auto zero_order_source = *imported.song;
+    auto zero_order_source = *imported.value;
     zero_order_source.storyboards.front().model->sprites.front().source_order = 0;
     const auto remove_format_version = [](wormedit::format_metadata_t& group) {
         const auto found = std::ranges::find_if(group.ordered_fields, [](const auto& field) {
@@ -1457,8 +1457,8 @@ Sprite,Foreground,Centre,"sprites/second.png",320,240
     set_sprite_order_zero(zero_order_source.metadata.format_groups.front());
     set_sprite_order_zero(zero_order_source.charts.front().metadata.format_groups.front());
     const auto zero_order_written = write_inline(zero_order_source);
-    REQUIRE(zero_order_written.text.has_value());
-    CHECK(count_text(*zero_order_written.text, "Sprite,Foreground,Centre") == 2);
+    REQUIRE(zero_order_written.value.has_value());
+    CHECK(count_text(*zero_order_written.value, "Sprite,Foreground,Centre") == 2);
 }
 
 TEST_CASE("osu!mania storyboard import and export reject malformed or out-of-bound content",
@@ -1474,7 +1474,7 @@ Sprite,Foreground,Centre,"broken.png"
 0,500,4,0,0,100,1,0
 )osu";
     const auto invalid = parse_inline(malformed);
-    CHECK_FALSE(invalid.song.has_value());
+    CHECK_FALSE(invalid.value.has_value());
     CHECK(has_code(invalid, wormedit::osu_mania_parse_diagnostic_code_t::invalid_storyboard));
 
     constexpr std::string_view unsupported_trigger = R"osu(osu file format v14
@@ -1490,7 +1490,7 @@ Sprite,Foreground,Centre,"a.png",0,0
 0,500,4,0,0,100,1,0
 )osu";
     const auto trigger_block = parse_inline(unsupported_trigger);
-    CHECK_FALSE(trigger_block.song.has_value());
+    CHECK_FALSE(trigger_block.value.has_value());
     CHECK(has_code(trigger_block,
                    wormedit::osu_mania_parse_diagnostic_code_t::unsupported_storyboard));
 
@@ -1502,7 +1502,7 @@ Sprite,Foreground,Centre,"a.png",0,0
     }
     deeply_nested += " F,0,0,1,0,1\n[TimingPoints]\n0,500,4,0,0,100,1,0\n";
     const auto bounded = parse_inline(deeply_nested);
-    CHECK_FALSE(bounded.song.has_value());
+    CHECK_FALSE(bounded.value.has_value());
     CHECK(has_code(bounded, wormedit::osu_mania_parse_diagnostic_code_t::storyboard_limit));
 
     constexpr std::string_view expanded_commands = R"osu(osu file format v14
@@ -1518,13 +1518,13 @@ Sprite,Foreground,Centre,"a.png",0,0
 )osu";
     const auto expanded_at_boundary =
         wormedit::parse_osu_mania_bytes(bytes(expanded_commands), {.max_events = 3});
-    CHECK_FALSE(expanded_at_boundary.song.has_value());
+    CHECK_FALSE(expanded_at_boundary.value.has_value());
     CHECK(has_code(expanded_at_boundary, wormedit::osu_mania_parse_diagnostic_code_t::event_limit));
     const auto expanded_with_room =
         wormedit::parse_osu_mania_bytes(bytes(expanded_commands), {.max_events = 4});
-    REQUIRE(expanded_with_room.song.has_value());
-    REQUIRE(expanded_with_room.song->storyboards.front().model.has_value());
-    REQUIRE(expanded_with_room.song->storyboards.front().model->sprites.front().nodes.size() == 2);
+    REQUIRE(expanded_with_room.value.has_value());
+    REQUIRE(expanded_with_room.value->storyboards.front().model.has_value());
+    REQUIRE(expanded_with_room.value->storyboards.front().model->sprites.front().nodes.size() == 2);
 
     constexpr std::string_view valid = R"osu(osu file format v14
 [General]
@@ -1538,52 +1538,52 @@ Sprite,Foreground,Centre,"a.png",0,0
 0,500,4,0,0,100,1,0
 )osu";
     const auto imported = parse_inline(valid);
-    REQUIRE(imported.song.has_value());
-    const auto bounded_write = write_inline(*imported.song, {.max_output_bytes = 64});
-    CHECK_FALSE(bounded_write.text.has_value());
+    REQUIRE(imported.value.has_value());
+    const auto bounded_write = write_inline(*imported.value, {.max_output_bytes = 64});
+    CHECK_FALSE(bounded_write.value.has_value());
     CHECK(std::ranges::any_of(bounded_write.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::output_limit;
     }));
 
-    auto unscoped_storyboard = *imported.song;
+    auto unscoped_storyboard = *imported.value;
     unscoped_storyboard.metadata.format_groups.clear();
     unscoped_storyboard.charts.front().metadata.format_groups.clear();
     auto without_storyboard = unscoped_storyboard;
     without_storyboard.storyboards.clear();
     std::size_t baseline_event_budget{};
-    wormedit::osu_mania_write_result_t baseline;
+    wormedit::osu_mania_write_outcome_t baseline;
     for (; baseline_event_budget < 32; ++baseline_event_budget) {
         baseline = write_inline(without_storyboard, {.max_events = baseline_event_budget});
-        if (baseline.text)
+        if (baseline.value)
             break;
     }
-    REQUIRE(baseline.text.has_value());
+    REQUIRE(baseline.value.has_value());
     const auto storyboard_event_limited =
         write_inline(unscoped_storyboard, {.max_events = baseline_event_budget + 1});
-    CHECK_FALSE(storyboard_event_limited.text.has_value());
+    CHECK_FALSE(storyboard_event_limited.value.has_value());
     CHECK(std::ranges::any_of(storyboard_event_limited.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::output_limit;
     }));
 
-    auto legacy = *imported.song;
+    auto legacy = *imported.value;
     legacy.storyboards.front().model.reset();
     legacy.storyboards.front().retained_source_lines = {"Sprite,Foreground,Centre,a.png,0,0"};
     const auto unsupported = write_inline(legacy);
-    CHECK_FALSE(unsupported.text.has_value());
+    CHECK_FALSE(unsupported.value.has_value());
     CHECK(std::ranges::any_of(unsupported.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
     }));
 
-    auto section_injection = *imported.song;
+    auto section_injection = *imported.value;
     section_injection.storyboards.front().model->retained_top_level_lines.push_back(
         {.source_order = 999, .text = "[Events]"});
     const auto rejected_section = write_inline(section_injection);
-    CHECK_FALSE(rejected_section.text.has_value());
+    CHECK_FALSE(rejected_section.value.has_value());
     CHECK(std::ranges::any_of(rejected_section.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
     }));
 
-    auto multi_chart = *imported.song;
+    auto multi_chart = *imported.value;
     const auto second_chart_id = wormedit::chart_id_t{50'000};
     const auto second_measure_id = wormedit::measure_id_t{50'100};
     multi_chart.charts.push_back({
@@ -1603,7 +1603,7 @@ Sprite,Foreground,Centre,"a.png",0,0
     REQUIRE(wormedit::validate_document(multi_chart).empty());
     const auto selected_chart_write =
         write_inline(multi_chart, {.chart = multi_chart.charts.front().id});
-    CHECK_FALSE(selected_chart_write.text.has_value());
+    CHECK_FALSE(selected_chart_write.value.has_value());
     CHECK(std::ranges::any_of(selected_chart_write.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
     }));
@@ -1612,8 +1612,8 @@ Sprite,Foreground,Centre,"a.png",0,0
 TEST_CASE("osu!mania writer diagnoses layer loss and rejects unsupported chart state",
           "[unit][format][osu-mania][writer][negative]") {
     const auto imported = parse_inline(rewiring_source);
-    REQUIRE(imported.song.has_value());
-    auto layered = *imported.song;
+    REQUIRE(imported.value.has_value());
+    auto layered = *imported.value;
     auto& chart = layered.charts.front();
     chart.semantic_layers.push_back({.id = wormedit::layer_id_t{1}, .name = "accent"});
     auto& note = chart.measures.front().notes.front();
@@ -1623,23 +1623,23 @@ TEST_CASE("osu!mania writer diagnoses layer loss and rejects unsupported chart s
     for (const auto& diagnostic : flattened.diagnostics)
         diagnostic_messages += diagnostic.message + "\n";
     INFO(diagnostic_messages);
-    REQUIRE(flattened.text.has_value());
+    REQUIRE(flattened.value.has_value());
     CHECK(std::ranges::any_of(flattened.diagnostics, [](const auto& diagnostic) {
         return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
                diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::lossy_transform;
     }));
 
-    auto unsupported = *imported.song;
+    auto unsupported = *imported.value;
     unsupported.charts.front().measures.front().notes.front().kind = wormedit::note_kind_t::mine;
     const auto rejected = write_inline(unsupported);
-    CHECK_FALSE(rejected.text.has_value());
-    CHECK(rejected.has_errors());
+    CHECK_FALSE(rejected.value.has_value());
+    CHECK(!rejected.ok());
     CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::unsupported_feature;
     }));
 
-    auto bounded = write_inline(*imported.song, {.max_output_bytes = 32});
-    CHECK_FALSE(bounded.text.has_value());
+    auto bounded = write_inline(*imported.value, {.max_output_bytes = 32});
+    CHECK_FALSE(bounded.value.has_value());
     CHECK(std::ranges::any_of(bounded.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::output_limit;
     }));
@@ -1658,8 +1658,8 @@ CircleSize:1
 256,192,0,1,0,
 )osu";
     auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    auto song = *imported.song;
+    REQUIRE(imported.value.has_value());
+    auto song = *imported.value;
     const auto selected = song.charts.front().id;
     song.charts.push_back({
         .id = wormedit::chart_id_t{90'000},
@@ -1681,8 +1681,8 @@ CircleSize:1
                                   .relative_output_path = "charts"});
     REQUIRE(validate_document(song).empty());
     const auto written = write_inline(song, {.chart = selected});
-    REQUIRE(written.text.has_value());
-    CHECK_FALSE(written.has_errors());
+    REQUIRE(written.value.has_value());
+    CHECK(written.ok());
 }
 
 TEST_CASE("osu!mania writer retains distinct song and difficulty format fields",
@@ -1698,25 +1698,25 @@ CircleSize:1
 256,192,0,1,0,
 )osu";
     auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    auto& song_group = imported.song->metadata.format_groups.front();
-    auto& chart_group = imported.song->charts.front().metadata.format_groups.front();
+    REQUIRE(imported.value.has_value());
+    auto& song_group = imported.value->metadata.format_groups.front();
+    auto& chart_group = imported.value->charts.front().metadata.format_groups.front();
     song_group.ordered_fields.emplace_back("General.SongOnly", "song-value");
     song_group.ordered_fields.emplace_back("Metadata.TitleUnicode", "曲名");
     chart_group.ordered_fields.emplace_back("Difficulty.ChartOnly", "chart-value");
     chart_group.ordered_fields.emplace_back("Metadata.ArtistUnicode", "作曲者");
 
-    const auto written = write_inline(*imported.song);
-    REQUIRE(written.text.has_value());
-    CHECK(written.text->find("SongOnly:song-value") != std::string::npos);
-    CHECK(written.text->find("ChartOnly:chart-value") != std::string::npos);
-    CHECK(written.text->find("TitleUnicode:曲名") != std::string::npos);
-    CHECK(written.text->find("ArtistUnicode:作曲者") != std::string::npos);
+    const auto written = write_inline(*imported.value);
+    REQUIRE(written.value.has_value());
+    CHECK(written.value->find("SongOnly:song-value") != std::string::npos);
+    CHECK(written.value->find("ChartOnly:chart-value") != std::string::npos);
+    CHECK(written.value->find("TitleUnicode:曲名") != std::string::npos);
+    CHECK(written.value->find("ArtistUnicode:作曲者") != std::string::npos);
 
-    auto conflicting = *imported.song;
+    auto conflicting = *imported.value;
     conflicting.charts.front().metadata.format_groups.front().ordered_fields.front().second = "4";
     const auto rejected = write_inline(conflicting);
-    CHECK_FALSE(rejected.text.has_value());
+    CHECK_FALSE(rejected.value.has_value());
     CHECK(std::ranges::any_of(rejected.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::invalid_metadata;
     }));
@@ -1779,12 +1779,12 @@ SliderBorder:4,5,6
 36,192,0,1,0,
 )osu";
     const auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    CHECK_FALSE(imported.has_errors());
+    REQUIRE(imported.value.has_value());
+    CHECK(imported.ok());
 
-    const auto written = write_inline(*imported.song);
-    REQUIRE(written.text.has_value());
-    CHECK_FALSE(written.has_errors());
+    const auto written = write_inline(*imported.value);
+    REQUIRE(written.value.has_value());
+    CHECK(written.ok());
 
     constexpr std::array expected_lines{
         "AudioFilename: music.ogg",
@@ -1832,13 +1832,13 @@ SliderBorder:4,5,6
     };
     for (const auto line : expected_lines) {
         CAPTURE(line);
-        CHECK(written.text->find(line) != std::string::npos);
+        CHECK(written.value->find(line) != std::string::npos);
     }
 
-    const auto reimported = parse_inline(*written.text);
-    REQUIRE(reimported.song.has_value());
-    CHECK_FALSE(reimported.has_errors());
-    const auto& fields = reimported.song->metadata.format_groups.front().ordered_fields;
+    const auto reimported = parse_inline(*written.value);
+    REQUIRE(reimported.value.has_value());
+    CHECK(reimported.ok());
+    const auto& fields = reimported.value->metadata.format_groups.front().ordered_fields;
     const auto has_field = [&](std::string_view identity, std::string_view value) {
         return std::ranges::any_of(fields, [&](const auto& field) {
             return field.first == identity && field.second == value;
@@ -1872,25 +1872,25 @@ CircleSize:1
     wormedit::osu_mania_parse_options_t field_options;
     field_options.max_metadata_fields = 1;
     const auto field_limited = wormedit::parse_osu_mania_bytes(source_bytes, field_options);
-    CHECK_FALSE(field_limited.song.has_value());
+    CHECK_FALSE(field_limited.value.has_value());
     CHECK(has_code(field_limited, wormedit::osu_mania_parse_diagnostic_code_t::metadata_limit));
 
     wormedit::osu_mania_parse_options_t byte_options;
     byte_options.max_metadata_bytes = 5;
     const auto byte_limited = wormedit::parse_osu_mania_bytes(source_bytes, byte_options);
-    CHECK_FALSE(byte_limited.song.has_value());
+    CHECK_FALSE(byte_limited.value.has_value());
     CHECK(has_code(byte_limited, wormedit::osu_mania_parse_diagnostic_code_t::metadata_limit));
 
     const auto imported = parse_inline(source);
-    REQUIRE(imported.song.has_value());
-    const auto write_field_limited = write_inline(*imported.song, {.max_metadata_fields = 1});
-    CHECK_FALSE(write_field_limited.text.has_value());
+    REQUIRE(imported.value.has_value());
+    const auto write_field_limited = write_inline(*imported.value, {.max_metadata_fields = 1});
+    CHECK_FALSE(write_field_limited.value.has_value());
     CHECK(std::ranges::any_of(write_field_limited.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::metadata_limit;
     }));
 
-    const auto write_byte_limited = write_inline(*imported.song, {.max_metadata_bytes = 5});
-    CHECK_FALSE(write_byte_limited.text.has_value());
+    const auto write_byte_limited = write_inline(*imported.value, {.max_metadata_bytes = 5});
+    CHECK_FALSE(write_byte_limited.value.has_value());
     CHECK(std::ranges::any_of(write_byte_limited.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::metadata_limit;
     }));
@@ -1899,8 +1899,8 @@ CircleSize:1
 TEST_CASE("osu!mania export bakes parametric SV recipes into inherited timing points",
           "[unit][format][osu-mania][sv-recipe]") {
     const auto parsed = parse_inline(rewiring_source);
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     REQUIRE(chart.measures.size() >= 2);
     chart.scrolls.clear();
@@ -1913,10 +1913,10 @@ TEST_CASE("osu!mania export bakes parametric SV recipes into inherited timing po
         .parameters = {.value_from = {2, 1}},
     });
     const auto written = write_inline(song);
-    REQUIRE(written.text.has_value());
-    const auto reparsed = parse_inline(*written.text);
-    REQUIRE(reparsed.song.has_value());
-    CHECK(std::ranges::any_of(reparsed.song->charts.front().scrolls, [](const auto& event) {
+    REQUIRE(written.value.has_value());
+    const auto reparsed = parse_inline(*written.value);
+    REQUIRE(reparsed.value.has_value());
+    CHECK(std::ranges::any_of(reparsed.value->charts.front().scrolls, [](const auto& event) {
         return event.multiplier == wormedit::signed_rational_t{2, 1};
     }));
     CHECK(chart.scrolls.empty());
@@ -1925,14 +1925,14 @@ TEST_CASE("osu!mania export bakes parametric SV recipes into inherited timing po
 
 TEST_CASE("osu mania imports bind lanes without changing exported chart bytes", "[osu][default-input]") {
     auto parsed = fixture("mania-tags-bookmarks-kiai.osu");
-    REQUIRE(parsed.song);
-    const auto& input = parsed.song->charts.front().input_profile;
-    CHECK(input.bindings.size() == parsed.song->charts.front().lane_layouts.front().layout.lanes.size());
+    REQUIRE(parsed.value);
+    const auto& input = parsed.value->charts.front().input_profile;
+    CHECK(input.bindings.size() == parsed.value->charts.front().lane_layouts.front().layout.lanes.size());
     CHECK(input.bindings.front().key == wormedit::physical_key_t::digit_1);
-    const auto bound = write_inline(*parsed.song);
-    parsed.song->charts.front().input_profile = {};
-    const auto unbound = write_inline(*parsed.song);
-    CHECK(bound.text == unbound.text);
+    const auto bound = write_inline(*parsed.value);
+    parsed.value->charts.front().input_profile = {};
+    const auto unbound = write_inline(*parsed.value);
+    CHECK(bound.value == unbound.value);
 }
 
 namespace {
@@ -1963,11 +1963,11 @@ auto has_line(const std::vector<std::string>& lines, std::string_view wanted) ->
 TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an edit",
           "[unit][format][osu-mania][writer][round-trip][non-gameplay]") {
     auto parsed = fixture("non-gameplay-roundtrip.osu");
-    REQUIRE(parsed.song.has_value());
-    REQUIRE_FALSE(parsed.has_errors());
+    REQUIRE(parsed.value.has_value());
+    REQUIRE_FALSE(!parsed.ok());
 
     // Edit: move the first tap to the last lane. Nothing else changes.
-    auto& measures = parsed.song->charts.front().measures;
+    auto& measures = parsed.value->charts.front().measures;
     const auto with_notes = std::ranges::find_if(
         measures, [](const auto& measure) { return !measure.notes.empty(); });
     REQUIRE(with_notes != measures.end());
@@ -1975,9 +1975,9 @@ TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an 
     REQUIRE(first_note.kind == wormedit::note_kind_t::tap);
     first_note.lane = wormedit::lane_id_t{4};
 
-    const auto written = write_inline(*parsed.song);
-    REQUIRE(written.text.has_value());
-    const auto lines = text_lines(*written.text);
+    const auto written = write_inline(*parsed.value);
+    REQUIRE(written.value.has_value());
+    const auto lines = text_lines(*written.value);
 
     SECTION("general, colours and unknown keys") {
         for (const auto wanted :
@@ -2019,12 +2019,12 @@ TEST_CASE("osu!mania keeps events, samples, colours and unknown keys through an 
     }
 
     SECTION("the exported file re-imports and re-exports byte for byte") {
-        const auto reparsed = wormedit::parse_osu_mania_bytes(bytes(*written.text));
-        REQUIRE(reparsed.song.has_value());
-        REQUIRE_FALSE(reparsed.has_errors());
-        const auto again = write_inline(*reparsed.song);
-        REQUIRE(again.text.has_value());
-        CHECK(*again.text == *written.text);
+        const auto reparsed = wormedit::parse_osu_mania_bytes(bytes(*written.value));
+        REQUIRE(reparsed.value.has_value());
+        REQUIRE_FALSE(!reparsed.ok());
+        const auto again = write_inline(*reparsed.value);
+        REQUIRE(again.value.has_value());
+        CHECK(*again.value == *written.value);
     }
 }
 
@@ -2066,8 +2066,8 @@ TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
                 source += std::to_string((2 * column + 1) * 512 / (2 * keys)) +
                     ",192," + std::to_string(column * 100) + ",1,0,0:0:0:0:\n";
             auto imported = parse_inline(source);
-            REQUIRE(imported.song);
-            const auto& chart = imported.song->charts.front();
+            REQUIRE(imported.value);
+            const auto& chart = imported.value->charts.front();
             const auto& layout = chart.lane_layouts.front().layout;
             const bool special = std::string_view(style) == "SpecialStyle:1\n";
             CHECK(layout.split_stage == special);
@@ -2078,16 +2078,16 @@ TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
                 CHECK(layout.lanes[column].role == lane_role_t::playable);
                 if (!special) check_ordinary_osu_class(layout.lanes[column].key_color, keys, column);
             }
-            auto reopened = native_reopen(*imported.song);
+            auto reopened = native_reopen(*imported.value);
             check_osu_split_layout(reopened.charts.front().lane_layouts.front().layout, layout);
             CHECK(reopened.charts.front().input_profile.profile_id == chart.input_profile.profile_id);
             CHECK(reopened.charts.front().input_profile.bindings.size() == chart.input_profile.bindings.size());
             auto exported = write_inline(reopened);
-            REQUIRE(exported.text);
-            auto reimported = parse_inline(*exported.text);
-            REQUIRE(reimported.song);
-            check_osu_split_layout(reimported.song->charts.front().lane_layouts.front().layout, layout);
-            CHECK(validate_document(*reimported.song).empty());
+            REQUIRE(exported.value);
+            auto reimported = parse_inline(*exported.value);
+            REQUIRE(reimported.value);
+            check_osu_split_layout(reimported.value->charts.front().lane_layouts.front().layout, layout);
+            CHECK(validate_document(*reimported.value).empty());
         }
     }
 }
@@ -2095,13 +2095,13 @@ TEST_CASE("osu SpecialStyle 12K and 16K survive native and osu roundtrips",
 TEST_CASE("osu Sample export reports the omitted BGM hold tail and retains the head",
           "[unit][format][osu-mania][writer][t423-codec]") {
     auto imported = parse_inline("osu file format v14\n[General]\nMode:3\n[Difficulty]\nCircleSize:4\n[Events]\nSample,500,0,\"kick.wav\",100\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n");
-    REQUIRE(imported.song);
-    auto& chart = imported.song->charts.front();
+    REQUIRE(imported.value);
+    auto& chart = imported.value->charts.front();
     auto& event = chart.measures.front().bgm_events.front();
     event.end = wormedit::local_position_t{event.position.measure, event.position.row + 120};
-    const auto written = write_inline(*imported.song);
-    REQUIRE(written.text);
-    CHECK(written.text->find("Sample,500,") != std::string::npos);
+    const auto written = write_inline(*imported.value);
+    REQUIRE(written.value);
+    CHECK(written.value->find("Sample,500,") != std::string::npos);
     CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::osu_mania_write_diagnostic_code_t::lossy_transform &&
                diagnostic.message.find("hold tail") != std::string::npos;
@@ -2120,24 +2120,24 @@ TEST_CASE("Selected SpecialStyle layout replaces retained osu style on export",
             "[Difficulty]\nCircleSize:" + std::to_string(keys) +
             "\n[TimingPoints]\n0,500,4,0,0,100,1,0\n[HitObjects]\n16,192,100,1,0,0:0:0:0:\n";
         auto parsed = parse_inline(source);
-        require_specialstyle(parsed.song.has_value());
-        auto history = document_history_t::from(*parsed.song);
+        require_specialstyle(parsed.value.has_value());
+        auto history = document_history_t::from(*parsed.value);
         const auto id = history.document.charts.front().id;
         const auto position = history.document.charts.front().lane_layouts.front().position;
         require_specialstyle(static_cast<bool>(apply_lane_profile_switch(
             history, id, position, make_osu_mania_profile(keys, true)->layout)));
         auto exported = write_inline(native_reopen(history.document));
-        require_specialstyle(exported.text.has_value());
-        check_specialstyle(exported.text->find("SpecialStyle:1") != std::string::npos);
-        check_specialstyle(exported.text->find("SpecialStyle:0") == std::string::npos);
-        auto reopened = parse_inline(*exported.text);
-        require_specialstyle(reopened.song.has_value());
-        check_specialstyle(reopened.song->charts.front().lane_layouts.front().layout.split_stage);
+        require_specialstyle(exported.value.has_value());
+        check_specialstyle(exported.value->find("SpecialStyle:1") != std::string::npos);
+        check_specialstyle(exported.value->find("SpecialStyle:0") == std::string::npos);
+        auto reopened = parse_inline(*exported.value);
+        require_specialstyle(reopened.value.has_value());
+        check_specialstyle(reopened.value->charts.front().lane_layouts.front().layout.split_stage);
         require_specialstyle(static_cast<bool>(apply_lane_profile_switch(
             history, id, position, make_osu_mania_profile(keys)->layout)));
         exported = write_inline(history.document, {.preserve_unknown_fields = false});
-        require_specialstyle(exported.text.has_value());
-        check_specialstyle(exported.text->find("SpecialStyle:0") != std::string::npos);
+        require_specialstyle(exported.value.has_value());
+        check_specialstyle(exported.value->find("SpecialStyle:0") != std::string::npos);
     }
 }
 
@@ -2145,9 +2145,9 @@ TEST_CASE("osu shared parse warnings remain independent of song presence", "[uni
     using namespace wormedit;
     osu_mania_parse_outcome_t parsed{.diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
     CHECK(parsed.ok());
-    const auto legacy = osu_mania_parse_result_t::from(std::move(parsed));
-    CHECK_FALSE(legacy.has_errors());
-    CHECK_FALSE(legacy.song);
+    const auto legacy = std::move(parsed);
+    CHECK(legacy.ok());
+    CHECK_FALSE(legacy.value);
     CHECK(legacy.diagnostics.front().message == "warning");
 }
 
@@ -2156,8 +2156,8 @@ TEST_CASE("osu shared write warnings retain text", "[unit][osu-mania][results]")
     osu_mania_write_outcome_t written{.value = std::string{"text"},
         .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
     CHECK(written.ok());
-    const auto legacy = osu_mania_write_result_t::from(std::move(written));
-    CHECK_FALSE(legacy.has_errors());
-    CHECK(legacy.text == "text");
+    const auto legacy = std::move(written);
+    CHECK(legacy.ok());
+    CHECK(legacy.value == "text");
     CHECK(legacy.diagnostics.front().message == "warning");
 }

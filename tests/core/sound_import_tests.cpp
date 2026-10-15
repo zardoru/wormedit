@@ -31,8 +31,8 @@ auto bmson_song() -> song_document_t {
                             std::istreambuf_iterator<char>()};
     const auto parsed =
         parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    return *parsed.song;
+    REQUIRE(parsed.value);
+    return *parsed.value;
 }
 
 auto entry(const std::string& name, sound_kind_t kind) -> bulk_sound_import_entry_t {
@@ -91,11 +91,11 @@ auto empty_stem_matches(const chart_document_t& chart, const resource_entry_t& r
 auto exported_stems_remain_empty(const song_document_t& song, std::size_t first_channel,
                                  std::size_t stem_count) -> bool {
     const auto written = write_bmson(song);
-    if (!written.json) return false;
+    if (!written.value) return false;
     const auto reparsed = parse_bmson_bytes(std::as_bytes(
-        std::span{written.json->data(), written.json->size()}));
-    if (!reparsed.song || reparsed.song->charts.empty()) return false;
-    const auto& channels = reparsed.song->charts.front().sound_channels;
+        std::span{written.value->data(), written.value->size()}));
+    if (!reparsed.value || reparsed.value->charts.empty()) return false;
+    const auto& channels = reparsed.value->charts.front().sound_channels;
     if (channels.size() < first_channel + stem_count) return false;
     for (std::size_t index = first_channel; index < first_channel + stem_count; ++index)
         if (!channels[index].events.empty()) return false;

@@ -1,5 +1,6 @@
 #include "sys/metadata_asset_runtime.h"
 #include "sys/thread_priority.h"
+#include <wormedit/core/async_job.h>
 
 #include "ui/frontend.h"
 
@@ -23,7 +24,9 @@ namespace runtime {
 namespace {
 
 struct metadata_asset_import_task_result_t {
-    wormedit::project_asset_copy_result_t copy;
+    wormedit::project_asset_copy_outcome_t copy{std::unexpected(
+        wormedit::error_t<wormedit::project_asset_copy_status_t>{
+            wormedit::project_asset_copy_status_t::invalid_request, {}})};
     std::optional<wormedit::audio_stream_info_t> stream;
     std::string decode_error;
 };
@@ -41,18 +44,41 @@ struct pending_metadata_asset_import_t {
     bool allocate_bms_identifier{};
 };
 
-struct pending_metadata_copy_preview_t {
-    wormedit::task_graph_handle_t graph;
-    wormedit::task_id_t task;
-    wormedit::notification_source_t source{wormedit::notification_source_t::document};
+struct metadata_copy_inspection_request_t {
+    wormedit::project_asset_copy_request_t copy;
+    std::filesystem::path output_path;
+    bool export_copy{};
 };
+using metadata_copy_inspection_job_t =
+    wormedit::async_job_t<metadata_copy_inspection_request_t,
+                          wormedit::project_asset_copy_outcome_t, wormedit::notification_source_t>;
 
 struct metadata_copy_preview_t {
     wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
-    std::optional<pending_metadata_copy_preview_t> pending;
+    metadata_copy_inspection_job_t job{scheduler,
+                                       1,
+                                       "Copy inspection could not start.",
+                                       "scheduler outstanding-task capacity exceeded",
+                                       "Copy inspection returned no result.",
+                                       wormedit::async_job_destruction_policy_t::release};
     std::optional<metadata_copy_preview_key_t> key;
     std::string message;
 };
+
+auto inspect_copy(const metadata_copy_inspection_request_t& request, std::stop_token stop)
+    -> metadata_copy_inspection_job_t::work_outcome_t {
+    using namespace wormedit;
+    auto inspected =
+        request.export_copy
+            ? inspect_export_asset_file({.project_directory = request.copy.project_directory,
+                                         .source_path = request.copy.source_path,
+                                         .relative_output_path = request.output_path,
+                                         .asset = request.copy.asset,
+                                         .maximum_bytes = request.copy.maximum_bytes},
+                                        stop)
+            : inspect_project_asset_file(request.copy, stop);
+    return metadata_copy_inspection_job_t::work_outcome_t{std::in_place, std::move(inspected)};
+}
 
 struct metadata_import_feedback_t {
     std::string message;
@@ -89,7 +115,7 @@ auto link_imported_metadata_audio(
         {.source_path = request.source_path,
          .copied_project_relative_path =
              request.export_copy ? std::optional<std::filesystem::path>{}
-                                 : std::optional{imported.copy.relative_path},
+                                 : std::optional{imported.copy->relative_path},
          .expected_new_asset_id = request.asset,
          .name = std::move(name),
          .allocate_bms_identifier = request.allocate_bms_identifier,
@@ -107,8 +133,8 @@ auto link_imported_metadata_audio(
         severity = wormedit::notification_severity_t::error;
         return false;
     }
-    const auto rebound = wormedit::rebind_workspace(workspace, history);
-    if (!rebound) {
+    const auto rebound = wormedit::workspace_action_result_t::rebind(workspace, history);
+    if (!(rebound.value && rebound.diagnostics.empty())) {
         source = wormedit::notification_source_t::document;
         severity = rebound.diagnostics.empty()
                        ? wormedit::notification_severity_t::error
@@ -123,7 +149,7 @@ auto link_imported_metadata_audio(
             return std::ranges::find(resource.roles, wormedit::resource_role_t::music) !=
                    resource.roles.end();
         });
-        (void)wormedit::apply_workspace_action(
+        (void)wormedit::workspace_action_result_t::from(
             workspace, history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = music != resources.end() ? music->asset : request.asset,
@@ -135,28 +161,28 @@ auto link_imported_metadata_audio(
     return true;
 }
 
-auto failed_import_feedback(const wormedit::task_result_t& completed,
+auto failed_import_feedback(const wormedit::task_outcome_t& completed,
                             const std::shared_ptr<const metadata_asset_import_task_result_t>& imported)
     -> std::optional<metadata_import_feedback_t> {
     using namespace wormedit;
-    if (!completed.is_successful() || !imported) {
-        const auto cancelled = completed.error &&
-                               completed.error->code == task_error_code_t::cancelled;
+    if (!completed.has_value() || !imported) {
+        const auto cancelled = !completed.has_value() &&
+                               completed.error().cause.code == task_error_code_t::cancelled;
         return metadata_import_feedback_t{
-            .message = completed.error ? completed.error->message
+            .message = !completed.has_value() ? completed.error().cause.message
                                        : "Project import-copy returned no result.",
             .severity = cancelled ? notification_severity_t::info
                                   : notification_severity_t::error};
     }
     if (!imported->copy) {
-        const auto status = imported->copy.status;
+        const auto status = imported->copy.error().code;
         const auto severity = status == project_asset_copy_status_t::cancelled
                                   ? notification_severity_t::info
                               : status == project_asset_copy_status_t::destination_collision
                                   ? notification_severity_t::warning
                                   : notification_severity_t::error;
         return metadata_import_feedback_t{
-            .message = imported->decode_error.empty() ? imported->copy.message
+            .message = imported->decode_error.empty() ? imported->copy.error().message
                                                       : imported->decode_error,
             .severity = severity};
     }
@@ -168,7 +194,7 @@ auto failed_import_feedback(const wormedit::task_result_t& completed,
 }
 
 auto complete_import_feedback(
-    const pending_metadata_asset_import_t& request, const wormedit::task_result_t& completed,
+    const pending_metadata_asset_import_t& request, const wormedit::task_outcome_t& completed,
     const std::shared_ptr<const metadata_asset_import_task_result_t>& imported,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace)
     -> metadata_import_feedback_t {
@@ -196,30 +222,31 @@ auto complete_import_feedback(
     return result;
 }
 
-auto copy_preview_feedback(const wormedit::task_result_t& completed,
-                           const std::shared_ptr<const wormedit::project_asset_copy_result_t>& inspected)
+auto copy_preview_feedback(const metadata_copy_inspection_job_t::completion_t& completed)
     -> std::pair<std::string, wormedit::notification_severity_t> {
     using namespace wormedit;
-    if (!completed.is_successful() || !inspected) {
-        const auto cancelled = completed.error &&
-                               completed.error->code == task_error_code_t::cancelled;
-        return {completed.error ? completed.error->message : "Copy inspection returned no result.",
-                cancelled ? notification_severity_t::info : notification_severity_t::error};
+    if (!completed) {
+        return {completed.error().cause.message,
+                completed.error().cause.code == task_error_code_t::cancelled
+                    ? notification_severity_t::info
+                    : notification_severity_t::error};
     }
+    const auto& inspected = completed->payload;
     using copy_status_t = project_asset_copy_status_t;
-    const auto severity = inspected->status == copy_status_t::destination_collision
+    const auto status = inspected->has_value() ? (*inspected)->status : inspected->error().code;
+    const auto severity = status == copy_status_t::destination_collision
                               ? notification_severity_t::warning
-                          : inspected->status == copy_status_t::not_staged ||
-                                    inspected->status == copy_status_t::reused ||
-                                    inspected->status == copy_status_t::cancelled
+                          : status == copy_status_t::not_staged ||
+                                    status == copy_status_t::reused ||
+                                    status == copy_status_t::cancelled
                               ? notification_severity_t::info
                               : notification_severity_t::error;
-    auto message = inspected->message;
-    if (inspected->status == copy_status_t::not_staged)
+    auto message = inspected->has_value() ? std::string{} : inspected->error().message;
+    if (status == copy_status_t::not_staged)
         message = "Destination is free; copy will create it.";
-    else if (inspected->status == copy_status_t::reused)
+    else if (status == copy_status_t::reused)
         message = "Identical file exists; copy will reuse it.";
-    else if (inspected->status == copy_status_t::destination_collision)
+    else if (status == copy_status_t::destination_collision)
         message = "Different file occupies destination; copy will preserve it.";
     else if (message.empty())
         message = "Copy destination cannot be used.";
@@ -233,7 +260,7 @@ auto process_pending_metadata_asset_import(
     -> std::optional<std::string> {
     if (!pending_import)
         return std::nullopt;
-    const auto completed = pending_import->graph.result(pending_import->task);
+    const auto completed = pending_import->graph.outcome(pending_import->task);
     if (!completed)
         return std::nullopt;
     const auto request = std::move(*pending_import);
@@ -241,7 +268,7 @@ auto process_pending_metadata_asset_import(
     const auto imported =
         wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
     auto feedback = complete_import_feedback(request, *completed, imported, history, workspace);
-    if (imported && imported->copy.status ==
+    if (imported && imported->copy && imported->copy->status ==
                         wormedit::project_asset_copy_status_t::copied &&
         !feedback.linked) {
         const wormedit::project_asset_copy_request_t copy_request{
@@ -254,9 +281,9 @@ auto process_pending_metadata_asset_import(
                                           .source_path = request.source_path,
                                           .relative_output_path = request.output_path,
                                           .asset = request.asset},
-                                         imported->copy)
+                                         *imported->copy)
                                    : wormedit::discard_unlinked_project_asset_copy(
-                                         copy_request, imported->copy);
+                                         copy_request, *imported->copy);
         if (!discarded)
             feedback.message += " Published copy remains; review it before removal.";
     }
@@ -266,16 +293,12 @@ auto process_pending_metadata_asset_import(
 
 void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
                                    const wormedit::notification_sink_t& notifications) {
-    if (!runtime.pending)
-        return;
-    const auto source = runtime.pending->source;
-    const auto completed = runtime.pending->graph.result(runtime.pending->task);
+    const auto completed = runtime.job.poll();
     if (!completed)
         return;
-    runtime.pending.reset();
-    const auto inspected =
-        wormedit::task_value_cast<wormedit::project_asset_copy_result_t>(*completed);
-    auto [message, severity] = copy_preview_feedback(*completed, inspected);
+    const auto source =
+        completed->has_value() ? completed->value().identity : completed->error().identity;
+    auto [message, severity] = copy_preview_feedback(*completed);
     runtime.message = std::move(message);
     post_runtime_message(notifications, severity, source, runtime.message);
 }
@@ -335,7 +358,7 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
     };
     if (export_copy) {
         completed->copy =
-            copy_resource_file_into_export({.project_directory = copy_request.project_directory,
+            create_export_asset_copy({.project_directory = copy_request.project_directory,
                                             .source_path = copy_request.source_path,
                                             .relative_output_path = output_path,
                                             .asset = copy_request.asset,
@@ -345,11 +368,11 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
     } else {
         auto request = copy_request;
         request.validate_temporary = validate;
-        completed->copy = copy_resource_file_into_project(request, stop);
+        completed->copy = create_project_asset_copy(request, stop);
     }
     if (completed->copy && !stop.stop_requested()) {
         audio::decoder_t decoder;
-        if (decoder.open(completed->copy.absolute_path, &completed->decode_error)) {
+        if (decoder.open(completed->copy->absolute_path, &completed->decode_error)) {
             if (const auto info = decoder.info(); info && info->source_sample_rate != 0 &&
                                                   info->source_channel_count != 0 &&
                                                   info->source_channel_count <= 32) {
@@ -362,16 +385,16 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
         if (!completed->stream && completed->decode_error.empty())
             completed->decode_error = "Published audio has invalid stream geometry.";
     }
-    if (stop.stop_requested() && completed->copy.status == project_asset_copy_status_t::copied) {
+    if (stop.stop_requested() && completed->copy && completed->copy->status == project_asset_copy_status_t::copied) {
         if (export_copy)
             (void)discard_unlinked_export_asset_copy(
                 {.project_directory = copy_request.project_directory,
                  .source_path = copy_request.source_path,
                  .relative_output_path = output_path,
                  .asset = copy_request.asset},
-                completed->copy);
+                *completed->copy);
         else
-            (void)discard_unlinked_project_asset_copy(copy_request, completed->copy);
+            (void)discard_unlinked_project_asset_copy(copy_request, *completed->copy);
     }
     return task_result_t::success(task_value_t::from(
         std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
@@ -415,7 +438,7 @@ auto metadata_asset_t::start_copy_preview(
     if (asset_base.empty())
         return finish("Open a saved native project before inspecting asset copies.",
                       notification_severity_t::warning);
-    if (runtime.pending)
+    if (runtime.job.is_busy())
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
     const bool import_copy = action.metadata_inspect_import;
@@ -432,30 +455,16 @@ auto metadata_asset_t::start_copy_preview(
     }
     const project_asset_copy_request_t request{
         .project_directory = asset_base, .source_path = source_path, .asset = asset};
-    task_graph_t graph{1};
-    const auto added = graph.add_task({}, [request, export_copy = action.metadata_inspect_export,
-                                           output_path](std::span<const task_result_t>,
-                                                        std::stop_token stop) {
-        auto inspected = std::make_shared<const project_asset_copy_result_t>(
-            export_copy ? inspect_export_asset_copy({.project_directory = request.project_directory,
-                                                     .source_path = request.source_path,
-                                                     .relative_output_path = output_path,
-                                                     .asset = request.asset,
-                                                     .maximum_bytes = request.maximum_bytes},
-                                                    stop)
-                        : inspect_project_asset_copy(request, stop));
-        return task_result_t::success(task_value_t::from(std::move(inspected)));
-    });
-    if (!added)
-        return finish(added.error ? added.error->message : "Copy inspection could not start.",
-                      notification_severity_t::error);
-    auto submitted = runtime.scheduler.submit(std::move(graph));
-    if (!submitted)
-        return finish(submitted.error ? submitted.error->message : "Copy inspection could not start.",
-                      notification_severity_t::error);
-    runtime.pending =
-        pending_metadata_copy_preview_t{.graph = std::move(submitted.graph), .task = *added.id,
-                                        .source = source};
+    const auto started = runtime.job.request(
+        [&request, &output_path, &action] {
+            return metadata_copy_inspection_request_t{.copy = request,
+                                                      .output_path = output_path,
+                                                      .export_copy =
+                                                          action.metadata_inspect_export};
+        },
+        source, inspect_copy);
+    if (!started)
+        return finish(started.error().message, notification_severity_t::error);
     runtime.key =
         metadata_copy_preview_key_t{.song = history.document.id,
                                     .revision = history.document.revision,
@@ -537,21 +546,21 @@ auto metadata_asset_t::start_import_copy(
     task_graph_t graph{1};
     const project_asset_copy_request_t copy_request{
         .project_directory = asset_base, .source_path = normalized_source, .asset = *reserved};
-    const auto added = graph.add_task({}, [copy_request, output_path,
+    const auto added = graph.create_task({}, [copy_request, output_path,
                                            export_copy](std::span<const task_result_t>,
                                                         std::stop_token stop) {
         return copy_and_decode_metadata_audio(copy_request, output_path, export_copy, stop);
     });
     if (!added)
-        return finish(added.error ? added.error->message : "Import-copy could not start.",
+        return finish(!added.has_value() ? added.error().message : "Import-copy could not start.",
                       notification_severity_t::error);
-    auto submitted = scheduler.submit(std::move(graph));
+    auto submitted = scheduler.begin(std::move(graph));
     if (!submitted)
-        return finish(submitted.error ? submitted.error->message : "Import-copy could not start.",
+        return finish(!submitted.has_value() ? submitted.error().message : "Import-copy could not start.",
                       notification_severity_t::error);
     pending_import = pending_metadata_asset_import_t{
-        .graph = std::move(submitted.graph),
-        .task = *added.id,
+        .graph = std::move(submitted.value()),
+        .task = *added,
         .song = history.document.id,
         .revision = history.document.revision,
         .chart = *workspace.selected_chart,
@@ -577,18 +586,18 @@ auto metadata_asset_t::poll(
 void metadata_asset_t::cancel() {
     if (impl_->pending_import)
         impl_->pending_import->graph.cancel();
-    if (impl_->copy_preview.pending)
-        impl_->copy_preview.pending->graph.cancel();
+    // Advisory feedback is still collected after explicit cancellation.
+    impl_->copy_preview.job.cancel(wormedit::async_job_cancel_policy_t::retain_completion);
 }
 
 void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
     if (impl_->pending_import) {
-        if (const auto completed = impl_->pending_import->graph.result(
+        if (const auto completed = impl_->pending_import->graph.outcome(
                 impl_->pending_import->task);
-            completed && completed->is_successful()) {
+            completed && completed->has_value()) {
             const auto imported =
                 wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
-            if (imported && imported->copy.status ==
+            if (imported && imported->copy && imported->copy->status ==
                                 wormedit::project_asset_copy_status_t::copied) {
                 const auto& request = *impl_->pending_import;
                 if (request.export_copy)
@@ -597,13 +606,13 @@ void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
                          .source_path = request.source_path,
                          .relative_output_path = request.output_path,
                          .asset = request.asset},
-                        imported->copy);
+                        *imported->copy);
                 else
                     (void)wormedit::discard_unlinked_project_asset_copy(
                         {.project_directory = asset_base,
                          .source_path = request.source_path,
                          .asset = request.asset},
-                        imported->copy);
+                        *imported->copy);
             }
         }
     }
@@ -615,7 +624,7 @@ auto metadata_asset_t::import_pending() const -> bool {
 }
 
 auto metadata_asset_t::copy_preview_pending() const -> bool {
-    return impl_->copy_preview.pending.has_value();
+    return impl_->copy_preview.job.is_busy();
 }
 
 auto metadata_asset_t::copy_preview_key() const

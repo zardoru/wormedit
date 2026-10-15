@@ -4,6 +4,7 @@
 #include "sys/bookmark_commands.h"
 #include "sys/compose_action_context.h"
 #include "sys/compose_action_outcome.h"
+#include "sys/compose_action_routes.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_bga_actions.h"
@@ -83,9 +84,6 @@
 
 namespace wormedit::sys::compose_action_detail {
 
-auto dispatch_compose_document_action_group(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t>;
-
 auto layout_profile_from_id(const wormedit::chart_document_t& chart,
                             wormedit::local_position_t position, std::string_view profile_id)
     -> std::optional<wormedit::lane_layout_t>;
@@ -98,9 +96,6 @@ auto layout_with_preserved_lane_ids(const wormedit::chart_document_t& chart,
 std::optional<compose_action_outcome_t>
 materialize_layout_measure(compose_action_context_t& context,
                            const wormedit::chart_document_t*& chart, bool& materialized);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_view_action_group(compose_action_context_t& context);
 
 auto stage_output_music(const wormedit::song_document_t& snapshot,
                         const wormedit::output_group_t& group,
@@ -165,9 +160,6 @@ struct resource_copy_plan_t {
 compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
                                              resource_copy_plan_t plan);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_copy_resource_action(compose_action_context_t& context);
-
 struct output_export_plan_t {
     wormedit::output_group_t group;
     wormedit::conversion_request_t request;
@@ -175,9 +167,6 @@ struct output_export_plan_t {
 
 compose_action_outcome_t start_output_export(compose_action_context_t& context,
                                              output_export_plan_t plan);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_export_output_group_action(compose_action_context_t& context);
 
 auto compose_placement_kind(const WormUiWorkspaceAction& action)
     -> std::optional<wormedit::resource_placement_kind_t>;
@@ -190,20 +179,11 @@ compose_action_outcome_t
 finish_compose_resource_placement(compose_action_context_t& context,
                                   wormedit::resource_placement_kind_t kind);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_place_resource_action(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_resource_action(compose_action_context_t& context);
-
 auto selected_bmson_source_event(const compose_action_context_t& context,
                                  wormedit::object_id_t bgm_event)
     -> std::optional<wormedit::object_id_t>;
 
 auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::object_id_t;
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_bmson_action(compose_action_context_t& context);
 
 struct beat_section_edit_t {
     std::optional<wormedit::marker_edit_action_t> edit;
@@ -229,9 +209,6 @@ struct edit_beat_section_action_t {
 };
 static_assert(compose_action<edit_beat_section_action_t, compose_action_context_t>);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_beat_section_action(compose_action_context_t& context);
-
 auto make_audio_bookmark_edit(compose_action_context_t& context,
                               const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
@@ -243,9 +220,6 @@ struct edit_audio_bookmark_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<edit_audio_bookmark_action_t, compose_action_context_t>);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_bookmark_action(compose_action_context_t& context);
 
 auto make_audio_section_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
@@ -259,9 +233,6 @@ struct edit_audio_section_action_t {
 };
 static_assert(compose_action<edit_audio_section_action_t, compose_action_context_t>);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_audio_section_action(compose_action_context_t& context);
-
 auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
@@ -274,9 +245,6 @@ struct edit_beat_bookmark_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<edit_beat_bookmark_action_t, compose_action_context_t>);
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
 
 struct edit_selected_note_labels_action_t {
     auto operator==(const edit_selected_note_labels_action_t&) const -> bool = default;
@@ -301,8 +269,6 @@ struct search_selected_note_labels_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
 };
 static_assert(compose_action<search_selected_note_labels_action_t, compose_action_context_t>);
-
-auto selection_transform_for(WormUiComposeActionKind kind) -> std::optional<selection_transform_t>;
 
 struct transform_selected_notes_action_t {
     selection_transform_t transform;
@@ -378,17 +344,8 @@ struct move_compose_bar_line_action_t {
 };
 static_assert(compose_action<move_compose_bar_line_action_t, compose_action_context_t>);
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_marker_action(compose_action_context_t& context);
-
 auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart, wormedit::layer_id_t id)
     -> const wormedit::semantic_layer_t*;
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_note_menu_action(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-dispatch_semantic_layer_palette_action(compose_action_context_t& context);
 
 compose_action_outcome_t semantic_layer_edit_status(compose_action_context_t& context,
                                                     wormedit::semantic_layer_edit_action_t edit,
@@ -399,27 +356,18 @@ compose_action_outcome_t semantic_layer_edit_status(compose_action_context_t& co
 auto selected_catalog_layer(compose_action_context_t& context)
     -> std::pair<const wormedit::chart_document_t*, const wormedit::semantic_layer_t*>;
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_semantic_layer_catalog_action(compose_action_context_t& context);
-
 void clear_semantic_layer_selection(application_command_state_t& app, bool clear_modes);
 
 auto target_semantic_layer_action_row(compose_action_context_t& context) -> bool;
 
-auto semantic_layer_menu_action(WormUiComposeActionKind kind) -> bool;
-
-auto locked_semantic_layer_menu_action(WormUiComposeActionKind kind) -> bool;
-
-auto target_captured_semantic_layer_action(compose_action_context_t& context)
+auto target_captured_semantic_layer_action(compose_action_context_t& context,
+                                           bool rejects_locked_target)
     -> std::optional<compose_action_outcome_t>;
 
 auto missing_semantic_layer_toggle_target(compose_action_context_t& context, bool toggle_lock)
     -> std::optional<compose_action_outcome_t>;
 
 auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::string;
-
-std::optional<compose_action_outcome_t>
-dispatch_compose_semantic_layer_state_action(compose_action_context_t& context);
 
 struct bms_statement_target_t {
     const wormedit::bms_control_node_t* statement{};
@@ -446,9 +394,6 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t;
 
-auto dispatch_compose_bms_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t>;
-
 auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool;
 
 auto quantize_editor_for(compose_action_context_t& context)
@@ -463,9 +408,4 @@ auto validate_quantize_preset_save(const compose_action_context_t& context, std:
 auto selected_snap_positions(const chart_document_t& chart, const editor_interaction_state_t& state)
     -> std::vector<local_position_t>;
 
-auto dispatch_quantize_preset_action(compose_action_context_t& context)
-    -> std::optional<compose_action_outcome_t>;
-
-auto dispatch_compose_area_with_quantize_report(compose_action_context_t& context)
-    -> std::optional<std::string>;
 } // namespace wormedit::sys::compose_action_detail

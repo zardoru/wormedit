@@ -2,9 +2,9 @@
 
 namespace wormedit::sys {
 
-auto build_kiai_spans_view(const chart_document_t& chart, const measure_index_t& measures,
-                        std::size_t limit) -> kiai_projection_t {
-    kiai_projection_t result;
+auto kiai_spans_view_t::from(const chart_document_t& chart, const measure_index_t& measures,
+                        std::size_t limit) -> kiai_spans_view_t {
+    kiai_spans_view_t result;
     result.spans = kiai_spans_of(chart, measures);
     if (result.spans.size() > limit) {
         result.spans.resize(limit);

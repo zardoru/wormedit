@@ -7,15 +7,6 @@
 
 namespace wormedit::audio {
 
-auto audition_pump_result_t::from(audition_pump_outcome_t&& outcome) -> audition_pump_result_t {
-    auto& effect = outcome ? *outcome : outcome.error();
-    return {.status = effect.status,
-            .requested_blocks = effect.requested_blocks,
-            .decoded_blocks = effect.decoded_blocks,
-            .cached_blocks = effect.cached_blocks,
-            .failure = std::move(effect.failure)};
-}
-
 namespace {
 
 auto is_valid_source(const audio_source_identity_t& source) -> bool {
@@ -118,7 +109,8 @@ auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& trans
                                   .cached_blocks = 0,
                                   .failure = std::nullopt};
     for (const auto& key : plan.keys) {
-        const auto decoded = sources.decode_block(transport, token, key);
+        const auto decoded_outcome = sources.decode_source_block(transport, token, key);
+        const auto& decoded = decoded_outcome ? *decoded_outcome : decoded_outcome.error();
         if (decoded.status == block_decode_status_t::decoded) {
             ++result.decoded_blocks;
             continue;
@@ -187,23 +179,6 @@ auto pump_audition_blocks(decoded_source_registry_t& sources, transport_t& trans
         return audition_pump_effect_t{.status = audition_pump_status_t::complete};
     }
     return decode_audition_plan(sources, transport, token, *plan);
-}
-
-auto prime_resident_audition(transport_t& transport, session_token_t token,
-                             std::span<const audition_clip_t> clips)
-    -> std::optional<audition_pump_result_t> {
-    auto primed = prime_resident_audition_blocks(transport, token, clips);
-    if (!primed)
-        return std::nullopt;
-    return audition_pump_result_t::from(std::move(*primed));
-}
-
-auto pump_audition_lookahead(decoded_source_registry_t& sources, transport_t& transport,
-                             session_token_t token, std::span<const audition_clip_t> clips,
-                             std::uint64_t timeline_frame, audition_pump_options_t options)
-    -> audition_pump_result_t {
-    return audition_pump_result_t::from(
-        pump_audition_blocks(sources, transport, token, clips, timeline_frame, options));
 }
 
 } // namespace wormedit::audio

@@ -1,6 +1,7 @@
 #include "sys/compose_bga_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
+#include "sys/compose_action_routes.h"
 #include "sys/resource_action_context.h"
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/resource_assignment.h>
@@ -166,24 +167,6 @@ struct remove_unused_bga_action_t {
 static_assert(compose_action<remove_unused_bga_action_t, const resource_action_context_t>);
 } // namespace
 
-auto dispatch_bga_action_outcome(const resource_action_context_t& context)
-    -> std::optional<compose_action_outcome_t> {
-    const auto& action = context.action;
-    auto& history = context.document.history;
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES &&
-        action.compose_action != WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA)
-        return std::nullopt;
-    const auto source = action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES
-                            ? notification_source_t::import_
-                            : notification_source_t::edit;
-    if (history.document.revision != action.compose_input_document_revision)
-        return compose_action_outcome_t::blocked(wormedit::stale_action_message("BGA action"),
-                                                 source);
-    if (action.compose_action == WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES)
-        return run_compose_action(import_bga_action_t{}, context);
-    return run_compose_action(remove_unused_bga_action_t{}, context);
-}
-
 auto import_bga_files(document_history_t& history, workspace_controller_t& workspace,
                       chart_id_t chart, std::span<const std::string> paths,
                       notification_sink_t notifications) -> std::string {
@@ -198,10 +181,26 @@ auto dispatch_compose_bga_action(const WormUiWorkspaceAction& action, document_h
                                  notification_sink_t notifications) -> std::optional<std::string> {
     const document_edit_inputs_t document{history, workspace, notifications};
     const resource_action_context_t context{action, document, chart};
-    auto feedback = dispatch_bga_action_outcome(context);
-    if (!feedback)
+    const auto* route = compose_action_detail::compose_action_route_t::find(
+        action.compose_action, compose_action_detail::compose_bga_routes);
+    if (!route)
         return std::nullopt;
-    auto finished = finish_compose_action(document, notifications, std::move(*feedback));
+    auto finished =
+        finish_compose_action(document, notifications, route->resource_operation(context, nullptr));
     return std::move(finished.message);
 }
+
+namespace compose_action_detail {
+namespace {
+constexpr auto bga_route_entries = std::array{
+    compose_action_route_t::from<import_bga_action_t, notification_source_t::import_,
+                                 resource_route_policy_t::bga_action>(
+        WORM_UI_COMPOSE_ACTION_IMPORT_BGA_FILES),
+    compose_action_route_t::from<remove_unused_bga_action_t, notification_source_t::edit,
+                                 resource_route_policy_t::bga_action>(
+        WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA),
+};
+} // namespace
+constinit const std::span<const compose_action_route_t> compose_bga_routes{bga_route_entries};
+} // namespace compose_action_detail
 } // namespace wormedit::sys

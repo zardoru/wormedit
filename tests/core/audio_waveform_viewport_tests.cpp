@@ -82,16 +82,16 @@ TEST_CASE("degenerate sources and inputs are handled", "[unit][audio][waveform]"
 TEST_CASE("projection uses the viewport window", "[unit][audio][waveform]") {
     const auto waveform = synthetic_waveform(1'000, 480);
     auto view = fit_waveform_viewport(waveform.total_frames, 100);
-    const auto full = build_waveform_viewport_view(waveform, view);
+    const auto full = waveform_view_t::from(waveform, view);
     REQUIRE(full);
-    CHECK(full.columns.size() == 100);
+    CHECK(full->columns.size() == 100);
     view = zoom_waveform_viewport(view, 0.0, 8.0);
-    const auto zoomed = build_waveform_viewport_view(waveform, view);
+    const auto zoomed = waveform_view_t::from(waveform, view);
     REQUIRE(zoomed);
-    CHECK(zoomed.columns.front().begin_frame == 0);
-    CHECK(zoomed.columns.back().end_frame <= waveform_viewport_end_frame(view));
+    CHECK(zoomed->columns.front().begin_frame == 0);
+    CHECK(zoomed->columns.back().end_frame <= waveform_viewport_end_frame(view));
 
     auto wrong = view;
     wrong.total_frames += 1;
-    CHECK_FALSE(build_waveform_viewport_view(waveform, wrong));
+    CHECK_FALSE(waveform_view_t::from(waveform, wrong));
 }

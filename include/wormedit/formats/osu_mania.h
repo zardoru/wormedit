@@ -54,14 +54,6 @@ struct osu_mania_parse_options_t {
 };
 
 using osu_mania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<osu_mania_parse_diagnostic_t>>;
-struct osu_mania_parse_result_t {
-    [[nodiscard]] static auto from(std::span<const std::byte> bytes, osu_mania_parse_options_t options = {}) -> osu_mania_parse_outcome_t;
-    [[nodiscard]] static auto from(osu_mania_parse_outcome_t&& outcome) -> osu_mania_parse_result_t;
-    std::optional<song_document_t> song;
-    std::vector<osu_mania_parse_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 enum class osu_mania_write_diagnostic_code_t {
     missing_chart,
@@ -98,14 +90,6 @@ struct osu_mania_write_options_t {
 };
 
 using osu_mania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<osu_mania_write_diagnostic_t>>;
-struct osu_mania_write_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song, osu_mania_write_options_t options = {}) -> osu_mania_write_outcome_t;
-    [[nodiscard]] static auto from(osu_mania_write_outcome_t&& outcome) -> osu_mania_write_result_t;
-    std::optional<std::string> text;
-    std::vector<osu_mania_write_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // Parses one stable-v14 or lazer-v128 UTF-8 osu!mania .osu file. Other
 // file-format versions reject explicitly. Parsing is bounded and transactional:
@@ -118,7 +102,7 @@ struct osu_mania_write_result_t {
 // source-time origin is explicit, including negative-time prefix measures.
 [[nodiscard]] auto parse_osu_mania_bytes(std::span<const std::byte> bytes,
                                          osu_mania_parse_options_t options = {})
-    -> osu_mania_parse_result_t;
+    -> osu_mania_parse_outcome_t;
 
 // Emits one deterministic UTF-8 osu!mania .osu chart. Stable-v14 hit-object
 // times are integer milliseconds rounded to nearest, with exact
@@ -127,6 +111,6 @@ struct osu_mania_write_result_t {
 // supported imported version and otherwise selects stable v14.
 [[nodiscard]] auto write_osu_mania(const song_document_t& song,
                                    osu_mania_write_options_t options = {})
-    -> osu_mania_write_result_t;
+    -> osu_mania_write_outcome_t;
 
 } // namespace wormedit

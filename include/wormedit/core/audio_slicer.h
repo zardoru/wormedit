@@ -54,6 +54,11 @@ struct audio_slice_range_t {
     auto operator==(const audio_slice_range_t&) const -> bool = default;
 };
 
+// Returns contiguous, non-empty, non-overlapping ranges that cover
+// [0, source_frames) exactly. Boundary N is computed from N in exact integer
+// arithmetic, never accumulated, so long sources do not drift. The last slice
+// may be shorter than the others. Any invalid input yields diagnostics and no
+// ranges.
 struct audio_slice_plan_t {
     [[nodiscard]] static auto from(const audio_slicer_request_t& request)
         -> diagnosed_t<audio_slice_plan_t, std::vector<audio_slicer_diagnostic_t>>;
@@ -63,22 +68,5 @@ struct audio_slice_plan_t {
 };
 using audio_slicer_outcome_t =
     diagnosed_t<audio_slice_plan_t, std::vector<audio_slicer_diagnostic_t>>;
-
-struct audio_slicer_result_t {
-    [[nodiscard]] static auto from(audio_slicer_outcome_t&& outcome) -> audio_slicer_result_t;
-
-    std::vector<audio_slice_range_t> ranges;
-    std::vector<audio_slicer_diagnostic_t> diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept { return diagnostics.empty(); }
-};
-
-// Returns contiguous, non-empty, non-overlapping ranges that cover
-// [0, source_frames) exactly. Boundary N is computed from N in exact integer
-// arithmetic, never accumulated, so long sources do not drift. The last slice
-// may be shorter than the others. Any invalid input yields diagnostics and no
-// ranges.
-[[nodiscard]] auto compute_audio_slices(const audio_slicer_request_t& request)
-    -> audio_slicer_result_t;
 
 } // namespace wormedit

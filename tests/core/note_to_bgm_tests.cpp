@@ -94,8 +94,8 @@ auto hold_restore_rejected(note_t obstacle) -> bool {
         chart_id_t{1}, events, lane_id_t{3});
     const auto before_bytes = write_native_project(before);
     const auto after_bytes = write_native_project(history.document);
-    return !result.applied && before_bytes.bytes && after_bytes.bytes &&
-           *before_bytes.bytes == *after_bytes.bytes && history.undo.empty();
+    return !result.applied && before_bytes.value && after_bytes.value &&
+           *before_bytes.value == *after_bytes.value && history.undo.empty();
 }
 
 auto find_test_note(const chart_document_t& chart, object_id_t id) -> const note_t* {
@@ -109,7 +109,7 @@ auto find_test_note(const chart_document_t& chart, object_id_t id) -> const note
 auto same_native_document(const song_document_t& left, const song_document_t& right) -> bool {
     const auto left_bytes = write_native_project(left);
     const auto right_bytes = write_native_project(right);
-    return left_bytes.bytes && right_bytes.bytes && *left_bytes.bytes == *right_bytes.bytes;
+    return left_bytes.value && right_bytes.value && *left_bytes.value == *right_bytes.value;
 }
 
 } // namespace
@@ -519,8 +519,8 @@ TEST_CASE("moving an imported BMS note writes only its BGM occurrence",
     const std::string source = "#TITLE allocator\n#PLAYER 1\n#BPM 120\n#WAV01 kick.wav\n#00011:01\n";
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
         {.lane_profile_id = "bms-5k-outside-scratch"});
-    require_move(parsed.song.has_value());
-    auto history = document_history_t::from(*parsed.song);
+    require_move(parsed.value.song.has_value());
+    auto history = document_history_t::from(*parsed.value.song);
     const auto chart_id = history.document.charts.front().id;
     const auto& chart_before = history.document.charts.front();
     require_move(!chart_before.measures.empty());
@@ -532,11 +532,11 @@ TEST_CASE("moving an imported BMS note writes only its BGM occurrence",
     require_move(moved.applied);
     const auto written = write_bms(history.document,
         {.lane_profile_id = "bms-5k-outside-scratch", .preserve_unchanged_source = true});
-    require_move(written.bytes.has_value());
-    const auto reparsed = parse_bms_bytes(std::as_bytes(std::span{written.bytes->data(), written.bytes->size()}),
+    require_move(written.value.has_value());
+    const auto reparsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}),
         {.lane_profile_id = "bms-5k-outside-scratch"});
-    require_move(reparsed.song.has_value());
-    const auto& roundtrip = reparsed.song->charts.front();
+    require_move(reparsed.value.song.has_value());
+    const auto& roundtrip = reparsed.value.song->charts.front();
     std::size_t note_count{};
     std::size_t event_count{};
     for (const auto& measure : roundtrip.measures) {
@@ -609,8 +609,8 @@ TEST_CASE("a BMSON stem tap goes back to its stem's BGM lane and keeps its slice
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     song.audio_assets.front().stream = {48'000, 2, 200'000, true};
     auto history = document_history_t::from(std::move(song));
     const auto chart_id = history.document.charts.front().id;
@@ -645,8 +645,8 @@ TEST_CASE("pure ordinary planning rejects linked BMSON notes while mixed command
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    require_move(parsed.song.has_value());
-    auto song = *parsed.song;
+    require_move(parsed.value.has_value());
+    auto song = *parsed.value;
     song.audio_assets.front().stream = {48'000, 2, 200'000, true};
     auto& setup_chart = song.charts.front();
     const auto bgm_measure = std::ranges::find_if(setup_chart.measures,
@@ -691,8 +691,8 @@ TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where 
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     song.audio_assets.front().stream = {48'000, 2, 400'000, true};
     auto history = document_history_t::from(std::move(song));
     const auto& chart = history.document.charts.front();
@@ -777,8 +777,8 @@ auto overlapping_linked_hold_batch_is_atomic() -> bool {
                             "published-vox-slicing.bmson", std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song);
-    auto song = *parsed.song;
+    REQUIRE(parsed.value);
+    auto song = *parsed.value;
     auto& chart = song.charts.front();
     const auto lane = std::ranges::find_if(chart.lane_layouts.front().layout.lanes,
         [&](const auto& candidate) {
@@ -826,7 +826,7 @@ auto overlapping_linked_hold_batch_is_atomic() -> bool {
         require_move(single.applied);
     }
     const auto before = write_native_project(history.document);
-    require_move(before.bytes.has_value());
+    require_move(before.value.has_value());
     const auto revision = history.document.revision;
     const auto result = move_bgm_events_to_lane(history, chart_id, ids, lane_id);
     check_move(!result.applied && !result.diagnostics.empty() &&
@@ -834,8 +834,8 @@ auto overlapping_linked_hold_batch_is_atomic() -> bool {
     check_move(history.document.revision == revision);
     check_move(history.undo.empty());
     const auto after = write_native_project(history.document);
-    require_move(after.bytes.has_value());
-    check_move(*after.bytes == *before.bytes);
+    require_move(after.value.has_value());
+    check_move(*after.value == *before.value);
     const auto& retained = history.document.charts.front();
     check_move(retained.sound_channels.front().id == channel_id);
     check_move(std::ranges::all_of(ids, [&](const auto id) {
@@ -995,8 +995,8 @@ TEST_CASE("a BMSON stem marker moves to a playfield lane and back without losing
                         std::ios::binary);
     const std::string bytes{std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>()};
     const auto parsed = parse_bmson_bytes(std::as_bytes(std::span{bytes.data(), bytes.size()}));
-    REQUIRE(parsed.song.has_value());
-    auto song = *parsed.song;
+    REQUIRE(parsed.value.has_value());
+    auto song = *parsed.value;
     song.audio_assets.front().stream = {48'000, 2, 200'000, true};
     auto history = document_history_t::from(std::move(song));
     const auto& chart = history.document.charts.front();
@@ -1023,7 +1023,7 @@ TEST_CASE("Core Move to BGM owns mixed selection and successive document order",
     song.charts.front().measures.front().bgm_events.push_back({.id = object_id_t{50},
         .position = {measure_id_t{1}, 0}, .source_lane = object_id_t{9}});
     auto history = document_history_t::from(std::move(song));
-    const auto before = write_native_project(history.document).bytes;
+    const auto before = write_native_project(history.document).value;
     editor_interaction_state_t state;
     state.chart = chart_id_t{1};
     state.selected_notes = {object_id_t{3}, object_id_t{2}, object_id_t{1}};
@@ -1048,14 +1048,14 @@ TEST_CASE("Core Move to BGM owns mixed selection and successive document order",
         check_move(history.document.charts.front().measures.back().notes.empty());
     }
     require_move(undo_document_command(history));
-    check_move(write_native_project(history.document).bytes == before);
+    check_move(write_native_project(history.document).value == before);
 }
 
 TEST_CASE("Core Move to BGM rejects missing notes and active gestures atomically",
           "[unit][core][note-to-bgm][selection-to-bgm]") {
     const auto rejected_kind = GENERATE(0, 2);
     auto history = document_history_t::from(plain_song());
-    const auto before = write_native_project(history.document).bytes;
+    const auto before = write_native_project(history.document).value;
     editor_interaction_state_t state;
     state.chart = chart_id_t{1};
     state.selected_notes = {object_id_t{1}, object_id_t{2}};
@@ -1065,5 +1065,5 @@ TEST_CASE("Core Move to BGM rejects missing notes and active gestures atomically
     const auto result = move_editor_selection_to_bgm(history, state, std::nullopt, true);
     require_move(result.payload.handled && !result.command.applied && !result.command.diagnostics.empty());
     check_move(history.undo.empty() && state.selected_notes == selection);
-    check_move(write_native_project(history.document).bytes == before);
+    check_move(write_native_project(history.document).value == before);
 }

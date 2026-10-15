@@ -1,3 +1,4 @@
+#include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_input.h"
@@ -69,8 +70,8 @@ struct compose_notification_fixture_t {
         state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{1}}};
         optional_state = state;
         const auto binding = workspace_controller_t::from(history);
-        REQUIRE(binding);
-        workspace = *binding.workspace;
+        wormedit::test::require_workspace_result(binding);
+        workspace = *binding.value;
         workspace.active_tab = workspace_tab_t::compose;
         workspace.selected_chart = chart_id_t{7};
         application.project.semantic_layer.semantic_layer_target = layer_id_t{8};
@@ -178,7 +179,7 @@ TEST_CASE("Compose edit success stays current after a later navigation cancellat
         {.kind = application_command_kind_t::semantic_layer_apply}, fixture.history,
         fixture.workspace, fixture.optional_state, fixture.timing_stage,
         fixture.application, fixture.sink);
-    REQUIRE(result.accepted);
+    REQUIRE(result.value);
     fixture.state = *fixture.optional_state;
     auto kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL;
     auto message = "Compose navigation canceled.";
@@ -274,7 +275,7 @@ TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][co
     compose_notification_fixture_t fixture;
     REQUIRE(invoke_application_command({.kind = application_command_kind_t::semantic_layer_apply},
         fixture.history, fixture.workspace, fixture.optional_state, fixture.timing_stage,
-        fixture.application, fixture.sink).accepted);
+        fixture.application, fixture.sink).value);
     fixture.state = *fixture.optional_state;
     const auto revision = fixture.history.document.revision;
     const auto undo_size = fixture.history.undo.size();
@@ -463,7 +464,7 @@ TEST_CASE("Delete dispatcher commits stem conversion and ordinary deletion as on
     f.optional_state = f.state;
     const auto result = invoke_application_command({.kind = application_command_kind_t::edit_delete},
         f.history, f.workspace, f.optional_state, f.timing_stage, f.application, f.sink);
-    check_mixed_input(result.accepted);
+    check_mixed_input(result.value);
     const auto& deleted = f.history.document.charts.front();
     check_mixed_input(deleted.measures.front().notes.empty());
     REQUIRE(deleted.measures.front().bgm_events.size() == 1);
@@ -492,7 +493,7 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         REQUIRE(std::holds_alternative<measure_index_t>(measures));
         const auto timing = build_timing_index(history.document.charts.front());
         REQUIRE(timing);
-        cache.timing.dead_spans = build_dead_spans_view(history.document.charts.front(),
+        cache.timing.dead_spans = dead_spans_view_t::from(history.document.charts.front(),
             std::get<measure_index_t>(measures), *timing.index, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;

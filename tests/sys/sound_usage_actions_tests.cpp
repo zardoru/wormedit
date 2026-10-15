@@ -39,7 +39,7 @@ auto usage_history() -> document_history_t {
 
 auto usage_action(const document_history_t& history, bool source_row = false)
     -> WormUiWorkspaceAction {
-    const auto usage = build_sound_usage_view(history.document, resource_id_t{20});
+    const auto usage = sound_usage_view_t::from(history.document, resource_id_t{20});
     const auto kind =
         source_row ? sound_usage_kind_t::sound_channel_source : sound_usage_kind_t::note;
     const auto found = std::ranges::find(usage.rows, kind, &sound_usage_row_t::kind);
@@ -71,10 +71,10 @@ auto valid_request() -> WormUiSoundUsageRequest {
 
 auto audio_workspace(const song_document_t& document) -> std::optional<workspace_controller_t> {
     auto bound = workspace_controller_t::from(document);
-    if (!bound)
+    if (!bound.value || !bound.diagnostics.empty())
         return std::nullopt;
-    bound.workspace->active_tab = workspace_tab_t::audio_slices;
-    return std::move(bound.workspace);
+    bound.value->active_tab = workspace_tab_t::audio_slices;
+    return std::move(bound.value);
 }
 
 void check_document_unchanged(const document_history_t& history, std::uint64_t revision,

@@ -84,6 +84,10 @@ struct chart_compare_request_t {
     std::size_t maximum_difference_rows{100'000};
 };
 
+// Compares selected difficulties in exact musical space. Candidate positions
+// are the union of note endpoints and lane-layout transitions. The result only
+// contains differing rows and is renderer-neutral; frontends may draw each row
+// as a synchronized yellow band across its panes.
 struct chart_comparison_t {
     [[nodiscard]] static auto from(const song_document_t& song, const chart_compare_request_t& request)
         -> diagnosed_t<chart_comparison_t>;
@@ -95,28 +99,5 @@ struct chart_comparison_t {
 };
 
 using chart_comparison_result_t = diagnosed_t<chart_comparison_t>;
-
-// Compatibility boundary for sys comparison views, including metadata on failure.
-struct chart_compare_result_t {
-    [[nodiscard]] static auto from(chart_comparison_result_t&& result) -> chart_compare_result_t;
-
-    std::uint64_t document_revision{};
-    std::vector<chart_id_t> charts;
-    std::vector<chart_compare_difference_row_t> differing_rows;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return !has_errors();
-    }
-};
-
-// Compares selected difficulties in exact musical space. Candidate positions
-// are the union of note endpoints and lane-layout transitions. The result only
-// contains differing rows and is renderer-neutral; frontends may draw each row
-// as a synchronized yellow band across its panes.
-[[nodiscard]] auto compare_chart_difficulties(const song_document_t& song,
-                                              const chart_compare_request_t& request)
-    -> chart_compare_result_t;
 
 } // namespace wormedit

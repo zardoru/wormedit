@@ -187,6 +187,14 @@ struct timing_index_t {
 };
 using timing_build_outcome_t = diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
 
+// Chart-intrinsic, default-option indices. Failed builds are retained too.
+struct chart_indices_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> chart_indices_t;
+
+    result_t<measure_index_t, diagnostic_list_t> measures;
+    timing_build_outcome_t timing;
+};
+
 struct timing_build_result_t {
     [[nodiscard]] static auto from(timing_build_outcome_t&& outcome) -> timing_build_result_t;
     std::optional<timing_index_t> index;
@@ -221,13 +229,16 @@ struct sample_frame_result_t {
     }
 };
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto build_timing_index(const chart_document_t& chart,
                                       timing_build_options_t options = {}) -> timing_build_result_t;
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
     -> timing_query_result_t;
@@ -248,6 +259,7 @@ proposed_timing_y_on_fixed_waveform(const timing_index_t& original, const timing
                                     exact_chart_row_t chart_row, double viewport_scroll_pixels,
                                     double pixels_per_standard_measure) -> std::optional<double>;
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                              local_position_t position,
                              timing_boundary_side_t side = timing_boundary_side_t::event)
@@ -278,6 +290,7 @@ struct beat_interval_fit_result_t {
 // On a bounded clock, input time rounds to the nearest picosecond tick and
 // interior rows round to the nearest nanorow (<= 0.5e-9 row), in addition to
 // the clock's accumulated error and <= 0.5 ps input rounding.
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                                        timing_inverse_options_t options = {})
     -> timing_position_query_result_t;

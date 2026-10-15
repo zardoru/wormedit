@@ -22,7 +22,7 @@ struct native_project_startup_result_t {
     bool recovery_scan_configured{};
     bool loaded_primary{};
     std::optional<native_project_document_version_t> primary_version;
-    native_project_recovery_scan_result_t recovery_scan;
+    native_project_recovery_scan_outcome_t recovery_scan;
     // True when the crash marker existed before this run wrote its own.
     bool previous_run_crashed{};
     // True when a `.bak` was created from the validated primary after a crash.

@@ -28,7 +28,7 @@ auto images() -> song_document_t {
 }
 }
 TEST_CASE("BGA projection searches and builds only the requested window with ID use state", "[sys][bga]") {
-    const auto result = build_bga_list_view(images(), {.search = "Image101", .row_limit = 3});
+    const auto result = bga_list_view_t::from(images(), {.search = "Image101", .row_limit = 3});
     require_bga(static_cast<bool>(result.rows.size() == 3));
     check_bga(result.total_matching == 11);
     check_bga(result.matching_ids.size() == 11);
@@ -42,7 +42,7 @@ TEST_CASE("BGA projection searches and builds only the requested window with ID 
     check_bga(std::ranges::find(result.advance_ids, resource_id_t{101}) == result.advance_ids.end());
     check_bga(result.rows.front().missing);
     check_bga(result.rows.front().slot == "101");
-    const auto used = build_bga_list_view(images(), {.search = "Image102"});
+    const auto used = bga_list_view_t::from(images(), {.search = "Image102"});
     check_bga(used.rows.front().video);
     check_bga(used.rows.front().use_count == 2);
     check_bga(used.advance_ids.size() == 11);
@@ -61,20 +61,20 @@ TEST_CASE("BGA dock sorts matching rows naturally before the requested window", 
         resource.target_identities = {{format_family_t::bms,
             index == 0 ? "0Z" : index == 1 ? "0a" : "10", "BMP"}};
     }
-    const auto result = build_bga_list_view(document, {.search = "snd", .row_limit = 2});
+    const auto result = bga_list_view_t::from(document, {.search = "snd", .row_limit = 2});
     require_bga(result.rows.size() == 2);
     check_bga(result.rows[0].name == "snd1.bmp");
     check_bga(result.rows[1].name == "snd2.bmp");
     check_bga(result.matching_ids[0] == resource_id_t{3});
     check_bga(result.advance_ids == result.matching_ids);
-    const auto by_id = build_bga_list_view(document, {.search = "snd", .row_limit = 2,
+    const auto by_id = bga_list_view_t::from(document, {.search = "snd", .row_limit = 2,
                                                    .sort = dock_sort_t::bms_id});
     require_bga(by_id.rows.size() == 2);
     check_bga(by_id.rows[0].name == "snd2.bmp");
     check_bga(by_id.rows[1].name == "snd10.bmp");
     check_bga(result.bms_capacity.used == 3);
     check_bga(result.bms_capacity.total == 1295);
-    const auto without_ids = build_bga_list_view(document, {.search = "snd", .row_limit = 2,
+    const auto without_ids = bga_list_view_t::from(document, {.search = "snd", .row_limit = 2,
         .sort = dock_sort_t::bms_id, .ids_available = false});
     require_bga(without_ids.rows.size() == 2);
     check_bga(without_ids.rows[0].name == "snd1.bmp");
@@ -88,7 +88,7 @@ TEST_CASE("BGA advance order spans off-screen matches and skips unavailable or n
     document.resources[3].missing = true;
     document.visual_assets[4].kind = asset_kind_t::storyboard;
     document.resources[5].asset = asset_id_t{9999};
-    const auto result = build_bga_list_view(document, {.search = "Image", .row_limit = 2});
+    const auto result = bga_list_view_t::from(document, {.search = "Image", .row_limit = 2});
 
     require_bga(result.rows.size() == 2);
     check_bga(result.matching_ids.size() == 1200);
@@ -102,11 +102,11 @@ TEST_CASE("BGA advance order spans off-screen matches and skips unavailable or n
 }
 TEST_CASE("BGA search matches names and BMP IDs and clamps its window", "[sys][bga]") {
     const auto document = images();
-    const auto result = build_bga_list_view(document, {.search = "iMaGe1200"});
+    const auto result = bga_list_view_t::from(document, {.search = "iMaGe1200"});
     require_bga(static_cast<bool>(result.rows.size() == 1));
     check_bga(result.rows.front().resource == resource_id_t{1200});
-    check_bga(build_bga_list_view(document, {.search = "1200"}).total_matching == 1);
-    const auto outside = build_bga_list_view(document, {.first_row = 2000, .row_limit = 3});
+    check_bga(bga_list_view_t::from(document, {.search = "1200"}).total_matching == 1);
+    const auto outside = bga_list_view_t::from(document, {.first_row = 2000, .row_limit = 3});
     check_bga(outside.first_row == 1200);
     check_bga(outside.rows.empty());
 }
@@ -116,7 +116,7 @@ TEST_CASE("Images use and full-path filters precede windows while membership rem
     auto document = images();
     document.visual_assets[101].source_path = "nested/Visual/scene.png";
     document.charts.push_back({.bga_events = {{.resource = resource_id_t{102}}}});
-    const auto used = build_bga_list_view(document, {.search = "NESTED/VISUAL", .row_limit = 1,
+    const auto used = bga_list_view_t::from(document, {.search = "NESTED/VISUAL", .row_limit = 1,
         .use_filter = resource_use_filter_t::used});
     require_bga(used.rows.size() == 1);
     check_bga(used.rows[0].resource == resource_id_t{102});
@@ -124,12 +124,12 @@ TEST_CASE("Images use and full-path filters precede windows while membership rem
     check_bga(used.rows[0].source_path == "nested/Visual/scene.png");
     check_bga(used.all_resource_ids.size() == document.resources.size());
     check_bga(used.matching_ids.size() == 1);
-    const auto missing = build_bga_list_view(document, {.row_limit = 1,
+    const auto missing = bga_list_view_t::from(document, {.row_limit = 1,
         .use_filter = resource_use_filter_t::missing});
     require_bga(missing.rows.size() == 1);
     check_bga(missing.rows[0].resource == resource_id_t{101});
     check_bga(missing.all_resource_ids.size() == document.resources.size());
-    const auto unused = build_bga_list_view(document, {.first_row = 100, .row_limit = 2,
+    const auto unused = bga_list_view_t::from(document, {.first_row = 100, .row_limit = 2,
         .use_filter = resource_use_filter_t::unused});
     check_bga(unused.total_matching == document.resources.size() - 1);
     check_bga(unused.rows.size() == 2);

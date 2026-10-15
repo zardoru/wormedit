@@ -61,7 +61,7 @@ auto populate_compose_beat_bookmark(compose_marker_storage_t<WormUiComposeBookma
     return true;
 }
 
-bool populate_compose_bookmark_storage(flattened_workspace_t& flattened,
+bool populate_compose_bookmark_storage(frontend_workspace_view_t& flattened,
                                        const wormedit::chart_document_t& chart,
                                        const wormedit::measure_index_t& measures,
                                        WormUiComposeView& view) {
@@ -176,7 +176,7 @@ auto populate_compose_beat_section(compose_marker_storage_t<WormUiComposeSection
     return true;
 }
 
-bool populate_compose_section_storage(flattened_workspace_t& flattened,
+bool populate_compose_section_storage(frontend_workspace_view_t& flattened,
                                       const wormedit::chart_document_t& chart,
                                       const wormedit::measure_index_t& measures,
                                       WormUiComposeView& view) {
@@ -205,7 +205,7 @@ bool populate_compose_section_storage(flattened_workspace_t& flattened,
     return true;
 }
 
-bool populate_compose_bookmark_and_section_storage(flattened_workspace_t& flattened,
+bool populate_compose_bookmark_and_section_storage(frontend_workspace_view_t& flattened,
                                                    const wormedit::chart_document_t& chart,
                                                    const wormedit::measure_index_t& measures,
                                                    WormUiComposeView& view) {
@@ -291,7 +291,7 @@ auto compose_initial_bpm(const wormedit::chart_document_t& chart,
     return initial;
 }
 
-void assign_compose_timing_marker_fractions(flattened_workspace_t& flattened) {
+void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened) {
     std::ranges::sort(flattened.compose.timing_marker, [](const auto& left, const auto& right) {
         return std::tie(left.lane, left.marker_y_pixels, left.source_order, left.storage_order,
                         left.object_id) < std::tie(right.lane, right.marker_y_pixels,
@@ -461,7 +461,7 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
 }
 
 void populate_compose_timing_markers(
-    flattened_workspace_t& flattened, const wormedit::song_document_t& document,
+    frontend_workspace_view_t& flattened, const wormedit::song_document_t& document,
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
@@ -566,7 +566,7 @@ std::string dead_span_label(const wormedit::sys::dead_span_band_t& band) {
     return text;
 }
 
-void populate_compose_dead_spans(flattened_workspace_t& flattened,
+void populate_compose_dead_spans(frontend_workspace_view_t& flattened,
                                  const compose_scene_cache_t& cache,
                                  const wormedit::editor_interaction_view_model_t& interaction_view,
                                  WormUiComposeView& view, bool downscroll, double pixels_per_row) {
@@ -597,7 +597,7 @@ void populate_compose_dead_spans(flattened_workspace_t& flattened,
         view.truncated = true;
 }
 
-void populate_compose_kiai_and_sv(flattened_workspace_t& flattened,
+void populate_compose_kiai_and_sv(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row,
@@ -670,7 +670,7 @@ std::string recipe_area_label(const wormedit::sys::recipe_area_t& area) {
 }
 
 void populate_compose_recipe_areas(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t total_rows, std::uint64_t selected_recipe,
@@ -703,10 +703,10 @@ void populate_compose_recipe_areas(
         if (previewing) {
             // The unapplied candidate replaces the stored values in this area's graph.
             previewed = stored_area;
-            const auto sampled = wormedit::sample_sv_recipe(chart, report->candidate);
-            previewed.evaluable = static_cast<bool>(sampled) && !sampled.points.empty();
+            const auto sampled = wormedit::sv_recipe_samples_t::from(chart, report->candidate);
+            previewed.evaluable = sampled.diagnostics.empty() && !sampled.value.points.empty();
             previewed.points.clear();
-            for (const auto& point : sampled.points)
+            for (const auto& point : sampled.value.points)
                 previewed.points.push_back({point.absolute_row, point.value});
             shown = &previewed;
         }
@@ -750,7 +750,7 @@ void populate_compose_recipe_areas(
     view.recipe_graph_point_count = flattened.compose.recipe_graph_point.size();
 }
 
-void populate_compose_speed_spans(flattened_workspace_t& flattened,
+void populate_compose_speed_spans(frontend_workspace_view_t& flattened,
                                   const compose_scene_cache_t& cache,
                                   const wormedit::editor_interaction_view_model_t& interaction_view,
                                   WormUiComposeView& view, bool downscroll, double pixels_per_row) {
@@ -817,7 +817,7 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
         preview.reset();
 }
 
-void populate_compose_recipe_form(flattened_workspace_t& flattened,
+void populate_compose_recipe_form(frontend_workspace_view_t& flattened,
                                   const wormedit::chart_document_t& chart,
                                   const application_command_state_t& application_state,
                                   WormUiComposeView& view) {

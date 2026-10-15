@@ -39,7 +39,6 @@ using audition_resolve_diagnostic_t =
     object_diagnostic_t<audition_resolve_code_t, audition_resolve_code_t::missing_object>;
 
 struct audition_resolve_result_t;
-struct preview_bindings_resolve_result_t;
 
 struct audition_resolution_t {
     [[nodiscard]] static auto from(audition_resolve_result_t&& report)
@@ -58,8 +57,6 @@ using audition_resolve_outcome_t =
     diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
 
 struct preview_bindings_resolution_t {
-    [[nodiscard]] static auto from(preview_bindings_resolve_result_t&& report)
-        -> diagnosed_t<preview_bindings_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
     [[nodiscard]] static auto from(const song_document_t& song, chart_id_t chart,
                                    const preview_schedule_t& schedule,
                                    std::span<const audition_source_binding_t> bindings,
@@ -73,20 +70,6 @@ struct preview_bindings_resolution_t {
 };
 using preview_bindings_resolve_outcome_t =
     diagnosed_t<preview_bindings_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
-
-struct preview_bindings_resolve_result_t {
-    [[nodiscard]] static auto from(preview_bindings_resolve_outcome_t&& outcome)
-        -> preview_bindings_resolve_result_t;
-    std::uint64_t document_revision{};
-    chart_id_t chart;
-    std::vector<preview_object_source_binding_t> bindings;
-    std::vector<audition_resolve_diagnostic_t> diagnostics;
-    std::size_t skipped_unavailable_objects{};
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return diagnostics.empty();
-    }
-};
 
 struct audition_resolve_result_t {
     [[nodiscard]] static auto from(audition_resolve_outcome_t&& outcome) -> audition_resolve_result_t;
@@ -128,10 +111,4 @@ struct bmson_draft_audition_request_t {
 // Resolves all playable/BGM objects referenced by an immutable preview
 // schedule. Document, event, channel-slice, asset, and runtime-source indexes
 // are built once for the whole batch.
-[[nodiscard]] auto resolve_preview_bindings(const song_document_t& song, chart_id_t chart,
-                                            const preview_schedule_t& schedule,
-                                            std::span<const audition_source_binding_t> bindings,
-                                            audition_resolve_options_t options = {})
-    -> preview_bindings_resolve_result_t;
-
 } // namespace wormedit::audio

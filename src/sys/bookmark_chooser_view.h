@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/result.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -22,7 +23,7 @@ struct bookmark_chooser_row_t {
     bool navigation_available{};
 };
 
-struct bookmark_chooser_projection_t {
+struct bookmark_chooser_view_t {
     chart_id_t chart;
     std::uint64_t document_revision{};
     std::size_t total_count{};
@@ -31,7 +32,10 @@ struct bookmark_chooser_projection_t {
     std::vector<bookmark_chooser_row_t> rows;
     std::string status;
 
-    [[nodiscard]] explicit operator bool() const noexcept { return status.empty(); }
+    [[nodiscard]] static auto from(const song_document_t&, chart_id_t,
+                                   std::size_t first_row, std::size_t row_limit, std::string_view query = {}) -> result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
 };
+using bookmark_chooser_view_outcome_t =
+    result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
 
 } // namespace wormedit::sys

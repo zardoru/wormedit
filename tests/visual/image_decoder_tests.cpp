@@ -68,12 +68,12 @@ TEST_CASE("visual resources resolve through explicit project-relative asset path
     CHECK(resolved->declared_width == 640);
     CHECK(resolved->declared_height == 480);
 
-    CHECK(resolve_visual_asset(document, resource_id_t{99}, "/project/song").status ==
+    CHECK(resolved_visual_asset_t::from(document, resource_id_t{99}, "/project/song").error().code ==
           visual_asset_status_t::unknown_resource);
-    CHECK(resolve_visual_asset(document, resource_id_t{10}, {}).status ==
+    CHECK(resolved_visual_asset_t::from(document, resource_id_t{10}, {}).error().code ==
           visual_asset_status_t::relative_path_without_base);
     document.resources.front().missing = true;
-    CHECK(resolve_visual_asset(document, resource_id_t{10}, "/project/song").status ==
+    CHECK(resolved_visual_asset_t::from(document, resource_id_t{10}, "/project/song").error().code ==
           visual_asset_status_t::missing_resource);
 }
 
@@ -95,35 +95,35 @@ TEST_CASE("bounded static image decoding publishes exact RGBA8 pixels", "[unit][
 
 TEST_CASE("image decoding rejects unsupported kinds malformed data and every configured cap",
           "[unit][visual][decode][negative]") {
-    CHECK(decode_image_rgba(image_source(asset_kind_t::video), encoded_bmp()).status ==
+    CHECK(rgba_image_t::from(image_source(asset_kind_t::video), encoded_bmp()).error().code ==
           image_status_t::unsupported_asset_kind);
 
     const std::array<std::byte, 8> malformed{};
-    CHECK(decode_image_rgba(image_source(), malformed).status == image_status_t::decode_failed);
+    CHECK(rgba_image_t::from(image_source(), malformed).error().code == image_status_t::decode_failed);
 
     auto input_limited = image_decode_limits_t{};
     input_limited.maximum_input_bytes = 10;
-    CHECK(decode_image_rgba(image_source(), encoded_bmp(), input_limited).status ==
+    CHECK(rgba_image_t::from(image_source(), encoded_bmp(), input_limited).error().code ==
           image_status_t::input_too_large);
 
     auto dimension_limited = image_decode_limits_t{};
     dimension_limited.maximum_width = 1;
-    CHECK(decode_image_rgba(image_source(), encoded_bmp(), dimension_limited).status ==
+    CHECK(rgba_image_t::from(image_source(), encoded_bmp(), dimension_limited).error().code ==
           image_status_t::dimension_limit_exceeded);
 
     auto pixel_limited = image_decode_limits_t{};
     pixel_limited.maximum_pixels = 1;
-    CHECK(decode_image_rgba(image_source(), encoded_bmp(), pixel_limited).status ==
+    CHECK(rgba_image_t::from(image_source(), encoded_bmp(), pixel_limited).error().code ==
           image_status_t::pixel_limit_exceeded);
 
     auto byte_limited = image_decode_limits_t{};
     byte_limited.maximum_rgba_bytes = 7;
-    CHECK(decode_image_rgba(image_source(), encoded_bmp(), byte_limited).status ==
+    CHECK(rgba_image_t::from(image_source(), encoded_bmp(), byte_limited).error().code ==
           image_status_t::byte_limit_exceeded);
 
     auto mismatched = image_source();
     mismatched.declared_width = 3;
-    CHECK(decode_image_rgba(mismatched, encoded_bmp()).status ==
+    CHECK(rgba_image_t::from(mismatched, encoded_bmp()).error().code ==
           image_status_t::declared_geometry_mismatch);
 }
 
@@ -144,8 +144,8 @@ TEST_CASE("visual image file loading is bounded before decode", "[unit][visual][
 
     auto bounded = image_decode_limits_t{};
     bounded.maximum_input_bytes = two_pixel_bmp.size() - 1;
-    CHECK(load_image_rgba(source, bounded).status == image_status_t::input_too_large);
+    CHECK(open_image_rgba(source, bounded).error().code == image_status_t::input_too_large);
 
     source.path += ".missing";
-    CHECK(load_image_rgba(source).status == image_status_t::read_failed);
+    CHECK(open_image_rgba(source).error().code == image_status_t::read_failed);
 }

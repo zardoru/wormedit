@@ -29,36 +29,20 @@ struct native_project_limits_t {
 };
 
 using native_project_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<native_project_diagnostic_t>>;
-struct native_project_write_result_t {
-    [[nodiscard]] static auto from(const song_document_t& song, native_project_limits_t limits = {}) -> native_project_write_outcome_t;
-    [[nodiscard]] static auto from(native_project_write_outcome_t&& outcome) -> native_project_write_result_t;
-    std::optional<std::string> bytes;
-    std::vector<native_project_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 using native_project_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<native_project_diagnostic_t>>;
-struct native_project_parse_result_t {
-    [[nodiscard]] static auto from(std::string_view bytes, native_project_limits_t limits = {}) -> native_project_parse_outcome_t;
-    [[nodiscard]] static auto from(native_project_parse_outcome_t&& outcome) -> native_project_parse_result_t;
-    std::optional<song_document_t> song;
-    std::vector<native_project_diagnostic_t> diagnostics;
-
-    [[nodiscard]] auto has_errors() const -> bool;
-};
 
 // The codec is independent of project packaging and filesystem publication. It
 // emits one deterministic, versioned UTF-8 JSON payload containing the complete
 // editable song document, including retained source provenance and BMS trees.
 [[nodiscard]] auto write_native_project(const song_document_t& song,
                                         native_project_limits_t limits = {})
-    -> native_project_write_result_t;
+    -> native_project_write_outcome_t;
 
 // Parsing is all-or-error: bounded JSON is decoded into a temporary document,
 // enum domains and the complete document graph are validated, and only then is
 // the document published in the result.
 [[nodiscard]] auto parse_native_project(std::string_view bytes, native_project_limits_t limits = {})
-    -> native_project_parse_result_t;
+    -> native_project_parse_outcome_t;
 
 } // namespace wormedit

@@ -48,28 +48,13 @@ enum class source_registration_status_t {
     duplicate_source,
     capacity_exceeded,
     open_failed,
-    // register_source_pending() accepted the source; its geometry is not probed yet.
+    // create_pending_source() accepted the source; its geometry is not probed yet.
     pending,
 };
 
 using source_registration_outcome_t =
     result_t<decoded_source_binding_t, error_t<source_registration_status_t>>;
 using pending_source_registration_outcome_t = result_t<void, error_t<source_registration_status_t>>;
-
-struct source_registration_result_t {
-    [[nodiscard]] static auto from(source_registration_outcome_t&& outcome)
-        -> source_registration_result_t;
-    [[nodiscard]] static auto from(pending_source_registration_outcome_t&& outcome)
-        -> source_registration_result_t;
-
-    source_registration_status_t status{source_registration_status_t::invalid_request};
-    std::optional<decoded_source_binding_t> binding;
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == source_registration_status_t::registered && binding.has_value();
-    }
-};
 
 // One failed geometry probe, reported once through take_probe_failures().
 struct source_probe_failure_t {
@@ -83,8 +68,8 @@ struct source_probe_failure_t {
 // overlap registry queries or removal because each in-flight decoder entry is
 // retained until its final caller releases it.
 //
-// Sources registered with register_source_pending() cost no I/O: they become
-// visible in bindings() once probe(), probe_next_pending() or a decode/analysis
+// Sources registered with create_pending_source() cost no I/O: they become
+// visible in bindings() once open_source_binding(), probe_next_pending() or a decode/analysis
 // request opens the file, reads its geometry, and closes it again. Decoders stay
 // open only while a decode or analysis uses them; at most maximum_open_decoders
 // idle decoders are kept afterwards (generated PCM sources are never closed).
@@ -98,22 +83,16 @@ class decoded_source_registry_t {
     // Raises the registration limit only; does not open or preload any sources.
     void ensure_source_capacity(std::size_t source_count);
 
+    // Registers and probes synchronously; a failed open is not retained.
     [[nodiscard]] auto create_source(decoded_source_registration_t registration)
         -> source_registration_outcome_t;
+    // Accepts a source without I/O; geometry remains unavailable until probed.
     [[nodiscard]] auto create_pending_source(decoded_source_registration_t registration)
         -> pending_source_registration_outcome_t;
     [[nodiscard]] auto open_source_binding(asset_id_t asset) -> source_registration_outcome_t;
     [[nodiscard]] auto create_generated_source(generated_source_registration_t registration)
         -> source_registration_outcome_t;
 
-    // Registers and probes synchronously; a source that cannot be opened is not kept.
-    [[nodiscard]] auto register_source(decoded_source_registration_t registration)
-        -> source_registration_result_t;
-    // Registers without touching the file. Returns `pending` or a rejection status.
-    [[nodiscard]] auto register_source_pending(decoded_source_registration_t registration)
-        -> source_registration_result_t;
-    // Probes one source (no-op if already probed). `registered` carries the binding.
-    [[nodiscard]] auto probe(asset_id_t asset) -> source_registration_result_t;
     // Claims and probes the oldest not-yet-probed source. Safe to call from several
     // threads at once; returns false when nothing is left to claim or stop was requested.
     auto probe_next_pending(std::stop_token stop = {}) -> bool;
@@ -132,15 +111,11 @@ class decoded_source_registry_t {
     // Points an authored asset at a new path for the same file. Identity, binding, probe state
     // and any open decoder are kept, so nothing is re-probed. False if the asset is unknown.
     [[nodiscard]] auto rebase_source(asset_id_t asset, std::filesystem::path path) -> bool;
-    [[nodiscard]] auto register_generated_source(generated_source_registration_t registration)
-        -> source_registration_result_t;
     [[nodiscard]] auto remove(asset_id_t asset) -> bool;
     void clear();
 
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
     [[nodiscard]] auto binding(asset_id_t asset) const -> std::optional<decoded_source_binding_t>;
-    [[nodiscard]] auto decode_block(transport_t& transport, session_token_t token,
-                                    audio_block_key_t key) -> block_decode_result_t;
     [[nodiscard]] auto decode_source_block(transport_t& transport, session_token_t token,
                                          audio_block_key_t key) -> block_decode_outcome_t;
     // Decodes the first `frames` output frames into `block_cache` ahead of playback
@@ -157,7 +132,7 @@ class decoded_source_registry_t {
                                         waveform_cache_t& waveform_cache,
                                         std::uint32_t frames_per_bin,
                                         waveform_analysis_options_t options = {},
-                                        std::stop_token stop = {}) -> waveform_analysis_result_t;
+                                        std::stop_token stop = {}) -> waveform_analysis_outcome_t;
     [[nodiscard]] auto size() const -> std::size_t;
 
   private:

@@ -1195,17 +1195,7 @@ struct bmson_materialization_t {
 
 } // namespace
 
-auto bmson_parse_result_t::has_errors() const -> bool {
-    return std::ranges::any_of(diagnostics, [](const auto& diagnostic) {
-        return diagnostic.severity == diagnostic_severity_t::error;
-    });
-}
-
-auto bmson_parse_result_t::from(bmson_parse_outcome_t&& outcome) -> bmson_parse_result_t {
-    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto bmson_parse_result_t::from(std::span<const std::byte> bytes, bmson_parse_options_t options)
+auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t options)
     -> bmson_parse_outcome_t {
     bmson_parse_outcome_t result{};
     if (bytes.size() > options.max_source_bytes) {
@@ -1316,10 +1306,6 @@ auto bmson_parse_result_t::from(std::span<const std::byte> bytes, bmson_parse_op
         add_parse_error(result, failure.code, failure.message, failure.path, failure.offset);
         return result;
     }
-}
-
-auto parse_bmson_bytes(std::span<const std::byte> bytes, bmson_parse_options_t options) -> bmson_parse_result_t {
-    return bmson_parse_result_t::from(bmson_parse_result_t::from(bytes, std::move(options)));
 }
 
 } // namespace wormedit

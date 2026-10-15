@@ -16,15 +16,15 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                        long double row, timing_boundary_side_t side, bool round_up)
     -> std::optional<double> {
     row = std::clamp(row, 0.0L, static_cast<long double>(timing.total_rows));
-    const auto time = timing.seconds_at(static_cast<std::uint64_t>(row), side);
-    if (!time || !time.seconds || time.seconds->denominator == 0) return std::nullopt;
-    const auto frames = static_cast<long double>(time.seconds->numerator) * waveform.sample_rate /
-                        time.seconds->denominator;
+    const auto time = timing.query_seconds(static_cast<std::uint64_t>(row), side);
+    if (!time || time->value.denominator == 0) return std::nullopt;
+    const auto frames = static_cast<long double>(time->value.numerator) * waveform.sample_rate /
+                        time->value.denominator;
     const auto bounded = std::clamp(round_up ? std::ceil(frames) : std::floor(frames),
                                    0.0L, static_cast<long double>(waveform.total_frames));
     return static_cast<double>(bounded / waveform.total_frames);
 }
-auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                               const audio::waveform_t& waveform,
                               const audio::aligned_waveform_request_t& request) -> bool {
     if (!std::isfinite(request.viewport_scroll_pixels) ||
@@ -36,10 +36,10 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     const auto& timing = *cache.timing.marker_timing_index;
     if (!cache.waveform.waveform_overview_key || *cache.waveform.waveform_overview_key != waveform.key ||
         cache.waveform.waveform_overview_identity != &waveform) {
-        const auto overview = audio::build_waveform_overview_view(waveform, timing, request);
+        const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
         if (!overview) return false;
         cache.waveform.waveform_overview_rows.clear();
-        for (const auto& row : overview.rows)
+        for (const auto& row : overview->rows)
             cache.waveform.waveform_overview_rows.push_back({row.audio_fraction,
                                                    std::clamp(row.absolute_peak, 0.0f, 1.0f)});
         cache.waveform.waveform_overview_key = waveform.key;
@@ -68,15 +68,15 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
-    const auto zero = timing.seconds_at(0, timing_boundary_side_t::before_delays);
-    const auto zero_fraction = zero && zero.seconds && zero.seconds->denominator != 0
-        ? static_cast<long double>(zero.seconds->numerator) * waveform.sample_rate /
-          zero.seconds->denominator / waveform.total_frames : -1.0L;
+    const auto zero = timing.query_seconds(0, timing_boundary_side_t::before_delays);
+    const auto zero_fraction = zero && zero && zero->value.denominator != 0
+        ? static_cast<long double>(zero->value.numerator) * waveform.sample_rate /
+          zero->value.denominator / waveform.total_frames : -1.0L;
     view.waveform_beat_zero_visible = std::isfinite(zero_fraction) && zero_fraction >= 0 && zero_fraction <= 1;
     view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible ? static_cast<double>(zero_fraction) : 0.0;
     return true;
 }
-void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
+void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
     flattened.compose.waveform.row = {};
     flattened.compose.waveform.overview_row = {};
     flattened.compose.waveform.bar_row = {};
@@ -103,7 +103,7 @@ void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
     view.waveform_beat_zero_visible = false;
     view.waveform_beat_zero_fraction = 0;
 }
-auto prepare_frame_waveform_storage(flattened_workspace_t& flattened) -> bool {
+auto prepare_frame_waveform_storage(frontend_workspace_view_t& flattened) -> bool {
     auto* arena = flattened.arena();
     if (!arena) return false;
     auto rows = arena_array<WormUiComposeWaveformRowView>(*arena,
@@ -178,16 +178,17 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
     request.viewport_scroll_pixels = static_cast<double>(first);
     request.viewport_height_pixels = static_cast<double>(count);
     request.maximum_rows = audio::maximum_aligned_waveform_rows;
-    auto projected = audio::build_composed_aligned_waveform_view(context.overview, context.detail,
+    auto projected = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
         context.row_table, request, context.blocks, context.style);
+    const auto& projected_data = projected ? *projected : projected.error();
     ++ring.projection_calls;
     ring.projected_rows += count;
     for (std::size_t index = 0; index < count; ++index) {
         const auto world = first + static_cast<std::int64_t>(index);
         ring.rows[cpu_row_slot(world, ring.rows.size())] = {world, {}, false, false};
     }
-    const bool incomplete = context.style.detail_level && projected.overview_spans != 0;
-    for (const auto& row : projected.rows) {
+    const bool incomplete = context.style.detail_level && projected_data.overview_spans != 0;
+    for (const auto& row : projected_data.rows) {
         const auto world = first + static_cast<std::int64_t>(std::floor(row.y_pixels));
         if (world < first || world >= first + static_cast<std::int64_t>(count)) continue;
         auto& stored = ring.rows[cpu_row_slot(world, ring.rows.size())];
@@ -244,17 +245,19 @@ void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
     audio::decoded_block_cache_t* decoded_blocks,
     const audio::waveform_analysis_result_t* detail_analysis,
     const audio::aligned_waveform_style_t* stable_style) {
-    audio::aligned_waveform_result_t aligned;
+    audio::aligned_waveform_view_outcome_t aligned =
+        std::unexpected(audio::aligned_waveform_view_result_t{});
     aligned = stable_style
-        ? audio::build_composed_aligned_waveform_view(waveform,
+        ? audio::aligned_waveform_view_result_t::from(waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             timing, request, decoded_blocks, *stable_style)
-        : (decoded_blocks ? audio::build_aligned_waveform_samples_view(waveform,
-            timing, request, *decoded_blocks) : audio::aligned_waveform_result_t{});
-    if (!stable_style && (!aligned || aligned.rows.empty()))
-        aligned = audio::build_aligned_waveform_view(*selected_waveform, timing, request);
+        : (decoded_blocks ? audio::aligned_waveform_view_result_t::from(waveform,
+            timing, request, *decoded_blocks) : audio::aligned_waveform_view_outcome_t{
+                std::unexpected(audio::aligned_waveform_view_result_t{})});
+    if (!stable_style && (!aligned || aligned->rows.empty()))
+        aligned = audio::aligned_waveform_view_result_t::from(*selected_waveform, timing, request);
     if (aligned) {
-        for (const auto& row : aligned.rows) {
+        for (const auto& row : aligned->rows) {
             if (!output.push_back({
                 .y_pixels = row.y_pixels,
                 .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
@@ -288,11 +291,11 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
                           const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
     if (bar.key && *bar.key == waveform.key && bar.identity == &waveform && bar.rows_range == range)
         return true;
-    const auto projected = audio::build_waveform_range_view(waveform, range.begin, range.end,
+    const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
                                                          WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
     if (!projected) return false;
     bar.rows.clear();
-    for (const auto& row : projected.rows)
+    for (const auto& row : projected->rows)
         bar.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
     bar.key = waveform.key;
     bar.identity = &waveform;
@@ -317,7 +320,7 @@ void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t
 }
 // Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
 // their fraction of the song. Bookmarks outside the window are left out.
-void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const compose_scene_cache_t& cache,
                                 const audio::waveform_t& waveform, bgm_bar_range_t range) {
     auto& view = flattened.view.compose;
     auto& out = flattened.compose.waveform.bar_bookmark;
@@ -331,10 +334,10 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
             const auto& bookmark = view.beat_bookmarks[index];
-            const auto time = cache.timing.marker_timing_index->seconds_at(bookmark.chart_row,
+            const auto time = cache.timing.marker_timing_index->query_seconds(bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
-            if (!time.seconds || time.seconds->denominator == 0) continue;
-            add(frames_to_fraction(wormedit::to_long_double(*time.seconds)),
+            if (!time || time->value.denominator == 0) continue;
+            add(frames_to_fraction(wormedit::to_long_double(time->value)),
                 bookmark.label, false);
         }
     }
@@ -347,7 +350,7 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     view.bgm_bar_bookmark_count = out.size();
 }
 // Publishes the BGM bar rows and measure marks for the requested song window.
-void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                       const audio::waveform_t& waveform, bgm_bar_range_t requested,
                       std::optional<bgm_bar_pan_override_t>* pan_override,
                       std::optional<bgm_bar_window_capture_t>* window_capture) {
@@ -400,7 +403,7 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
 
 
 void populate_audio_waveform_views(
-    flattened_workspace_t& flattened,
+    frontend_workspace_view_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     int window_width, const WormUiAudioWaveformViewportRequest* viewport_request) {
     if (!flattened.view.audio_slices.visible && !flattened.view.metadata.visible)
@@ -432,12 +435,12 @@ void populate_audio_waveform_views(
             .frames_per_pixel = viewport_request->frames_per_pixel,
             .pixel_width = viewport_request->pixel_width});
     }
-    const auto projection = wormedit::audio::build_waveform_viewport_view(waveform, viewport);
+    const auto projection = wormedit::audio::waveform_view_t::from(waveform, viewport);
     if (!projection)
         return;
 
-    flattened.audio.waveform.reserve(projection.columns.size());
-    for (const auto& column : projection.columns) {
+    flattened.audio.waveform.reserve(projection->columns.size());
+    for (const auto& column : projection->columns) {
         flattened.audio.waveform.push_back({
             .minimum = {column.minimum[0], column.minimum[1]},
             .maximum = {column.maximum[0], column.maximum[1]},
@@ -462,7 +465,7 @@ void populate_audio_waveform_views(
 }
 
 auto populate_compose_waveform_projection(
-    flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+    frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     bool has_selected_audio_asset,
     const wormedit::editor_interaction_state_t* interaction_state,

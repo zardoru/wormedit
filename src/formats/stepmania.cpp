@@ -1346,14 +1346,7 @@ auto validate_input_bytes(std::span<const std::byte> bytes,
 
 } // namespace
 
-auto stepmania_parse_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
-auto stepmania_parse_result_t::from(stepmania_parse_outcome_t&& outcome) -> stepmania_parse_result_t {
-    return {.song = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto stepmania_parse_result_t::from(std::span<const std::byte> bytes, stepmania_parse_options_t options)
+auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_options_t options)
     -> stepmania_parse_outcome_t {
     stepmania_parse_outcome_t result{};
     const auto source = validate_input_bytes(bytes, options, result.diagnostics);
@@ -1372,9 +1365,6 @@ auto stepmania_parse_result_t::from(std::span<const std::byte> bytes, stepmania_
             .source_order=0, .byte_offset=std::nullopt});
     }
     return result;
-}
-auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_options_t options) -> stepmania_parse_result_t {
-    return stepmania_parse_result_t::from(stepmania_parse_result_t::from(bytes, std::move(options)));
 }
 
 namespace {
@@ -2162,10 +2152,6 @@ auto note_map_text(const chart_document_t& chart,
 
 } // namespace
 
-auto stepmania_write_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
 auto stepmania_export_policy_result_t::from(stepmania_export_policy_outcome_t&& outcome) -> stepmania_export_policy_result_t {
     if (!outcome) return {.options = {}, .error = outcome.error().code,
         .message = std::move(outcome.error().message)};
@@ -2290,13 +2276,13 @@ class stepmania_writer_t {
     baked_charts_.reserve(charts_.size());
     for (const auto* chart : charts_) {
         auto baked = bake_sv_recipes_for_export(*chart);
-        if (!baked) {
+        if (!baked.value || !baked.diagnostics.empty()) {
             report(stepmania_write_diagnostic_code_t::unrepresentable_position,
                    "SV recipe export bake failed: " + baked.diagnostics.front().message,
                    "SCROLLS/SPEEDS");
             return false;
         }
-        baked_charts_.push_back(std::move(*baked.chart));
+        baked_charts_.push_back(std::move(*baked.value));
     }
     charts_.clear();
     charts_.reserve(baked_charts_.size());
@@ -2626,16 +2612,9 @@ class stepmania_writer_t {
     }
 };
 
-auto stepmania_write_result_t::from(stepmania_write_outcome_t&& outcome) -> stepmania_write_result_t {
-    return {.text = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-auto stepmania_write_result_t::from(const song_document_t& song, stepmania_write_options_t options)
+auto write_stepmania(const song_document_t& song, stepmania_write_options_t options)
     -> stepmania_write_outcome_t {
     return stepmania_writer_t{song, std::move(options)}.run();
-}
-
-auto write_stepmania(const song_document_t& song, stepmania_write_options_t options) -> stepmania_write_result_t {
-    return stepmania_write_result_t::from(stepmania_write_result_t::from(song, std::move(options)));
 }
 
 } // namespace wormedit

@@ -78,25 +78,25 @@ TEST_CASE("slices render to WAV files that decode to the same frames", "[unit][a
 
     scratch_directory_t scratch{"ok"};
     std::size_t last_done = 0;
-    const auto result = render_audio_slices(
+    const auto result = rendered_audio_slices_t::from(
         source, ranges,
         {.directory = scratch.path, .base_name = "part",
          .progress = [&](std::size_t done, std::size_t) { last_done = done; }});
     REQUIRE(result);
-    REQUIRE(result.files.size() == 2);
-    CHECK(result.files[0].filename() == "part_001.wav");
+    REQUIRE(result->files.size() == 2);
+    CHECK(result->files[0].filename() == "part_001.wav");
     CHECK(last_done == 2);
 
     decoder_t first;
-    REQUIRE(first.open(result.files[0]));
+    REQUIRE(first.open(result->files[0]));
     CHECK(first.info()->output_frame_count == total / 3);
     decoder_t second;
-    REQUIRE(second.open(result.files[1]));
+    REQUIRE(second.open(result->files[1]));
     CHECK(second.info()->output_frame_count == total - total / 3);
 
     std::vector<float> expected(64 * 2), actual(64 * 2);
-    REQUIRE(source.read_at(total / 3 + 100, expected, 64).frames_read == 64);
-    REQUIRE(second.read_at(100, actual, 64).frames_read == 64);
+    REQUIRE(source.read_frames_at(total / 3 + 100, expected, 64).value().frames_read == 64);
+    REQUIRE(second.read_frames_at(100, actual, 64).value().frames_read == 64);
     for (std::size_t index = 0; index < expected.size(); ++index)
         CHECK(std::abs(expected[index] - actual[index]) < 1.0F / 16'000.0F);
 }
@@ -119,24 +119,23 @@ TEST_CASE("cancelling or invalid requests leave no files behind", "[unit][audio]
          }});
     CHECK(cancelled_outcome == std::unexpected(wormedit::error_t<slice_render_status_t>{
         slice_render_status_t::cancelled, "cancelled"}));
-    const auto cancelled = slice_render_result_t::from(std::move(cancelled_outcome));
     CHECK(published == 2);
-    CHECK(cancelled.files.empty());
+    CHECK_FALSE(cancelled_outcome.has_value());
     CHECK(file_count(scratch.path) == 0);
 
     const auto rejects = [&](std::vector<audio_slice_range_t> bad) {
-        const auto result = render_audio_slices(source, bad,
+        const auto result = rendered_audio_slices_t::from(source, bad,
                                                 {.directory = scratch.path, .base_name = "bad"});
-        CHECK(result.status == slice_render_status_t::invalid_request);
-        CHECK_FALSE(result.error.empty());
+        CHECK(result.error().code == slice_render_status_t::invalid_request);
+        CHECK_FALSE(result.error().message.empty());
         CHECK(file_count(scratch.path) == 0);
     };
     rejects({});
     rejects({{10, 10}});
     rejects({{0, total + 1}});
     rejects({{0, 100}, {50, 200}});
-    const auto no_name = render_audio_slices(source, std::vector<audio_slice_range_t>{{0, 100}}, {});
-    CHECK(no_name.status == slice_render_status_t::invalid_request);
+    const auto no_name = rendered_audio_slices_t::from(source, std::vector<audio_slice_range_t>{{0, 100}}, {});
+    CHECK(no_name.error().code == slice_render_status_t::invalid_request);
 }
 
 namespace {
@@ -196,9 +195,8 @@ auto decoded_samples(decoder_t& decoder) -> std::optional<std::vector<float>> {
     if (!info || info->output_frame_count == 0 ||
         info->output_frame_count > maximum_read_frames) return std::nullopt;
     std::vector<float> samples(static_cast<std::size_t>(info->output_frame_count) * 2);
-    const auto read = decoder.read_at(0, samples, static_cast<std::size_t>(info->output_frame_count));
-    if ((read.status != read_status_t::success && read.status != read_status_t::end_of_stream) ||
-        read.frames_read != info->output_frame_count)
+    const auto read = decoder.read_frames_at(0, samples, static_cast<std::size_t>(info->output_frame_count));
+    if (!read || read->frames_read != info->output_frame_count)
         return std::nullopt;
     return samples;
 }
@@ -274,13 +272,13 @@ TEST_CASE("float32 slice export preserves a 48 kHz source after normalized decod
 
     const std::vector<audio_slice_range_t> range{{0, info->output_frame_count}};
     scratch_directory_t float_output{"float-render"};
-    const auto rendered = render_audio_slices(source, range,
+    const auto rendered = rendered_audio_slices_t::from(source, range,
         {.directory = float_output.path, .base_name = "slice",
          .encoding = slice_wav_encoding_t::float32});
     require_slice_float(static_cast<bool>(rendered));
-    require_slice_float(rendered.files.size() == 1);
+    require_slice_float(rendered->files.size() == 1);
     decoder_t slice;
-    require_slice_float(slice.open(rendered.files.front()));
+    require_slice_float(slice.open(rendered->files.front()));
     const auto actual = decoded_samples(slice);
     require_slice_float(actual.has_value());
     check_float_pcm(*expected, *actual);
@@ -304,17 +302,17 @@ TEST_CASE("slice float encoding rejects invalid payloads and PCM16 remains the d
     require_slice_float(source.open(fixture("keysound-c4.ogg")));
     const std::vector<audio_slice_range_t> range{{0, 64}};
     scratch_directory_t scratch{"bad-encoding"};
-    const auto invalid = render_audio_slices(source, range,
+    const auto invalid = rendered_audio_slices_t::from(source, range,
         {.directory = scratch.path, .base_name = "invalid",
          .encoding = static_cast<slice_wav_encoding_t>(255)});
-    check_slice_float(invalid.status == slice_render_status_t::invalid_request);
-    check_slice_float(!invalid.error.empty());
+    check_slice_float(invalid.error().code == slice_render_status_t::invalid_request);
+    check_slice_float(!invalid.error().message.empty());
     check_slice_float(file_count(scratch.path) == 0);
 
     scratch_directory_t default_output{"default-pcm"};
-    const auto pcm = render_audio_slices(source, range,
+    const auto pcm = rendered_audio_slices_t::from(source, range,
         {.directory = default_output.path, .base_name = "pcm"});
     require_slice_float(static_cast<bool>(pcm));
-    const auto header = read_bytes(pcm.files.front());
+    const auto header = read_bytes(pcm->files.front());
     check_slice_float(read_u16(header, 20) == 1);
 }

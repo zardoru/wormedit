@@ -2452,8 +2452,15 @@ dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) 
     }
 }
 
-auto dispatch_bms_branch_choice_action(compose_action_context_t& context)
-    -> compose_action_outcome_t {
+struct edit_compose_bms_branch_choice_action_t {
+    auto operator==(const edit_compose_bms_branch_choice_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_compose_bms_branch_choice_action_t, compose_action_context_t>);
+
+auto edit_compose_bms_branch_choice_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto& action = context.action;
     auto& history = context.environment.document.history;
@@ -2474,6 +2481,15 @@ auto dispatch_bms_branch_choice_action(compose_action_context_t& context)
         return compose_action_outcome_t::blocked(
             "Choose a current BMS RANDOM or SWITCH control first.", notification_source_t::format);
     }
+    return std::nullopt;
+}
+
+auto edit_compose_bms_branch_choice_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
     auto applied = apply_bms_branch_choice_command(
         history,
         {.chart = *workspace.selected_chart,
@@ -2509,14 +2525,9 @@ void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::ui
     }
 }
 
-auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
-    -> compose_action_outcome_t {
-    using namespace wormedit;
-    const auto& action = context.action;
-    auto& history = context.environment.document.history;
-    auto& workspace = context.environment.document.workspace;
-
-    constexpr compose_action_description_t description{
+struct edit_compose_bms_branch_statement_action_t {
+    const chart_document_t* chart{};
+    static constexpr compose_action_description_t description{
         .success = "Inactive BMS branch statement updated.",
         .unchanged = "BMS branch statement edit was rejected without changing the document.",
         .rebind_failure = "BMS branch statement changed, but workspace rebinding failed.",
@@ -2524,6 +2535,19 @@ auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
         .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only,
         .unchanged_severity = notification_severity_t::warning,
         .is_unchanged_accepted = false};
+    auto operator==(const edit_compose_bms_branch_statement_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_compose_bms_branch_statement_action_t, compose_action_context_t>);
+
+auto edit_compose_bms_branch_statement_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
+
     if (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
         workspace.selected_chart->value != action.compose_input_chart_id)
         return compose_action_outcome_t::blocked(
@@ -2541,10 +2565,19 @@ auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
             history, action.compose_input_document_revision, "BMS branch statement action"))
         return compose_action_outcome_t::from(
             bms_branch_statement_command_result_t{.command = std::move(*rejected)}, description);
-    const auto* chart = history.document.find_chart(*workspace.selected_chart);
+    chart = history.document.find_chart(*workspace.selected_chart);
     if (chart == nullptr)
         return compose_action_outcome_t::blocked("The selected BMS chart is no longer available.",
                                                  notification_source_t::format);
+    return std::nullopt;
+}
+
+auto edit_compose_bms_branch_statement_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
     if (!chart->bms_control_tree) {
         auto missing_tree = apply_bms_branch_statement_edit_command(
             history, {.chart = *workspace.selected_chart,
@@ -2734,8 +2767,16 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action,
         description, "BMS branch leaf moved.");
 }
 
-auto dispatch_bms_branch_block_action(compose_action_context_t& context)
-    -> compose_action_outcome_t {
+struct edit_compose_bms_branch_block_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const edit_compose_bms_branch_block_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_compose_bms_branch_block_action_t, compose_action_context_t>);
+
+auto edit_compose_bms_branch_block_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     const auto& action = context.action;
     auto& history = context.environment.document.history;
@@ -2751,7 +2792,7 @@ auto dispatch_bms_branch_block_action(compose_action_context_t& context)
         blocked->source = notification_source_t::format;
         return std::move(*blocked);
     }
-    const auto* chart = history.document.find_chart(*workspace.selected_chart);
+    chart = history.document.find_chart(*workspace.selected_chart);
     if (chart == nullptr || !chart->bms_control_tree)
         return compose_action_outcome_t::blocked("The selected chart has no BMS branch outline.",
                                                  notification_source_t::format);
@@ -2759,6 +2800,15 @@ auto dispatch_bms_branch_block_action(compose_action_context_t& context)
         return compose_action_outcome_t::blocked(
             wormedit::stale_action_message("BMS branch block action"),
             notification_source_t::format);
+    return std::nullopt;
+}
+
+auto edit_compose_bms_branch_block_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& action = context.action;
+    auto& history = context.environment.document.history;
+    auto& workspace = context.environment.document.workspace;
     return run_bms_block_command(action, history, *chart, *workspace.selected_chart);
 }
 
@@ -2767,18 +2817,18 @@ auto dispatch_compose_bms_action(compose_action_context_t& context)
     switch (context.action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_SET_BMS_BRANCH_CHOICE:
     case WORM_UI_COMPOSE_ACTION_CLEAR_BMS_BRANCH_CHOICE:
-        return dispatch_bms_branch_choice_action(context);
+        return run_compose_action(edit_compose_bms_branch_choice_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_EDIT_BMS_BRANCH_STATEMENT:
     case WORM_UI_COMPOSE_ACTION_INSERT_BMS_BRANCH_STATEMENT:
     case WORM_UI_COMPOSE_ACTION_DELETE_BMS_BRANCH_STATEMENT: {
-        auto outcome = dispatch_bms_branch_statement_action(context);
+        auto outcome = run_compose_action(edit_compose_bms_branch_statement_action_t{}, context);
         outcome.has_bms_statement_feedback = true;
         return outcome;
     }
     case WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK:
     case WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK:
     case WORM_UI_COMPOSE_ACTION_MOVE_BMS_BRANCH_LEAF: {
-        auto outcome = dispatch_bms_branch_block_action(context);
+        auto outcome = run_compose_action(edit_compose_bms_branch_block_action_t{}, context);
         outcome.has_bms_statement_feedback = true;
         return outcome;
     }

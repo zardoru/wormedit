@@ -429,9 +429,6 @@ auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::strin
 std::optional<compose_action_outcome_t>
 dispatch_compose_semantic_layer_state_action(compose_action_context_t& context);
 
-auto dispatch_bms_branch_choice_action(compose_action_context_t& context)
-    -> compose_action_outcome_t;
-
 struct bms_statement_target_t {
     const wormedit::bms_control_node_t* statement{};
     const wormedit::bms_control_node_t* leaf{};
@@ -440,9 +437,6 @@ struct bms_statement_target_t {
 void find_bms_statement_target(const wormedit::bms_control_node_t& node, std::uint64_t id,
                                const wormedit::bms_control_node_t* enclosing_leaf,
                                bms_statement_target_t& result);
-
-auto dispatch_bms_branch_statement_action(compose_action_context_t& context)
-    -> compose_action_outcome_t;
 
 struct bms_leaf_target_t {
     const wormedit::bms_control_node_t* block{};
@@ -458,9 +452,6 @@ auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64
 auto run_bms_block_command(const WormUiWorkspaceAction& action,
                            wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
-    -> compose_action_outcome_t;
-
-auto dispatch_bms_branch_block_action(compose_action_context_t& context)
     -> compose_action_outcome_t;
 
 auto dispatch_compose_bms_action(compose_action_context_t& context)

@@ -706,8 +706,8 @@ TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses s
 }
 
 namespace {
-auto branch_cache_rows_equal(const workspace_bms_branch_outline_t& left,
-                              const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_rows_equal(const workspace_bms_branch_outline_view_t& left,
+                             const workspace_bms_branch_outline_view_t& right) -> bool {
     return std::ranges::equal(left.rows, right.rows, [](const auto& a, const auto& b) {
         return std::tie(a.kind, a.id, a.depth, a.source_order, a.active, a.selected,
                         a.display_text, a.display_text_truncated) ==
@@ -715,8 +715,8 @@ auto branch_cache_rows_equal(const workspace_bms_branch_outline_t& left,
                         b.display_text, b.display_text_truncated);
     });
 }
-auto branch_cache_choices_equal(const workspace_bms_branch_outline_t& left,
-                                 const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_choices_equal(const workspace_bms_branch_outline_view_t& left,
+                                const workspace_bms_branch_outline_view_t& right) -> bool {
     return std::ranges::equal(left.choices, right.choices, [](const auto& a, const auto& b) {
         return std::tie(a.id, a.kind, a.source_order, a.active, a.editable, a.selected_value,
                         a.previous_value, a.next_value, a.can_clear) ==
@@ -724,8 +724,8 @@ auto branch_cache_choices_equal(const workspace_bms_branch_outline_t& left,
                         b.previous_value, b.next_value, b.can_clear);
     });
 }
-auto branch_cache_outlines_equal(const workspace_bms_branch_outline_t& left,
-                                 const workspace_bms_branch_outline_t& right) -> bool {
+auto branch_cache_outlines_equal(const workspace_bms_branch_outline_view_t& left,
+                                 const workspace_bms_branch_outline_view_t& right) -> bool {
     const bool diagnostics = std::ranges::equal(left.diagnostics, right.diagnostics,
         [](const auto& a, const auto& b) {
             return std::tie(a.severity, a.code, a.message, a.object) ==

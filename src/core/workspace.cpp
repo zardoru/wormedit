@@ -337,7 +337,7 @@ auto bounded_utf8_prefix(std::string_view text, std::size_t maximum_bytes) -> st
 struct branch_outline_context_t {
     const chart_document_t& chart;
     const workspace_limits_t& limits;
-    workspace_bms_branch_outline_t& outline;
+    workspace_bms_branch_outline_view_t& outline;
     std::size_t maximum_diagnostics{};
     std::unordered_map<std::uint64_t, std::vector<std::size_t>> selections_by_id;
     std::vector<bool> matched_selections;
@@ -352,7 +352,7 @@ struct branch_outline_context_t {
 
     branch_outline_context_t(const chart_document_t& chart_value,
                              const workspace_limits_t& limits_value,
-                             workspace_bms_branch_outline_t& outline_value,
+                             workspace_bms_branch_outline_view_t& outline_value,
                              std::size_t diagnostic_limit)
         : chart(chart_value), limits(limits_value), outline(outline_value),
           maximum_diagnostics(diagnostic_limit) {}
@@ -737,12 +737,6 @@ auto report_unmatched_branch_selections(branch_outline_context_t& context) -> vo
     }
 }
 
-[[maybe_unused]] auto make_branch_outline(const chart_document_t& chart,
-                                          const workspace_limits_t& limits)
-    -> workspace_bms_branch_outline_t {
-    return workspace_bms_branch_outline_t::from(chart, limits);
-}
-
 auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t& cache,
                                  const chart_document_t& chart) -> bool {
     return std::ranges::equal(cache.choices, chart.active_branch_selection,
@@ -751,18 +745,23 @@ auto is_branch_cache_choices_current(const workspace_bms_branch_outline_cache_t&
         });
 }
 
-auto build_branch_outline_view(const song_document_t& document, const chart_document_t& chart,
-    const workspace_limits_t& limits, workspace_bms_branch_outline_cache_t* cache)
-    -> workspace_bms_branch_outline_t {
+} // namespace
+
+auto workspace_bms_branch_outline_view_t::from(const song_document_t& document,
+                                               const chart_document_t& chart,
+                                               const workspace_limits_t& limits,
+                                               workspace_bms_branch_outline_cache_t* cache)
+    -> workspace_bms_branch_outline_view_t {
     // Retained ordinary statements are visible too; only an absent tree is empty.
     if (!chart.bms_control_tree) return {};
-    if (!cache) return workspace_bms_branch_outline_t::from(chart, limits);
+    if (!cache)
+        return workspace_bms_branch_outline_view_t::from(chart, limits);
     if (cache->valid && cache->document_identity == &document &&
         cache->chart_identity == &chart && cache->song == document.id &&
         cache->chart == chart.id && cache->revision == document.revision &&
         cache->limits == limits && is_branch_cache_choices_current(*cache, chart))
         return cache->outline;
-    auto outline = workspace_bms_branch_outline_t::from(chart, limits);
+    auto outline = workspace_bms_branch_outline_view_t::from(chart, limits);
     cache->valid = false;
     cache->choices.clear();
     cache->choices.reserve(chart.active_branch_selection.size());
@@ -780,12 +779,10 @@ auto build_branch_outline_view(const song_document_t& document, const chart_docu
     return cache->outline;
 }
 
-} // namespace
-
-auto workspace_bms_branch_outline_t::from(const chart_document_t& chart,
-                                          const workspace_limits_t& limits)
-    -> workspace_bms_branch_outline_t {
-    workspace_bms_branch_outline_t outline;
+auto workspace_bms_branch_outline_view_t::from(const chart_document_t& chart,
+                                               const workspace_limits_t& limits)
+    -> workspace_bms_branch_outline_view_t {
+    workspace_bms_branch_outline_view_t outline;
     if (!chart.bms_control_tree)
         return outline;
     outline.available = true;
@@ -1397,8 +1394,8 @@ auto build_compose_tab(workspace_view_build_context_t& context,
         .layout_segment_count = chart->lane_layouts.size(),
         .lane_count = lane_count,
         .layer_count = chart->semantic_layers.size(),
-        .bms_branch_outline = build_branch_outline_view(document, *chart, workspace.limits,
-                                                     branch_cache),
+        .bms_branch_outline = workspace_bms_branch_outline_view_t::from(
+            document, *chart, workspace.limits, branch_cache),
     };
     return true;
 }

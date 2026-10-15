@@ -1061,7 +1061,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
 }
 
 void populate_compose_branch_rows(flattened_workspace_t& result,
-                                  const wormedit::workspace_bms_branch_outline_t& outline) {
+                                  const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.rows.size(),
         static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_ROW_CAPACITY));
@@ -1113,7 +1113,7 @@ auto compose_branch_choice_view(const wormedit::workspace_bms_branch_choice_t& c
         .can_clear = choice.can_clear};
 }
 void populate_compose_branch_choices(flattened_workspace_t& result,
-                                     const wormedit::workspace_bms_branch_outline_t& outline) {
+                                     const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.choices.size(),
         static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_CHOICE_CAPACITY));
@@ -1135,8 +1135,8 @@ void populate_compose_branch_choices(flattened_workspace_t& result,
         view.branch_choice_count = result.compose.branch.choice.size();
     }
 }
-void populate_compose_branch_diagnostics(flattened_workspace_t& result,
-                                        const wormedit::workspace_bms_branch_outline_t& outline) {
+void populate_compose_branch_diagnostics(
+    flattened_workspace_t& result, const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.diagnostics.size(),
         static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
@@ -1153,7 +1153,7 @@ void populate_compose_branch_diagnostics(flattened_workspace_t& result,
     }
 }
 void populate_compose_branch_outline(flattened_workspace_t& result,
-                                    const wormedit::workspace_bms_branch_outline_t& outline) {
+                                     const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     view.branch_outline_available = outline.available;
     view.branch_display_text_truncated = outline.display_text_truncated;

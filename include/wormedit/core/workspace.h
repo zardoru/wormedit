@@ -280,9 +280,16 @@ struct workspace_bms_branch_choice_t {
     bool can_clear{};
 };
 
-struct workspace_bms_branch_outline_t {
+struct workspace_bms_branch_outline_cache_t;
+
+struct workspace_bms_branch_outline_view_t {
+    [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart,
+                                   const workspace_limits_t& limits,
+                                   workspace_bms_branch_outline_cache_t* cache)
+        -> workspace_bms_branch_outline_view_t;
+
     [[nodiscard]] static auto from(const chart_document_t& chart, const workspace_limits_t& limits)
-        -> workspace_bms_branch_outline_t;
+        -> workspace_bms_branch_outline_view_t;
 
     bool available{};
     bool rows_truncated{};
@@ -316,7 +323,7 @@ struct workspace_bms_branch_outline_cache_t {
     std::uint64_t revision{};
     workspace_limits_t limits;
     std::vector<std::pair<branch_id_t, std::int64_t>> choices;
-    workspace_bms_branch_outline_t outline;
+    workspace_bms_branch_outline_view_t outline;
     bool valid{};
     std::size_t build_count{};
 };
@@ -328,7 +335,7 @@ struct workspace_compose_view_t {
     std::size_t layout_segment_count{};
     std::size_t lane_count{};
     std::size_t layer_count{};
-    workspace_bms_branch_outline_t bms_branch_outline;
+    workspace_bms_branch_outline_view_t bms_branch_outline;
 };
 
 struct workspace_storyboard_view_t {
@@ -357,8 +364,10 @@ using workspace_tab_view_t =
                  workspace_audio_slices_view_t, workspace_compare_validate_view_t>;
 
 struct workspace_view_t {
+    // Temporary: removed by T-642 after sys callers migrate to the diagnosed factory.
     [[nodiscard]] static auto from(const workspace_controller_t& workspace,
                                    const song_document_t& document) -> workspace_view_result_t;
+    // Temporary: removed by T-642 after sys callers migrate to the diagnosed factory.
     // Also builds a non-active tab's view. This lets the shell display the
     // storyboard placeholder while navigation/actions continue to reject it.
     // Compare diagnostics may be supplied from a cache keyed to this document's
@@ -391,6 +400,7 @@ struct workspace_view_result_t {
         workspace_tab_t tab, const diagnostic_list_t* cached_diagnostics = nullptr,
         workspace_bms_branch_outline_cache_t* branch_cache = nullptr,
         workspace_binding_validation_cache_t* binding_cache = nullptr) -> workspace_view_outcome_t;
+    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
     [[nodiscard]] static auto from(workspace_view_outcome_t&& outcome) -> workspace_view_result_t;
     std::optional<workspace_view_t> view;
     diagnostic_list_t diagnostics;

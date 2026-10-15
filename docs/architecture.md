@@ -52,9 +52,13 @@ You write only what changes:
    `begin`/`update`/`apply` (gesture). Drags that preview before committing are a `proposal_t`
    payload.
 
-The stamp, copy, ready/no-op checks, commit, Undo record, stale message, "already active" rule,
-result construction and feedback are not written by the edit. If a new edit needs any of them, the
-shared runner is missing something; extend the runner, not the edit.
+The runners exist to make this the easiest way to write an edit, not to restrict what an edit can
+do. They keep every safeguard: the stale-document check, the single lazy copy, rejection without
+publishing, the no-op check, one commit with its Undo record, the "another gesture is already
+active" rule, the stale message, result construction and feedback. Writing an edit through them
+gets all of these without having to remember them; writing them by hand is more work and the
+first thing to drift. If a new edit needs a safeguard the runner lacks, add it to the runner so
+every edit gets it.
 
 ## Where to look
 

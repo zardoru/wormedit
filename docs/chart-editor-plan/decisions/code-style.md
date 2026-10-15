@@ -84,7 +84,9 @@ it in new code even before the card lands.
   transaction changes the document. Adding a chart edit means writing its validation, the data it
   changes and its effect, plus one route entry or gesture kind. The stamp, copy, ready/no-op checks,
   commit, Undo record, stale message, exclusivity and result construction belong to the shared
-  runners. When an edit needs one of them, extend the runner. Keep `docs/architecture.md` true
+  runners, which keep every one of these safeguards. The goal is that the right way is also the
+  least work, not a restriction; when an edit needs a safeguard the runner lacks, add it to the
+  runner so every edit gets it. Keep `docs/architecture.md` true
   when a runner changes. No scripting layer or reified command objects: undo is snapshots.
 - **Document commands run through `document_command_transaction_t`:** build it with
   `::from(history)`, reject through it, copy the document lazily and only once, commit through it.

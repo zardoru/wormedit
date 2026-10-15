@@ -279,7 +279,14 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
 
 std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool from_selection);
 
-compose_action_outcome_t edit_beat_section(compose_action_context_t& context);
+struct edit_beat_section_action_t {
+    const chart_document_t* chart{};
+    bool adding{};
+    auto operator==(const edit_beat_section_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_beat_section_action_t, compose_action_context_t>);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_beat_section_action(compose_action_context_t& context);
@@ -288,7 +295,13 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
                               const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-compose_action_outcome_t edit_audio_bookmark(compose_action_context_t& context);
+struct edit_audio_bookmark_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const edit_audio_bookmark_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_audio_bookmark_action_t, compose_action_context_t>);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_audio_bookmark_action(compose_action_context_t& context);
@@ -297,7 +310,13 @@ auto make_audio_section_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-compose_action_outcome_t edit_audio_section(compose_action_context_t& context);
+struct edit_audio_section_action_t {
+    const chart_document_t* chart{};
+    auto operator==(const edit_audio_section_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_audio_section_action_t, compose_action_context_t>);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_audio_section_action(compose_action_context_t& context);
@@ -306,7 +325,14 @@ auto make_beat_bookmark_edit(compose_action_context_t& context,
                              const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-compose_action_outcome_t edit_beat_bookmark(compose_action_context_t& context);
+struct edit_beat_bookmark_action_t {
+    const chart_document_t* chart{};
+    WormUiComposeActionKind operation{};
+    auto operator==(const edit_beat_bookmark_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_beat_bookmark_action_t, compose_action_context_t>);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_beat_bookmark_action(compose_action_context_t& context);
@@ -318,7 +344,13 @@ struct edit_selected_note_labels_action_t {
 };
 static_assert(compose_action<edit_selected_note_labels_action_t, compose_action_context_t>);
 
-compose_action_outcome_t navigate_audio_marker(compose_action_context_t& context);
+struct navigate_audio_marker_action_t {
+    std::optional<std::int64_t> cursor;
+    auto operator==(const navigate_audio_marker_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<navigate_audio_marker_action_t, compose_action_context_t>);
 
 struct search_selected_note_labels_action_t {
     auto operator==(const search_selected_note_labels_action_t&) const -> bool = default;

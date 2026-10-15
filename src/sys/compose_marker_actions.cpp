@@ -44,7 +44,7 @@ dispatch_compose_marker_action(compose_action_context_t& context) {
         return dispatch_compose_audio_bookmark_action(context);
     case WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER:
     case WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER:
-        return navigate_audio_marker(context);
+        return run_compose_action(navigate_audio_marker_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_UPDATE_AUDIO_SECTION:
     case WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION:

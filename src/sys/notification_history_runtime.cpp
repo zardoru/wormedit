@@ -11,10 +11,10 @@
 namespace wormedit::sys {
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
-    -> std::optional<wormedit::command_invocation_result_t> {
+    -> std::optional<wormedit::command_invocation_outcome_t> {
     if (command.kind != application_command_kind_t::view_notifications) return std::nullopt;
     if (!auto_repeat) (void)runtime.apply({WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0}, center);
-    return wormedit::command_invocation_result_t{.accepted = true};
+    return wormedit::command_invocation_outcome_t{.value = true};
 }
 
 namespace {

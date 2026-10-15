@@ -173,7 +173,7 @@ TEST_CASE("notification command ignores repeats while closed and unrelated comma
     const auto repeated = invoke_notification_history_command(
         {.kind = application_command_kind_t::view_notifications}, true, runtime, center);
     REQUIRE(repeated);
-    CHECK(repeated->accepted);
+    CHECK(repeated->value);
     CHECK_FALSE(runtime.visible);
 }
 

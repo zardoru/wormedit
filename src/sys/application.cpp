@@ -460,7 +460,7 @@ void remap_and_save_shortcut(wormedit::command_registry_t& registry, const worme
     const wormedit::shortcut_chord_t& chord, const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::notification_sink_t& notifications) {
     const auto remapped = wormedit::remap_command(registry, id, {chord});
-    if (!remapped.applied) {
+    if (!remapped.value) {
         notifications.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::input,
                            remapped.diagnostics.empty() ? "Shortcut could not be changed."
                                                         : remapped.diagnostics.front().message);
@@ -947,11 +947,11 @@ auto application_command_focus(const WormUiWorkspaceAction& action,
 
 void post_shortcut_rejection(wormedit::notification_sink_t& notifications,
                             const wormedit::command_registry_t& registry,
-                            const wormedit::command_dispatch_result_t& result) {
+                            const wormedit::command_dispatch_outcome_t& result) {
     // A controller posts its own rejection once. Registry-level failures have
     // no controller, so the input boundary owns their notification.
-    const auto* command = result.command ? wormedit::find_command(registry, *result.command) : nullptr;
-    if (result.status == wormedit::command_dispatch_status_t::rejected && command &&
+    const auto* command = result.value.command ? wormedit::find_command(registry, *result.value.command) : nullptr;
+    if (result.value.status == wormedit::command_dispatch_status_t::rejected && command &&
         command->definition.invoke)
         return;
     if (result.diagnostics.empty())
@@ -1001,7 +1001,7 @@ void build_command_menu_view(const wormedit::command_registry_t& registry, WormU
 auto command_menu_invoker(wormedit::command_invoker_t invoke) -> wormedit::command_invoker_t {
     return [invoke = std::move(invoke)](const wormedit::command_invocation_context_t& invocation) {
         if (invocation.command.value == "workspace.command_menu")
-            return wormedit::command_invocation_result_t{.accepted = worm_ui_frontend_open_command_menu()};
+            return wormedit::command_invocation_outcome_t{.value = worm_ui_frontend_open_command_menu()};
         return invoke(invocation);
     };
 }
@@ -1935,7 +1935,7 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
 auto dispatch_click_audition_toggle(const wormedit::command_invocation_context_t& invocation,
     wormedit::sys::program_preferences_runtime_t& program, application_command_state_t& state,
     wormedit::notification_sink_t& notifications)
-    -> std::optional<wormedit::command_invocation_result_t> {
+    -> std::optional<wormedit::command_invocation_outcome_t> {
     const auto command = parse_application_command(invocation.command.value);
     if (!command || command->kind != wormedit::sys::application_command_kind_t::audio_toggle_click_audition)
         return std::nullopt;
@@ -1945,14 +1945,14 @@ auto dispatch_click_audition_toggle(const wormedit::command_invocation_context_t
             wormedit::notification_severity_t::error, wormedit::notification_source_t::system);
     notifications.post(wormedit::notification_severity_t::success, wormedit::notification_source_t::input,
         state.preferences.editor_preferences.audition_on_click ? "Play sound on click enabled." : "Play sound on click disabled.");
-    return wormedit::command_invocation_result_t{.accepted = true};
+    return wormedit::command_invocation_outcome_t{.value = true};
 }
 
 template<class InvokeEditor>
 auto dispatch_options_or_editor_command(const wormedit::command_invocation_context_t& invocation,
     wormedit::sys::options_runtime_t& options, const wormedit::program_preferences_t& preferences,
     wormedit::sys::notification_history_runtime_t& notifications,
-    wormedit::notification_center_t& center, InvokeEditor&& invoke_editor) -> wormedit::command_invocation_result_t {
+    wormedit::notification_center_t& center, InvokeEditor&& invoke_editor) -> wormedit::command_invocation_outcome_t {
     const auto command = parse_application_command(invocation.command.value);
     if (command) {
         const auto notification = wormedit::sys::invoke_notification_history_command(
@@ -1961,7 +1961,7 @@ auto dispatch_options_or_editor_command(const wormedit::command_invocation_conte
     }
     if (command && command->kind == wormedit::sys::application_command_kind_t::workspace_options) {
         wormedit::sys::open_options(options, preferences);
-        return {.accepted = true};
+        return {.value = true};
     }
     return invoke_editor();
 }
@@ -1970,7 +1970,7 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& compose_interaction_state,
     application_command_state_t& application_command_state, wormedit::notification_sink_t& notifications)
-    -> wormedit::command_invocation_result_t {
+    -> wormedit::command_invocation_outcome_t {
     using severity_t = wormedit::notification_severity_t;
     using source_t = wormedit::notification_source_t;
     const auto created = wormedit::apply_add_chart_command(
@@ -2003,7 +2003,7 @@ auto create_chart_from_registered_command(wormedit::document_history_t& history,
     remember_snap_denominator(application_command_state, *created.payload.chart,
         application_command_state.preferences.editor_preferences.default_snap);
     notifications.post(severity_t::success, source_t::document, "New chart created.");
-    return wormedit::command_invocation_result_t{.accepted = true};
+    return wormedit::command_invocation_outcome_t{.value = true};
 }
 
 
@@ -2760,25 +2760,25 @@ struct application_t::implementation_t {
                           application_command_focus(action, session.workspace),
                           application_primary_modifier());
             tap_event_ns.reset();
-            if (!dispatched.command || (dispatched.command->value != "timing.tap" &&
-                                        dispatched.command->value != "workspace.options" &&
-                                        dispatched.command->value != "view.notifications"))
+            if (!dispatched.value.command || (dispatched.value.command->value != "timing.tap" &&
+                                        dispatched.value.command->value != "workspace.options" &&
+                                        dispatched.value.command->value != "view.notifications"))
                 preserves_editor_gesture = false;
-            if (dispatched.status == command_dispatch_status_t::invoked) {
+            if (dispatched.value.status == command_dispatch_status_t::invoked) {
                 handled = true;
-            } else if (dispatched.status == command_dispatch_status_t::disabled) {
+            } else if (dispatched.value.status == command_dispatch_status_t::disabled) {
                 handled = true;
                 platform.notification_sink.post(
                     notification_severity_t::warning, notification_source_t::input,
-                    dispatched.command
-                        ? "Command is currently unavailable: " + dispatched.command->value
+                    dispatched.value.command
+                        ? "Command is currently unavailable: " + dispatched.value.command->value
                         : "Command is currently unavailable.");
-            } else if (dispatched.status == command_dispatch_status_t::conflict ||
-                       dispatched.status == command_dispatch_status_t::invalid_event ||
-                       dispatched.status == command_dispatch_status_t::rejected) {
+            } else if (dispatched.value.status == command_dispatch_status_t::conflict ||
+                       dispatched.value.status == command_dispatch_status_t::invalid_event ||
+                       dispatched.value.status == command_dispatch_status_t::rejected) {
                 handled = true;
                 post_shortcut_rejection(platform.notification_sink, command_registry, dispatched);
-            } else if (dispatched.status == command_dispatch_status_t::repeat_suppressed) {
+            } else if (dispatched.value.status == command_dispatch_status_t::repeat_suppressed) {
                 handled = true;
             }
         }
@@ -3095,11 +3095,11 @@ struct application_t::implementation_t {
                                                application_command_state);
             const auto dispatched = wormedit::invoke_command(
                 command_registry, command, application_command_focus(action, workspace));
-            if (dispatched.status == wormedit::command_dispatch_status_t::disabled) {
+            if (dispatched.value.status == wormedit::command_dispatch_status_t::disabled) {
                 platform.notification_sink.post_transient_hint(
                     wormedit::notification_source_t::input,
                     "No beat-anchored bookmarks or section boundaries are available.");
-            } else if (dispatched.status != wormedit::command_dispatch_status_t::invoked &&
+            } else if (dispatched.value.status != wormedit::command_dispatch_status_t::invoked &&
                        !dispatched.diagnostics.empty()) {
                 post_shortcut_rejection(platform.notification_sink, command_registry, dispatched);
             }
@@ -3662,7 +3662,7 @@ struct application_t::implementation_t {
 
     auto dispatch_registered_application_command(
         const wormedit::command_invocation_context_t& invocation,
-        const std::optional<std::uint64_t>& tap_event_ns) -> command_invocation_result_t {
+        const std::optional<std::uint64_t>& tap_event_ns) -> command_invocation_outcome_t {
         auto& program = preferences.program_preferences;
         auto& history = session.history;
         auto& workspace = session.workspace;
@@ -3688,14 +3688,14 @@ struct application_t::implementation_t {
                     source_t::document);
             notifications.post_transient_hint(source_t::document,
                                               "Choose the layout for the new project.");
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         }
         if (command->kind == wormedit::sys::application_command_kind_t::document_save_project) {
             if (!worm_ui_frontend_request_save_project(history.document.id.value))
                 return wormedit::sys::reject_application_command(
                     notifications, "Finish the open dialog first.", severity_t::warning,
                     source_t::document);
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         }
         if (command->kind == wormedit::sys::application_command_kind_t::document_new_chart)
             return create_chart_from_registered_command(history, workspace,
@@ -3704,7 +3704,7 @@ struct application_t::implementation_t {
         if (command->kind == wormedit::sys::application_command_kind_t::timing_tap_assistant) {
             views.tap_runtime.toggle();
             (void)views.tap_runtime.observe(views.tap_clock());
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         }
         if (command->kind == wormedit::sys::application_command_kind_t::timing_tap) {
             const auto clock = views.tap_clock();
@@ -3718,7 +3718,7 @@ struct application_t::implementation_t {
                     notifications, guidance ? severity_t::hint : severity_t::warning,
                     source_t::input, state.status));
             }
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         }
         return wormedit::sys::invoke_application_command(*command, command_inputs());
     }
@@ -4105,7 +4105,7 @@ struct application_t::implementation_t {
     }
 
     auto invoke_registry_command(const command_invocation_context_t& invocation)
-        -> command_invocation_result_t {
+        -> command_invocation_outcome_t {
         return dispatch_options_or_editor_command(
             invocation, preferences.options_runtime, preferences.program_preferences.preferences,
             views.notification_history, platform.notifications, [this, &invocation] {

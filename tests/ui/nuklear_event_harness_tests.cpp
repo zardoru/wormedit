@@ -3588,7 +3588,7 @@ namespace {
 
 auto route_harness_shortcut(const WormUiWorkspaceAction& action,
                             const wormedit::command_registry_t& registry)
-    -> wormedit::command_dispatch_result_t {
+    -> wormedit::command_dispatch_outcome_t {
     if (action.shortcut_event_count != 1) {
         return {};
     }
@@ -3621,8 +3621,8 @@ auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scanco
                         const wormedit::command_registry_t& registry) -> bool {
     const auto dispatched = route_harness_shortcut(action, registry);
     return harness_tool_chord(action, scancode) &&
-           dispatched.status == wormedit::command_dispatch_status_t::invoked &&
-           dispatched.command == wormedit::command_id_t{std::string(expected)} &&
+           dispatched.value.status == wormedit::command_dispatch_status_t::invoked &&
+           dispatched.value.command == wormedit::command_id_t{std::string(expected)} &&
            action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
            action.compose_input_count == 0;
 }
@@ -3633,7 +3633,7 @@ TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         });
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
@@ -3655,10 +3655,10 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_result_t{.accepted = true};
+            return wormedit::command_invocation_outcome_t{.value = true};
         });
     REQUIRE(wormedit::update_command_state(registry, {"edit.tool_draw"}, false,
-                                            std::nullopt).applied);
+                                            std::nullopt).value);
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
     (void)harness.frame();
@@ -3666,8 +3666,8 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
     const auto action = harness.frame(std::span{&press, 1}, SDL_KMOD_LALT);
     const auto dispatched = route_harness_shortcut(action.get(), registry);
     expect_draw(harness_tool_chord(action.get(), SDL_SCANCODE_2) &&
-          dispatched.status == wormedit::command_dispatch_status_t::disabled &&
-          dispatched.command == wormedit::command_id_t{"edit.tool_draw"});
+          dispatched.value.status == wormedit::command_dispatch_status_t::disabled &&
+          dispatched.value.command == wormedit::command_id_t{"edit.tool_draw"});
 }
 
 namespace {
@@ -4612,14 +4612,14 @@ TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy in
     std::string invoked;
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return wormedit::command_invocation_result_t{.accepted = true};
+        return wormedit::command_invocation_outcome_t{.value = true};
     });
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     for (const auto mods : {SDL_KMOD_NONE, SDL_KMOD_SHIFT}) {
         const auto frame = harness.frame(std::span{&press, 1}, mods);
         expect_t422(frame.get().compose_input_count == 0);
-        expect_t422(route_harness_shortcut(frame.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+        expect_t422(route_harness_shortcut(frame.get(), registry).value.status == wormedit::command_dispatch_status_t::invoked);
         expect_t422(invoked == (mods == SDL_KMOD_NONE ? "edit.move_to_bgm" : "edit.move_next_to_bgm"));
         (void)harness.frame(std::span{&release, 1});
     }
@@ -4909,13 +4909,13 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         ++calls;
         check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
-        return wormedit::command_invocation_result_t{.accepted = true};
+        return wormedit::command_invocation_outcome_t{.value = true};
     });
     (void)harness.frame();
     const std::array keys{key_event(SDL_EVENT_KEY_DOWN, SDLK_SPACE, SDL_SCANCODE_SPACE)};
     const auto action = harness.frame(keys, SDL_KMOD_SHIFT);
     check_layer_menu(action.get().compose_input_count == 0);
-    check_layer_menu(route_harness_shortcut(action.get(), registry).status == wormedit::command_dispatch_status_t::invoked);
+    check_layer_menu(route_harness_shortcut(action.get(), registry).value.status == wormedit::command_dispatch_status_t::invoked);
     check_layer_menu(calls == 1);
 }
 
@@ -7868,10 +7868,10 @@ TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects comman
     std::string invoked;
     const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked = context.command.value;
-        return command_invocation_result_t{.accepted = true};
+        return command_invocation_outcome_t{.value = true};
     });
     const auto result = route_harness_shortcut(frame.get(), registry);
-    expect_t422(result.command == command_id_t{"selection.select_all_objects"});
+    expect_t422(result.value.command == command_id_t{"selection.select_all_objects"});
     expect_t422(invoked == "selection.select_all_objects");
 }
 

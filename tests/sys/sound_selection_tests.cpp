@@ -195,7 +195,7 @@ TEST_CASE("same sound select command has a remappable primary Shift A binding", 
     std::string invoked;
     auto registry = command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return command_invocation_result_t{.accepted = true};
+        return command_invocation_outcome_t{.value = true};
     });
     const auto* command = find_command(registry, {"selection.select_same_sound_chart"});
     REQUIRE(command);
@@ -214,7 +214,7 @@ TEST_CASE("same sound select command has a remappable primary Shift A binding", 
     expect_sound(invoked == "selection.select_same_sound_chart");
     const auto parsed = wormedit::sys::parse_application_command(invoked);
     expect_sound(parsed && parsed->kind == wormedit::sys::application_command_kind_t::selection_select_same_sound_chart);
-    expect_sound(remap_command(registry, {"selection.select_same_sound_chart"}, {{shortcut_key_t::f6, 0}}).applied);
+    expect_sound(remap_command(registry, {"selection.select_same_sound_chart"}, {{shortcut_key_t::f6, 0}}).value);
     invoked.clear();
     (void)dispatch_shortcut(registry, {.chord = event_chord}, focus, primary);
     expect_sound(invoked.empty());

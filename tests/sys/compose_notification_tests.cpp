@@ -178,7 +178,7 @@ TEST_CASE("Compose edit success stays current after a later navigation cancellat
         {.kind = application_command_kind_t::semantic_layer_apply}, fixture.history,
         fixture.workspace, fixture.optional_state, fixture.timing_stage,
         fixture.application, fixture.sink);
-    REQUIRE(result.accepted);
+    REQUIRE(result.value);
     fixture.state = *fixture.optional_state;
     auto kind = WORM_UI_COMPOSE_INPUT_NAVIGATION_CANCEL;
     auto message = "Compose navigation canceled.";
@@ -274,7 +274,7 @@ TEST_CASE("Paste cancellation keeps the original stop boundary", "[unit][sys][co
     compose_notification_fixture_t fixture;
     REQUIRE(invoke_application_command({.kind = application_command_kind_t::semantic_layer_apply},
         fixture.history, fixture.workspace, fixture.optional_state, fixture.timing_stage,
-        fixture.application, fixture.sink).accepted);
+        fixture.application, fixture.sink).value);
     fixture.state = *fixture.optional_state;
     const auto revision = fixture.history.document.revision;
     const auto undo_size = fixture.history.undo.size();
@@ -463,7 +463,7 @@ TEST_CASE("Delete dispatcher commits stem conversion and ordinary deletion as on
     f.optional_state = f.state;
     const auto result = invoke_application_command({.kind = application_command_kind_t::edit_delete},
         f.history, f.workspace, f.optional_state, f.timing_stage, f.application, f.sink);
-    check_mixed_input(result.accepted);
+    check_mixed_input(result.value);
     const auto& deleted = f.history.document.charts.front();
     check_mixed_input(deleted.measures.front().notes.empty());
     REQUIRE(deleted.measures.front().bgm_events.size() == 1);

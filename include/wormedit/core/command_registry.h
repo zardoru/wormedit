@@ -169,19 +169,8 @@ struct command_invocation_context_t {
 
 using command_invocation_outcome_t = diagnosed_t<bool>;
 
-struct command_invocation_result_t {
-    [[nodiscard]] static auto from(command_invocation_outcome_t&& outcome) -> command_invocation_result_t;
-    [[nodiscard]] auto into_outcome() && -> command_invocation_outcome_t;
-    bool accepted{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return accepted && diagnostics.empty();
-    }
-};
-
 using command_invoker_t =
-    std::function<command_invocation_result_t(const command_invocation_context_t&)>;
+    std::function<command_invocation_outcome_t(const command_invocation_context_t&)>;
 
 struct command_definition_t {
     command_id_t id;
@@ -227,33 +216,17 @@ inline constexpr std::size_t maximum_shortcut_profile_bytes = 1024U * 1024U;
 
 using command_registry_outcome_t = diagnosed_t<bool>;
 
-struct command_registry_result_t {
-    [[nodiscard]] static auto from(command_registry_t& registry, command_registration_t registration)
-        -> command_registry_outcome_t;
-    [[nodiscard]] static auto from(command_registry_outcome_t&& outcome) -> command_registry_result_t;
-    [[nodiscard]] static auto update_state(command_registry_t& registry, const command_id_t& id,
-        bool enabled, std::optional<bool> checked) -> command_registry_outcome_t;
-    [[nodiscard]] static auto remap(command_registry_t& registry, const command_id_t& id,
-        std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t;
-    bool applied{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return applied && diagnostics.empty();
-    }
-};
-
 [[nodiscard]] auto register_command(command_registry_t& registry,
                                     command_registration_t registration)
-    -> command_registry_result_t;
+    -> command_registry_outcome_t;
 [[nodiscard]] auto find_command(const command_registry_t& registry, const command_id_t& id) noexcept
     -> const command_t*;
 [[nodiscard]] auto update_command_state(command_registry_t& registry, const command_id_t& id,
                                         bool enabled, std::optional<bool> checked)
-    -> command_registry_result_t;
+    -> command_registry_outcome_t;
 [[nodiscard]] auto remap_command(command_registry_t& registry, const command_id_t& id,
                                  std::vector<shortcut_chord_t> shortcuts)
-    -> command_registry_result_t;
+    -> command_registry_outcome_t;
 
 struct shortcut_profile_binding_t {
     command_id_t command;
@@ -265,6 +238,8 @@ struct shortcut_profile_binding_t {
 // This profile is intentionally independent of song_document_t and native
 // chart serialization. Persist it as a user preference alongside app settings.
 struct shortcut_profile_t {
+    [[nodiscard]] static auto from(std::string_view serialized)
+        -> diagnosed_t<std::optional<shortcut_profile_t>>;
     [[nodiscard]] static auto from(const command_registry_t& registry, std::string profile_id)
         -> shortcut_profile_t;
 
@@ -276,21 +251,9 @@ struct shortcut_profile_t {
 
 using shortcut_profile_outcome_t = diagnosed_t<bool>;
 
-struct shortcut_profile_result_t {
-    [[nodiscard]] static auto from(command_registry_t& registry, const shortcut_profile_t& profile)
-        -> shortcut_profile_outcome_t;
-    [[nodiscard]] static auto from(shortcut_profile_outcome_t&& outcome) -> shortcut_profile_result_t;
-    bool applied{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return applied && diagnostics.empty();
-    }
-};
-
 [[nodiscard]] auto apply_shortcut_profile(command_registry_t& registry,
                                           const shortcut_profile_t& profile)
-    -> shortcut_profile_result_t;
+    -> shortcut_profile_outcome_t;
 [[nodiscard]] auto diagnose_shortcut_conflicts(
     const command_registry_t& registry,
     shortcut_primary_modifier_t primary_modifier = shortcut_primary_modifier_t::control)
@@ -311,21 +274,6 @@ struct shortcut_conflict_t {
 
 using shortcut_profile_parse_outcome_t = diagnosed_t<std::optional<shortcut_profile_t>>;
 
-struct shortcut_profile_parse_result_t {
-    [[nodiscard]] static auto from(std::string_view serialized) -> shortcut_profile_parse_outcome_t;
-    [[nodiscard]] static auto from(shortcut_profile_parse_outcome_t&& outcome)
-        -> shortcut_profile_parse_result_t;
-    std::optional<shortcut_profile_t> profile;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return profile.has_value() && diagnostics.empty();
-    }
-};
-
-[[nodiscard]] auto parse_shortcut_profile(std::string_view serialized)
-    -> shortcut_profile_parse_result_t;
-
 enum class command_dispatch_status_t : std::uint8_t {
     invoked,
     rejected,
@@ -339,27 +287,14 @@ enum class command_dispatch_status_t : std::uint8_t {
 
 struct shortcut_event_t;
 struct command_dispatch_effect_t {
+    [[nodiscard]] auto is_invoked() const noexcept -> bool {
+        return status == command_dispatch_status_t::invoked;
+    }
     command_dispatch_status_t status{command_dispatch_status_t::no_match};
     std::optional<command_id_t> command;
     auto operator==(const command_dispatch_effect_t&) const -> bool = default;
 };
 using command_dispatch_outcome_t = diagnosed_t<command_dispatch_effect_t>;
-
-struct command_dispatch_result_t {
-    [[nodiscard]] static auto from(const command_registry_t& registry,
-        const shortcut_event_t& event, const command_focus_t& focus,
-        shortcut_primary_modifier_t primary_modifier) -> command_dispatch_outcome_t;
-    [[nodiscard]] static auto invoke(const command_registry_t& registry, const command_id_t& id,
-        const command_focus_t& focus = {}) -> command_dispatch_outcome_t;
-    [[nodiscard]] static auto from(command_dispatch_outcome_t&& outcome) -> command_dispatch_result_t;
-    command_dispatch_status_t status{command_dispatch_status_t::no_match};
-    std::optional<command_id_t> command;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == command_dispatch_status_t::invoked;
-    }
-};
 
 struct shortcut_event_t {
     shortcut_chord_t chord;
@@ -369,9 +304,9 @@ struct shortcut_event_t {
 [[nodiscard]] auto dispatch_shortcut(const command_registry_t& registry,
                                      const shortcut_event_t& event, const command_focus_t& focus,
                                      shortcut_primary_modifier_t primary_modifier)
-    -> command_dispatch_result_t;
+    -> command_dispatch_outcome_t;
 [[nodiscard]] auto invoke_command(const command_registry_t& registry, const command_id_t& id,
-                                  const command_focus_t& focus = {}) -> command_dispatch_result_t;
+                                  const command_focus_t& focus = {}) -> command_dispatch_outcome_t;
 
 
 } // namespace wormedit

@@ -118,7 +118,7 @@ invoke_application_command(application_command_t command, wormedit::document_his
                            std::optional<wormedit::editor_interaction_state_t>& compose_state,
                            std::optional<wormedit::timing_lane_pseudonote_preview_t>& timing_stage,
                            application_command_state_t& application_state,
-                           notification_sink_t& sink) -> wormedit::command_invocation_result_t {
+                           notification_sink_t& sink) -> wormedit::command_invocation_outcome_t {
     test_dispatch::defaults_t defaults;
     const command_dispatch_inputs_t environment{{history, workspace, sink},
                                                 {application_state, compose_state, timing_stage}};

@@ -385,20 +385,7 @@ auto add_builtin(command_registry_t& registry, command_invoker_t invoker, std::s
 
 } // namespace
 
-auto command_invocation_result_t::from(command_invocation_outcome_t&& outcome)
-    -> command_invocation_result_t {
-    return {.accepted = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto command_invocation_result_t::into_outcome() && -> command_invocation_outcome_t {
-    return {.value = accepted, .diagnostics = std::move(diagnostics)};
-}
-
-auto command_registry_result_t::from(command_registry_outcome_t&& outcome) -> command_registry_result_t {
-    return {.applied = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto command_registry_result_t::from(command_registry_t& registry, command_registration_t registration)
+auto register_command(command_registry_t& registry, command_registration_t registration)
     -> command_registry_outcome_t {
     command_registry_outcome_t result{};
     result.diagnostics = valid_registration(registration);
@@ -424,17 +411,13 @@ auto command_registry_result_t::from(command_registry_t& registry, command_regis
     return result;
 }
 
-auto register_command(command_registry_t& registry, command_registration_t registration) -> command_registry_result_t {
-    return command_registry_result_t::from(command_registry_result_t::from(registry, std::move(registration)));
-}
-
 auto find_command(const command_registry_t& registry, const command_id_t& id) noexcept
     -> const command_t* {
     const auto found = std::ranges::find(registry.commands, id, command_id_of);
     return found == registry.commands.end() ? nullptr : &*found;
 }
 
-auto command_registry_result_t::update_state(command_registry_t& registry, const command_id_t& id, bool enabled,
+auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
                           std::optional<bool> checked) -> command_registry_outcome_t {
     command_registry_outcome_t result{};
     const auto found = std::ranges::find(registry.commands, id, command_id_of);
@@ -461,12 +444,7 @@ auto find_shortcut_conflicts(const command_registry_t& registry,
     return overlapping_chord_pairs(registry, primary_modifier);
 }
 
-auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
-                          std::optional<bool> checked) -> command_registry_result_t {
-    return command_registry_result_t::from(command_registry_result_t::update_state(registry, id, enabled, checked));
-}
-
-auto command_registry_result_t::remap(command_registry_t& registry, const command_id_t& id,
+auto remap_command(command_registry_t& registry, const command_id_t& id,
                    std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t {
     command_registry_outcome_t result{};
     if (!is_valid_chord_list(shortcuts)) {
@@ -498,16 +476,7 @@ auto shortcut_profile_t::from(const command_registry_t& registry, std::string pr
     return profile;
 }
 
-auto remap_command(command_registry_t& registry, const command_id_t& id,
-                   std::vector<shortcut_chord_t> shortcuts) -> command_registry_result_t {
-    return command_registry_result_t::from(command_registry_result_t::remap(registry, id, std::move(shortcuts)));
-}
-
-auto shortcut_profile_result_t::from(shortcut_profile_outcome_t&& outcome) -> shortcut_profile_result_t {
-    return {.applied = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto shortcut_profile_result_t::from(command_registry_t& registry, const shortcut_profile_t& profile)
+auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
     -> shortcut_profile_outcome_t {
     shortcut_profile_outcome_t result{};
     result.diagnostics = valid_profile(profile);
@@ -543,11 +512,6 @@ auto shortcut_profile_result_t::from(command_registry_t& registry, const shortcu
     return result;
 }
 
-auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
-    -> shortcut_profile_result_t {
-    return shortcut_profile_result_t::from(shortcut_profile_result_t::from(registry, profile));
-}
-
 auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::string {
     if (has_errors(valid_profile(profile))) {
         return {};
@@ -573,12 +537,7 @@ auto serialize_shortcut_profile(const shortcut_profile_t& profile) -> std::strin
     return output;
 }
 
-auto shortcut_profile_parse_result_t::from(shortcut_profile_parse_outcome_t&& outcome)
-    -> shortcut_profile_parse_result_t {
-    return {.profile = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto shortcut_profile_parse_result_t::from(std::string_view serialized) -> shortcut_profile_parse_outcome_t {
+auto shortcut_profile_t::from(std::string_view serialized) -> shortcut_profile_parse_outcome_t {
     shortcut_profile_parse_outcome_t result{};
     if (serialized.empty() || serialized.size() > maximum_shortcut_profile_bytes) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -650,9 +609,6 @@ auto shortcut_profile_parse_result_t::from(std::string_view serialized) -> short
     }
     return result;
 }
-auto parse_shortcut_profile(std::string_view serialized) -> shortcut_profile_parse_result_t {
-    return shortcut_profile_parse_result_t::from(shortcut_profile_parse_result_t::from(serialized));
-}
 
 namespace {
 
@@ -685,12 +641,7 @@ auto shortcut_candidates(const command_registry_t& registry, const shortcut_even
 
 } // namespace
 
-auto command_dispatch_result_t::from(command_dispatch_outcome_t&& outcome) -> command_dispatch_result_t {
-    return {.status = outcome.value.status, .command = std::move(outcome.value.command),
-            .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto command_dispatch_result_t::from(const command_registry_t& registry, const shortcut_event_t& event,
+auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_t& event,
                        const command_focus_t& focus, shortcut_primary_modifier_t primary_modifier)
     -> command_dispatch_outcome_t {
     command_dispatch_outcome_t result{};
@@ -755,7 +706,7 @@ auto command_dispatch_result_t::from(const command_registry_t& registry, const s
         .shortcut = event.chord,
         .auto_repeat = event.auto_repeat,
     };
-    auto invocation = command.definition.invoke(context).into_outcome();
+    auto invocation = command.definition.invoke(context);
     const auto accepted = invocation.value && invocation.ok();
     result.diagnostics = std::move(invocation.diagnostics);
     result.value.status = accepted
@@ -764,12 +715,7 @@ auto command_dispatch_result_t::from(const command_registry_t& registry, const s
     return result;
 }
 
-auto dispatch_shortcut(const command_registry_t& registry, const shortcut_event_t& event,
-    const command_focus_t& focus, shortcut_primary_modifier_t primary_modifier) -> command_dispatch_result_t {
-    return command_dispatch_result_t::from(command_dispatch_result_t::from(registry, event, focus, primary_modifier));
-}
-
-auto command_dispatch_result_t::invoke(const command_registry_t& registry, const command_id_t& id,
+auto invoke_command(const command_registry_t& registry, const command_id_t& id,
                     const command_focus_t& focus) -> command_dispatch_outcome_t {
     command_dispatch_outcome_t result{};
     if (focus.modal_context.size() > maximum_focus_context_bytes ||
@@ -809,18 +755,13 @@ auto command_dispatch_result_t::invoke(const command_registry_t& registry, const
         return result;
     }
     const command_invocation_context_t context{.command = command->definition.id, .focus = focus};
-    auto invocation = command->definition.invoke(context).into_outcome();
+    auto invocation = command->definition.invoke(context);
     const auto accepted = invocation.value && invocation.ok();
     result.diagnostics = std::move(invocation.diagnostics);
     result.value.status = accepted
                         ? command_dispatch_status_t::invoked
                         : command_dispatch_status_t::rejected;
     return result;
-}
-
-auto invoke_command(const command_registry_t& registry, const command_id_t& id,
-    const command_focus_t& focus) -> command_dispatch_result_t {
-    return command_dispatch_result_t::from(command_dispatch_result_t::invoke(registry, id, focus));
 }
 
 auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
@@ -1050,8 +991,5 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
 
     return registry;
 }
-
-
-
 
 } // namespace wormedit

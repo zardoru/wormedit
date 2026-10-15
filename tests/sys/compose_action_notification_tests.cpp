@@ -122,12 +122,12 @@ struct action_notification_fixture_t {
         const auto registry = command_registry_t::from([&](const auto& request) {
             const auto command = parse_application_command(request.command.value);
             return command ? invoke_application_command(*command, history, workspace, interaction,
-                timing, application, sink) : command_invocation_result_t{};
+                timing, application, sink) : command_invocation_outcome_t{};
         });
         const auto result = invoke_command(registry, {id}, {.workspace_active = true,
             .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
         state = *interaction;
-        return static_cast<bool>(result);
+        return result.value.is_invoked();
     }
     auto entries() -> std::vector<notification_entry_t> {
         center.drain_inbox(notification_time_t{});
@@ -1479,7 +1479,7 @@ TEST_CASE("Quantize grid and editing snap are one shared grid",
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::navigation_next_snap}, fixture.history,
         fixture.workspace, compose, preview, fixture.application, fixture.sink);
-    require_action(result.accepted);
+    require_action(result.value);
     check_action(compose->active_snap_denominator == 4);
     check_action(fixture.application.project.quantize.quantize_editor->request.divisions == 4);
     check_action(fixture.application.project.quantize.quantize_editor->request.tie == quantization_tie_t::later);

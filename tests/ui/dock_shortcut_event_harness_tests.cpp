@@ -21,13 +21,13 @@ auto registry_for_docks() -> command_registry_t {
         const auto dock = id == "view.open_layers" ? WORM_UI_COMPOSE_DOCK_OPEN_LAYERS
             : id == "semantic_layer.create" ? WORM_UI_COMPOSE_DOCK_CREATE_LAYER
             : WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS;
-        return command_invocation_result_t{
-            .accepted = worm_ui_frontend_compose_dock_command(dock, 1, 1, 1)};
+        return command_invocation_outcome_t{
+            .value = worm_ui_frontend_compose_dock_command(dock, 1, 1, 1)};
     });
 }
 auto press_and_dispatch(nuklear_event_harness_t& harness, SDL_Keycode code,
                         SDL_Scancode scan, SDL_Keymod modifiers)
-    -> command_dispatch_result_t {
+    -> command_dispatch_outcome_t {
     SDL_Event event{};
     event.type = event.key.type = SDL_EVENT_KEY_DOWN;
     event.key.key = code;
@@ -51,14 +51,14 @@ TEST_CASE("Dock shortcut opens Layers in a narrow window without creating a laye
           "[frontend-state][event-harness][dock-shortcuts]") {
     nuklear_event_harness_t harness{960, 720};
     prepare(harness);
-    check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).status ==
+    check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).value.status ==
                command_dispatch_status_t::invoked);
     const auto action = harness.frame();
     check_dock(worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
     check_dock(!worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible);
     check_dock(harness.drawn_text().find("Layers") != std::string::npos);
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
-    check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).status ==
+    check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L, SDL_KMOD_CTRL).value.status ==
                command_dispatch_status_t::invoked);
     static_cast<void>(harness.frame());
     check_dock(!worm_ui_nuklear_compose_state().dock_layout.layers_panel_visible);
@@ -69,7 +69,7 @@ TEST_CASE("Dock shortcut creation emits one existing Add layer action with its c
     nuklear_event_harness_t harness{1280, 800};
     prepare(harness);
     check_dock(press_and_dispatch(harness, SDLK_L, SDL_SCANCODE_L,
-        SDL_KMOD_GUI | SDL_KMOD_SHIFT).status == command_dispatch_status_t::invoked);
+        SDL_KMOD_GUI | SDL_KMOD_SHIFT).value.status == command_dispatch_status_t::invoked);
     check_dock(harness.frame().get().compose_action != WORM_UI_COMPOSE_ACTION_ADD_SEMANTIC_LAYER);
     check_dock(worm_ui_nuklear_compose_state().layer_editor.layer_creation_context.has_value());
     static_cast<void>(harness.frame());
@@ -99,7 +99,7 @@ TEST_CASE("Dock shortcut toggles Sounds without opening the Go to sound picker",
     prepare(harness);
     const bool visible = worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible;
     check_dock(press_and_dispatch(harness, SDLK_K, SDL_SCANCODE_K,
-        SDL_KMOD_CTRL | SDL_KMOD_SHIFT).status == command_dispatch_status_t::invoked);
+        SDL_KMOD_CTRL | SDL_KMOD_SHIFT).value.status == command_dispatch_status_t::invoked);
     check_dock(worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible != visible);
     check_dock(!worm_ui_nuklear_compose_state().sound_picker_ui.sound_picker.open);
     check_dock(worm_ui_frontend_compose_dock_command(WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS, 1, 1, 1));

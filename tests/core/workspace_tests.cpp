@@ -844,16 +844,16 @@ auto binding_cache_tracks_document_and_limits() -> bool {
         workspace.transport.position_frame = frame * 800;
         if (!cached_binding_view(song, workspace, cache)) return false;
     }
-    if (cache.build_count != 1) return false;
+    if (cache.build_count() != 1) return false;
     ++song.revision;
     workspace.document_revision = song.revision;
-    if (!cached_binding_view(song, workspace, cache) || cache.build_count != 2) return false;
+    if (!cached_binding_view(song, workspace, cache) || cache.build_count() != 2) return false;
     auto replacement = song;
-    if (!cached_binding_view(replacement, workspace, cache) || cache.build_count != 3) return false;
+    if (!cached_binding_view(replacement, workspace, cache) || cache.build_count() != 3) return false;
     workspace.limits.maximum_audio_assets = 0;
     const auto rejected = cached_binding_view(replacement, workspace, cache);
     const auto reference = workspace_view_t::from(workspace, replacement);
-    return !rejected && !reference && cache.build_count == 4 &&
+    return !rejected && !reference && cache.build_count() == 4 &&
         rejected.diagnostics.front().code == reference.diagnostics.front().code &&
         rejected.diagnostics.front().message == reference.diagnostics.front().message;
 }
@@ -877,7 +877,7 @@ auto binding_cache_keeps_dynamic_guards() -> bool {
     if (cached_binding_view(song, workspace, cache)) return false;
     workspace.active_tab = workspace_tab_t::setup;
     --workspace.document_revision;
-    return !cached_binding_view(song, workspace, cache) && cache.build_count == 1;
+    return !cached_binding_view(song, workspace, cache) && cache.build_count() == 1;
 }
 auto binding_cache_revalidates_invalid_id_edits() -> bool {
     auto song = workspace_song();
@@ -889,11 +889,11 @@ auto binding_cache_revalidates_invalid_id_edits() -> bool {
     song.audio_assets.push_back(song.audio_assets.front());
     workspace.document_revision = ++song.revision;
     const auto rejected = cached_binding_view(song, workspace, cache);
-    if (rejected || rejected.diagnostics.empty() || cache.build_count != 2) return false;
-    if (cached_binding_view(song, workspace, cache) || cache.build_count != 2) return false;
+    if (rejected || rejected.diagnostics.empty() || cache.build_count() != 2) return false;
+    if (cached_binding_view(song, workspace, cache) || cache.build_count() != 2) return false;
     song.audio_assets.pop_back();
     workspace.document_revision = ++song.revision;
-    return static_cast<bool>(cached_binding_view(song, workspace, cache)) && cache.build_count == 3;
+    return static_cast<bool>(cached_binding_view(song, workspace, cache)) && cache.build_count() == 3;
 }
 } // namespace
 

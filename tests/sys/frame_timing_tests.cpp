@@ -47,6 +47,7 @@
 #include <limits>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <SDL3/SDL_timer.h>
 #include <cstdlib>
 #include <new>
@@ -6498,15 +6499,18 @@ TEST_CASE("Project replacement preserves the live BMSON width service while clea
 TEST_CASE("Workspace frame cache clears when the same document is reopened", "[sys][frame-timing][T558]") {
     wormedit::sys::compare_scene_cache_t cache;
     cache.bind_project_session(7);
-    cache.binding_validation.valid = true;
-    cache.binding_validation.build_count = 1;
+    const auto document = compose_test_song();
+    const workspace_limits_t limits;
+    const workspace_document_cache_query_t key{.document = document, .limits = limits};
+    static_cast<void>(cache.binding_validation.get_or_build(key,
+        std::bind_front(validate_document, std::cref(document))));
     cache.branch_outline.valid = true;
     cache.cached_diagnostics.push_back({});
     cache.bind_project_session(7);
-    expect_compose_test(cache.binding_validation.valid);
+    expect_compose_test(cache.binding_validation.has_value());
     cache.bind_project_session(8);
-    expect_compose_test(!cache.binding_validation.valid);
-    expect_compose_test(cache.binding_validation.build_count == 0);
+    expect_compose_test(!cache.binding_validation.has_value());
+    expect_compose_test(cache.binding_validation.build_count() == 0);
     expect_compose_test(!cache.branch_outline.valid && cache.cached_diagnostics.empty());
     expect_compose_test(cache.session_generation == 8);
 }

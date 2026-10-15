@@ -16,6 +16,25 @@
 #include <utility>
 
 namespace wormedit {
+auto workspace_document_cache_key_t::from(const workspace_document_cache_query_t& query)
+    -> workspace_document_cache_key_t {
+    workspace_document_cache_key_t key;
+    key.assign(query);
+    return key;
+}
+
+void workspace_document_cache_key_t::assign(const workspace_document_cache_query_t& query) {
+    document_identity = &query.document;
+    stamp = document_stamp_t::from(query.document);
+    limits = query.limits;
+}
+
+auto workspace_document_cache_key_t::operator==(const workspace_document_cache_query_t& query) const
+    -> bool {
+    return document_identity == &query.document && stamp.is_current(query.document) &&
+           limits == query.limits;
+}
+
 auto workspace_chart_option_t::from(const chart_document_t& chart) -> workspace_chart_option_t {
     return {
         .id = chart.id,
@@ -133,17 +152,9 @@ auto validate_binding_bounds(const song_document_t& document, const workspace_li
 auto binding_diagnostics(const song_document_t& document, const workspace_limits_t& limits,
                          workspace_binding_validation_cache_t* cache) -> diagnostic_list_t {
     if (!cache) return validate_binding_bounds(document, limits);
-    if (!cache->valid || cache->document_identity != &document || cache->song != document.id ||
-        cache->revision != document.revision || cache->limits != limits) {
-        cache->diagnostics = validate_binding_bounds(document, limits);
-        cache->document_identity = &document;
-        cache->song = document.id;
-        cache->revision = document.revision;
-        cache->limits = limits;
-        cache->valid = true;
-        ++cache->build_count;
-    }
-    return cache->diagnostics;
+    const workspace_document_cache_query_t key{.document = document, .limits = limits};
+    return cache->get_or_build(key, std::bind_front(validate_binding_bounds,
+        std::cref(key.document), std::cref(key.limits)));
 }
 
 

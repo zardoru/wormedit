@@ -2,6 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/catalogs.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/result.h>
 
 #include <array>
@@ -301,18 +302,26 @@ struct workspace_bms_branch_outline_view_t {
     diagnostic_list_t diagnostics;
 };
 
-// Optional application-lifetime cache. Document mutations must advance revision,
-// as required by the workspace binding contract. Per-frame workspace guards
-// (focus, selected chart, comparisons and tab) are never cached.
-struct workspace_binding_validation_cache_t {
-    const song_document_t* document_identity{};
-    song_id_t song;
-    std::uint64_t revision{};
-    workspace_limits_t limits;
-    diagnostic_list_t diagnostics;
-    bool valid{};
-    std::size_t build_count{};
+struct workspace_document_cache_query_t {
+    const song_document_t& document;
+    const workspace_limits_t& limits;
 };
+
+struct workspace_document_cache_key_t {
+    const song_document_t* document_identity{};
+    document_stamp_t stamp;
+    workspace_limits_t limits;
+
+    [[nodiscard]] static auto from(const workspace_document_cache_query_t& query)
+        -> workspace_document_cache_key_t;
+    void assign(const workspace_document_cache_query_t& query);
+    [[nodiscard]] auto operator==(const workspace_document_cache_query_t& query) const -> bool;
+    auto operator==(const workspace_document_cache_key_t&) const -> bool = default;
+};
+
+// Document mutations advance revision. Per-frame focus/chart/tab guards remain uncached.
+using workspace_binding_validation_cache_t =
+    keyed_cache_t<workspace_document_cache_key_t, diagnostic_list_t>;
 
 // One owned outline; branch choices and limits participate even between revisions.
 struct workspace_bms_branch_outline_cache_t {

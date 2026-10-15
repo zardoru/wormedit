@@ -101,6 +101,7 @@ add_executable(wormedit_core_tests
     sys/project_save_paths_tests.cpp
     core/document_tests.cpp
     core/chart_indices_tests.cpp
+    core/keyed_cache_tests.cpp
     core/editor_navigation_input_tests.cpp
     core/editor_scene_tests.cpp
     core/editor_scene_bgm_layers_tests.cpp

@@ -646,25 +646,76 @@ struct pending_semantic_layer_paint_gesture_t {
     auto operator==(const pending_semantic_layer_paint_gesture_t&) const -> bool = default;
 };
 
+struct editor_hit_test_index_t;
+
+// Field inspection follows scrolling; retained Compose overlays keep captured coordinates.
+enum class editor_area_preview_anchor_policy_t { captured_coordinates, viewport_relative };
+struct pending_editor_area_selection_t;
+
+struct editor_area_selection_preview_t {
+    [[nodiscard]] static auto from(const pending_editor_area_selection_t&, document_stamp_t,
+                                    double viewport_scroll_pixels, editor_area_preview_anchor_policy_t)
+        -> editor_area_selection_preview_t;
+    document_stamp_t stamp;
+    double left_pixels{};
+    double top_pixels{};
+    double right_pixels{};
+    double bottom_pixels{};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
+    auto operator==(const editor_area_selection_preview_t&) const -> bool = default;
+};
+
+struct pending_editor_area_selection_t {
+    static constexpr auto kind = editor_gesture_kind_t::area;
+    static constexpr auto update_message = "area selection update requires an active gesture";
+    static constexpr bool needs_initial_view = true;
+    std::shared_ptr<const editor_hit_test_index_t> hit_index;
+    double anchor_x_pixels{};
+    double anchor_y_pixels{};
+    double current_x_pixels{};
+    double current_y_pixels{};
+    double field_left_pixels{};
+    double field_width_pixels{};
+    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
+    std::shared_ptr<const std::vector<object_id_t>> notes;
+    editor_selection_scope_t scope{};
+    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
+    std::shared_ptr<const editor_area_geometry_snapshot_t> object_geometry;
+
+    [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_editor_area_selection_action_t&)
+        -> diagnosed_t<std::optional<pending_editor_area_selection_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, double x_pixels, double y_pixels) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
+    auto operator==(const pending_editor_area_selection_t&) const -> bool = default;
+};
+
 // Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
 using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_move_gesture_t, document_stamp_t>,
                                       proposal_t<pending_note_paint_gesture_t, document_stamp_t>,
-                                      proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>>;
+                                      proposal_t<pending_semantic_layer_paint_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_editor_area_selection_t, document_stamp_t>>;
 
 // A projection contains only render data; paint's visited cells stay in the capture.
 using active_gesture_preview_t = std::variant<
     proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
-    proposal_t<pending_note_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t>;
+    proposal_t<pending_note_move_gesture_t, document_stamp_t>, note_paint_gesture_preview_t,
+    editor_area_selection_preview_t>;
 
-[[nodiscard]] inline auto build_editor_gesture_preview(const std::optional<active_gesture_t>& active)
+[[nodiscard]] inline auto build_editor_gesture_preview(const std::optional<active_gesture_t>& active,
+    double viewport_scroll_pixels = 0.0,
+    editor_area_preview_anchor_policy_t area_anchor_policy = editor_area_preview_anchor_policy_t::viewport_relative)
     -> std::optional<active_gesture_preview_t> {
     if (!active) return std::nullopt;
-    return std::visit([](const auto& proposal) -> std::optional<active_gesture_preview_t> {
+    return std::visit([viewport_scroll_pixels, area_anchor_policy](const auto& proposal) -> std::optional<active_gesture_preview_t> {
         if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_note_paint_gesture_t>)
             return note_paint_gesture_preview_t{.stamp = proposal.stamp, .targets = proposal.payload.targets};
         else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_semantic_layer_paint_gesture_t>)
             return std::nullopt;
+        else if constexpr (std::same_as<std::remove_cvref_t<decltype(proposal.payload)>, pending_editor_area_selection_t>)
+            return editor_area_selection_preview_t::from(proposal.payload, proposal.stamp,
+                                                        viewport_scroll_pixels, area_anchor_policy);
         else
             return proposal;
     }, *active);
@@ -673,15 +724,14 @@ using active_gesture_preview_t = std::variant<
 template<class Gesture, class Variant>
 [[nodiscard]] auto gesture_payload(Variant* active)
     -> std::conditional_t<std::is_const_v<Variant>, const Gesture*, Gesture*> {
-    if constexpr (std::same_as<Gesture, note_paint_gesture_preview_t>)
+    if constexpr (std::same_as<Gesture, note_paint_gesture_preview_t> ||
+                  std::same_as<Gesture, editor_area_selection_preview_t>)
         return active ? std::get_if<Gesture>(active) : nullptr;
     else {
         const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
         return proposal ? &proposal->payload : nullptr;
     }
 }
-
-struct editor_hit_test_index_t;
 
 struct pending_space_range_selection_t {
     document_stamp_t stamp;
@@ -711,32 +761,6 @@ struct canvas_row_span_t {
     std::uint64_t end_row{};
 
     auto operator==(const canvas_row_span_t&) const -> bool = default;
-};
-
-struct editor_area_selection_preview_t {
-    document_stamp_t stamp;
-    double left_pixels{};
-    double top_pixels{};
-    double right_pixels{};
-    double bottom_pixels{};
-    std::shared_ptr<const std::vector<object_id_t>> notes;
-    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
-};
-
-struct pending_editor_area_selection_t {
-    document_stamp_t stamp;
-    std::shared_ptr<const editor_hit_test_index_t> hit_index;
-    double anchor_x_pixels{};
-    double anchor_y_pixels{};
-    double current_x_pixels{};
-    double current_y_pixels{};
-    double field_left_pixels{};
-    double field_width_pixels{};
-    editor_area_selection_mode_t mode{editor_area_selection_mode_t::replace};
-    std::shared_ptr<const std::vector<object_id_t>> notes;
-    editor_selection_scope_t scope{};
-    std::shared_ptr<const std::vector<editor_selection_object_t>> objects;
-    std::shared_ptr<const editor_area_geometry_snapshot_t> object_geometry;
 };
 
 struct editor_interaction_state_t {
@@ -780,7 +804,6 @@ struct editor_interaction_state_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
     std::optional<pending_space_range_selection_t> pending_space_range_selection;
     // The most recently committed non-empty area/Space interval. This is
     // controller state rather than renderer state so marker authoring and
@@ -853,7 +876,6 @@ struct editor_interaction_view_model_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;
     std::optional<position_span_t> retained_selection_range;
     std::optional<canvas_row_span_t> retained_canvas_selection_range;

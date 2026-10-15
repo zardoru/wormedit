@@ -1460,7 +1460,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
             begin_editor_area_selection_action_t{drag[0], drag[1], 100.0, 200.0,
                                                  editor_area_selection_mode_t::replace, true});
         REQUIRE(begun);
-        REQUIRE(begun.view->pending_editor_area_selection.has_value());
+        REQUIRE(static_cast<bool>(begun.view->gesture<wormedit::editor_area_selection_preview_t>()));
         CHECK(state.selected_notes.empty());
         const auto committed =
             dispatch_editor_action(history, state,
@@ -1474,7 +1474,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
               std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
         CHECK(committed.view->retained_selection_range ==
               position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 480}});
-        CHECK_FALSE(committed.view->pending_editor_area_selection.has_value());
+        CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::editor_area_selection_preview_t>()));
         CHECK_FALSE(committed.document_changed);
         CHECK(history.document.revision == 1);
     }
@@ -1746,8 +1746,8 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         begin_editor_area_selection_action_t{120.0, 47.0, 100.0, 200.0,
                                              editor_area_selection_mode_t::replace, true, scope});
     REQUIRE(area_begin);
-    REQUIRE(area_begin.view->pending_editor_area_selection.has_value());
-    REQUIRE(area_begin.view->pending_editor_area_selection->objects != nullptr);
+    REQUIRE(static_cast<bool>(area_begin.view->gesture<wormedit::editor_area_selection_preview_t>()));
+    REQUIRE(area_begin.view->gesture<wormedit::editor_area_selection_preview_t>()->objects != nullptr);
     const auto area_commit = dispatch_editor_action(
         history, state,
         update_editor_area_selection_action_t{.x_pixels = 180.0,
@@ -1757,7 +1757,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     REQUIRE(area_commit);
     CHECK(state.selected_notes.empty());
     CHECK(state.selected_objects.size() == 11);
-    CHECK_FALSE(area_commit.view->pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(area_commit.view->gesture<wormedit::editor_area_selection_preview_t>()));
 
     const editor_selection_scope_t bgm_only{.notes = false, .bgm = true};
     REQUIRE(dispatch_editor_action(
@@ -2143,7 +2143,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
                                              editor_area_selection_mode_t::replace, false});
     CHECK_FALSE(failed_begin);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -2152,7 +2152,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
     const auto capture_lost = dispatch_editor_action(
         history, state, update_editor_area_selection_action_t{290.0, 100.0, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2166,7 +2166,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
                                               .pointer_captured = false,
                                               .phase = wormedit::editor_gesture_phase_t::commit});
     REQUIRE(capture_lost_on_release);
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2186,10 +2186,10 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
 }
 
 TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
@@ -2360,7 +2360,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
                 history, state,
                 begin_editor_area_selection_action_t{110.0, 95.0, 100.0, 200.0,
                                                      editor_area_selection_mode_t::replace, true}));
-            REQUIRE(state.pending_editor_area_selection.has_value());
+            REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
         } else {
             REQUIRE(dispatch_editor_action(
                 history, state,
@@ -2374,7 +2374,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
         CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
-        CHECK(state.pending_editor_area_selection.has_value() == (selection_kind == 0));
+        CHECK(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()) == (selection_kind == 0));
         CHECK(state.pending_space_range_selection.has_value() == (selection_kind == 1));
         CHECK(note_count(history) == 0);
     }
@@ -4566,7 +4566,7 @@ TEST_CASE("global marquee explicitly permits starting in the rail while default 
         fixture.history, fixture.state,
         outside_field_marquee(editor_area_selection_mode_t::replace, false));
     CHECK_FALSE(strict);
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     commit_global_first_note(fixture, editor_area_selection_mode_t::replace);
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(fixture.history.document.revision == 1);
@@ -4596,7 +4596,7 @@ TEST_CASE("global marquee cancellation preserves the previous committed selectio
     REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
                                     cancel_editor_area_selection_action_t{}));
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -4683,7 +4683,7 @@ TEST_CASE("stale global marquee geometry cannot alter the committed selection",
     CHECK_FALSE(rejected);
     test::check_stale_action_message(rejected.diagnostics, "Projected selection geometry");
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -5277,9 +5277,9 @@ TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
 
 namespace {
 void check_exact_drag_preview(const editor_interaction_result_t& result) {
-    REQUIRE(result.view->pending_editor_area_selection);
-    CHECK(result.view->pending_editor_area_selection->top_pixels == 45.0);
-    CHECK(result.view->pending_editor_area_selection->bottom_pixels == 100.0);
+    REQUIRE(result.view->gesture<wormedit::editor_area_selection_preview_t>());
+    CHECK(result.view->gesture<wormedit::editor_area_selection_preview_t>()->top_pixels == 45.0);
+    CHECK(result.view->gesture<wormedit::editor_area_selection_preview_t>()->bottom_pixels == 100.0);
 }
 void check_retained_drag_range(const document_history_t& history,
                               const editor_interaction_state_t& state, bool snap) {

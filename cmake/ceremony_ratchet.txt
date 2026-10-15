@@ -5,8 +5,8 @@
 view_result_unwrap | 0 | src | holds_alternative<editor_interaction_view_model_t>
 outcome_move_adapter | 83 | src,include | _result_t::from\([a-z0-9_:<>, ]*_outcome_t&&
 transaction_ready_guard | 23 | src | if \(!transaction\.is_ready\(\)\)
-gesture_already_active_guard | 3 | src | already active"
-gesture_requires_active_guard | 1 | src | requires an active gesture
+gesture_already_active_guard | 2 | src | already active"
+gesture_requires_active_guard | 0 | src | requires an active gesture
 hand_rolled_job_generation | 9 | src,include | next_generation_
 variant_allow_list_probe | 24 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
 compatibility_forwarder | 7 | src,include | // Compatibility

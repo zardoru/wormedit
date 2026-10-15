@@ -1168,8 +1168,6 @@ void cancel_stale_compose_interaction(
              !state.pending_hold->stamp.is_revision_current(history.document.revision)) ||
             (state.active_gesture &&
              wormedit::is_editor_gesture_stale(state.active_gesture, history.document.revision)) ||
-            (state.pending_editor_area_selection &&
-             !state.pending_editor_area_selection->stamp.is_revision_current(history.document.revision)) ||
             (state.pending_space_range_selection &&
              !state.pending_space_range_selection->stamp.is_revision_current(history.document.revision));
         const bool compose_inactive =

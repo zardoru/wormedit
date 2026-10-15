@@ -1452,7 +1452,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr ||
-        retained_state->pending_editor_area_selection.has_value() ||
+        static_cast<bool>(retained_state->gesture<wormedit::pending_editor_area_selection_t>()) ||
         retained_state->pending_space_range_selection.has_value();
     if (!hover_gesture_active && cache.frame.hover &&
         cache.frame.hover->document_revision == history.document.revision &&
@@ -1475,11 +1475,11 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
     auto& interaction_view = input.scope.interaction_view;
     const auto& measures = input.scope.chart_scope.measures;
     const auto downscroll = input.scope.downscroll;
-    if (interaction_view.pending_editor_area_selection) {
-        const auto& preview = *interaction_view.pending_editor_area_selection;
+    if (interaction_view.gesture<wormedit::editor_area_selection_preview_t>()) {
+        const auto& preview = *interaction_view.gesture<wormedit::editor_area_selection_preview_t>();
         view.area_selection_preview_visible = true;
         view.area_selection_preview_mode =
-            compose_scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
+            compose_scalar_selection_mode(retained_state->gesture<wormedit::pending_editor_area_selection_t>()->mode);
         view.area_selection_preview_bounds = {
             std::clamp(preview.left_pixels, 0.0, view.viewport_width_pixels),
             std::clamp(downscroll ? view.viewport_height_pixels - preview.bottom_pixels

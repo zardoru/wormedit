@@ -14,6 +14,8 @@ struct editor_edit_context_t {
     document_history_t& history;
     editor_interaction_state_t& state;
     chart_scope_t scope;
+    // Borrowed only during dispatch; view-dependent gestures never store this pointer.
+    const editor_interaction_view_model_t* initial_view{};
 };
 
 using editor_initial_view_t = std::variant<editor_interaction_view_model_t, diagnostic_list_t>;

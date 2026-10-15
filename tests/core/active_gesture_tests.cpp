@@ -160,3 +160,40 @@ TEST_CASE("Semantic paint commits without a final sampled target", "[core][activ
     CHECK(committed.document_changed);
     fixture.check_capture_ended(1);
 }
+
+static_assert(editor_gesture<pending_editor_area_selection_t,
+                            begin_editor_area_selection_action_t, double, double>);
+
+TEST_CASE("Area selection uses a borrowed dispatch view and ends without a document edit", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    const auto initial = inspect_editor_interaction(fixture.history, fixture.state);
+    REQUIRE(std::holds_alternative<editor_interaction_view_model_t>(initial));
+    context.initial_view = &std::get<editor_interaction_view_model_t>(initial);
+    REQUIRE(begin_gesture<pending_editor_area_selection_t>(context,
+        begin_editor_area_selection_action_t{.x_pixels = 10, .y_pixels = 0.5, .field_width_pixels = 100}));
+    REQUIRE(commit_gesture<pending_editor_area_selection_t>(context, 20.0, 0.5));
+    fixture.check_capture_ended(0);
+}
+
+TEST_CASE("View-dependent gestures reject a missing dispatch view", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    CHECK_FALSE(begin_gesture<pending_editor_area_selection_t>(context,
+        begin_editor_area_selection_action_t{}));
+    fixture.check_capture_ended(0);
+}
+
+TEST_CASE("Area previews preserve both existing anchor projection policies", "[core][active-gesture]") {
+    const auto geometry = std::make_shared<const editor_area_geometry_snapshot_t>(
+        editor_area_geometry_snapshot_t{.projection = editor_area_geometry_projection_t{
+            .viewport_scroll_pixels = 200}});
+    const pending_editor_area_selection_t pending{
+        .anchor_y_pixels = 100, .current_y_pixels = 50, .object_geometry = geometry};
+    const auto relative = editor_area_selection_preview_t::from(pending, document_stamp_t::from(7),
+        250, editor_area_preview_anchor_policy_t::viewport_relative);
+    const auto captured = editor_area_selection_preview_t::from(pending, document_stamp_t::from(7),
+        250, editor_area_preview_anchor_policy_t::captured_coordinates);
+    CHECK((relative.top_pixels == 50 && relative.bottom_pixels == 50));
+    CHECK((captured.top_pixels == 50 && captured.bottom_pixels == 100));
+}

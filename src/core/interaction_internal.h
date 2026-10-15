@@ -1199,26 +1199,13 @@ auto audition_selected_object(bool requested, const std::vector<editor_selection
 auto select_editor_objects(editor_edit_context_t& context,
                            const select_editor_objects_action_t& action)
     -> editor_interaction_result_t;
-struct area_selection_context_t {
-    editor_edit_context_t& edit;
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-};
 auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
                                   double viewport_height) -> bool;
-auto begin_area_selection_gesture(area_selection_context_t& context,
-                                  const begin_editor_area_selection_action_t& request)
-    -> editor_interaction_result_t;
-auto update_area_selection_gesture(area_selection_context_t& context, double x_pixels,
-                                   double y_pixels, bool pointer_captured)
-    -> editor_interaction_result_t;
-auto snapped_area_selection_row(const area_selection_context_t& context,
+auto snapped_area_selection_row(const editor_edit_context_t& context,
                                 const editor_interaction_view_model_t& view, double y)
     -> std::optional<std::uint64_t>;
-auto retain_area_selection_range(area_selection_context_t& context,
+auto retain_area_selection_range(editor_edit_context_t& context,
                                  const pending_editor_area_selection_t& pending) -> void;
-auto commit_area_selection_gesture(area_selection_context_t& context, double x_pixels,
-                                   double y_pixels, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;

@@ -17,29 +17,9 @@ void populate_compose_selection_preview(
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
     interaction_view.pending_hold = retained_state->pending_hold;
-    interaction_view.active_gesture = wormedit::build_editor_gesture_preview(retained_state->active_gesture);
+    interaction_view.active_gesture = wormedit::build_editor_gesture_preview(retained_state->active_gesture,
+        retained_state->viewport_scroll_pixels, wormedit::editor_area_preview_anchor_policy_t::captured_coordinates);
     interaction_view.retained_selection_range = retained_state->retained_selection_range;
-    interaction_view.pending_editor_area_selection =
-        retained_state->pending_editor_area_selection
-            ? std::optional{wormedit::editor_area_selection_preview_t{
-                  .stamp =
-                      retained_state->pending_editor_area_selection->stamp,
-                  .left_pixels =
-                      std::min(retained_state->pending_editor_area_selection->anchor_x_pixels,
-                               retained_state->pending_editor_area_selection->current_x_pixels),
-                  .top_pixels =
-                      std::min(retained_state->pending_editor_area_selection->anchor_y_pixels,
-                               retained_state->pending_editor_area_selection->current_y_pixels),
-                  .right_pixels =
-                      std::max(retained_state->pending_editor_area_selection->anchor_x_pixels,
-                               retained_state->pending_editor_area_selection->current_x_pixels),
-                  .bottom_pixels =
-                      std::max(retained_state->pending_editor_area_selection->anchor_y_pixels,
-                               retained_state->pending_editor_area_selection->current_y_pixels),
-                  .notes = retained_state->pending_editor_area_selection->notes,
-                  .objects = retained_state->pending_editor_area_selection->objects,
-              }}
-            : std::nullopt;
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;
     if (retained_state->retained_selection_range) {

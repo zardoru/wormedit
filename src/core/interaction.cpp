@@ -427,28 +427,7 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
-        .active_gesture = build_editor_gesture_preview(state.active_gesture),
-        .pending_editor_area_selection =
-            state.pending_editor_area_selection
-                ? std::optional{editor_area_selection_preview_t{
-                      .stamp = state.pending_editor_area_selection->stamp,
-                      .left_pixels =
-                          std::min(state.pending_editor_area_selection->anchor_x_pixels,
-                                   state.pending_editor_area_selection->current_x_pixels),
-                      .top_pixels =
-                          std::min(area_selection_anchor_y(*state.pending_editor_area_selection,
-                                                           state.viewport_scroll_pixels),
-                                   state.pending_editor_area_selection->current_y_pixels),
-                      .right_pixels =
-                          std::max(state.pending_editor_area_selection->anchor_x_pixels,
-                                   state.pending_editor_area_selection->current_x_pixels),
-                      .bottom_pixels =
-                          std::max(area_selection_anchor_y(*state.pending_editor_area_selection,
-                                                           state.viewport_scroll_pixels),
-                                   state.pending_editor_area_selection->current_y_pixels),
-                      .notes = state.pending_editor_area_selection->notes,
-                      .objects = state.pending_editor_area_selection->objects}}
-                : std::nullopt,
+        .active_gesture = build_editor_gesture_preview(state.active_gesture, state.viewport_scroll_pixels),
         .pending_space_range_selection = std::move(space_preview),
         .retained_selection_range = retained_selection_range,
         .retained_canvas_selection_range = state.retained_canvas_selection_range,
@@ -525,6 +504,20 @@ auto proposed_playhead_cursor(const document_history_t& history, const chart_doc
 }
 
 } // namespace interaction_detail
+
+auto editor_area_selection_preview_t::from(const pending_editor_area_selection_t& pending,
+    document_stamp_t stamp, double viewport_scroll_pixels, editor_area_preview_anchor_policy_t policy)
+    -> editor_area_selection_preview_t {
+    const auto anchor_y = policy == editor_area_preview_anchor_policy_t::captured_coordinates
+        ? pending.anchor_y_pixels
+        : interaction_detail::area_selection_anchor_y(pending, viewport_scroll_pixels);
+    return {.stamp = stamp,
+        .left_pixels = std::min(pending.anchor_x_pixels, pending.current_x_pixels),
+        .top_pixels = std::min(anchor_y, pending.current_y_pixels),
+        .right_pixels = std::max(pending.anchor_x_pixels, pending.current_x_pixels),
+        .bottom_pixels = std::max(anchor_y, pending.current_y_pixels),
+        .notes = pending.notes, .objects = pending.objects};
+}
 
 auto inspect_editor_interaction(const document_history_t& history,
                                 const editor_interaction_state_t& state)
@@ -1960,29 +1953,18 @@ auto handle(editor_edit_context_t& context,
 }
 
 
-auto handle(editor_edit_context_t& context,
-            const begin_editor_area_selection_action_t& typed_action,
-            const editor_initial_view_t& initial_view) -> editor_interaction_result_t {
-    area_selection_context_t area_selection{context, initial_view};
-
-    return begin_area_selection_gesture(area_selection, typed_action);
+auto handle(editor_edit_context_t& context, const begin_editor_area_selection_action_t& request)
+    -> editor_interaction_result_t {
+    return begin_gesture<pending_editor_area_selection_t>(context, request);
 }
 
-auto handle(editor_edit_context_t& context,
-            const update_editor_area_selection_action_t& typed_action,
-            const editor_initial_view_t& initial_view) -> editor_interaction_result_t {
-    if (typed_action.phase == editor_gesture_phase_t::commit) {
-        area_selection_context_t area_selection{context, initial_view};
-
-        return commit_area_selection_gesture(area_selection, typed_action.x_pixels,
-                                             typed_action.y_pixels, typed_action.pointer_captured);
-    }
-    area_selection_context_t area_selection{context, initial_view};
-
-    return update_area_selection_gesture(area_selection, typed_action.x_pixels,
-                                         typed_action.y_pixels, typed_action.pointer_captured);
+auto handle(editor_edit_context_t& context, const update_editor_area_selection_action_t& request)
+    -> editor_interaction_result_t {
+    if (!request.pointer_captured) return cancel_pointer_gesture(context);
+    if (request.phase == editor_gesture_phase_t::commit)
+        return commit_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
+    return update_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
 }
-
 
 auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&)
     -> editor_interaction_result_t {
@@ -2110,14 +2092,6 @@ struct editor_action_visitor_t {
         -> editor_interaction_result_t {
         return handle(context, action, absolute);
     }
-    auto operator()(const begin_editor_area_selection_action_t& action) const
-        -> editor_interaction_result_t {
-        return handle(context, action, initial_view);
-    }
-    auto operator()(const update_editor_area_selection_action_t& action) const
-        -> editor_interaction_result_t {
-        return handle(context, action, initial_view);
-    }
     auto operator()(const adjust_editor_zoom_action_t& action) const
         -> editor_interaction_result_t {
         return handle(context, action, absolute);
@@ -2144,7 +2118,8 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     const auto built_index = build_measure_index(*chart);
     const auto& index = std::get<measure_index_t>(built_index);
     const auto absolute = state.virtual_bms_cursor_row.value_or(*absolute_row(index, state.cursor));
-    editor_edit_context_t context{history, state, {*chart, index}};
+    editor_edit_context_t context{history, state, {*chart, index},
+                                  &std::get<editor_interaction_view_model_t>(initial_view)};
     return std::visit(editor_action_visitor_t{context, initial_view, absolute}, action);
 }
 } // namespace

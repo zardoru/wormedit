@@ -15,19 +15,26 @@ concept editor_gesture = requires(Gesture& gesture, editor_edit_context_t& conte
 };
 
 // Captured state is validated at the runner boundary, including direct core callers.
+template<class Gesture>
 inline auto validate_gesture_capture(editor_edit_context_t& context)
     -> std::optional<editor_interaction_result_t> {
-    if (!is_editor_gestures_stale(context.state, context.history.document.revision))
-        return std::nullopt;
-    clear_editor_gestures(context.state);
-    return interaction_detail::diagnostic_result(context.history, context.state,
-        {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    if (is_editor_gestures_stale(context.state, context.history.document.revision)) {
+        clear_editor_gestures(context.state);
+        return interaction_detail::diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    }
+    if constexpr (requires { Gesture::needs_initial_view; }) {
+        if (Gesture::needs_initial_view && !context.initial_view)
+            return interaction_detail::diagnostic_result(context.history, context.state,
+                {error(diagnostic_code_t::invalid_resolution, "editor gesture requires a field view")});
+    }
+    return std::nullopt;
 }
 
 template<class Gesture, class... Arguments>
 [[nodiscard]] auto begin_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
-    if (auto stale = validate_gesture_capture(context)) return std::move(*stale);
+    if (auto stale = validate_gesture_capture<Gesture>(context)) return std::move(*stale);
     if (has_pending_editor_gesture(context.state))
         return interaction_detail::diagnostic_result(context.history, context.state,
             {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
@@ -46,7 +53,7 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
 }
 [[nodiscard]] auto update_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
-    if (auto stale = validate_gesture_capture(context)) return std::move(*stale);
+    if (auto stale = validate_gesture_capture<Gesture>(context)) return std::move(*stale);
     auto* gesture = context.state.gesture<Gesture>();
     if (!gesture)
         return interaction_detail::diagnostic_result(context.history, context.state,

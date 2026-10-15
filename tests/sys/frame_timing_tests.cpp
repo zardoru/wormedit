@@ -1798,7 +1798,7 @@ TEST_CASE("Retained playhead geometry rejects stale provenance and active gestur
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{2}, 1, &index}));
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 2, &index}));
     compare_follow_state(state, before);
-    state.pending_editor_area_selection.emplace();
+    state.active_gesture = wormedit::proposal_t<wormedit::pending_editor_area_selection_t, wormedit::document_stamp_t>{};
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 1, &index}));
     CHECK_FALSE(follow_editor_playhead(history, state, {chart_id_t{1}, 1, &index},
         {measure_id_t{3}, 0}, 100));
@@ -6542,7 +6542,7 @@ auto range_pause_routing(unsigned guard) -> bool {
     case 2: ++action.compose_input_chart_id; break;
     case 3: ++action.compose_input_document_revision; break;
     case 4: fixture.application.project.timing_recipe.timing_locked = true; break;
-    case 5: fixture.interaction->pending_editor_area_selection.emplace(); break;
+    case 5: fixture.interaction->active_gesture = wormedit::proposal_t<wormedit::pending_editor_area_selection_t, wormedit::document_stamp_t>{}; break;
     case 6: fixture.interaction->retained_selection_range.reset(); break;
     case 7: fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
     case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_proposal_t{}; break;

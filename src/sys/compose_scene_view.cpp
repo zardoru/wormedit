@@ -639,7 +639,7 @@ bool initialize_compose_view_state(
     view.semantic_layer_paint_mode_active =
         notes_editable && application_state.project.compose_gesture.semantic_layer_paint_mode_active;
     view.semantic_layer_gesture_active =
-        retained_state && editor_interaction_has_pending_gesture(*retained_state);
+        retained_state && retained_state->is_pending();
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;

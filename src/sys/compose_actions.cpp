@@ -596,7 +596,7 @@ struct toggle_compose_note_paint_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         std::string status;
         auto& application_state = context.environment.editor.commands;
-        if (editor_interaction_has_pending_gesture(context.state)) {
+        if (context.state.is_pending()) {
             auto result = dispatch_editor_action(context.environment.document.history, context.state,
                                                  cancel_editor_gesture_action_t{});
             if (!result.accepted)
@@ -2200,7 +2200,7 @@ auto toggle_semantic_layer_paint_mode_action_t::perform(compose_action_context_t
     using namespace wormedit;
     auto& state = context.state;
     auto& app = context.environment.editor.commands;
-    if (editor_interaction_has_pending_gesture(state)) {
+    if (state.is_pending()) {
         auto result = dispatch_editor_action(context.environment.document.history, state,
                                                    cancel_editor_gesture_action_t{});
         if (!result.accepted)
@@ -3520,7 +3520,7 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
                            wormedit::stale_action_message("Export"));
         return true;
     }
-    if (application.project.clipboard.paste_session || (retained && editor_interaction_has_pending_gesture(*retained))) {
+    if (application.project.clipboard.paste_session || (retained && retained->is_pending())) {
         notifications.post(notification_severity_t::warning, notification_source_t::export_,
                            "Finish or cancel the active editor gesture before exporting.");
         return true;

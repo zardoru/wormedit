@@ -272,7 +272,7 @@ auto loop_selection_command(command_context_t& context) -> std::optional<command
     const auto* chart = context.environment.document.history.document.find_chart(
         state ? state->chart : chart_id_t{});
     if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
-        editor_interaction_has_pending_gesture(*state) ||
+        state->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
         return reject_application_command(
@@ -666,7 +666,7 @@ auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<
                                           "Bookmark chooser requires the active Compose chart.",
                                           notification_severity_t::warning,
                                           notification_source_t::input);
-    if (editor_interaction_has_pending_gesture(*interaction))
+    if (interaction->is_pending())
         return reject_application_command(context.environment.document.notifications,
                                           "Finish or cancel the active Compose gesture first.",
                                           notification_severity_t::warning,
@@ -690,7 +690,7 @@ auto open_sound_picker_command(command_context_t& context) -> std::optional<comm
                                           "Sound picker requires the active Compose chart.",
                                           notification_severity_t::warning,
                                           notification_source_t::input);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return reject_application_command(context.environment.document.notifications,
                                           "Finish or cancel the active Compose gesture first.",
@@ -748,8 +748,7 @@ auto project_export_command(command_context_t& context) -> std::optional<command
                                           notification_severity_t::warning,
                                           notification_source_t::export_);
     if ((context.environment.editor.retained &&
-         editor_interaction_has_pending_gesture(
-             *context.environment.editor.retained)) ||
+         context.environment.editor.retained->is_pending()) ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return reject_application_command(
             context.environment.document.notifications,
@@ -784,7 +783,7 @@ auto compose_auxiliary_command(command_context_t& context) -> std::optional<comm
                                           "Dock command requires the active Compose chart.",
                                           notification_severity_t::warning,
                                           notification_source_t::input);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return reject_application_command(context.environment.document.notifications,
                                           "Finish or cancel the active Compose gesture first.",
@@ -834,7 +833,7 @@ auto bookmark_commands(command_context_t& context) -> std::optional<command_resu
                                           notification_severity_t::warning,
                                           notification_source_t::input);
     if (kind == command_kind_t::markers_add_bookmark &&
-        (editor_interaction_has_pending_gesture(*state) ||
+        (state->is_pending() ||
          context.environment.editor.commands.project.clipboard.paste_session))
         return reject_application_command(
             context.environment.document.notifications,
@@ -969,7 +968,7 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
             context.environment.document.notifications,
             "Timing insertion is unavailable at a virtual BMS cursor row.",
             notification_severity_t::warning, notification_source_t::edit);
-    if (editor_interaction_has_pending_gesture(*state))
+    if (state->is_pending())
         return reject_application_command(
             context.environment.document.notifications,
             "Finish or cancel the active Compose gesture before inserting timing.",
@@ -1042,7 +1041,7 @@ auto select_tool_command(command_context_t& context) -> std::optional<command_re
                                           "Pick an unlocked visible layer in the Layers dock.",
                                           notification_severity_t::warning,
                                           notification_source_t::edit);
-    if (editor_interaction_has_pending_gesture(*state)) {
+    if (state->is_pending()) {
         const auto canceled = wormedit::dispatch_editor_action(
             context.environment.document.history, *state, wormedit::cancel_editor_gesture_action_t{});
         if (!canceled.accepted)

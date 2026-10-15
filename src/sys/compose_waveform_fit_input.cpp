@@ -230,7 +230,7 @@ auto begin_compose_beat_fit(
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t {
     using namespace wormedit;
     if (application_state.project.timing_recipe.timing_locked || scene_cache.timing.beat_fit_drag ||
-        editor_interaction_has_pending_gesture(state) || !scene_cache.scene.index ||
+        state.is_pending() || !scene_cache.scene.index ||
         !scene_cache.timing.marker_timing_index || scene_cache.waveform.waveform_overview_sample_rate == 0 ||
         scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
         return compose_input_family_result_t::from(
@@ -377,7 +377,7 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
         cache.waveform.waveform_overview_total_frames == 0 || cache.waveform.waveform_overview_sample_rate == 0 ||
         !context.input_chart)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
-    if (editor_interaction_has_pending_gesture(state))
+    if (state.is_pending())
         return compose_input_family_result_t::from(
             "Finish or cancel the active gesture before navigating the waveform.");
     const auto& timing = *cache.timing.marker_timing_index;
@@ -415,7 +415,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
         return seek_compose_waveform(input, context, result, accepted);
     auto& cache = context.environment.controls.cache;
     if (!cache.timing.marker_timing_index || !cache.scene.index || !context.input_chart ||
-        editor_interaction_has_pending_gesture(context.state))
+        context.state.is_pending())
         return compose_input_family_result_t::from(
             "Waveform overview seek is unavailable during an active gesture.");
     const auto end =

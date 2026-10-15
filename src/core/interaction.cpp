@@ -472,10 +472,6 @@ auto diagnostic_result(const document_history_t& history, const editor_interacti
     return result;
 }
 
-auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool {
-    return (state).is_pending();
-}
-
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
                               const measure_index_t& index, const editor_interaction_state_t& state,
                               local_position_t position)
@@ -573,7 +569,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart || !geometry.index || !std::isfinite(target_scroll) ||
         !std::isfinite(following_anchor_fraction) || !std::isfinite(cursor_subrow) ||
-        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || is_playhead_gesture_active(state))
+        following_anchor_fraction < 0.0 || following_anchor_fraction > 1.0 || state.is_pending())
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      "playhead geometry is stale or playback editing is blocked")}};
     if (geometry.chart != state.chart || geometry.document_revision != history.document.revision)

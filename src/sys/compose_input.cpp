@@ -2342,7 +2342,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     auto& scene_cache = environment.controls.cache;
 
     using namespace wormedit;
-    if (!editor_interaction_has_pending_gesture(state))
+    if (!state.is_pending())
         state.scratch_on_right = application_state.scratch_on_right;
     scene_cache.frame.audition_request.reset();
     scene_cache.frame.draft_audition_request.reset();

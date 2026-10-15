@@ -897,8 +897,6 @@ auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t;
 auto diagnostic_result(const document_history_t& history, const editor_interaction_state_t& state,
                        diagnostic_list_t diagnostics) -> editor_interaction_result_t;
 
-auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool;
-
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
                               const measure_index_t& index, const editor_interaction_state_t& state,
                               local_position_t position)

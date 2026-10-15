@@ -616,10 +616,6 @@ auto move_selected_objects_to_lane(document_history_t& history,
 }
 
 namespace {
-auto is_note_conversion_pending(const editor_interaction_state_t& state) -> bool {
-    return (state).is_pending();
-}
-
 auto selected_conversion_notes(const editor_interaction_state_t& state) -> std::vector<object_id_t> {
     auto ids = state.selected_notes;
     for (const auto& object : state.selected_objects)
@@ -662,7 +658,7 @@ auto move_editor_selection_to_bgm(document_history_t& history,
     auto moving = selected_conversion_notes(state);
     if (moving.empty()) return {};
     selected_note_to_bgm_result_t result{.payload = {.handled = true}};
-    if (is_note_conversion_pending(state)) {
+    if (state.is_pending()) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM has stale input or an active gesture");
         return result;

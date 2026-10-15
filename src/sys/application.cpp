@@ -218,7 +218,6 @@ using wormedit::sys::compose_physical_scancode;
 using wormedit::sys::compose_project_y;
 using wormedit::sys::compose_source_y;
 using wormedit::sys::compose_surface_height;
-using wormedit::sys::editor_interaction_has_pending_gesture;
 using wormedit::sys::maximum_layout_lane_count;
 using wormedit::sys::populate_compose_view;
 using wormedit::sys::requested_snap_denominator;
@@ -799,7 +798,7 @@ auto project_export_available(const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose,
     const application_command_state_t& application) -> bool {
     return chart && !application.project.clipboard.paste_session &&
-        (!compose || !editor_interaction_has_pending_gesture(*compose));
+        (!compose || !compose->is_pending());
 }
 
 void refresh_application_command_states(
@@ -811,7 +810,7 @@ void refresh_application_command_states(
     const auto* chart = selected_chart(history, workspace);
     const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
                                compose_state && compose_state->chart == chart->id;
-    const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
+    const bool pending = compose_ready && compose_state->is_pending();
     bool target_valid{};
     if (chart && application_state.project.semantic_layer.semantic_layer_target) {
         const auto target_layer =
@@ -1165,7 +1164,7 @@ void cancel_stale_compose_interaction(
         const bool pending_is_stale = state.is_stale(history.document.revision);
         const bool compose_inactive =
             workspace.active_tab != wormedit::workspace_tab_t::compose;
-        if (editor_interaction_has_pending_gesture(state) &&
+        if (state.is_pending() &&
             (selected_chart_changed || pending_is_stale || compose_inactive)) {
             (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
@@ -1462,7 +1461,7 @@ auto dispatch_reviewed_sound_slot_batch(const WormUiWorkspaceAction& action,
         feedback = stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths, notifications);
         return true;
     }
-    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+    if (interaction && interaction->is_pending()) {
         feedback = "Finish or cancel the Compose gesture before importing sounds.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         worm_ui_frontend_sound_slot_batch_result(false, feedback.c_str());
@@ -1502,7 +1501,7 @@ auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
         feedback = stage_sound_import(history.document, chart, paths, notifications, action.sound_import_kind);
         return true;
     }
-    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+    if (interaction && interaction->is_pending()) {
         feedback = "Finish or cancel the Compose gesture before importing sounds.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         worm_ui_frontend_sound_import_result(false, feedback.c_str());
@@ -1661,7 +1660,7 @@ auto build_application_notifications_view(const wormedit::notification_center_t&
     auto view = wormedit::sys::build_notification_view(center, now);
     view.history_available = true;
     view.history = runtime.project(center, document, now, document_generation);
-    view.edit_gesture_active = interaction && editor_interaction_has_pending_gesture(*interaction);
+    view.edit_gesture_active = interaction && interaction->is_pending();
     return view;
 }
 
@@ -3293,7 +3292,7 @@ struct application_t::implementation_t {
         if (!session.project_identity.session_loaded)
             return shortcut_handled;
         if (shortcut_handled && !preserves_editor_gesture && views.compose_interaction_state &&
-            editor_interaction_has_pending_gesture(*views.compose_interaction_state)) {
+            views.compose_interaction_state->is_pending()) {
             (void)wormedit::dispatch_editor_action(session.history,
                                                    *views.compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
@@ -3540,7 +3539,7 @@ struct application_t::implementation_t {
             return false;
         if (group_action &&
             (application.project.clipboard.paste_session ||
-             (interaction && editor_interaction_has_pending_gesture(*interaction)))) {
+             (interaction && interaction->is_pending()))) {
             notifications.post(
                 wormedit::notification_severity_t::warning,
                 wormedit::notification_source_t::document,
@@ -4142,8 +4141,7 @@ struct application_t::implementation_t {
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
             views.compose_interaction_state && session.workspace.selected_chart &&
             views.compose_interaction_state->chart == *session.workspace.selected_chart) {
-            if (wormedit::sys::editor_interaction_has_pending_gesture(
-                    *views.compose_interaction_state))
+            if (views.compose_interaction_state->is_pending())
                 return compose_action_outcome_t::blocked(
                     "Finish or cancel the active Compose gesture before seeking.",
                     wormedit::notification_source_t::input);

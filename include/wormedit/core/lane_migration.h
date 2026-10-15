@@ -1,7 +1,7 @@
 #pragma once
 #include <wormedit/core/proposal_apply_result.h>
 
-#include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/lane_profiles.h>
 
 #include <cstdint>
@@ -46,51 +46,71 @@ struct lane_migration_collision_t {
     auto operator==(const lane_migration_collision_t&) const -> bool = default;
 };
 
-struct lane_migration_proposal_t {
-    lane_migration_issue_t issue{lane_migration_issue_t::none};
-    chart_stamp_t stamp;
-    diagnostic_list_t diagnostics;
-    lane_input_profile_t target;
-    std::vector<lane_migration_mapping_t> mapping;
+struct lane_migration_report_t {
     std::vector<object_id_t> dropped_notes;
     std::vector<object_id_t> dropped_sound_channel_events;
-    // The example list is capped at 64. collision_count counts incoming
-    // objects with at least one conflict, not every colliding pair. Touching
-    // hold endpoints count as overlap.
+    // Counts incoming conflicts (closed hold endpoints); examples remain capped at64.
     std::vector<lane_migration_collision_t> collisions;
     std::size_t collision_count{};
     std::size_t mapped_note_count{};
     std::size_t remapped_note_count{};
     std::size_t notes_in_merged_lanes{};
-    // Number of old bindings removed plus new target bindings added.
     std::size_t changed_bindings{};
+    auto operator==(const lane_migration_report_t&) const -> bool = default;
+};
 
-    [[nodiscard]] auto message() const noexcept -> std::string_view {
-        return diagnostics.empty() ? std::string_view{} : std::string_view{diagnostics.front().message};
-    }
+struct lane_migration_diagnostic_t : diagnostic_t {
+    lane_migration_issue_t issue{lane_migration_issue_t::none};
+    chart_stamp_t stamp;
+    lane_migration_report_t report;
+    auto operator==(const lane_migration_diagnostic_t&) const -> bool = default;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return issue == lane_migration_issue_t::none && static_cast<bool>(canonical_);
+    [[nodiscard]] static auto from(lane_migration_issue_t issue, std::string message,
+        chart_stamp_t stamp, lane_migration_report_t report) -> lane_migration_diagnostic_t {
+        return {error(diagnostic_code_t::invalid_binding, std::move(message)), issue, stamp,
+                std::move(report)};
     }
+};
+
+struct lane_migration_proposal_t;
+using lane_migration_diagnostics_t = std::vector<lane_migration_diagnostic_t>;
+using lane_migration_proposal_outcome_t =
+    proposal_outcome_t<lane_migration_proposal_t, chart_stamp_t, lane_migration_diagnostics_t>;
+
+struct lane_migration_proposal_t {
+    [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
+        chart_id_t chart, lane_input_profile_t target,
+        std::span<const lane_migration_mapping_t> mapping = {}) -> lane_migration_proposal_outcome_t;
+    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& song,
+        lane_input_profile_t target, std::span<const lane_migration_mapping_t> mapping = {}) const
+        -> lane_migration_proposal_outcome_t;
+
+    lane_input_profile_t target;
+    std::vector<lane_migration_mapping_t> mapping;
+    lane_migration_report_t report;
+    auto operator==(const lane_migration_proposal_t&) const -> bool = default;
 
   private:
     std::shared_ptr<const lane_migration_proposal_payload_t> canonical_;
     friend class lane_migration_proposal_access_t;
 };
 
-using lane_migration_apply_result_t = proposal_apply_result_t<lane_migration_issue_t>;
+static_assert(staged_proposal<lane_migration_proposal_t,
+    std::tuple<const song_document_t&, std::uint64_t, chart_id_t, lane_input_profile_t,
+               std::span<const lane_migration_mapping_t>>,
+    std::tuple<const chart_stamp_t&, const song_document_t&, lane_input_profile_t,
+               std::span<const lane_migration_mapping_t>>,
+    chart_stamp_t, lane_migration_diagnostics_t>);
 
-// An empty mapping requests the display-order default. A supplied mapping must
-// name every source lane; null targets explicitly drop that lane's notes.
-[[nodiscard]] auto propose_lane_migration(
-    const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
-    lane_input_profile_t target,
-    std::span<const lane_migration_mapping_t> mapping = {}) -> lane_migration_proposal_t;
+using lane_migration_preview_view_t =
+    proposal_preview_view_t<lane_migration_proposal_t, chart_stamp_t, lane_migration_diagnostics_t>;
+
+using lane_migration_apply_result_t = proposal_apply_result_t<lane_migration_issue_t>;
 
 // The proposal is revision-bound and applies all chart layout segments,
 // notes, bindings, and retained playable sound-channel events atomically.
 [[nodiscard]] auto apply_lane_migration(document_history_t& history,
-                                        const lane_migration_proposal_t& proposal,
+                                        const proposal_t<lane_migration_proposal_t>& proposal,
                                         bool confirm_drop) -> lane_migration_apply_result_t;
 
 } // namespace wormedit

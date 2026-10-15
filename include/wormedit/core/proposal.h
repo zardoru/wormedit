@@ -38,6 +38,31 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
 template <class Payload, class Stamp = chart_stamp_t, class Diagnostics = diagnostic_list_t>
 using proposal_outcome_t = diagnosed_t<std::optional<proposal_t<Payload, Stamp>>, Diagnostics>;
 
+// Report-bearing proposals expose the same borrowed success/failure projection.
+template <class Payload, class Stamp, class Diagnostics> struct proposal_preview_view_t {
+    using report_type = std::remove_cvref_t<decltype(std::declval<Payload>().report)>;
+    using diagnostic_type = typename Diagnostics::value_type;
+
+    const proposal_t<Payload, Stamp>* proposal{};
+    const diagnostic_type* diagnostic{};
+    const Stamp* stamp{};
+    const report_type* report{};
+    auto operator==(const proposal_preview_view_t&) const -> bool = default;
+
+    [[nodiscard]] static auto from(const proposal_outcome_t<Payload, Stamp, Diagnostics>& outcome)
+        noexcept -> proposal_preview_view_t {
+        if (outcome.value)
+            return {.proposal = &*outcome.value, .stamp = &outcome.value->stamp,
+                    .report = &outcome.value->payload.report};
+        if (!outcome.diagnostics.empty()) {
+            const auto& diagnostic = outcome.diagnostics.front();
+            return {.diagnostic = &diagnostic, .stamp = &diagnostic.stamp,
+                    .report = &diagnostic.report};
+        }
+        return {};
+    }
+};
+
 namespace proposal_detail {
 
 // Separate argument lists preserve owners whose build and revision inputs differ.

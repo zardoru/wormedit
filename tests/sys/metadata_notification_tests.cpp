@@ -459,7 +459,7 @@ TEST_CASE("key-count preview then apply changes the family profile as one undoab
     const auto target = lane_profile_family_targets(fixture.history.document.charts.front())[index];
     require_metadata_notification(fixture.dispatch(lane_profile_preview_action(fixture, index)).has_value());
     require_metadata_notification(fixture.drop.lane_profile_preview.has_value());
-    require_metadata_notification(static_cast<bool>(*fixture.drop.lane_profile_preview));
+    require_metadata_notification(fixture.drop.lane_profile_preview->value.has_value());
 
     WormUiWorkspaceAction apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;

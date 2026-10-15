@@ -19,6 +19,19 @@ namespace {
 
 using namespace wormedit;
 
+void check_lane_issue(const lane_migration_proposal_outcome_t& outcome, lane_migration_issue_t issue) {
+    CHECK_FALSE(outcome.value);
+    REQUIRE(outcome.diagnostics.size() == 1);
+    CHECK(outcome.diagnostics.front().issue == issue);
+}
+
+void check_lane_staleness(const lane_migration_proposal_outcome_t& outcome) {
+    REQUIRE_FALSE(outcome.value);
+    REQUIRE(outcome.diagnostics.size() == 1);
+    test::check_stale_action_message(outcome.diagnostics.front().message, "Lane migration");
+}
+
+
 auto ordered(const lane_layout_t& layout) -> std::vector<lane_definition_t> {
     auto lanes = layout.lanes;
     std::ranges::stable_sort(lanes, {}, &lane_definition_t::display_order);
@@ -58,9 +71,9 @@ auto add_note(chart_document_t& chart, object_id_t id, lane_id_t lane,
         .kind = end ? note_kind_t::hold : note_kind_t::tap, .end = end});
 }
 
-auto explicit_merge(const lane_migration_proposal_t& defaults, lane_id_t from,
+auto explicit_merge(const lane_migration_proposal_outcome_t& defaults, lane_id_t from,
                     lane_id_t to) -> std::vector<lane_migration_mapping_t> {
-    auto mapping = defaults.mapping;
+    auto mapping = defaults.value->payload.mapping;
     const auto found = std::ranges::find(mapping, from, &lane_migration_mapping_t::source_lane);
     REQUIRE(found != mapping.end());
     found->target_lane = to;
@@ -132,16 +145,16 @@ auto find_retained_event(const chart_document_t& chart, object_id_t id)
 }
 
 
-void check_default_drop_preview(const lane_migration_proposal_t& preview) {
-    CHECK(preview.dropped_notes == std::vector<object_id_t>{object_id_t{32}, object_id_t{33}});
-    CHECK(preview.mapped_note_count == 1);
-    CHECK(preview.remapped_note_count == 0);
-    CHECK(preview.changed_bindings == 2);
+void check_default_drop_preview(const lane_migration_proposal_outcome_t& preview) {
+    CHECK(preview.value->payload.report.dropped_notes == std::vector<object_id_t>{object_id_t{32}, object_id_t{33}});
+    CHECK(preview.value->payload.report.mapped_note_count == 1);
+    CHECK(preview.value->payload.report.remapped_note_count == 0);
+    CHECK(preview.value->payload.report.changed_bindings == 2);
 }
 
 void check_drop_requires_confirmation(document_history_t& history,
-                                      const lane_migration_proposal_t& preview) {
-    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
+                                      const lane_migration_proposal_outcome_t& preview) {
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
     CHECK(history.document.charts.front().measures[0].notes.size() == 2);
 }
@@ -161,11 +174,11 @@ void check_drop_undo(document_history_t& history) {
     CHECK(history.document.charts.front().measures[1].notes.size() == 1);
 }
 
-void check_noncolliding_merge_preview(const lane_migration_proposal_t& preview) {
-    CHECK(preview.collision_count == 0);
-    CHECK(preview.collisions.empty());
-    CHECK(preview.mapped_note_count == 2);
-    CHECK(preview.notes_in_merged_lanes == 2);
+void check_noncolliding_merge_preview(const lane_migration_proposal_outcome_t& preview) {
+    CHECK(preview.value->payload.report.collision_count == 0);
+    CHECK(preview.value->payload.report.collisions.empty());
+    CHECK(preview.value->payload.report.mapped_note_count == 2);
+    CHECK(preview.value->payload.report.notes_in_merged_lanes == 2);
 }
 
 void check_merged_notes(const chart_document_t& chart, lane_id_t lane) {
@@ -175,11 +188,11 @@ void check_merged_notes(const chart_document_t& chart, lane_id_t lane) {
     CHECK(notes[1].lane == lane);
 }
 
-void check_hold_tail_witness(const lane_migration_proposal_t& preview) {
-    CHECK(preview.collision_count == 1);
-    REQUIRE(preview.collisions.size() == 1);
-    CHECK(preview.collisions.front().first_note == object_id_t{51});
-    CHECK(preview.collisions.front().second_note == object_id_t{52});
+void check_hold_tail_witness(const lane_migration_proposal_outcome_t& preview) {
+    CHECK(preview.value->payload.report.collision_count == 1);
+    REQUIRE(preview.value->payload.report.collisions.size() == 1);
+    CHECK(preview.value->payload.report.collisions.front().first_note == object_id_t{51});
+    CHECK(preview.value->payload.report.collisions.front().second_note == object_id_t{52});
 }
 
 auto require_note(const chart_document_t& chart, object_id_t id) -> const note_t& {
@@ -194,9 +207,9 @@ auto require_note(const chart_document_t& chart, object_id_t id) -> const note_t
     return *note;
 }
 
-void check_no_linked_drops(const lane_migration_proposal_t& preview) {
-    CHECK(preview.dropped_notes.empty());
-    CHECK(preview.dropped_sound_channel_events.empty());
+void check_no_linked_drops(const lane_migration_proposal_outcome_t& preview) {
+    CHECK(preview.value->payload.report.dropped_notes.empty());
+    CHECK(preview.value->payload.report.dropped_sound_channel_events.empty());
 }
 
 void check_linked_pair(const chart_document_t& chart, const note_t& note,
@@ -209,11 +222,11 @@ void check_linked_pair(const chart_document_t& chart, const note_t& note,
     CHECK(event->end == note.end);
 }
 
-void check_linked_drop_preview(const lane_migration_proposal_t& preview,
+void check_linked_drop_preview(const lane_migration_proposal_outcome_t& preview,
                                object_id_t note_id, object_id_t event_id) {
-    CHECK(std::ranges::find(preview.dropped_notes, note_id) != preview.dropped_notes.end());
-    CHECK(std::ranges::find(preview.dropped_sound_channel_events, event_id) !=
-          preview.dropped_sound_channel_events.end());
+    CHECK(std::ranges::find(preview.value->payload.report.dropped_notes, note_id) != preview.value->payload.report.dropped_notes.end());
+    CHECK(std::ranges::find(preview.value->payload.report.dropped_sound_channel_events, event_id) !=
+          preview.value->payload.report.dropped_sound_channel_events.end());
 }
 
 void check_linked_pair_removed(const chart_document_t& chart, object_id_t note_id,
@@ -254,9 +267,9 @@ auto add_unlinked_collision_event(chart_document_t& chart) -> retained_collision
     return fixture;
 }
 
-auto has_retained_collision_witness(const lane_migration_proposal_t& preview,
+auto has_retained_collision_witness(const lane_migration_proposal_outcome_t& preview,
                                     const retained_collision_fixture_t& fixture) -> bool {
-    return std::ranges::any_of(preview.collisions, [&](const auto& collision) {
+    return std::ranges::any_of(preview.value->payload.report.collisions, [&](const auto& collision) {
         return (collision.first_note == fixture.note && collision.second_note == fixture.event &&
                 collision.second_is_sound_channel_event) ||
                (collision.second_note == fixture.note && collision.first_note == fixture.event &&
@@ -265,11 +278,11 @@ auto has_retained_collision_witness(const lane_migration_proposal_t& preview,
 }
 
 void check_retained_collision_rejected(document_history_t& history,
-                                       const lane_migration_proposal_t& preview,
+                                       const lane_migration_proposal_outcome_t& preview,
                                        const retained_collision_fixture_t& fixture) {
-    CHECK(preview.collision_count > 0);
+    CHECK(preview.value->payload.report.collision_count > 0);
     CHECK(has_retained_collision_witness(preview, fixture));
-    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::lane_collision);
 }
 
@@ -296,12 +309,12 @@ TEST_CASE("lane migration previews drops and changes all segments in one undoabl
     REQUIRE(validate_document(song).empty());
     auto history = document_history_t::from(song);
 
-    const auto preview = propose_lane_migration(history.document, 5, chart_id_t{2}, *target);
-    REQUIRE(preview);
+    const auto preview = lane_migration_proposal_t::propose(history.document, 5, chart_id_t{2}, *target);
+    REQUIRE(preview.value);
     check_default_drop_preview(preview);
     check_drop_requires_confirmation(history, preview);
 
-    const auto applied = apply_lane_migration(history, preview, true);
+    const auto applied = apply_lane_migration(history, *preview.value, true);
     REQUIRE(applied);
     check_migrated_segments(history.document.charts.front(), *target);
     check_drop_undo(history);
@@ -316,14 +329,14 @@ TEST_CASE("lane migration reports and applies a noncolliding many-to-one mapping
     const auto target_lanes = ordered(target->layout);
     add_note(song.charts.front(), object_id_t{41}, source[0].id, {measure_id_t{3}, 0});
     add_note(song.charts.front(), object_id_t{42}, source[1].id, {measure_id_t{3}, 8});
-    auto defaults = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(defaults);
+    auto defaults = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(defaults.value);
     auto mapping = explicit_merge(defaults, source[1].id, target_lanes[0].id);
-    const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
-    REQUIRE(preview);
+    const auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target, mapping);
+    REQUIRE(preview.value);
     check_noncolliding_merge_preview(preview);
     auto history = document_history_t::from(song);
-    REQUIRE(apply_lane_migration(history, preview, false));
+    REQUIRE(apply_lane_migration(history, *preview.value, false));
     check_merged_notes(history.document.charts.front(), target_lanes[0].id);
 }
 
@@ -337,14 +350,14 @@ TEST_CASE("lane migration rejects inclusive hold-tail collisions created by a la
     add_note(song.charts.front(), object_id_t{51}, source[0].id,
              {measure_id_t{3}, 0}, local_position_t{measure_id_t{3}, 8});
     add_note(song.charts.front(), object_id_t{52}, source[1].id, {measure_id_t{3}, 8});
-    const auto defaults = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(defaults);
+    const auto defaults = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(defaults.value);
     const auto mapping = explicit_merge(defaults, source[1].id, target_lanes[0].id);
-    const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
-    REQUIRE(preview);
+    const auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target, mapping);
+    REQUIRE(preview.value);
     check_hold_tail_witness(preview);
     auto history = document_history_t::from(song);
-    CHECK(apply_lane_migration(history, preview, false).payload.issue == lane_migration_issue_t::lane_collision);
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue == lane_migration_issue_t::lane_collision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 2);
 }
 
@@ -353,20 +366,20 @@ TEST_CASE("lane migration rejects modified previews and another song at matching
     auto song = migration_song();
     const auto target = make_osu_mania_profile(5);
     REQUIRE(target);
-    auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(preview);
+    auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(preview.value);
 
     auto other = song;
     other.id = song_id_t{9};
-    test::check_stale_action_message(propose_lane_migration(song, song.revision + 1, chart_id_t{2}, *target).message(), "Lane migration");
+    check_lane_staleness(lane_migration_proposal_t::propose(song, song.revision + 1, chart_id_t{2}, *target));
     auto other_history = document_history_t::from(other);
-    test::check_stale_action_message(apply_lane_migration(other_history, preview, false).payload.message, "Lane migration");
-    CHECK(apply_lane_migration(other_history, preview, false).payload.issue ==
+    test::check_stale_action_message(apply_lane_migration(other_history, *preview.value, false).payload.message, "Lane migration");
+    CHECK(apply_lane_migration(other_history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
 
     auto history = document_history_t::from(song);
-    preview.target.layout.display_name = "tampered";
-    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
+    preview.value->payload.target.layout.display_name = "tampered";
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::invalid_mapping);
     CHECK(history.document.charts.front().lane_layouts.front().layout.display_name ==
           song.charts.front().lane_layouts.front().layout.display_name);
@@ -377,13 +390,13 @@ TEST_CASE("lane migration rejects source drift even when document revision is re
     auto song = migration_song();
     const auto target = make_osu_mania_profile(5);
     REQUIRE(target);
-    const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(preview);
+    const auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(preview.value);
     auto history = document_history_t::from(song);
     const auto source_lane = ordered(history.document.charts.front().lane_layouts.front().layout).front().id;
     add_note(history.document.charts.front(), object_id_t{61}, source_lane,
              {measure_id_t{3}, 0});
-    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::stale_revision);
     CHECK(history.document.charts.front().measures.front().notes.size() == 1);
 }
@@ -394,13 +407,11 @@ TEST_CASE("lane migration rejects zero or duplicate target lane IDs",
     auto target = make_osu_mania_profile(5);
     REQUIRE(target);
     target->layout.lanes.front().id = {};
-    CHECK(propose_lane_migration(song, 5, chart_id_t{2}, *target).issue ==
-          lane_migration_issue_t::invalid_target_profile);
+    check_lane_issue(lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target), lane_migration_issue_t::invalid_target_profile);
     target = make_osu_mania_profile(5);
     REQUIRE(target);
     target->layout.lanes.back().id = target->layout.lanes.front().id;
-    CHECK(propose_lane_migration(song, 5, chart_id_t{2}, *target).issue ==
-          lane_migration_issue_t::invalid_target_profile);
+    check_lane_issue(lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target), lane_migration_issue_t::invalid_target_profile);
 }
 
 TEST_CASE("lane migration requires explicit mapping when a lane changes rank across segments",
@@ -410,16 +421,15 @@ TEST_CASE("lane migration requires explicit mapping when a lane changes rank acr
     std::swap(later[0].display_order, later[1].display_order);
     const auto target = make_osu_mania_profile(7);
     REQUIRE(target);
-    CHECK(propose_lane_migration(song, 5, chart_id_t{2}, *target).issue ==
-          lane_migration_issue_t::ambiguous_default_mapping);
+    check_lane_issue(lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target), lane_migration_issue_t::ambiguous_default_mapping);
 
     const auto source = ordered(song.charts.front().lane_layouts.front().layout);
     const auto target_lanes = ordered(target->layout);
     std::vector<lane_migration_mapping_t> mapping;
     for (std::size_t i = 0; i < source.size(); ++i)
         mapping.push_back({source[i].id, target_lanes[i].id});
-    const auto explicit_preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
-    CHECK(explicit_preview);
+    const auto explicit_preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target, mapping);
+    CHECK(explicit_preview.value);
 }
 
 TEST_CASE("lane migration collision examples stay bounded for a dense many-to-one merge",
@@ -435,13 +445,13 @@ TEST_CASE("lane migration collision examples stay bounded for a dense many-to-on
         add_note(song.charts.front(), object_id_t{2000 + row}, source[1].id,
                  {measure_id_t{3}, row});
     }
-    const auto defaults = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(defaults);
+    const auto defaults = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(defaults.value);
     const auto mapping = explicit_merge(defaults, source[1].id, target_lanes[0].id);
-    const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target, mapping);
-    REQUIRE(preview);
-    CHECK(preview.collision_count == 100);
-    CHECK(preview.collisions.size() == 64);
+    const auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target, mapping);
+    REQUIRE(preview.value);
+    CHECK(preview.value->payload.report.collision_count == 100);
+    CHECK(preview.value->payload.report.collisions.size() == 64);
 }
 
 TEST_CASE("lane migration handles many ordered notes without reporting collisions",
@@ -456,11 +466,11 @@ TEST_CASE("lane migration handles many ordered notes without reporting collision
         add_note(song.charts.front(), object_id_t{3000 + index}, source[0].id,
                  {measure, row});
     }
-    const auto preview = propose_lane_migration(song, 5, chart_id_t{2}, *target);
-    REQUIRE(preview);
-    CHECK(preview.mapped_note_count == 2000);
-    CHECK(preview.collision_count == 0);
-    CHECK(preview.collisions.empty());
+    const auto preview = lane_migration_proposal_t::propose(song, 5, chart_id_t{2}, *target);
+    REQUIRE(preview.value);
+    CHECK(preview.value->payload.report.mapped_note_count == 2000);
+    CHECK(preview.value->payload.report.collision_count == 0);
+    CHECK(preview.value->payload.report.collisions.empty());
 }
 
 TEST_CASE("lane migration keeps an imported BMSON note and retained event together",
@@ -476,12 +486,12 @@ TEST_CASE("lane migration keeps an imported BMSON note and retained event togeth
     const auto target = profile_with_new_lane_ids(source, 10'000);
     const auto mapping = rank_mapping(source, target.layout);
     auto history = document_history_t::from(*parsed.song);
-    const auto preview = propose_lane_migration(history.document, history.document.revision,
+    const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 source.id, target, mapping);
-    REQUIRE(preview);
+    REQUIRE(preview.value);
     check_no_linked_drops(preview);
 
-    const auto applied = apply_lane_migration(history, preview, false);
+    const auto applied = apply_lane_migration(history, *preview.value, false);
     REQUIRE(applied);
     const auto& migrated = history.document.charts.front();
     const auto& moved_note = require_note(migrated, note_id);
@@ -501,13 +511,13 @@ TEST_CASE("lane migration confirms dropping a linked BMSON pair together",
     const auto target = profile_with_new_lane_ids(source, 20'000);
     const auto mapping = rank_mapping(source, target.layout, note->lane);
     auto history = document_history_t::from(*parsed.song);
-    const auto preview = propose_lane_migration(history.document, history.document.revision,
+    const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 source.id, target, mapping);
-    REQUIRE(preview);
+    REQUIRE(preview.value);
     check_linked_drop_preview(preview, note_id, event_id);
-    CHECK(apply_lane_migration(history, preview, false).payload.issue ==
+    CHECK(apply_lane_migration(history, *preview.value, false).payload.issue ==
           lane_migration_issue_t::drop_confirmation_required);
-    REQUIRE(apply_lane_migration(history, preview, true));
+    REQUIRE(apply_lane_migration(history, *preview.value, true));
     const auto& migrated = history.document.charts.front();
     check_linked_pair_removed(migrated, note_id, event_id);
     CHECK(validate_document(history.document).empty());
@@ -529,9 +539,9 @@ TEST_CASE("lane migration collision sweep includes unlinked playable BMSON event
     REQUIRE(note_mapping != mapping.end());
     note_mapping->target_lane = target.layout.lanes.front().id;
     auto history = document_history_t::from(*parsed.song);
-    const auto preview = propose_lane_migration(history.document, history.document.revision,
+    const auto preview = lane_migration_proposal_t::propose(history.document, history.document.revision,
                                                 chart.id, target, mapping);
-    REQUIRE(preview);
+    REQUIRE(preview.value);
     check_retained_collision_rejected(history, preview, fixture);
 }
 
@@ -552,10 +562,10 @@ TEST_CASE("lane migration preserves parsed BMS branch hold channel identity",
     auto target = profile_with_new_lane_ids(chart, 40'000);
     const auto safe_mapping = rank_mapping(chart, target.layout);
     auto safe_history = document_history_t::from(*parsed.song);
-    const auto safe_preview = propose_lane_migration(
+    const auto safe_preview = lane_migration_proposal_t::propose(
         safe_history.document, safe_history.document.revision, chart.id, target, safe_mapping);
-    REQUIRE(safe_preview);
-    REQUIRE(apply_lane_migration(safe_history, safe_preview, false));
+    REQUIRE(safe_preview.value);
+    REQUIRE(apply_lane_migration(safe_history, *safe_preview.value, false));
     const auto& safe_chart = safe_history.document.charts.front();
     const auto safe_note = std::ranges::find(safe_chart.measures.front().notes, hold_id,
                                              &note_t::id);
@@ -593,8 +603,7 @@ TEST_CASE("lane migration rejects parsed BMS branch holds moved to another chann
                                            &lane_migration_mapping_t::source_lane);
     REQUIRE(explicit_lane != mapping.end());
     explicit_lane->target_lane = destination->id;
-    CHECK(propose_lane_migration(*parsed.song, parsed.song->revision, chart.id, target, mapping)
-              .issue == lane_migration_issue_t::unsupported_branch_identity);
+    check_lane_issue(lane_migration_proposal_t::propose(*parsed.song, parsed.song->revision, chart.id, target, mapping), lane_migration_issue_t::unsupported_branch_identity);
 }
 
 TEST_CASE("Sealed lane migration stamp changes stay tamper errors before staleness",
@@ -602,10 +611,11 @@ TEST_CASE("Sealed lane migration stamp changes stay tamper errors before stalene
     auto history = document_history_t::from(migration_song());
     const auto target = make_osu_mania_profile(5);
     REQUIRE(target);
-    auto proposal = propose_lane_migration(history.document, history.document.revision,
+    auto proposal = lane_migration_proposal_t::propose(history.document, history.document.revision,
         chart_id_t{2}, *target);
-    ++proposal.stamp.document.revision;
-    const auto result = apply_lane_migration(history, proposal, false);
+    REQUIRE(proposal.value);
+    ++proposal.value->stamp.document.revision;
+    const auto result = apply_lane_migration(history, *proposal.value, false);
     CHECK(result.payload.issue == lane_migration_issue_t::invalid_mapping);
     CHECK(result.payload.message == "Lane migration preview data was changed after proposal.");
     CHECK(result.command.diagnostics.empty());
@@ -617,12 +627,40 @@ TEST_CASE("Lane migration diagnostics own the existing proposal failure message"
     auto history = document_history_t::from(migration_song());
     const auto target = make_osu_mania_profile(5);
     REQUIRE(target);
-    const auto proposal = propose_lane_migration(history.document, history.document.revision + 1,
+    const auto proposal = lane_migration_proposal_t::propose(history.document, history.document.revision + 1,
         chart_id_t{2}, *target);
     REQUIRE(proposal.diagnostics.size() == 1);
-    test::check_stale_action_message(proposal.diagnostics, "Lane migration");
-    const auto result = apply_lane_migration(history, proposal, false);
-    CHECK(result.payload.message == proposal.message());
-    CHECK(result.command.diagnostics.empty());
+    CHECK_FALSE(proposal.value);
+    test::check_stale_action_message(proposal.diagnostics.front().message, "Lane migration");
+    CHECK(proposal.diagnostics.front().issue == lane_migration_issue_t::stale_revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Lane proposal revision reseals a target without publishing",
+          "[core][lane-migration][proposal-revision]") {
+    auto history = document_history_t::from(migration_song());
+    const auto target = make_osu_mania_profile(5);
+    REQUIRE(target);
+    const auto original = lane_migration_proposal_t::propose(history.document, history.document.revision,
+        chart_id_t{2}, *target);
+    REQUIRE(original.value);
+    const auto revised = original.value->payload.revise(original.value->stamp, history.document, *target);
+    REQUIRE(revised.value);
+    CHECK(revised.value->stamp == original.value->stamp);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Lane proposal revision keeps canonical tampering before expiry",
+          "[core][lane-migration][proposal-revision]") {
+    auto history = document_history_t::from(migration_song());
+    const auto target = make_osu_mania_profile(5);
+    REQUIRE(target);
+    auto original = lane_migration_proposal_t::propose(history.document, history.document.revision,
+        chart_id_t{2}, *target);
+    REQUIRE(original.value);
+    ++history.document.revision;
+    original.value->payload.target.layout.display_name = "tampered";
+    const auto rejected = original.value->payload.revise(original.value->stamp, history.document, *target);
+    check_lane_issue(rejected, lane_migration_issue_t::invalid_mapping);
     CHECK(history.undo.empty());
 }

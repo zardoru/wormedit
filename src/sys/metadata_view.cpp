@@ -178,16 +178,19 @@ void populate_metadata_lane_profile(flattened_workspace_t& flattened,
     metadata.lane_profile_choices = choices.data();
     metadata.lane_profile_choice_count = choices.size();
     if (!metadata_drop.lane_profile_preview) return;
-    const auto& preview = *metadata_drop.lane_profile_preview;
+    const auto preview = wormedit::lane_migration_preview_view_t::from(*metadata_drop.lane_profile_preview);
+    const auto mapped_count = preview.report ? preview.report->mapped_note_count : 0;
+    const auto dropped_count = preview.report ? preview.report->dropped_notes.size() : 0;
+    const auto collision_count = preview.report ? preview.report->collision_count : 0;
     metadata.lane_profile_preview_present = true;
-    metadata.lane_profile_preview_valid = static_cast<bool>(preview);
-    metadata.lane_profile_mapped_note_count = preview.mapped_note_count;
-    metadata.lane_profile_dropped_note_count = preview.dropped_notes.size();
-    metadata.lane_profile_collision_count = preview.collision_count;
-    metadata.lane_profile_apply_enabled = static_cast<bool>(preview);
-    const auto message = "Key-count preview: " + std::to_string(preview.mapped_note_count) + " notes map, " +
-                         std::to_string(preview.dropped_notes.size()) + " dropped, " +
-                         std::to_string(preview.collision_count) + " collisions.";
+    metadata.lane_profile_preview_valid = preview.proposal != nullptr;
+    metadata.lane_profile_mapped_note_count = mapped_count;
+    metadata.lane_profile_dropped_note_count = dropped_count;
+    metadata.lane_profile_collision_count = collision_count;
+    metadata.lane_profile_apply_enabled = preview.proposal != nullptr;
+    const auto message = "Key-count preview: " + std::to_string(mapped_count) + " notes map, " +
+                         std::to_string(dropped_count) + " dropped, " +
+                         std::to_string(collision_count) + " collisions.";
     const auto* text = metadata_frame_text(flattened, message);
     metadata.lane_profile_preview_message = text ? text : "";
 }

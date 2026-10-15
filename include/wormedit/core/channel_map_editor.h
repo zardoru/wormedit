@@ -95,27 +95,8 @@ static_assert(staged_proposal<channel_map_proposal_t,
                std::span<const channel_map_replacement_t>>,
     chart_stamp_t, channel_map_diagnostics_t>);
 
-// Borrowed view of either a successful proposal or a failed attempt's diagnostic report.
-struct channel_map_preview_view_t {
-    const proposal_t<channel_map_proposal_t>* proposal{};
-    const channel_map_diagnostic_t* diagnostic{};
-    const chart_stamp_t* stamp{};
-    const channel_map_report_t* report{};
-    auto operator==(const channel_map_preview_view_t&) const -> bool = default;
-
-    [[nodiscard]] static auto from(const channel_map_proposal_outcome_t& outcome) noexcept
-        -> channel_map_preview_view_t {
-        if (outcome.value)
-            return {.proposal = &*outcome.value, .stamp = &outcome.value->stamp,
-                    .report = &outcome.value->payload.report};
-        if (!outcome.diagnostics.empty()) {
-            const auto& diagnostic = outcome.diagnostics.front();
-            return {.diagnostic = &diagnostic, .stamp = &diagnostic.stamp,
-                    .report = &diagnostic.report};
-        }
-        return {};
-    }
-};
+using channel_map_preview_view_t =
+    proposal_preview_view_t<channel_map_proposal_t, chart_stamp_t, channel_map_diagnostics_t>;
 
 using channel_map_apply_result_t = proposal_apply_result_t<channel_map_issue_t>;
 

@@ -1,5 +1,6 @@
 #include "sys/metadata_asset_runtime.h"
 #include "sys/thread_priority.h"
+#include <wormedit/core/async_job.h>
 
 #include "ui/frontend.h"
 
@@ -43,18 +44,41 @@ struct pending_metadata_asset_import_t {
     bool allocate_bms_identifier{};
 };
 
-struct pending_metadata_copy_preview_t {
-    wormedit::task_graph_handle_t graph;
-    wormedit::task_id_t task;
-    wormedit::notification_source_t source{wormedit::notification_source_t::document};
+struct metadata_copy_inspection_request_t {
+    wormedit::project_asset_copy_request_t copy;
+    std::filesystem::path output_path;
+    bool export_copy{};
 };
+using metadata_copy_inspection_job_t =
+    wormedit::async_job_t<metadata_copy_inspection_request_t,
+                          wormedit::project_asset_copy_outcome_t, wormedit::notification_source_t>;
 
 struct metadata_copy_preview_t {
     wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
-    std::optional<pending_metadata_copy_preview_t> pending;
+    metadata_copy_inspection_job_t job{scheduler,
+                                       1,
+                                       "Copy inspection could not start.",
+                                       "scheduler outstanding-task capacity exceeded",
+                                       "Copy inspection returned no result.",
+                                       wormedit::async_job_destruction_policy_t::release};
     std::optional<metadata_copy_preview_key_t> key;
     std::string message;
 };
+
+auto inspect_copy(const metadata_copy_inspection_request_t& request, std::stop_token stop)
+    -> metadata_copy_inspection_job_t::work_outcome_t {
+    using namespace wormedit;
+    auto inspected =
+        request.export_copy
+            ? inspect_export_asset_file({.project_directory = request.copy.project_directory,
+                                         .source_path = request.copy.source_path,
+                                         .relative_output_path = request.output_path,
+                                         .asset = request.copy.asset,
+                                         .maximum_bytes = request.copy.maximum_bytes},
+                                        stop)
+            : inspect_project_asset_file(request.copy, stop);
+    return metadata_copy_inspection_job_t::work_outcome_t{std::in_place, std::move(inspected)};
+}
 
 struct metadata_import_feedback_t {
     std::string message;
@@ -198,16 +222,16 @@ auto complete_import_feedback(
     return result;
 }
 
-auto copy_preview_feedback(const wormedit::task_outcome_t& completed,
-                           const std::shared_ptr<const wormedit::project_asset_copy_outcome_t>& inspected)
+auto copy_preview_feedback(const metadata_copy_inspection_job_t::completion_t& completed)
     -> std::pair<std::string, wormedit::notification_severity_t> {
     using namespace wormedit;
-    if (!completed.has_value() || !inspected) {
-        const auto cancelled = !completed.has_value() &&
-                               completed.error().cause.code == task_error_code_t::cancelled;
-        return {!completed.has_value() ? completed.error().cause.message : "Copy inspection returned no result.",
-                cancelled ? notification_severity_t::info : notification_severity_t::error};
+    if (!completed) {
+        return {completed.error().cause.message,
+                completed.error().cause.code == task_error_code_t::cancelled
+                    ? notification_severity_t::info
+                    : notification_severity_t::error};
     }
+    const auto& inspected = completed->payload;
     using copy_status_t = project_asset_copy_status_t;
     const auto status = inspected->has_value() ? (*inspected)->status : inspected->error().code;
     const auto severity = status == copy_status_t::destination_collision
@@ -269,16 +293,12 @@ auto process_pending_metadata_asset_import(
 
 void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
                                    const wormedit::notification_sink_t& notifications) {
-    if (!runtime.pending)
-        return;
-    const auto source = runtime.pending->source;
-    const auto completed = runtime.pending->graph.outcome(runtime.pending->task);
+    const auto completed = runtime.job.poll();
     if (!completed)
         return;
-    runtime.pending.reset();
-    const auto inspected =
-        wormedit::task_value_cast<wormedit::project_asset_copy_outcome_t>(*completed);
-    auto [message, severity] = copy_preview_feedback(*completed, inspected);
+    const auto source =
+        completed->has_value() ? completed->value().identity : completed->error().identity;
+    auto [message, severity] = copy_preview_feedback(*completed);
     runtime.message = std::move(message);
     post_runtime_message(notifications, severity, source, runtime.message);
 }
@@ -418,7 +438,7 @@ auto metadata_asset_t::start_copy_preview(
     if (asset_base.empty())
         return finish("Open a saved native project before inspecting asset copies.",
                       notification_severity_t::warning);
-    if (runtime.pending)
+    if (runtime.job.is_busy())
         return finish("Wait for the current copy inspection to finish.",
                       notification_severity_t::info);
     const bool import_copy = action.metadata_inspect_import;
@@ -435,30 +455,16 @@ auto metadata_asset_t::start_copy_preview(
     }
     const project_asset_copy_request_t request{
         .project_directory = asset_base, .source_path = source_path, .asset = asset};
-    task_graph_t graph{1};
-    const auto added = graph.create_task({}, [request, export_copy = action.metadata_inspect_export,
-                                           output_path](std::span<const task_result_t>,
-                                                        std::stop_token stop) {
-        auto inspected = std::make_shared<const project_asset_copy_outcome_t>(
-            export_copy ? inspect_export_asset_file({.project_directory = request.project_directory,
-                                                     .source_path = request.source_path,
-                                                     .relative_output_path = output_path,
-                                                     .asset = request.asset,
-                                                     .maximum_bytes = request.maximum_bytes},
-                                                    stop)
-                        : inspect_project_asset_file(request, stop));
-        return task_result_t::success(task_value_t::from(std::move(inspected)));
-    });
-    if (!added)
-        return finish(!added.has_value() ? added.error().message : "Copy inspection could not start.",
-                      notification_severity_t::error);
-    auto submitted = runtime.scheduler.begin(std::move(graph));
-    if (!submitted)
-        return finish(!submitted.has_value() ? submitted.error().message : "Copy inspection could not start.",
-                      notification_severity_t::error);
-    runtime.pending =
-        pending_metadata_copy_preview_t{.graph = std::move(submitted.value()), .task = *added,
-                                        .source = source};
+    const auto started = runtime.job.request(
+        [&request, &output_path, &action] {
+            return metadata_copy_inspection_request_t{.copy = request,
+                                                      .output_path = output_path,
+                                                      .export_copy =
+                                                          action.metadata_inspect_export};
+        },
+        source, inspect_copy);
+    if (!started)
+        return finish(started.error().message, notification_severity_t::error);
     runtime.key =
         metadata_copy_preview_key_t{.song = history.document.id,
                                     .revision = history.document.revision,
@@ -580,8 +586,8 @@ auto metadata_asset_t::poll(
 void metadata_asset_t::cancel() {
     if (impl_->pending_import)
         impl_->pending_import->graph.cancel();
-    if (impl_->copy_preview.pending)
-        impl_->copy_preview.pending->graph.cancel();
+    // Advisory feedback is still collected after explicit cancellation.
+    impl_->copy_preview.job.cancel(wormedit::async_job_cancel_policy_t::retain_completion);
 }
 
 void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
@@ -618,7 +624,7 @@ auto metadata_asset_t::import_pending() const -> bool {
 }
 
 auto metadata_asset_t::copy_preview_pending() const -> bool {
-    return impl_->copy_preview.pending.has_value();
+    return impl_->copy_preview.job.is_busy();
 }
 
 auto metadata_asset_t::copy_preview_key() const

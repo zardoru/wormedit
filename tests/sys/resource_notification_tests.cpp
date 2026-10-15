@@ -159,6 +159,28 @@ TEST_CASE("metadata copy inspection posts start and completion once", "[unit][sy
     CHECK(fixture.entries().size() == 2);
 }
 
+TEST_CASE("metadata inspection retains advisory feedback after invalidation and cancel",
+          "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    auto action = fixture.inspect_action();
+    require_resource_notification(fixture.assets.start_copy_preview(
+                                      action, fixture.history, fixture.workspace,
+                                      fixture.project) == "Copy destination inspection started.");
+    fixture.assets.clear_copy_preview_key();
+    ++fixture.history.document.revision;
+    fixture.assets.cancel();
+    fixture.wait_for_preview();
+    check_resource_notification(!fixture.assets.copy_preview_pending());
+    check_resource_notification(!fixture.assets.copy_preview_key());
+    const auto entries = fixture.entries();
+    require_resource_notification(entries.size() == 2);
+    check_resource_notification(entries[0].source == notification_source_t::import_);
+    check_resource_notification(entries[0].severity == notification_severity_t::info);
+    check_resource_notification(!entries[0].message.empty());
+    (void)fixture.assets.poll(fixture.history, fixture.workspace, fixture.project);
+    check_resource_notification(fixture.entries().size() == 2);
+}
+
 TEST_CASE("metadata copy inspection rejection is explicit and does not mutate document",
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;

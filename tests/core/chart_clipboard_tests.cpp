@@ -563,14 +563,14 @@ TEST_CASE("Paste revision rebuilds ghosts and preserves the captured revision",
     const auto first = chart_paste_proposal_t::propose(song, chart_id_t{2}, clipboard,
         {measure_id_t{1}, 0}, song.revision);
     REQUIRE(first.value);
-    const auto revised = first.value->payload.revise(first.value->stamp, song, clipboard,
-        {measure_id_t{1}, 120});
+    const auto revised = first.value->revise(song, clipboard,
+        local_position_t{measure_id_t{1}, 120});
     REQUIRE(revised.value);
     expect(revised.value->stamp == first.value->stamp);
     expect(std::get<note_t>(revised.value->payload.report.objects.front()).position.row == 120);
     ++song.revision;
-    const auto stale = first.value->payload.revise(first.value->stamp, song, clipboard,
-        {measure_id_t{1}, 120});
+    const auto stale = first.value->revise(song, clipboard,
+        local_position_t{measure_id_t{1}, 120});
     REQUIRE_FALSE(stale.value);
     REQUIRE(stale.diagnostics.size() == 1);
     test::check_stale_action_message(stale.diagnostics.front().message, "Chart paste proposal");

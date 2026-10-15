@@ -314,8 +314,7 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    auto revised = drag.value->payload.revise(drag.value->stamp,
-        context.environment.document.history, *release,
+    auto revised = drag.value->revise(context.environment.document.history, *release,
         context.environment.commands.project.timing_recipe.timing_locked);
     if (!revised.value) {
         result.diagnostics = std::move(revised.diagnostics);

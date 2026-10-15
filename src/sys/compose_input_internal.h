@@ -167,7 +167,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         pending.push_back({.position = candidate, .restart = restart});
     }
     if (pending.empty()) {
-        auto revised = stroke->payload.revise(stroke->stamp, *position);
+        auto revised = stroke->revise(*position);
         stroke = std::move(revised.value);
         severity = notification_severity_t::hint;
         return "BMSON razor remains on staged grid cells.";
@@ -179,7 +179,7 @@ auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
         propose_bmson_bgm_markers(history, state, application_state, reference, pending, &severity);
     if (application_state.project.compose_gesture.bmson_marker_draft &&
         application_state.project.compose_gesture.bmson_marker_draft->payload.markers.size() == before + pending.size()) {
-        auto revised = stroke->payload.revise(stroke->stamp, *position);
+        auto revised = stroke->revise(*position);
         stroke = std::move(revised.value);
     }
     return status;

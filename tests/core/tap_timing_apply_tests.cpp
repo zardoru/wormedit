@@ -352,7 +352,7 @@ TEST_CASE("Tap proposal revision preserves its capture and leaves publication to
     const auto original = proposal(history.document, stable_estimate(0.0, {247, 2}));
     REQUIRE(original.value.has_value());
     history.document.id = song_id_t{99};
-    const auto revised = original.value->payload.revise(original.value->stamp, history.document,
+    const auto revised = original.value->revise(history.document,
                                                          tap_bpm_choice_t::nearest_one);
     check_tap_revision_capture(*original.value, revised);
     CHECK(history.document.charts.front().bpms.empty());
@@ -365,11 +365,11 @@ TEST_CASE("Tap proposal revision has no stale payload and keeps timing lock prio
     const auto original = proposal(history.document);
     REQUIRE(original.value.has_value());
     ++history.document.revision;
-    const auto stale = original.value->payload.revise(original.value->stamp, history.document,
+    const auto stale = original.value->revise(history.document,
                                                        tap_bpm_choice_t::nearest_one);
     check_tap_revision_failure(stale, diagnostic_code_t::invalid_id,
                                 stale_action_message("Tap timing proposal"));
-    const auto locked = original.value->payload.revise(original.value->stamp, history.document,
+    const auto locked = original.value->revise(history.document,
                                                         tap_bpm_choice_t::nearest_one, true);
     check_tap_revision_failure(locked, diagnostic_code_t::unsupported_feature,
                                 "tap timing apply is disabled while timing is locked");

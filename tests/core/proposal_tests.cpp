@@ -22,8 +22,9 @@ struct metadata_payload_t {
                     .stamp = document_stamp_t::from(document), .payload = {.title = std::move(title)}}};
     }
 
-    auto revise(const song_document_t& document, std::string title) const
+    auto revise(const document_stamp_t& stamp, const song_document_t& document, std::string title) const
         -> proposal_outcome_t<metadata_payload_t, document_stamp_t> {
+        CHECK(stamp == document_stamp_t::from(document));
         return propose(document, std::move(title));
     }
 };
@@ -34,13 +35,13 @@ struct mutable_payload_t {
     static auto propose() -> proposal_outcome_t<mutable_payload_t> {
         return {.value = proposal_t<mutable_payload_t>{}};
     }
-    auto revise(bool reject) -> proposal_outcome_t<mutable_payload_t> {
+    auto revise(const chart_stamp_t& stamp, bool reject) -> proposal_outcome_t<mutable_payload_t> {
         is_rejected = reject;
         if (reject) return {};
-        return {.value = proposal_t<mutable_payload_t>{.payload = *this}};
+        return {.value = proposal_t<mutable_payload_t>{.stamp = stamp, .payload = *this}};
     }
 };
-static_assert(staged_proposal<mutable_payload_t, std::tuple<>, std::tuple<bool>>);
+static_assert(staged_proposal<mutable_payload_t, std::tuple<>, std::tuple<const chart_stamp_t&, bool>>);
 
 struct editable_report_t {
     std::string text;
@@ -142,7 +143,7 @@ static_assert(staged_proposal<private_payload_t,
 
 static_assert(staged_proposal<metadata_payload_t,
     std::tuple<const song_document_t&, std::string>,
-    std::tuple<const song_document_t&, std::string>, document_stamp_t>);
+    std::tuple<const document_stamp_t&, const song_document_t&, std::string>, document_stamp_t>);
 static_assert(!staged_proposal<wrong_outcome_payload_t, std::tuple<>, std::tuple<>>);
 static_assert(std::is_aggregate_v<proposal_t<metadata_payload_t>>);
 static_assert(std::equality_comparable<proposal_t<metadata_payload_t>>);
@@ -222,7 +223,7 @@ TEST_CASE("Shared proposal builds and revisions carry no payload on failure", "[
     const auto built = metadata_payload_t::propose(history.document, "Proposed");
     REQUIRE(built.ok());
     REQUIRE(built.value.has_value());
-    const auto revised = built.value->payload.revise(history.document, "");
+    const auto revised = built.value->revise(history.document, "");
     check_failed_title(revised);
     CHECK(built.value->payload.title == "Proposed");
     CHECK(history.undo.empty());
@@ -254,11 +255,14 @@ TEST_CASE("Shared proposals retain typed diagnostics and private payload invaria
 TEST_CASE("Shared proposal revisions support mutable state machines", "[core][proposal]") {
     auto initial = mutable_payload_t::propose();
     REQUIRE(initial.value);
-    const auto rejected = initial.value->payload.revise(true);
+    initial.value->stamp = chart_stamp_t::from(make_history().document, chart_id_t{7});
+    const auto stamp = initial.value->stamp;
+    const auto rejected = initial.value->revise(true);
     CHECK_FALSE(rejected.value);
     CHECK(initial.value->payload.is_rejected);
-    const auto revised = initial.value->payload.revise(false);
+    const auto revised = initial.value->revise(false);
     REQUIRE(revised.value);
+    CHECK(revised.value->stamp == stamp);
     CHECK_FALSE(revised.value->payload.is_rejected);
 }
 

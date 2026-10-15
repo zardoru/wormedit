@@ -35,6 +35,22 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
 
     auto operator==(const proposal_t&) const -> bool = default;
 
+    template <class... Arguments>
+        requires requires(Payload& value, const Stamp& captured, Arguments&&... arguments) {
+            value.revise(captured, std::forward<Arguments>(arguments)...);
+        }
+    [[nodiscard]] auto revise(Arguments&&... arguments) -> decltype(auto) {
+        return payload.revise(stamp, std::forward<Arguments>(arguments)...);
+    }
+
+    template <class... Arguments>
+        requires requires(const Payload& value, const Stamp& captured, Arguments&&... arguments) {
+            value.revise(captured, std::forward<Arguments>(arguments)...);
+        }
+    [[nodiscard]] auto revise(Arguments&&... arguments) const -> decltype(auto) {
+        return payload.revise(stamp, std::forward<Arguments>(arguments)...);
+    }
+
     template <class Diagnostics> requires requires { typename Diagnostics::report_type; }
     [[nodiscard]] static auto report(diagnosed_t<std::optional<proposal_t>, Diagnostics>& outcome)
         noexcept -> typename Diagnostics::report_type* {

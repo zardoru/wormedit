@@ -2819,7 +2819,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     fixture.project();
     auto begun = audio_offset_drag_t::propose(fixture.history.document, chart_id_t{1}, 48000);
     REQUIRE(begun.value);
-    auto updated = begun.value->payload.revise(begun.value->stamp, fixture.history.document, 4800);
+    auto updated = begun.value->revise(fixture.history.document, 4800);
     REQUIRE(updated.value);
     std::optional<proposal_t<audio_offset_drag_t>> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
@@ -7273,7 +7273,7 @@ TEST_CASE("BMSON proposal adoption moves markers prepared by the existing native
     REQUIRE(insert_bmson_sound_markers(temporary, proposed.value->stamp.chart,
                                      fixture.reference, prepared));
     const auto* storage = prepared.data();
-    const auto revised = proposed.value->payload.revise(proposed.value->stamp, std::move(prepared));
+    const auto revised = proposed.value->revise(std::move(prepared));
     REQUIRE(revised.value);
     CHECK(revised.value->payload.markers.data() == storage);
     CHECK(revised.value->payload.markers.front().restart);
@@ -7328,7 +7328,7 @@ TEST_CASE("Razor revision adopts an acknowledged staged cell without allocating"
     const auto stamp = captured.value->stamp;
     allocations = 0;
     count_allocations = true;
-    const auto revised = captured.value->payload.revise(stamp, {measure, 240});
+    const auto revised = captured.value->revise(local_position_t{measure, 240});
     count_allocations = false;
     const auto counted = allocations;
     REQUIRE(revised.value);
@@ -7358,7 +7358,7 @@ auto make_prepared_draw_stroke(const document_history_t& history,
     application_command_state_t::bga_draw_stroke_proposal_t initial{
         .stamp = chart_stamp_t::from(history.document, chart.id),
         .payload = {.erase = true, .geometry = std::move(*geometry)}};
-    auto proposed = initial.payload.revise(initial.stamp, input, chart, state, 120, true);
+    auto proposed = initial.revise(input, chart, state, 120, true);
     REQUIRE(proposed.value);
     return std::move(*proposed.value);
 }
@@ -7383,7 +7383,7 @@ TEST_CASE("Draw proposal revision adds no allocations beyond the existing duplic
     const auto previous_cost = allocations;
     allocations = 0;
     count_allocations = true;
-    const auto revised = stroke.payload.revise(stroke.stamp, input,
+    const auto revised = stroke.revise(input,
         fixture.history.document.charts.front(), fixture.state, 120, false);
     count_allocations = false;
     const auto current_cost = allocations;
@@ -7403,7 +7403,7 @@ TEST_CASE("Draw proposal begins at the first cell and preserves snap interpolati
     const auto input = make_draw_point_input(true);
     auto stroke = make_prepared_draw_stroke(fixture.history, fixture.state, input);
     const auto* geometry = stroke.payload.geometry.entries.data();
-    const auto revised = stroke.payload.revise(stroke.stamp, input,
+    const auto revised = stroke.revise(input,
         fixture.history.document.charts.front(), fixture.state, 360, false);
     REQUIRE(revised.value);
     CHECK(revised.value->payload.targets.size() == 3);
@@ -7422,7 +7422,7 @@ TEST_CASE("Draw proposal rejects a missing cell without an applicable value or a
     auto stroke = make_prepared_draw_stroke(fixture.history, fixture.state, input);
     allocations = 0;
     count_allocations = true;
-    const auto rejected = stroke.payload.revise(stroke.stamp, input,
+    const auto rejected = stroke.revise(input,
         fixture.history.document.charts.front(), fixture.state, std::nullopt, false);
     count_allocations = false;
     const auto counted = allocations;

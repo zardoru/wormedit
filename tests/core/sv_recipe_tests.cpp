@@ -80,7 +80,7 @@ auto checked_draft(proposal_outcome_t<sv_recipe_draft_t> outcome)
 void revise_draft(const document_history_t& history, proposal_outcome_t<sv_recipe_draft_t>& draft,
                   sv_recipe_t candidate) {
     REQUIRE(draft.value);
-    auto revised = draft.value->payload.revise(draft.value->stamp, history, std::move(candidate),
+    auto revised = draft.value->revise(history, std::move(candidate),
         false, std::move(draft.diagnostics));
     REQUIRE(revised.value);
     draft = std::move(revised);
@@ -89,7 +89,7 @@ void revise_draft(const document_history_t& history, proposal_outcome_t<sv_recip
 void revise_draft_range(const document_history_t& history,
     proposal_outcome_t<sv_recipe_draft_t>& draft, position_span_t hits, std::uint64_t snap) {
     REQUIRE(draft.value);
-    auto revised = draft.value->payload.revise(draft.value->stamp, history, hits, snap,
+    auto revised = draft.value->revise(history, hits, snap,
         false, std::move(draft.diagnostics));
     REQUIRE(revised.value);
     draft = std::move(revised);
@@ -340,7 +340,7 @@ TEST_CASE("SV recipe range drag snaps, previews without mutation, and commits on
 
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
     REQUIRE(drag.value->payload.status == sv_recipe_range_drag_status_t::previewing);
-    const auto drag_revised = drag.value->payload.revise(drag.value->stamp, history, {measure_id_t{11}, 370}, false);
+    const auto drag_revised = drag.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
     REQUIRE(drag_revised.value);
     CHECK((drag.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
     CHECK((history.document.charts.front().sv_recipes.front().range.begin ==
@@ -363,7 +363,7 @@ TEST_CASE("SV recipe endpoint crossing normalizes while whole-span drag preserve
     auto history = document_history_t::from(std::move(song));
 
     auto endpoint = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto endpoint_revised = endpoint.value->payload.revise(endpoint.value->stamp, history, {measure_id_t{12}, 481}, false);
+    const auto endpoint_revised = endpoint.value->revise(history, local_position_t{measure_id_t{12}, 481}, false);
     REQUIRE(endpoint_revised.value);
     CHECK((endpoint.value->payload.preview_range.begin == local_position_t{measure_id_t{12}, 0}));
     CHECK((endpoint.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
@@ -372,13 +372,13 @@ TEST_CASE("SV recipe endpoint crossing normalizes while whole-span drag preserve
 
     auto chart_end =
         make_range_proposal(history, sv_recipe_range_handle_t::end, {measure_id_t{12}, 0});
-    const auto chart_end_revised = chart_end.value->payload.revise(chart_end.value->stamp, history, {measure_id_t{12}, 959}, false);
+    const auto chart_end_revised = chart_end.value->revise(history, local_position_t{measure_id_t{12}, 959}, false);
     REQUIRE(chart_end_revised.value);
     CHECK((chart_end.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 960}));
     cancel_sv_recipe_range_drag(*chart_end.value);
 
     auto whole = make_range_proposal(history, sv_recipe_range_handle_t::whole_span, {measure_id_t{11}, 0});
-    const auto whole_revised = whole.value->payload.revise(whole.value->stamp, history, {measure_id_t{11}, 370}, false);
+    const auto whole_revised = whole.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
     REQUIRE(whole_revised.value);
     CHECK((whole.value->payload.preview_range.begin == local_position_t{measure_id_t{11}, 480}));
     CHECK((whole.value->payload.preview_range.end == local_position_t{measure_id_t{12}, 480}));
@@ -394,7 +394,7 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     const auto original = history.document.charts.front().sv_recipes.front().range;
 
     auto zero = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto zero_revised = zero.value->payload.revise(zero.value->stamp, history, {measure_id_t{12}, 0}, false);
+    const auto zero_revised = zero.value->revise(history, local_position_t{measure_id_t{12}, 0}, false);
     CHECK_FALSE(zero_revised.value);
     CHECK(zero.value->payload.preview_range == original);
     CHECK(zero.value->payload.status == sv_recipe_range_drag_status_t::previewing);
@@ -409,7 +409,7 @@ TEST_CASE("SV recipe range drag rejects zero spans, locks, and stale revisions a
     auto proposed = history.document;
     proposed.metadata.title = "revision change";
     REQUIRE(commit_document_command(history, std::move(proposed), "Unrelated edit"));
-    const auto stale_revised = stale.value->payload.revise(stale.value->stamp, history, {measure_id_t{12}, 480}, false);
+    const auto stale_revised = stale.value->revise(history, local_position_t{measure_id_t{12}, 480}, false);
     CHECK_FALSE(stale_revised.value);
     test::check_stale_action_message(stale_revised.diagnostics, "SV recipe range drag");
     CHECK(stale.value->payload.status == sv_recipe_range_drag_status_t::rejected);
@@ -564,8 +564,8 @@ TEST_CASE("SV recipe draft range snapping normalizes direction and remains trans
     CHECK(chart_end_preview.candidate_points.points.back().absolute_row == 1919);
 
     const auto before_failed_range = draft.value->payload.candidate.range;
-    const auto failed_range = draft.value->payload.revise(draft.value->stamp, history,
-        {{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
+    const auto failed_range = draft.value->revise(history,
+        position_span_t{{measure_id_t{11}, 0}, {measure_id_t{11}, 0}}, 4);
     CHECK_FALSE(failed_range.value);
     CHECK(draft.value->payload.candidate.range == before_failed_range);
     CHECK(history.document.revision == revision);
@@ -741,7 +741,7 @@ TEST_CASE("SV range stamps keep equal-revision project replacement draggable",
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 17});
     CHECK(drag.value->stamp == chart_stamp_t::from(history.document, chart_id_t{10}));
     history.document.id = song_id_t{99};
-    const auto drag_revised = drag.value->payload.revise(drag.value->stamp, history, {measure_id_t{11}, 370}, false);
+    const auto drag_revised = drag.value->revise(history, local_position_t{measure_id_t{11}, 370}, false);
     REQUIRE(drag_revised.value);
     CHECK(apply_sv_recipe_range_drag(history, *drag.value, false).applied);
     CHECK(drag.value->payload.status == sv_recipe_range_drag_status_t::committed);
@@ -785,12 +785,12 @@ TEST_CASE("SV range failed revisions retain the last valid applicable range",
         make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {2, 1}));
     auto history = document_history_t::from(std::move(song));
     auto drag = make_range_proposal(history, sv_recipe_range_handle_t::begin, {measure_id_t{11}, 0});
-    const auto valid = drag.value->payload.revise(drag.value->stamp, history,
-        {measure_id_t{11}, 370}, false);
+    const auto valid = drag.value->revise(history,
+        local_position_t{measure_id_t{11}, 370}, false);
     REQUIRE(valid.value);
     const auto retained = drag.value->payload.preview_range;
-    const auto rejected = drag.value->payload.revise(drag.value->stamp, history,
-        {measure_id_t{12}, 0}, false);
+    const auto rejected = drag.value->revise(history,
+        local_position_t{measure_id_t{12}, 0}, false);
     check_retained_range(history, *drag.value, rejected, retained);
     REQUIRE(apply_sv_recipe_range_drag(history, *drag.value, false));
     CHECK(history.document.charts.front().sv_recipes.front().range == retained);
@@ -819,8 +819,8 @@ TEST_CASE("SV draft range revisions transfer existing string storage",
     candidate.name.assign(512, 'n');
     auto initial = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
     const auto* name_storage = initial.value->payload.candidate.name.data();
-    const auto revised = initial.value->payload.revise(initial.value->stamp, history,
-        {{measure_id_t{11}, 17}, {measure_id_t{12}, 451}}, 4);
+    const auto revised = initial.value->revise(history,
+        position_span_t{{measure_id_t{11}, 17}, {measure_id_t{12}, 451}}, 4);
     REQUIRE(revised.value);
     CHECK(revised.value->payload.candidate.name == candidate.name);
     CHECK(revised.value->payload.candidate.name.data() == name_storage);

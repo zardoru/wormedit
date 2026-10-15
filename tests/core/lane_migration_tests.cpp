@@ -644,7 +644,7 @@ TEST_CASE("Lane proposal revision reseals a target without publishing",
     const auto original = lane_migration_proposal_t::propose(history.document, history.document.revision,
         chart_id_t{2}, *target);
     REQUIRE(original.value);
-    const auto revised = original.value->payload.revise(original.value->stamp, history.document, *target);
+    const auto revised = original.value->revise(history.document, *target);
     REQUIRE(revised.value);
     CHECK(revised.value->stamp == original.value->stamp);
     CHECK(history.undo.empty());
@@ -660,7 +660,7 @@ TEST_CASE("Lane proposal revision keeps canonical tampering before expiry",
     REQUIRE(original.value);
     ++history.document.revision;
     original.value->payload.target.layout.display_name = "tampered";
-    const auto rejected = original.value->payload.revise(original.value->stamp, history.document, *target);
+    const auto rejected = original.value->revise(history.document, *target);
     check_lane_issue(rejected, lane_migration_issue_t::invalid_mapping);
     CHECK(history.undo.empty());
 }

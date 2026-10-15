@@ -361,7 +361,7 @@ TEST_CASE("Channel-map revision reseals changed mappings without publishing",
         chart.id, chart.lane_layouts.front().id, std::span{&first, 1});
     REQUIRE(original.value);
     const auto next = replacement(lane, "1B");
-    const auto revised = original.value->payload.revise(original.value->stamp, history.document,
+    const auto revised = original.value->revise(history.document,
                                                         std::span{&next, 1});
     REQUIRE(revised.value);
     CHECK(revised.value->stamp == original.value->stamp);
@@ -379,7 +379,7 @@ TEST_CASE("Channel-map revision keeps seal tampering ahead of expiry",
     REQUIRE(original.value);
     ++history.document.revision;
     original.value->payload.report.affected_note_count = 42;
-    const auto rejected = original.value->payload.revise(original.value->stamp, history.document,
+    const auto rejected = original.value->revise(history.document,
                                                          std::span{&change, 1});
     CHECK_FALSE(rejected.value);
     REQUIRE(rejected.diagnostics.size() == 1);

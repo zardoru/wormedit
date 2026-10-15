@@ -2629,8 +2629,8 @@ struct application_t::implementation_t {
             return clear_audio_offset_drag(
                 context, "Audio offset drag has no matching captured transaction.");
         }
-        const auto updated = drag->payload.revise(
-            drag->stamp, history.document, action.audio_offset_drag_delta_frames, timing_locked);
+        const auto updated = drag->revise(
+            history.document, action.audio_offset_drag_delta_frames, timing_locked);
         if (!updated.ok() || !updated.value) {
             drag.reset();
             drag_tab.reset();
@@ -3406,7 +3406,7 @@ struct application_t::implementation_t {
                                                 "Audio offset nudge could not start.",
                                                 notification_severity_t::warning);
         }
-        const auto updated = begun.value->payload.revise(begun.value->stamp, session.history.document,
+        const auto updated = begun.value->revise(session.history.document,
                                                       context.action.audio_offset_drag_delta_frames,
                                                       context.timing_locked);
         if (!updated.ok() || !updated.value) {

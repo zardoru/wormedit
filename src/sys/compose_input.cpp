@@ -675,7 +675,7 @@ auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
                 ? notification_severity_t::warning
                 : to_notification_severity(checked.diagnostics.front().severity),
             notification_source_t::edit);
-    auto revised = draft->payload.revise(draft->stamp, std::move(proposed));
+    auto revised = draft->revise(std::move(proposed));
     draft = std::move(revised.value);
     const auto message = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_REMOVE_DRAFT
                              ? "Staged BMSON region removed."
@@ -1952,7 +1952,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
         return bga_draw_stop(transaction.outcome.diagnostics.front().message);
     }
     const auto row = bga_draw_row(input, context, *chart, pending->payload.geometry);
-    auto revised = pending->payload.revise(pending->stamp, input, *chart, context.state, row, beginning);
+    auto revised = pending->revise(input, *chart, context.state, row, beginning);
     if (!revised.value) {
         pending.reset();
         return bga_draw_stop(bgm ? "BGM Draw requires a valid lane and at most 50,000 targets."

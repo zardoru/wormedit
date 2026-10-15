@@ -1029,7 +1029,7 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
         else
             post_edit_rejection(notifications, result.diagnostics, "Timing event deletion was rejected.");
     }
-    wormedit::cancel_timing_lane_pseudonote(stage);
+    wormedit::cancel_proposal(stage);
 }
 
 
@@ -1048,7 +1048,7 @@ void quick_insert_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be inserted at that row.");
         return;
     }
-    const auto result = wormedit::apply_timing_lane_pseudonote(history, candidate, timing_locked);
+    const auto result = wormedit::apply_proposal(history, candidate, timing_locked);
     if (result)
         notifications.post(wormedit::notification_severity_t::success,
                            wormedit::notification_source_t::edit, "Timing event inserted.");
@@ -3737,7 +3737,7 @@ struct application_t::implementation_t {
 
         const bool valid = (*timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage), session.history, *value, timing_locked)).value.has_value();
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
-            const auto result = wormedit::apply_timing_lane_pseudonote(
+            const auto result = wormedit::apply_proposal(
                 session.history, *timing_stage, timing_locked);
             const auto edited_existing = timing_stage->report()->existing_event.has_value();
             if (result)
@@ -3789,7 +3789,7 @@ struct application_t::implementation_t {
             }
         } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
             if (timing_stage) {
-                wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+                wormedit::cancel_proposal(*timing_stage);
                 timing_stage.reset();
                 platform.notification_sink.post_transient_hint(
                     wormedit::notification_source_t::edit, "Timing event staging cancelled.");
@@ -3896,7 +3896,7 @@ struct application_t::implementation_t {
             return;
         if (auto failure = wormedit::sys::validate_timing_stage_binding(
                 action, session.history, session.workspace, *stage)) {
-            wormedit::cancel_timing_lane_pseudonote(*stage);
+            wormedit::cancel_proposal(*stage);
             stage.reset();
             post_edit_rejection(
                 platform.notification_sink, {},

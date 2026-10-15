@@ -829,7 +829,7 @@ auto bpm_stage_ready(const TimingInsertFixture& fixture,
 
 auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> bool {
     if (!fixture.preview) return false;
-    const auto committed = wormedit::apply_timing_lane_pseudonote(
+    const auto committed = wormedit::apply_proposal(
         fixture.fixture.history, *fixture.preview, false);
     return committed.applied && fixture.fixture.history.document.revision == revision + 1 &&
            fixture.fixture.history.undo.size() == 1;

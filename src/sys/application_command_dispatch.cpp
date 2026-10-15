@@ -910,7 +910,7 @@ auto timing_lock_command(command_context_t& context) -> std::optional<command_re
                                           notification_source_t::edit);
     app.project.timing_recipe.timing_locked = !app.project.timing_recipe.timing_locked;
     if (app.project.timing_recipe.timing_locked && context.environment.editor.timing_stage) {
-        cancel_timing_lane_pseudonote(*context.environment.editor.timing_stage);
+        cancel_proposal(*context.environment.editor.timing_stage);
         context.environment.editor.timing_stage.reset();
     }
     post_command_message(context.environment.document.notifications,

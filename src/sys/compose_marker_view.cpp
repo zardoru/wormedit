@@ -536,7 +536,7 @@ void populate_compose_timing_markers(
     view.timing_marker_count = flattened.compose.timing_marker.size();
     const auto* stage_report = timing_stage ? timing_stage->report() : nullptr;
     if (stage_report &&
-        stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        stage_report->lifecycle.status() == wormedit::proposal_status_t::active &&
         timing_stage->captured_stamp().is_current(chart.id, view.document_revision)) {
         const auto stage_row =
             (cache.scene.index->measures).row_of(stage_report->position);

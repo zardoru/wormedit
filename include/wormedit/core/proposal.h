@@ -164,10 +164,13 @@ public:
     [[nodiscard]] auto captured_stamp() const noexcept -> const Stamp& { return captured_stamp_; }
     [[nodiscard]] auto input() const noexcept -> const proposal_application_input_t& { return input_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
+    [[nodiscard]] auto has_invalid_preparation() const noexcept -> bool { return has_invalid_preparation_; }
+    void invalidate_preparation() noexcept { has_invalid_preparation_ = true; }
 private:
     const Stamp& captured_stamp_;
     const proposal_application_input_t& input_;
     const chart_document_t* target_{};
+    bool has_invalid_preparation_{};
     friend class proposal_lifecycle_runner_t;
 };
 
@@ -190,6 +193,53 @@ public:
             return proposal_application_stage_t::locked;
         }
         return std::nullopt;
+    }
+
+    template<class Payload, class... Arguments>
+    [[nodiscard]] static auto revision_target(Payload& payload, const song_document_t& document,
+        chart_id_t chart, Arguments&&... arguments) -> result_t<const chart_document_t*, diagnostic_t> {
+        if constexpr (requires { payload.validate_target(document, chart, proposal_operation_t::revise,
+                                                         arguments...); })
+            return payload.validate_target(document, chart, proposal_operation_t::revise, arguments...);
+        else return payload.validate_target(document, chart, proposal_operation_t::revise);
+    }
+
+    template<class Pending, class... Arguments>
+    [[nodiscard]] static auto revise(Pending& pending, const document_history_t& history,
+        proposal_revision_input_t& input, Arguments&&... arguments) -> bool {
+        using payload_type = typename Pending::payload_type;
+        auto& lifecycle = proposal_lifecycle_of(pending.payload);
+        const auto& policy = payload_type::lifecycle_policy;
+        if (!lifecycle.is_active()) return false;
+        if constexpr (requires { pending.payload.can_revise(arguments...); }) {
+            if (!pending.payload.can_revise(arguments...)) return false;
+        }
+        input.diagnostics.clear();
+        std::optional<proposal_application_stage_t> stopped;
+        if (input.is_timing_locked && policy.lock_order == proposal_lock_order_t::before_stamp)
+            stopped = proposal_application_stage_t::locked;
+        else if (!pending.is_current(history, payload_type::apply_policy.identity))
+            stopped = proposal_application_stage_t::expired;
+        else if (input.is_timing_locked) stopped = proposal_application_stage_t::locked;
+        if (stopped) {
+            input.diagnostics.push_back(*stopped == proposal_application_stage_t::locked
+                ? error(policy.locked_code, std::string(policy.locked_message))
+                : error(payload_type::apply_policy.stale_code,
+                    stale_action_message(payload_type::apply_policy.stale_label)));
+            lifecycle.invalidate(policy, *stopped);
+            return false;
+        }
+        auto target = revision_target(pending.payload, history.document, pending.stamp.chart, arguments...);
+        if (!target) {
+            input.diagnostics.push_back(std::move(target.error()));
+            lifecycle.invalidate(policy, proposal_application_stage_t::binding);
+            return false;
+        }
+        proposal_revision_scope_t<typename Pending::stamp_type> scope{
+            history, pending.stamp, input.diagnostics, *target};
+        const bool is_accepted = pending.payload.revise(scope, std::forward<Arguments>(arguments)...);
+        lifecycle.finish_revision(policy, is_accepted, scope.has_invalid_target());
+        return is_accepted;
     }
 
     template<class Edit> requires stateful_proposal_payload<Edit>
@@ -268,9 +318,10 @@ using proposal_edit_diagnostics_t = decltype(
 template<class Edit, class Scope, class... Arguments>
 concept proposal_edit = std::derived_from<Scope, document_edit_scope_t> &&
     requires(Edit&& edit, Scope& scope, Arguments&&... arguments) {
-        { std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...) }
-            -> std::same_as<diagnosed_t<std::optional<std::string>,
-                proposal_edit_diagnostics_t<Edit, Scope, Arguments...>>>;
+        std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...);
+        requires std::same_as<proposal_edit_outcome_t<Edit, Scope, Arguments...>, document_command_result_t> ||
+            std::same_as<proposal_edit_outcome_t<Edit, Scope, Arguments...>,
+                diagnosed_t<std::optional<std::string>, proposal_edit_diagnostics_t<Edit, Scope, Arguments...>>>;
     };
 
 // Synchronous edits and captured proposals share ready/error/no-op/publication policy.
@@ -287,15 +338,24 @@ template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edi
             return application_result::finish(edit, transaction.finish_without_commit(), {}, *stopped);
     }
     auto prepared = std::forward<Edit>(edit).apply(scope, std::forward<Arguments>(arguments)...);
-    application_result::merge(transaction, prepared.diagnostics, proposal_application_stage_t::prepared);
-    const bool can_commit = prepared.value.has_value() && prepared.ok() &&
-        !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
-    if (!can_commit) {
-        return application_result::finish(edit, transaction.finish_without_commit(),
-            std::move(prepared.diagnostics), proposal_application_stage_t::prepared);
+    if constexpr (std::same_as<decltype(prepared), document_command_result_t>) {
+        // Temporary: removed by T-637 when typed numeric edits expose prepared operations.
+        auto stage = proposal_application_stage_t::published;
+        if constexpr (stateful_proposal_payload<Edit>) {
+            if (scope.has_invalid_preparation()) stage = proposal_application_stage_t::preflight;
+        }
+        return application_result::finish(edit, transaction.finish_with(std::move(prepared)), {}, stage);
+    } else {
+        application_result::merge(transaction, prepared.diagnostics, proposal_application_stage_t::prepared);
+        const bool can_commit = prepared.value.has_value() && prepared.ok() &&
+            !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
+        if (!can_commit) {
+            return application_result::finish(edit, transaction.finish_without_commit(),
+                std::move(prepared.diagnostics), proposal_application_stage_t::prepared);
+        }
+        return application_result::finish(edit, transaction.commit(std::move(*prepared.value)),
+            std::move(prepared.diagnostics), proposal_application_stage_t::published);
     }
-    return application_result::finish(edit, transaction.commit(std::move(*prepared.value)),
-        std::move(prepared.diagnostics), proposal_application_stage_t::published);
 }
 
 // Applicable state has one stamp; diagnostics belong to the build/revision outcome.
@@ -321,33 +381,12 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         }
     [[nodiscard]] auto revise(const document_history_t& history, proposal_revision_input_t input,
                              Arguments&&... arguments) {
-        using outcome_type = decltype(payload.revise(std::declval<proposal_revision_scope_t<Stamp>&>(),
-            std::forward<Arguments>(arguments)...));
-        auto& lifecycle = proposal_lifecycle_of(payload);
-        const auto& policy = Payload::lifecycle_policy;
-        if (!lifecycle.is_active()) return outcome_type{.diagnostics = std::move(input.diagnostics)};
-        input.diagnostics.clear();
-        if (input.is_timing_locked) {
-            input.diagnostics.push_back(error(policy.locked_code, std::string(policy.locked_message)));
-            lifecycle.invalidate(policy, proposal_application_stage_t::locked);
-            return outcome_type{.diagnostics = std::move(input.diagnostics)};
-        }
-        if (!is_current(history, Payload::apply_policy.identity)) {
-            input.diagnostics.push_back(error(Payload::apply_policy.stale_code,
-                stale_action_message(Payload::apply_policy.stale_label)));
-            lifecycle.invalidate(policy, proposal_application_stage_t::expired);
-            return outcome_type{.diagnostics = std::move(input.diagnostics)};
-        }
-        auto target = payload.validate_target(history.document, stamp.chart, proposal_operation_t::revise);
-        if (!target) {
-            input.diagnostics.push_back(std::move(target.error()));
-            lifecycle.invalidate(policy, proposal_application_stage_t::binding);
-            return outcome_type{.diagnostics = std::move(input.diagnostics)};
-        }
-        proposal_revision_scope_t<Stamp> scope{history, stamp, input.diagnostics, *target};
-        auto revised = payload.revise(scope, std::forward<Arguments>(arguments)...);
-        lifecycle.finish_revision(policy, revised.value.has_value(), scope.has_invalid_target());
-        return revised;
+        diagnosed_t<std::optional<proposal_t>> outcome;
+        if (proposal_lifecycle_runner_t::revise(*this, history, input,
+                                               std::forward<Arguments>(arguments)...))
+            outcome.value = proposal_t{stamp, std::move(payload)};
+        outcome.diagnostics = std::move(input.diagnostics);
+        return outcome;
     }
 
     [[nodiscard]] auto inspect(const document_history_t& history,
@@ -489,10 +528,10 @@ struct lifecycle_t<Payload, Stamp, Diagnostics, std::tuple<ProposeArguments...>,
                                  ReviseArguments... revised) {
           { Payload::propose(std::forward<ProposeArguments>(proposed)...) }
               -> std::derived_from<proposal_outcome_t<Payload, Stamp, Diagnostics>>;
-          { payload.revise(std::forward<ReviseArguments>(revised)...) }
-              -> std::derived_from<proposal_outcome_t<Payload, Stamp, Diagnostics>>;
-          requires std::same_as<decltype(Payload::propose(std::forward<ProposeArguments>(proposed)...)),
-              decltype(payload.revise(std::forward<ReviseArguments>(revised)...))>;
+          payload.revise(std::forward<ReviseArguments>(revised)...);
+          requires std::same_as<decltype(payload.revise(std::forward<ReviseArguments>(revised)...)), bool> ||
+              std::same_as<decltype(Payload::propose(std::forward<ProposeArguments>(proposed)...)),
+                  decltype(payload.revise(std::forward<ReviseArguments>(revised)...))>;
       }> {};
 
 } // namespace proposal_detail

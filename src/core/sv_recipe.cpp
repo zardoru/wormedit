@@ -973,28 +973,24 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
     return outcome;
 }
 
-auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
-    sv_recipe_t candidate) -> proposal_outcome_t<sv_recipe_draft_t> {
+auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>&,
+    sv_recipe_t candidate) -> bool {
     auto& draft = *this;
-    const auto& stamp = scope.captured_stamp();
-    proposal_outcome_t<sv_recipe_draft_t> outcome{.diagnostics = std::move(scope.diagnostics())};
     candidate.id = draft.existing_recipe.value_or(recipe_id_t{});
     draft.candidate = std::move(candidate);
-    outcome.value = proposal_t<sv_recipe_draft_t>{stamp, std::move(draft)};
-    return outcome;
+    return true;
 }
 
 auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
     position_span_t pointer_hits, std::uint64_t active_snap_denominator)
-    -> proposal_outcome_t<sv_recipe_draft_t> {
+    -> bool {
     auto& draft = *this;
-    const auto& stamp = scope.captured_stamp();
-    proposal_outcome_t<sv_recipe_draft_t> outcome{.diagnostics = std::move(scope.diagnostics())};
+    auto& diagnostics = scope.diagnostics();
     const auto* chart = scope.target();
     auto built_index = build_measure_index(*chart);
     if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
-        return outcome;
+        diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+        return false;
     }
     const auto& index = std::get<measure_index_t>(built_index);
     const auto snapped_begin = snapped_position(*chart, index, pointer_hits.begin, active_snap_denominator);
@@ -1002,27 +998,26 @@ auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
     const auto begin_row = snapped_begin ? position_row(index, *snapped_begin, true) : std::nullopt;
     const auto end_row = snapped_end ? position_row(index, *snapped_end, true) : std::nullopt;
     if (!begin_row || !end_row) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                      "SV recipe draft range cannot be represented on the active grid"));
-        return outcome;
+        return false;
     }
     if (*begin_row == *end_row) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+        diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                      "SV recipe draft range must have a nonzero width"));
-        return outcome;
+        return false;
     }
     const auto first_row = std::min(*begin_row, *end_row);
     const auto last_row = std::max(*begin_row, *end_row);
     const auto begin_position = position_at_row(index, first_row);
     const auto end_position = position_at_row(index, last_row, true);
     if (!begin_position || !end_position) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+        diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                      "SV recipe draft range exceeds the chart grid"));
-        return outcome;
+        return false;
     }
     draft.candidate.range = {*begin_position, *end_position};
-    outcome.value = proposal_t<sv_recipe_draft_t>{stamp, std::move(draft)};
-    return outcome;
+    return true;
 }
 
 auto preview_sv_recipe_draft(const document_history_t& history, const proposal_t<sv_recipe_draft_t>& pending,
@@ -1334,29 +1329,27 @@ auto sv_recipe_range_drag_t::is_unchanged() const noexcept -> bool {
 }
 
 auto sv_recipe_range_drag_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
-    local_position_t pointer_position) -> proposal_outcome_t<sv_recipe_range_drag_t> {
-    proposal_outcome_t<sv_recipe_range_drag_t> outcome{.diagnostics = std::move(scope.diagnostics())};
-    const auto& stamp = scope.captured_stamp();
+    local_position_t pointer_position) -> bool {
+    auto& diagnostics = scope.diagnostics();
     const auto* chart = scope.target();
     const auto* target_recipe = recipe_by_id(*chart, recipe);
     if (!target_recipe) {
         scope.invalidate_target();
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
-        return outcome;
+        diagnostics.push_back(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
+        return false;
     }
     auto built_index = build_measure_index(*chart);
     if (!std::holds_alternative<measure_index_t>(built_index)) {
-        outcome.diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
+        diagnostics = std::move(std::get<diagnostic_list_t>(built_index));
         scope.invalidate_target();
-        return outcome;
+        return false;
     }
     auto prepared = prepare_sv_recipe_range(*chart, *target_recipe,
         std::get<measure_index_t>(built_index), *this, pointer_position);
-    outcome.diagnostics = std::move(prepared.diagnostics);
-    if (!prepared.value) return outcome;
+    diagnostics = std::move(prepared.diagnostics);
+    if (!prepared.value) return false;
     preview_range = *prepared.value;
-    outcome.value = proposal_t<sv_recipe_range_drag_t>{stamp, *this};
-    return outcome;
+    return true;
 }
 
 auto sv_recipe_range_drag_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,

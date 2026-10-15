@@ -839,10 +839,9 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     timing_scene_cache_t cache;
     timing_grid_state_t grid;
     grid.active_denominator = 4;
-    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
-        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
-                              .position = {measure_id_t{1}, 0}}}}};
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t::from(
+        chart_stamp_t::from(history.document, chart_id_t{1}),
+        timing_lane_pseudonote_preview_t{.report = {.position = {measure_id_t{1}, 0}}})};
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
     const auto& view = flattened.view.timing;
@@ -7137,11 +7136,11 @@ TEST_CASE("Timing stage converts transition fractions through the shared careful
     binding.workspace->selected_chart = chart_id_t{1};
     flattened_workspace_t flattened;
     timing_scene_cache_t cache;
-    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
-        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t::from(
+        chart_stamp_t::from(history.document, chart_id_t{1}),
+        timing_lane_pseudonote_preview_t{.report = {
             .kind = timing_lane_kind_t::speed, .position = {measure_id_t{1}, 0},
-            .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}}}}};
+            .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}}})};
     populate_timing_view_for_compose(flattened, history, *binding.workspace, cache, 1280, 980, {}, &stage);
     CHECK(flattened.view.timing.stage_secondary_value == 3'002'399'751'580'331.0);
 }

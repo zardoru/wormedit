@@ -215,7 +215,7 @@ void populate_timing_stage_view(
     const wormedit::timing_lane_pseudonote_outcome_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
     const auto* report = stage ? stage->report() : nullptr;
-    if (report && report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+    if (report && report->lifecycle.status() == wormedit::proposal_status_t::active &&
         stage->captured_stamp().is_current(chart.id, revision)) {
         view.stage_active = true;
         view.stage_valid = stage->value.has_value();
@@ -311,7 +311,7 @@ void populate_timing_view_for_compose(
     view.supported_snap_denominators = timing_grid.supported_denominators.data();
     view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
     const auto* report = stage ? stage->report() : nullptr;
-    const bool editing_stage = report && report->status == wormedit::timing_lane_pseudonote_status_t::editing;
+    const bool editing_stage = report && report->lifecycle.status() == wormedit::proposal_status_t::active;
     if (!editing_stage) return;
     const auto* measures = cached_measures(cache, chart, history.document.revision);
     const auto row_to_pixels = [&](long double row) {

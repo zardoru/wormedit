@@ -93,13 +93,11 @@ struct sv_recipe_draft_t {
         sv_recipe_t candidate, bool timing_locked = false) -> proposal_outcome_t<sv_recipe_draft_t>;
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         recipe_id_t recipe, bool timing_locked = false) -> proposal_outcome_t<sv_recipe_draft_t>;
-    // Successful revisions transfer this payload into the returned proposal. Failed
+    // Successful envelope revisions transfer this payload into the returned proposal. Failed
     // range updates keep its last valid candidate. Reuse the prior diagnostic buffer.
-    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t candidate)
-        -> proposal_outcome_t<sv_recipe_draft_t>;
+    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t candidate) -> bool;
     [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&,
-        position_span_t pointer_hits, std::uint64_t active_snap_denominator)
-        -> proposal_outcome_t<sv_recipe_draft_t>;
+        position_span_t pointer_hits, std::uint64_t active_snap_denominator) -> bool;
     [[nodiscard]] auto preview_candidate() const -> sv_recipe_t;
 
     proposal_lifecycle_t lifecycle;
@@ -218,8 +216,7 @@ struct sv_recipe_range_drag_t {
         -> proposal_outcome_t<sv_recipe_range_drag_t>;
     // Failed pointer updates leave the previous valid range available. Fatal errors
     // mark this state rejected; neither failure returns an applicable proposal.
-    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, local_position_t pointer_position)
-        -> proposal_outcome_t<sv_recipe_range_drag_t>;
+    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, local_position_t pointer_position) -> bool;
 
     proposal_lifecycle_t lifecycle;
     recipe_id_t recipe;

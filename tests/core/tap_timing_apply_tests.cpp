@@ -117,7 +117,7 @@ TEST_CASE("Tap timing commit inserts row-zero BPM and undo restores both values 
     CHECK(preview->bpms.front().position == local_position_t{measure_id_t{10}, 0});
     CHECK(preview->beat_zero_audio_offset_seconds == signed_rational_t{1, 2});
 
-    const auto result = apply_tap_timing_proposal(history, *proposed.value);
+    const auto result = apply_proposal(history, *proposed.value);
     REQUIRE(result);
     CHECK(history.undo.size() == 1);
     CHECK(history.document.charts.front().bpms.size() == 1);
@@ -151,7 +151,7 @@ TEST_CASE("Tap timing commit changes only the final row-zero BPM and preserves l
     const auto before_note_position = before_note.position;
     const auto proposed = proposal(history.document, stable_estimate(), tap_bpm_choice_t::nearest_half);
     REQUIRE(proposed.value.has_value());
-    REQUIRE(apply_tap_timing_proposal(history, *proposed.value));
+    REQUIRE(apply_proposal(history, *proposed.value));
     const auto& changed = history.document.charts.front();
     CHECK(changed.bpms[0].beats_per_minute == signed_rational_t{100, 1});
     CHECK(changed.bpms[1].beats_per_minute == signed_rational_t{120, 1});
@@ -184,11 +184,11 @@ TEST_CASE("Tap timing lock, stale, unstable, invalid and overflowing proposals r
         CHECK(history.undo.size() == before_undo);
         CHECK(history.redo.size() == before_redo);
     };
-    CHECK_FALSE(apply_tap_timing_proposal(history, *valid.value, true));
+    CHECK_FALSE(apply_proposal(history, *valid.value, true));
     unchanged();
     auto stale = *valid.value;
     --stale.stamp.document.revision;
-    CHECK_FALSE(apply_tap_timing_proposal(history, stale));
+    CHECK_FALSE(apply_proposal(history, stale));
     unchanged();
     auto unstable = stable_estimate();
     unstable.stable = false;
@@ -215,7 +215,7 @@ TEST_CASE("Tap timing commit rejects a chart made invalid after proposal without
     history.document.charts.front().measures.clear();
     const auto revision = history.document.revision;
     const auto next = history.next_revision;
-    const auto result = apply_tap_timing_proposal(history, *proposed.value);
+    const auto result = apply_proposal(history, *proposed.value);
     CHECK_FALSE(result);
     CHECK(history.document.revision == revision);
     CHECK(history.next_revision == next);
@@ -277,7 +277,7 @@ TEST_CASE("Captured tap timing uses shared stale feedback after timing lock",
     bool locked = false;
     SECTION("stale proposal") {}
     SECTION("lock takes precedence") { locked = true; }
-    const auto result = apply_tap_timing_proposal(history, stale, locked);
+    const auto result = apply_proposal(history, stale, locked);
     const auto expected = locked
         ? std::string{"tap timing apply is disabled while timing is locked"}
         : stale_action_message("Tap timing proposal");
@@ -291,14 +291,14 @@ void check_tap_project_replacement(document_history_t& history,
                                     const proposal_t<tap_timing_apply_proposal_t>& proposed) {
     history.document.id = song_id_t{99};
     CHECK(make_tap_timing_preview(history.document, proposed).has_value());
-    CHECK(apply_tap_timing_proposal(history, proposed).applied);
+    CHECK(apply_proposal(history, proposed).applied);
     CHECK(history.undo.size() == 1);
 }
 
 void check_tap_missing_target(document_history_t& history,
                               const proposal_t<tap_timing_apply_proposal_t>& proposed) {
     history.document.charts.clear();
-    const auto result = apply_tap_timing_proposal(history, proposed);
+    const auto result = apply_proposal(history, proposed);
     check_tap_timing_rejection(result, "tap timing proposal no longer matches a valid chart");
     CHECK(history.undo.empty());
 }

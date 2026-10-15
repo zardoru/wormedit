@@ -11,6 +11,15 @@ namespace wormedit {
 enum class tap_bpm_choice_t { raw, nearest_one, nearest_half };
 
 struct tap_timing_apply_proposal_t {
+    static constexpr proposal_apply_policy_t apply_policy{
+        .stale_label = "Tap timing proposal", .identity = document_identity_policy_t::revision_only};
+    [[nodiscard]] static auto validate_apply(bool timing_locked = false) -> diagnostic_list_t;
+    [[nodiscard]] auto prepare_document(const song_document_t&, chart_id_t) const
+        -> std::optional<song_document_t>;
+    [[nodiscard]] auto apply(document_command_transaction_t&, chart_id_t,
+                             bool timing_locked = false) const
+        -> diagnosed_t<std::optional<std::string>>;
+
     [[nodiscard]] static auto propose(const song_document_t& document, chart_id_t chart,
                                   const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
                                   std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
@@ -43,9 +52,5 @@ using tap_timing_apply_proposal_outcome_t = proposal_outcome_t<tap_timing_apply_
     const song_document_t& document, const proposal_t<tap_timing_apply_proposal_t>& proposal)
     -> std::optional<chart_document_t>;
 
-[[nodiscard]] auto apply_tap_timing_proposal(document_history_t& history,
-                                             const proposal_t<tap_timing_apply_proposal_t>& proposal,
-                                             bool timing_locked = false)
-    -> document_command_result_t;
 
 } // namespace wormedit

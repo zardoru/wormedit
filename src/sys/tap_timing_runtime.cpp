@@ -203,7 +203,7 @@ auto tap_timing_runtime_t::apply(document_history_t& history, const tap_timing_c
         status_ = stale_result_status.c_str();
         return {.revision = history.document.revision};
     }
-    auto result = apply_tap_timing_proposal(history, *captured, timing_locked);
+    auto result = wormedit::apply_proposal(history, *captured, timing_locked);
     if (result) reset();
     else status_ = "Apply rejected; check timing lock and tap again.";
     return result;

@@ -1058,8 +1058,10 @@ using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     std::uint64_t row) -> const lane_layout_t*;
 
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto build_measure_index(const chart_document_t& chart)
     -> std::variant<measure_index_t, diagnostic_list_t>;
+// Temporary: removed by T-632 after the remaining callers migrate to members.
 [[nodiscard]] auto absolute_row(const measure_index_t& index, local_position_t position)
     -> std::optional<std::uint64_t>;
 [[nodiscard]] auto validate_input_profile(const lane_layout_t& layout,

@@ -603,7 +603,7 @@ auto collect_timing_bpms(timing_build_context_t& context) -> bool {
     context.bpms.reserve(context.chart.bpms.size());
     for (std::size_t order = 0; order < context.chart.bpms.size(); ++order) {
         const auto& bpm = context.chart.bpms[order];
-        const auto row = absolute_row(context.measures, bpm.position);
+        const auto row = context.measures.row_of(bpm.position);
         if (!row) {
             context.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
                                                 "BPM position is outside chart geometry", bpm.id));
@@ -636,7 +636,7 @@ auto collect_timing_pauses(timing_build_context_t& context) -> bool {
     context.pauses.reserve(context.chart.pauses.size());
     for (std::size_t order = 0; order < context.chart.pauses.size(); ++order) {
         const auto& pause = context.chart.pauses[order];
-        const auto row = absolute_row(context.measures, pause.position);
+        const auto row = context.measures.row_of(pause.position);
         if (!row) {
             context.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
                                                 "pause position is outside chart geometry",
@@ -665,8 +665,8 @@ auto collect_timing_pauses(timing_build_context_t& context) -> bool {
 
 auto collect_timing_warps(timing_build_context_t& context) -> bool {
     for (const auto& warp : context.chart.warps) {
-        const auto begin = absolute_row(context.measures, warp.span.begin);
-        const auto end = absolute_row(context.measures, warp.span.end);
+        const auto begin = context.measures.row_of(warp.span.begin);
+        const auto end = context.measures.row_of(warp.span.end);
         if (!begin || !end || *end <= *begin) {
             context.diagnostics.push_back(error(timing_error_code_t::invalid_warp,
                                                 "warp must be a positive in-chart musical interval",
@@ -956,13 +956,13 @@ auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t 
                                            "timing discontinuity profile is not recognized"));
         return result;
     }
-    const auto built_measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built_measures)) {
+    const auto built_measures = measure_index_t::from(chart);
+    if (!built_measures) {
         result.diagnostics.push_back(
             error(timing_error_code_t::invalid_document, "chart measure geometry is invalid"));
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(built_measures);
+    const auto& measures = *built_measures;
     if (chart.divisions_per_standard_measure == 0 || measures.total_rows == 0) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "timing requires a nonempty positive-resolution chart"));
@@ -1117,12 +1117,12 @@ auto timing_query_result_t::from(timing_coordinate_outcome_t&& outcome) -> timin
 
 auto timing_at(const timing_index_t& index, std::uint64_t row, timing_boundary_side_t side)
     -> timing_query_result_t {
-    return timing_query_result_t::from(index.query_seconds(row, side));
+    return index.seconds_at(row, side);
 }
 
 auto timing_at(const timing_index_t& index, exact_chart_row_t row, timing_boundary_side_t side)
     -> timing_query_result_t {
-    return timing_query_result_t::from(index.query_seconds(row, side));
+    return index.seconds_at(row, side);
 }
 
 auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll_pixels,
@@ -1191,7 +1191,7 @@ auto proposed_timing_y_on_fixed_waveform(const timing_index_t& original,
 
 auto timing_index_t::query_seconds(const measure_index_t& measures, local_position_t position,
                                     timing_boundary_side_t side) const -> timing_coordinate_outcome_t {
-    const auto row = absolute_row(measures, position);
+    const auto row = measures.row_of(position);
     if (!row) {
         return std::unexpected(timing_coordinate_metadata_t{.diagnostic = error(timing_error_code_t::position_out_of_range,
                                "timing query position is outside chart geometry")});
@@ -1201,7 +1201,7 @@ auto timing_index_t::query_seconds(const measure_index_t& measures, local_positi
 
 auto timing_at(const timing_index_t& index, const measure_index_t& measures,
                local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
-    return timing_query_result_t::from(index.query_seconds(measures, position, side));
+    return index.seconds_at(measures, position, side);
 }
 
 namespace {
@@ -1213,7 +1213,7 @@ auto is_selected_bpm_last_before_beat(const chart_document_t& chart,
         if (event.id == selected) {
             continue;
         }
-        const auto row = absolute_row(measures, event.position);
+        const auto row = measures.row_of(event.position);
         if (!row || (*row >= anchor_row && *row <= beat_row)) {
             return false;
         }
@@ -1228,7 +1228,7 @@ auto is_locked_anchors_preserved(const chart_document_t& chart, const measure_in
         if (!anchor.locked) {
             continue;
         }
-        const auto row = absolute_row(measures, anchor.position);
+        const auto row = measures.row_of(anchor.position);
         if (!row || *row < anchor_row) {
             continue;
         }
@@ -1257,8 +1257,8 @@ auto beat_fit_selection(const chart_document_t& chart, const measure_index_t& me
         std::ranges::count(chart.bpms, bpm_event, &bpm_event_t::id) != 1) {
         return error(timing_error_code_t::invalid_fit, "beat fit requires one selected BPM event");
     }
-    const auto anchor_row = absolute_row(measures, selected->position);
-    const auto beat_row = absolute_row(measures, beat);
+    const auto anchor_row = measures.row_of(selected->position);
+    const auto beat_row = measures.row_of(beat);
     if (!anchor_row || !beat_row || *anchor_row >= *beat_row) {
         return error(timing_error_code_t::position_out_of_range,
                      "fitted beat must follow the selected BPM event");
@@ -1274,11 +1274,11 @@ auto beat_fit_selection(const chart_document_t& chart, const measure_index_t& me
 auto candidate_beat_time(chart_document_t& candidate, const beat_fit_selection_t& selected,
                          std::int64_t bpm) -> std::optional<signed_rational_t> {
     candidate.bpms[selected.selected_index].beats_per_minute = {bpm, 1};
-    const auto built = build_timing_index(candidate);
-    if (!built) {
+    const auto built = timing_index_t::from(candidate);
+    if (!built.value) {
         return std::nullopt;
     }
-    const auto end = (*built.index).seconds_at(selected.beat_row);
+    const auto end = (*built.value).seconds_at(selected.beat_row);
     return end ? end.seconds : std::nullopt;
 }
 
@@ -1298,19 +1298,19 @@ auto build_beat_interval_fit(const chart_document_t& chart, object_id_t bpm_even
         return std::unexpected(error(timing_error_code_t::invalid_fit,
                       "beat fit requires a representable target source frame and sample rate"));
     }
-    const auto measure_build = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measure_build)) {
+    const auto measure_build = measure_index_t::from(chart);
+    if (!measure_build) {
         return std::unexpected(error(timing_error_code_t::invalid_document,
                       "beat fit requires valid chart measure geometry"));
     }
-    const auto& measures = std::get<measure_index_t>(measure_build);
+    const auto& measures = *measure_build;
     const auto selection = beat_fit_selection(chart, measures, bpm_event, beat);
     if (const auto* failure = std::get_if<timing_diagnostic_t>(&selection)) {
         return std::unexpected(*failure);
     }
     const auto& selected = std::get<beat_fit_selection_t>(selection);
-    const auto original_build = build_timing_index(chart);
-    if (!original_build) {
+    const auto original_build = timing_index_t::from(chart);
+    if (!original_build.value) {
         return std::unexpected(error(timing_error_code_t::invalid_document,
                       "beat fit requires a valid timing index"));
     }
@@ -1342,19 +1342,19 @@ auto build_beat_interval_fit(const chart_document_t& chart, object_id_t bpm_even
                       "fitted BPM exceeds exact rational arithmetic bounds"));
     }
     candidate.bpms[selected.selected_index].beats_per_minute = *fitted_bpm;
-    const auto fitted_build = build_timing_index(candidate);
-    if (!fitted_build) {
+    const auto fitted_build = timing_index_t::from(candidate);
+    if (!fitted_build.value) {
         return std::unexpected(error(timing_error_code_t::invalid_fit,
                       "fitted BPM does not produce a valid timing index"));
     }
-    const auto fitted_beat = (*fitted_build.index).seconds_at(selected.beat_row);
+    const auto fitted_beat = (*fitted_build.value).seconds_at(selected.beat_row);
     const auto matched =
         fitted_beat ? compare_exact(*fitted_beat.seconds, target_time) : std::nullopt;
     if (!matched || *matched != 0) {
         return std::unexpected(error(timing_error_code_t::invalid_fit,
                       "fitted BPM does not reach the exact target frame"));
     }
-    if (!is_locked_anchors_preserved(chart, measures, *fitted_build.index, selected.anchor_row,
+    if (!is_locked_anchors_preserved(chart, measures, *fitted_build.value, selected.anchor_row,
                                   sample_rate)) {
         return std::unexpected(error(timing_error_code_t::locked_anchor_conflict,
                       "beat fit would move a locked timing anchor"));
@@ -1643,7 +1643,7 @@ auto timing_position_query_result_t::from(timing_coordinate_outcome_t&& outcome)
 
 auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
                          timing_inverse_options_t options) -> timing_position_query_result_t {
-    return timing_position_query_result_t::from(index.query_position(seconds, options));
+    return index.row_at(seconds, options);
 }
 
 auto sample_frame_t::from(signed_rational_t seconds, std::uint32_t sample_rate,
@@ -1755,7 +1755,7 @@ struct scroll_speed_event_context_t {
 auto collect_scroll_events(scroll_speed_event_context_t& context) -> void {
     for (std::size_t order = 0; order < context.chart.scrolls.size(); ++order) {
         const auto& event = context.chart.scrolls[order];
-        const auto row = absolute_row(context.measures, event.position);
+        const auto row = context.measures.row_of(event.position);
         if (!row) {
             context.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
                                                 "scroll event position is outside chart geometry",
@@ -1794,7 +1794,7 @@ auto collect_scroll_events(scroll_speed_event_context_t& context) -> void {
 auto collect_speed_events(scroll_speed_event_context_t& context) -> void {
     for (std::size_t order = 0; order < context.chart.speeds.size(); ++order) {
         const auto& event = context.chart.speeds[order];
-        const auto row = absolute_row(context.measures, event.position);
+        const auto row = context.measures.row_of(event.position);
         if (!row) {
             context.diagnostics.push_back(error(timing_error_code_t::position_out_of_range,
                                                 "speed event position is outside chart geometry",
@@ -2110,13 +2110,13 @@ auto compile_displacement_segments(scroll_speed_event_context_t& context,
 auto scroll_speed_index_t::from(const chart_document_t& chart, const timing_index_t& timing,
                               scroll_speed_build_options_t options) -> scroll_speed_build_outcome_t {
     scroll_speed_build_outcome_t result{};
-    const auto built_measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built_measures)) {
+    const auto built_measures = measure_index_t::from(chart);
+    if (!built_measures) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "scroll/speed chart measure geometry is invalid"));
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(built_measures);
+    const auto& measures = *built_measures;
     if (timing.divisions_per_standard_measure != chart.divisions_per_standard_measure ||
         timing.total_rows != measures.total_rows || timing.rows.empty() ||
         timing.total_rows > maximum_i64_magnitude ||
@@ -3138,13 +3138,13 @@ auto preview_schedule_t::from(const chart_document_t& chart, const timing_index_
                   "preview schedule and timing index must use the same positive chart resolution"));
         return result;
     }
-    const auto built_measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built_measures)) {
+    const auto built_measures = measure_index_t::from(chart);
+    if (!built_measures) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            "preview chart measure geometry is invalid"));
         return result;
     }
-    const auto& measures = std::get<measure_index_t>(built_measures);
+    const auto& measures = *built_measures;
     if (measures.total_rows != timing.total_rows) {
         result.diagnostics.push_back(error(timing_error_code_t::invalid_document,
                                            stale_action_message("Preview timing index")));
@@ -3250,16 +3250,22 @@ auto build_preview_schedule(const chart_document_t& chart, const timing_index_t&
 }
 
 auto timing_index_t::seconds_at(std::uint64_t row, timing_boundary_side_t side) const
-    -> timing_query_result_t { return timing_at(*this, row, side); }
+    -> timing_query_result_t {
+    return timing_query_result_t::from(query_seconds(row, side));
+}
 auto timing_index_t::seconds_at(exact_chart_row_t row, timing_boundary_side_t side) const
-    -> timing_query_result_t { return timing_at(*this, row, side); }
+    -> timing_query_result_t {
+    return timing_query_result_t::from(query_seconds(row, side));
+}
 auto timing_index_t::seconds_at(const measure_index_t& measures, local_position_t position,
     timing_boundary_side_t side) const -> timing_query_result_t {
-    return timing_at(*this, measures, position, side);
+    return timing_query_result_t::from(query_seconds(measures, position, side));
 }
 
 auto timing_index_t::row_at(signed_rational_t seconds, timing_inverse_options_t options) const
-    -> timing_position_query_result_t { return musical_position_at(*this, seconds, options); }
+    -> timing_position_query_result_t {
+    return timing_position_query_result_t::from(query_position(seconds, options));
+}
 
 auto timing_index_t::tail_seconds_per_row() const -> std::optional<double> {
     if (rows.empty() || divisions_per_standard_measure == 0) return std::nullopt;

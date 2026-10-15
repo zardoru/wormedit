@@ -36,7 +36,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
     const auto& timing = *cache.timing.marker_timing_index;
     if (!cache.waveform.waveform_overview_key || *cache.waveform.waveform_overview_key != waveform.key ||
         cache.waveform.waveform_overview_identity != &waveform) {
-        const auto overview = audio::build_waveform_overview_view(waveform, timing, request);
+        const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
         if (!overview) return false;
         cache.waveform.waveform_overview_rows.clear();
         for (const auto& row : overview->rows)
@@ -178,7 +178,7 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
     request.viewport_scroll_pixels = static_cast<double>(first);
     request.viewport_height_pixels = static_cast<double>(count);
     request.maximum_rows = audio::maximum_aligned_waveform_rows;
-    auto projected = audio::build_composed_aligned_waveform_view(context.overview, context.detail,
+    auto projected = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
         context.row_table, request, context.blocks, context.style);
     const auto& projected_data = projected ? *projected : projected.error();
     ++ring.projection_calls;
@@ -245,17 +245,17 @@ void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
     audio::decoded_block_cache_t* decoded_blocks,
     const audio::waveform_analysis_result_t* detail_analysis,
     const audio::aligned_waveform_style_t* stable_style) {
-    audio::aligned_waveform_outcome_t aligned =
-        std::unexpected(audio::aligned_waveform_result_t{});
+    audio::aligned_waveform_view_outcome_t aligned =
+        std::unexpected(audio::aligned_waveform_view_result_t{});
     aligned = stable_style
-        ? audio::build_composed_aligned_waveform_view(waveform,
+        ? audio::aligned_waveform_view_result_t::from(waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             timing, request, decoded_blocks, *stable_style)
-        : (decoded_blocks ? audio::build_aligned_waveform_samples_view(waveform,
-            timing, request, *decoded_blocks) : audio::aligned_waveform_outcome_t{
-                std::unexpected(audio::aligned_waveform_result_t{})});
+        : (decoded_blocks ? audio::aligned_waveform_view_result_t::from(waveform,
+            timing, request, *decoded_blocks) : audio::aligned_waveform_view_outcome_t{
+                std::unexpected(audio::aligned_waveform_view_result_t{})});
     if (!stable_style && (!aligned || aligned->rows.empty()))
-        aligned = audio::build_aligned_waveform_view(*selected_waveform, timing, request);
+        aligned = audio::aligned_waveform_view_result_t::from(*selected_waveform, timing, request);
     if (aligned) {
         for (const auto& row : aligned->rows) {
             if (!output.push_back({
@@ -291,7 +291,7 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
                           const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
     if (bar.key && *bar.key == waveform.key && bar.identity == &waveform && bar.rows_range == range)
         return true;
-    const auto projected = audio::build_waveform_range_view(waveform, range.begin, range.end,
+    const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
                                                          WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
     if (!projected) return false;
     bar.rows.clear();
@@ -435,7 +435,7 @@ void populate_audio_waveform_views(
             .frames_per_pixel = viewport_request->frames_per_pixel,
             .pixel_width = viewport_request->pixel_width});
     }
-    const auto projection = wormedit::audio::build_waveform_viewport_view(waveform, viewport);
+    const auto projection = wormedit::audio::waveform_view_t::from(waveform, viewport);
     if (!projection)
         return;
 

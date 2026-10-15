@@ -1052,7 +1052,7 @@ void expect_published_waveform_rows(std::span<const WormUiComposeWaveformRowView
 void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
     const auto height = fixture.flattened.view.compose.viewport_height_pixels;
     const auto scroll = std::floor(fixture.interaction.viewport_scroll_pixels);
-    const auto reference = audio::build_composed_aligned_waveform_view(*fixture.analysis.waveform,
+    const auto reference = audio::aligned_waveform_view_result_t::from(*fixture.analysis.waveform,
         nullptr, *fixture.cache.timing.marker_timing_index,
         {.viewport_scroll_pixels = scroll - 1, .viewport_height_pixels = height + 2,
          .pixels_per_standard_measure = fixture.flattened.view.compose.pixels_per_standard_measure},
@@ -1541,7 +1541,7 @@ void check_clock_projection(const audio::waveform_t& waveform, const timing_inde
                             double scroll, bool descending = false) {
     audio::aligned_waveform_request_t request{.viewport_scroll_pixels = scroll,
         .viewport_height_pixels = 64, .pixels_per_standard_measure = 192};
-    const auto result = audio::build_composed_aligned_waveform_view(waveform, nullptr, timing,
+    const auto result = audio::aligned_waveform_view_result_t::from(waveform, nullptr, timing,
                                                                request, nullptr, {});
     REQUIRE(result);
     for (const auto& row : result->rows) {
@@ -3973,7 +3973,7 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
     frame_arena_t arena;
     borrow_waveform_frame(fixture, arena); fixture.project();
     const auto& view = fixture.flattened.view.compose;
-    const auto reference = audio::build_aligned_waveform_view(*fixture.analysis.waveform,
+    const auto reference = audio::aligned_waveform_view_result_t::from(*fixture.analysis.waveform,
         *fixture.cache.timing.marker_timing_index, {.viewport_scroll_pixels=fixture.interaction.viewport_scroll_pixels,
             .viewport_height_pixels=view.viewport_height_pixels,
             .pixels_per_standard_measure=view.pixels_per_standard_measure,

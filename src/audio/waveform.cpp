@@ -612,8 +612,8 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
     return best;
 }
 
-auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection_request_t request)
-    -> waveform_projection_outcome_t {
+auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_request_t request)
+    -> waveform_view_outcome_t {
     if (!is_valid_waveform_geometry(waveform)) {
         return std::unexpected(waveform_projection_status_t::invalid_waveform);
     }
@@ -637,7 +637,7 @@ auto waveform_projection_t::from(const waveform_t& waveform, waveform_projection
         return std::unexpected(waveform_projection_status_t::invalid_waveform);
     }
 
-    waveform_projection_t result{
+    waveform_view_t result{
         .level_frames_per_bin = level->frames_per_bin,
     };
     result.columns.reserve(column_count);

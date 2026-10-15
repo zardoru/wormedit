@@ -35,31 +35,31 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
     }
 };
 
-template <class Payload, class Stamp = chart_stamp_t>
-using proposal_outcome_t = diagnosed_t<std::optional<proposal_t<Payload, Stamp>>>;
+template <class Payload, class Stamp = chart_stamp_t, class Diagnostics = diagnostic_list_t>
+using proposal_outcome_t = diagnosed_t<std::optional<proposal_t<Payload, Stamp>>, Diagnostics>;
 
 namespace proposal_detail {
 
 // Separate argument lists preserve owners whose build and revision inputs differ.
-template <class Payload, class Stamp, class ProposeArguments, class ReviseArguments>
+template <class Payload, class Stamp, class Diagnostics, class ProposeArguments, class ReviseArguments>
 struct lifecycle_t : std::false_type {};
 
-template <class Payload, class Stamp, class... ProposeArguments, class... ReviseArguments>
-struct lifecycle_t<Payload, Stamp, std::tuple<ProposeArguments...>, std::tuple<ReviseArguments...>>
+template <class Payload, class Stamp, class Diagnostics, class... ProposeArguments, class... ReviseArguments>
+struct lifecycle_t<Payload, Stamp, Diagnostics, std::tuple<ProposeArguments...>, std::tuple<ReviseArguments...>>
     : std::bool_constant<requires(const Payload& payload, ProposeArguments... proposed,
                                  ReviseArguments... revised) {
           { Payload::propose(std::forward<ProposeArguments>(proposed)...) }
-              -> std::same_as<proposal_outcome_t<Payload, Stamp>>;
+              -> std::same_as<proposal_outcome_t<Payload, Stamp, Diagnostics>>;
           { payload.revise(std::forward<ReviseArguments>(revised)...) }
-              -> std::same_as<proposal_outcome_t<Payload, Stamp>>;
+              -> std::same_as<proposal_outcome_t<Payload, Stamp, Diagnostics>>;
       }> {};
 
 } // namespace proposal_detail
 
 template <class Payload, class ProposeArguments, class ReviseArguments,
-          class Stamp = chart_stamp_t>
-concept staged_proposal = std::is_aggregate_v<Payload> &&
+          class Stamp = chart_stamp_t, class Diagnostics = diagnostic_list_t>
+concept staged_proposal = std::is_aggregate_v<proposal_t<Payload, Stamp>> &&
     (std::same_as<Stamp, chart_stamp_t> || std::same_as<Stamp, document_stamp_t>) &&
-    proposal_detail::lifecycle_t<Payload, Stamp, ProposeArguments, ReviseArguments>::value;
+    proposal_detail::lifecycle_t<Payload, Stamp, Diagnostics, ProposeArguments, ReviseArguments>::value;
 
 } // namespace wormedit

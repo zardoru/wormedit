@@ -116,29 +116,32 @@ void populate_metadata_channel_map_lanes(flattened_workspace_t& flattened,
     metadata.channel_map_lane_count = flattened.metadata.channel_map_lane.size();
 }
 
-auto channel_map_preview_summary(const wormedit::channel_map_proposal_t& preview) -> std::string {
-    if (preview.issue != wormedit::channel_map_issue_t::none) return std::string{preview.message()};
-    if (!preview.conflicts.empty()) {
-        const auto& first = preview.conflicts.front();
+auto channel_map_preview_summary(const wormedit::channel_map_preview_view_t& preview) -> std::string {
+    if (preview.diagnostic && preview.diagnostic->issue != wormedit::channel_map_issue_t::none)
+        return preview.diagnostic->message;
+    if (preview.report && !preview.report->conflicts.empty()) {
+        const auto& first = preview.report->conflicts.front();
         return "Channel " + first.channel + " would be shared by " + first.first_lane_name +
                " and " + first.second_lane_name + ".";
     }
-    return "Preview: " + std::to_string(preview.affected_note_count) + " notes change channel.";
+    return "Preview: " + std::to_string(preview.report ? preview.report->affected_note_count : 0) +
+           " notes change channel.";
 }
 
 void populate_metadata_channel_map_preview(flattened_workspace_t& flattened,
                                            const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
-    const auto& preview = metadata_drop.channel_map_preview;
-    if (!preview) return;
-    const auto valid = static_cast<bool>(*preview);
+    const auto& outcome = metadata_drop.channel_map_preview;
+    if (!outcome) return;
+    const auto preview = wormedit::channel_map_preview_view_t::from(*outcome);
+    const auto valid = preview.proposal != nullptr;
     metadata.channel_map_preview_present = true;
     metadata.channel_map_preview_valid = valid;
-    metadata.channel_map_preview_affected_note_count = preview->affected_note_count;
-    metadata.channel_map_preview_conflict_count = preview->conflict_count;
-    const auto* message = metadata_frame_text(flattened, channel_map_preview_summary(*preview));
+    metadata.channel_map_preview_affected_note_count = preview.report ? preview.report->affected_note_count : 0;
+    metadata.channel_map_preview_conflict_count = preview.report ? preview.report->conflict_count : 0;
+    const auto* message = metadata_frame_text(flattened, channel_map_preview_summary(preview));
     metadata.channel_map_preview_message = message ? message : "";
-    metadata.channel_map_apply_enabled = valid && preview->conflict_count == 0 &&
+    metadata.channel_map_apply_enabled = valid && preview.report->conflict_count == 0 &&
                                          !metadata.channel_map_lanes_truncated;
 }
 

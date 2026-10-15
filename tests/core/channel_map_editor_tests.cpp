@@ -17,6 +17,18 @@ namespace {
 
 using namespace wormedit;
 
+// The same contract probe can run against the original and migrated factory return shapes.
+template <class Outcome> auto has_no_channel_proposal(const Outcome& outcome) -> bool {
+    if constexpr (requires { outcome.value.has_value(); }) return !outcome.value.has_value();
+    return false;
+}
+
+void check_stale_channel_outcome(const channel_map_proposal_outcome_t& outcome) {
+    REQUIRE_FALSE(outcome.value);
+    REQUIRE(outcome.diagnostics.size() == 1);
+    test::check_stale_action_message(outcome.diagnostics.front().message, "Channel-map edit");
+}
+
 auto channel_song() -> song_document_t {
     const auto profile = make_bme_7k_profile();
     return {
@@ -73,10 +85,10 @@ auto batch_swap_scenario() -> bool {
     auto history = document_history_t::from(song);
     const std::array replacements{replacement(first, *second.bms_channels.visible),
                                   replacement(second, *first.bms_channels.visible)};
-    const auto preview = propose_bms_channel_map_edit(history.document, 7, chart_id_t{2},
+    const auto preview = channel_map_proposal_t::propose(history.document, 7, chart_id_t{2},
                                                        object_id_t{10}, replacements);
-    if (!preview || preview.affected_note_count != 2) return false;
-    if (!apply_bms_channel_map_edit(history, preview)) return false;
+    if (!preview.value || preview.value->payload.report.affected_note_count != 2) return false;
+    if (!apply_bms_channel_map_edit(history, *preview.value)) return false;
     const auto& changed = history.document.charts.front();
     const auto changed_first = std::ranges::find(changed.lane_layouts[0].layout.lanes, first.id,
                                                   &lane_definition_t::id);
@@ -111,12 +123,13 @@ auto channel_conflict_scenario() -> bool {
     const auto& chart = song.charts.front();
     const auto& lanes = chart.lane_layouts.front().layout.lanes;
     const auto duplicate = replacement(lanes[1], *lanes[0].bms_channels.visible);
-    const auto result = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto result = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&duplicate, 1});
-    return result.issue == channel_map_issue_t::duplicate_channel &&
-           result.conflict_count == 1 && result.conflicts.size() == 1 &&
-           result.conflicts.front().first_lane_name == lanes[0].name &&
-           result.conflicts.front().second_lane_name == lanes[1].name;
+    const auto view = channel_map_preview_view_t::from(result);
+    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::duplicate_channel &&
+           view.report->conflict_count == 1 && view.report->conflicts.size() == 1 &&
+           view.report->conflicts.front().first_lane_name == lanes[0].name &&
+           view.report->conflicts.front().second_lane_name == lanes[1].name;
 }
 
 auto casefold_scenario() -> bool {
@@ -124,42 +137,48 @@ auto casefold_scenario() -> bool {
     const auto& chart = song.charts.front();
     const auto& lanes = chart.lane_layouts.front().layout.lanes;
     auto lower = replacement(lanes.front(), "1a");
-    const auto normalized = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto normalized = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&lower, 1});
-    if (!normalized || normalized.replacements.front().channels.visible != "1A" ||
-        normalized.affected_note_count != 0) return false;
+    if (!normalized.value || normalized.value->payload.replacements.front().channels.visible != "1A" ||
+        normalized.value->payload.report.affected_note_count != 0) return false;
     auto first = replacement(lanes[0], "1A");
     auto second = replacement(lanes[1], "1a");
     const std::array duplicates{first, second};
-    const auto conflict = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto conflict = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, duplicates);
-    return conflict.issue == channel_map_issue_t::duplicate_channel &&
-           conflict.conflicts.size() == 1 && conflict.conflicts.front().channel == "1A";
+    const auto view = channel_map_preview_view_t::from(conflict);
+    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::duplicate_channel &&
+           view.report->conflicts.size() == 1 && view.report->conflicts.front().channel == "1A";
 }
 
 auto invalid_channel_rejected() -> bool {
     const auto song = channel_song();
     const auto& chart = song.charts.front();
     auto invalid = replacement(chart.lane_layouts.front().layout.lanes.front(), "1!");
-    const auto malformed = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto malformed = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&invalid, 1});
     invalid.channels.visible = "31";
-    const auto wrong_family = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto wrong_family = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&invalid, 1});
     invalid.channels.visible = "10";
-    const auto zero_suffix = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto zero_suffix = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&invalid, 1});
     auto with_note = song;
     with_note.charts.front().measures.front().notes.push_back({
         .id = object_id_t{80}, .position = {measure_id_t{3}, 0},
         .lane = chart.lane_layouts.front().layout.lanes.front().id});
     invalid.channels.visible.reset();
-    const auto missing_used = propose_bms_channel_map_edit(with_note, 7, chart.id,
+    const auto missing_used = channel_map_proposal_t::propose(with_note, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&invalid, 1});
-    return malformed.issue == channel_map_issue_t::invalid_channel &&
-           wrong_family.issue == channel_map_issue_t::invalid_channel &&
-           zero_suffix.issue == channel_map_issue_t::invalid_channel &&
-           missing_used.issue == channel_map_issue_t::missing_export_channel;
+    const auto malformed_view = channel_map_preview_view_t::from(malformed);
+    const auto family_view = channel_map_preview_view_t::from(wrong_family);
+    const auto zero_view = channel_map_preview_view_t::from(zero_suffix);
+    const auto missing_view = channel_map_preview_view_t::from(missing_used);
+    return malformed_view.diagnostic && family_view.diagnostic && zero_view.diagnostic && missing_view.diagnostic &&
+           malformed_view.diagnostic->issue == channel_map_issue_t::invalid_channel &&
+           family_view.diagnostic->issue == channel_map_issue_t::invalid_channel &&
+           zero_view.diagnostic->issue == channel_map_issue_t::invalid_channel &&
+           missing_view.diagnostic->issue == channel_map_issue_t::missing_export_channel;
 }
 
 auto branch_map_rejected() -> bool {
@@ -177,9 +196,10 @@ auto branch_map_rejected() -> bool {
         [](const auto& item) { return item.bms_channels.visible == "11"; });
     if (lane == chart.lane_layouts.front().layout.lanes.end()) return false;
     const auto change = replacement(*lane, "1A");
-    const auto proposal = propose_bms_channel_map_edit(*parsed.song, parsed.song->revision,
+    const auto proposal = channel_map_proposal_t::propose(*parsed.song, parsed.song->revision,
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    return proposal.issue == channel_map_issue_t::unsupported_branch_channel;
+    const auto view = channel_map_preview_view_t::from(proposal);
+    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::unsupported_branch_channel;
 }
 
 auto branch_hold_source_channel_rejected() -> bool {
@@ -207,9 +227,10 @@ auto branch_hold_source_channel_rejected() -> bool {
     selected->end = local_position_t{selected->position.measure, selected->position.row + 1};
     selected->provenance.source_field = "11 slot 0 object 01";
     const auto change = replacement(*lane, "1A");
-    const auto proposal = propose_bms_channel_map_edit(*parsed.song, parsed.song->revision,
+    const auto proposal = channel_map_proposal_t::propose(*parsed.song, parsed.song->revision,
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    return proposal.issue == channel_map_issue_t::unsupported_branch_channel;
+    const auto view = channel_map_preview_view_t::from(proposal);
+    return !view.proposal && view.diagnostic && view.diagnostic->issue == channel_map_issue_t::unsupported_branch_channel;
 }
 
 auto root_export_swap_scenario() -> bool {
@@ -226,10 +247,10 @@ auto root_export_swap_scenario() -> bool {
     if (first == layout.layout.lanes.end() || second == layout.layout.lanes.end()) return false;
     auto history = document_history_t::from(*song);
     const std::array replacements{replacement(*first, "12"), replacement(*second, "11")};
-    const auto preview = propose_bms_channel_map_edit(history.document,
+    const auto preview = channel_map_proposal_t::propose(history.document,
         history.document.revision, chart.id, layout.id, replacements);
-    if (!preview || preview.affected_note_count != 2 ||
-        !apply_bms_channel_map_edit(history, preview)) return false;
+    if (!preview.value || preview.value->payload.report.affected_note_count != 2 ||
+        !apply_bms_channel_map_edit(history, *preview.value)) return false;
     const auto written = write_bms(history.document);
     if (!written.bytes || written.has_errors() ||
         written.bytes->find("#00011:02") == std::string::npos ||
@@ -267,21 +288,22 @@ TEST_CASE("BMS channel-map proposals reject stale or altered state",
     const auto& chart = song.charts.front();
     const auto lane = chart.lane_layouts.front().layout.lanes.front();
     const auto change = replacement(lane, "1A");
-    const auto proposal = propose_bms_channel_map_edit(song, 7, chart.id,
+    const auto proposal = channel_map_proposal_t::propose(song, 7, chart.id,
         chart.lane_layouts.front().id, std::span{&change, 1});
-    REQUIRE(proposal);
+    REQUIRE(proposal.value);
     auto other = song;
     other.id = song_id_t{9};
-    test::check_stale_action_message(propose_bms_channel_map_edit(song, song.revision + 1, chart.id, chart.lane_layouts.front().id, std::span{&change, 1}).message(), "Channel-map edit");
+    const auto stale = channel_map_proposal_t::propose(song, song.revision + 1, chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
+    check_stale_channel_outcome(stale);
     auto history = document_history_t::from(other);
-    CHECK(apply_bms_channel_map_edit(history, proposal).payload.issue ==
+    CHECK(apply_bms_channel_map_edit(history, *proposal.value).payload.issue ==
           channel_map_issue_t::stale_revision);
-    test::check_stale_action_message(apply_bms_channel_map_edit(history, proposal).payload.message, "Channel-map edit");
+    test::check_stale_action_message(apply_bms_channel_map_edit(history, *proposal.value).payload.message, "Channel-map edit");
     CHECK(history.document.revision == other.revision);
     history = document_history_t::from(song);
     auto altered = proposal;
-    altered.affected_note_count = 42;
-    CHECK(apply_bms_channel_map_edit(history, altered).payload.issue ==
+    altered.value->payload.report.affected_note_count = 42;
+    CHECK(apply_bms_channel_map_edit(history, *altered.value).payload.issue ==
           channel_map_issue_t::invalid_replacement);
     CHECK(history.document.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible ==
           song.charts.front().lane_layouts.front().layout.lanes.front().bms_channels.visible);
@@ -293,10 +315,11 @@ TEST_CASE("Sealed channel-map stamp changes stay tamper errors before staleness"
     auto history = document_history_t::from(channel_song());
     const auto& chart = history.document.charts.front();
     const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
-    auto proposal = propose_bms_channel_map_edit(history.document, history.document.revision,
+    auto proposal = channel_map_proposal_t::propose(history.document, history.document.revision,
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    ++proposal.stamp.document.revision;
-    const auto result = apply_bms_channel_map_edit(history, proposal);
+    REQUIRE(proposal.value);
+    ++proposal.value->stamp.document.revision;
+    const auto result = apply_bms_channel_map_edit(history, *proposal.value);
     CHECK(result.payload.issue == channel_map_issue_t::invalid_replacement);
     CHECK(result.payload.message == "Channel-map preview data changed after proposal.");
     CHECK(result.command.diagnostics.empty());
@@ -308,12 +331,58 @@ TEST_CASE("Channel-map diagnostics own the existing proposal failure message",
     auto history = document_history_t::from(channel_song());
     const auto& chart = history.document.charts.front();
     const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
-    const auto proposal = propose_bms_channel_map_edit(history.document, history.document.revision + 1,
+    const auto proposal = channel_map_proposal_t::propose(history.document, history.document.revision + 1,
         chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
     REQUIRE(proposal.diagnostics.size() == 1);
-    test::check_stale_action_message(proposal.diagnostics, "Channel-map edit");
-    const auto result = apply_bms_channel_map_edit(history, proposal);
-    CHECK(result.payload.message == proposal.message());
-    CHECK(result.command.diagnostics.empty());
+    CHECK_FALSE(proposal.value);
+    test::check_stale_action_message(proposal.diagnostics.front().message, "Channel-map edit");
+    CHECK(proposal.diagnostics.front().issue == channel_map_issue_t::stale_revision);
+    CHECK(proposal.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Failed channel-map construction has no applicable proposal",
+          "[core][channel-map][failed-outcome-shape]") {
+    const auto song = channel_song();
+    const auto& chart = song.charts.front();
+    const auto invalid = replacement(chart.lane_layouts.front().layout.lanes.front(), "1!");
+    const auto outcome = channel_map_proposal_t::propose(song, song.revision, chart.id,
+        chart.lane_layouts.front().id, std::span{&invalid, 1});
+    CHECK(has_no_channel_proposal(outcome));
+}
+
+TEST_CASE("Channel-map revision reseals changed mappings without publishing",
+          "[core][channel-map][proposal-revision]") {
+    auto history = document_history_t::from(channel_song());
+    const auto& chart = history.document.charts.front();
+    const auto& lane = chart.lane_layouts.front().layout.lanes.front();
+    const auto first = replacement(lane, "1A");
+    const auto original = channel_map_proposal_t::propose(history.document, history.document.revision,
+        chart.id, chart.lane_layouts.front().id, std::span{&first, 1});
+    REQUIRE(original.value);
+    const auto next = replacement(lane, "1B");
+    const auto revised = original.value->payload.revise(original.value->stamp, history.document,
+                                                        std::span{&next, 1});
+    REQUIRE(revised.value);
+    CHECK(revised.value->stamp == original.value->stamp);
+    CHECK(history.undo.empty());
+    REQUIRE(apply_bms_channel_map_edit(history, *revised.value));
+}
+
+TEST_CASE("Channel-map revision keeps seal tampering ahead of expiry",
+          "[core][channel-map][proposal-revision]") {
+    auto history = document_history_t::from(channel_song());
+    const auto& chart = history.document.charts.front();
+    const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
+    auto original = channel_map_proposal_t::propose(history.document, history.document.revision,
+        chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
+    REQUIRE(original.value);
+    ++history.document.revision;
+    original.value->payload.report.affected_note_count = 42;
+    const auto rejected = original.value->payload.revise(original.value->stamp, history.document,
+                                                         std::span{&change, 1});
+    CHECK_FALSE(rejected.value);
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().issue == channel_map_issue_t::invalid_replacement);
     CHECK(history.undo.empty());
 }

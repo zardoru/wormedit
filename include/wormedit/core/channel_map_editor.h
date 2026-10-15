@@ -1,7 +1,7 @@
 #pragma once
 #include <wormedit/core/proposal_apply_result.h>
 
-#include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/document.h>
 
 #include <cstddef>
@@ -10,6 +10,7 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace wormedit {
@@ -33,12 +34,7 @@ enum class channel_map_issue_t {
 struct channel_map_replacement_t {
     lane_id_t lane;
     bms_channel_map_t channels;
-    auto operator==(const channel_map_replacement_t& other) const -> bool {
-        return lane == other.lane && channels.visible == other.channels.visible &&
-               channels.invisible == other.channels.invisible &&
-               channels.long_note == other.channels.long_note &&
-               channels.mine == other.channels.mine;
-    }
+    auto operator==(const channel_map_replacement_t&) const -> bool = default;
 };
 
 struct channel_map_conflict_t {
@@ -48,41 +44,84 @@ struct channel_map_conflict_t {
     auto operator==(const channel_map_conflict_t&) const -> bool = default;
 };
 
-struct channel_map_proposal_t {
-    channel_map_issue_t issue{channel_map_issue_t::none};
-    chart_stamp_t stamp;
-    diagnostic_list_t diagnostics;
-    object_id_t layout_segment;
-    std::vector<channel_map_replacement_t> replacements;
+struct channel_map_report_t {
     std::vector<channel_map_conflict_t> conflicts;
     std::size_t conflict_count{};
     std::size_t affected_note_count{};
+    auto operator==(const channel_map_report_t&) const -> bool = default;
+};
 
-    [[nodiscard]] auto message() const noexcept -> std::string_view {
-        return diagnostics.empty() ? std::string_view{} : std::string_view{diagnostics.front().message};
-    }
+// A failed attempt retains display/identity metadata, never applicable replacements or a seal.
+struct channel_map_diagnostic_t : diagnostic_t {
+    channel_map_issue_t issue{channel_map_issue_t::none};
+    chart_stamp_t stamp;
+    channel_map_report_t report;
+    auto operator==(const channel_map_diagnostic_t&) const -> bool = default;
 
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return issue == channel_map_issue_t::none && static_cast<bool>(canonical_);
+    [[nodiscard]] static auto from(channel_map_issue_t issue, std::string message,
+                                   chart_stamp_t stamp, channel_map_report_t report)
+        -> channel_map_diagnostic_t {
+        return {error(diagnostic_code_t::invalid_binding, std::move(message)), issue, stamp,
+                std::move(report)};
     }
+};
+
+struct channel_map_proposal_t;
+using channel_map_diagnostics_t = std::vector<channel_map_diagnostic_t>;
+using channel_map_proposal_outcome_t =
+    proposal_outcome_t<channel_map_proposal_t, chart_stamp_t, channel_map_diagnostics_t>;
+
+struct channel_map_proposal_t {
+    [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
+        chart_id_t chart, object_id_t layout_segment,
+        std::span<const channel_map_replacement_t> replacements) -> channel_map_proposal_outcome_t;
+    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& song,
+        std::span<const channel_map_replacement_t> replacements) const -> channel_map_proposal_outcome_t;
+
+    object_id_t layout_segment;
+    std::vector<channel_map_replacement_t> replacements;
+    channel_map_report_t report;
+    auto operator==(const channel_map_proposal_t&) const -> bool = default;
 
   private:
     std::shared_ptr<const channel_map_proposal_payload_t> canonical_;
     friend class channel_map_proposal_access_t;
 };
 
-using channel_map_apply_result_t = proposal_apply_result_t<channel_map_issue_t>;
+static_assert(staged_proposal<channel_map_proposal_t,
+    std::tuple<const song_document_t&, std::uint64_t, chart_id_t, object_id_t,
+               std::span<const channel_map_replacement_t>>,
+    std::tuple<const chart_stamp_t&, const song_document_t&,
+               std::span<const channel_map_replacement_t>>,
+    chart_stamp_t, channel_map_diagnostics_t>);
 
-// Each replacement names one lane in the selected layout segment. The final map,
-// including all replacements, is validated as a whole so simultaneous swaps work.
-[[nodiscard]] auto propose_bms_channel_map_edit(
-    const song_document_t& song, std::uint64_t expected_revision, chart_id_t chart,
-    object_id_t layout_segment, std::span<const channel_map_replacement_t> replacements)
-    -> channel_map_proposal_t;
+// Borrowed view of either a successful proposal or a failed attempt's diagnostic report.
+struct channel_map_preview_view_t {
+    const proposal_t<channel_map_proposal_t>* proposal{};
+    const channel_map_diagnostic_t* diagnostic{};
+    const chart_stamp_t* stamp{};
+    const channel_map_report_t* report{};
+    auto operator==(const channel_map_preview_view_t&) const -> bool = default;
+
+    [[nodiscard]] static auto from(const channel_map_proposal_outcome_t& outcome) noexcept
+        -> channel_map_preview_view_t {
+        if (outcome.value)
+            return {.proposal = &*outcome.value, .stamp = &outcome.value->stamp,
+                    .report = &outcome.value->payload.report};
+        if (!outcome.diagnostics.empty()) {
+            const auto& diagnostic = outcome.diagnostics.front();
+            return {.diagnostic = &diagnostic, .stamp = &diagnostic.stamp,
+                    .report = &diagnostic.report};
+        }
+        return {};
+    }
+};
+
+using channel_map_apply_result_t = proposal_apply_result_t<channel_map_issue_t>;
 
 // Applies the sealed preview as one revision-checked undoable command.
 [[nodiscard]] auto apply_bms_channel_map_edit(
-    document_history_t& history, const channel_map_proposal_t& proposal)
+    document_history_t& history, const proposal_t<channel_map_proposal_t>& proposal)
     -> channel_map_apply_result_t;
 
 } // namespace wormedit

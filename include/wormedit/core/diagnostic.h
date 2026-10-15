@@ -41,6 +41,7 @@ template <class Code, Code DefaultCode> struct object_diagnostic_t {
     Code code{DefaultCode};
     std::string message;
     std::optional<object_id_t> object;
+    auto operator==(const object_diagnostic_t&) const -> bool = default;
 };
 
 template <class Code, Code DefaultCode> struct path_diagnostic_t {

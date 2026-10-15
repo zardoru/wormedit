@@ -7,6 +7,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -158,6 +159,11 @@ void merge_recent_undo_records(document_history_t& history, std::size_t count, s
 template <class Payload> struct command_result_with_t {
     document_command_result_t command;
     Payload payload{};
+
+    [[nodiscard]] static auto from(document_command_result_t command, Payload payload)
+        -> command_result_with_t {
+        return {.command = std::move(command), .payload = std::move(payload)};
+    }
 
     [[nodiscard]] explicit operator bool() const noexcept {
         if constexpr (requires { payload.is_success(); })

@@ -246,17 +246,19 @@ auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const doc
     const auto replacements = channel_map_replacements(action);
     if (action.metadata_chart_id == 0 || !replacements)
         return {notification_severity_t::warning, "Channel-map preview payload is incomplete."};
-    auto preview = propose_bms_channel_map_edit(
+    auto preview = channel_map_proposal_t::propose(
         history.document, action.metadata_document_revision, chart_id_t{action.metadata_chart_id},
         object_id_t{action.metadata_channel_map_layout_segment_id}, *replacements);
-    auto feedback = metadata_edit_feedback_t{notification_severity_t::info, std::string{preview.message()}};
-    if (!preview) {
+    const auto view = channel_map_preview_view_t::from(preview);
+    auto feedback = metadata_edit_feedback_t{notification_severity_t::info,
+        view.diagnostic ? view.diagnostic->message : std::string{}};
+    if (!view.proposal) {
         feedback.severity = notification_severity_t::error;
-    } else if (preview.conflict_count != 0) {
+    } else if (view.report->conflict_count != 0) {
         feedback = {notification_severity_t::warning, "Channel-map preview has " +
-                    std::to_string(preview.conflict_count) + " conflicts; Apply is disabled."};
+                    std::to_string(view.report->conflict_count) + " conflicts; Apply is disabled."};
     } else {
-        feedback.message = "Channel-map preview: " + std::to_string(preview.affected_note_count) +
+        feedback.message = "Channel-map preview: " + std::to_string(view.report->affected_note_count) +
                            " notes change channel.";
     }
     metadata_drop.channel_map_preview = std::move(preview);
@@ -268,9 +270,10 @@ auto dispatch_channel_map_apply(document_history_t& history, workspace_controlle
     if (!metadata_drop.channel_map_preview)
         return {notification_severity_t::warning, "Preview the channel map before applying it."};
     const auto& preview = *metadata_drop.channel_map_preview;
-    if (!preview || preview.conflict_count != 0)
+    const auto view = channel_map_preview_view_t::from(preview);
+    if (!view.proposal || view.report->conflict_count != 0)
         return {notification_severity_t::warning, "The channel-map preview is not applicable."};
-    auto result = apply_bms_channel_map_edit(history, preview);
+    auto result = apply_bms_channel_map_edit(history, *view.proposal);
     metadata_drop.clear_channel_map_preview();
     if (!result) return {notification_severity_t::error, result.payload.message};
     auto feedback = publish_metadata_edit(std::move(result.command), workspace, history);

@@ -256,8 +256,8 @@ TEST_CASE("channel-map preview with a conflict keeps apply rejected and the docu
     const auto previewed = fixture.dispatch(preview.action);
     require_metadata_notification(previewed.has_value());
     require_metadata_notification(fixture.drop.channel_map_preview.has_value());
-    check_metadata_notification(!static_cast<bool>(*fixture.drop.channel_map_preview) ||
-                                fixture.drop.channel_map_preview->conflict_count > 0);
+    check_metadata_notification(!fixture.drop.channel_map_preview->value ||
+        channel_map_preview_view_t::from(*fixture.drop.channel_map_preview).report->conflict_count > 0);
 
     WormUiWorkspaceAction apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
@@ -282,8 +282,8 @@ TEST_CASE("channel-map preview then apply swaps two lanes as one undoable comman
     const auto previewed = fixture.dispatch(preview.action);
     require_metadata_notification(previewed.has_value());
     require_metadata_notification(fixture.drop.channel_map_preview.has_value());
-    require_metadata_notification(static_cast<bool>(*fixture.drop.channel_map_preview));
-    check_metadata_notification(fixture.drop.channel_map_preview->conflict_count == 0);
+    require_metadata_notification(fixture.drop.channel_map_preview->value.has_value());
+    check_metadata_notification(fixture.drop.channel_map_preview->value->payload.report.conflict_count == 0);
 
     WormUiWorkspaceAction apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;

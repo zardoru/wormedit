@@ -361,7 +361,7 @@ TEST_CASE("Channel-map revision reseals changed mappings without publishing",
         chart.id, chart.lane_layouts.front().id, std::span{&first, 1});
     REQUIRE(original.value);
     const auto next = replacement(lane, "1B");
-    const auto revised = original.value->revise(history.document,
+    const auto revised = original.value->revise(history.document, {},
                                                         std::span{&next, 1});
     REQUIRE(revised.value);
     CHECK(revised.value->stamp == original.value->stamp);
@@ -379,7 +379,7 @@ TEST_CASE("Channel-map revision keeps seal tampering ahead of expiry",
     REQUIRE(original.value);
     ++history.document.revision;
     original.value->payload.report.affected_note_count = 42;
-    const auto rejected = original.value->revise(history.document,
+    const auto rejected = original.value->revise(history.document, {},
                                                          std::span{&change, 1});
     CHECK_FALSE(rejected.value);
     REQUIRE(rejected.diagnostics.size() == 1);
@@ -402,5 +402,22 @@ TEST_CASE("Channel-map publication keeps typed failure and command diagnostics",
     CHECK(result.payload.issue == channel_map_issue_t::invalid_replacement);
     CHECK(result.payload.message == "The channel-map edit failed validation.");
     CHECK_FALSE(result.command.diagnostics.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Channel-map revision rejects a replacement project at the same revision",
+          "[core][channel-map][proposal-revision]") {
+    auto history = document_history_t::from(channel_song());
+    const auto& chart = history.document.charts.front();
+    const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
+    const auto original = channel_map_proposal_t::propose(history.document, history.document.revision,
+        chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
+    REQUIRE(original.value);
+    history.document.id = song_id_t{99};
+    const auto rejected = original.value->revise(history.document, {}, std::span{&change, 1});
+    CHECK_FALSE(rejected.value);
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().issue == channel_map_issue_t::stale_revision);
+    CHECK(rejected.diagnostics.front().stamp == original.value->stamp);
     CHECK(history.undo.empty());
 }

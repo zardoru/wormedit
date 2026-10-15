@@ -463,6 +463,16 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
     [[nodiscard]] auto revise(const song_document_t& document,
         proposal_input_t<proposal_revision_diagnostics_t<RevisionPayload, Stamp, Arguments...>> input,
         Arguments&&... arguments) const -> proposal_revision_outcome_t<RevisionPayload, Stamp, Arguments...> {
+        if constexpr (requires { payload.validate_capture(stamp); }) {
+            auto invalid = payload.validate_capture(stamp);
+            if (invalid.has_errors()) {
+                input.diagnostics.clear();
+                using diagnostic_type = typename std::remove_cvref_t<decltype(input.diagnostics)>::value_type;
+                input.diagnostics.push_back(diagnostic_type::from(
+                    invalid.issue, std::move(invalid.message), stamp, {}));
+                return {.diagnostics = std::move(input.diagnostics)};
+            }
+        }
         if constexpr (requires { payload.validate_candidate(arguments...); }) {
             if (auto invalid = payload.validate_candidate(arguments...)) {
                 input.diagnostics.clear();
@@ -591,13 +601,14 @@ template<class Pending, class... Arguments> requires applicable_proposal<Pending
         if constexpr (std::same_as<std::remove_cvref_t<decltype(first)>, bool>)
             lifecycle_input.is_timing_locked = first;
     }
-    if constexpr (requires { pending.payload.validate_apply(pending.stamp, arguments...); }) {
+    if constexpr (requires { pending.payload.validate_capture(pending.stamp); })
+        preflight = pending.payload.validate_capture(pending.stamp);
+    else if constexpr (requires { pending.payload.validate_apply(pending.stamp, arguments...); })
         preflight = pending.payload.validate_apply(pending.stamp, arguments...);
-        if (diagnostic_queries::has_errors(preflight))
-            return application_result::finish(pending.payload,
-                document_command_transaction_t::rejection(history.document.revision, diagnostic_list_t{}),
-                std::move(preflight), proposal_application_stage_t::preflight);
-    }
+    if (diagnostic_queries::has_errors(preflight))
+        return application_result::finish(pending.payload,
+            document_command_transaction_t::rejection(history.document.revision, diagnostic_list_t{}),
+            std::move(preflight), proposal_application_stage_t::preflight);
     const auto& policy = std::remove_cvref_t<Pending>::payload_type::apply_policy;
     if constexpr (!stateful_proposal_payload<edit_type> &&
                   !std::remove_cvref_t<Pending>::payload_type::apply_policy.locked_message.empty()) {

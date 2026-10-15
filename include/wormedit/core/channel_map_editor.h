@@ -72,17 +72,18 @@ using channel_map_proposal_outcome_t =
 
 struct channel_map_proposal_t {
     static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Channel-map edit"};
+    static constexpr auto revision_policy = apply_policy;
     static constexpr auto apply_stale_issue = channel_map_issue_t::stale_revision;
     static constexpr auto apply_commit_failure_issue = channel_map_issue_t::invalid_replacement;
     static constexpr std::string_view apply_commit_failure_message = "The channel-map edit failed validation.";
-    [[nodiscard]] auto validate_apply(const chart_stamp_t&) const
+    [[nodiscard]] auto validate_capture(const chart_stamp_t&) const
         -> proposal_apply_payload_t<channel_map_issue_t>;
     [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&) const
         -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<channel_map_issue_t>>;
     [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
         chart_id_t chart, object_id_t layout_segment,
         std::span<const channel_map_replacement_t> replacements) -> channel_map_proposal_outcome_t;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& song,
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>&,
         std::span<const channel_map_replacement_t> replacements) const -> channel_map_proposal_outcome_t;
 
     object_id_t layout_segment;
@@ -91,15 +92,13 @@ struct channel_map_proposal_t {
     auto operator==(const channel_map_proposal_t&) const -> bool = default;
 
   private:
-    [[nodiscard]] static auto prepare(const song_document_t&, const chart_stamp_t&, object_id_t,
-        std::span<const channel_map_replacement_t>) -> channel_map_proposal_outcome_t;
     std::shared_ptr<const channel_map_proposal_payload_t> canonical_;
 };
 
 static_assert(staged_proposal<channel_map_proposal_t,
     std::tuple<const song_document_t&, std::uint64_t, chart_id_t, object_id_t,
                std::span<const channel_map_replacement_t>>,
-    std::tuple<const chart_stamp_t&, const song_document_t&,
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&,
                std::span<const channel_map_replacement_t>>,
     chart_stamp_t, channel_map_diagnostics_t>);
 

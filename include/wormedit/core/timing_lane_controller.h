@@ -97,7 +97,7 @@ class timing_lane_pseudonote_outcome_t : public proposal_outcome_t<timing_lane_p
   public:
     timing_lane_pseudonote_outcome_t() = default;
     explicit timing_lane_pseudonote_outcome_t(timing_lane_pseudonote_proposal_t editor)
-        : outcome_type{.value = std::move(editor)} {}
+        : outcome_type{.value = std::move(editor), .diagnostics = {}} {}
 
     [[nodiscard]] auto editor() noexcept -> timing_lane_pseudonote_proposal_t* {
         return value ? &*value : rejected_ ? &*rejected_ : nullptr;

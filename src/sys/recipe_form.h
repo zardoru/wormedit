@@ -55,7 +55,7 @@ class recipe_form_outcome_t : public proposal_outcome_t<recipe_form_preview_t> {
   public:
     recipe_form_outcome_t() = default;
     explicit recipe_form_outcome_t(recipe_form_proposal_t editor)
-        : outcome_type{.value = std::move(editor)} {}
+        : outcome_type{.value = std::move(editor), .diagnostics = {}} {}
 
     [[nodiscard]] auto editor() noexcept -> recipe_form_proposal_t* {
         return value ? &*value : rejected_ ? &*rejected_ : nullptr;

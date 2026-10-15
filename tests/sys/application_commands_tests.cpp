@@ -8,6 +8,7 @@
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/native_chart_edit_action.h"
 #include "sys/transport_player_actions.h"
 
 #include <wormedit/core/command_registry.h>
@@ -16,6 +17,7 @@
 #include <wormedit/core/notifications.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_template_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
@@ -25,6 +27,7 @@
 #include <span>
 #include <filesystem>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 
 using namespace wormedit::sys;
 
@@ -2904,3 +2907,143 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     CHECK((status && *status == "Playback rate unchanged."));
     CHECK(catalog_requested_rate == wormedit::rational_t{});
 }
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+
+namespace {
+auto native_edit_binding_history() -> wormedit::document_history_t {
+    using namespace wormedit;
+    return document_history_t::from({.id = song_id_t{1},
+                                     .revision = 4,
+                                     .charts = {{.id = chart_id_t{2},
+                                                 .divisions_per_standard_measure = 960,
+                                                 .measures = {{.id = measure_id_t{3}}},
+                                                 .bpms = {{.id = object_id_t{10},
+                                                           .position = {measure_id_t{3}, 0},
+                                                           .beats_per_minute = {120, 1}}}}}});
+}
+constexpr compose_action_description_t native_edit_binding_description{
+    .success = "Changed.", .unchanged = "Unchanged.", .rebind_failure = "Rebind failed."};
+
+void check_rejected_native_edit(const compose_action_outcome_t& outcome) {
+    CHECK_FALSE(outcome.accepted);
+    CHECK_FALSE(outcome.mutated);
+    CHECK_FALSE(outcome.diagnostics.empty());
+}
+
+void check_unpublished_native_edit(const wormedit::document_history_t& history,
+                                    const std::optional<std::string>& before,
+                                    std::uint64_t revision) {
+    CHECK(wormedit::write_native_project(history.document).bytes == before);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+    CHECK(history.redo.empty());
+}
+
+auto insert_native_binding_bookmark(wormedit::document_history_t& history,
+                                     const wormedit::marker_edit_action_t& edit)
+    -> wormedit::object_id_t {
+    using namespace wormedit;
+    REQUIRE(run_native_chart_edit<marker_edit_action_t>(history, edit, native_edit_binding_description)
+                .mutated);
+    REQUIRE(history.document.charts.front().bookmarks.size() == 1);
+    REQUIRE(history.undo.size() == 1);
+    CHECK(history.undo.back().label == "Insert bookmark");
+    return history.document.charts.front().bookmarks.front().id;
+}
+
+void update_native_binding_bookmark(wormedit::document_history_t& history,
+                                     wormedit::object_id_t id, wormedit::local_position_t position) {
+    using namespace wormedit;
+    REQUIRE(run_native_chart_edit<marker_edit_action_t>(
+                history, update_edit_t<bookmark_edit_value_t>{.chart = chart_id_t{2}, .id = id,
+                    .value = {.label = "Renamed", .position = position}}, native_edit_binding_description)
+                .mutated);
+    REQUIRE(history.undo.size() == 2);
+    CHECK(history.undo.back().label == "Update bookmark");
+    CHECK(history.document.charts.front().bookmarks.front().label == "Renamed");
+}
+
+void delete_native_binding_bookmark(wormedit::document_history_t& history, wormedit::object_id_t id) {
+    using namespace wormedit;
+    REQUIRE(run_native_chart_edit<marker_edit_action_t>(
+                history, delete_edit_t<bookmark_edit_value_t>{.chart = chart_id_t{2}, .id = id},
+                native_edit_binding_description)
+                .mutated);
+    CHECK(history.document.charts.front().bookmarks.empty());
+    REQUIRE(history.undo.size() == 3);
+    CHECK(history.undo.back().label == "Delete bookmark");
+}
+
+void check_native_binding_marker_undo(wormedit::document_history_t& history) {
+    using namespace wormedit;
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.front().label == "Renamed");
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.front().label == std::string(160, 'x'));
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().bookmarks.empty());
+}
+} // namespace
+
+TEMPLATE_TEST_CASE("Native chart action bindings reject invalid targets without publishing",
+                   "[sys][native-chart-edit]", wormedit::bpm_edit_action_t,
+                   wormedit::marker_edit_action_t, wormedit::pause_warp_edit_action_t,
+                   wormedit::scroll_speed_edit_action_t, wormedit::timing_anchor_edit_action_t,
+                   wormedit::sv_recipe_edit_action_t, wormedit::semantic_layer_edit_action_t,
+                   wormedit::lane_layout_action_t) {
+    auto history = native_edit_binding_history();
+    const auto before = wormedit::write_native_project(history.document).bytes;
+    REQUIRE(before.has_value());
+    REQUIRE_FALSE(before->empty());
+    const auto revision = history.document.revision;
+    const TestType edit{};
+    const auto outcome =
+        run_native_chart_edit<TestType>(history, edit, native_edit_binding_description);
+    check_rejected_native_edit(outcome);
+    check_unpublished_native_edit(history, before, revision);
+}
+
+TEMPLATE_TEST_CASE("Captured native chart action bindings reject stale transactions before copying",
+                   "[sys][native-chart-edit]", wormedit::bpm_edit_action_t,
+                   wormedit::marker_edit_action_t, wormedit::pause_warp_edit_action_t,
+                   wormedit::scroll_speed_edit_action_t, wormedit::timing_anchor_edit_action_t,
+                   wormedit::sv_recipe_edit_action_t) {
+    using namespace wormedit;
+    auto history = native_edit_binding_history();
+    const auto stamp = document_stamp_t::from(history.document);
+    ++history.document.revision;
+    const auto before = wormedit::write_native_project(history.document).bytes;
+    REQUIRE(before.has_value());
+    REQUIRE_FALSE(before->empty());
+    const auto revision = history.document.revision;
+    auto transaction = document_command_transaction_t::from(history, stamp, "Native edit");
+    const TestType edit{};
+    const auto outcome =
+        run_native_chart_edit<TestType>(transaction, edit, native_edit_binding_description);
+    check_rejected_native_edit(outcome);
+    CHECK_FALSE(transaction.has_copy());
+    wormedit::test::check_stale_action_message(outcome.diagnostics, "Native edit");
+    check_unpublished_native_edit(history, before, revision);
+}
+
+TEST_CASE("Native chart action bindings borrow labels and keep one-step marker history",
+          "[sys][native-chart-edit]") {
+    using namespace wormedit;
+    auto history = native_edit_binding_history();
+    const auto initial_revision = history.document.revision;
+    const local_position_t position{measure_id_t{3}, 240};
+    const marker_edit_action_t insert{insert_edit_t<bookmark_edit_value_t>{
+        .chart = chart_id_t{2}, .value = {.label = std::string(160, 'x'), .position = position}}};
+    const auto& label = std::get<insert_edit_t<bookmark_edit_value_t>>(insert).value.label;
+    const auto* original_buffer = label.data();
+    const auto id = insert_native_binding_bookmark(history, insert);
+    CHECK(label.data() == original_buffer);
+    CHECK(label == std::string(160, 'x'));
+    update_native_binding_bookmark(history, id, position);
+    delete_native_binding_bookmark(history, id);
+    CHECK(history.document.revision == initial_revision + 3);
+    check_native_binding_marker_undo(history);
+}
+
+#endif

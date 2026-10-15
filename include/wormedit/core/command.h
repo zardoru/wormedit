@@ -27,6 +27,24 @@ template <typename Value> struct insert_edit_t {
     chart_id_t chart;
     Value value;
     auto operator==(const insert_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const insert_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const insert_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value> struct update_edit_t {
@@ -34,6 +52,24 @@ template <typename Value> struct update_edit_t {
     typename chart_edit_value_traits_t<Value>::id_type id;
     Value value;
     auto operator==(const update_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const update_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const update_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value> struct delete_edit_t {
@@ -41,6 +77,24 @@ template <typename Value> struct delete_edit_t {
     typename chart_edit_value_traits_t<Value>::id_type id;
     [[no_unique_address]] typename chart_edit_value_traits_t<Value>::delete_options_type options{};
     auto operator==(const delete_edit_t&) const -> bool = default;
+
+    template <class Context>
+        requires requires(Context& context, const delete_edit_t& edit) {
+            {
+                context.validate(edit)
+            } -> std::same_as<std::optional<typename Context::outcome_type>>;
+        }
+    [[nodiscard]] auto validate(Context& context) const
+        -> std::optional<typename Context::outcome_type> {
+        return context.validate(*this);
+    }
+    template <class Context>
+        requires requires(Context& context, const delete_edit_t& edit) {
+            { context.perform(edit) } -> std::same_as<typename Context::outcome_type>;
+        }
+    [[nodiscard]] auto perform(Context& context) const -> typename Context::outcome_type {
+        return context.perform(*this);
+    }
 };
 
 template <typename Value>

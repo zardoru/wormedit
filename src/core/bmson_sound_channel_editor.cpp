@@ -115,13 +115,13 @@ auto interpolate_bmson_razor_path(const chart_document_t& chart,
         return result;
     }
     maximum_positions = std::min<std::size_t>(maximum_positions, 256);
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) {
+    const auto built = measure_index_t::from(chart);
+    if (!built) {
         reject_path(diagnostic_code_t::invalid_measure,
                     "BMSON razor path requires valid chart measure geometry");
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built);
+    const auto& index = *built;
     const auto first = index.row_of(from);
     const auto last = index.row_of(to);
     if (!first || !last) {
@@ -210,9 +210,8 @@ auto move_bmson_bgm_marker(document_history_t& history,
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                         "BMSON marker move requires a known chart and BGM event");
     }
-    const auto measures = build_measure_index(*found_chart);
-    if (!std::holds_alternative<measure_index_t>(measures) ||
-        !(std::get<measure_index_t>(measures)).row_of(target)) {
+    const auto measures = measure_index_t::from(*found_chart);
+    if (!measures || !measures->row_of(target)) {
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::row_out_of_range,
                         "BMSON marker target is outside exact chart geometry");
     }
@@ -241,7 +240,7 @@ auto move_bmson_bgm_marker(document_history_t& history,
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                         "BGM marker and retained source event disagree");
     }
-    const auto translated = translate_hold_end(std::get<measure_index_t>(measures),
+    const auto translated = translate_hold_end(*measures,
         semantic->position, semantic->end, target, history.document.revision);
     if (const auto* failure = std::get_if<document_command_result_t>(&translated)) return *failure;
     const auto translated_end = std::get<std::optional<local_position_t>>(translated);
@@ -489,11 +488,11 @@ auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
         found_chart->source_family != format_family_t::bmson || !reference_bgm_event)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON marker insertion requires a known chart and BGM event");
-    const auto built = build_measure_index(*found_chart);
-    if (std::holds_alternative<diagnostic_list_t>(built))
+    const auto built = measure_index_t::from(*found_chart);
+    if (!built)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_measure,
                         "BMSON chart has invalid measure geometry");
-    const auto& index = std::get<measure_index_t>(built);
+    const auto& index = *built;
     if (auto failure = validate_marker_batch_geometry(index, markers, revision)) return *failure;
     auto source_result = resolve_marker_source(*found_chart, reference_bgm_event, revision);
     if (const auto* failure = std::get_if<document_command_result_t>(&source_result))
@@ -816,11 +815,11 @@ auto assign_bmson_sound_event(document_history_t& history,
         (playable_lane && !*playable_lane))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON sound assignment requires a linked event and valid target");
-    const auto built = build_measure_index(*found_chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    const auto built = measure_index_t::from(*found_chart);
+    if (!built)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_measure,
                         "BMSON sound assignment requires valid measure geometry");
-    const auto& index = std::get<measure_index_t>(built);
+    const auto& index = *built;
     const auto refs = find_semantic_event(*found_chart, semantic_event);
     if (!is_valid_semantic_event(refs))
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
@@ -946,10 +945,10 @@ auto classify_stem_restart(const chart_document_t& chart, const sound_channel_t&
                             generated_slices->diagnostics.front().message);
         validated_slices = &*generated_slices;
     }
-    const auto timing = build_timing_index(chart);
-    if (!timing) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_resolution,
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_resolution,
                                  "BMSON stem point timing cannot be resolved");
-    const auto inside = target_inside_active_slice(*validated_slices, *timing.index, row,
+    const auto inside = target_inside_active_slice(*validated_slices, *timing.value, row,
                                                     sample_rate, source_end);
     if (!inside) return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_resolution,
                                  "BMSON stem source length is unknown at the target row");
@@ -983,11 +982,11 @@ auto resolve_stem_target(document_history_t& history, std::size_t chart_offset,
         }) != 1)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                         "BMSON stem channel has no explicit linked source lane");
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    const auto built = measure_index_t::from(chart);
+    if (!built)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_measure,
                         "BMSON stem point requires valid chart geometry");
-    auto measures = std::get<measure_index_t>(built);
+    auto measures = *built;
     const auto row = measures.row_of(target);
     if (!row) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::row_out_of_range,
                               "BMSON stem point is outside chart geometry");
@@ -1344,9 +1343,8 @@ auto insert_bmson_packed_one_shot(document_history_t& history, chart_id_t chart_
     if (asset == nullptr)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::dangling_asset,
                         "Packed BMSON sound resource has no audio asset");
-    const auto built = build_measure_index(*original_chart);
-    if (!std::holds_alternative<measure_index_t>(built) ||
-        !(std::get<measure_index_t>(built)).row_of(target))
+    const auto built = measure_index_t::from(*original_chart);
+    if (!built || !built->row_of(target))
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::row_out_of_range,
                         "Packed BMSON point is outside chart geometry");
     if (resource_binding != bindings.end() && resource_binding->ambiguous)
@@ -1432,12 +1430,11 @@ auto resolve_packed_stroke_context(document_history_t& history,
     if (lane->stem_channel)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::unsupported_feature,
                         "BMSON stem lanes are not drawable; place stem points on a stem lane instead");
-    auto built = build_measure_index(*chart);
-    auto* index = std::get_if<measure_index_t>(&built);
-    if (!index)
+    auto built = measure_index_t::from(*chart);
+    if (!built)
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_measure,
                         "BMSON stroke chart index is invalid");
-    packed_stroke_context_t context{chart_offset, chart, std::move(*index), {}};
+    packed_stroke_context_t context{chart_offset, chart, std::move(*built), {}};
     std::unordered_set<std::uint64_t> seen;
     for (const auto& position : targets) {
         const auto row = context.index.row_of(position);

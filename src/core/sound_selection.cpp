@@ -211,22 +211,21 @@ auto select_same_sound(const song_document_t& song, const chart_document_t& char
                        const sound_selection_query_t& query)
     -> std::vector<editor_selection_object_t> {
     std::vector<editor_selection_object_t> result;
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
-    if (!index || query.keys.empty())
+    const auto built = measure_index_t::from(chart);
+    if (!built || query.keys.empty())
         return result;
     const auto sounds = sound_match_index_t::from(song, chart, query);
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             if (!is_lane_visible(chart, note, query))
                 continue;
-            if (is_matching_selection(chart, sounds, *index, note, query))
+            if (is_matching_selection(chart, sounds, *built, note, query))
                 result.push_back({editor_selection_object_kind_t::note, note.id});
         }
     }
     for (const auto& measure : chart.measures)
         for (const auto& bgm : measure.bgm_events)
-            if (is_matching_selection(chart, sounds, *index, bgm, query))
+            if (is_matching_selection(chart, sounds, *built, bgm, query))
                 result.push_back({editor_selection_object_kind_t::bgm_event, bgm.id});
     return result;
 }

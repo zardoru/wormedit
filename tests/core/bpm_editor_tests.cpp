@@ -578,3 +578,65 @@ TEST_CASE("failed beat fit outcome owns diagnostics without an apply payload",
     CHECK(history.document.revision == 4);
     CHECK(history.undo.empty());
 }
+
+namespace {
+
+void check_target_query(target_identity_query_t query, target_query_messages_t messages,
+                        const diagnostic_list_t& expected = {}) {
+    diagnostic_list_t diagnostics;
+    CHECK(query.validate(diagnostics, messages) == expected.empty());
+    CHECK(diagnostics == expected);
+}
+
+} // namespace
+
+TEST_CASE("BPM deletion rejects a cross-kind ID collision before changing the chart",
+          "[unit][core][bpm-editor][target-policy]") {
+    auto song = bpm_song();
+    song.charts.front().bookmarks.push_back({.id = object_id_t{10},
+        .label = "collision", .position = local_position_t{measure_id_t{3}, 0}});
+    auto history = document_history_t::from(std::move(song));
+    const auto revision = history.document.revision;
+    const auto result = apply_bpm_edit(history, delete_edit_t<bpm_edit_value_t>{
+        .chart = chart_id_t{2}, .id = object_id_t{10}});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::duplicate_id,
+          "BPM event ID is ambiguous because it appears more than once")});
+    CHECK(history.document.charts.front().bpms.size() == 1);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("target identity queries preserve collection chart and preindexed policies",
+          "[unit][core][bpm-editor][target-policy]") {
+    auto chart = bpm_song().charts.front();
+    chart.bookmarks.push_back({.id = object_id_t{10}});
+    chart.measures.front().id = measure_id_t{10};
+    chart.semantic_layers.push_back({.id = layer_id_t{10}});
+    const target_query_messages_t messages{"missing", "ambiguous", "zero"};
+    check_target_query(chart.query_target(chart.bpms, object_id_t{10}), messages);
+    check_target_query(chart.query_target(chart.measures, measure_id_t{10}), messages);
+    check_target_query(chart.query_target(chart.semantic_layers, layer_id_t{10}), messages);
+    check_target_query(chart.query_target(chart.bpms, object_id_t{10},
+        target_uniqueness_scope_t::chart_objects), messages,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    check_target_query(chart.query_target(chart.bpms, object_id_t{99},
+        target_uniqueness_scope_t::chart_objects), messages,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+    chart.bookmarks.push_back({.id = object_id_t{99}});
+    chart.bookmarks.push_back({.id = object_id_t{99}});
+    check_target_query(chart.query_target(chart.bpms, object_id_t{99},
+        target_uniqueness_scope_t::chart_objects), messages,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+    check_target_query(chart.query_object_id(object_id_t{99}), messages,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    chart.bpms.push_back(chart.bpms.front());
+    check_target_query(chart.query_target(chart.bpms, object_id_t{10}), messages,
+        {error(diagnostic_code_t::duplicate_id, "ambiguous")});
+    check_target_query(target_identity_query_t::from(object_id_t{}, 2), messages,
+        {error(diagnostic_code_t::invalid_id, "zero")});
+    check_target_query(target_identity_query_t::from(object_id_t{}, 1),
+        {.missing = "missing", .ambiguous = "ambiguous"});
+    check_target_query(target_identity_query_t::from(object_id_t{10}, 0), messages,
+        {error(diagnostic_code_t::invalid_id, "missing")});
+}

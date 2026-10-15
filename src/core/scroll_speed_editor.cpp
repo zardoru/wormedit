@@ -44,18 +44,12 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
 template <typename event_t>
 auto unique_event(const chart_document_t& chart, std::vector<event_t>& events, object_id_t id,
                   std::string_view name, document_command_result_t& result) -> event_t* {
-    const auto found = std::ranges::find(events, id, &event_t::id);
-    if (found == events.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               std::string(name) + " command refers to an unknown event");
+    if (!chart.query_target(events, id, target_uniqueness_scope_t::chart_objects)
+             .validate(result.diagnostics, {
+                 " command refers to an unknown event",
+                 " event ID is ambiguous because it appears more than once", {}, name}))
         return nullptr;
-    }
-    if (chart_object_id_count(chart, id) != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               std::string(name) + " event ID is ambiguous because it appears more than once");
-        return nullptr;
-    }
-    return &*found;
+    return &*std::ranges::find(events, id, &event_t::id);
 }
 
 struct scroll_speed_edit_context_t {

@@ -45,23 +45,10 @@ auto is_marker_text_within_limit(const chart_document_t& chart, const marker_edi
 
 auto validate_chart_object_id(const chart_document_t& chart, object_id_t id,
                               document_command_result_t& result, std::string_view type) -> bool {
-    if (!id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               std::string(type) + " command uses the reserved zero object ID");
-        return false;
-    }
-    const auto count = chart_object_id_count(chart, id);
-    if (count == 0) {
-        reject(result, diagnostic_code_t::invalid_id,
-               std::string(type) + " command refers to an unknown object");
-        return false;
-    }
-    if (count != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               std::string(type) + " ID is ambiguous because it appears more than once");
-        return false;
-    }
-    return true;
+    return chart.query_object_id(id).validate(result.diagnostics, {
+        " command refers to an unknown object",
+        " ID is ambiguous because it appears more than once",
+        " command uses the reserved zero object ID", type});
 }
 
 auto validate_position(const chart_document_t& chart, local_position_t position,

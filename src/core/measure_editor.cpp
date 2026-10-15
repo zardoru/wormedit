@@ -52,17 +52,11 @@ auto next_measure_id(const chart_document_t& chart) -> std::optional<measure_id_
 
 auto unique_measure(chart_document_t& chart, measure_id_t id, document_command_result_t& result)
     -> measure_chunk_t* {
-    const auto found = chart.find_measure(id);
-    if (!id || found == nullptr) {
-        reject(result, diagnostic_code_t::invalid_id, "measure edit refers to an unknown measure");
-        return nullptr;
-    }
-    if (std::ranges::count(chart.measures, id, &measure_chunk_t::id) != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "measure ID is ambiguous because it appears more than once");
-        return nullptr;
-    }
-    return found;
+    if (!chart.query_target(chart.measures, id).validate(result.diagnostics, {
+            "measure edit refers to an unknown measure",
+            "measure ID is ambiguous because it appears more than once",
+            "measure edit refers to an unknown measure"})) return nullptr;
+    return chart.find_measure(id);
 }
 
 auto measure_definition_equal(const measure_definition_t& left, const measure_definition_t& right) -> bool {

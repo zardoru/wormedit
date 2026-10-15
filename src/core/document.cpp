@@ -1,4 +1,5 @@
 #include "text_util.h"
+#include "chart_object_ids.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/document.h>
 #include <wormedit/core/sv_recipe.h>
@@ -16,6 +17,24 @@
 #include <unordered_set>
 
 namespace wormedit {
+
+auto target_identity_query_t::validate(diagnostic_list_t& diagnostics,
+                                        target_query_messages_t messages) const -> bool {
+    auto message = std::string_view{};
+    auto code = diagnostic_code_t::invalid_id;
+    if (is_zero && !messages.reserved_zero.empty()) message = messages.reserved_zero;
+    else if (count == 0) message = messages.missing;
+    else if (count != 1) {
+        message = messages.ambiguous;
+        code = diagnostic_code_t::duplicate_id;
+    } else return true;
+    diagnostics.push_back(error(code, std::string(messages.domain) + std::string(message)));
+    return false;
+}
+
+auto chart_document_t::query_object_id(object_id_t id) const -> target_identity_query_t {
+    return target_identity_query_t::from(id, chart_object_id_count(*this, id, 2));
+}
 
 auto resource_entry_t::has_role(resource_role_t role) const -> bool {
     return std::ranges::find(roles, role) != roles.end();

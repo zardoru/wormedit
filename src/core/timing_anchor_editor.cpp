@@ -19,22 +19,10 @@ auto validate_position(const chart_document_t& chart, local_position_t position,
 
 auto unique_anchor(chart_document_t& chart, object_id_t id, document_command_result_t& result)
     -> timing_anchor_t* {
-    if (!id) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "timing anchor command uses the reserved zero object ID");
-        return nullptr;
-    }
-    const auto id_count = chart_object_id_count(chart, id, 2);
-    if (id_count == 0) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "timing anchor command refers to an unknown anchor");
-        return nullptr;
-    }
-    if (id_count != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "timing anchor ID is ambiguous because it appears more than once");
-        return nullptr;
-    }
+    if (!chart.query_object_id(id).validate(result.diagnostics, {
+            "timing anchor command refers to an unknown anchor",
+            "timing anchor ID is ambiguous because it appears more than once",
+            "timing anchor command uses the reserved zero object ID"})) return nullptr;
     const auto found = std::ranges::find(chart.timing_anchors, id, &timing_anchor_t::id);
     if (found == chart.timing_anchors.end()) {
         reject(result, diagnostic_code_t::invalid_id,

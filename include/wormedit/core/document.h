@@ -5,6 +5,7 @@
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
 
+#include <algorithm>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -14,6 +15,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <type_traits>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -802,6 +804,35 @@ class chart_indices_slot_t {
     mutable std::shared_ptr<const chart_indices_t> value_;
 };
 
+// Identity domains stay typed; only the uniqueness verdict is shared. Counts may come
+// from a collection, the chart traversal, or an already built index.
+struct target_query_messages_t {
+    std::string_view missing;
+    std::string_view ambiguous;
+    // Empty means zero is an ordinary ID in this domain.
+    std::string_view reserved_zero{};
+    std::string_view domain{};
+};
+
+struct target_identity_query_t {
+    std::size_t count{};
+    bool is_zero{};
+
+    template <class Id>
+    [[nodiscard]] static auto from(Id id, std::size_t count) -> target_identity_query_t {
+        return {.count = count, .is_zero = !id};
+    }
+    template <class Value, class Id>
+    [[nodiscard]] static auto from(const std::vector<Value>& values, Id id)
+        -> target_identity_query_t {
+        return from(id, std::ranges::count(values, id, &Value::id));
+    }
+    [[nodiscard]] auto validate(diagnostic_list_t& diagnostics,
+                                 target_query_messages_t messages) const -> bool;
+};
+
+enum class target_uniqueness_scope_t { collection, chart_objects };
+
 struct chart_document_t {
     chart_id_t id;
     chart_metadata_t metadata;
@@ -837,6 +868,19 @@ struct chart_document_t {
     std::uint64_t virtual_tail_measures{};
     // Derived, never serialized. Unchanged snapshot copies share the payload.
     chart_indices_slot_t indices_slot{};
+    [[nodiscard]] auto query_object_id(object_id_t id) const -> target_identity_query_t;
+    template <class Value, class Id>
+    [[nodiscard]] auto query_target(const std::vector<Value>& values, Id id,
+        target_uniqueness_scope_t scope = target_uniqueness_scope_t::collection) const
+        -> target_identity_query_t {
+        const auto local = target_identity_query_t::from(values, id);
+        // These targets historically reject a missing kind before checking ambiguity.
+        if (local.count == 0) return local;
+        if constexpr (std::is_same_v<Id, object_id_t>) {
+            if (scope == target_uniqueness_scope_t::chart_objects) return query_object_id(id);
+        }
+        return local;
+    }
     [[nodiscard]] auto find_note(object_id_t id) const -> const note_t*;
     [[nodiscard]] auto find_note(object_id_t id) -> note_t*;
     [[nodiscard]] auto find_bgm_event(object_id_t id) const -> const bgm_event_t*;

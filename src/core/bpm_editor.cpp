@@ -42,18 +42,11 @@ auto validate_bpm_position(const chart_document_t& chart, local_position_t posit
 
 auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_result_t& result)
     -> bpm_event_t* {
-    const auto found = std::ranges::find(chart.bpms, id, &bpm_event_t::id);
-    if (found == chart.bpms.end()) {
-        reject(result, diagnostic_code_t::invalid_id,
-               "BPM event command refers to an unknown event");
-        return nullptr;
-    }
-    if (std::ranges::count(chart.bpms, id, &bpm_event_t::id) != 1) {
-        reject(result, diagnostic_code_t::duplicate_id,
-               "BPM event ID is ambiguous because it appears more than once");
-        return nullptr;
-    }
-    return &*found;
+    if (!chart.query_target(chart.bpms, id, target_uniqueness_scope_t::chart_objects)
+             .validate(result.diagnostics, {
+                 "BPM event command refers to an unknown event",
+                 "BPM event ID is ambiguous because it appears more than once"})) return nullptr;
+    return &*std::ranges::find(chart.bpms, id, &bpm_event_t::id);
 }
 
 struct bpm_edit_effect_t {

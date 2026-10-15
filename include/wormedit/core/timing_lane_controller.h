@@ -70,9 +70,7 @@ struct timing_lane_pseudonote_state_t {
 };
 
 struct timing_lane_pseudonote_preview_t;
-using timing_lane_pseudonote_diagnostics_t = proposal_diagnostics_t<timing_lane_pseudonote_state_t>;
-using timing_lane_pseudonote_outcome_t = proposal_outcome_t<timing_lane_pseudonote_preview_t,
-    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>;
+class timing_lane_pseudonote_outcome_t;
 using timing_lane_pseudonote_proposal_t = proposal_t<timing_lane_pseudonote_preview_t>;
 
 struct timing_lane_pseudonote_preview_t {
@@ -91,17 +89,62 @@ struct timing_lane_pseudonote_preview_t {
     auto operator==(const timing_lane_pseudonote_preview_t&) const -> bool = default;
 };
 
+// This editor retains rejected display state beside its plain proposal outcome.
+// Diagnostics remain an ordinary list; retained reports stay in their payload.
+class timing_lane_pseudonote_outcome_t : public proposal_outcome_t<timing_lane_pseudonote_preview_t> {
+    using outcome_type = proposal_outcome_t<timing_lane_pseudonote_preview_t>;
+
+  public:
+    timing_lane_pseudonote_outcome_t() = default;
+    explicit timing_lane_pseudonote_outcome_t(timing_lane_pseudonote_proposal_t editor)
+        : outcome_type{.value = std::move(editor)} {}
+
+    [[nodiscard]] auto editor() noexcept -> timing_lane_pseudonote_proposal_t* {
+        return value ? &*value : rejected_ ? &*rejected_ : nullptr;
+    }
+    [[nodiscard]] auto editor() const noexcept -> const timing_lane_pseudonote_proposal_t* {
+        return value ? &*value : rejected_ ? &*rejected_ : nullptr;
+    }
+    [[nodiscard]] auto report() noexcept -> timing_lane_pseudonote_state_t* {
+        auto* captured = editor();
+        return captured ? &captured->payload.report : nullptr;
+    }
+    [[nodiscard]] auto report() const noexcept -> const timing_lane_pseudonote_state_t* {
+        const auto* captured = editor();
+        return captured ? &captured->payload.report : nullptr;
+    }
+    [[nodiscard]] auto captured_stamp() const noexcept -> const chart_stamp_t& {
+        const auto* captured = editor();
+        static constexpr chart_stamp_t empty{};
+        return captured ? captured->stamp : empty;
+    }
+    void complete(bool is_accepted) {
+        if (is_accepted) {
+            if (!value && rejected_) value = std::move(rejected_);
+            rejected_.reset();
+        } else if (value) {
+            rejected_ = std::move(value);
+            value.reset();
+        }
+    }
+
+
+  private:
+    std::optional<timing_lane_pseudonote_proposal_t> rejected_;
+};
+
+static_assert(std::is_nothrow_move_constructible_v<timing_lane_pseudonote_outcome_t>);
+static_assert(std::is_nothrow_move_assignable_v<timing_lane_pseudonote_outcome_t>);
+static_assert(!std::is_polymorphic_v<timing_lane_pseudonote_outcome_t>);
+
 static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
     std::tuple<const document_history_t&, chart_id_t, timing_lane_pseudonote_state_t, bool>,
     std::tuple<timing_lane_pseudonote_outcome_t, const document_history_t&, timing_lane_value_t, bool>,
-    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>);
+    chart_stamp_t, diagnostic_list_t>);
 static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
     std::tuple<const document_history_t&, chart_id_t, timing_lane_event_ref_t, bool>,
     std::tuple<timing_lane_pseudonote_outcome_t, const document_history_t&, local_position_t, bool>,
-    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>);
-
-using timing_lane_pseudonote_view_t = proposal_preview_view_t<timing_lane_pseudonote_preview_t,
-    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>;
+    chart_stamp_t, diagnostic_list_t>);
 
 // BPM, scroll/SV, speed, stop, delay, warp, kiai, and timing-anchor lanes are
 // supported. Meter editing is outside this controller because the current

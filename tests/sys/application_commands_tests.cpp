@@ -34,7 +34,7 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
     const wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
     wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
         .selected_chart = wormedit::chart_id_t{2}};
-    const wormedit::timing_lane_pseudonote_outcome_t stage{.value = wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})}};
+    const wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})}};
     WormUiWorkspaceAction action{};
     action.timing_chart_id = 2;
     action.timing_document_revision = 7;
@@ -58,7 +58,7 @@ TEST_CASE("Application timing stage validation keeps captured identity and reque
     wormedit::document_history_t history{.document = {.id = wormedit::song_id_t{1}, .revision = 7}};
     wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
         .selected_chart = wormedit::chart_id_t{2}};
-    wormedit::timing_lane_pseudonote_outcome_t stage{.value = wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
+    wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
         .payload = {.report = {.existing_event = wormedit::object_id_t{3}}}}};
     WormUiWorkspaceAction action{};
     action.timing_chart_id = 2;
@@ -800,17 +800,17 @@ TEST_CASE("Disallowed note kind leaves Select and the armed kind unchanged", "[s
 auto bpm_preview_matches(const wormedit::timing_lane_pseudonote_outcome_t& preview,
                          wormedit::local_position_t cursor) -> bool {
     using namespace wormedit;
-    return wormedit::timing_lane_pseudonote_proposal_t::report(preview)->kind == timing_lane_kind_t::bpm && wormedit::timing_lane_pseudonote_proposal_t::report(preview)->position == cursor &&
-           wormedit::timing_lane_pseudonote_proposal_t::report(preview)->initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
-           std::get<timing_bpm_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value).beats_per_minute == signed_rational_t{150, 1};
+    return preview.report()->kind == timing_lane_kind_t::bpm && preview.report()->position == cursor &&
+           preview.report()->initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
+           std::get<timing_bpm_value_t>(preview.report()->value).beats_per_minute == signed_rational_t{150, 1};
 }
 
 auto sv_preview_matches(const wormedit::timing_lane_pseudonote_outcome_t& preview,
                         wormedit::local_position_t cursor) -> bool {
     using namespace wormedit;
-    return wormedit::timing_lane_pseudonote_proposal_t::report(preview)->kind == timing_lane_kind_t::scroll && wormedit::timing_lane_pseudonote_proposal_t::report(preview)->position == cursor &&
-           wormedit::timing_lane_pseudonote_proposal_t::report(preview)->initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
-           std::get<timing_scroll_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value).multiplier == signed_rational_t{3, 2};
+    return preview.report()->kind == timing_lane_kind_t::scroll && preview.report()->position == cursor &&
+           preview.report()->initial_value_source == timing_lane_initial_value_source_t::effective_at_position &&
+           std::get<timing_scroll_value_t>(preview.report()->value).multiplier == signed_rational_t{3, 2};
 }
 
 auto history_unchanged(const wormedit::document_history_t& history, std::uint64_t revision) -> bool {

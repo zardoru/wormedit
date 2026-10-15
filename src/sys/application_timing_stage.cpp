@@ -184,10 +184,10 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     }
     if (action.timing_object_id != 0) {
         auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{*requested_kind, object_id_t{action.timing_object_id}}, timing_locked);
-        if (wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing &&
+        if (preview.report()->status == timing_lane_pseudonote_status_t::editing &&
             action.timing_has_target_y) {
             const auto chart =
-                history.document.find_chart(wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(preview).chart);
+                history.document.find_chart(preview.captured_stamp().chart);
             const auto target =
                 chart == nullptr
                     ? std::optional<local_position_t>{}

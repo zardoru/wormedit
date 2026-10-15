@@ -145,10 +145,10 @@ TEST_CASE("timing pseudo-notes preview typed values and commit through one share
 
     auto bpm = begin(history, timing_lane_kind_t::bpm, 120, timing_bpm_value_t{{150, 1}},
                      timing_lane_initial_value_source_t::effective_at_position);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(bpm.report()->status == timing_lane_pseudonote_status_t::editing);
     CHECK(bpm.value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->position == pos(120));
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->initial_value_source == timing_lane_initial_value_source_t::effective_at_position);
+    CHECK(bpm.report()->position == pos(120));
+    CHECK(bpm.report()->initial_value_source == timing_lane_initial_value_source_t::effective_at_position);
     CHECK(history.document.revision == initial_revision);
     CHECK(history.undo.size() == initial_undo_count);
     CHECK(history.document.charts.front().measures.front().notes.empty());
@@ -156,7 +156,7 @@ TEST_CASE("timing pseudo-notes preview typed values and commit through one share
     REQUIRE((bpm = timing_lane_pseudonote_preview_t::revise(std::move(bpm), history, timing_bpm_value_t{{90, 1}}, false)).value.has_value());
     const auto inserted_bpm = apply_timing_lane_pseudonote(history, bpm, false);
     REQUIRE(inserted_bpm);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->status == timing_lane_pseudonote_status_t::committed);
+    CHECK(bpm.report()->status == timing_lane_pseudonote_status_t::committed);
     REQUIRE(history.document.charts.front().bpms.size() == 2);
     CHECK(history.document.charts.front().bpms.back().position == pos(120));
     CHECK(history.document.charts.front().bpms.back().beats_per_minute == signed_rational_t{90, 1});
@@ -175,11 +175,11 @@ TEST_CASE("each timing lane commits its own typed event without creating playabl
     auto history = document_history_t::from(timing_song());
     const auto insert = [&](timing_lane_kind_t kind, std::uint64_t row, timing_lane_value_t value) {
         auto preview = begin(history, kind, row, std::move(value));
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
+        REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::editing);
         const auto undo_count = history.undo.size();
         const auto result = apply_timing_lane_pseudonote(history, preview, false);
         REQUIRE(result);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::committed);
+        CHECK(preview.report()->status == timing_lane_pseudonote_status_t::committed);
         CHECK(history.undo.size() == undo_count + 1);
         CHECK(history.document.charts.front().measures.front().notes.empty());
     };
@@ -236,22 +236,22 @@ TEST_CASE("existing timing lane events update in place and retain source identit
         const auto original_revision = history.document.revision;
         auto preview =
             timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{kind, event}, false);
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->existing_event == event);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->position == position);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(preview).document.revision == original_revision);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value.index() == original.index());
+        REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::editing);
+        REQUIRE(preview.report()->existing_event == event);
+        CHECK(preview.report()->position == position);
+        CHECK(preview.captured_stamp().document.revision == original_revision);
+        CHECK(preview.report()->value.index() == original.index());
         switch (kind) {
         case timing_lane_kind_t::bpm:
-            CHECK(std::get<timing_bpm_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value).beats_per_minute ==
+            CHECK(std::get<timing_bpm_value_t>(preview.report()->value).beats_per_minute ==
                   std::get<timing_bpm_value_t>(original).beats_per_minute);
             break;
         case timing_lane_kind_t::scroll:
-            CHECK(std::get<timing_scroll_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value).multiplier ==
+            CHECK(std::get<timing_scroll_value_t>(preview.report()->value).multiplier ==
                   std::get<timing_scroll_value_t>(original).multiplier);
             break;
         case timing_lane_kind_t::speed: {
-            const auto& actual = std::get<timing_speed_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value);
+            const auto& actual = std::get<timing_speed_value_t>(preview.report()->value);
             const auto& expected = std::get<timing_speed_value_t>(original);
             CHECK(actual.multiplier == expected.multiplier);
             CHECK(actual.transition_beats == expected.transition_beats);
@@ -260,28 +260,28 @@ TEST_CASE("existing timing lane events update in place and retain source identit
         }
         case timing_lane_kind_t::stop:
         case timing_lane_kind_t::delay: {
-            const auto& actual = std::get<timing_pause_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value);
+            const auto& actual = std::get<timing_pause_value_t>(preview.report()->value);
             const auto& expected = std::get<timing_pause_value_t>(original);
             CHECK(actual.duration == expected.duration);
             CHECK(actual.source_unit == expected.source_unit);
             break;
         }
         case timing_lane_kind_t::warp: {
-            const auto& actual = std::get<timing_warp_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value);
+            const auto& actual = std::get<timing_warp_value_t>(preview.report()->value);
             const auto& expected = std::get<timing_warp_value_t>(original);
             CHECK(actual.end == expected.end);
             CHECK(actual.source_encoding == expected.source_encoding);
             break;
         }
         case timing_lane_kind_t::kiai: {
-            const auto& actual = std::get<timing_kiai_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value);
+            const auto& actual = std::get<timing_kiai_value_t>(preview.report()->value);
             const auto& expected = std::get<timing_kiai_value_t>(original);
             CHECK(actual.enabled == expected.enabled);
             CHECK(actual.retained_effect_bits == expected.retained_effect_bits);
             break;
         }
         case timing_lane_kind_t::anchor: {
-            const auto& actual = std::get<timing_anchor_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->value);
+            const auto& actual = std::get<timing_anchor_value_t>(preview.report()->value);
             const auto& expected = std::get<timing_anchor_value_t>(original);
             CHECK(actual.source_sample_frame == expected.source_sample_frame);
             CHECK(actual.locked == expected.locked);
@@ -293,7 +293,7 @@ TEST_CASE("existing timing lane events update in place and retain source identit
         REQUIRE((preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, changed, false)).value.has_value());
         const auto result = apply_timing_lane_pseudonote(history, preview, false);
         REQUIRE(result);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::committed);
+        CHECK(preview.report()->status == timing_lane_pseudonote_status_t::committed);
         CHECK(history.undo.size() == undo_count + 1);
         CHECK(history.document.revision == original_revision + 1);
         check_document(history.document.charts.front(), true);
@@ -411,23 +411,23 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
           "[unit][core][timing-lane-controller][update][negative]") {
     auto history = document_history_t::from(timing_edit_song());
     auto unknown = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{999}}, false);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(unknown)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(unknown.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
 
     auto wrong_kind = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{10}}, false);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(wrong_kind)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(wrong_kind.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(wrong_kind, diagnostic_code_t::invalid_resolution));
 
     auto wrong_pause_kind = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{41}}, false);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(wrong_pause_kind)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(wrong_pause_kind.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(wrong_pause_kind, diagnostic_code_t::invalid_resolution));
 
     auto locked = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, true);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(locked)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(locked.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
 
     auto stale = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(stale.report()->status == timing_lane_pseudonote_status_t::editing);
     const auto intervening =
         apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
                                     .chart = chart_id_t{2},
@@ -437,7 +437,7 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     REQUIRE(intervening);
     const auto revision_after_intervening = history.document.revision;
     CHECK_FALSE((stale = timing_lane_pseudonote_preview_t::revise(std::move(stale), history, timing_bpm_value_t{{90, 1}}, false)).value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(stale.report()->status == timing_lane_pseudonote_status_t::cancelled);
     test::check_stale_action_message(stale.diagnostics, "Timing pseudo-note");
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
     CHECK(history.document.revision == revision_after_intervening);
@@ -445,7 +445,7 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
           signed_rational_t{120, 1});
 
     auto stale_confirm = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(stale_confirm)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(stale_confirm.report()->status == timing_lane_pseudonote_status_t::editing);
     const auto another_change =
         apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
                                     .chart = chart_id_t{2},
@@ -456,7 +456,7 @@ TEST_CASE("existing timing edit targets reject unknown, wrong-kind, locked, and 
     const auto result = apply_timing_lane_pseudonote(history, stale_confirm, false);
     CHECK_FALSE(result);
     CHECK(has_code(result, diagnostic_code_t::invalid_id));
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(stale_confirm)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(stale_confirm.report()->status == timing_lane_pseudonote_status_t::cancelled);
     CHECK(history.document.charts.front().scrolls.front().multiplier == signed_rational_t{-2, 3});
 }
 
@@ -464,24 +464,24 @@ TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edit
           "[unit][core][timing-lane-controller][negative]") {
     auto history = document_history_t::from(timing_song());
     auto locked = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_pseudonote_state_t{.kind = timing_lane_kind_t::bpm, .position = pos(120), .value = timing_bpm_value_t{{100, 1}}, .initial_value_source = timing_lane_initial_value_source_t::explicit_default}, true);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(locked)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(locked.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
     CHECK(history.document.charts.front().bpms.size() == 1);
 
     auto occupied = begin(history, timing_lane_kind_t::bpm, 0, timing_bpm_value_t{{100, 1}});
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(occupied)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(occupied.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(occupied, diagnostic_code_t::collision));
 
     // Other timing lanes may coincide; occupancy is checked within the lane's
     // event family, matching the chart model's same-row ordering rules.
     auto different_lane =
         begin(history, timing_lane_kind_t::scroll, 0, timing_scroll_value_t{{2, 1}});
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(different_lane)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(different_lane.report()->status == timing_lane_pseudonote_status_t::editing);
     cancel_timing_lane_pseudonote(different_lane);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(different_lane)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(different_lane.report()->status == timing_lane_pseudonote_status_t::cancelled);
 
     auto stale = begin(history, timing_lane_kind_t::scroll, 120, timing_scroll_value_t{{2, 1}});
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(stale.report()->status == timing_lane_pseudonote_status_t::editing);
     const auto intervening =
         apply_bpm_edit(history, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
                                     .chart = chart_id_t{2},
@@ -492,15 +492,15 @@ TEST_CASE("pseudo-note insertion rejects locked, occupied, and stale timing edit
     const auto result = apply_timing_lane_pseudonote(history, stale, false);
     CHECK_FALSE(result);
     CHECK(has_code(result, diagnostic_code_t::invalid_id));
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(stale.report()->status == timing_lane_pseudonote_status_t::cancelled);
     CHECK(history.document.revision == revision_after_intervening);
     CHECK(history.document.charts.front().scrolls.empty());
 
     auto lock_during_edit =
         begin(history, timing_lane_kind_t::scroll, 180, timing_scroll_value_t{{2, 1}});
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(lock_during_edit)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(lock_during_edit.report()->status == timing_lane_pseudonote_status_t::editing);
     CHECK_FALSE((lock_during_edit = timing_lane_pseudonote_preview_t::revise(std::move(lock_during_edit), history, timing_scroll_value_t{{3, 1}}, true)).value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(lock_during_edit)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(lock_during_edit.report()->status == timing_lane_pseudonote_status_t::cancelled);
     CHECK(has_code(lock_during_edit, diagnostic_code_t::unsupported_feature));
     CHECK(history.document.charts.front().scrolls.empty());
 }
@@ -509,18 +509,18 @@ TEST_CASE("invalid value types, rationals, pause units, and warp spans cannot be
           "[unit][core][timing-lane-controller][negative]") {
     auto history = document_history_t::from(timing_song());
     auto bpm = begin(history, timing_lane_kind_t::bpm, 120, timing_bpm_value_t{{100, 1}});
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(bpm.report()->status == timing_lane_pseudonote_status_t::editing);
     CHECK_FALSE((bpm = timing_lane_pseudonote_preview_t::revise(std::move(bpm), history, timing_bpm_value_t{{0, 1}}, false)).value.has_value());
     CHECK_FALSE(bpm.value.has_value());
     CHECK(has_code(bpm, diagnostic_code_t::invalid_rational));
     const auto invalid_bpm = apply_timing_lane_pseudonote(history, bpm, false);
     CHECK_FALSE(invalid_bpm);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(bpm.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(history.document.charts.front().bpms.size() == 1);
 
     auto mismatched =
         begin(history, timing_lane_kind_t::speed, 180, timing_speed_value_t{{1, 1}, {}, false});
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(mismatched)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(mismatched.report()->status == timing_lane_pseudonote_status_t::editing);
     CHECK_FALSE(
         (mismatched = timing_lane_pseudonote_preview_t::revise(std::move(mismatched), history, timing_scroll_value_t{{1, 1}}, false)).value.has_value());
     CHECK(has_code(mismatched, diagnostic_code_t::invalid_resolution));
@@ -528,17 +528,17 @@ TEST_CASE("invalid value types, rationals, pause units, and warp spans cannot be
 
     auto bad_pause = begin(history, timing_lane_kind_t::delay, 240,
                            timing_pause_value_t{{1, 1}, pause_unit_t::bms_stop_ticks});
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bad_pause)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(bad_pause.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(bad_pause, diagnostic_code_t::invalid_resolution));
 
     auto zero_warp =
         begin(history, timing_lane_kind_t::warp, 300, timing_warp_value_t{.end = pos(300)});
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(zero_warp)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(zero_warp.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(zero_warp, diagnostic_code_t::invalid_hold));
 
     auto outside_warp =
         begin(history, timing_lane_kind_t::warp, 360, timing_warp_value_t{.end = pos(960)});
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(outside_warp)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(outside_warp.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(outside_warp, diagnostic_code_t::row_out_of_range));
     CHECK(history.document.charts.front().pauses.empty());
     CHECK(history.document.charts.front().warps.empty());
@@ -551,10 +551,10 @@ TEST_CASE("existing timing pseudo-notes update every typed family in place",
     const auto insert = [&](timing_lane_kind_t kind, std::uint64_t row,
                             timing_lane_value_t value) -> object_id_t {
         auto preview = begin(history, kind, row, std::move(value));
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
+        REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::editing);
         const auto result = apply_timing_lane_pseudonote(history, preview, false);
         REQUIRE(result);
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::committed);
+        REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::committed);
         const auto& chart = history.document.charts.front();
         switch (kind) {
         case timing_lane_kind_t::bpm:
@@ -596,14 +596,14 @@ TEST_CASE("existing timing pseudo-notes update every typed family in place",
     const auto edit = [&](timing_lane_kind_t kind, object_id_t event, timing_lane_value_t value) {
         auto preview =
             timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{kind, event}, false);
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
-        REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->existing_event == event);
+        REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::editing);
+        REQUIRE(preview.report()->existing_event == event);
         const auto revision = history.document.revision;
         const auto undo_count = history.undo.size();
         REQUIRE((preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, std::move(value), false)).value.has_value());
         const auto result = apply_timing_lane_pseudonote(history, preview, false);
         REQUIRE(result);
-        CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::committed);
+        CHECK(preview.report()->status == timing_lane_pseudonote_status_t::committed);
         CHECK(history.document.revision > revision);
         CHECK(history.undo.size() == undo_count + 1);
     };
@@ -666,9 +666,9 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
                          pos(0), wormedit::timing_bpm_value_t{signed_rational_t{130, 1}})});
     REQUIRE(coincident);
     auto own_row = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(own_row)->status == timing_lane_pseudonote_status_t::editing);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(own_row)->position == pos(0));
-    CHECK(std::get<timing_bpm_value_t>(wormedit::timing_lane_pseudonote_proposal_t::report(own_row)->value).beats_per_minute ==
+    REQUIRE(own_row.report()->status == timing_lane_pseudonote_status_t::editing);
+    CHECK(own_row.report()->position == pos(0));
+    CHECK(std::get<timing_bpm_value_t>(own_row.report()->value).beats_per_minute ==
           signed_rational_t{120, 1});
 
     const auto revision = history.document.revision;
@@ -676,24 +676,24 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
     const auto unchanged = apply_timing_lane_pseudonote(history, own_row, false);
     CHECK_FALSE(unchanged);
     CHECK(unchanged.diagnostics.empty());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(own_row)->status == timing_lane_pseudonote_status_t::committed);
+    CHECK(own_row.report()->status == timing_lane_pseudonote_status_t::committed);
     CHECK(history.document.revision == revision);
     CHECK(history.undo.size() == undo_count);
 
     auto wrong_kind = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{10}}, false);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(wrong_kind)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(wrong_kind.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(wrong_kind, diagnostic_code_t::invalid_resolution));
 
     auto unknown = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{999}}, false);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(unknown)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(unknown.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(unknown, diagnostic_code_t::invalid_id));
 
     auto locked = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, true);
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(locked)->status == timing_lane_pseudonote_status_t::rejected);
+    CHECK(locked.report()->status == timing_lane_pseudonote_status_t::rejected);
     CHECK(has_code(locked, diagnostic_code_t::unsupported_feature));
 
     auto stale = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(stale.report()->status == timing_lane_pseudonote_status_t::editing);
     const auto intervening =
         apply_bpm_edit(history, wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
                                     .chart = chart_id_t{2},
@@ -702,7 +702,7 @@ TEST_CASE("existing timing pseudo-note targets are exact, revision-bound, and no
                                         pos(0), wormedit::timing_bpm_value_t{{140, 1}})});
     REQUIRE(intervening);
     CHECK_FALSE((stale = timing_lane_pseudonote_preview_t::revise(std::move(stale), history, timing_bpm_value_t{{150, 1}}, false)).value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(stale)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(stale.report()->status == timing_lane_pseudonote_status_t::cancelled);
     CHECK(has_code(stale, diagnostic_code_t::invalid_id));
     CHECK(history.document.charts.front().bpms.front().beats_per_minute ==
           signed_rational_t{140, 1});
@@ -714,9 +714,9 @@ TEST_CASE("existing timing markers move as transient previews and delete through
     const auto original_revision = history.document.revision;
 
     auto bpm = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(bpm.report()->status == timing_lane_pseudonote_status_t::editing);
     REQUIRE((bpm = timing_lane_pseudonote_preview_t::revise(std::move(bpm), history, pos(720), false)).value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(bpm)->position == pos(720));
+    CHECK(bpm.report()->position == pos(720));
     CHECK(history.document.revision == original_revision);
     const auto moved = apply_timing_lane_pseudonote(history, bpm, false);
     REQUIRE(moved);
@@ -725,10 +725,10 @@ TEST_CASE("existing timing markers move as transient previews and delete through
     CHECK(history.document.charts.front().bpms.front().provenance.source_order == 3);
 
     auto warp = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::warp, object_id_t{50}}, false);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(warp)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(warp.report()->status == timing_lane_pseudonote_status_t::editing);
     CHECK_FALSE((warp = timing_lane_pseudonote_preview_t::revise(std::move(warp), history, pos(420), false)).value.has_value());
     CHECK(has_code(warp, diagnostic_code_t::invalid_hold));
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(warp)->status == timing_lane_pseudonote_status_t::editing);
+    CHECK(warp.report()->status == timing_lane_pseudonote_status_t::editing);
 
     const auto before_delete = history.document.revision;
     const auto deleted = delete_existing_timing_lane_event(
@@ -775,7 +775,7 @@ TEST_CASE("the effective initial BPM cannot leave chart row zero",
     const auto revision = history.document.revision;
     CHECK_FALSE((initial = timing_lane_pseudonote_preview_t::revise(std::move(initial), history, pos(120), false)).value.has_value());
     CHECK(has_code(initial, diagnostic_code_t::unsupported_feature));
-    CHECK((wormedit::timing_lane_pseudonote_proposal_t::report(initial)->position == pos(0) && history.document.revision == revision));
+    CHECK((initial.report()->position == pos(0) && history.document.revision == revision));
 }
 
 TEST_CASE("the effective initial BPM can change value but cannot be deleted",
@@ -967,7 +967,7 @@ TEST_CASE("quick insert copies the BPM in force without changing the effective t
     auto preview = begin(history, timing_lane_kind_t::bpm, 480,
                          timing_bpm_value_t{*inherited},
                          timing_lane_initial_value_source_t::effective_at_position);
-    REQUIRE(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
+    REQUIRE(preview.report()->status == timing_lane_pseudonote_status_t::editing);
     REQUIRE(apply_timing_lane_pseudonote(history, preview, false));
     const auto& bpms = history.document.charts.front().bpms;
     REQUIRE(bpms.size() == 2);
@@ -1011,7 +1011,7 @@ TEST_CASE("Timing proposal parameter rejection remains editable and can recover"
     CHECK(preview.value.has_value());
     CHECK_FALSE((preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, timing_scroll_value_t{{2, 0}}, false)).value.has_value());
     CHECK_FALSE(preview.value.has_value());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing);
+    CHECK(preview.report()->status == timing_lane_pseudonote_status_t::editing);
     REQUIRE((preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, timing_scroll_value_t{{3, 1}}, false)).value.has_value());
     CHECK(preview.value.has_value());
 }
@@ -1023,7 +1023,7 @@ TEST_CASE("Unchanged timing Apply stays committed and valid without an Undo reco
     const auto result = apply_timing_lane_pseudonote(history, preview, false);
     CHECK_FALSE(result.applied);
     CHECK(result.diagnostics.empty());
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::committed);
+    CHECK(preview.report()->status == timing_lane_pseudonote_status_t::committed);
     CHECK(preview.value.has_value());
     CHECK(history.undo.empty());
 }
@@ -1032,7 +1032,7 @@ TEST_CASE("Timing stamps preserve equal-revision project replacement on Apply",
           "[unit][core][timing-lane-controller][proposal-stamp]") {
     auto history = document_history_t::from(timing_song());
     auto preview = begin(history, timing_lane_kind_t::scroll, 120, timing_scroll_value_t{{2, 1}});
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(preview) == chart_stamp_t::from(history.document, chart_id_t{2}));
+    CHECK(preview.captured_stamp() == chart_stamp_t::from(history.document, chart_id_t{2}));
     history.document.id = song_id_t{99};
     REQUIRE((preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, timing_scroll_value_t{{3, 1}}, false)).value.has_value());
     CHECK(apply_timing_lane_pseudonote(history, preview, false).applied);
@@ -1049,7 +1049,7 @@ TEST_CASE("Timing Apply keeps captured-stale rejection before timing lock",
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().code == diagnostic_code_t::invalid_id);
     test::check_stale_action_message(result.diagnostics, "Timing pseudo-note");
-    CHECK(wormedit::timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::cancelled);
+    CHECK(preview.report()->status == timing_lane_pseudonote_status_t::cancelled);
     CHECK_FALSE(preview.value.has_value());
     CHECK(history.undo.empty());
 }
@@ -1101,9 +1101,9 @@ TEST_CASE("Rejected timing proposal retains editor data without an applicable va
     outcome = timing_lane_pseudonote_preview_t::revise(
         std::move(outcome), history, timing_scroll_value_t{{2, 0}}, false);
     CHECK_FALSE(outcome.value);
-    const auto view = timing_lane_pseudonote_view_t::from(outcome);
-    REQUIRE(view.report);
-    CHECK(*view.stamp == stamp);
-    CHECK(std::get<timing_scroll_value_t>(view.report->value).multiplier == signed_rational_t{2, 0});
-    CHECK(view.report->status == timing_lane_pseudonote_status_t::editing);
+    const auto* report = outcome.report();
+    REQUIRE(report);
+    CHECK(outcome.captured_stamp() == stamp);
+    CHECK(std::get<timing_scroll_value_t>(report->value).multiplier == signed_rational_t{2, 0});
+    CHECK(report->status == timing_lane_pseudonote_status_t::editing);
 }

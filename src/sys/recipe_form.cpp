@@ -198,7 +198,7 @@ auto recipe_form_preview_t::revise(recipe_form_outcome_t previous,
     }
     previous.value = recipe_form_proposal_t{
         .stamp = chart_stamp_t::from(document, chart.id), .payload = {.report = std::move(report)}};
-    recipe_form_proposal_t::complete(previous, bool(chart.id) && previous.diagnostics.empty());
+    previous.complete(bool(chart.id) && previous.diagnostics.empty());
     return previous;
 }
 
@@ -231,7 +231,7 @@ auto apply_recipe_form(document_history_t& history, chart_id_t chart_id, recipe_
     auto candidate = recipe_from_form(form, *recipe);
     if (!candidate) return "Values must be exact fractions and counts must be whole numbers.";
     // This synchronous path leaves semantic validation to the native command, once.
-    const recipe_form_outcome_t proposal{.value = recipe_form_proposal_t{
+    const recipe_form_outcome_t proposal{recipe_form_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart_id),
         .payload = {.report = {.candidate = std::move(*candidate)}}}};
     const auto result = apply_recipe_form(history, proposal);

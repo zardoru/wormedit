@@ -43,59 +43,6 @@ struct mutable_payload_t {
 };
 static_assert(staged_proposal<mutable_payload_t, std::tuple<>, std::tuple<const chart_stamp_t&, bool>>);
 
-struct editable_report_t {
-    std::string text;
-    auto operator==(const editable_report_t&) const -> bool = default;
-};
-struct reported_payload_t;
-using reported_diagnostics_t = proposal_diagnostics_t<editable_report_t, document_stamp_t>;
-using reported_outcome_t = proposal_outcome_t<reported_payload_t, document_stamp_t, reported_diagnostics_t>;
-struct reported_payload_t {
-    editable_report_t report;
-    auto operator==(const reported_payload_t&) const -> bool = default;
-
-    static auto propose(const song_document_t& document, std::string text) -> reported_outcome_t {
-        reported_outcome_t outcome{.value = proposal_t<reported_payload_t, document_stamp_t>{
-            .stamp = document_stamp_t::from(document), .payload = {.report = {std::move(text)}}}};
-        const auto is_accepted = !outcome.value->payload.report.text.empty();
-        if (!is_accepted)
-            outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Editor value is empty."));
-        proposal_t<reported_payload_t, document_stamp_t>::complete(outcome, is_accepted);
-        return outcome;
-    }
-    static auto revise(reported_outcome_t outcome, bool is_accepted) -> reported_outcome_t {
-        outcome.diagnostics.clear();
-        if (!is_accepted)
-            outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, "Editor value was rejected."));
-        proposal_t<reported_payload_t, document_stamp_t>::complete(outcome, is_accepted);
-        return outcome;
-    }
-};
-using reported_proposal_t = proposal_t<reported_payload_t, document_stamp_t>;
-using reported_view_t = proposal_preview_view_t<reported_payload_t, document_stamp_t, reported_diagnostics_t>;
-static_assert(std::is_aggregate_v<reported_diagnostics_t>);
-static_assert(!std::is_polymorphic_v<reported_diagnostics_t>);
-static_assert(std::is_nothrow_move_constructible_v<reported_diagnostics_t>);
-static_assert(staged_proposal<reported_payload_t,
-    std::tuple<const song_document_t&, std::string>, std::tuple<reported_outcome_t, bool>,
-    document_stamp_t, reported_diagnostics_t>);
-
-void check_rejected_report(const reported_outcome_t& outcome, const char* storage) {
-    CHECK_FALSE(outcome.value);
-    REQUIRE(outcome.diagnostics.report);
-    CHECK(outcome.diagnostics.report->text.data() == storage);
-    CHECK_FALSE(outcome.ok());
-    CHECK(reported_view_t::from(outcome).diagnostic == &outcome.diagnostics.front());
-}
-
-void check_repaired_report(const reported_outcome_t& outcome, const char* storage) {
-    REQUIRE(outcome.value);
-    CHECK_FALSE(outcome.diagnostics.report);
-    CHECK(outcome.diagnostics.empty());
-    CHECK(outcome.value->payload.report.text.data() == storage);
-    CHECK(reported_view_t::from(outcome).report == &outcome.value->payload.report);
-}
-
 struct wrong_outcome_payload_t {
     static auto propose() -> bool;
     auto revise() const -> bool;
@@ -264,65 +211,6 @@ TEST_CASE("Shared proposal revisions support mutable state machines", "[core][pr
     REQUIRE(revised.value);
     CHECK(revised.value->stamp == stamp);
     CHECK_FALSE(revised.value->payload.is_rejected);
-}
-
-TEST_CASE("Shared proposal reports retain rejected editor data and can be repaired", "[core][proposal]") {
-    const auto history = make_history();
-    auto initial = reported_payload_t::propose(history.document, std::string(512, 'x'));
-    REQUIRE(initial.value);
-    const auto stamp = initial.value->stamp;
-    const auto* storage = initial.value->payload.report.text.data();
-    auto failed = reported_payload_t::revise(std::move(initial), false);
-    check_rejected_report(failed, storage);
-    CHECK(reported_proposal_t::captured_stamp(failed) == stamp);
-    CHECK(reported_proposal_t::report(failed) == &*failed.diagnostics.report);
-    const auto repaired = reported_payload_t::revise(std::move(failed), true);
-    check_repaired_report(repaired, storage);
-    CHECK(repaired.value->stamp == stamp);
-}
-
-TEST_CASE("Shared report diagnostics bind directly to existing vector validators", "[core][proposal]") {
-    reported_diagnostics_t diagnostics;
-    const chart_document_t chart{.id = chart_id_t{1}, .measures = {{.id = measure_id_t{1}}}};
-    CHECK_FALSE(validate_chart_position(chart, {measure_id_t{99}, 0}, diagnostics, "Timing event"));
-    REQUIRE(diagnostics.size() == 1);
-    CHECK(diagnostic_queries::has_errors(diagnostics));
-    diagnostics = diagnostic_list_t{};
-    CHECK(diagnostics.empty());
-}
-
-TEST_CASE("Shared report completion does not fabricate an absent editor state", "[core][proposal]") {
-    reported_outcome_t outcome;
-    reported_proposal_t::complete(outcome, true);
-    CHECK_FALSE(outcome.value);
-    CHECK(reported_proposal_t::report(outcome) == nullptr);
-    const auto view = reported_view_t::from(outcome);
-    CHECK(view.report == nullptr);
-    CHECK(view.stamp == nullptr);
-}
-
-TEST_CASE("Shared report diagnostics keep metadata when validators replace messages", "[core][proposal]") {
-    const auto stamp = document_stamp_t::from(7);
-    auto diagnostics = reported_diagnostics_t::from(stamp, {.text = "editor"},
-        {error(diagnostic_code_t::invalid_id, "first")});
-    diagnostics = diagnostic_list_t{error(diagnostic_code_t::invalid_id, "replacement")};
-    REQUIRE(diagnostics.report);
-    CHECK(diagnostics.report->text == "editor");
-    CHECK(diagnostics.stamp == stamp);
-    REQUIRE(diagnostics.size() == 1);
-    CHECK(diagnostics.front().message == "replacement");
-}
-
-TEST_CASE("Rejected proposal reports retain stamped transaction rejection feedback", "[core][proposal]") {
-    auto history = make_history();
-    const auto outcome = reported_payload_t::propose(history.document, "");
-    REQUIRE_FALSE(outcome.value);
-    ++history.document.revision;
-    const auto transaction = reported_proposal_t::transaction(outcome, history, "Editor report");
-    CHECK_FALSE(transaction.is_ready());
-    CHECK_FALSE(transaction.has_copy());
-    test::check_stale_action_message(transaction.outcome.diagnostics, "Editor report");
-    CHECK(history.undo.empty());
 }
 
 TEST_CASE("Shared proposal outcomes support inline single diagnostics", "[core][proposal]") {

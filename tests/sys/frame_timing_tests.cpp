@@ -839,7 +839,7 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     timing_scene_cache_t cache;
     timing_grid_state_t grid;
     grid.active_denominator = 4;
-    timing_lane_pseudonote_outcome_t stage{.value = timing_lane_pseudonote_proposal_t{
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
         .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
                               .position = {measure_id_t{1}, 0}}}}};
@@ -2663,7 +2663,13 @@ TEST_CASE("the selected recipe's form and its unapplied preview reach the Compos
     fixture.application.project.timing_recipe.recipe_selected = 7001;
     fixture.application.project.timing_recipe.recipe_preview = wormedit::sys::recipe_form_preview_t::propose(
         fixture.history.document, chart, chart.sv_recipes.front(), form);
-    fixture.application.project.timing_recipe.recipe_preview->diagnostics.stamp.document.revision += 5;
+    auto& preview = *fixture.application.project.timing_recipe.recipe_preview;
+    auto expired = *preview.editor();
+    expired.stamp.document.revision += 5;
+    recipe_form_outcome_t rejected{std::move(expired)};
+    rejected.diagnostics = std::move(preview.diagnostics);
+    rejected.complete(false);
+    preview = std::move(rejected);
     fixture.project();
     CHECK_FALSE(fixture.application.project.timing_recipe.recipe_preview.has_value());
 }
@@ -7131,7 +7137,7 @@ TEST_CASE("Timing stage converts transition fractions through the shared careful
     binding.workspace->selected_chart = chart_id_t{1};
     flattened_workspace_t flattened;
     timing_scene_cache_t cache;
-    timing_lane_pseudonote_outcome_t stage{.value = timing_lane_pseudonote_proposal_t{
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
         .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
             .kind = timing_lane_kind_t::speed, .position = {measure_id_t{1}, 0},
@@ -7193,7 +7199,7 @@ TEST_CASE("Timing stage borrowed owner survives rejected and repaired revisions"
         std::move(*editor.stage), history, timing_bpm_value_t{{0, 1}}, false);
     CHECK(editor.stage_view() == borrowed);
     CHECK_FALSE(borrowed->value);
-    CHECK(std::get<timing_bpm_value_t>(timing_lane_pseudonote_proposal_t::report(*borrowed)->value)
+    CHECK(std::get<timing_bpm_value_t>(borrowed->report()->value)
               .beats_per_minute == signed_rational_t{0, 1});
     *editor.stage = timing_lane_pseudonote_preview_t::revise(
         std::move(*editor.stage), history, timing_bpm_value_t{{150, 1}}, false);

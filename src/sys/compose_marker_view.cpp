@@ -534,10 +534,10 @@ void populate_compose_timing_markers(
     assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();
-    const auto* stage_report = timing_stage ? wormedit::timing_lane_pseudonote_proposal_t::report(*timing_stage) : nullptr;
+    const auto* stage_report = timing_stage ? timing_stage->report() : nullptr;
     if (stage_report &&
         stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(*timing_stage).is_current(chart.id, view.document_revision)) {
+        timing_stage->captured_stamp().is_current(chart.id, view.document_revision)) {
         const auto stage_row =
             (cache.scene.index->measures).row_of(stage_report->position);
         if (stage_row) {
@@ -684,7 +684,7 @@ void populate_compose_recipe_areas(
     view.recipe_graph_point_count = 0;
     if (!cache.timing.recipe_areas || !(pixels_per_row > 0.0))
         return;
-    const auto* report = preview ? recipe_form_proposal_t::report(*preview) : nullptr;
+    const auto* report = preview ? preview->report() : nullptr;
     const auto scroll = interaction_view.viewport_scroll_pixels;
     const auto height = view.viewport_height_pixels;
     const auto row_to_y = [&](std::uint64_t row) {
@@ -807,8 +807,8 @@ void drop_stale_recipe_preview(application_command_state_t& application_state,
     auto& preview = application_state.project.timing_recipe.recipe_preview;
     if (!preview)
         return;
-    const auto* report = recipe_form_proposal_t::report(*preview);
-    const bool current = report && recipe_form_proposal_t::captured_stamp(*preview).is_current(chart.id, revision) &&
+    const auto* report = preview->report();
+    const bool current = report && preview->captured_stamp().is_current(chart.id, revision) &&
                          report->candidate.id.value == application_state.project.timing_recipe.recipe_selected &&
                          std::ranges::any_of(chart.sv_recipes, [&](const auto& recipe) {
                              return recipe.id == report->candidate.id;

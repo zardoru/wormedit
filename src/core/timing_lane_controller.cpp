@@ -283,7 +283,7 @@ auto prepare_timing_group_moves(const document_history_t& history, const chart_d
             return false;
         }
         auto preview = timing_lane_pseudonote_preview_t::propose(history, chart.id, wormedit::timing_lane_event_ref_t{event.kind, event.event}, false);
-        if (timing_lane_pseudonote_proposal_t::report(preview)->status != timing_lane_pseudonote_status_t::editing) {
+        if (preview.report()->status != timing_lane_pseudonote_status_t::editing) {
             result.diagnostics = std::move(preview.diagnostics);
             return false;
         }
@@ -292,8 +292,8 @@ auto prepare_timing_group_moves(const document_history_t& history, const chart_d
                                         "the initial BPM cannot move with a timing group")};
             return false;
         }
-        const auto source = absolute_row(index, timing_lane_pseudonote_proposal_t::report(preview)->position);
-        const auto target = shifted_position(index, timing_lane_pseudonote_proposal_t::report(preview)->position, row_delta);
+        const auto source = absolute_row(index, preview.report()->position);
+        const auto target = shifted_position(index, preview.report()->position, row_delta);
         const auto warp_end = event.kind == timing_lane_kind_t::warp
                                   ? shifted_warp_end(chart, index, event.event, row_delta)
                                   : std::nullopt;
@@ -352,7 +352,7 @@ auto validate_warp_value(const chart_document_t& chart, local_position_t positio
 
 auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_outcome_t& outcome)
     -> bool {
-    auto& preview = *timing_lane_pseudonote_proposal_t::report(outcome);
+    auto& preview = *outcome.report();
     const auto kind = preview.kind;
     const auto& value = preview.value;
     auto& diagnostics = outcome.diagnostics;
@@ -403,7 +403,7 @@ auto validate_value(const chart_document_t& chart, timing_lane_pseudonote_outcom
 
 auto initial_status(timing_lane_pseudonote_outcome_t& outcome, const document_history_t& history,
                     bool timing_locked) -> bool {
-    auto& preview = *timing_lane_pseudonote_proposal_t::report(outcome);
+    auto& preview = *outcome.report();
     if (timing_locked) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
@@ -411,13 +411,13 @@ auto initial_status(timing_lane_pseudonote_outcome_t& outcome, const document_hi
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    if (!timing_lane_pseudonote_proposal_t::captured_stamp(outcome).chart) {
+    if (!outcome.captured_stamp().chart) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id, "timing pseudo-note uses an empty chart ID"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
         return false;
     }
-    const auto* chart = history.document.find_chart(timing_lane_pseudonote_proposal_t::captured_stamp(outcome).chart);
+    const auto* chart = history.document.find_chart(outcome.captured_stamp().chart);
     if (chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
@@ -454,8 +454,8 @@ auto initial_status(timing_lane_pseudonote_outcome_t& outcome, const document_hi
 auto cancel_for_revision_or_lock(const document_history_t& history,
                                  timing_lane_pseudonote_outcome_t& outcome, bool timing_locked)
     -> bool {
-    auto& preview = *timing_lane_pseudonote_proposal_t::report(outcome);
-    if (!timing_lane_pseudonote_proposal_t::captured_stamp(outcome).document.is_current(history.document, document_identity_policy_t::revision_only)) {
+    auto& preview = *outcome.report();
+    if (!outcome.captured_stamp().document.is_current(history.document, document_identity_policy_t::revision_only)) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                stale_action_message("Timing pseudo-note")));
@@ -655,10 +655,10 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
     initial.status = timing_lane_pseudonote_status_t::inactive;
     initial.existing_event.reset();
     initial.normalize_value();
-    timing_lane_pseudonote_outcome_t outcome{.value = timing_lane_pseudonote_proposal_t{
+    timing_lane_pseudonote_outcome_t outcome{timing_lane_pseudonote_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart), .payload = {.report = std::move(initial)}}};
     const auto is_accepted = initial_status(outcome, history, timing_locked);
-    timing_lane_pseudonote_proposal_t::complete(outcome, is_accepted);
+    outcome.complete(is_accepted);
     return outcome;
 }
 
@@ -666,16 +666,16 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
     timing_lane_event_ref_t target, bool timing_locked) -> timing_lane_pseudonote_outcome_t {
     const auto kind = target.kind;
     const auto event = target.event;
-    timing_lane_pseudonote_outcome_t outcome{.value = timing_lane_pseudonote_proposal_t{
+    timing_lane_pseudonote_outcome_t outcome{timing_lane_pseudonote_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart),
         .payload = {.report = {.kind = kind, .existing_event = event}}}};
-    auto& preview = *timing_lane_pseudonote_proposal_t::report(outcome);
+    auto& preview = *outcome.report();
     if (timing_locked) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
                "timing is locked; timing lane edits are unavailable"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     if (!chart || !event) {
@@ -683,7 +683,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "existing timing event uses a reserved zero ID"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     const auto* target_chart = history.document.find_chart(chart);
@@ -692,7 +692,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "existing timing event refers to an unknown chart"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     const auto id_count = chart_object_id_count(*target_chart, event, 2);
@@ -701,7 +701,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "existing timing event refers to an unknown object"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     if (id_count != 1) {
@@ -709,7 +709,7 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
         outcome.diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
                "existing timing event ID is ambiguous because it appears more than once"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     if (!load_existing_event(*target_chart, kind, event, preview.position, preview.value)) {
@@ -717,35 +717,35 @@ auto timing_lane_pseudonote_preview_t::propose(const document_history_t& history
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                "existing object does not match the requested timing lane kind"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return outcome;
     }
     const auto is_accepted = initial_status(outcome, history, timing_locked);
-    timing_lane_pseudonote_proposal_t::complete(outcome, is_accepted);
+    outcome.complete(is_accepted);
     return outcome;
 }
 
 auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t previous,
     const document_history_t& history, timing_lane_value_t value, bool timing_locked)
     -> timing_lane_pseudonote_outcome_t {
-    auto* state = timing_lane_pseudonote_proposal_t::report(previous);
+    auto* state = previous.report();
     if (!state) return previous;
     auto& preview = *state;
     if (preview.status != timing_lane_pseudonote_status_t::editing) {
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     if (cancel_for_revision_or_lock(history, previous, timing_locked)) {
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
-    const auto* chart = history.document.find_chart(timing_lane_pseudonote_proposal_t::captured_stamp(previous).chart);
+    const auto* chart = history.document.find_chart(previous.captured_stamp().chart);
     if (chart == nullptr) {
         previous.diagnostics.clear();
         previous.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     if (!is_existing_target_current(*chart, preview)) {
@@ -753,7 +753,7 @@ auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t p
         previous.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     preview.set_value(std::move(value));
@@ -762,36 +762,36 @@ auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t p
         previous.diagnostics.clear();
         previous.diagnostics.push_back(error(diagnostic_code_t::collision,
                "timing lane row already contains an event of this type"));
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     const auto is_accepted = validate_position(*chart, preview.position, previous.diagnostics, "timing event") &&
                              validate_value(*chart, previous);
-    timing_lane_pseudonote_proposal_t::complete(previous, is_accepted);
+    previous.complete(is_accepted);
     return previous;
 }
 
 auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t previous,
     const document_history_t& history, local_position_t exact_snapped_position, bool timing_locked)
     -> timing_lane_pseudonote_outcome_t {
-    auto* state = timing_lane_pseudonote_proposal_t::report(previous);
+    auto* state = previous.report();
     if (!state) return previous;
     auto& preview = *state;
     if (preview.status != timing_lane_pseudonote_status_t::editing || !preview.existing_event) {
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     if (cancel_for_revision_or_lock(history, previous, timing_locked)) {
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
-    const auto* chart = history.document.find_chart(timing_lane_pseudonote_proposal_t::captured_stamp(previous).chart);
+    const auto* chart = history.document.find_chart(previous.captured_stamp().chart);
     if (chart == nullptr || !is_existing_target_current(*chart, preview)) {
         previous.diagnostics.clear();
         previous.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "existing timing event no longer matches the staged target"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     if (preview.kind == timing_lane_kind_t::bpm &&
@@ -800,14 +800,14 @@ auto timing_lane_pseudonote_preview_t::revise(timing_lane_pseudonote_outcome_t p
         previous.diagnostics.clear();
         previous.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
                "the initial BPM is fixed at chart row zero"));
-        timing_lane_pseudonote_proposal_t::complete(previous, false);
+        previous.complete(false);
         return previous;
     }
     preview.position = exact_snapped_position;
     previous.diagnostics.clear();
     const auto is_accepted = validate_position(*chart, preview.position, previous.diagnostics, "timing event") &&
                              validate_value(*chart, previous);
-    timing_lane_pseudonote_proposal_t::complete(previous, is_accepted);
+    previous.complete(is_accepted);
     return previous;
 }
 
@@ -854,10 +854,10 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
     auto staged = document_history_t::from(history.document);
     for (const auto& move : moves) {
         auto preview = timing_lane_pseudonote_preview_t::propose(staged, chart_id, wormedit::timing_lane_event_ref_t{move.event.kind, move.event.event}, false);
-        if (move.warp_end && timing_lane_pseudonote_proposal_t::report(preview)->status == timing_lane_pseudonote_status_t::editing) {
-            std::get<timing_warp_value_t>(timing_lane_pseudonote_proposal_t::report(preview)->value).end = *move.warp_end;
+        if (move.warp_end && preview.report()->status == timing_lane_pseudonote_status_t::editing) {
+            std::get<timing_warp_value_t>(preview.report()->value).end = *move.warp_end;
         }
-        if (timing_lane_pseudonote_proposal_t::report(preview)->status != timing_lane_pseudonote_status_t::editing ||
+        if (preview.report()->status != timing_lane_pseudonote_status_t::editing ||
             !(preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), staged, move.target, false)).value.has_value()) {
             result.diagnostics = std::move(preview.diagnostics);
             return result;
@@ -877,19 +877,19 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
                                     timing_lane_pseudonote_outcome_t& outcome, bool timing_locked)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
-    auto* state = timing_lane_pseudonote_proposal_t::report(outcome);
+    auto* state = outcome.report();
     if (!state || state->status != timing_lane_pseudonote_status_t::editing) {
         result.diagnostics = outcome.diagnostics;
         return result;
     }
     auto& preview = *state;
-    auto transaction = timing_lane_pseudonote_proposal_t::transaction(outcome, history,
-        "Timing pseudo-note", document_identity_policy_t::revision_only);
+    auto transaction = outcome.editor()->transaction(
+        history, "Timing pseudo-note", document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) {
         result = transaction.commit({});
         outcome.diagnostics = result.diagnostics;
         preview.status = timing_lane_pseudonote_status_t::cancelled;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
     if (timing_locked) {
@@ -898,17 +898,17 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
                "timing lock changed while a pseudo-note was being edited"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
-    const auto* chart = history.document.find_chart(timing_lane_pseudonote_proposal_t::captured_stamp(outcome).chart);
+    const auto* chart = history.document.find_chart(outcome.captured_stamp().chart);
     if (chart == nullptr) {
         outcome.diagnostics.clear();
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
                "timing pseudo-note refers to an unknown chart"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
     if (!is_existing_target_current(*chart, preview)) {
@@ -917,7 +917,7 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
                "existing timing event no longer matches the staged target"));
         preview.status = timing_lane_pseudonote_status_t::cancelled;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
     if (preview.kind == timing_lane_kind_t::bpm && preview.existing_event &&
@@ -928,7 +928,7 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
                "the initial BPM is fixed at chart row zero"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
     if (!preview.existing_event && is_same_row_is_occupied(*chart, preview.kind, preview.position)) {
@@ -937,7 +937,7 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
                "timing lane row already contains an event of this type"));
         preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
     if (!outcome.value) {
@@ -950,7 +950,7 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
         !validate_value(*chart, outcome)) {
         preview.status = timing_lane_pseudonote_status_t::rejected;
         result.diagnostics = outcome.diagnostics;
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
         return result;
     }
 
@@ -959,17 +959,16 @@ auto apply_timing_lane_pseudonote(document_history_t& history,
     preview.status = result.applied || result.diagnostics.empty()
         ? timing_lane_pseudonote_status_t::committed
         : timing_lane_pseudonote_status_t::rejected;
-    timing_lane_pseudonote_proposal_t::complete(outcome,
-        preview.status == timing_lane_pseudonote_status_t::committed);
+    outcome.complete(preview.status == timing_lane_pseudonote_status_t::committed);
     return result;
 }
 
 void cancel_timing_lane_pseudonote(timing_lane_pseudonote_outcome_t& outcome) noexcept {
-    auto* state = timing_lane_pseudonote_proposal_t::report(outcome);
+    auto* state = outcome.report();
     if (state && state->status == timing_lane_pseudonote_status_t::editing) {
         state->status = timing_lane_pseudonote_status_t::cancelled;
         outcome.diagnostics.clear();
-        timing_lane_pseudonote_proposal_t::complete(outcome, false);
+        outcome.complete(false);
     }
 }
 
@@ -983,7 +982,7 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
         return result;
     }
     const auto preview = timing_lane_pseudonote_preview_t::propose(history, chart, wormedit::timing_lane_event_ref_t{kind, event}, false);
-    if (timing_lane_pseudonote_proposal_t::report(preview)->status != timing_lane_pseudonote_status_t::editing) {
+    if (preview.report()->status != timing_lane_pseudonote_status_t::editing) {
         result.diagnostics = preview.diagnostics;
         return result;
     }
@@ -1028,7 +1027,7 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     auto preview = timing_lane_pseudonote_preview_t::propose(history, chart, wormedit::timing_lane_event_ref_t{timing_lane_kind_t::speed, event}, timing_locked);
-    if (timing_lane_pseudonote_proposal_t::report(preview)->status != timing_lane_pseudonote_status_t::editing) {
+    if (preview.report()->status != timing_lane_pseudonote_status_t::editing) {
         result.diagnostics = preview.diagnostics.empty()
             ? diagnostic_list_t{error(diagnostic_code_t::invalid_id, "the speed event is unavailable")}
             : preview.diagnostics;
@@ -1040,7 +1039,7 @@ auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object
         return result;
     }
     if (edit.transition) {
-        auto value = std::get<timing_speed_value_t>(timing_lane_pseudonote_proposal_t::report(preview)->value);
+        auto value = std::get<timing_speed_value_t>(preview.report()->value);
         value.transition_beats = *edit.transition;
         if (!(preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, value, timing_locked)).value.has_value()) {
             result.diagnostics = preview.diagnostics;

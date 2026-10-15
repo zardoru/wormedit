@@ -138,7 +138,7 @@ void sort_segments(chart_document_t& chart) {
     const auto built = measure_index_t::from(chart);
     if (!built) return;
     std::ranges::stable_sort(chart.lane_layouts, {}, [&](const auto& segment) {
-        return absolute_row(*built, segment.position).value_or(0);
+        return built->row_of(segment.position).value_or(0);
     });
 }
 

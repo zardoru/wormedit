@@ -333,10 +333,10 @@ auto bpm_event_at_anchor(const chart_document_t& chart, local_position_t anchor)
     const auto measures = build_measure_index(chart);
     if (!std::holds_alternative<measure_index_t>(measures)) return nullptr;
     const auto& index = std::get<measure_index_t>(measures);
-    const auto anchor_row = absolute_row(index, anchor);
+    const auto anchor_row = index.row_of(anchor);
     if (!anchor_row) return nullptr;
     for (const auto& event : chart.bpms) {
-        if (absolute_row(index, event.position) == anchor_row) return &event;
+        if (index.row_of(event.position) == anchor_row) return &event;
     }
     return nullptr;
 }
@@ -356,8 +356,8 @@ auto make_beat_interval_drag(const song_document_t& document, const chart_docume
         return result;
     }
     const auto& index = std::get<measure_index_t>(measures);
-    const auto anchor_row = absolute_row(index, anchor);
-    const auto beat_row = absolute_row(index, beat);
+    const auto anchor_row = index.row_of(anchor);
+    const auto beat_row = index.row_of(beat);
     if (!anchor_row || !beat_row || *beat_row <= *anchor_row) {
         result.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                                            "fitted beat must follow the selected BPM event"));
@@ -518,7 +518,7 @@ auto revise_beat_interval_bpm_values(const song_document_t& document, const char
     const auto measures = build_measure_index(*candidate);
     if (!std::holds_alternative<measure_index_t>(measures))
         return {.value = std::nullopt, .diagnostics = std::get<diagnostic_list_t>(measures)};
-    const auto beat_row = absolute_row(std::get<measure_index_t>(measures), drag.beat);
+    const auto beat_row = (std::get<measure_index_t>(measures)).row_of(drag.beat);
     const auto timing = build_timing_index(*candidate);
     if (!beat_row || !timing) {
         beat_interval_drag_outcome_t rejected;
@@ -534,10 +534,10 @@ auto revise_beat_interval_bpm_values(const song_document_t& document, const char
     if (!frame) return {.value = std::nullopt, .diagnostics = {error(diagnostic_code_t::invalid_rational,
         "Snapped beat target is outside the source frame range")}};
     const auto anchor_row =
-        absolute_row(std::get<measure_index_t>(measures), drag.original_bpm_position);
+        (std::get<measure_index_t>(measures)).row_of(drag.original_bpm_position);
     for (const auto& anchor : chart->timing_anchors) {
         if (!anchor.locked) continue;
-        const auto row = absolute_row(std::get<measure_index_t>(measures), anchor.position);
+        const auto row = (std::get<measure_index_t>(measures)).row_of(anchor.position);
         if (!row || !anchor_row || *row < *anchor_row) continue;
         const auto anchor_timing = (*timing.index).seconds_at(*row);
         const auto anchor_frame = anchor_timing

@@ -18,7 +18,7 @@ auto place_events(const chart_document_t& chart, const measure_index_t& measures
     std::vector<placed_event_t> placed;
     placed.reserve(chart.kiai.size());
     for (const auto& event : chart.kiai) {
-        if (const auto row = absolute_row(measures, event.position))
+        if (const auto row = measures.row_of(event.position))
             placed.push_back({*row, event.provenance.source_order, event.id, event.enabled});
     }
     std::ranges::sort(placed, [](const auto& left, const auto& right) {
@@ -117,7 +117,7 @@ auto write_boundary_plan(chart_document_t& chart, const measure_index_t& measure
     auto original = chart.kiai;
     // Events outside the measure geometry are not part of any area and stay as they are.
     std::erase_if(chart.kiai, [&](const kiai_event_t& event) {
-        return absolute_row(measures, event.position) &&
+        return measures.row_of(event.position) &&
                std::ranges::find(plan.kept, event.id) == plan.kept.end();
     });
     for (const auto& [id, position] : plan.moves) {

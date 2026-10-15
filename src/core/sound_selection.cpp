@@ -37,8 +37,8 @@ auto is_in_range(const measure_index_t& index, local_position_t position,
               std::optional<local_position_t> end, const sound_selection_query_t& query) -> bool {
     if (!query.visible)
         return true;
-    const auto begin = absolute_row(index, position);
-    const auto tail = end ? absolute_row(index, *end) : begin;
+    const auto begin = index.row_of(position);
+    const auto tail = end ? index.row_of(*end) : begin;
     return begin && tail && static_cast<double>(*begin) <= query.visible->end_row &&
            static_cast<double>(*tail) >= query.visible->begin_row;
 }

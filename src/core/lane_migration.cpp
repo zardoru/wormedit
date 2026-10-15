@@ -133,8 +133,8 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
 auto absolute_range(const measure_index_t& index, local_position_t begin_position,
                     std::optional<local_position_t> end_position)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>> {
-    const auto begin = absolute_row(index, begin_position);
-    const auto end = end_position ? absolute_row(index, *end_position) : begin;
+    const auto begin = index.row_of(begin_position);
+    const auto end = end_position ? index.row_of(*end_position) : begin;
     if (!begin || !end) return std::nullopt;
     return std::pair{*begin, *end};
 }

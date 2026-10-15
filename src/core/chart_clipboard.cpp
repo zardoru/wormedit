@@ -103,10 +103,10 @@ auto append_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
     std::optional<std::uint64_t> row;
     std::optional<std::uint64_t> end;
     if constexpr (std::is_same_v<Event, warp_event_t>) {
-        row = absolute_row(index, event.span.begin);
-        end = absolute_row(index, event.span.end);
+        row = index.row_of(event.span.begin);
+        end = index.row_of(event.span.end);
     } else {
-        row = absolute_row(index, event.position);
+        row = index.row_of(event.position);
         end = row;
     }
     if (!row || !end || *end < *row) return false;
@@ -428,13 +428,13 @@ auto append_interval(std::vector<paste_interval_t>& intervals, const Payload& pa
     if constexpr (!std::is_same_v<Payload, note_t> && !std::is_same_v<Payload, bgm_event_t>) {
         return true;
     } else {
-    const auto row = absolute_row(index, payload.position);
+    const auto row = index.row_of(payload.position);
     if (!row) return false;
     paste_interval_t interval{.begin = *row, .end = *row, .proposed = proposed};
     if constexpr (std::is_same_v<Payload, note_t>) {
         interval.lane = payload.lane.value;
         if (payload.end) {
-            const auto end = absolute_row(index, *payload.end);
+            const auto end = index.row_of(*payload.end);
             if (!end || *end < *row) return false;
             interval.end = *end;
         }
@@ -621,7 +621,7 @@ auto apply_stem_run_rules(const song_document_t& document, const chart_document_
         const auto playing = stem_audio_playing(document, chart, *channel, *timing.value, first);
         if (!playing || *playing) continue;
         const auto overlaps = std::ranges::any_of(channel->events, [&](const auto& existing) {
-            const auto row = absolute_row(index, existing.position);
+            const auto row = index.row_of(existing.position);
             return row && *row > first && *row <= last;
         });
         if (overlaps)

@@ -156,7 +156,7 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
     for (const auto& target : targets) cells.emplace(target.row, target.lane);
     if (erase) {
         std::erase_if(chart.bga_events, [&](const auto& event) {
-            const auto row = absolute_row(index, event.position);
+            const auto row = index.row_of(event.position);
             const auto lane = editor_bga_lane_index(event.kind);
             return row && lane && cells.contains({*row, *lane});
         });
@@ -842,7 +842,7 @@ auto commit_bgm_stroke_erase(document_command_transaction_t& transaction, std::s
     for (auto& measure : proposed.charts[chart_offset].measures)
         removed += std::erase_if(measure.bgm_events, [&](const auto& event) {
             const auto row = event.source_lane == lane && !event.sound_channel_event
-                                 ? absolute_row(index, event.position) : std::nullopt;
+                                 ? index.row_of(event.position) : std::nullopt;
             return row && rows.contains(*row);
         });
     if (!removed) return unchanged;

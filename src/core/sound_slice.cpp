@@ -156,7 +156,7 @@ auto sound_slice_index_t::from(const chart_document_t& chart,
     std::vector<indexed_event_t> events;
     events.reserve(channel.events.size());
     for (const auto& event : channel.events) {
-        const auto row = absolute_row(measure_index, event.position);
+        const auto row = measure_index.row_of(event.position);
         if (!row.has_value()) {
             result.diagnostics.push_back(diagnostic(
                 sound_slice_error_code_t::invalid_document,

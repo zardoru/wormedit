@@ -390,14 +390,14 @@ auto lift_bucketed_objects(chart_document_t& chart, const measure_index_t& index
     for (auto at = first; at < chart.measures.size(); ++at) {
         auto& measure = chart.measures[at];
         for (auto& note : measure.notes) {
-            const auto row = absolute_row(index, note.position);
-            const auto end = note.end ? absolute_row(index, *note.end) : std::nullopt;
+            const auto row = index.row_of(note.position);
+            const auto end = note.end ? index.row_of(*note.end) : std::nullopt;
             if (!row || (note.end && !end)) return false;
             notes.push_back({std::move(note), *row, end});
         }
         for (auto& event : measure.bgm_events) {
-            const auto row = absolute_row(index, event.position);
-            const auto end = event.end ? absolute_row(index, *event.end) : std::nullopt;
+            const auto row = index.row_of(event.position);
+            const auto end = event.end ? index.row_of(*event.end) : std::nullopt;
             if (!row || (event.end && !end)) return false;
             bgm.push_back({std::move(event), *row, end});
         }
@@ -411,7 +411,7 @@ auto collect_free_rows(chart_document_t& chart, const measure_index_t& index,
                        std::vector<rowed_free_t>& free_rows) -> bool {
     auto ok = true;
     for_each_free_position(chart, [&](local_position_t& position, free_position_kind_t) {
-        const auto row = absolute_row(index, position);
+        const auto row = index.row_of(position);
         if (!row) ok = false;
         else free_rows.push_back({&position, *row});
     });
@@ -422,14 +422,14 @@ auto place_free_position(const measure_index_t& index, const rowed_free_t& item)
     -> std::optional<local_position_t> {
     if (item.exclusive_end && item.row == index.total_rows && !index.entries.empty())
         return local_position_t{index.entries.back().id, index.entries.back().row_capacity};
-    return position_at_absolute_row(index, item.row);
+    return index.position_at(item.row);
 }
 
 // Writes each lifted object back at the position its row now has.
 auto place_lifted_objects(chart_document_t& chart, const measure_index_t& after,
                           std::size_t first_measure, std::vector<rowed_note_t>& notes,
                           std::vector<rowed_bgm_t>& bgm, std::vector<rowed_free_t>& free_rows) -> bool {
-    const auto place = [&](std::uint64_t row) { return position_at_absolute_row(after, row); };
+    const auto place = [&](std::uint64_t row) { return after.position_at(row); };
     for (auto& item : free_rows) {
         const auto position = place_free_position(after, item);
         if (!position) return false;
@@ -509,7 +509,7 @@ auto split_measure_at(chart_document_t& chart, local_position_t position,
     const auto old_index = build_measure_index(chart);
     const auto* before = std::get_if<measure_index_t>(&old_index);
     const auto target = chart.find_measure(position.measure);
-    if (!before || target == nullptr || !absolute_row(*before, position)) return false;
+    if (!before || target == nullptr || !before->row_of(position)) return false;
     const auto capacity = validate_measure(chart.divisions_per_standard_measure, target->definition);
     if (!capacity || position.row == 0 || position.row >= *capacity.row_capacity ||
         chart.measures.size() >= limits.maximum_measures ||
@@ -575,7 +575,7 @@ auto conversion_row(const measure_index_t& index, local_position_t position,
         const auto& last = index.entries.back();
         if (position.measure == last.id && position.row == last.row_capacity) return index.total_rows;
     }
-    return absolute_row(index, position);
+    return index.row_of(position);
 }
 
 auto is_conversion_configuration(const chart_document_t& chart, const local_position_t* position) -> bool {
@@ -585,16 +585,16 @@ auto is_conversion_configuration(const chart_document_t& chart, const local_posi
 auto is_conversion_timing_blocked(const chart_document_t& chart, const measure_index_t& index,
                                const pause_range_t& range) -> bool {
     const auto closed = [&](local_position_t position) {
-        const auto row = absolute_row(index, position);
+        const auto row = index.row_of(position);
         return !row || (*row >= range.begin && *row <= range.end);
     };
     const auto bpm = std::ranges::any_of(chart.bpms, [&](const auto& event) {
-        const auto row = absolute_row(index, event.position);
+        const auto row = index.row_of(event.position);
         return !row || (*row > range.begin && *row <= range.end);
     });
     const auto warp = std::ranges::any_of(chart.warps, [&](const auto& event) {
-        const auto first = absolute_row(index, event.span.begin);
-        const auto last = absolute_row(index, event.span.end);
+        const auto first = index.row_of(event.span.begin);
+        const auto last = index.row_of(event.span.end);
         return !first || !last || (*first <= range.end && *last >= range.begin);
     });
     return bpm || warp || std::ranges::any_of(chart.pauses, [&](const auto& event) { return closed(event.position); });
@@ -604,7 +604,7 @@ auto is_conversion_points_clear(const chart_document_t& chart, const measure_ind
                              const pause_range_t& range) -> bool {
     bool clear = true;
     const auto visit = [&](const local_position_t& position, free_position_kind_t) {
-        const auto row = absolute_row(index, position);
+        const auto row = index.row_of(position);
         if (!row || (range.has_row(*row) && !is_conversion_configuration(chart, &position))) clear = false;
     };
     for_each_free_position(chart, visit);
@@ -613,7 +613,7 @@ auto is_conversion_points_clear(const chart_document_t& chart, const measure_ind
         for (const auto& bgm : measure.bgm_events) visit(bgm.position, free_position_kind_t::other);
     }
     for (const auto& layout : chart.lane_layouts) {
-        const auto row = absolute_row(index, layout.position);
+        const auto row = index.row_of(layout.position);
         if (!row || (*row > range.begin && *row < range.end)) clear = false;
     }
     for (const auto& recipe : chart.sv_recipes) {
@@ -690,7 +690,7 @@ auto adjust_conversion_transitions(chart_document_t& chart, const measure_index_
     const pause_range_t& range, std::vector<std::uint64_t>& timed_rows) -> bool {
     for (auto& speed : chart.speeds) {
         if (speed.transition_is_seconds || speed.transition_beats.numerator == 0) continue;
-        const auto start = absolute_row(index, speed.position);
+        const auto start = index.row_of(speed.position);
         const auto length = conversion_transition_rows(speed.transition_beats, chart.divisions_per_standard_measure);
         if (!start || !length || *length > std::numeric_limits<std::uint64_t>::max() - *start) return false;
         const auto end = *start + *length;
@@ -732,7 +732,7 @@ auto convert_pause_geometry(chart_document_t& chart, const measure_index_t& befo
     const auto built = build_measure_index(chart);
     const auto* after = std::get_if<measure_index_t>(&built);
     if (!after || !place_lifted_objects(chart, *after, 0, notes, bgm, positions)) return false;
-    const auto start = position_at_absolute_row(*after, range.begin);
+    const auto start = after->position_at(range.begin);
     if (!start) return false;
     pause.position = *start;
     chart.pauses.push_back(std::move(pause));
@@ -745,7 +745,7 @@ void apply_measure_action(measure_edit_context_t& context, const convert_range_t
     if (!chart) return;
     const auto built = build_measure_index(*chart);
     const auto* before = std::get_if<measure_index_t>(&built);
-    const auto first = before ? absolute_row(*before, edit.range.begin) : std::nullopt;
+    const auto first = before ? before->row_of(edit.range.begin) : std::nullopt;
     const auto last = before ? conversion_row(*before, edit.range.end, true) : std::nullopt;
     if (!first || !last || *first >= *last ||
         (edit.kind != pause_kind_t::stop && edit.kind != pause_kind_t::delay)) {

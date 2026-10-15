@@ -121,8 +121,8 @@ auto validate_section_anchor(const chart_document_t& chart, marker_anchor_t anch
             !validate_position(chart, beat_span->end, index, result, "section")) {
             return false;
         }
-        const auto begin = absolute_row(index, beat_span->begin);
-        const auto end = absolute_row(index, beat_span->end);
+        const auto begin = index.row_of(beat_span->begin);
+        const auto end = index.row_of(beat_span->end);
         if (!begin.has_value() || !end.has_value() || *end <= *begin) {
             reject(result, diagnostic_code_t::invalid_hold,
                    "beat-anchored section end must be after its start");

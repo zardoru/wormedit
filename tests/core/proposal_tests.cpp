@@ -416,3 +416,16 @@ TEST_CASE("Shared proposals retain commit diagnostic replacement", "[core][propo
     CHECK(history.document.metadata.title == "Proposed");
     CHECK(history.undo.size() == 1);
 }
+
+TEST_CASE("Shared proposal construction transfers a move-only prepared payload", "[unit][proposal]") {
+    const document_stamp_t captured{.project = song_id_t{77}, .revision = 3};
+    auto title = std::make_unique<std::string>("Prepared title");
+    const auto* original = title.get();
+    result_t<consuming_title_t, diagnostic_t> prepared{consuming_title_t{.title = std::move(title)}};
+    auto pending = proposal_t<consuming_title_t, document_stamp_t>::from(captured, std::move(prepared));
+    REQUIRE(pending.value);
+    CHECK(pending.value->payload.title.get() == original);
+    CHECK_FALSE(prepared->title);
+    CHECK(pending.value->stamp == captured);
+    CHECK(pending.diagnostics.empty());
+}

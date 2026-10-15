@@ -13,6 +13,7 @@
 #include <tuple>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 namespace wormedit {
 
@@ -45,6 +46,11 @@ struct proposal_capture_policy_t {
     std::string_view locked_message;
     auto operator==(const proposal_capture_policy_t&) const -> bool = default;
 
+    [[nodiscard]] auto is_current(const document_stamp_t& captured, const song_document_t& document) const noexcept
+        -> bool {
+        return captured.is_current(document, identity);
+    }
+
     [[nodiscard]] auto validate_lock(bool is_timing_locked, proposal_lock_order_t moment) const
         -> std::optional<diagnostic_t> {
         if (is_timing_locked && lock_order == moment && !locked_message.empty())
@@ -57,7 +63,7 @@ struct proposal_capture_policy_t {
         if (auto locked = validate_lock(is_timing_locked, proposal_lock_order_t::before_stamp))
             return std::unexpected(proposal_capture_failure_t{
                 .stage = proposal_application_stage_t::locked, .diagnostic = std::move(*locked)});
-        if (!captured.is_current(document, identity))
+        if (!is_current(captured, document))
             return std::unexpected(proposal_capture_failure_t{
                 .stage = proposal_application_stage_t::expired,
                 .diagnostic = error(stale_code, stale_action_message(stale_label))});
@@ -176,9 +182,9 @@ using proposal_revision_diagnostics_t = decltype(
 
 template<class Stamp> class proposal_revision_scope_t : public proposal_read_scope_t<Stamp> {
 public:
-    proposal_revision_scope_t(const document_history_t& history, const Stamp& captured,
+    proposal_revision_scope_t(const proposal_read_scope_t<Stamp>& source,
         diagnostic_list_t& diagnostics, const chart_document_t* target)
-        : proposal_read_scope_t<Stamp>(history.document, captured), diagnostics_(diagnostics), target_(target) {}
+        : proposal_read_scope_t<Stamp>(source), diagnostics_(diagnostics), target_(target) {}
     [[nodiscard]] auto diagnostics() const noexcept -> diagnostic_list_t& { return diagnostics_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
     [[nodiscard]] auto has_invalid_target() const noexcept -> bool { return has_invalid_target_; }
@@ -259,22 +265,21 @@ public:
             if (!pending.payload.can_revise(arguments...)) return false;
         }
         input.diagnostics.clear();
-        auto captured = payload_type::apply_policy.validate(
-            pending.document_stamp(), history.document, input.is_timing_locked);
+        auto captured = pending.inspect(history.document, payload_type::apply_policy, input.is_timing_locked);
         if (!captured) {
             auto& failure = captured.error();
             input.diagnostics.push_back(std::move(failure.diagnostic));
             lifecycle.invalidate(policy, failure.stage);
             return false;
         }
-        auto target = revision_target(pending.payload, history.document, pending.stamp.chart, arguments...);
+        auto target = revision_target(pending.payload, captured->source_document(), pending.stamp.chart, arguments...);
         if (!target) {
             input.diagnostics.push_back(std::move(target.error()));
             lifecycle.invalidate(policy, proposal_application_stage_t::binding);
             return false;
         }
         proposal_revision_scope_t<typename Pending::stamp_type> scope{
-            history, pending.stamp, input.diagnostics, *target};
+            *captured, input.diagnostics, *target};
         const bool is_accepted = pending.payload.revise(scope, std::forward<Arguments>(arguments)...);
         lifecycle.finish_revision(policy, is_accepted, scope.has_invalid_target());
         return is_accepted;
@@ -284,11 +289,6 @@ public:
     [[nodiscard]] static auto prepare_application(Edit& edit, proposal_edit_scope_t<chart_stamp_t>& scope)
         -> std::optional<proposal_application_stage_t> {
         auto& diagnostics = scope.transaction().outcome.diagnostics;
-        if (auto locked = std::remove_cvref_t<Edit>::apply_policy.validate_lock(
-                scope.input().is_timing_locked, proposal_lock_order_t::after_stamp)) {
-            diagnostics.push_back(std::move(*locked));
-            return proposal_application_stage_t::locked;
-        }
         if constexpr (requires { edit.is_unchanged(); }) {
             if (edit.is_unchanged()) return proposal_application_stage_t::unchanged;
         }
@@ -371,6 +371,14 @@ template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edi
     if (!transaction.is_ready())
         return application_result::finish(edit, transaction.finish_without_commit(), {},
             proposal_application_stage_t::expired);
+    if constexpr (requires { scope.input(); std::remove_cvref_t<Edit>::apply_policy; }) {
+        if (auto locked = std::remove_cvref_t<Edit>::apply_policy.validate_lock(
+                scope.input().is_timing_locked, proposal_lock_order_t::after_stamp)) {
+            transaction.outcome.diagnostics.push_back(std::move(*locked));
+            return application_result::finish(edit, transaction.finish_without_commit(), {},
+                proposal_application_stage_t::locked);
+        }
+    }
     if constexpr (stateful_proposal_payload<Edit>) {
         if (auto stopped = proposal_lifecycle_runner_t::prepare_application(edit, scope))
             return application_result::finish(edit, transaction.finish_without_commit(), {}, *stopped);
@@ -413,6 +421,24 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         return pending;
     }
 
+    template<class Diagnostic>
+    [[nodiscard]] static auto from(Stamp captured, result_t<Payload, Diagnostic>&& prepared)
+        -> diagnosed_t<std::optional<proposal_t>, std::vector<Diagnostic>> {
+        diagnosed_t<std::optional<proposal_t>, std::vector<Diagnostic>> outcome;
+        if (prepared) outcome.value.emplace(from(captured, std::move(*prepared)));
+        else outcome.diagnostics.push_back(std::move(prepared.error()));
+        return outcome;
+    }
+
+    [[nodiscard]] auto inspect(const song_document_t& document,
+        const proposal_capture_policy_t& policy = Payload::apply_policy, bool is_timing_locked = false) const
+        -> result_t<proposal_read_scope_t<Stamp>, proposal_capture_failure_t>
+        requires requires { Payload::apply_policy; } {
+        auto captured = policy.validate(document_stamp(), document, is_timing_locked);
+        if (!captured) return std::unexpected(std::move(captured.error()));
+        return proposal_read_scope_t<Stamp>{document, stamp};
+    }
+
     template<class... Arguments> requires stateful_proposal_payload<Payload> &&
         requires(Payload& value, proposal_revision_scope_t<Stamp>& scope, Arguments&&... arguments) {
             value.revise(scope, std::forward<Arguments>(arguments)...);
@@ -443,14 +469,13 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
                 return {.diagnostics = std::move(input.diagnostics)};
             }
         }
-        auto captured = RevisionPayload::revision_policy.validate(document_stamp(), document, input.is_timing_locked);
+        auto captured = inspect(document, RevisionPayload::revision_policy, input.is_timing_locked);
         if (!captured) {
             input.diagnostics.clear();
             input.diagnostics.push_back(std::move(captured.error().diagnostic));
             return {.diagnostics = std::move(input.diagnostics)};
         }
-        const proposal_read_scope_t<Stamp> scope{document, stamp};
-        return payload.revise(scope, std::forward<Arguments>(arguments)...);
+        return payload.revise(*captured, std::forward<Arguments>(arguments)...);
     }
 
     [[nodiscard]] auto inspect(const document_history_t& history,
@@ -464,12 +489,12 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
                 std::string(policy.inactive_inspect_message)));
             return std::unexpected(std::move(diagnostics));
         }
-        auto captured = Payload::apply_policy.validate(document_stamp(), history.document, false);
+        auto captured = inspect(history.document);
         if (!captured) {
             diagnostics.push_back(std::move(captured.error().diagnostic));
             return std::unexpected(std::move(diagnostics));
         }
-        auto target = payload.validate_target(history.document, stamp.chart, proposal_operation_t::inspect);
+        auto target = payload.validate_target(captured->source_document(), stamp.chart, proposal_operation_t::inspect);
         if (!target) {
             diagnostics.push_back(std::move(target.error()));
             return std::unexpected(std::move(diagnostics));
@@ -544,6 +569,11 @@ template<class Pending, class... Arguments> requires applicable_proposal<Pending
                 document_command_transaction_t::rejection(history.document.revision, diagnostic_list_t{}),
                 std::move(preflight), *stopped);
     }
+    if constexpr (!stateful_proposal_payload<edit_type> && sizeof...(Arguments) > 0) {
+        const auto& first = std::get<0>(std::tie(arguments...));
+        if constexpr (std::same_as<std::remove_cvref_t<decltype(first)>, bool>)
+            lifecycle_input.is_timing_locked = first;
+    }
     if constexpr (requires { pending.payload.validate_apply(pending.stamp, arguments...); }) {
         preflight = pending.payload.validate_apply(pending.stamp, arguments...);
         if (diagnostic_queries::has_errors(preflight))
@@ -552,6 +582,15 @@ template<class Pending, class... Arguments> requires applicable_proposal<Pending
                 std::move(preflight), proposal_application_stage_t::preflight);
     }
     const auto& policy = std::remove_cvref_t<Pending>::payload_type::apply_policy;
+    if constexpr (!stateful_proposal_payload<edit_type> &&
+                  !std::remove_cvref_t<Pending>::payload_type::apply_policy.locked_message.empty()) {
+        if (auto locked = policy.validate_lock(lifecycle_input.is_timing_locked, proposal_lock_order_t::before_stamp)) {
+            preflight.push_back(std::move(*locked));
+            return application_result::finish(pending.payload,
+                document_command_transaction_t::rejection(history.document.revision, diagnostic_list_t{}),
+                std::move(preflight), proposal_application_stage_t::locked);
+        }
+    }
     auto transaction = pending.transaction(history, policy.stale_label, policy.identity, policy.stale_code);
     application_result::merge(transaction, preflight, proposal_application_stage_t::preflight);
     scope_type scope{transaction, pending.stamp, lifecycle_input};

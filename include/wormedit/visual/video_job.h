@@ -65,10 +65,21 @@ using video_job_outcome_t = result_t<video_job_frame_t,
 using video_job_completion_outcome_t =
     async_job_completion_outcome_t<async_job_project_identity_t, video_job_outcome_t>;
 
+class video_frame_job_t;
+struct video_decode_request_t {
+    video_frame_job_t& owner;
+    song_id_t project;
+    std::uint64_t document_revision{};
+    resolved_visual_asset_t source;
+    video_preview_clock_t clock;
+    video_frame_decode_limits_t limits;
+};
+
 // Runs at most a bounded number of seek/decode requests off the UI thread.
 // Starting a request cancels older generations; only the newest generation is
 // observable, even if an interrupted FFmpeg call takes time to unwind.
-class video_frame_job_t {
+class video_frame_job_t
+    : public async_job_t<video_decode_request_t, video_job_outcome_t, async_job_project_identity_t> {
   public:
     video_frame_job_t(video_frame_cache_t& cache, task_scheduler_t& scheduler,
                       std::size_t maximum_in_flight_jobs = 2);
@@ -77,44 +88,17 @@ class video_frame_job_t {
     video_frame_job_t(const video_frame_job_t&) = delete;
     auto operator=(const video_frame_job_t&) -> video_frame_job_t& = delete;
 
-    [[nodiscard]] auto begin(song_id_t project, std::uint64_t document_revision,
+    [[nodiscard]] auto request(song_id_t project, std::uint64_t document_revision,
                                resolved_visual_asset_t source, video_preview_clock_t clock,
                                video_frame_decode_limits_t limits = {}) -> async_job_start_outcome_t;
 
-    [[nodiscard]] auto poll_completion() -> std::optional<video_job_completion_outcome_t>;
-    [[nodiscard]] auto wait_completion() -> std::optional<video_job_completion_outcome_t>;
-    void cancel() noexcept;
-    [[nodiscard]] auto is_busy() const noexcept -> bool;
-
   private:
-    struct decode_request_t {
-        song_id_t project;
-        std::uint64_t document_revision{};
-        resolved_visual_asset_t source;
-        video_preview_clock_t clock;
-        video_frame_decode_limits_t limits;
-    };
-
-    struct worker_t {
-        std::uint64_t generation{};
-        song_id_t project;
-        std::uint64_t document_revision{};
-        task_graph_handle_t graph;
-        task_id_t task;
-    };
-
-    void discard_terminal_jobs();
-    [[nodiscard]] auto decode_uncached_frame(const decode_request_t& request,
+    [[nodiscard]] auto decode_uncached_frame(const video_decode_request_t& request,
                                              std::stop_token stop) -> video_frame_decode_result_t;
-    [[nodiscard]] auto run_decode(const decode_request_t& request, std::stop_token stop)
-        -> task_result_t;
+    [[nodiscard]] static auto run_decode(const video_decode_request_t& request, std::stop_token stop)
+        -> work_outcome_t;
 
     video_frame_cache_t& cache_;
-    task_scheduler_t& scheduler_;
-    std::size_t maximum_in_flight_jobs_{};
-    std::uint64_t next_generation_{};
-    std::uint64_t current_generation_{};
-    std::vector<worker_t> workers_;
     std::mutex session_mutex_;
     std::unique_ptr<video_decoder_session_t> session_;
     song_id_t session_project_;

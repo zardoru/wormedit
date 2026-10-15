@@ -48,9 +48,9 @@ auto has_bounded_decode_error() -> bool {
     video_frame_cache_t cache;
     task_scheduler_t scheduler{1, 1};
     video_frame_job_t job{cache, scheduler};
-    if (!job.begin(song_id_t{9}, 8, item, clock(item.resource, 0), {.maximum_rgba_bytes = 1}))
+    if (!job.request(song_id_t{9}, 8, item, clock(item.resource, 0), {.maximum_rgba_bytes = 1}))
         return false;
-    const auto completion = job.wait_completion();
+    const auto completion = job.wait();
     if (!completion || !*completion || !completion->value().payload) return false;
     const auto& outcome = *completion->value().payload;
     if (outcome) return false;
@@ -94,14 +94,14 @@ TEST_CASE("video frame job publishes only the newest revision-bound request",
     task_scheduler_t scheduler{1, 2};
     video_frame_job_t job{cache, scheduler};
 
-    const auto superseded = job.begin(song_id_t{1}, 2, item, clock(item.resource, 0));
+    const auto superseded = job.request(song_id_t{1}, 2, item, clock(item.resource, 0));
     REQUIRE(superseded);
-    const auto current = job.begin(song_id_t{1}, 3, item, clock(item.resource, 3, 2));
+    const auto current = job.request(song_id_t{1}, 3, item, clock(item.resource, 3, 2));
     REQUIRE(current);
     CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
-    const auto completion = job.wait_completion();
+    const auto completion = job.wait();
     REQUIRE(completion);
     REQUIRE(*completion);
     CHECK(completion->value().generation == *current);
@@ -123,12 +123,12 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
     task_scheduler_t scheduler{1, 1};
     video_frame_job_t job{cache, scheduler};
 
-    CHECK(job.begin(song_id_t{}, 2, item, clock(item.resource, 0)).error().code ==
+    CHECK(job.request(song_id_t{}, 2, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
-    CHECK(job.begin(song_id_t{1}, 0, item, clock(item.resource, 0)).error().code ==
+    CHECK(job.request(song_id_t{1}, 0, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
     video_frame_job_t disabled{cache, scheduler, 0};
-    CHECK(disabled.begin(song_id_t{1}, 2, item, clock(item.resource, 0)).error().code ==
+    CHECK(disabled.request(song_id_t{1}, 2, item, clock(item.resource, 0)).error().code ==
           video_job_start_status_t::invalid_request);
 
     std::stop_source cancelled;

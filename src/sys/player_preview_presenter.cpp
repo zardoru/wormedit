@@ -128,7 +128,7 @@ struct player_preview_presenter_t::impl_t {
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
 void player_preview_presenter_t::impl_t::consume_video_completion(
     visual::video_frame_job_t& job, song_id_t current_project) {
-    auto completion = job.poll_completion();
+    auto completion = job.poll();
     if (!completion) return;
     const auto& identity = *completion ? completion->value().identity : completion->error().identity;
     if (identity.project != current_project || identity.document_revision != revision) return;
@@ -594,7 +594,7 @@ void request_player_preview_video(const Context& context) {
     const auto resolved = visual::resolved_visual_asset_t::from(
         context.history.document, clock.resource, context.project_directory);
     if (!resolved || resolved->kind != asset_kind_t::video) return;
-    const auto started = video_job.begin(context.history.document.id,
+    const auto started = video_job.request(context.history.document.id,
         context.history.document.revision, *resolved, clock);
     if (started) {
         state.requested_video_clock = clock;

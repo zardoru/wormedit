@@ -85,9 +85,11 @@ template <class Request, class Payload, class Identity> class async_job_t {
           missing_payload_message_(missing_payload_message) {
         workers_.reserve(maximum_in_flight_);
     }
-    ~async_job_t() {
+    ~async_job_t() { shutdown(); }
+    void shutdown() {
         cancel();
         for (const auto& worker : workers_) static_cast<void>(worker.graph.wait());
+        workers_.clear();
     }
     async_job_t(const async_job_t&) = delete;
     auto operator=(const async_job_t&) -> async_job_t& = delete;

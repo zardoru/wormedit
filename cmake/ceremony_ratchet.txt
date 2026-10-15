@@ -7,7 +7,7 @@ outcome_move_adapter | 30 | src,include | _result_t::from\([a-z0-9_:<>, ]*_outco
 transaction_ready_guard | 18 | src | if \(!transaction\.is_ready\(\)\)
 gesture_already_active_guard | 5 | src | already active"
 gesture_requires_active_guard | 4 | src | requires an active gesture
-hand_rolled_job_generation | 3 | src,include | next_generation_
+hand_rolled_job_generation | 0 | src,include | next_generation_
 variant_allow_list_probe | 24 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
 compatibility_forwarder | 2 | src,include | // Compatibility
 envelope_stamp_unpacked | 0 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp

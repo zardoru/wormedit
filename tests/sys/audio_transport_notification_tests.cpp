@@ -136,7 +136,7 @@ TEST_CASE("Preview audio tail retains the final editable playhead row", "[audio]
 namespace {
 auto deferred_seek_failure_preserves_position() -> bool {
     audio::decoded_source_registry_t sources;
-    const auto source = sources.register_generated_source({
+    const auto source = sources.create_generated_source({
         .source = {"notification-seek", "v1"}, .interleaved_stereo = std::vector<float>(88'200, 0.5F)});
     if (!source) return false;
     audio::decoded_block_cache_t blocks;
@@ -151,7 +151,7 @@ auto deferred_seek_failure_preserves_position() -> bool {
     preview_schedule_t schedule{.sample_rate = audio::output_sample_rate};
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const audio::preview_object_source_binding_t binding{
-        .object = object_id_t{1}, .voices = {{.source = source.binding->source, .frame_count = 44'100}}};
+        .object = object_id_t{1}, .voices = {{.source = source->source, .frame_count = 44'100}}};
     if (!output.start(schedule, std::span{&binding, 1})) return false;
     sources.clear();
     if (!output.seek(1'234)) return false;

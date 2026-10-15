@@ -15,13 +15,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry, std::string_view name,
                       std::uint64_t asset) -> wormedit::audio::decoded_source_binding_t {
-    const auto added = registry.register_source({
+    const auto added = registry.create_source({
         .asset = wormedit::asset_id_t{asset},
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "preview-v1:" + std::string(name)},
     });
     REQUIRE(added);
-    return *added.binding;
+    return *added;
 }
 
 } // namespace
@@ -118,7 +118,7 @@ auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
     const std::vector<float> samples(maximum_read_frames * output_channel_count, 0.125F);
     for (std::size_t index = 0; index < overlapping_source_count; ++index) {
         const auto identity = "generated:preview-overlap:" + std::to_string(index);
-        const auto generated = sources.register_generated_source({
+        const auto generated = sources.create_generated_source({
             .source = {identity, "preview-overlap-v1"},
             .interleaved_stereo = samples,
         });
@@ -127,7 +127,7 @@ auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
         }
         voices.push_back({
             .id = index + 1U,
-            .source = generated.binding->source,
+            .source = generated->source,
             .frame_count = maximum_read_frames,
         });
     }

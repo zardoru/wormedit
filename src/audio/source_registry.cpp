@@ -390,46 +390,6 @@ auto decoded_source_registry_t::create_generated_source(
     return binding;
 }
 
-auto source_registration_result_t::from(source_registration_outcome_t&& outcome)
-    -> source_registration_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .binding = std::nullopt,
-                .message = std::move(outcome.error().message)};
-    return {.status = source_registration_status_t::registered,
-            .binding = std::move(*outcome),
-            .message = {}};
-}
-
-auto source_registration_result_t::from(pending_source_registration_outcome_t&& outcome)
-    -> source_registration_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .binding = std::nullopt,
-                .message = std::move(outcome.error().message)};
-    return {
-        .status = source_registration_status_t::pending, .binding = std::nullopt, .message = {}};
-}
-
-auto decoded_source_registry_t::register_source(decoded_source_registration_t registration)
-    -> source_registration_result_t {
-    return source_registration_result_t::from(create_source(std::move(registration)));
-}
-
-auto decoded_source_registry_t::register_source_pending(decoded_source_registration_t registration)
-    -> source_registration_result_t {
-    return source_registration_result_t::from(create_pending_source(std::move(registration)));
-}
-
-auto decoded_source_registry_t::probe(asset_id_t asset) -> source_registration_result_t {
-    return source_registration_result_t::from(open_source_binding(asset));
-}
-
-auto decoded_source_registry_t::register_generated_source(
-    generated_source_registration_t registration) -> source_registration_result_t {
-    return source_registration_result_t::from(create_generated_source(std::move(registration)));
-}
-
 void decoded_source_registry_t::detach(const std::shared_ptr<entry_t>& entry) {
     const std::scoped_lock lifecycle(entry->lifecycle);
     entry->detached = true;

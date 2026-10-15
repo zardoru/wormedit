@@ -213,7 +213,7 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
     audio::decoded_source_registry_t sources;
     for (const auto& asset : song.audio_assets) {
         const auto path = directory / asset.source_path;
-        const auto registered = sources.register_source({asset.id, path,
+        const auto registered = sources.create_source({asset.id, path,
             {path.string(), "conversion-pcm-v1"}});
         require_span(static_cast<bool>(registered));
     }

@@ -88,10 +88,8 @@ auto register_one_asset(const song_document_t& document, const audio_asset_t& as
                         std::filesystem::path resolved_path, std::uint64_t generation,
                         audio::decoded_source_registry_t& sources, bool defer) -> bool {
     auto registration = asset_registration(document, asset, std::move(resolved_path), generation);
-    const auto registered = defer ? sources.register_source_pending(std::move(registration))
-                                  : sources.register_source(std::move(registration));
-    return defer ? registered.status == audio::source_registration_status_t::pending
-                 : static_cast<bool>(registered);
+    return defer ? sources.create_pending_source(std::move(registration)).has_value()
+                 : sources.create_source(std::move(registration)).has_value();
 }
 
 
@@ -216,16 +214,16 @@ auto resident_requests(const std::vector<resident_candidate_t>& candidates,
     std::vector<resident_wanted_t> wanted;
     for (const auto& candidate : candidates) {
         if (stop.stop_requested()) break;
-        const auto probed = sources.probe(candidate.asset);
+        const auto probed = sources.open_source_binding(candidate.asset);
         const auto key = resident_content_key(candidate.path);
-        if (!probed.binding || !key ||
-            probed.binding->output_frame_count > options.maximum_frames_per_sample) {
+        if (!probed || !key ||
+            probed->output_frame_count > options.maximum_frames_per_sample) {
             continue;
         }
         wanted.push_back({candidate.asset,
-                          {.source = probed.binding->source,
+                          {.source = probed->source,
                            .content_key = *key,
-                           .frame_count = probed.binding->output_frame_count}});
+                           .frame_count = probed->output_frame_count}});
     }
     return wanted;
 }

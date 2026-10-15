@@ -32,25 +32,25 @@ TEST_CASE("decoded source registry exposes authoritative geometry and exact iden
     using namespace wormedit::audio;
     decoded_source_registry_t registry;
     const auto added =
-        registry.register_source(registration(wormedit::asset_id_t{7}, "keysound-c4.ogg"));
+        registry.create_source(registration(wormedit::asset_id_t{7}, "keysound-c4.ogg"));
     REQUIRE(added);
-    REQUIRE(added.binding.has_value());
-    CHECK(added.binding->asset == wormedit::asset_id_t{7});
-    CHECK(added.binding->source_sample_rate > 0);
-    REQUIRE(added.binding->source_frame_count.has_value());
-    CHECK(*added.binding->source_frame_count > 0);
-    CHECK(added.binding->output_sample_rate == output_sample_rate);
-    CHECK(added.binding->output_frame_count > 0);
+    REQUIRE(added.has_value());
+    CHECK(added->asset == wormedit::asset_id_t{7});
+    CHECK(added->source_sample_rate > 0);
+    REQUIRE(added->source_frame_count.has_value());
+    CHECK(*added->source_frame_count > 0);
+    CHECK(added->output_sample_rate == output_sample_rate);
+    CHECK(added->output_frame_count > 0);
 
     const auto bindings = registry.bindings();
     REQUIRE(bindings.size() == 1);
-    CHECK(bindings.front() == *added.binding);
+    CHECK(bindings.front() == *added);
 
     decoded_block_cache_t cache;
     transport_t transport{cache};
     const auto token = transport.start();
     REQUIRE(token.has_value());
-    const audio_block_key_t key{added.binding->source, 0};
+    const audio_block_key_t key{added->source, 0};
     const auto decoded = registry.decode_block(transport, *token, key);
     CHECK(decoded.status == block_decode_status_t::decoded);
     CHECK(decoded.frames > 0);
@@ -69,28 +69,28 @@ TEST_CASE("decoded source registry rejects malformed duplicate and over-cap regi
           "[unit][audio][source-registry][bounds]") {
     using namespace wormedit::audio;
     decoded_source_registry_t registry{1};
-    CHECK(registry.register_source({}).status == source_registration_status_t::invalid_request);
+    CHECK(registry.create_source({}).error().code == source_registration_status_t::invalid_request);
 
     auto missing = registration(wormedit::asset_id_t{1}, "does-not-exist.ogg");
-    CHECK(registry.register_source(std::move(missing)).status ==
+    CHECK(registry.create_source(std::move(missing)).error().code ==
           source_registration_status_t::open_failed);
     CHECK(registry.size() == 0);
 
     const auto first =
-        registry.register_source(registration(wormedit::asset_id_t{1}, "keysound-c4.ogg"));
+        registry.create_source(registration(wormedit::asset_id_t{1}, "keysound-c4.ogg"));
     REQUIRE(first);
 
     auto duplicate_asset = registration(wormedit::asset_id_t{1}, "keysound-e4.ogg");
-    CHECK(registry.register_source(std::move(duplicate_asset)).status ==
+    CHECK(registry.create_source(std::move(duplicate_asset)).error().code ==
           source_registration_status_t::duplicate_asset);
 
     auto duplicate_source = registration(wormedit::asset_id_t{2}, "keysound-g4.ogg");
-    duplicate_source.source = first.binding->source;
-    CHECK(registry.register_source(std::move(duplicate_source)).status ==
+    duplicate_source.source = first->source;
+    CHECK(registry.create_source(std::move(duplicate_source)).error().code ==
           source_registration_status_t::duplicate_source);
 
     CHECK(
-        registry.register_source(registration(wormedit::asset_id_t{2}, "keysound-g4.ogg")).status ==
+        registry.create_source(registration(wormedit::asset_id_t{2}, "keysound-g4.ogg")).error().code ==
         source_registration_status_t::capacity_exceeded);
     CHECK(registry.size() == 1);
     registry.clear();
@@ -102,10 +102,10 @@ TEST_CASE("registered decoder bindings prepare a revision-bound semantic object 
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t registry;
-    const auto added = registry.register_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
+    const auto added = registry.create_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
     REQUIRE(added);
     REQUIRE(registry.binding(asset_id_t{7}));
-    CHECK(registry.binding(asset_id_t{7}) == added.binding);
+    CHECK(registry.binding(asset_id_t{7}).value() == added.value());
     CHECK_FALSE(registry.binding(asset_id_t{8}));
 
     song_document_t song{.id = song_id_t{1}, .revision = 4};
@@ -130,9 +130,9 @@ TEST_CASE("registered decoder bindings prepare a revision-bound semantic object 
     REQUIRE(prepared);
     REQUIRE(prepared.prepared.has_value());
     REQUIRE(prepared.prepared->clips.size() == 1);
-    CHECK(prepared.prepared->clips.front().source == added.binding->source);
+    CHECK(prepared.prepared->clips.front().source == added->source);
     CHECK(prepared.prepared->clips.front().source_start_frame == 0);
-    CHECK(prepared.prepared->clips.front().frame_count == added.binding->output_frame_count);
+    CHECK(prepared.prepared->clips.front().frame_count == added->output_frame_count);
     CHECK_FALSE(bridge.session_token().has_value());
 }
 
@@ -141,18 +141,18 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
     using namespace wormedit::audio;
     decoded_source_registry_t registry;
     const std::vector<float> pcm{0.25F, -0.25F, 0.5F, -0.5F, 0.75F, -0.75F};
-    const auto added = registry.register_generated_source(
+    const auto added = registry.create_generated_source(
         {.source = {"internal:metronome", "click:v1"}, .interleaved_stereo = pcm});
     REQUIRE(added);
-    CHECK_FALSE(added.binding->asset);
-    CHECK(added.binding->output_frame_count == 3);
+    CHECK_FALSE(added->asset);
+    CHECK(added->output_frame_count == 3);
     CHECK(registry.bindings().empty());
 
     decoded_block_cache_t cache;
     transport_t transport{cache};
     const auto token = transport.start();
     REQUIRE(token.has_value());
-    const audio_block_key_t key{added.binding->source, 0};
+    const audio_block_key_t key{added->source, 0};
     const auto decoded = registry.decode_block(transport, *token, key);
     REQUIRE(decoded.status == block_decode_status_t::decoded);
     CHECK(decoded.frames == 3);
@@ -163,8 +163,8 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
 
     CHECK(
         registry
-            .register_generated_source({.source = added.binding->source, .interleaved_stereo = pcm})
-            .status == source_registration_status_t::duplicate_source);
+            .create_generated_source({.source = added->source, .interleaved_stereo = pcm})
+            .error().code == source_registration_status_t::duplicate_source);
 }
 
 TEST_CASE("decoded source registry retains project decoders for waveform analysis",
@@ -172,7 +172,7 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t registry;
-    const auto added = registry.register_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
+    const auto added = registry.create_source(registration(asset_id_t{7}, "keysound-c4.ogg"));
     REQUIRE(added);
     decoded_block_cache_t blocks;
     waveform_cache_t waveforms;
@@ -180,8 +180,8 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
     const auto analyzed = registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128);
     REQUIRE(analyzed.value().status == waveform_analysis_status_t::generated);
     REQUIRE(waveform_analysis_t::find_waveform(analyzed) != nullptr);
-    CHECK(waveform_analysis_t::find_waveform(analyzed)->key.source == added.binding->source);
-    CHECK(waveform_analysis_t::find_waveform(analyzed)->total_frames == added.binding->output_frame_count);
+    CHECK(waveform_analysis_t::find_waveform(analyzed)->key.source == added->source);
+    CHECK(waveform_analysis_t::find_waveform(analyzed)->total_frames == added->output_frame_count);
     CHECK(registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128).value().status ==
           waveform_analysis_status_t::cache_hit);
     CHECK(registry.analyze_waveform(asset_id_t{99}, blocks, waveforms, 128).error().code ==
@@ -210,7 +210,7 @@ void check_pending_inventory(wormedit::audio::decoded_source_registry_t& registr
     CHECK(registry.bindings().empty());
     CHECK_FALSE(registry.binding(wormedit::asset_id_t{1}));
 
-    CHECK(registry.register_source_pending(pending_registration(1)).status ==
+    CHECK(registry.create_pending_source(pending_registration(1)).error().code ==
           source_registration_status_t::duplicate_asset);
 
 }
@@ -231,9 +231,8 @@ TEST_CASE("pending registration opens no decoder until a probe runs",
     using namespace wormedit::audio;
     decoded_source_registry_t registry{2'048};
     for (std::uint64_t asset = 1; asset <= 1'000; ++asset) {
-        const auto added = registry.register_source_pending(pending_registration(asset));
-        REQUIRE(added.status == source_registration_status_t::pending);
-        CHECK_FALSE(added.binding.has_value());
+        const auto added = registry.create_pending_source(pending_registration(asset));
+        REQUIRE(added.has_value());
     }
     check_pending_inventory(registry);
 
@@ -249,7 +248,7 @@ namespace {
 void check_failure_is_reported_once(wormedit::audio::decoded_source_registry_t& registry) {
     using namespace wormedit::audio;
     CHECK(registry.take_probe_failures().empty());
-    CHECK(registry.probe(wormedit::asset_id_t{2}).status == source_registration_status_t::open_failed);
+    CHECK(registry.open_source_binding(wormedit::asset_id_t{2}).error().code == source_registration_status_t::open_failed);
     CHECK(registry.take_probe_failures().empty());
 }
 void check_failure_queue(wormedit::audio::decoded_source_registry_t& registry) {
@@ -274,10 +273,8 @@ TEST_CASE("probe failures are reported once and keep the source out of bindings"
           "[unit][audio][source-registry][lazy]") {
     using namespace wormedit::audio;
     decoded_source_registry_t registry;
-    REQUIRE(registry.register_source_pending(pending_registration(1)).status ==
-            source_registration_status_t::pending);
-    REQUIRE(registry.register_source_pending(pending_registration(2, "missing-file.ogg")).status ==
-            source_registration_status_t::pending);
+    REQUIRE(registry.create_pending_source(pending_registration(1)).has_value());
+    REQUIRE(registry.create_pending_source(pending_registration(2, "missing-file.ogg")).has_value());
     registry.await_pending();
 
     check_failed_inventory(registry);
@@ -301,8 +298,7 @@ TEST_CASE("decoding a pending source probes it on demand and bounds idle open de
     using namespace wormedit::audio;
     decoded_source_registry_t registry{64, 4};
     for (std::uint64_t asset = 1; asset <= 12; ++asset) {
-        REQUIRE(registry.register_source_pending(pending_registration(asset)).status ==
-                source_registration_status_t::pending);
+        REQUIRE(registry.create_pending_source(pending_registration(asset)).has_value());
     }
     decoded_block_cache_t cache;
     transport_t transport{cache};
@@ -340,9 +336,8 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
     using namespace wormedit::audio;
     const auto long_path = write_long_wav();
     decoded_source_registry_t registry{64, 1};
-    REQUIRE(registry.register_source({.asset = {100}, .path = long_path,
-                                      .source = {"fixture:long", "generated-v1:long"}}).status ==
-            source_registration_status_t::registered);
+    REQUIRE(registry.create_source({.asset = {100}, .path = long_path,
+                                      .source = {"fixture:long", "generated-v1:long"}}).has_value());
     decoded_block_cache_t cache;
     transport_t transport{cache};
     const auto token = transport.start();
@@ -351,8 +346,7 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
     REQUIRE(registry.decode_block(transport, *token, {long_source, 0}).status ==
             block_decode_status_t::decoded);
     for (std::uint64_t asset = 1; asset <= 4; ++asset) {
-        REQUIRE(registry.register_source_pending(pending_registration(asset)).status ==
-                source_registration_status_t::pending);
+        REQUIRE(registry.create_pending_source(pending_registration(asset)).has_value());
         check_pending_decode(registry, transport, *token, asset);
     }
     // The cap of one idle decoder trims the short sources but never the long one.
@@ -364,8 +358,7 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
 
 namespace {
 void race_removed_probe(wormedit::audio::decoded_source_registry_t& registry, std::uint64_t asset) {
-    REQUIRE(registry.register_source_pending(pending_registration(asset, "missing-file.ogg")).status ==
-            wormedit::audio::source_registration_status_t::pending);
+    REQUIRE(registry.create_pending_source(pending_registration(asset, "missing-file.ogg")));
     std::barrier start{2};
     std::thread worker([&] { start.arrive_and_wait(); registry.probe_next_pending(); });
     start.arrive_and_wait();
@@ -386,7 +379,7 @@ TEST_CASE("synchronous source registration tolerates concurrent registry clearin
     std::atomic<bool> done{};
     std::thread clearing([&] { while (!done.load()) registry.clear(); });
     for (std::uint64_t asset = 1; asset <= 500; ++asset)
-        static_cast<void>(registry.register_source(pending_registration(asset)));
+        static_cast<void>(registry.create_source(pending_registration(asset)));
     done = true;
     clearing.join();
     registry.clear();

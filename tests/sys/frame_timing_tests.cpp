@@ -1229,14 +1229,14 @@ struct channel_projection_fixture_t : envelope_projection_fixture_t {
     channel_projection_fixture_t() {
         const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
                           "fixtures" / "audio" / "keysound-c4.ogg";
-        const auto added = sources.register_source({asset_id_t{7}, path, {"waveform:test", "immutable:v1"}});
+        const auto added = sources.create_source({asset_id_t{7}, path, {"waveform:test", "immutable:v1"}});
         expect_gpu_work(static_cast<bool>(added));
         history.document.audio_assets.push_back({.id = asset_id_t{7}, .source_path = path,
-            .stream = {added.binding->source_sample_rate, 2, added.binding->source_frame_count, true}});
+            .stream = {added->source_sample_rate, 2, added->source_frame_count, true}});
         auto& waveform = *analysis.waveform;
-        waveform.key.source = added.binding->source;
-        waveform.sample_rate = added.binding->output_sample_rate;
-        waveform.total_frames = added.binding->output_frame_count;
+        waveform.key.source = added->source;
+        waveform.sample_rate = added->output_sample_rate;
+        waveform.total_frames = added->output_frame_count;
         waveform.bins.resize((waveform.total_frames + 255) / 256);
         for (std::size_t index = 0; index < waveform.bins.size(); ++index) {
             auto& bin = waveform.bins[index];
@@ -1410,7 +1410,7 @@ void register_prepared_stem_source(channel_projection_fixture_t& fixture,
     fixture.sources.clear();
     const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
                       "fixtures" / "audio" / filename;
-    REQUIRE(fixture.sources.register_source({*fixture.asset, path,
+    REQUIRE(fixture.sources.create_source({*fixture.asset, path,
         {"prepared-span", std::string(version)}}));
 }
 
@@ -5103,7 +5103,7 @@ auto configure_mixed_projection(channel_projection_fixture_t& fixture)
     -> std::shared_ptr<const audio::waveform_analysis_result_t> {
     const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
                       "fixtures" / "audio" / "keysound-c4.ogg";
-    const auto packed_source = fixture.sources.register_source(
+    const auto packed_source = fixture.sources.create_source(
         {asset_id_t{8}, path, {"waveform:packed", "immutable:v1"}});
     expect_gpu_work(static_cast<bool>(packed_source));
     auto packed_asset = fixture.history.document.audio_assets.back();
@@ -5130,7 +5130,7 @@ auto configure_mixed_projection(channel_projection_fixture_t& fixture)
     fixture.workspace.transport.audio_asset.reset();
     fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74000;
     auto packed_analysis = std::make_shared<audio::waveform_analysis_result_t>(*fixture.channel_analysis);
-    packed_analysis->waveform->key.source = packed_source.binding->source;
+    packed_analysis->waveform->key.source = packed_source->source;
     return packed_analysis;
 }
 

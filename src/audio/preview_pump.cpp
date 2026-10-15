@@ -173,22 +173,23 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::invalid_request});
 
-    auto snapshot = transport.snapshot_active_voices(token, options.maximum_voices);
-    if (snapshot.status == active_voice_snapshot_status_t::stale_generation)
+    auto snapshot = transport.snapshot_voices(token, options.maximum_voices);
+    const auto snapshot_status = snapshot ? active_voice_snapshot_status_t::ready : snapshot.error();
+    if (snapshot_status == active_voice_snapshot_status_t::stale_generation)
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::stale_generation});
-    if (snapshot.status == active_voice_snapshot_status_t::capacity_exceeded) {
+    if (snapshot_status == active_voice_snapshot_status_t::capacity_exceeded) {
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::capacity_exceeded,
                                   .active_voices = options.maximum_voices + 1});
     }
 
     const auto planned =
-        plan_preview_keys(snapshot.voices, timeline_frame, *window_end, options.maximum_blocks);
+        plan_preview_keys(snapshot.value(), timeline_frame, *window_end, options.maximum_blocks);
     if (!planned) {
         const auto& plan = planned.error();
         preview_pump_effect_t result{.status = plan.status};
-        result.active_voices = snapshot.voices.size();
+        result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         if (plan.status == preview_pump_status_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
@@ -198,13 +199,13 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
     const auto& plan = *planned;
     if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
         preview_pump_effect_t result{.status = preview_pump_status_t::capacity_exceeded};
-        result.active_voices = snapshot.voices.size();
+        result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         result.requested_blocks = plan.keys.size();
         return std::unexpected(std::move(result));
     }
     preview_pump_effect_t result{.status = preview_pump_status_t::ready};
-    result.active_voices = snapshot.voices.size();
+    result.active_voices = snapshot.value().size();
     result.overlapping_voices = plan.overlapping_voices;
     return decode_preview_plan(sources, transport, token, plan, std::move(result));
 }

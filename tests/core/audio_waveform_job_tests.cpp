@@ -16,8 +16,8 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry,
                       wormedit::asset_id_t asset, std::string_view name)
-    -> wormedit::audio::source_registration_result_t {
-    return registry.register_source({
+    -> wormedit::audio::source_registration_outcome_t {
+    return registry.create_source({
         .asset = asset,
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "waveform-job:v1"},

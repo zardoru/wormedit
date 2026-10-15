@@ -14,7 +14,7 @@ void check_large_inventory_pending(wormedit::audio::decoded_source_registry_t& s
                                    std::uint64_t sound_count) {
     CHECK(sources.pending_count() == sound_count);
     CHECK(sources.open_decoder_count() == 0);
-    REQUIRE(sources.probe(wormedit::asset_id_t{sound_count}));
+    REQUIRE(sources.open_source_binding(wormedit::asset_id_t{sound_count}));
 }
 
 void check_large_inventory_binding(const wormedit::audio::decoded_source_registry_t& sources,

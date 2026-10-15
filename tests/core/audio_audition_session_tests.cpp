@@ -42,13 +42,13 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry, std::string_view name,
                       wormedit::asset_id_t asset = wormedit::asset_id_t{1})
     -> wormedit::audio::decoded_source_binding_t {
-    const auto added = registry.register_source({
+    const auto added = registry.create_source({
         .asset = asset,
         .path = fixture_path(name),
         .source = {"fixture:" + std::string(name), "generated-v1:" + std::string(name)},
     });
     REQUIRE(added);
-    return *added.binding;
+    return *added;
 }
 
 auto all_zero(const std::vector<float>& samples) -> bool {

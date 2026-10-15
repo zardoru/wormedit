@@ -110,7 +110,7 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
     expect_audition(SDL_InitSubSystem(SDL_INIT_AUDIO));
     audio_lifetime_t lifetime;
     audition_fixture_t fixture;
-    const auto registration = fixture.sources.register_source({.asset = asset_id_t{1},
+    const auto registration = fixture.sources.create_source({.asset = asset_id_t{1},
         .path = std::filesystem::path(WORMEDIT_FIXTURE_DIR) / "audio/keysound-c4.ogg",
         .source = {"fixture:keysound-c4.ogg", "notification-test"}});
     expect_audition(static_cast<bool>(registration));

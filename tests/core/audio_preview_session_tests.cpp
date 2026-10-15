@@ -42,18 +42,18 @@ auto fixture_path(std::string_view name) -> std::filesystem::path {
 
 auto register_fixture(wormedit::audio::decoded_source_registry_t& registry)
     -> wormedit::audio::decoded_source_binding_t {
-    const auto added = registry.register_source({
+    const auto added = registry.create_source({
         .asset = wormedit::asset_id_t{1},
         .path = fixture_path("polyphonic-chord.ogg"),
         .source = {"fixture:polyphonic-chord", "chart-session-v1"},
     });
     REQUIRE(added);
-    return *added.binding;
+    return *added;
 }
 
-auto has_active_voice(const std::optional<wormedit::audio::active_voice_snapshot_t>& snapshot,
+auto has_active_voice(const std::optional<wormedit::audio::active_voice_snapshot_outcome_t>& snapshot,
                       std::uint64_t source_start, std::uint64_t frame_count) -> bool {
-    return snapshot && std::ranges::any_of(snapshot->voices, [&](const auto& voice) {
+    return snapshot && snapshot->has_value() && std::ranges::any_of(snapshot->value(), [&](const auto& voice) {
         return voice.source_start_frame == source_start && voice.frame_count == frame_count;
     });
 }
@@ -108,11 +108,11 @@ auto preview_session_survives_underrun_and_completes() -> bool {
            completed.first_timeline_frame == 32 && !session.is_active();
 }
 
-auto contiguous_music_segments(const wormedit::audio::active_voice_snapshot_t& active) -> bool {
+auto contiguous_music_segments(const wormedit::audio::active_voice_snapshot_outcome_t& active) -> bool {
     using namespace wormedit::audio;
-    if (active.voices.size() != 3) return false;
-    for (std::size_t index = 0; index < active.voices.size(); ++index) {
-        const auto& voice = active.voices[index];
+    if (!active || active.value().size() != 3) return false;
+    for (std::size_t index = 0; index < active.value().size(); ++index) {
+        const auto& voice = active.value()[index];
         const auto expected = static_cast<std::uint64_t>(index) * maximum_read_frames;
         if (voice.kind != voice_kind_t::music || voice.timeline_start_frame != expected ||
             voice.source_start_frame != expected || voice.frame_count != maximum_read_frames)
@@ -128,12 +128,12 @@ auto seek_music_segment_starts_at_source_frame(wormedit::audio::preview_session_
     using namespace wormedit::audio;
     const auto seek = seek_primed(session, 500, {.lookahead_frames = maximum_read_frames});
     const auto current_token = bridge.session_token();
-    const auto active = seek && current_token ? transport.snapshot_active_voices(*current_token)
-                                               : active_voice_snapshot_t{};
-    return seek && active && !active.voices.empty() &&
-           active.voices.front().timeline_start_frame == 500 &&
-           active.voices.front().source_start_frame == 500 &&
-           active.voices.front().frame_count == maximum_read_frames - 500;
+    const auto active = seek && current_token ? transport.snapshot_voices(*current_token)
+                                               : active_voice_snapshot_outcome_t{std::unexpected(active_voice_snapshot_status_t::stale_generation)};
+    return seek && active && !active.value().empty() &&
+           active.value().front().timeline_start_frame == 500 &&
+           active.value().front().source_start_frame == 500 &&
+           active.value().front().frame_count == maximum_read_frames - 500;
 }
 
 auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
@@ -150,7 +150,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         pcm[frame * output_channel_count] = sample;
         pcm[frame * output_channel_count + 1] = sample;
     }
-    const auto generated = sources.register_generated_source({
+    const auto generated = sources.create_generated_source({
         .source = {"generated:preview-loop", "preview-loop-v1"},
         .interleaved_stereo = std::move(pcm),
     });
@@ -163,11 +163,11 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     constexpr object_id_t music_object{std::numeric_limits<std::uint64_t>::max()};
     schedule.music = preview_schedule_t::music_event_t{
-        .resource = resource_id_t{7}, .frame_count = generated.binding->output_frame_count};
+        .resource = resource_id_t{7}, .frame_count = generated->output_frame_count};
     const preview_object_source_binding_t binding{
         .object = music_object,
-        .voices = {{.source = generated.binding->source,
-                    .frame_count = generated.binding->output_frame_count}},
+        .voices = {{.source = generated->source,
+                    .frame_count = generated->output_frame_count}},
     };
     const preview_loop_region_t region{loop_begin, loop_end};
     if (!session.set_loop_region(region) || session.set_loop_region(preview_loop_region_t{64, 64}))
@@ -215,11 +215,11 @@ auto preview_music_seek_geometry_is_correct() -> bool {
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
     std::vector<float> pcm(3U * maximum_read_frames * output_channel_count, 0.125F);
-    const auto registered = sources.register_generated_source(
+    const auto registered = sources.create_generated_source(
         {.source = {"generated:preview-music", "preview-music-v1"},
          .interleaved_stereo = std::move(pcm)});
     if (!registered) return false;
-    const auto source = *registered.binding;
+    const auto source = *registered;
     decoded_block_cache_t cache{preview_block_cache_limits()};
     transport_t transport{cache};
     preview_transport_bridge_t bridge{transport};
@@ -237,7 +237,7 @@ auto preview_music_seek_geometry_is_correct() -> bool {
     if (!started || bridge.materialize_until(3 * maximum_read_frames).status !=
                         preview_bridge_pump_status_t::ready)
         return false;
-    const auto active = transport.snapshot_active_voices(*started.token);
+    const auto active = transport.snapshot_voices(*started.token);
     const bool valid = contiguous_music_segments(active) &&
                        seek_music_segment_starts_at_source_frame(session, transport, bridge);
     return session.stop().scheduled_voices >= 1 && valid;
@@ -274,11 +274,11 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
     std::vector<float> pcm(3U * maximum_read_frames * output_channel_count, 0.25F);
-    const auto registered = sources.register_generated_source(
+    const auto registered = sources.create_generated_source(
         {.source = {"generated:preview-music-drop", "preview-music-drop-v1"},
          .interleaved_stereo = std::move(pcm)});
     if (!registered) return false;
-    const auto source = *registered.binding;
+    const auto source = *registered;
     decoded_block_cache_t cache{preview_block_cache_limits()};
     transport_t transport{cache};
     preview_transport_bridge_t bridge{transport};
@@ -300,9 +300,9 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
     const auto pumped = pump_preview_lookahead(
         sources, transport, *started.token, session.timeline_frame(),
         {.lookahead_frames = maximum_read_frames});
-    const auto active = transport.snapshot_active_voices(*started.token);
-    const bool later_segment_scheduled = pumped && active && active.voices.size() == 1 &&
-                                         active.voices.front().timeline_start_frame ==
+    const auto active = transport.snapshot_voices(*started.token);
+    const bool later_segment_scheduled = pumped && active && active.value().size() == 1 &&
+                                         active.value().front().timeline_start_frame ==
                                              maximum_read_frames;
     const bool later_segment_played = next_music_segment_is_still_playing(
         session, sources, transport, *started.token);
@@ -399,7 +399,7 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
     check_session_condition(sought.token != old_token);
     check_session_condition(session.timeline_frame() == 200);
     check_session_condition(!transport.is_current(old_token));
-    check_session_condition(has_active_voice(transport.snapshot_active_voices(*sought.token), 100, 900));
+    check_session_condition(has_active_voice(transport.snapshot_voices(*sought.token), 100, 900));
 
     const auto stopped = session.stop();
     check_session_condition(stopped.scheduled_voices == 1);
@@ -415,7 +415,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
     std::vector<float> click(64 * output_channel_count, 0.25F);
-    const auto generated = sources.register_generated_source({
+    const auto generated = sources.create_generated_source({
         .source = {"internal:metronome:measure", "chart-session-v1"},
         .interleaved_stereo = std::move(click),
     });
@@ -437,7 +437,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
                            .accent = metronome_accent_t::measure}};
     const preview_metronome_source_binding_t metronome{
         .accent = metronome_accent_t::measure,
-        .voice = {.source = generated.binding->source, .frame_count = 64},
+        .voice = {.source = generated->source, .frame_count = 64},
     };
 
     const auto started =
@@ -577,10 +577,10 @@ struct in_flight_preview_fixture_t {
     in_flight_preview_fixture_t() {
         std::vector<float> pcm(2'000, -0.5F);
         std::fill_n(pcm.begin(), 1'000, 0.5F);
-        const auto registered = sources.register_generated_source({
+        const auto registered = sources.create_generated_source({
             .source = {"in-flight", "v1"}, .interleaved_stereo = std::move(pcm)});
         expect_pending(registered);
-        source = registered.binding->source;
+        source = registered->source;
         schedule.bgm = {{.sample_frame = 0, .object = wormedit::object_id_t{1},
                          .resource = wormedit::resource_id_t{1}},
                         {.sample_frame = 128, .object = wormedit::object_id_t{2},
@@ -674,7 +674,7 @@ TEST_CASE("Layer assist clicks are audible with metronome off and cancel queued 
     using namespace wormedit;
     using namespace wormedit::audio;
     decoded_source_registry_t sources;
-    const auto source = sources.register_generated_source({.source = {"generated:layer-tick", "v1"},
+    const auto source = sources.create_generated_source({.source = {"generated:layer-tick", "v1"},
         .interleaved_stereo = std::vector<float>(512*output_channel_count, 0.1F)});
     require_session_condition(static_cast<bool>(source));
     decoded_block_cache_t cache{preview_block_cache_limits()};
@@ -685,9 +685,9 @@ TEST_CASE("Layer assist clicks are audible with metronome off and cancel queued 
     constexpr object_id_t music_id{std::numeric_limits<std::uint64_t>::max()};
     schedule.music = preview_schedule_t::music_event_t{resource_id_t{1}, 0, 0, 512};
     const preview_object_source_binding_t music{.object = music_id,
-        .voices = {{.source = source.binding->source, .frame_count = 512}}};
+        .voices = {{.source = source->source, .frame_count = 512}}};
     const preview_metronome_source_binding_t click{.accent = metronome_accent_t::regular,
-        .voice = {.source = source.binding->source, .frame_count = 8}};
+        .voice = {.source = source->source, .frame_count = 8}};
     session.set_metronome_enabled(false);
     require_session_condition(session.set_layer_tick_frames(std::array<std::uint64_t, 2>{32,96}));
     const auto started = start_primed(session, schedule, std::span{&music,1}, std::span{&click,1},

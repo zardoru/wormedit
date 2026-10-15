@@ -32,16 +32,16 @@ auto has_failed_analysis_in_completed_job() -> bool {
     waveform_cache_t waveforms;
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler};
-    const auto started = job.begin(asset_id_t{7}, 32);
+    const auto started = job.request(asset_id_t{7}, 32);
     if (!started) return false;
-    auto completion = job.wait_completion();
+    auto completion = job.wait();
     if (!completion || !*completion) return false;
     const auto& completed = completion->value();
     if (!completed.payload || completed.payload->status != waveform_analysis_status_t::decoder_unavailable)
         return false;
     return completed.generation == *started && completed.identity == asset_id_t{7} &&
            completed.payload != nullptr && !job.is_busy() &&
-           !job.poll_completion();
+           !job.poll();
 }
 
 } // namespace
@@ -58,14 +58,14 @@ TEST_CASE("waveform job publishes the newest bounded scheduler request",
     task_scheduler_t scheduler{1, 4};
     waveform_job_t job{sources, blocks, waveforms, scheduler};
 
-    const auto superseded = job.begin(asset_id_t{1}, 64);
+    const auto superseded = job.request(asset_id_t{1}, 64);
     REQUIRE(superseded);
-    const auto current = job.begin(asset_id_t{2}, 32);
+    const auto current = job.request(asset_id_t{2}, 32);
     REQUIRE(current);
     CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
-    const auto completion = job.wait_completion();
+    const auto completion = job.wait();
     const auto& completed = completion.value().value();
     REQUIRE(completed.payload);
     CHECK(completed.generation == *current);
@@ -85,9 +85,9 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler, 0};
 
-    CHECK(job.begin(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
-    CHECK(job.begin({}, 32).error().code == waveform_job_start_status_t::invalid_request);
-    CHECK_FALSE(job.poll_completion().has_value());
+    CHECK(job.request(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
+    CHECK(job.request({}, 32).error().code == waveform_job_start_status_t::invalid_request);
+    CHECK_FALSE(job.poll().has_value());
     CHECK_FALSE(job.is_busy());
 }
 
@@ -114,7 +114,7 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     worker_started.wait();
 
     waveform_job_t job{sources, blocks, waveforms, scheduler};
-    const auto rejected = job.begin(asset_id_t{1}, 32);
+    const auto rejected = job.request(asset_id_t{1}, 32);
     release_worker.count_down();
     REQUIRE(blocker_submission.value().wait());
 

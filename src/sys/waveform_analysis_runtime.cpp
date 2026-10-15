@@ -173,7 +173,7 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
     std::optional<asset_id_t>& attempted, const char* failure_message) {
     if (attempted != asset) attempted.reset();
     if (!asset || attempted == asset) return;
-    const auto started = job.begin(*asset, 256);
+    const auto started = job.request(*asset, 256);
     if (started) {
         accepted = asset;
         return;
@@ -218,7 +218,7 @@ void waveform_analysis_t::service_workspace_waveform(const workspace_controller_
         request_selected_waveform(workspace.transport.audio_asset, waveform_job_,
             waveform_job_asset_, attempted_waveform_asset_, "Waveform analysis could not start.");
     }
-    if (const auto completed = waveform_job_.poll_completion(); completed) {
+    if (const auto completed = waveform_job_.poll(); completed) {
         const auto asset = *completed ? completed->value().identity : completed->error().identity;
         if (waveform_job_asset_ != asset) return;
         if (*completed && completed->value().payload) waveform_analysis_ = completed->value().payload;
@@ -308,7 +308,7 @@ void waveform_analysis_t::service_idle_detail(
         detail_key_ = key;
         detail_asset_ = asset;
     }
-    if (const auto completed = detail_job_.poll_completion(); completed && *completed && completed->value().identity == asset &&
+    if (const auto completed = detail_job_.poll(); completed && *completed && completed->value().identity == asset &&
         completed->value().payload && completed->value().payload->waveform &&
         completed->value().payload->waveform->key == key) {
         detail_analysis_ = completed->value().payload;
@@ -317,7 +317,7 @@ void waveform_analysis_t::service_idle_detail(
         !audio::build_cached_waveform_samples_view(decoded_blocks_, key.source,
             key.begin_frame, key.end_frame, audio::maximum_aligned_waveform_rows);
     if (detail_job_.is_busy() || (detail_analysis_ && !pcm_missing)) return;
-    const auto started = detail_job_.begin(*asset, 32,
+    const auto started = detail_job_.request(*asset, 32,
         {.begin_frame = key.begin_frame, .end_frame = key.end_frame,
          .require_cached_pcm = window->frames_per_pixel < 1.0});
     (void)started; // A busy bounded scheduler retries next frame and retains coarse rendering.
@@ -366,7 +366,7 @@ void waveform_analysis_t::service_channel_waveform(
             channel_waveform_job_asset_, attempted_channel_asset_,
             "Channel waveform analysis could not start.");
     }
-    if (const auto completed = channel_waveform_job_.poll_completion(); completed) {
+    if (const auto completed = channel_waveform_job_.poll(); completed) {
         const auto asset = *completed ? completed->value().identity : completed->error().identity;
         if (channel_waveform_job_asset_ != asset) return;
         if (*completed && completed->value().payload) channel_waveform_analysis_ = completed->value().payload;
@@ -485,7 +485,7 @@ void waveform_analysis_t::collect_stem_waveforms(const std::vector<asset_id_t>& 
             slot->asset.reset();
             continue;
         }
-        const auto completed = slot->job.poll_completion();
+        const auto completed = slot->job.poll();
         if (!completed) continue;
         slot->asset.reset();
         // A failed analysis is kept so the stem shows a placeholder, and retried once its
@@ -521,7 +521,7 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
         if (!stem_needs_analysis(asset)) continue;
         const auto free_slot = std::ranges::find_if(stem_slots_, [](const auto& slot) { return !slot->asset; });
         if (free_slot == stem_slots_.end()) return;
-        const auto started = (*free_slot)->job.begin(asset, 256);
+        const auto started = (*free_slot)->job.request(asset, 256);
         if (started) {
             (*free_slot)->asset = asset;
         } else if (started.error().code != audio::waveform_job_start_status_t::capacity_exceeded) {

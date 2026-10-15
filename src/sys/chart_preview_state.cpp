@@ -351,7 +351,7 @@ auto chart_preview_t::play_pause(
                                               resume_frame, end_frame);
     if (!started)
         return report(notification_severity_t::error, false,
-                      started.message.empty() ? "Chart preview could not start." : started.message);
+                      started.error().message.empty() ? "Chart preview could not start." : started.error().message);
     paused = false;
     std::string status = from_beginning ? "Chart preview started from the beginning."
            : was_paused ? "Chart preview resumed."
@@ -375,7 +375,7 @@ auto restore_preview_after_seek_failure(const chart_preview_t& preview,
         preview.retained_metronome_bindings, previous_frame, preview.end_frame);
     if (restored) return failure + " Playback continues from its previous position.";
     return failure + " Playback could not be restored: " +
-        (restored.message.empty() ? "audio output is unavailable." : restored.message);
+        (restored.error().message.empty() ? "audio output is unavailable." : restored.error().message);
 }
 } // namespace
 
@@ -396,7 +396,7 @@ auto chart_preview_t::seek(std::uint64_t frame, const song_document_t& document,
         if (!sought)
             return report(notification_severity_t::error, false,
                 restore_preview_after_seek_failure(*this, previous_frame, preview_session, preview_output,
-                    sought.message.empty() ? "Chart preview seek failed." : sought.message));
+                    sought.error().message.empty() ? "Chart preview seek failed." : sought.error().message));
         paused = false;
     } else {
         paused = true;

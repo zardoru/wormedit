@@ -42,7 +42,7 @@ struct bms_branch_selection_request_t {
 
 struct bms_branch_selection_payload_t {
     std::optional<song_document_t> song;
-    bms_branch_projection_preview_t preview;
+    bms_branch_preview_view_t preview;
 };
 struct bms_branch_selection_diagnostics_t {
     std::vector<bms_branch_selection_diagnostic_t> selection;
@@ -59,7 +59,7 @@ struct bms_branch_selection_result_t {
         const bms_branch_selection_request_t& request) -> bms_branch_selection_outcome_t;
     [[nodiscard]] static auto from(bms_branch_selection_outcome_t&& outcome) -> bms_branch_selection_result_t;
     std::optional<song_document_t> song;
-    bms_branch_projection_preview_t preview;
+    bms_branch_preview_view_t preview;
     std::vector<bms_branch_selection_diagnostic_t> diagnostics;
     std::vector<bms_write_diagnostic_t> write_diagnostics;
     std::vector<bms_parse_diagnostic_t> parse_diagnostics;

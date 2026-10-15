@@ -28,7 +28,7 @@ using bms_branch_statement_command_result_t = command_result_with_t<bms_branch_s
     -> bms_branch_statement_command_result_t;
 
 struct bms_branch_selection_command_payload_t {
-    bms_branch_projection_preview_t preview;
+    bms_branch_preview_view_t preview;
     std::vector<bms_branch_selection_diagnostic_t> format_diagnostics;
     std::vector<bms_write_diagnostic_t> write_diagnostics;
     std::vector<bms_parse_diagnostic_t> parse_diagnostics;

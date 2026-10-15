@@ -409,10 +409,6 @@ auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart, worme
     -> const wormedit::semantic_layer_t*;
 
 std::optional<compose_action_outcome_t>
-assign_compose_layer_target(compose_action_context_t& context, bool none,
-                            wormedit::layer_id_t target);
-
-std::optional<compose_action_outcome_t>
 add_selected_compose_sounds_to_layer(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
@@ -449,26 +445,6 @@ auto missing_semantic_layer_toggle_target(compose_action_context_t& context, boo
     -> std::optional<compose_action_outcome_t>;
 
 auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::string;
-
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool toggle_lock);
-
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_filter(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_paint_mode(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_solo(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-select_semantic_layer_notes(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-edit_semantic_layer_membership(compose_action_context_t& context);
-
-auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_action_outcome_t;
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_semantic_layer_state_action(compose_action_context_t& context);

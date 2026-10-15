@@ -1139,16 +1139,29 @@ auto catalog_semantic_layer_by_id(const wormedit::chart_document_t& chart,
     return found == chart.semantic_layers.end() ? nullptr : &*found;
 }
 
-std::optional<compose_action_outcome_t>
-assign_compose_layer_target(compose_action_context_t& context, bool none,
-                            wormedit::layer_id_t target) {
-    constexpr std::string_view rebind_failure =
-        "Semantic-layer membership changed, but workspace rebinding failed.";
+struct assign_compose_layer_target_action_t {
+    bool none{};
+    layer_id_t target{};
+    auto operator==(const assign_compose_layer_target_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<assign_compose_layer_target_action_t, compose_action_context_t>);
+
+auto assign_compose_layer_target_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing semantic layers.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto assign_compose_layer_target_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    constexpr std::string_view rebind_failure =
+        "Semantic-layer membership changed, but workspace rebinding failed.";
     auto& app = context.environment.editor.commands;
     auto applied = wormedit::sys::apply_compose_layer_assignment(
         context.environment.document.history, context.state,
@@ -1274,8 +1287,7 @@ dispatch_compose_note_menu_action(compose_action_context_t& context) {
         return compose_action_outcome_t::from({}, notification_severity_t::hint);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_NOTE_MENU_LAYER:
         app.project.semantic_layer.note_layer_menu_row_count = 0;
-        return assign_compose_layer_target(context, action.compose_semantic_layer_id == 0,
-            layer_id_t{action.compose_semantic_layer_id});
+        return run_compose_action(assign_compose_layer_target_action_t{.none = action.compose_semantic_layer_id == 0, .target = layer_id_t{action.compose_semantic_layer_id}}, context);
     default: return std::nullopt;
     }
 }
@@ -1287,7 +1299,7 @@ choose_no_semantic_layer(compose_action_context_t& context) {
                                                  notification_source_t::edit);
     if (!context.state.selected_notes.empty() ||
         !selected_compose_bgm_events(context.state).empty())
-        return assign_compose_layer_target(context, true, {});
+        return run_compose_action(assign_compose_layer_target_action_t{.none = true, .target = {}}, context);
     auto& app = context.environment.editor.commands;
     app.project.semantic_layer.semantic_layer_target.reset();
     app.project.semantic_layer.semantic_layer_target_none = true;
@@ -1771,12 +1783,17 @@ auto semantic_layer_toggle_status(bool toggle_lock, bool previous) -> std::strin
     return previous ? "Semantic layer hidden." : "Semantic layer shown.";
 }
 
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool toggle_lock) {
-    constexpr std::string_view rebind_failure =
-        "Semantic-layer state changed, but workspace rebinding failed.";
+struct toggle_semantic_layer_visibility_or_lock_action_t {
+    bool toggle_lock{};
+    auto operator==(const toggle_semantic_layer_visibility_or_lock_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_semantic_layer_visibility_or_lock_action_t, compose_action_context_t>);
+
+auto toggle_semantic_layer_visibility_or_lock_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    auto& app = context.environment.editor.commands;
     if (auto blocked = context.require_no_gesture(
             toggle_lock
                 ? "Finish or cancel the active Compose gesture before changing layer lock state."
@@ -1785,11 +1802,20 @@ toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto toggle_semantic_layer_visibility_or_lock_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    auto& app = context.environment.editor.commands;
+    constexpr std::string_view rebind_failure =
+        "Semantic-layer state changed, but workspace rebinding failed.";
     if (!target_semantic_layer_action_row(context))
         return compose_action_outcome_t::blocked(
             "The selected semantic layer is no longer available.", notification_source_t::edit);
-    if (const auto missing = missing_semantic_layer_toggle_target(context, toggle_lock))
-        return missing;
+    if (auto missing = missing_semantic_layer_toggle_target(context, toggle_lock))
+        return std::move(*missing);
     const auto [chart, layer] = selected_catalog_layer(context);
     const bool previous = toggle_lock ? layer->locked : layer->visible;
     const auto color = semantic_layer_rgba_t{
@@ -1828,13 +1854,29 @@ toggle_semantic_layer_visibility_or_lock(compose_action_context_t& context, bool
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_filter(compose_action_context_t& context) {
+struct toggle_semantic_layer_filter_action_t {
+    std::pair<const chart_document_t*, const semantic_layer_t*> target{};
+    auto operator==(const toggle_semantic_layer_filter_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_semantic_layer_filter_action_t, compose_action_context_t>);
+
+auto toggle_semantic_layer_filter_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto [chart, layer] = selected_catalog_layer(context);
+    target = selected_catalog_layer(context);
+    const auto& [chart, layer] = target;
     if (!chart || !layer)
         return compose_action_outcome_t::blocked(
             "Choose a visible semantic layer before filtering by it.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto toggle_semantic_layer_filter_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& [chart, layer] = target;
     auto& app = context.environment.editor.commands;
     if (app.project.semantic_layer.semantic_layer_filter_chart != chart->id) {
         app.project.semantic_layer.semantic_layer_filter_chart = chart->id;
@@ -1860,8 +1902,20 @@ toggle_semantic_layer_filter(compose_action_context_t& context) {
                                           notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_paint_mode(compose_action_context_t& context) {
+struct toggle_semantic_layer_paint_mode_action_t {
+    auto operator==(const toggle_semantic_layer_paint_mode_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_semantic_layer_paint_mode_action_t, compose_action_context_t>);
+
+auto toggle_semantic_layer_paint_mode_action_t::validate(compose_action_context_t&) const
+    -> std::optional<compose_action_outcome_t> {
+    return std::nullopt;
+}
+
+auto toggle_semantic_layer_paint_mode_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     using namespace wormedit;
     auto& state = context.state;
     auto& app = context.environment.editor.commands;
@@ -1887,13 +1941,29 @@ toggle_semantic_layer_paint_mode(compose_action_context_t& context) {
         notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-toggle_semantic_layer_solo(compose_action_context_t& context) {
+struct toggle_semantic_layer_solo_action_t {
+    std::pair<const chart_document_t*, const semantic_layer_t*> target{};
+    auto operator==(const toggle_semantic_layer_solo_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_semantic_layer_solo_action_t, compose_action_context_t>);
+
+auto toggle_semantic_layer_solo_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto [chart, layer] = selected_catalog_layer(context);
+    target = selected_catalog_layer(context);
+    const auto& [chart, layer] = target;
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
         return compose_action_outcome_t::blocked(
             "Choose a visible semantic layer before soloing it.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto toggle_semantic_layer_solo_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto* layer = target.second;
     if (!layer) {
         context.environment.editor.commands.project.semantic_layer.semantic_layer_solo_active = false;
         return compose_action_outcome_t::blocked(
@@ -1906,19 +1976,35 @@ toggle_semantic_layer_solo(compose_action_context_t& context) {
         notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-select_semantic_layer_notes(compose_action_context_t& context) {
+struct select_semantic_layer_notes_action_t {
+    std::pair<const chart_document_t*, const semantic_layer_t*> target{};
+    auto operator==(const select_semantic_layer_notes_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<select_semantic_layer_notes_action_t, compose_action_context_t>);
+
+auto select_semantic_layer_notes_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before selecting by layer.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
-    const auto [chart, layer] = selected_catalog_layer(context);
+    target = selected_catalog_layer(context);
+    const auto& [chart, layer] = target;
     if (!chart || !context.environment.editor.commands.project.semantic_layer.semantic_layer_target)
         return compose_action_outcome_t::blocked(
             "Choose a visible semantic layer before selecting its notes.",
             notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto select_semantic_layer_notes_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    const auto& [chart, layer] = target;
     if (!layer) {
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target.reset();
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target_none = false;
@@ -1937,16 +2023,29 @@ select_semantic_layer_notes(compose_action_context_t& context) {
     return compose_action_outcome_t::from(std::move(result), "Semantic-layer notes selected.");
 }
 
-std::optional<compose_action_outcome_t>
-edit_semantic_layer_membership(compose_action_context_t& context) {
+struct edit_semantic_layer_membership_action_t {
+    auto operator==(const edit_semantic_layer_membership_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_semantic_layer_membership_action_t, compose_action_context_t>);
+
+auto edit_semantic_layer_membership_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    auto& state = context.state;
-    auto& app = context.environment.editor.commands;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing semantic layers.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto edit_semantic_layer_membership_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    auto& state = context.state;
+    auto& app = context.environment.editor.commands;
     const auto apply = context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER;
     const auto explicit_id = context.action.compose_semantic_layer_id;
     const auto candidate_none = explicit_id == 0 && app.project.semantic_layer.semantic_layer_target_none;
@@ -1955,7 +2054,7 @@ edit_semantic_layer_membership(compose_action_context_t& context) {
             return compose_action_outcome_t::from("No layer only assigns",
                                                   notification_severity_t::info,
                                                   notification_source_t::input);
-        return assign_compose_layer_target(context, true, {});
+        return run_compose_action(assign_compose_layer_target_action_t{.none = true, .target = {}}, context);
     }
     const auto* chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
@@ -1966,7 +2065,7 @@ edit_semantic_layer_membership(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked(
             "Choose a semantic layer and select notes or BGM events first.",
             notification_source_t::edit);
-    if (apply) return assign_compose_layer_target(context, false, candidate);
+    if (apply) return run_compose_action(assign_compose_layer_target_action_t{.none = false, .target = candidate}, context);
     return semantic_layer_edit_status(context,
         replace_notes_semantic_layer_action_t{
             state.chart, candidate, state.selected_notes, true,
@@ -1975,7 +2074,17 @@ edit_semantic_layer_membership(compose_action_context_t& context) {
         "Semantic-layer membership changed, but workspace rebinding failed.");
 }
 
-auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_action_outcome_t {
+struct toggle_layer_assist_tick_action_t {
+    const chart_document_t* chart{};
+    layer_id_t id{};
+    auto operator==(const toggle_layer_assist_tick_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<toggle_layer_assist_tick_action_t, compose_action_context_t>);
+
+auto toggle_layer_assist_tick_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
         return compose_action_outcome_t::blocked(
@@ -1987,15 +2096,21 @@ auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_acti
         return std::move(*blocked);
     }
     auto& app = context.environment.editor.commands;
-    const auto* chart =
+    chart =
         selected_chart(context.environment.document.history, context.environment.document.workspace);
-    const auto id = layer_id_t{context.action.compose_semantic_layer_id};
+    id = layer_id_t{context.action.compose_semantic_layer_id};
     if (!chart || !catalog_semantic_layer_by_id(*chart, id))
         return compose_action_outcome_t::blocked(
             "The selected semantic layer is no longer available.", notification_source_t::edit);
     if (!app.metronome_settings().available || !app.services.transport_set_layer_assist)
         return compose_action_outcome_t::blocked(
             "Layer assist ticks need an available audio preview.", notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto toggle_layer_assist_tick_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    auto& app = context.environment.editor.commands;
     auto layers = app.project.semantic_layer.layer_assist_chart == chart->id ? app.project.semantic_layer.layer_assist_layers : std::vector<layer_id_t>{};
     const auto existing = std::ranges::find(layers, id);
     const bool enabled = existing == layers.end();
@@ -2011,19 +2126,12 @@ auto toggle_layer_assist_tick(compose_action_context_t& context) -> compose_acti
         notification_severity_t::info, notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) {
-    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK)
-        return toggle_layer_assist_tick(context);
-    switch (context.action.compose_action) {
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY:
-        return toggle_semantic_layer_visibility_or_lock(context, false);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK:
-        return toggle_semantic_layer_visibility_or_lock(context, true);
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
-    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER:
-        return toggle_semantic_layer_filter(context);
-    case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
+struct clear_semantic_layer_target_action_t {
+    auto operator==(const clear_semantic_layer_target_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target.reset();
         context.environment.editor.commands.project.semantic_layer.semantic_layer_target_none = false;
         context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active = false;
@@ -2031,15 +2139,33 @@ dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) 
         return compose_action_outcome_t::from("Semantic-layer target cleared.",
                                               notification_severity_t::info,
                                               notification_source_t::input);
+    }
+};
+static_assert(compose_action<clear_semantic_layer_target_action_t, compose_action_context_t>);
+
+std::optional<compose_action_outcome_t>
+dispatch_compose_semantic_layer_state_action(compose_action_context_t& context) {
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_LAYER_ASSIST_TICK)
+        return run_compose_action(toggle_layer_assist_tick_action_t{}, context);
+    switch (context.action.compose_action) {
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_VISIBILITY:
+        return run_compose_action(toggle_semantic_layer_visibility_or_lock_action_t{.toggle_lock = false}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_LOCK:
+        return run_compose_action(toggle_semantic_layer_visibility_or_lock_action_t{.toggle_lock = true}, context);
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_REQUIRE_FILTER:
+    case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_EXCLUDE_FILTER:
+        return run_compose_action(toggle_semantic_layer_filter_action_t{}, context);
+    case WORM_UI_COMPOSE_ACTION_CLEAR_SEMANTIC_LAYER:
+        return run_compose_action(clear_semantic_layer_target_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_PAINT_MODE:
-        return toggle_semantic_layer_paint_mode(context);
+        return run_compose_action(toggle_semantic_layer_paint_mode_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER_SOLO:
-        return toggle_semantic_layer_solo(context);
+        return run_compose_action(toggle_semantic_layer_solo_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_SELECT_SEMANTIC_LAYER_NOTES:
-        return select_semantic_layer_notes(context);
+        return run_compose_action(select_semantic_layer_notes_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_APPLY_SEMANTIC_LAYER:
     case WORM_UI_COMPOSE_ACTION_TOGGLE_SEMANTIC_LAYER:
-        return edit_semantic_layer_membership(context);
+        return run_compose_action(edit_semantic_layer_membership_action_t{}, context);
     default:
         return std::nullopt;
     }

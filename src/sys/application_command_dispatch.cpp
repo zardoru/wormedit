@@ -8,14 +8,14 @@
 #include "sys/compose_semantic_layer_commands.h"
 
 #include "sys/bookmark_commands.h"
-#include <wormedit/core/chart_clipboard.h>
 #include "sys/compose_input.h"
-#include "sys/compose_sound_selection.h"
 #include "sys/compose_scroll_geometry.h"
+#include "sys/compose_sound_selection.h"
 #include "sys/compose_view.h"
 #include "sys/external_player.h"
 #include "sys/transport_player_actions.h"
 #include "ui/frontend.h"
+#include <wormedit/core/chart_clipboard.h>
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
@@ -44,7 +44,8 @@ namespace {
 void remember_snap_denominator(application_command_state_t& state, wormedit::chart_id_t chart,
                                std::uint64_t denominator) {
     if (chart.value != 0 && denominator != 0) {
-        state.project.compose_view.requested_snap_denominators.insert_or_assign(chart.value, denominator);
+        state.project.compose_view.requested_snap_denominators.insert_or_assign(chart.value,
+                                                                                denominator);
     }
 }
 
@@ -60,76 +61,13 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
     editor->preset_index.reset();
 }
 
-auto clear_selection_or_cancel_preview(wormedit::document_history_t& history,
-                                       wormedit::editor_interaction_state_t* state,
-                                       application_command_state_t& application_state,
-                                       notification_sink_t& sink)
-    -> wormedit::command_invocation_outcome_t {
-    if (application_state.project.clipboard.paste_session) {
-        application_state.project.clipboard.paste_session.reset();
-        sink.post(notification_severity_t::hint, notification_source_t::edit,
-                  "Paste preview cancelled.");
-        return {.value = true};
-    }
-    if (application_state.services.transport_inline_active &&
-        application_state.services.transport_inline_active() &&
-        application_state.services.transport_cancel_restore) {
-        static_cast<void>(application_state.services.transport_cancel_restore());
-        return {.value = true};
-    }
-    if (!state) {
-        return reject_application_command(sink,
-            "Clear Selection requires the active Compose chart.", notification_severity_t::warning,
-            notification_source_t::edit);
-    }
-    (void)wormedit::dispatch_editor_action(history, *state,
-                                           wormedit::cancel_editor_gesture_action_t{});
-    application_state.project.compose_gesture.note_paint_mode_active = false;
-    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-    application_state.project.semantic_layer.semantic_layer_solo_active = false;
-    return accept_editor_command(
-        wormedit::dispatch_editor_action(history, *state,
-                                         wormedit::select_editor_notes_action_t{}),
-        sink, "Selection, pending Compose gesture, and note-paint mode cleared.",
-        notification_severity_t::success, notification_source_t::edit);
-}
-
-auto post_command_message(notification_sink_t& sink, notification_severity_t severity,
-                          notification_source_t source, std::string_view message)
-    -> void {
-    sink.post_feedback(severity, source, message);
-}
-
 } // namespace
 
-auto reject_application_command(
-    notification_sink_t& sink, std::string message, notification_severity_t severity,
-    notification_source_t source,
-    wormedit::diagnostic_code_t code)
-    -> wormedit::command_invocation_outcome_t {
-    post_command_message(sink, severity, source, message);
-    return {
-        .diagnostics = {{.severity = wormedit::diagnostic_severity_t::error,
-                         .code = code,
-                         .message = std::move(message)}},
-    };
-}
-
-auto accept_editor_command(const wormedit::editor_interaction_result_t& result,
-                           notification_sink_t& sink, std::string_view accepted,
-                           notification_severity_t accepted_severity,
-                           notification_source_t source) -> wormedit::command_invocation_outcome_t {
-    if (result.accepted) {
-        post_command_message(sink, accepted_severity, source, std::string{accepted});
-    } else if (!result.diagnostics.empty()) {
-        const auto& diagnostic = result.diagnostics.front();
-        post_command_message(sink, to_notification_severity(diagnostic.severity), source,
-                             diagnostic.message);
-    } else {
-        post_command_message(sink, notification_severity_t::warning, source,
-                             "Compose action was rejected.");
-    }
-    return {.value = result.accepted, .diagnostics = result.diagnostics};
+auto reject_application_command(notification_sink_t& sink, std::string message,
+                                notification_severity_t severity, notification_source_t source,
+                                diagnostic_code_t code) -> command_invocation_outcome_t {
+    return finish_application_command(
+        sink, compose_action_outcome_t::from(std::move(message), severity, source, code));
 }
 
 struct application_command_context_t {
@@ -145,128 +83,150 @@ struct application_command_context_t {
                    ? &*environment.editor.retained
                    : nullptr;
     }
-    auto rebind() -> wormedit::command_invocation_outcome_t {
-        auto outcome = compose_action_outcome_t::from({}, notification_severity_t::success,
-                                                      notification_source_t::document, true);
-        outcome.delivery = compose_feedback_delivery_t::none;
-        outcome.rebind_failure =
-            "Command applied, but environment.document.workspace rebinding failed.";
-        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
-        outcome.is_rebind_severity_diagnostic = false;
-        auto finished = finish_compose_action(
-            environment.document, environment.document.notifications, std::move(outcome));
-        if (!finished.accepted)
-            return {.diagnostics = {{.severity = diagnostic_severity_t::error,
-                                     .code = diagnostic_code_t::invalid_id,
-                                     .message = std::move(finished.message)}}};
-        return {.value = true};
-    }
 };
 
-using command_result_t = wormedit::command_invocation_outcome_t;
+using command_result_t = compose_action_outcome_t;
 using command_context_t = application_command_context_t;
 using command_kind_t = wormedit::sys::application_command_kind_t;
 
-auto history_command(command_context_t& context) -> std::optional<command_result_t> {
+auto clear_selection_or_cancel_preview(command_context_t& context) -> compose_action_outcome_t {
+    auto& history = context.environment.document.history;
+    auto* state = context.compose();
+    auto& application_state = context.environment.editor.commands;
+
+    if (application_state.project.clipboard.paste_session) {
+        application_state.project.clipboard.paste_session.reset();
+        auto outcome = compose_action_outcome_t::from(
+            "Paste preview cancelled.", notification_severity_t::hint, notification_source_t::edit,
+            compose_message_lifetime_t::borrowed);
+        outcome.delivery = compose_feedback_delivery_t::notification;
+        return outcome;
+    }
+    if (application_state.services.transport_inline_active &&
+        application_state.services.transport_inline_active() &&
+        application_state.services.transport_cancel_restore) {
+        static_cast<void>(application_state.services.transport_cancel_restore());
+        return {.delivery = compose_feedback_delivery_t::none};
+    }
+    if (!state) {
+        return compose_action_outcome_t::from(
+            "Clear Selection requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
+    }
+    (void)wormedit::dispatch_editor_action(history, *state,
+                                           wormedit::cancel_editor_gesture_action_t{});
+    application_state.project.compose_gesture.note_paint_mode_active = false;
+    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+    application_state.project.semantic_layer.semantic_layer_solo_active = false;
+    return compose_action_outcome_t::from(
+        wormedit::dispatch_editor_action(history, *state, wormedit::select_editor_notes_action_t{}),
+        "Selection, pending Compose gesture, and note-paint mode cleared.",
+        notification_severity_t::success, notification_source_t::edit);
+}
+
+auto history_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
-    if (kind == command_kind_t::history_undo || kind == command_kind_t::history_redo) {
-        if (context.environment.editor.retained) {
-            (void)dispatch_editor_action(context.environment.document.history,
-                                         *context.environment.editor.retained,
-                                         cancel_editor_gesture_action_t{});
-            (void)dispatch_editor_action(context.environment.document.history,
-                                         *context.environment.editor.retained,
-                                         select_editor_notes_action_t{});
-        }
-        const bool undo = kind == command_kind_t::history_undo;
-        const auto changed = undo ? undo_document_command(context.environment.document.history)
-                                  : redo_document_command(context.environment.document.history);
-        post_command_message(context.environment.document.notifications,
-                             changed ? notification_severity_t::success
-                                     : notification_severity_t::info,
-                             notification_source_t::edit,
-                             changed ? (undo ? "Undo applied." : "Redo applied.")
-                                     : (undo ? "Nothing to undo." : "Nothing to redo."));
-        if (!changed) return command_result_t{.value = true};
-        context.environment.editor.timing_stage.reset();
-        return context.rebind();
+    if (context.environment.editor.retained) {
+        (void)dispatch_editor_action(context.environment.document.history,
+                                     *context.environment.editor.retained,
+                                     cancel_editor_gesture_action_t{});
+        (void)dispatch_editor_action(context.environment.document.history,
+                                     *context.environment.editor.retained,
+                                     select_editor_notes_action_t{});
     }
-    return std::nullopt;
+    const bool undo = kind == command_kind_t::history_undo;
+    const auto changed = undo ? undo_document_command(context.environment.document.history)
+                              : redo_document_command(context.environment.document.history);
+    auto outcome = compose_action_outcome_t::from(
+        changed ? (undo ? "Undo applied." : "Redo applied.")
+                : (undo ? "Nothing to undo." : "Nothing to redo."),
+        changed ? notification_severity_t::success : notification_severity_t::info,
+        notification_source_t::edit, compose_message_lifetime_t::borrowed);
+    outcome.mutated = changed;
+    if (!changed)
+        return outcome;
+    context.environment.editor.timing_stage.reset();
+    return outcome;
 }
 
-auto external_player_command(command_context_t& context) -> std::optional<command_result_t> {
+auto external_player_command(command_context_t& context) -> command_result_t {
     external_player_action_t action;
     switch (context.command.kind) {
-    case command_kind_t::transport_external_play_start: action = external_player_action_t::play_start; break;
-    case command_kind_t::transport_external_play_here: action = external_player_action_t::play_here; break;
-    case command_kind_t::transport_external_stop: action = external_player_action_t::stop; break;
-    default: return std::nullopt;
+    case command_kind_t::transport_external_play_start:
+        action = external_player_action_t::play_start;
+        break;
+    case command_kind_t::transport_external_play_here:
+        action = external_player_action_t::play_here;
+        break;
+    case command_kind_t::transport_external_stop:
+        action = external_player_action_t::stop;
+        break;
+    default:
+        std::unreachable();
     }
     if (!context.environment.editor.commands.services.external_player)
-        return reject_application_command(
-            context.environment.document.notifications, "External player is unavailable.",
-            notification_severity_t::warning, notification_source_t::audio);
+        return compose_action_outcome_t::from(
+            "External player is unavailable.", notification_severity_t::warning,
+            notification_source_t::audio, diagnostic_code_t::unsupported_feature);
     static_cast<void>(context.environment.editor.commands.services.external_player(action));
-    return command_result_t{.value = true};
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
-auto metronome_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::transport_toggle_metronome) return std::nullopt;
+auto metronome_command(command_context_t& context) -> command_result_t {
     if (!toggle_transport_metronome(context.environment.editor.commands))
-        return reject_application_command(
-            context.environment.document.notifications, "Metronome is unavailable.",
-            notification_severity_t::warning, notification_source_t::audio);
-    post_command_message(
-        context.environment.document.notifications, notification_severity_t::success,
-        notification_source_t::audio,
-        context.environment.editor.commands.metronome_settings().enabled
-            ? "Metronome enabled."
-            : "Metronome disabled.");
-    return command_result_t{.value = true};
+        return compose_action_outcome_t::from(
+            "Metronome is unavailable.", notification_severity_t::warning,
+            notification_source_t::audio, diagnostic_code_t::unsupported_feature);
+    return compose_action_outcome_t::from(
+        context.environment.editor.commands.metronome_settings().enabled ? "Metronome enabled."
+                                                                         : "Metronome disabled.",
+        notification_severity_t::success, notification_source_t::audio,
+        compose_message_lifetime_t::borrowed);
 }
 
 auto cursor_measure_operation(command_kind_t kind) -> std::optional<cursor_measure_command_t> {
     switch (kind) {
-    case command_kind_t::measures_insert_before: return cursor_measure_command_t::insert_before;
-    case command_kind_t::measures_insert_after: return cursor_measure_command_t::insert_after;
-    case command_kind_t::measures_remove_empty: return cursor_measure_command_t::remove_empty;
-    default: return std::nullopt;
+    case command_kind_t::measures_insert_before:
+        return cursor_measure_command_t::insert_before;
+    case command_kind_t::measures_insert_after:
+        return cursor_measure_command_t::insert_after;
+    case command_kind_t::measures_remove_empty:
+        return cursor_measure_command_t::remove_empty;
+    default:
+        return std::nullopt;
     }
 }
 
-auto measure_command(command_context_t& context) -> std::optional<command_result_t> {
+auto measure_command(command_context_t& context) -> command_result_t {
     const auto operation = cursor_measure_operation(context.command.kind);
-    if (!operation && context.command.kind != command_kind_t::measures_split_at_cursor) return std::nullopt;
     auto* state = context.compose();
     if (!state)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Measure editing requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Measure editing requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (const auto error = compose_measure_edit_rejection(
-            *state, context.environment.editor.commands.project.clipboard.paste_session.has_value()))
-        return reject_application_command(context.environment.document.notifications, *error,
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+            *state,
+            context.environment.editor.commands.project.clipboard.paste_session.has_value()))
+        return compose_action_outcome_t::from(*error, notification_severity_t::warning,
+                                              notification_source_t::edit,
+                                              diagnostic_code_t::unsupported_feature);
     auto severity = notification_severity_t::warning;
-    const auto message =
-        operation ? apply_cursor_measure_command(context.environment.document.history, *state,
-                                                 *operation, &severity)
-                  : apply_cursor_measure_split(context.environment.document.history, *state, &severity);
-    post_command_message(context.environment.document.notifications, severity,
-                         notification_source_t::edit, message);
-    if (severity == notification_severity_t::warning) return command_result_t{};
-    return context.rebind();
+    auto message = operation ? apply_cursor_measure_command(context.environment.document.history,
+                                                            *state, *operation, &severity)
+                             : apply_cursor_measure_split(context.environment.document.history,
+                                                          *state, &severity);
+    auto outcome =
+        compose_action_outcome_t::from(std::move(message), severity, notification_source_t::edit);
+    outcome.accepted = severity != notification_severity_t::warning;
+    return outcome;
 }
 
-auto loop_selection_command(command_context_t& context) -> std::optional<command_result_t> {
+auto loop_selection_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const bool toggle = context.command.kind == command_kind_t::transport_toggle_loop_selection;
-    if (!toggle && context.command.kind != command_kind_t::transport_loop_selection) return std::nullopt;
     const bool disable =
-        toggle &&
-        context.environment.editor.commands.services.transport_loop_selection_active &&
+        toggle && context.environment.editor.commands.services.transport_loop_selection_active &&
         context.environment.editor.commands.services.transport_loop_selection_active();
     const auto* state = context.compose();
     const auto* chart = context.environment.document.history.document.find_chart(
@@ -275,164 +235,155 @@ auto loop_selection_command(command_context_t& context) -> std::optional<command
         editor_interaction_has_pending_gesture(*state) ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
-        return reject_application_command(
-            context.environment.document.notifications, "Select a committed area to loop playback.",
-            notification_severity_t::warning, notification_source_t::audio);
+        return compose_action_outcome_t::from(
+            "Select a committed area to loop playback.", notification_severity_t::warning,
+            notification_source_t::audio, diagnostic_code_t::unsupported_feature);
     if (disable) {
         if (!context.environment.editor.commands.services.transport_set_loop_selection(
                 state->chart, context.environment.document.history.document.revision, 0, 0, false))
-            return reject_application_command(context.environment.document.notifications,
-                                              "Loop selection is unavailable or expired.",
-                                              notification_severity_t::warning,
-                                              notification_source_t::audio);
-        post_command_message(context.environment.document.notifications,
-                             notification_severity_t::success, notification_source_t::audio,
-                             "Loop selection disabled.");
-        return command_result_t{.value = true};
+            return compose_action_outcome_t::from(
+                "Loop selection is unavailable or expired.", notification_severity_t::warning,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
+        return compose_action_outcome_t::from(
+            "Loop selection disabled.", notification_severity_t::success,
+            notification_source_t::audio, compose_message_lifetime_t::borrowed);
     }
     const auto indexed = build_measure_index(*chart);
     const auto* measures = std::get_if<measure_index_t>(&indexed);
-    const auto begin = measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
-    const auto end = measures ? absolute_row(*measures, state->retained_selection_range->end) : std::nullopt;
+    const auto begin =
+        measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
+    const auto end =
+        measures ? absolute_row(*measures, state->retained_selection_range->end) : std::nullopt;
     if (!begin || !end || *begin >= *end ||
         !context.environment.editor.commands.services.transport_set_loop_selection(
-            state->chart, context.environment.document.history.document.revision, *begin, *end, true))
-        return reject_application_command(
-            context.environment.document.notifications, "Loop selection is unavailable or expired.",
-            notification_severity_t::warning, notification_source_t::audio);
-    post_command_message(context.environment.document.notifications,
-                         notification_severity_t::success, notification_source_t::audio,
-                         "Loop selection enabled.");
-    return command_result_t{.value = true};
+            state->chart, context.environment.document.history.document.revision, *begin, *end,
+            true))
+        return compose_action_outcome_t::from(
+            "Loop selection is unavailable or expired.", notification_severity_t::warning,
+            notification_source_t::audio, diagnostic_code_t::unsupported_feature);
+    return compose_action_outcome_t::from(
+        "Loop selection enabled.", notification_severity_t::success, notification_source_t::audio,
+        compose_message_lifetime_t::borrowed);
 }
 
-auto transport_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (const auto result = metronome_command(context)) return result;
+auto transport_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
     auto& app = context.environment.editor.commands;
-    if (kind == command_kind_t::transport_rate_slower || kind == command_kind_t::transport_rate_faster) {
+    if (kind == command_kind_t::transport_rate_slower ||
+        kind == command_kind_t::transport_rate_faster) {
         const auto prior_rate = app.preferences.transport_rate_index;
-        const auto stepped =
+        auto stepped =
             step_transport_rate_status(app, kind == command_kind_t::transport_rate_faster);
         if (!stepped)
-            return reject_application_command(context.environment.document.notifications,
-                                              "Playback output rejected the rate change.",
-                                              notification_severity_t::warning,
+            return compose_action_outcome_t::from(
+                "Playback output rejected the rate change.", notification_severity_t::warning,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
+        return compose_action_outcome_t::from(std::move(*stepped),
+                                              prior_rate == app.preferences.transport_rate_index
+                                                  ? notification_severity_t::info
+                                                  : notification_severity_t::success,
                                               notification_source_t::audio);
-        post_command_message(context.environment.document.notifications,
-                             prior_rate == app.preferences.transport_rate_index
-                                 ? notification_severity_t::info
-                                 : notification_severity_t::success,
-                             notification_source_t::audio, *stepped);
-        return command_result_t{.value = true};
     }
     if (kind == command_kind_t::transport_play_stop) {
-        const bool hard_stop = app.services.transport_preview_playing && app.services.transport_preview_playing();
+        const bool hard_stop =
+            app.services.transport_preview_playing && app.services.transport_preview_playing();
         const auto result = play_stop_transport(app);
         if (!result)
-            return reject_application_command(
-                context.environment.document.notifications, "Chart preview is unavailable.",
-                notification_severity_t::warning, notification_source_t::audio);
+            return compose_action_outcome_t::from(
+                "Chart preview is unavailable.", notification_severity_t::warning,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
         if (hard_stop)
-            post_command_message(context.environment.document.notifications,
-                                 notification_severity_t::hint, notification_source_t::audio,
-                                 "Audio preview stopped.");
-        return command_result_t{.value = true};
+            return compose_action_outcome_t::from(
+                "Audio preview stopped.", notification_severity_t::hint,
+                notification_source_t::audio, compose_message_lifetime_t::borrowed);
+        return command_result_t{.delivery = compose_feedback_delivery_t::none};
     }
     if (kind == command_kind_t::transport_play_pause) {
         if (!app.services.transport_play_pause)
-            return reject_application_command(
-                context.environment.document.notifications, "Chart preview is unavailable.",
-                notification_severity_t::warning, notification_source_t::audio);
+            return compose_action_outcome_t::from(
+                "Chart preview is unavailable.", notification_severity_t::warning,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
         static_cast<void>(app.services.transport_play_pause());
-        return command_result_t{.value = true};
+        return command_result_t{.delivery = compose_feedback_delivery_t::none};
     }
     if (kind == command_kind_t::transport_play_from_start) {
         if (!app.services.transport_play_from_start)
-            return reject_application_command(
-                context.environment.document.notifications, "Chart preview is unavailable.",
-                notification_severity_t::warning, notification_source_t::audio);
+            return compose_action_outcome_t::from(
+                "Chart preview is unavailable.", notification_severity_t::warning,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
         static_cast<void>(app.services.transport_play_from_start());
-        return command_result_t{.value = true};
+        return command_result_t{.delivery = compose_feedback_delivery_t::none};
     }
     if (kind == command_kind_t::transport_stop) {
-        if (!app.services.transport_stop || !app.services.transport_active || !app.services.transport_active())
-            return reject_application_command(
-                context.environment.document.notifications, "No audio preview is playing.",
-                notification_severity_t::hint, notification_source_t::audio);
+        if (!app.services.transport_stop || !app.services.transport_active ||
+            !app.services.transport_active())
+            return compose_action_outcome_t::from(
+                "No audio preview is playing.", notification_severity_t::hint,
+                notification_source_t::audio, diagnostic_code_t::unsupported_feature);
         app.services.transport_stop();
-        post_command_message(context.environment.document.notifications,
-                             notification_severity_t::hint, notification_source_t::audio,
-                             "Audio preview stopped.");
-        return command_result_t{.value = true};
+        return compose_action_outcome_t::from(
+            "Audio preview stopped.", notification_severity_t::hint, notification_source_t::audio,
+            compose_message_lifetime_t::borrowed);
     }
-    return std::nullopt;
+    std::unreachable();
 }
 
-auto note_to_bgm_command(command_context_t& context) -> std::optional<command_result_t> {
+auto note_to_bgm_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
-    if (kind != command_kind_t::edit_move_to_bgm && kind != command_kind_t::edit_move_next_to_bgm)
-        return std::nullopt;
     auto* state = context.compose();
     const auto* found = context.environment.document.history.document.find_chart(
         state ? state->chart : chart_id_t{});
     const auto* chart = found == nullptr ? nullptr : &*found;
     if (!state || !chart ||
-        !compose_move_to_bgm_available(*chart, *state,
-                                       context.environment.editor.commands))
-        return reject_application_command(
-            context.environment.document.notifications,
+        !compose_move_to_bgm_available(*chart, *state, context.environment.editor.commands))
+        return compose_action_outcome_t::from(
             "Move to BGM requires selected notes on an editable BMS chart.",
-            notification_severity_t::hint, notification_source_t::edit);
-    const auto moved = move_editor_selection_to_bgm(
-        context.environment.document.history, *state,
-        std::nullopt, kind == command_kind_t::edit_move_next_to_bgm);
+            notification_severity_t::hint, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
+    const auto moved =
+        move_editor_selection_to_bgm(context.environment.document.history, *state, std::nullopt,
+                                     kind == command_kind_t::edit_move_next_to_bgm);
     if (!moved.payload.handled)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Select playable notes before moving them to BGM.",
-                                          notification_severity_t::hint,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Select playable notes before moving them to BGM.", notification_severity_t::hint,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (!moved.command.applied) {
-        const auto message = moved.command.diagnostics.empty() ? "The notes could not be moved to BGM."
-                                                               : moved.command.diagnostics.front().message;
-        return reject_application_command(context.environment.document.notifications, message,
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        const auto message = moved.command.diagnostics.empty()
+                                 ? "The notes could not be moved to BGM."
+                                 : moved.command.diagnostics.front().message;
+        return compose_action_outcome_t::from(message, notification_severity_t::warning,
+                                              notification_source_t::edit,
+                                              diagnostic_code_t::unsupported_feature);
     }
-    const auto rebound = context.rebind();
-    if (!rebound.value) return rebound;
-    post_command_message(context.environment.document.notifications, notification_severity_t::hint,
-                         notification_source_t::edit, "Selected notes moved to BGM.");
-    return command_result_t{.value = true};
+    auto outcome = compose_action_outcome_t::from(
+        "Selected notes moved to BGM.", notification_severity_t::hint, notification_source_t::edit,
+        compose_message_lifetime_t::borrowed);
+    outcome.mutated = true;
+    return outcome;
 }
 
-auto clipboard_commands(command_context_t& context) -> std::optional<command_result_t> {
+auto clipboard_commands(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
     if (kind == command_kind_t::edit_paste) {
         const auto* state = context.compose();
         if (!state)
-            return reject_application_command(context.environment.document.notifications,
-                                              "Paste requires the active Compose chart.",
-                                              notification_severity_t::warning,
-                                              notification_source_t::edit);
+            return compose_action_outcome_t::from(
+                "Paste requires the active Compose chart.", notification_severity_t::warning,
+                notification_source_t::edit, diagnostic_code_t::unsupported_feature);
         std::string message;
         const bool accepted =
             begin_compose_paste(context.environment.editor.commands,
                                 context.environment.document.history.document, *state, message);
-        post_command_message(context.environment.document.notifications,
-                             accepted ? notification_severity_t::hint
-                                      : notification_severity_t::warning,
-                             notification_source_t::edit, std::move(message));
-        return command_result_t{.value = accepted};
+        return compose_action_outcome_t::from(std::move(message),
+                                              accepted ? notification_severity_t::hint
+                                                       : notification_severity_t::warning,
+                                              notification_source_t::edit, false, accepted);
     }
-    if (kind != command_kind_t::edit_copy && kind != command_kind_t::edit_cut)
-        return std::nullopt;
     auto* state = context.compose();
     if (!state)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Clipboard requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Clipboard requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     const wormedit::selection_delete_options_t options{
         .kiai_head =
             wormedit::object_id_t{
@@ -442,39 +393,36 @@ auto clipboard_commands(command_context_t& context) -> std::optional<command_res
                 context.environment.editor.commands.project.timing_recipe.recipe_selected},
         .timing_locked = context.environment.editor.commands.project.timing_recipe.timing_locked};
     if (options.recipe)
-        return reject_application_command(context.environment.document.notifications,
-                                          "SV recipes cannot be copied to the chart clipboard.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "SV recipes cannot be copied to the chart clipboard.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     auto copied =
         kind == command_kind_t::edit_cut
             ? wormedit::create_cut_chart_clipboard(context.environment.document.history, *state,
-                                            options)
-            : wormedit::chart_clipboard_t::from(context.environment.document.history.document, *state,
-                                             context.environment.document.history.document.revision,
-                                             options.kiai_head);
+                                                   options)
+            : wormedit::chart_clipboard_t::from(
+                  context.environment.document.history.document, *state,
+                  context.environment.document.history.document.revision, options.kiai_head);
     if (!copied)
-        return reject_application_command(context.environment.document.notifications,
-                                          std::move(copied.error()), notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            std::move(copied.error()), notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::edit_cut)
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
     context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(*copied);
-    post_command_message(context.environment.document.notifications,
-                         notification_severity_t::success, notification_source_t::edit,
-                         kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.");
-    if (kind == command_kind_t::edit_cut) return context.rebind();
-    return command_result_t{.value = true};
+    auto outcome = compose_action_outcome_t::from(
+        kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.",
+        notification_severity_t::success, notification_source_t::edit,
+        compose_message_lifetime_t::borrowed);
+    return outcome;
 }
 
-auto edit_commands(command_context_t& context) -> std::optional<command_result_t> {
-    if (const auto result = clipboard_commands(context)) return result;
-    if (context.command.kind != command_kind_t::edit_delete) return std::nullopt;
+auto edit_commands(command_context_t& context) -> command_result_t {
     auto* state = context.compose();
     if (!state)
-        return reject_application_command(
-            context.environment.document.notifications, "Delete requires the active Compose chart.",
-            notification_severity_t::warning, notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Delete requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     const auto result = wormedit::delete_selection_all(
         context.environment.document.history, *state,
         {.kiai_head =
@@ -488,69 +436,55 @@ auto edit_commands(command_context_t& context) -> std::optional<command_result_t
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
         context.environment.editor.commands.project.timing_recipe.recipe_selected = 0;
     }
-    auto accepted = accept_editor_command(
-        result, context.environment.document.notifications,
-        result.document_changed ? "Selection deleted." : "No object at the cursor.",
+    auto accepted = compose_action_outcome_t::from(
+        result, result.document_changed ? "Selection deleted." : "No object at the cursor.",
         result.document_changed ? notification_severity_t::success : notification_severity_t::info,
         notification_source_t::edit);
-    if (result.document_changed) {
-        const auto rebound = context.rebind();
-        if (!rebound.value) return rebound;
-    }
+    accepted.mutated = result.document_changed;
     return accepted;
 }
 
 auto same_sound_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     auto* state = context.compose();
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!state || !chart)
-        return reject_application_command(
-            context.environment.document.notifications, "Hover a note or select a sound first",
-            notification_severity_t::hint, notification_source_t::edit);
-    auto request =
-        compose_same_sound_request(context.environment.document.history.document, *chart, *state,
-                                   context.environment.editor.commands, false,
-                                   editor_area_selection_mode_t::add);
+        return compose_action_outcome_t::from(
+            "Hover a note or select a sound first", notification_severity_t::hint,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
+    auto request = compose_same_sound_request(context.environment.document.history.document, *chart,
+                                              *state, context.environment.editor.commands, false,
+                                              editor_area_selection_mode_t::add);
     if (const auto* error = std::get_if<std::string>(&request))
-        return reject_application_command(context.environment.document.notifications, *error,
-                                          notification_severity_t::hint,
-                                          notification_source_t::edit);
-    return accept_editor_command(
+        return compose_action_outcome_t::from(*error, notification_severity_t::hint,
+                                              notification_source_t::edit,
+                                              diagnostic_code_t::unsupported_feature);
+    return compose_action_outcome_t::from(
         dispatch_editor_action(context.environment.document.history, *state,
                                std::get<select_editor_objects_action_t>(std::move(request))),
-        context.environment.document.notifications, "Matching sounds added to selection.",
-        notification_severity_t::success, notification_source_t::edit);
+        "Matching sounds added to selection.", notification_severity_t::success,
+        notification_source_t::edit);
 }
 
-auto selection_commands(command_context_t& context) -> std::optional<command_result_t> {
+auto selection_commands(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
     auto* state = context.compose();
-    if (kind == command_kind_t::selection_select_same_sound_chart) return same_sound_command(context);
-    if (kind == command_kind_t::selection_clear)
-        return clear_selection_or_cancel_preview(context.environment.document.history, state,
-                                                 context.environment.editor.commands,
-                                                 context.environment.document.notifications);
-    if (kind != command_kind_t::selection_select_all && kind != command_kind_t::selection_invert &&
-        kind != command_kind_t::selection_select_all_objects)
-        return std::nullopt;
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!state || !chart)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Selection command requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Selection command requires the active Compose chart.",
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     const auto all_objects = kind == command_kind_t::selection_select_all_objects;
     const auto invert = kind == command_kind_t::selection_invert;
-    return accept_editor_command(
+    return compose_action_outcome_t::from(
         select_editor_scope(context.environment.document.history, *state,
                             all_objects ? editor_selection_scope_t{true, true, true, true}
                                         : editor_selection_scope_t{},
                             invert),
-        context.environment.document.notifications,
         all_objects ? "All selectable chart objects selected."
         : invert    ? "Playable-note selection inverted."
                     : "All playable notes selected.",
@@ -559,12 +493,15 @@ auto selection_commands(command_context_t& context) -> std::optional<command_res
 
 // Audio-time markers need the chart's timing index. A failed build is reported
 // once and navigation falls back to beat-anchored markers only.
-auto marker_timing_index(const wormedit::chart_document_t& chart,
-                         notification_sink_t& sink) -> std::optional<wormedit::timing_index_t> {
-    if (!wormedit::sys::has_audio_marker_navigation(chart)) return std::nullopt;
+auto marker_timing_index(const wormedit::chart_document_t& chart, notification_sink_t& sink)
+    -> std::optional<wormedit::timing_index_t> {
+    if (!wormedit::sys::has_audio_marker_navigation(chart))
+        return std::nullopt;
     auto built = wormedit::timing_index_t::from(chart);
-    if (built.value) return std::move(built.value);
-    post_command_message(sink, notification_severity_t::warning, notification_source_t::input,
+    if (built.value)
+        return std::move(built.value);
+    sink.post_feedback(
+        notification_severity_t::warning, notification_source_t::input,
         "Audio-time bookmarks are skipped because the chart timing could not be built.");
     return std::nullopt;
 }
@@ -574,72 +511,72 @@ auto navigate_active_markers(command_context_t& context,
                              wormedit::marker_navigation_direction_t direction)
     -> wormedit::marker_navigation_outcome_t {
     using namespace wormedit;
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
-    const auto timing = chart
-                            ? marker_timing_index(*chart, context.environment.document.notifications)
-                            : std::nullopt;
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
+    const auto timing =
+        chart ? marker_timing_index(*chart, context.environment.document.notifications)
+              : std::nullopt;
     return marker_navigation_match_t::from(context.environment.document.history.document,
-                            context.environment.document.history.document.revision, state.chart,
-                            state.cursor, direction, {}, {}, timing ? &*timing : nullptr);
+                                           context.environment.document.history.document.revision,
+                                           state.chart, state.cursor, direction, {}, {},
+                                           timing ? &*timing : nullptr);
 }
 
 void post_marker_warnings(notification_sink_t& sink,
                           const wormedit::diagnostic_list_t& diagnostics) {
     for (const auto& diagnostic : diagnostics)
-        post_command_message(sink, to_notification_severity(diagnostic.severity),
-                             notification_source_t::input, diagnostic.message);
+        sink.post_feedback(to_notification_severity(diagnostic.severity),
+                           notification_source_t::input, diagnostic.message);
 }
 
-auto navigation_commands(command_context_t& context) -> std::optional<command_result_t> {
+auto navigation_commands(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
     auto* state = context.compose();
     if (kind == command_kind_t::navigation_previous_snap ||
         kind == command_kind_t::navigation_next_snap) {
         if (!state)
-            return reject_application_command(context.environment.document.notifications,
-                                              "Snap navigation requires the active Compose chart.",
-                                              notification_severity_t::warning,
-                                              notification_source_t::input);
+            return compose_action_outcome_t::from(
+                "Snap navigation requires the active Compose chart.",
+                notification_severity_t::warning, notification_source_t::input,
+                diagnostic_code_t::unsupported_feature);
         const auto direction = kind == command_kind_t::navigation_previous_snap
-            ? interaction_direction_t::backward : interaction_direction_t::forward;
+                                   ? interaction_direction_t::backward
+                                   : interaction_direction_t::forward;
         const auto result = dispatch_editor_action(context.environment.document.history, *state,
                                                    cycle_edit_snap_action_t{direction});
         if (result.accepted) {
-            remember_snap_denominator(context.environment.editor.commands,
-                                      state->chart, state->active_snap_denominator);
+            remember_snap_denominator(context.environment.editor.commands, state->chart,
+                                      state->active_snap_denominator);
             follow_snap_with_quantize_grid(context.environment.editor.commands,
                                            context.environment.document.history, *state);
         }
-        return accept_editor_command(result, context.environment.document.notifications,
-                                     direction == interaction_direction_t::backward
-                                         ? "Previous snap selected."
-                                         : "Next snap selected.",
-                                     notification_severity_t::hint, notification_source_t::input);
+        return compose_action_outcome_t::from(
+            result,
+            direction == interaction_direction_t::backward ? "Previous snap selected."
+                                                           : "Next snap selected.",
+            notification_severity_t::hint, notification_source_t::input);
     }
-    if (kind != command_kind_t::navigation_previous_marker &&
-        kind != command_kind_t::navigation_next_marker) return std::nullopt;
     if (!state)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Bookmark navigation requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Bookmark navigation requires the active Compose chart.",
+            notification_severity_t::warning, notification_source_t::input,
+            diagnostic_code_t::unsupported_feature);
     const auto direction = kind == command_kind_t::navigation_previous_marker
-        ? marker_navigation_direction_t::previous : marker_navigation_direction_t::next;
+                               ? marker_navigation_direction_t::previous
+                               : marker_navigation_direction_t::next;
     const auto marker = navigate_active_markers(context, *state, direction);
     if (marker.value.status == marker_navigation_status_t::no_result) {
-        post_command_message(context.environment.document.notifications,
-                             notification_severity_t::info, notification_source_t::input,
-                             direction == marker_navigation_direction_t::previous
-                                 ? "No previous beat-anchored bookmark or section boundary."
-                                 : "No next beat-anchored bookmark or section boundary.");
-        return command_result_t{.value = true};
+        return compose_action_outcome_t::from(
+            direction == marker_navigation_direction_t::previous
+                ? "No previous beat-anchored bookmark or section boundary."
+                : "No next beat-anchored bookmark or section boundary.",
+            notification_severity_t::info, notification_source_t::input,
+            compose_message_lifetime_t::borrowed);
     }
     if (marker.value.status != marker_navigation_status_t::found || !marker.value.item ||
         !marker.value.item->beat_position)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."
                                        : marker.diagnostics.front().message,
             marker.diagnostics.empty()
@@ -647,158 +584,143 @@ auto navigation_commands(command_context_t& context) -> std::optional<command_re
                 : to_notification_severity(marker.diagnostics.front().severity),
             notification_source_t::input, diagnostic_code_t::invalid_id);
     post_marker_warnings(context.environment.document.notifications, marker.diagnostics);
-    return accept_editor_command(
-        dispatch_editor_action(
-            context.environment.document.history, *state,
-            jump_edit_cursor_action_t{*marker.value.item->beat_position, marker.value.document_revision}),
-        context.environment.document.notifications,
+    return compose_action_outcome_t::from(
+        dispatch_editor_action(context.environment.document.history, *state,
+                               jump_edit_cursor_action_t{*marker.value.item->beat_position,
+                                                         marker.value.document_revision}),
         direction == marker_navigation_direction_t::previous
             ? "Moved to the previous bookmark or section boundary."
             : "Moved to the next bookmark or section boundary.",
         notification_severity_t::hint, notification_source_t::input);
 }
 
-auto open_bookmark_chooser_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::navigation_go_to_bookmark) return std::nullopt;
+auto open_bookmark_chooser_command(command_context_t& context) -> command_result_t {
     auto* interaction = context.compose();
     if (!interaction || !context.environment.editor.commands.bookmarks.has_chooser_backend())
-        return reject_application_command(context.environment.document.notifications,
-                                          "Bookmark chooser requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Bookmark chooser requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (editor_interaction_has_pending_gesture(*interaction))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Finish or cancel the active Compose gesture first.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     const bool opened = context.environment.editor.commands.bookmarks.open_chooser(
         context.environment.document.history.document.id.value, interaction->chart.value,
         context.environment.document.history.document.revision);
     if (!opened)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Bookmark chooser is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input);
-    return command_result_t{.value = true};
+            notification_severity_t::warning, notification_source_t::input,
+            diagnostic_code_t::unsupported_feature);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
-auto open_sound_picker_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::navigation_go_to_sound) return std::nullopt;
+auto open_sound_picker_command(command_context_t& context) -> command_result_t {
     auto* interaction = context.compose();
     if (!interaction || !context.environment.editor.commands.services.open_sound_picker)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Sound picker requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Sound picker requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (editor_interaction_has_pending_gesture(*interaction) ||
         context.environment.editor.commands.project.clipboard.paste_session)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Finish or cancel the active Compose gesture first.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     const bool opened = context.environment.editor.commands.services.open_sound_picker(
         context.environment.document.history.document.id.value, interaction->chart.value,
         context.environment.document.history.document.revision);
     if (!opened)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Sound picker is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input);
-    return command_result_t{.value = true};
+            notification_severity_t::warning, notification_source_t::input,
+            diagnostic_code_t::unsupported_feature);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
-auto compose_quantize_command(command_context_t& context) -> std::optional<command_result_t> {
+auto compose_quantize_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
-    if (kind != command_kind_t::edit_toggle_quantize_preview &&
-        kind != command_kind_t::edit_apply_quantize) return std::nullopt;
     auto* state = context.compose();
     if (!state || !can_apply_compose_quantize(context.environment.editor.commands, *state))
-        return reject_application_command(
-            context.environment.document.notifications, compose_quantize_idle_message,
-            notification_severity_t::warning, notification_source_t::input);
+        return compose_action_outcome_t::from(
+            compose_quantize_idle_message, notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     const auto toggle = kind == command_kind_t::edit_toggle_quantize_preview;
     auto outcome = invoke_compose_quantize_command(toggle, context.environment.document.history,
                                                    *state, context.environment.editor.commands);
-    if (toggle)
-        context.environment.document.notifications.post_transient_hint(
-            notification_source_t::edit,
+    if (toggle) {
+        outcome = compose_action_outcome_t::from(
             context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
                 ? "Quantize preview enabled."
-                : "Quantize preview disabled.");
-    if (toggle)
-        return command_result_t{.value = outcome.accepted};
-    auto finished =
-        finish_compose_action(context.environment.document,
-                              context.environment.document.notifications, std::move(outcome));
-    if (!finished.accepted && finished.mutated)
-        return command_result_t{.value = false,
-                                .diagnostics = {{.severity = diagnostic_severity_t::error,
-                                                 .code = diagnostic_code_t::invalid_id,
-                                                 .message = std::move(finished.message)}}};
-    return command_result_t{.value = finished.accepted};
+                : "Quantize preview disabled.",
+            notification_severity_t::hint, notification_source_t::edit,
+            compose_message_lifetime_t::borrowed);
+        outcome.delivery = compose_feedback_delivery_t::transient_hint;
+    }
+    outcome.are_command_diagnostics_retained = false;
+    return outcome;
 }
 
-auto project_export_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::document_export_output_group) return std::nullopt;
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+auto project_export_command(command_context_t& context) -> command_result_t {
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!chart || !context.environment.editor.commands.services.open_project_export)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Export requires a selected project difficulty.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::export_);
+        return compose_action_outcome_t::from(
+            "Export requires a selected project difficulty.", notification_severity_t::warning,
+            notification_source_t::export_, diagnostic_code_t::unsupported_feature);
     if ((context.environment.editor.retained &&
-         editor_interaction_has_pending_gesture(
-             *context.environment.editor.retained)) ||
+         editor_interaction_has_pending_gesture(*context.environment.editor.retained)) ||
         context.environment.editor.commands.project.clipboard.paste_session)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Finish or cancel the active editor gesture before exporting.",
-            notification_severity_t::warning, notification_source_t::export_);
+            notification_severity_t::warning, notification_source_t::export_,
+            diagnostic_code_t::unsupported_feature);
     const bool opened = context.environment.editor.commands.services.open_project_export(
         context.environment.document.history.document.id.value, chart->id.value,
         context.environment.document.history.document.revision);
     if (!opened)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Export is unavailable while another window owns input.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::export_);
-    return command_result_t{.value = true};
+        return compose_action_outcome_t::from(
+            "Export is unavailable while another window owns input.",
+            notification_severity_t::warning, notification_source_t::export_,
+            diagnostic_code_t::unsupported_feature);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
-auto compose_auxiliary_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (auto result = project_export_command(context)) return result;
-    if (auto result = compose_quantize_command(context)) return result;
-    if (auto result = open_sound_picker_command(context)) return result;
+auto compose_auxiliary_command(command_context_t& context) -> command_result_t {
     WormUiComposeDockCommand dock;
     switch (context.command.kind) {
-    case command_kind_t::view_open_layers: dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS; break;
-    case command_kind_t::semantic_layer_create: dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER; break;
-    case command_kind_t::view_toggle_sounds: dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS; break;
-    default: return std::nullopt;
+    case command_kind_t::view_open_layers:
+        dock = WORM_UI_COMPOSE_DOCK_OPEN_LAYERS;
+        break;
+    case command_kind_t::semantic_layer_create:
+        dock = WORM_UI_COMPOSE_DOCK_CREATE_LAYER;
+        break;
+    case command_kind_t::view_toggle_sounds:
+        dock = WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS;
+        break;
+    default:
+        std::unreachable();
     }
     auto* interaction = context.compose();
-    if (!interaction || context.environment.editor.commands.project.compose_view.compose_timing_focus ||
+    if (!interaction ||
+        context.environment.editor.commands.project.compose_view.compose_timing_focus ||
         !context.environment.editor.commands.services.compose_dock_command)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Dock command requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Dock command requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (editor_interaction_has_pending_gesture(*interaction) ||
         context.environment.editor.commands.project.clipboard.paste_session)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Finish or cancel the active Compose gesture first.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     const bool accepted = context.environment.editor.commands.services.compose_dock_command(
         dock, context.environment.document.history.document.id.value, interaction->chart.value,
         context.environment.document.history.document.revision);
     if (!accepted)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Dock command is unavailable while another editor owns input.",
-            notification_severity_t::warning, notification_source_t::input);
-    return command_result_t{.value = true};
+            notification_severity_t::warning, notification_source_t::input,
+            diagnostic_code_t::unsupported_feature);
+    return command_result_t{.delivery = compose_feedback_delivery_t::none};
 }
 
 auto run_bookmark_command(application_command_context_t& context, editor_interaction_state_t& state,
@@ -818,105 +740,100 @@ auto run_bookmark_command(application_command_context_t& context, editor_interac
 }
 
 // Primary+Up/Down jump bookmarks in screen direction; Primary+B adds one here.
-auto bookmark_commands(command_context_t& context) -> std::optional<command_result_t> {
+auto bookmark_commands(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
     const bool previous = kind == command_kind_t::navigation_previous_bookmark;
-    if (!previous && kind != command_kind_t::navigation_next_bookmark &&
-        kind != command_kind_t::markers_add_bookmark)
-        return std::nullopt;
     auto* state = context.compose();
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!state || !chart)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Bookmark commands require the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::input);
+        return compose_action_outcome_t::from(
+            "Bookmark commands require the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::markers_add_bookmark &&
         (editor_interaction_has_pending_gesture(*state) ||
          context.environment.editor.commands.project.clipboard.paste_session))
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before editing bookmarks.",
-            notification_severity_t::warning, notification_source_t::edit);
-    const auto previous_revision = context.environment.document.history.document.revision;
-    const auto bookmark_chart = state->chart;
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     auto outcome = run_bookmark_command(context, *state, *chart, previous);
     if (!outcome.accepted && !outcome.diagnostics.empty())
         outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
-    outcome = finish_compose_action(context.environment.document,
-                                    context.environment.document.notifications, std::move(outcome));
-    if (outcome.mutated && !outcome.accepted) {
-        // Registered commands retain the old rebind rejection code and one diagnostic.
-        outcome.diagnostics.resize(1);
-        outcome.diagnostics.front() = {.severity = diagnostic_severity_t::error,
-                                       .code = diagnostic_code_t::invalid_id,
-                                       .message = std::move(outcome.message)};
-    }
-    if (outcome.mutated && outcome.accepted && kind == command_kind_t::markers_add_bookmark)
-        static_cast<void>(context.environment.editor.commands.bookmarks.preserve_preview_revision(
-            bookmark_chart, previous_revision,
-            context.environment.document.history.document.revision));
-    return command_result_t{.value = outcome.accepted,
-                            .diagnostics = std::move(outcome.diagnostics)};
+    return outcome;
 }
 
-auto workspace_tab_command(command_context_t& context) -> std::optional<command_result_t> {
+auto workspace_tab_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     std::optional<workspace_tab_t> tab;
     switch (context.command.kind) {
     case command_kind_t::timing_open_settings:
         context.environment.editor.commands.preferences.timing_settings_visible =
             !context.environment.editor.commands.preferences.timing_settings_visible;
-        return command_result_t{.value = true};
-    case command_kind_t::workspace_open_setup: tab = workspace_tab_t::setup; break;
-    case command_kind_t::workspace_open_metadata: tab = workspace_tab_t::metadata; break;
+        return command_result_t{.delivery = compose_feedback_delivery_t::none};
+    case command_kind_t::workspace_open_setup:
+        tab = workspace_tab_t::setup;
+        break;
+    case command_kind_t::workspace_open_metadata:
+        tab = workspace_tab_t::metadata;
+        break;
     case command_kind_t::workspace_open_timing:
         // The Timing screen is retired; its command opens Compose in timing focus.
         tab = workspace_tab_t::compose;
         context.environment.editor.commands.project.compose_view.compose_timing_focus = true;
         break;
-    case command_kind_t::workspace_open_compose: tab = workspace_tab_t::compose; break;
-    case command_kind_t::workspace_open_storyboard: tab = workspace_tab_t::storyboard; break;
-    case command_kind_t::workspace_open_audio_slices: tab = workspace_tab_t::audio_slices; break;
-    case command_kind_t::workspace_open_compare_validate: tab = workspace_tab_t::compare_validate; break;
-    default: return std::nullopt;
+    case command_kind_t::workspace_open_compose:
+        tab = workspace_tab_t::compose;
+        break;
+    case command_kind_t::workspace_open_storyboard:
+        tab = workspace_tab_t::storyboard;
+        break;
+    case command_kind_t::workspace_open_audio_slices:
+        tab = workspace_tab_t::audio_slices;
+        break;
+    case command_kind_t::workspace_open_compare_validate:
+        tab = workspace_tab_t::compare_validate;
+        break;
+    default:
+        std::unreachable();
     }
-    const auto applied = workspace_action_result_t::from(context.environment.document.workspace,
-                                                context.environment.document.history.document,
-                                                workspace_switch_tab_action_t{*tab});
-    post_command_message(context.environment.document.notifications,
-                         applied.value ? notification_severity_t::info
-                         : applied.diagnostics.empty()
-                             ? notification_severity_t::warning
-                             : to_notification_severity(applied.diagnostics.front().severity),
-                         notification_source_t::input,
-                         applied.value               ? "Workspace tab changed."
-                         : applied.diagnostics.empty() ? "Workspace tab change was rejected."
-                                                       : applied.diagnostics.front().message);
-    return command_result_t{.value = applied.value, .diagnostics = applied.diagnostics};
+    auto applied = workspace_action_result_t::from(context.environment.document.workspace,
+                                                   context.environment.document.history.document,
+                                                   workspace_switch_tab_action_t{*tab});
+    auto outcome = compose_action_outcome_t::from(
+        document_command_result_t{.applied = applied.value,
+                                  .diagnostics = std::move(applied.diagnostics)},
+        compose_action_description_t{.success = "Workspace tab changed.",
+                                     .unchanged = "Workspace tab change was rejected.",
+                                     .source = notification_source_t::input,
+                                     .diagnostic_policy =
+                                         compose_diagnostic_feedback_policy_t::rejected_only,
+                                     .unchanged_severity = notification_severity_t::warning,
+                                     .is_unchanged_accepted = false},
+        compose_message_lifetime_t::borrowed);
+    outcome.severity = outcome.accepted ? notification_severity_t::info : outcome.severity;
+    outcome.mutated = false;
+    return outcome;
 }
 
-auto timing_lock_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::timing_toggle_lock) return std::nullopt;
+auto timing_lock_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     auto& app = context.environment.editor.commands;
     if (!(context.environment.document.workspace.active_tab == workspace_tab_t::compose &&
           app.project.compose_view.compose_timing_focus))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Timing Lock requires Compose with Timing focus.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Timing Lock requires Compose with Timing focus.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     app.project.timing_recipe.timing_locked = !app.project.timing_recipe.timing_locked;
     if (app.project.timing_recipe.timing_locked && context.environment.editor.timing_stage) {
         cancel_timing_lane_pseudonote(*context.environment.editor.timing_stage);
         context.environment.editor.timing_stage.reset();
     }
-    post_command_message(context.environment.document.notifications,
-                         notification_severity_t::success, notification_source_t::edit,
-                         app.project.timing_recipe.timing_locked ? "Timing edits locked." : "Timing edits unlocked.");
-    return command_result_t{.value = true};
+    return compose_action_outcome_t::from(
+        app.project.timing_recipe.timing_locked ? "Timing edits locked." : "Timing edits unlocked.",
+        notification_severity_t::success, notification_source_t::edit,
+        compose_message_lifetime_t::borrowed);
 }
 
 auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
@@ -929,172 +846,171 @@ auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
     if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
     const auto timing = timing_index_t::from(chart);
-    if (!timing.value) return std::nullopt;
+    if (!timing.value)
+        return std::nullopt;
     const auto scroll = scroll_speed_index_t::from(chart, *timing.value);
-    if (!scroll.value) return std::nullopt;
+    if (!scroll.value)
+        return std::nullopt;
     const auto value = scroll_speed_state_t::from(*scroll.value, *timing.value,
-                                       {static_cast<std::int64_t>(*row), 1});
+                                                  {static_cast<std::int64_t>(*row), 1});
     return value ? std::optional{value->value.scroll_multiplier} : std::nullopt;
 }
 
-auto timing_insert_command(command_context_t& context) -> std::optional<command_result_t> {
+auto timing_insert_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     timing_lane_kind_t lane{};
     if (context.command.kind == command_kind_t::timing_insert_bpm)
         lane = timing_lane_kind_t::bpm;
-    else if (context.command.kind == command_kind_t::timing_insert_sv)
-        lane = timing_lane_kind_t::scroll;
     else
-        return std::nullopt;
+        lane = timing_lane_kind_t::scroll;
 
     if (context.environment.editor.commands.project.timing_recipe.timing_locked)
-        return reject_application_command(
-            context.environment.document.notifications, "Timing edits are locked.",
-            notification_severity_t::warning, notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Timing edits are locked.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (context.environment.editor.timing_stage)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Confirm or cancel the open timing edit before starting another.",
-            notification_severity_t::warning, notification_source_t::edit);
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     auto* state = context.compose();
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!state || !chart)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Timing insertion requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Timing insertion requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (state->virtual_bms_cursor_row)
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Timing insertion is unavailable at a virtual BMS cursor row.",
-            notification_severity_t::warning, notification_source_t::edit);
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     if (editor_interaction_has_pending_gesture(*state))
-        return reject_application_command(
-            context.environment.document.notifications,
+        return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before inserting timing.",
-            notification_severity_t::warning, notification_source_t::edit);
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
 
     timing_lane_value_t initial;
     if (lane == timing_lane_kind_t::bpm) {
         const auto bpm = effective_bpm_at(*chart, state->cursor);
         if (!bpm)
-            return reject_application_command(
-                context.environment.document.notifications,
+            return compose_action_outcome_t::from(
                 "The effective BPM could not be resolved at the cursor.",
-                notification_severity_t::warning, notification_source_t::edit);
+                notification_severity_t::warning, notification_source_t::edit,
+                diagnostic_code_t::unsupported_feature);
         initial = timing_bpm_value_t{*bpm};
     } else {
         const auto multiplier = effective_scroll_multiplier_at(*chart, state->cursor);
         if (!multiplier)
-            return reject_application_command(
-                context.environment.document.notifications,
+            return compose_action_outcome_t::from(
                 "The effective SV value could not be resolved at the cursor.",
-                notification_severity_t::warning, notification_source_t::edit);
+                notification_severity_t::warning, notification_source_t::edit,
+                diagnostic_code_t::unsupported_feature);
         initial = timing_scroll_value_t{*multiplier};
     }
-    auto preview = timing_lane_pseudonote_preview_t::propose(context.environment.document.history, chart->id, wormedit::timing_lane_pseudonote_state_t{.kind = lane, .position = state->cursor, .value = std::move(initial), .initial_value_source = timing_lane_initial_value_source_t::effective_at_position}, context.environment.editor.commands.project.timing_recipe.timing_locked);
+    auto preview = timing_lane_pseudonote_preview_t::propose(
+        context.environment.document.history, chart->id,
+        wormedit::timing_lane_pseudonote_state_t{
+            .kind = lane,
+            .position = state->cursor,
+            .value = std::move(initial),
+            .initial_value_source = timing_lane_initial_value_source_t::effective_at_position},
+        context.environment.editor.commands.project.timing_recipe.timing_locked);
     if (!preview.value) {
         const auto message = preview.diagnostics.empty()
                                  ? "Timing event could not be staged at the Compose cursor."
                                  : preview.diagnostics.front().message;
-        return reject_application_command(
-            context.environment.document.notifications, message,
+        return compose_action_outcome_t::from(
+            message,
             preview.diagnostics.empty()
                 ? notification_severity_t::warning
                 : to_notification_severity(preview.diagnostics.front().severity),
-            notification_source_t::edit);
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     }
     context.environment.editor.timing_stage = std::move(preview);
-    post_command_message(context.environment.document.notifications, notification_severity_t::hint,
-                         notification_source_t::edit, "Timing event staged; confirm to insert it.");
-    return command_result_t{.value = true};
+    return compose_action_outcome_t::from(
+        "Timing event staged; confirm to insert it.", notification_severity_t::hint,
+        notification_source_t::edit, compose_message_lifetime_t::borrowed);
 }
 
-auto select_tool_command(command_context_t& context) -> std::optional<command_result_t> {
+auto select_tool_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
-    if (kind != command_kind_t::edit_tool_select && kind != command_kind_t::edit_tool_draw &&
-        kind != command_kind_t::edit_tool_layer) return std::nullopt;
     if (kind != command_kind_t::edit_tool_select &&
-        !wormedit::ui::compose_notes_editable(
-            compose_mode_of(context.environment.editor.commands)))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Draw and Layer are unavailable in Timing focus.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        !wormedit::ui::compose_notes_editable(compose_mode_of(context.environment.editor.commands)))
+        return compose_action_outcome_t::from(
+            "Draw and Layer are unavailable in Timing focus.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     auto* state = context.compose();
     if (!state)
-        return reject_application_command(
-            context.environment.document.notifications, "Select requires the active Compose chart.",
-            notification_severity_t::warning, notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Select requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind != command_kind_t::edit_tool_select &&
         !std::holds_alternative<wormedit::editor_interaction_view_model_t>(
             wormedit::inspect_editor_interaction(context.environment.document.history, *state)))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Draw and Layer require editable chart geometry.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Draw and Layer require editable chart geometry.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::edit_tool_layer &&
         !compose_layer_brush_target_editable(
             context.environment.document.history.document, state->chart,
             context.environment.editor.commands.project.semantic_layer.semantic_layer_target))
-        return reject_application_command(context.environment.document.notifications,
-                                          "Pick an unlocked visible layer in the Layers dock.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Pick an unlocked visible layer in the Layers dock.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (editor_interaction_has_pending_gesture(*state)) {
-        const auto canceled = wormedit::dispatch_editor_action(
-            context.environment.document.history, *state, wormedit::cancel_editor_gesture_action_t{});
+        const auto canceled =
+            wormedit::dispatch_editor_action(context.environment.document.history, *state,
+                                             wormedit::cancel_editor_gesture_action_t{});
         if (!canceled.accepted)
-            return accept_editor_command(canceled, context.environment.document.notifications,
-                                         "Gesture canceled.", notification_severity_t::warning,
-                                         notification_source_t::edit);
+            return compose_action_outcome_t::from(canceled, "Gesture canceled.",
+                                                  notification_severity_t::warning,
+                                                  notification_source_t::edit);
     }
     context.environment.editor.commands.project.compose_gesture.bga_draw_stroke.reset();
     context.environment.editor.commands.project.compose_gesture.note_paint_mode_active =
         kind == command_kind_t::edit_tool_draw;
     context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active =
         kind == command_kind_t::edit_tool_layer;
-    post_command_message(context.environment.document.notifications, notification_severity_t::hint,
-                         notification_source_t::edit, "Compose tool selected.");
-    return command_result_t{.value = true};
+    return compose_action_outcome_t::from("Compose tool selected.", notification_severity_t::hint,
+                                          notification_source_t::edit,
+                                          compose_message_lifetime_t::borrowed);
 }
 
-auto note_kind_command(command_context_t& context) -> std::optional<command_result_t> {
-    if (context.command.kind != command_kind_t::edit_note_kind) return std::nullopt;
+auto note_kind_command(command_context_t& context) -> command_result_t {
     auto* state = context.compose();
     if (!state || !context.command.note_kind)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Note kind requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Note kind requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     const auto result =
         wormedit::arm_note_kind(context.environment.document.history, *state,
                                 static_cast<wormedit::note_kind_t>(*context.command.note_kind));
     if (result.accepted) {
         context.environment.editor.commands.project.compose_gesture.note_paint_mode_active = true;
-        context.environment.editor.commands.project.compose_gesture.semantic_layer_paint_mode_active = false;
+        context.environment.editor.commands.project.compose_gesture
+            .semantic_layer_paint_mode_active = false;
     }
-    return accept_editor_command(result, context.environment.document.notifications,
-                                 "Note paint tool armed.", notification_severity_t::hint,
-                                 notification_source_t::edit);
+    return compose_action_outcome_t::from(result, "Note paint tool armed.",
+                                          notification_severity_t::hint,
+                                          notification_source_t::edit);
 }
 
 auto semantic_layer_slot_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     auto* state = context.compose();
-    const auto* chart =
-        selected_chart(context.environment.document.history, context.environment.document.workspace);
+    const auto* chart = selected_chart(context.environment.document.history,
+                                       context.environment.document.workspace);
     if (!state || !chart)
-        return reject_application_command(context.environment.document.notifications,
-                                          "Layer selection requires the active Compose chart.",
-                                          notification_severity_t::warning,
-                                          notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "Layer selection requires the active Compose chart.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     const auto slot = context.command.semantic_layer_slot.value_or(0);
     if (!slot)
-        return reject_application_command(
-            context.environment.document.notifications, "That semantic-layer slot is unavailable.",
-            notification_severity_t::warning, notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "That semantic-layer slot is unavailable.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     auto& app = context.environment.editor.commands;
     if (app.project.semantic_layer.semantic_layer_palette_chart != chart->id) {
         app.project.semantic_layer.semantic_layer_palette_chart = chart->id;
@@ -1105,108 +1021,233 @@ auto semantic_layer_slot_command(command_context_t& context) -> command_result_t
         app.project.semantic_layer.semantic_layer_palette_page, false,
         WORM_UI_COMPOSE_SEMANTIC_LAYER_CAPACITY);
     if (!palette || slot > palette->layer_indices.size())
-        return reject_application_command(
-            context.environment.document.notifications, "That semantic-layer slot is unavailable.",
-            notification_severity_t::warning, notification_source_t::edit);
+        return compose_action_outcome_t::from(
+            "That semantic-layer slot is unavailable.", notification_severity_t::warning,
+            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     const auto* layer = &chart->semantic_layers[palette->layer_indices[slot - 1]];
     app.project.semantic_layer.semantic_layer_target = layer->id;
     app.project.semantic_layer.semantic_layer_target_none = false;
-    post_command_message(context.environment.document.notifications, notification_severity_t::info,
-                         notification_source_t::edit, "Semantic-layer target: " + layer->name);
-    return {.value = true};
+    return compose_action_outcome_t::from("Semantic-layer target: " + layer->name,
+                                          notification_severity_t::info,
+                                          notification_source_t::edit);
 }
 
 auto semantic_layer_membership_command(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     auto* state = context.compose();
     auto& app = context.environment.editor.commands;
-    if (!state || (!app.project.semantic_layer.semantic_layer_target && !app.project.semantic_layer.semantic_layer_target_none) || state->selected_notes.empty())
-        return reject_application_command(
-            context.environment.document.notifications,
+    if (!state ||
+        (!app.project.semantic_layer.semantic_layer_target &&
+         !app.project.semantic_layer.semantic_layer_target_none) ||
+        state->selected_notes.empty())
+        return compose_action_outcome_t::from(
             "Choose a semantic layer and select playable notes first.",
-            notification_severity_t::warning, notification_source_t::edit);
+            notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     semantic_layer_edit_action_t edit;
     const auto kind = context.command.kind;
-    if (app.project.semantic_layer.semantic_layer_target_none && kind != command_kind_t::semantic_layer_apply)
-        return reject_application_command(context.environment.document.notifications,
-                                          "No layer only assigns", notification_severity_t::warning,
-                                          notification_source_t::edit);
+    if (app.project.semantic_layer.semantic_layer_target_none &&
+        kind != command_kind_t::semantic_layer_apply)
+        return compose_action_outcome_t::from(
+            "No layer only assigns", notification_severity_t::warning, notification_source_t::edit,
+            diagnostic_code_t::unsupported_feature);
     if (app.project.semantic_layer.semantic_layer_target_none)
         edit = clear_semantic_layer_membership_action_t{state->chart, state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_apply)
         edit = replace_notes_semantic_layer_action_t{
             state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_remove)
-        edit =
-            semantic_layer_membership_edit_t{.chart = state->chart,
-                                             .layer = *app.project.semantic_layer.semantic_layer_target,
-                                             .notes = state->selected_notes,
-                                             .operation = wormedit::membership_operation_t::remove};
+        edit = semantic_layer_membership_edit_t{
+            .chart = state->chart,
+            .layer = *app.project.semantic_layer.semantic_layer_target,
+            .notes = state->selected_notes,
+            .operation = wormedit::membership_operation_t::remove};
     else
         edit = replace_notes_semantic_layer_action_t{
-            state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes, true};
-    const auto applied = apply_semantic_layer_edit(context.environment.document.history, edit);
-    if (applied.applied) {
-        const auto rebound = context.rebind();
-        if (!rebound.value) return rebound;
+            state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes,
+            true};
+    return compose_action_outcome_t::from(
+        apply_semantic_layer_edit(context.environment.document.history, edit),
+        compose_action_description_t{.success = "Semantic-layer membership updated.",
+                                     .unchanged = "Semantic-layer membership was unchanged.",
+                                     .source = notification_source_t::edit,
+                                     .diagnostic_policy =
+                                         compose_diagnostic_feedback_policy_t::rejected_only},
+        compose_message_lifetime_t::borrowed);
+}
+
+auto clear_semantic_layer_command(command_context_t& context) -> compose_action_outcome_t {
+    auto& application_state = context.environment.editor.commands;
+    application_state.project.semantic_layer.semantic_layer_target.reset();
+    application_state.project.semantic_layer.semantic_layer_target_none = false;
+    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
+    application_state.project.semantic_layer.semantic_layer_solo_active = false;
+    return compose_action_outcome_t::from(
+        "Semantic-layer target cleared.", notification_severity_t::info,
+        notification_source_t::edit, compose_message_lifetime_t::borrowed);
+}
+
+auto unsupported_application_command(command_context_t&) -> compose_action_outcome_t {
+    return compose_action_outcome_t::from(
+        "Command is not implemented by the application.", notification_severity_t::warning,
+        notification_source_t::system, diagnostic_code_t::unsupported_feature);
+}
+
+struct application_command_route_t {
+    compose_action_outcome_t (*operation)(command_context_t&);
+    compose_feedback_order_t feedback_order{compose_feedback_order_t::after_rebind};
+    bool refresh_on_accepted{};
+    bool uses_producer_rebind_policy{};
+    bool preserves_bookmark_preview{};
+    auto operator==(const application_command_route_t&) const -> bool = default;
+
+    static auto from(command_kind_t kind) -> application_command_route_t;
+};
+
+auto application_command_route_t::from(command_kind_t kind) -> application_command_route_t {
+    switch (kind) {
+    case command_kind_t::history_undo:
+    case command_kind_t::history_redo:
+        return {.operation = history_command,
+                .feedback_order = compose_feedback_order_t::before_rebind};
+    case command_kind_t::edit_tool_select:
+    case command_kind_t::edit_tool_draw:
+    case command_kind_t::edit_tool_layer:
+        return {.operation = select_tool_command};
+    case command_kind_t::edit_note_kind:
+        return {.operation = note_kind_command};
+    case command_kind_t::measures_insert_before:
+    case command_kind_t::measures_insert_after:
+    case command_kind_t::measures_remove_empty:
+    case command_kind_t::measures_split_at_cursor:
+        return {.operation = measure_command,
+                .feedback_order = compose_feedback_order_t::before_rebind,
+                .refresh_on_accepted = true};
+    case command_kind_t::transport_loop_selection:
+    case command_kind_t::transport_toggle_loop_selection:
+        return {.operation = loop_selection_command};
+    case command_kind_t::transport_toggle_metronome:
+        return {.operation = metronome_command};
+    case command_kind_t::transport_play_stop:
+    case command_kind_t::transport_play_pause:
+    case command_kind_t::transport_play_from_start:
+    case command_kind_t::transport_stop:
+    case command_kind_t::transport_rate_slower:
+    case command_kind_t::transport_rate_faster:
+        return {.operation = transport_command};
+    case command_kind_t::transport_external_play_start:
+    case command_kind_t::transport_external_play_here:
+    case command_kind_t::transport_external_stop:
+        return {.operation = external_player_command};
+    case command_kind_t::edit_move_to_bgm:
+    case command_kind_t::edit_move_next_to_bgm:
+        return {.operation = note_to_bgm_command};
+    case command_kind_t::edit_copy:
+    case command_kind_t::edit_paste:
+        return {.operation = clipboard_commands,
+                .feedback_order = compose_feedback_order_t::before_rebind};
+    case command_kind_t::edit_cut:
+        return {.operation = clipboard_commands,
+                .feedback_order = compose_feedback_order_t::before_rebind,
+                .refresh_on_accepted = true};
+    case command_kind_t::edit_delete:
+        return {.operation = edit_commands,
+                .feedback_order = compose_feedback_order_t::before_rebind};
+    case command_kind_t::selection_clear:
+        return {.operation = clear_selection_or_cancel_preview};
+    case command_kind_t::selection_select_same_sound_chart:
+        return {.operation = same_sound_command};
+    case command_kind_t::selection_select_all:
+    case command_kind_t::selection_select_all_objects:
+    case command_kind_t::selection_invert:
+        return {.operation = selection_commands};
+    case command_kind_t::navigation_previous_snap:
+    case command_kind_t::navigation_next_snap:
+    case command_kind_t::navigation_previous_marker:
+    case command_kind_t::navigation_next_marker:
+        return {.operation = navigation_commands};
+    case command_kind_t::navigation_go_to_bookmark:
+        return {.operation = open_bookmark_chooser_command};
+    case command_kind_t::document_export_output_group:
+        return {.operation = project_export_command};
+    case command_kind_t::edit_toggle_quantize_preview:
+    case command_kind_t::edit_apply_quantize:
+        return {.operation = compose_quantize_command, .uses_producer_rebind_policy = true};
+    case command_kind_t::navigation_go_to_sound:
+        return {.operation = open_sound_picker_command};
+    case command_kind_t::view_open_layers:
+    case command_kind_t::semantic_layer_create:
+    case command_kind_t::view_toggle_sounds:
+        return {.operation = compose_auxiliary_command};
+    case command_kind_t::navigation_previous_bookmark:
+    case command_kind_t::navigation_next_bookmark:
+    case command_kind_t::markers_add_bookmark:
+        return {.operation = bookmark_commands,
+                .uses_producer_rebind_policy = true,
+                .preserves_bookmark_preview = true};
+    case command_kind_t::workspace_open_setup:
+    case command_kind_t::workspace_open_metadata:
+    case command_kind_t::workspace_open_timing:
+    case command_kind_t::workspace_open_compose:
+    case command_kind_t::workspace_open_storyboard:
+    case command_kind_t::workspace_open_audio_slices:
+    case command_kind_t::workspace_open_compare_validate:
+    case command_kind_t::timing_open_settings:
+        return {.operation = workspace_tab_command};
+    case command_kind_t::timing_insert_bpm:
+    case command_kind_t::timing_insert_sv:
+        return {.operation = timing_insert_command};
+    case command_kind_t::timing_toggle_lock:
+        return {.operation = timing_lock_command};
+    case command_kind_t::semantic_layer_select_slot:
+        return {.operation = semantic_layer_slot_command};
+    case command_kind_t::semantic_layer_apply:
+    case command_kind_t::semantic_layer_remove:
+    case command_kind_t::semantic_layer_toggle:
+        return {.operation = semantic_layer_membership_command};
+    case command_kind_t::semantic_layer_clear_target:
+        return {.operation = clear_semantic_layer_command};
+
+    case command_kind_t::document_new_project:
+    case command_kind_t::document_save_project:
+    case command_kind_t::document_new_chart:
+    case command_kind_t::view_notifications:
+    case command_kind_t::workspace_options:
+    case command_kind_t::timing_tap_assistant:
+    case command_kind_t::timing_tap:
+    case command_kind_t::audio_paint_hitsound:
+    case command_kind_t::audio_toggle_click_audition:
+    case command_kind_t::workspace_command_menu:
+        break;
     }
-    if (applied.applied || applied.diagnostics.empty())
-        post_command_message(context.environment.document.notifications,
-                             applied.applied ? notification_severity_t::success
-                                             : notification_severity_t::info,
-                             notification_source_t::edit,
-                             applied.applied ? "Semantic-layer membership updated."
-                                             : "Semantic-layer membership was unchanged.");
-    else
-        post_command_message(context.environment.document.notifications,
-                             to_notification_severity(applied.diagnostics.front().severity),
-                             notification_source_t::edit, applied.diagnostics.front().message);
-    return {.value = applied.applied || applied.diagnostics.empty(),
-            .diagnostics = applied.diagnostics};
+    return {.operation = unsupported_application_command};
 }
 
 auto invoke_application_command(application_command_t command,
                                 const command_dispatch_inputs_t& environment)
-    -> wormedit::command_invocation_outcome_t {
-    auto& application_state = environment.editor.commands;
-    auto& sink = environment.document.notifications;
-
+    -> command_invocation_outcome_t {
     command_context_t context{environment, command};
-    const auto kind = command.kind;
-    if (auto result = history_command(context)) return *result;
-    if (auto result = select_tool_command(context)) return *result;
-    if (auto result = note_kind_command(context)) return *result;
-    if (auto result = measure_command(context)) return *result;
-    if (auto result = loop_selection_command(context)) return *result;
-    if (auto result = transport_command(context)) return *result;
-    if (auto result = external_player_command(context)) return *result;
-    if (auto result = note_to_bgm_command(context)) return *result;
-    if (auto result = edit_commands(context)) return *result;
-    if (auto result = selection_commands(context)) return *result;
-    if (auto result = navigation_commands(context)) return *result;
-    if (auto result = open_bookmark_chooser_command(context)) return *result;
-    if (auto result = compose_auxiliary_command(context)) return *result;
-    if (auto result = bookmark_commands(context)) return *result;
-    if (auto result = workspace_tab_command(context)) return *result;
-    if (auto result = timing_insert_command(context)) return *result;
-    if (auto result = timing_lock_command(context)) return *result;
-    if (kind == command_kind_t::semantic_layer_select_slot)
-        return semantic_layer_slot_command(context);
-    if (kind == command_kind_t::semantic_layer_clear_target) {
-        application_state.project.semantic_layer.semantic_layer_target.reset();
-        application_state.project.semantic_layer.semantic_layer_target_none = false;
-        application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
-        application_state.project.semantic_layer.semantic_layer_solo_active = false;
-        post_command_message(sink, notification_severity_t::info, notification_source_t::edit,
-                             "Semantic-layer target cleared.");
-        return {.value = true};
+    const auto route = application_command_route_t::from(command.kind);
+    const auto previous_revision = environment.document.history.document.revision;
+    const auto previous_chart =
+        environment.document.workspace.selected_chart.value_or(chart_id_t{});
+    auto outcome = route.operation(context);
+    outcome.feedback_order = route.feedback_order;
+    if (route.refresh_on_accepted && outcome.accepted)
+        outcome.is_workspace_refresh_required = true;
+    if (!route.uses_producer_rebind_policy) {
+        outcome.rebind_failure =
+            "Command applied, but environment.document.workspace rebinding failed.";
+        outcome.rebind_feedback_policy = compose_rebind_feedback_policy_t::document_only;
+        outcome.is_rebind_severity_diagnostic = false;
     }
-    if (kind == command_kind_t::semantic_layer_apply ||
-        kind == command_kind_t::semantic_layer_remove ||
-        kind == command_kind_t::semantic_layer_toggle)
-        return semantic_layer_membership_command(context);
-    return reject_application_command(sink, "Command is not implemented by the application.",
-        notification_severity_t::warning, notification_source_t::system);
+    const bool preserve_preview = route.preserves_bookmark_preview && outcome.mutated;
+    auto finished = finish_application_command(environment.document.notifications,
+                                               std::move(outcome), &environment.document);
+    if (preserve_preview && finished.value)
+        static_cast<void>(environment.editor.commands.bookmarks.preserve_preview_revision(
+            previous_chart, previous_revision, environment.document.history.document.revision));
+    return finished;
 }
 
 } // namespace wormedit::sys

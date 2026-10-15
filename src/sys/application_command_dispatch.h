@@ -32,10 +32,7 @@ auto reject_application_command(
     wormedit::diagnostic_code_t code = wormedit::diagnostic_code_t::unsupported_feature)
     -> wormedit::command_invocation_outcome_t;
 
-auto accept_editor_command(const wormedit::editor_interaction_result_t& result,
-                           notification_sink_t& sink, std::string_view accepted,
-                           notification_severity_t accepted_severity,
-                           notification_source_t source) -> wormedit::command_invocation_outcome_t;
+
 
 // Stamped Compose activations must be checked before refreshing/invoking the registry.
 inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,

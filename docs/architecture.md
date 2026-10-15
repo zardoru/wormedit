@@ -67,7 +67,7 @@ every edit gets it.
 
 | To find | Search |
 |---|---|
-| A direct command's route | `src/sys/application_command_dispatch.cpp`, `src/sys/compose_actions.cpp` (the `compose_action` concept, `run_compose_action` in `include/wormedit/core/proposal.h`) |
+| A direct command's route | `application_command_route_t::from` in `src/sys/application_command_dispatch.cpp`, `src/sys/compose_actions.cpp` (the `compose_action` concept, `run_compose_action` in `include/wormedit/core/proposal.h`); command completion is `finish_application_command` in `src/sys/compose_action_outcome.cpp` |
 | A gesture | `src/core/interaction_gesture_runner.h` (`editor_gesture`, `begin_gesture`/`update_gesture`/`commit_gesture`/`cancel_gesture`) and the gesture's own file |
 | A proposal | `proposal_t<` and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h` |

@@ -819,6 +819,18 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
   - The preview is derived from the active gesture, not a mirror of its fields.
   - The sys forwarder is deleted; callers use the core member.
   - Decide in the inventory whether a gesture is a `proposal_t` whose payload updates per frame (T-630); if so it reuses that envelope instead of a third lifecycle shape; otherwise record why not.
+- **Acceptance (owner 2026-10-15):** a gesture or proposal owner reads as "this is how the gesture works, this is what it proposes, this is when it is valid, commit it", with no guard, stamp, status or result unwrapping repeated per action. Target shape for one owner, with everything else in the runner:
+  ```cpp
+  struct note_duration_gesture_t {
+      static constexpr auto kind = editor_gesture_kind_t::duration;
+      // what it proposes
+      static auto begin(const editor_edit_context_t&, object_id_t reference) -> diagnosed_t<std::optional<note_duration_gesture_t>>;
+      auto update(const editor_edit_context_t&, local_position_t end) -> diagnostic_list_t;
+      // when it is valid, and the edit itself
+      auto apply(document_command_transaction_t&) const -> diagnostic_list_t;
+  };
+  ```
+  Review check: no owner contains `is_revision_current`/`is_current`, `is_ready()`, `make_view`, `holds_alternative`, "already active" or "requires an active" checks, or a lifecycle status write; `grep` for each over the owners returns only the runner.
 - **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `include/wormedit/core/interaction.h`, `include/wormedit/core/interaction_gestures.h`, `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/proposal.h`, `docs/chart-editor-plan/decisions/code-style.md`, the T-586/T-598 notes and the T-609, T-618 and T-630 completion notes on this page.
 - **Files owned:** `include/wormedit/core/interaction.h`, `include/wormedit/core/interaction_gestures.h`, `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/proposal.h`, `tests/core/proposal_tests.cpp`, a new `tests/core/active_gesture_tests.cpp`. Gesture and proposal-owner callers in core, sys and tests are supporting files recorded per part (one gesture kind or caller module per checkpoint).
 - **Runs after/before:** After T-630 (shares `interaction.h` and the proposal envelope). Before the Nuklear pattern audit and T-621; disjoint from T-633 except for `require_no_gesture`.

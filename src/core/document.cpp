@@ -28,7 +28,9 @@ auto target_identity_query_t::validate(diagnostic_list_t& diagnostics,
         message = messages.ambiguous;
         code = diagnostic_code_t::duplicate_id;
     } else return true;
-    diagnostics.push_back(error(code, std::string(messages.domain) + std::string(message)));
+    auto text = std::string(messages.domain);
+    text.append(message);
+    diagnostics.push_back(error(code, std::move(text)));
     return false;
 }
 

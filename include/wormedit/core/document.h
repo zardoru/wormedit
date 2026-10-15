@@ -812,11 +812,13 @@ struct target_query_messages_t {
     // Empty means zero is an ordinary ID in this domain.
     std::string_view reserved_zero{};
     std::string_view domain{};
+    auto operator==(const target_query_messages_t&) const -> bool = default;
 };
 
 struct target_identity_query_t {
     std::size_t count{};
     bool is_zero{};
+    auto operator==(const target_identity_query_t&) const -> bool = default;
 
     template <class Id>
     [[nodiscard]] static auto from(Id id, std::size_t count) -> target_identity_query_t {
@@ -873,13 +875,16 @@ struct chart_document_t {
     [[nodiscard]] auto query_target(const std::vector<Value>& values, Id id,
         target_uniqueness_scope_t scope = target_uniqueness_scope_t::collection) const
         -> target_identity_query_t {
-        const auto local = target_identity_query_t::from(values, id);
-        // These targets historically reject a missing kind before checking ambiguity.
-        if (local.count == 0) return local;
         if constexpr (std::is_same_v<Id, object_id_t>) {
-            if (scope == target_uniqueness_scope_t::chart_objects) return query_object_id(id);
+            if (scope == target_uniqueness_scope_t::chart_objects) {
+                // Reject a missing kind before checking chart-wide ambiguity.
+                if (std::ranges::find(values, id, &Value::id) == values.end())
+                    return target_identity_query_t::from(id, 0);
+                return query_object_id(id);
+            }
         }
-        return local;
+        // Measures and semantic layers have their own typed collection domains.
+        return target_identity_query_t::from(values, id);
     }
     [[nodiscard]] auto find_note(object_id_t id) const -> const note_t*;
     [[nodiscard]] auto find_note(object_id_t id) -> note_t*;

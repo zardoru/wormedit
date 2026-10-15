@@ -640,3 +640,82 @@ TEST_CASE("target identity queries preserve collection chart and preindexed poli
     check_target_query(target_identity_query_t::from(object_id_t{10}, 0), messages,
         {error(diagnostic_code_t::invalid_id, "missing")});
 }
+
+namespace {
+
+auto make_bpm_execution_update() -> bpm_edit_action_t {
+    return update_edit_t<bpm_edit_value_t>{.chart = chart_id_t{2}, .id = object_id_t{10},
+        .value = bpm_edit_value_t::from({measure_id_t{3}, 0}, timing_bpm_value_t{{180, 1}})};
+}
+
+void check_bpm_unchanged(const document_history_t& history) {
+    CHECK(history.undo.empty());
+    CHECK(history.document.revision == 4);
+    CHECK(history.document.charts.front().bpms.front().beats_per_minute == signed_rational_t{120, 1});
+}
+
+} // namespace
+
+TEST_CASE("BPM execution rejects invalid caps without publishing a document",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    CHECK_FALSE(transaction.has_copy());
+    const auto result = apply_bpm_edit(transaction, make_bpm_execution_update(),
+                                      {.maximum_bpm_events = 0});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+        "BPM event cap must be positive")});
+    CHECK_FALSE(transaction.has_copy());
+    CHECK(transaction.finished);
+    check_bpm_unchanged(history);
+}
+
+TEST_CASE("BPM execution preserves warning rejection after the edit",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    const diagnostic_list_t warnings{{.severity = diagnostic_severity_t::warning,
+        .code = diagnostic_code_t::unsupported_feature, .message = "retained warning"}};
+    transaction.outcome.diagnostics = warnings;
+    const auto result = apply_bpm_edit(transaction, make_bpm_execution_update());
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == warnings);
+    CHECK(transaction.finished);
+    CHECK_FALSE(transaction.has_copy());
+    check_bpm_unchanged(history);
+}
+
+TEST_CASE("BPM execution retains adopted documents and publishes only once",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    auto transaction = document_command_transaction_t::from(history);
+    auto prepared = history.document;
+    prepared.charts.front().bpms.front().provenance.source_order = 99;
+    transaction.adopt_document(std::move(prepared));
+    REQUIRE(apply_bpm_edit(transaction, make_bpm_execution_update()).applied);
+    CHECK(history.document.charts.front().bpms.front().provenance.source_order == 99);
+    CHECK(history.undo.size() == 1);
+    const auto revision = history.document.revision;
+    CHECK_FALSE(apply_bpm_edit(transaction, make_bpm_execution_update()).applied);
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("BPM extension postvalidation rejects without publishing the mutated copy",
+          "[unit][core][bpm-editor][execution][audio-extent]") {
+    auto song = bpm_song();
+    song.audio_assets.push_back({.id = asset_id_t{1}, .source_path = "long-track.wav",
+        .stream = {48'000, 2, 48'000ULL * 10'000'000, true}});
+    song.resources.push_back({.id = resource_id_t{1}, .asset = asset_id_t{1},
+        .roles = {resource_role_t::music}});
+    auto history = document_history_t::from(std::move(song));
+    const auto result = apply_bpm_edit(history, update_edit_t<bpm_edit_value_t>{
+        .chart = chart_id_t{2}, .id = object_id_t{10},
+        .value = bpm_edit_value_t::from({measure_id_t{3}, 0}, timing_bpm_value_t{{240, 1}})});
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_measure,
+        "BPM edit would exceed the audio chart measure limits")});
+    CHECK(history.document.charts.front().measures.size() == 1);
+    check_bpm_unchanged(history);
+}

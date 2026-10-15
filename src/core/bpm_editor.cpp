@@ -51,7 +51,7 @@ auto unique_bpm_event(chart_document_t& chart, object_id_t id, document_command_
 
 struct bpm_edit_effect_t {
     bool changed{};
-    std::string label;
+    std::string command_label;
     auto operator==(const bpm_edit_effect_t&) const -> bool = default;
 };
 using bpm_edit_outcome_t = result_t<bpm_edit_effect_t, bpm_edit_effect_t>;
@@ -61,21 +61,6 @@ struct bpm_edit_context_t {
     bpm_edit_limits_t limits;
     document_command_result_t& result;
 };
-
-auto edit_context(song_document_t& document, chart_id_t id, bpm_edit_limits_t limits,
-                  document_command_result_t& result) -> chart_document_t* {
-    const auto found = document.find_chart(id);
-    if (!id || found == nullptr) {
-        reject(result, diagnostic_code_t::invalid_id, "BPM edit refers to an unknown chart");
-        return nullptr;
-    }
-    if (found->bpms.size() > limits.maximum_bpm_events) {
-        reject(result, diagnostic_code_t::invalid_resolution,
-               "selected chart exceeds the BPM event cap");
-        return nullptr;
-    }
-    return &*found;
-}
 
 auto apply_insert(bpm_edit_context_t context,
                   const wormedit::insert_edit_t<wormedit::bpm_edit_value_t>& edit)
@@ -109,7 +94,7 @@ auto apply_insert(bpm_edit_context_t context,
         .beats_per_minute = edit.value.settings.beats_per_minute,
         .provenance = {.source_order = *source_order},
     });
-    return bpm_edit_effect_t{.changed = true, .label = "Insert BPM event"};
+    return bpm_edit_effect_t{.changed = true, .command_label = "Insert BPM event"};
 }
 
 auto apply_update(bpm_edit_context_t context,
@@ -132,7 +117,7 @@ auto apply_update(bpm_edit_context_t context,
     }
     event->position = edit.value.position;
     event->beats_per_minute = edit.value.settings.beats_per_minute;
-    return bpm_edit_effect_t{.changed = true, .label = "Update BPM event"};
+    return bpm_edit_effect_t{.changed = true, .command_label = "Update BPM event"};
 }
 
 auto apply_delete(bpm_edit_context_t context,
@@ -151,33 +136,45 @@ auto apply_delete(bpm_edit_context_t context,
     std::erase_if(context.chart.bms_bpm_projections,
                   [id](const auto& projection) { return projection.event == id; });
     std::erase_if(context.chart.bpms, [id](const auto& item) { return item.id == id; });
-    return bpm_edit_effect_t{.changed = true, .label = "Delete BPM event"};
-}
-
-template <typename Edit>
-auto apply_chart_edit(song_document_t& document, const Edit& edit, bpm_edit_limits_t limits,
-                      document_command_result_t& result) -> bpm_edit_outcome_t {
-    auto* chart = edit_context(document, edit.chart, limits, result);
-    if (chart == nullptr) {
-        return std::unexpected(bpm_edit_effect_t{});
-    }
-    auto context = bpm_edit_context_t{*chart, limits, result};
-    if constexpr (std::is_same_v<Edit, wormedit::insert_edit_t<wormedit::bpm_edit_value_t>>) {
-        return apply_insert(context, edit);
-    } else if constexpr (std::is_same_v<Edit,
-                                        wormedit::update_edit_t<wormedit::bpm_edit_value_t>>) {
-        return apply_update(context, edit);
-    } else {
-        return apply_delete(context, edit);
-    }
+    return bpm_edit_effect_t{.changed = true, .command_label = "Delete BPM event"};
 }
 
 struct bpm_operation_visitor_t {
-    document_command_transaction_t& transaction;
-    const bpm_edit_limits_t& limits;
+    song_document_t& proposed;
+    document_command_result_t& result;
+    bpm_edit_limits_t limits;
 
-    template <typename Edit> auto operator()(const Edit& edit) const {
-        return apply_chart_edit(transaction.copy_document(), edit, limits, transaction.outcome);
+    static constexpr std::string_view invalid_limits_message = "BPM event cap must be positive";
+    static auto has_valid_limits(const bpm_edit_limits_t& limits) -> bool {
+        return limits.maximum_bpm_events != 0;
+    }
+
+    template <typename Edit> auto operator()(const Edit& edit) const -> bpm_edit_outcome_t {
+        auto* chart = proposed.find_chart(edit.chart);
+        if (!edit.chart || chart == nullptr) {
+            reject(result, diagnostic_code_t::invalid_id, "BPM edit refers to an unknown chart");
+            return std::unexpected(bpm_edit_effect_t{});
+        }
+        if (chart->bpms.size() > limits.maximum_bpm_events) {
+            reject(result, diagnostic_code_t::invalid_resolution,
+                   "selected chart exceeds the BPM event cap");
+            return std::unexpected(bpm_edit_effect_t{});
+        }
+        auto context = bpm_edit_context_t{*chart, limits, result};
+        if constexpr (std::is_same_v<Edit, insert_edit_t<bpm_edit_value_t>>) {
+            return apply_insert(context, edit);
+        } else if constexpr (std::is_same_v<Edit, update_edit_t<bpm_edit_value_t>>) {
+            return apply_update(context, edit);
+        } else {
+            return apply_delete(context, edit);
+        }
+    }
+
+    auto postvalidate() -> bool {
+        if (extend_native_charts_to_audio_end(proposed)) return true;
+        reject(result, diagnostic_code_t::invalid_measure,
+               "BPM edit would exceed the audio chart measure limits");
+        return false;
     }
 };
 
@@ -254,31 +251,13 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 
 auto apply_bpm_edit(document_history_t& history,
     const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    return apply_bpm_edit(transaction, action, limits);
+    return document_command_transaction_t::from(history).execute<bpm_operation_visitor_t>(action, limits);
 }
 
 auto apply_bpm_edit(document_command_transaction_t& transaction,
                     const bpm_edit_action_t& action, bpm_edit_limits_t limits)
     -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.commit({});
-    auto& result = transaction.outcome;
-    if (limits.maximum_bpm_events == 0) {
-        reject(result, diagnostic_code_t::invalid_resolution, "BPM event cap must be positive");
-        return transaction.finish_without_commit();
-    }
-
-    auto& proposed = transaction.copy_document();
-    auto outcome = std::visit(bpm_operation_visitor_t{transaction, limits}, action);
-    if (!outcome || !result.diagnostics.empty() || !outcome->changed) {
-        return transaction.finish_without_commit();
-    }
-    if (!extend_native_charts_to_audio_end(proposed)) {
-        reject(result, diagnostic_code_t::invalid_measure,
-               "BPM edit would exceed the audio chart measure limits");
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(std::move(outcome->label));
+    return transaction.execute<bpm_operation_visitor_t>(action, limits);
 }
 
 namespace {

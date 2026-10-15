@@ -10,6 +10,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <type_traits>
 #include <variant>
 #include <vector>
 
@@ -318,6 +319,42 @@ struct document_command_transaction_t {
         -> document_command_result_t;
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_list_t diagnostics)
         -> document_command_result_t;
+    // An operation is an aggregate visitor over proposed/result/limits. It supplies
+    // has_valid_limits/invalid_limits_message, the domain edit, and optional postvalidate().
+    // Void visitors carry their effect; value visitors return their existing effect.
+    template <class Operation, class Action, class Limits>
+    [[nodiscard]] auto execute(const Action& action, const Limits& limits) -> document_command_result_t {
+        if (!is_ready()) return commit({});
+        if (!Operation::has_valid_limits(limits)) {
+            wormedit::reject(outcome, diagnostic_code_t::invalid_resolution,
+                             std::string(Operation::invalid_limits_message));
+            return finish_without_commit();
+        }
+        Operation operation{.proposed = copy_document(), .result = outcome, .limits = limits};
+        if constexpr (std::is_void_v<decltype(std::visit(operation, action))>) {
+            std::visit(operation, action);
+            return finish_execution(operation, operation);
+        } else {
+            auto effect = std::visit(operation, action);
+            return finish_execution(operation, std::move(effect));
+        }
+    }
+
+    template <class Operation, class Effect>
+    [[nodiscard]] auto finish_execution(Operation& operation, Effect&& effect)
+        -> document_command_result_t {
+        if constexpr (requires { effect.has_value(); }) {
+            if (!effect) return finish_without_commit();
+            return finish_execution(operation, std::move(*effect));
+        } else {
+            if (!outcome.diagnostics.empty() || !effect.changed) return finish_without_commit();
+            if constexpr (requires { operation.postvalidate(); }) {
+                if (!operation.postvalidate()) return finish_without_commit();
+            }
+            return commit(std::move(effect.command_label));
+        }
+    }
+
     [[nodiscard]] auto commit_outcome(std::string label, document_command_options_t options = {})
         -> document_command_outcome_t;
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})

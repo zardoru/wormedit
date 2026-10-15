@@ -75,7 +75,7 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
 }
 
 [[nodiscard]] auto compare_local_difference_positions(
-    const wormedit::chart_compare_result_t& comparison, wormedit::chart_id_t chart)
+    const wormedit::chart_comparison_t& comparison, wormedit::chart_id_t chart)
     -> std::vector<wormedit::local_position_t>;
 
 void populate_compare_view(flattened_workspace_t& result,

@@ -512,10 +512,6 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
 
 } // namespace
 
-auto chart_compare_result_t::has_errors() const -> bool {
-    return diagnostic_queries::has_errors(diagnostics);
-}
-
 auto chart_comparison_t::from(const song_document_t& song, const chart_compare_request_t& request)
     -> chart_comparison_result_t {
     chart_comparison_result_t result{.value = {.document_revision = song.revision,
@@ -557,18 +553,6 @@ auto chart_comparison_t::from(const song_document_t& song, const chart_compare_r
     }
     (void)append_difference_rows(work);
     return result;
-}
-
-auto chart_compare_result_t::from(chart_comparison_result_t&& result) -> chart_compare_result_t {
-    return {.document_revision = result.value.document_revision,
-            .charts = std::move(result.value.charts),
-            .differing_rows = std::move(result.value.differing_rows),
-            .diagnostics = std::move(result.diagnostics)};
-}
-
-auto compare_chart_difficulties(const song_document_t& song, const chart_compare_request_t& request)
-    -> chart_compare_result_t {
-    return chart_compare_result_t::from(chart_comparison_t::from(song, request));
 }
 
 } // namespace wormedit

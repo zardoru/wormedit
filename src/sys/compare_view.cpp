@@ -114,7 +114,7 @@ void build_diagnostics_view(compare_scene_cache_t& cache,
 
 } // namespace
 
-auto compare_local_difference_positions(const wormedit::chart_compare_result_t& comparison,
+auto compare_local_difference_positions(const wormedit::chart_comparison_t& comparison,
                                        wormedit::chart_id_t chart)
     -> std::vector<wormedit::local_position_t> {
     std::vector<wormedit::local_position_t> rows;
@@ -206,9 +206,9 @@ void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t&
 
     wormedit::chart_compare_request_t request;
     request.charts = {first_id, second_id};
-    const auto compared = wormedit::compare_chart_difficulties(history.document, request);
-    const auto first_rows = compare_local_difference_positions(compared, first_id);
-    const auto second_rows = compare_local_difference_positions(compared, second_id);
+    const auto compared = wormedit::chart_comparison_t::from(history.document, request);
+    const auto first_rows = compare_local_difference_positions(compared.value, first_id);
+    const auto second_rows = compare_local_difference_positions(compared.value, second_id);
     if (cache.first_chart != first_id || cache.second_chart != second_id ||
         cache.revision != history.document.revision || cache.song != history.document.id) {
         cache.first_state.reset();

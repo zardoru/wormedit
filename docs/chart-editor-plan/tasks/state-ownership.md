@@ -928,7 +928,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-638 Reuse the chart-object ID traversal everywhere
 
-- **Status:** Ready (owner approved the hand-listed chart event vectors target, 2026-10-15; from the ceremony audit)
+- **Status:** Done (`96ac084`, 2026-10-15)
 - **Findings closed:** CE5: nine maximum/count scans duplicating `chart_object_ids.h`.
 - **Stale-plan audit:** Search reductions over `.id.value`, lists of chart vectors and nested channel/measure traversal. Inventory ceiling vs next-ID returns, count/cap behavior, multiple-ID reservation and overflow. Exclude resource/asset/measure/layer/recipe IDs and cloning's reference remapper. Verify all nine consumers still exist after ongoing cards.
 - **Outcome:** The existing traversal is the only list of chart object declarations for allocation/count queries. Add one reusable ceiling/count reducer/query if necessary; consumers retain named allocation policies, without their own thirteen-container lists. Do not create a persistent index/cache for a one-shot scan.
@@ -945,6 +945,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Reject/failure behavior:** Preserve cap reached vs ID-space exhausted, and atomic failure of multi-ID allocations. UINT64_MAX must never wrap to zero. A failed gate stops completion.
 - **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure` (includes the ceremony ratchet); `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox; meaningful cases with the maximum ID in each nested domain, empty chart, exact cap, cap+1, UINT64_MAX and multi-ID reservation. Confirm old and new valid allocation outputs match.
 - **Out of scope:** Unifying unrelated ID domains, changing cloning/remapping, allocating IDs differently, persistent caches/indexes or unrelated source-order allocation.
+- **Completion:** `96ac084`. `object_id_ceiling_t::from(chart, limit)` in `chart_object_ids.h` is the one ceiling/count scan; all nine consumers use it and keep their allocation policies (ceiling vs next ID, caps, overflow, atomic multi-ID reservation). The BMSON marker allocator keeps its source-clip supplement. New `tests/core/chart_object_ids_tests.cpp` covers all 16 declaration collections, nested channel/measure objects, empty chart, exact cap and cap+1, UINT64_MAX and multi-ID reservation. `local_object_id_scan` ratchet 9 → 2; both remaining matches are `interaction_detail::next_object_id` (`note_placement.cpp:99`, `interaction_internal.h:249`), marked `// Temporary: removed by T-642`. Gate on main: GCC and clang 3869/3869, event harness 509/509, documentation 2/2.
 
 ## T-639 Own timing kind-to-storage routing once
 
@@ -1000,6 +1001,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Runs after/before:** After T-631/T-632/T-634 and the Nuklear pattern audit; before T-642/T-621. Coordinate other input-routing cards first.
 - **Decisions applied:** D6 excludes state-lifetime splitting. No new identity/click policy approved; preserve current differences. Any owner-approved correction requires a failing-before production event test.
   - Owner (2026-10-15): add the bookmark-capture project-identity test (a stale capture after switching to a project with the same chart id and revision) first; fix the capture only if it fails.
+  - Result (`0d08c98`, 2026-10-15): the test passes (four variants, switch on motion and on release). `compose_input_panel.cpp:622-629` treats a project change as a chart change and calls `reset_compose_revision_state`, which cancels the bookmark capture, so the missing project check in `bookmark_move_capture_matches` is covered by the outer reset. No fix needed.
 - **Steps:**
   1. Save policy matrix and resolve overlap with the Nuklear audit and active input cards. Establish current focus-loss, overflow, release/click and project-change behavior through existing event harness.
   2. Extend existing continuation owner using named phase/policy values and no stored callbacks. Prove one timing-marker path and compare with existing span continuation.

@@ -1013,6 +1013,10 @@ auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t 
     return result;
 }
 
+auto chart_indices_t::from(const chart_document_t& chart) -> chart_indices_t {
+    return {.measures = measure_index_t::from(chart), .timing = timing_index_t::from(chart)};
+}
+
 auto timing_build_result_t::from(timing_build_outcome_t&& outcome) -> timing_build_result_t {
     return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
 }

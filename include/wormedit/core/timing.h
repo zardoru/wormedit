@@ -187,6 +187,14 @@ struct timing_index_t {
 };
 using timing_build_outcome_t = diagnosed_t<std::optional<timing_index_t>, std::vector<timing_diagnostic_t>>;
 
+// Chart-intrinsic, default-option indices. Failed builds are retained too.
+struct chart_indices_t {
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> chart_indices_t;
+
+    result_t<measure_index_t, diagnostic_list_t> measures;
+    timing_build_outcome_t timing;
+};
+
 struct timing_build_result_t {
     [[nodiscard]] static auto from(timing_build_outcome_t&& outcome) -> timing_build_result_t;
     std::optional<timing_index_t> index;

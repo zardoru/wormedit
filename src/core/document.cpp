@@ -47,6 +47,10 @@ auto find_measure_object(Chart& chart, Id id, Member member)
 } // namespace
 auto song_document_t::find_chart(chart_id_t id) -> chart_document_t* { return find_id(charts, id); }
 auto song_document_t::find_chart(chart_id_t id) const -> const chart_document_t* { return find_id(charts, id); }
+
+void song_document_t::reset_chart_indices() noexcept {
+    for (auto& chart : charts) chart.indices_slot = {};
+}
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
 auto chart_document_t::find_measure(measure_id_t id) -> measure_chunk_t* { return find_id(measures, id); }

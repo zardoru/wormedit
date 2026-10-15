@@ -187,6 +187,9 @@ struct document_history_t {
                                   std::size_t maximum_undo_entries = 128,
                                   bool initially_saved = true) -> document_history_t;
 
+    // Main-loop-only lazy read. The returned value belongs to the committed snapshot.
+    [[nodiscard]] auto indices(chart_id_t chart) const -> const chart_indices_t*;
+
     song_document_t document;
     std::vector<document_command_record_t> undo;
     std::vector<document_command_record_t> redo;

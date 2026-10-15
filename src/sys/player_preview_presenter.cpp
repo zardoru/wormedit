@@ -156,8 +156,7 @@ auto evaluate_storyboards(const song_document_t& document,
     return true;
 }
 
-
-void append_scene_geometry(const player_preview_scene_t& scene,
+void append_scene_geometry(const player_preview_scene_view_t& scene,
                            std::vector<WormUiPlayerPreviewLaneView>& lanes,
                            std::vector<WormUiPlayerPreviewReceptorView>& receptors,
                            std::vector<WormUiPlayerPreviewHoldView>& holds,
@@ -607,7 +606,7 @@ template <typename Context, typename Frame>
 auto present_player_preview_frame(const Context& context, const Frame& frame) -> bool {
     auto& state = context.state;
     auto& view = context.view;
-    const auto scene = player_preview_scene_t::from(
+    const auto scene = player_preview_scene_view_t::from(
         *state.index, {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,

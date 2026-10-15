@@ -762,3 +762,19 @@ TEST_CASE("BPM extension postvalidation rejects without publishing the mutated c
     CHECK(history.document.charts.front().measures.size() == 1);
     check_bpm_unchanged(history);
 }
+
+TEST_CASE("BPM execution resolves chart before checking its event cap and edit target",
+          "[unit][core][bpm-editor][execution]") {
+    auto history = document_history_t::from(bpm_song());
+    history.document.charts.front().bpms.push_back(history.document.charts.front().bpms.front());
+    auto edit = update_edit_t<bpm_edit_value_t>{.chart = chart_id_t{99}, .id = object_id_t{999}};
+    const auto missing = apply_bpm_edit(history, edit, {.maximum_bpm_events = 1});
+    CHECK(missing.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_id,
+        "BPM edit refers to an unknown chart")});
+    edit.chart = chart_id_t{2};
+    const auto capped = apply_bpm_edit(history, edit, {.maximum_bpm_events = 1});
+    CHECK(capped.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
+        "selected chart exceeds the BPM event cap")});
+    CHECK(history.document.revision == 4);
+    CHECK(history.undo.empty());
+}

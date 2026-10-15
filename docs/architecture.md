@@ -28,7 +28,8 @@ There are two paths in and one way to change the document.
 - **Transaction (the executor):** `document_command_transaction_t` is the only way to change the
   document. It checks the stamp, copies the document lazily once, runs the edit, rejects
   without publishing, detects a no-op, and commits once with its Undo label *(T-607, T-637)*.
-  Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
+  `execute<Operation>` resolves the target chart, checks the operation's declared event caps,
+  and passes `chart_document_t&` to its edit overload. Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
   direct command's operation, *is* the edit.
 - **Core edit:** a plain function or `apply(transaction&)` in `src/core` that changes chart data.
   This is where domain logic lives.

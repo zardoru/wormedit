@@ -2573,7 +2573,7 @@ struct t422_fixture_t {
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     notification_center_t notifications;

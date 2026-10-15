@@ -11,7 +11,7 @@
 
 namespace wormedit::sys {
 namespace {
-auto metadata_frame_text(flattened_workspace_t& flattened, std::string_view text)
+auto metadata_frame_text(frontend_workspace_view_t& flattened, std::string_view text)
     -> const char* {
     auto* arena = flattened.arena();
     const auto* copied = arena ? arena_string(*arena, text) : nullptr;
@@ -19,7 +19,7 @@ auto metadata_frame_text(flattened_workspace_t& flattened, std::string_view text
     return copied;
 }
 
-void populate_metadata_music(flattened_workspace_t& flattened,
+void populate_metadata_music(frontend_workspace_view_t& flattened,
                              const wormedit::document_history_t& history,
                              const wormedit::workspace_controller_t& workspace) {
     if (!workspace.transport.audio_asset) return;
@@ -50,7 +50,7 @@ auto metadata_copy_preview_matches(const WormUiMetadataView& metadata,
         key.source_path.generic_string() == metadata.selected_music_source;
 }
 
-void populate_metadata_chart_resolution(flattened_workspace_t& flattened,
+void populate_metadata_chart_resolution(frontend_workspace_view_t& flattened,
                                        const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
     const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
@@ -58,7 +58,7 @@ void populate_metadata_chart_resolution(flattened_workspace_t& flattened,
     metadata.chart_divisions_per_standard_measure = chart->divisions_per_standard_measure;
 }
 
-void populate_metadata_copy_preview(flattened_workspace_t& flattened,
+void populate_metadata_copy_preview(frontend_workspace_view_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const runtime::metadata_asset_t& runtime) {
     auto& metadata = flattened.view.metadata;
@@ -75,7 +75,7 @@ void populate_metadata_copy_preview(flattened_workspace_t& flattened,
     metadata.copy_preview_source = metadata_frame_text(flattened, key->source_path.generic_string());
 }
 
-void populate_metadata_channel_map_lanes(flattened_workspace_t& flattened,
+void populate_metadata_channel_map_lanes(frontend_workspace_view_t& flattened,
                                         const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
     const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
@@ -128,7 +128,7 @@ auto channel_map_preview_summary(const wormedit::channel_map_preview_view_t& pre
            " notes change channel.";
 }
 
-void populate_metadata_channel_map_preview(flattened_workspace_t& flattened,
+void populate_metadata_channel_map_preview(frontend_workspace_view_t& flattened,
                                            const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
     const auto& outcome = metadata_drop.channel_map_preview;
@@ -149,7 +149,7 @@ constexpr const char* custom_lane_profile_reason =
     "Custom layouts need the per-lane mapping editor, which is not available here yet.";
 
 // The chart's key-count family, then a disabled Custom entry. Labels live in the frame arena.
-void populate_metadata_lane_profile(flattened_workspace_t& flattened,
+void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
@@ -195,7 +195,7 @@ void populate_metadata_lane_profile(flattened_workspace_t& flattened,
     metadata.lane_profile_preview_message = text ? text : "";
 }
 
-void populate_metadata_chart_choices(flattened_workspace_t& flattened,
+void populate_metadata_chart_choices(frontend_workspace_view_t& flattened,
                                      const wormedit::document_history_t& history) {
     auto& metadata = flattened.view.metadata;
     constexpr std::size_t batch_limit = WORM_UI_METADATA_BATCH_CHART_CAPACITY;
@@ -219,7 +219,7 @@ void populate_metadata_chart_choices(flattened_workspace_t& flattened,
     metadata.chart_choice_count = choices.size();
 }
 
-void populate_metadata_output_groups(flattened_workspace_t& flattened,
+void populate_metadata_output_groups(frontend_workspace_view_t& flattened,
                                      const wormedit::document_history_t& history,
                                      const wormedit::workspace_controller_t& workspace) {
     auto& metadata = flattened.view.metadata;
@@ -266,7 +266,7 @@ void populate_metadata_output_groups(flattened_workspace_t& flattened,
 
 
 void populate_metadata_view_projection(
-    flattened_workspace_t& flattened, const wormedit::document_history_t& history,
+    frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& asset_base, metadata_drop_state_t& metadata_drop,
     runtime::metadata_asset_t& metadata_asset_runtime) {

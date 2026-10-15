@@ -101,14 +101,14 @@ bool compose_scene_cache_t::ensure_scene_key(const wormedit::song_document_t& do
 }
 
 namespace compose_projection_detail {
-void report_compose_projection(flattened_workspace_t& flattened,
+void report_compose_projection(frontend_workspace_view_t& flattened,
                                projection_feedback_kind_t producer,
                                wormedit::notification_severity_t severity, std::string message,
                                std::uint64_t object, wormedit::notification_source_t source) {
     flattened.projection_feedback.push_back({producer, object, severity, source, std::move(message)});
 }
 
-void report_compose_diagnostic(flattened_workspace_t& flattened, projection_feedback_kind_t producer,
+void report_compose_diagnostic(frontend_workspace_view_t& flattened, projection_feedback_kind_t producer,
     const wormedit::diagnostic_list_t& diagnostics, const char* fallback) {
     report_compose_projection(flattened, producer, to_notification_severity(diagnostics),
                               diagnostics.empty() ? std::string{fallback}
@@ -580,7 +580,7 @@ void populate_lane_layout_editor(WormUiComposeView& view, const wormedit::chart_
     populate_lane_layout_profile_choices(view, chart, active);
 }
 
-void populate_lane_layout_segments(flattened_workspace_t& flattened,
+void populate_lane_layout_segments(frontend_workspace_view_t& flattened,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::measure_index_t& measures,
                                    const wormedit::editor_interaction_view_model_t& interaction,
@@ -890,7 +890,7 @@ auto layer_assist_enabled(const application_command_state_t& app, wormedit::char
            std::ranges::find(app.project.semantic_layer.layer_assist_layers, layer) != app.project.semantic_layer.layer_assist_layers.end();
 }
 
-auto append_semantic_layer_row(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+auto append_semantic_layer_row(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                                const wormedit::semantic_layer_t& layer, bool selected, bool assist_tick) -> bool {
     auto* arena = flattened.arena();
     const auto* name = arena ? arena_string(*arena, layer.name) : nullptr;
@@ -933,7 +933,7 @@ void populate_semantic_membership_counts(compose_scene_cache_t& cache,
     }
 }
 
-void populate_note_layer_menu(flattened_workspace_t& flattened,
+void populate_note_layer_menu(frontend_workspace_view_t& flattened,
     const wormedit::chart_document_t& chart, std::uint64_t revision,
     application_command_state_t& app) {
     auto& view = flattened.view.compose;
@@ -961,7 +961,7 @@ void populate_note_layer_menu(flattened_workspace_t& flattened,
 }
 
 bool populate_semantic_layer_palette(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     compose_scene_cache_t& cache, const wormedit::document_history_t& history,
     application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
@@ -1056,7 +1056,7 @@ bool populate_semantic_layer_palette(
 
 
 void populate_compose_selected_objects_and_drafts(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const wormedit::document_history_t& history,
     application_command_state_t& application_state,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
@@ -1073,7 +1073,7 @@ void populate_compose_selected_objects_and_drafts(
     populate_compose_selected_note(flattened, chart, retained_state, view, cache);
 }
 
-void populate_compose_staged_draft(flattened_workspace_t& flattened,
+void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view) {
     if (!application_state.project.compose_gesture.bmson_marker_draft) return;
@@ -1118,7 +1118,7 @@ void populate_compose_selected_bgm(
 }
 
 void populate_compose_selected_note(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     const std::optional<wormedit::editor_interaction_state_t>& retained_state,
     WormUiComposeView& view, compose_scene_cache_t& cache) {
     if (retained_state->selected_notes.size() != 1) return;
@@ -1136,7 +1136,7 @@ void populate_compose_selected_note(
 }
 
 
-auto cached_compose_measures(flattened_workspace_t& flattened,
+auto cached_compose_measures(frontend_workspace_view_t& flattened,
                              const wormedit::chart_document_t& chart,
                              compose_scene_cache_t& cache) -> const wormedit::measure_index_t* {
     if (cache.scene.cached_measure_index) return &*cache.scene.cached_measure_index;
@@ -1153,7 +1153,7 @@ auto cached_compose_measures(flattened_workspace_t& flattened,
 
 
 const wormedit::measure_index_t* prepare_compose_chart_view(
-    flattened_workspace_t& flattened, const wormedit::chart_document_t& chart,
+    frontend_workspace_view_t& flattened, const wormedit::chart_document_t& chart,
     wormedit::document_history_t& history, compose_scene_cache_t& cache,
     application_command_state_t& application_state) {
     auto& view = flattened.view.compose;
@@ -1533,7 +1533,7 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
 
 }
 
-auto compose_static_storage_bytes(const flattened_workspace_t& storage) -> std::size_t {
+auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> std::size_t {
     const auto& data = storage.compose;
     // The independently owned arena's committed chunks include all span storage.
     // Count those chunks once, separately from the remaining heap containers.
@@ -1583,7 +1583,7 @@ auto compose_static_source_layout_matches(const WormUiComposeView& source,
         source.timing_focus==view.timing_focus &&
         source.downscroll==view.downscroll && source.lane_key_legend_visible==view.lane_key_legend_visible;
 }
-void clear_static_source_selection(flattened_workspace_t& storage) {
+void clear_static_source_selection(frontend_workspace_view_t& storage) {
     for (auto& note:storage.compose.note) note.selected=false;
     for (auto& hold:storage.compose.hold) hold.selected=false;
     for (auto& event:storage.compose.bgm.event) event.selected=false;
@@ -1656,7 +1656,7 @@ void refresh_compose_static_source(const compose_scene_projection_context_t& pro
         return;
     }
     discard_compose_static_source(cache);
-    auto storage = std::make_shared<flattened_workspace_t>();
+    auto storage = std::make_shared<frontend_workspace_view_t>();
     auto& retained = storage->view.compose;
     retained = make_compose_static_view(view, cache.scene.scene_window.view);
     const auto static_frame = projection.inputs.frame.for_output(*storage);
@@ -1751,7 +1751,7 @@ auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double
 
 auto extract_scalar_grid(compose_scene_cache_t& cache,
                          const wormedit::editor_field_scene_view_t& scene,
-                         flattened_workspace_t& flattened, double shift) -> bool {
+                         frontend_workspace_view_t& flattened, double shift) -> bool {
     const auto indices = scalar_projection_query(cache, 3, double(scene.visible_begin_row),
                                                  double(scene.visible_end_row));
     if (!indices)
@@ -1775,7 +1775,7 @@ auto extract_scalar_grid(compose_scene_cache_t& cache,
 }
 auto extract_scalar_objects(compose_scene_cache_t& cache,
                             const wormedit::editor_field_scene_window_metadata_view_t& metadata,
-                            flattened_workspace_t& flattened,
+                            frontend_workspace_view_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool {
     const auto& source = cache.scene.static_scene_storage->compose;
@@ -1830,7 +1830,7 @@ auto scalar_projection_fits_budget(const compose_scene_projection_context_t& pro
            scalar.bga_event.size() <= WORM_UI_COMPOSE_BGA_EVENT_CAPACITY &&
            scalar.grid.line.size() <= WORM_UI_COMPOSE_GRID_CAPACITY;
 }
-void discard_scalar_projection(flattened_workspace_t& flattened) {
+void discard_scalar_projection(frontend_workspace_view_t& flattened) {
     flattened.compose.band.clear();
     flattened.compose.lane.clear();
     flattened.compose.note.clear();
@@ -2411,7 +2411,7 @@ void populate_compose_final_projection(const compose_projection_context_t<wormed
 }
 
 void populate_bgm_only_compose_projection(
-    flattened_workspace_t& flattened, wormedit::document_history_t& history,
+    frontend_workspace_view_t& flattened, wormedit::document_history_t& history,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
     compose_scene_cache_t& cache, application_command_state_t& application_state,
     WormUiComposeView& view, bool downscroll,
@@ -2510,7 +2510,7 @@ void bind_branch_statement_metadata(const wormedit::bms_control_node_t& node,
         bind_branch_statement_metadata(child, rows, row_index);
 }
 
-void populate_branch_statement_metadata(flattened_workspace_t& flattened,
+void populate_branch_statement_metadata(frontend_workspace_view_t& flattened,
                                        const wormedit::chart_document_t& chart) {
     if (!chart.bms_control_tree) return;
     auto& rows = flattened.compose.branch.row;
@@ -2556,7 +2556,7 @@ auto projected_pointer_hold_active(const std::optional<wormedit::editor_interact
             wormedit::hold_gesture_source_t::alt_pointer));
 }
 
-void populate_compose_view(flattened_workspace_t& flattened,
+void populate_compose_view(frontend_workspace_view_t& flattened,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compose_scene_cache_t& cache, int window_width, int window_height,

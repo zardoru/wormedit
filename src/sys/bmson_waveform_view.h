@@ -22,7 +22,7 @@ struct waveform_analysis_slot_t {
 };
 
 struct bmson_waveform_projection_context_t {
-    flattened_workspace_t& flattened;
+    frontend_workspace_view_t& flattened;
     wormedit::document_history_t& history;
     const wormedit::workspace_controller_t& workspace;
     wormedit::editor_interaction_state_t* interaction_state;

@@ -56,7 +56,7 @@ struct sound_list_request_t {
     std::size_t row_limit{64};
 };
 
-struct sound_list_t {
+struct sound_list_view_t {
     // The requested window of matching rows, in catalog order.
     std::vector<sound_list_row_t> rows;
     std::size_t total_matching{};
@@ -64,16 +64,16 @@ struct sound_list_t {
     std::size_t first_row{};
     // Every tag in the catalog (first spelling), sorted case-insensitively.
     std::vector<std::string> all_tags;
+
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const sound_list_request_t& request) -> sound_list_view_t;
 };
 
 // The kind shown for a resource: the explicit one, else stem for BGM/music-only
 // resources and keysound otherwise.
 [[nodiscard]] auto effective_sound_kind(const resource_entry_t& resource) -> sound_kind_t;
 
-[[nodiscard]] auto build_sound_list_view(const song_document_t& document,
-                                      const sound_list_request_t& request) -> sound_list_t;
-
-struct sound_properties_t {
+struct sound_properties_view_t {
     bool valid{};
     resource_id_t resource;
     asset_id_t asset;
@@ -86,11 +86,11 @@ struct sound_properties_t {
     std::uint32_t channels{};
     std::uint64_t use_count{};
     bool missing{};
-};
 
-// Invalid (valid == false) when the resource is unknown or not audio.
-[[nodiscard]] auto build_sound_properties_view(const song_document_t& document,
-                                            resource_id_t resource) -> sound_properties_t;
+    // Invalid (valid == false) when the resource is unknown or not audio.
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   resource_id_t resource) -> sound_properties_view_t;
+};
 
 // The fallback outcome of each audio resource whose authored file is absent (up to `limit`,
 // document order). Exact files and resources with no candidate do not appear. Directory scans
@@ -124,7 +124,7 @@ struct keysound_row_t {
     bool missing{};
     std::uint64_t use_count{};
     std::string source_path;
-    // Bit i is set when the sound's default layers include keysound_list_t::layers[i].
+    // Bit i is set when the sound's default layers include keysound_list_view_t::layers[i].
     std::uint64_t layer_mask{};
     std::uint64_t note_layer_conflict_mask{};
     std::uint64_t sound_group_id{};
@@ -147,7 +147,10 @@ struct keysound_selection_row_t {
     auto operator==(const keysound_selection_row_t&) const -> bool = default;
 };
 
-struct keysound_list_t {
+struct keysound_list_request_t;
+struct keysound_list_cache_t;
+
+struct keysound_list_view_t {
     // Sound payloads only for the requested display window and selected IDs.
     std::vector<keysound_row_t> rows;
     std::vector<keysound_row_t> selected_rows;
@@ -179,7 +182,7 @@ struct keysound_list_t {
     std::string selected_filter_layer_name;
     bool selected_filter_layer_valid{};
     bms_identifier_capacity_t bms_capacity{};
-    auto operator==(const keysound_list_t& other) const -> bool {
+    auto operator==(const keysound_list_view_t& other) const -> bool {
         return rows == other.rows && selected_rows == other.selected_rows &&
             selection_rows == other.selection_rows && display_rows == other.display_rows &&
             listed_resources == other.listed_resources && advance_rows == other.advance_rows &&
@@ -196,6 +199,29 @@ struct keysound_list_t {
             bms_capacity.total == other.bms_capacity.total &&
             bms_capacity.largest_free_run == other.bms_capacity.largest_free_run;
     }
+
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const chart_document_t* chart,
+                                   std::size_t maximum_rows,
+                                   dock_sort_t sort = dock_sort_t::natural_name,
+                                   bool ids_available = true)
+        -> keysound_list_view_t;
+
+    // Filter the complete placeable catalog first, then flatten group sections and
+    // return only the requested display window. ID-only lists retain full filtered order.
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const chart_document_t* chart,
+                                   const keysound_list_request_t& request)
+        -> keysound_list_view_t;
+
+    [[nodiscard]] static auto from(keysound_list_cache_t& cache,
+                                   const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
+                                   dock_sort_t sort = dock_sort_t::natural_name, bool ids_available = true)
+        -> const keysound_list_view_t&;
+
+    [[nodiscard]] static auto from(keysound_list_cache_t& cache,
+                                   const song_document_t& document, const chart_document_t* chart,
+                                   const keysound_list_request_t& request) -> const keysound_list_view_t&;
 };
 
 enum class keysound_layer_filter_kind_t : std::uint8_t { any, no_layer, specific };
@@ -232,10 +258,7 @@ struct keysound_list_cache_t {
     }
 
 public:
-    friend auto build_keysound_list_cached_view(keysound_list_cache_t&, const song_document_t&,
-        const chart_document_t*, std::size_t, dock_sort_t, bool) -> const keysound_list_t&;
-    friend auto build_keysound_list_cached_view(keysound_list_cache_t&, const song_document_t&,
-        const chart_document_t*, const keysound_list_request_t&) -> const keysound_list_t&;
+    friend struct keysound_list_view_t;
 
     struct identity_t {
         std::uint64_t project_id{};
@@ -282,30 +305,9 @@ private:
     bool legacy_valid_{}, request_valid_{};
     legacy_key_t legacy_key_;
     request_key_t request_key_;
-    keysound_list_t legacy_result_, request_result_;
+    keysound_list_view_t legacy_result_, request_result_;
     std::size_t projection_builds_{}, asset_index_builds_{};
 };
-
-[[nodiscard]] auto build_keysound_list_view(const song_document_t& document,
-                                         const chart_document_t* chart,
-                                         std::size_t maximum_rows,
-                                         dock_sort_t sort = dock_sort_t::natural_name,
-                                         bool ids_available = true)
-    -> keysound_list_t;
-
-// Filter the complete placeable catalog first, then flatten group sections and
-// return only the requested display window. ID-only lists retain full filtered order.
-[[nodiscard]] auto build_keysound_list_view(const song_document_t& document,
-                                         const chart_document_t* chart,
-                                         const keysound_list_request_t& request)
-    -> keysound_list_t;
-[[nodiscard]] auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
-    const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
-    dock_sort_t sort = dock_sort_t::natural_name, bool ids_available = true)
-    -> const keysound_list_t&;
-[[nodiscard]] auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
-    const song_document_t& document, const chart_document_t* chart,
-    const keysound_list_request_t& request) -> const keysound_list_t&;
 
 // All supported nonzero BMS WAV slots, filtered and projected in a bounded window.
 struct sound_slot_request_t {
@@ -325,13 +327,14 @@ struct sound_slot_row_t {
     bool placeable{};
     std::string source_path;
 };
-struct sound_slot_list_t {
+struct sound_slots_view_t {
     std::vector<sound_slot_row_t> rows;
     std::size_t first_row{}, total_matching{};
     // Index in the filtered virtual list, or SIZE_MAX when the selected slot is hidden.
     std::size_t selected_row{SIZE_MAX};
+
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const sound_slot_request_t& request) -> sound_slots_view_t;
 };
-[[nodiscard]] auto build_sound_slots_view(const song_document_t& document,
-                                       const sound_slot_request_t& request) -> sound_slot_list_t;
 
 } // namespace wormedit::sys

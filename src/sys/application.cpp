@@ -190,8 +190,7 @@ using wormedit::sys::timing_stage_value;
 
 
 
-using wormedit::sys::flatten_workspace;
-using wormedit::sys::flattened_workspace_t;
+using wormedit::sys::frontend_workspace_view_t;
 using wormedit::sys::create_session_project_id;
 using wormedit::sys::parse_application_command;
 using wormedit::sys::timing_grid_state_t;
@@ -4521,7 +4520,7 @@ struct application_t::implementation_t {
             views.project_chart_runtime.session_generation);
     }
 
-    auto prepare_bound_frame_view(const workspace_view_t& model) -> flattened_workspace_t {
+    auto prepare_bound_frame_view(const workspace_view_t& model) -> frontend_workspace_view_t {
         prepare_bound_workspace_frame();
         prepare_tap_proposal(views.tap_runtime, views.tap_clock, session.history.document,
                              commands.audio_offset_edits_locked(), views.compose_scene_cache);
@@ -4530,7 +4529,7 @@ struct application_t::implementation_t {
         worm_ui_frontend_bga_move_preview(&bga_move_preview.chart_id,
                                           &bga_move_preview.document_revision,
                                           &bga_move_preview.event_id, &bga_move_preview.y_pixels);
-        return wormedit::sys::build_application_frame_view({
+        return wormedit::sys::frontend_workspace_view_t::from({
             .model = model,
             .history = session.history,
             .workspace = session.workspace,
@@ -4570,7 +4569,7 @@ struct application_t::implementation_t {
         });
     }
 
-    void complete_frame_view(flattened_workspace_t& flattened,
+    void complete_frame_view(frontend_workspace_view_t& flattened,
                              const composed_frame_inputs_t& frame) {
         validate_minimap_start_frame(commands, session.history, views.compose_interaction_state);
         flattened.view.minimap_click_moves_paused_playhead =
@@ -4655,7 +4654,7 @@ struct application_t::implementation_t {
                                         viewport_height);
     }
 
-    void dispatch_frame_action(double viewport_delta_seconds, flattened_workspace_t& flattened,
+    void dispatch_frame_action(double viewport_delta_seconds, frontend_workspace_view_t& flattened,
                                WormUiWorkspaceAction& action) {
         {
 
@@ -4676,7 +4675,7 @@ struct application_t::implementation_t {
         }
     }
 
-    void compose_frame_ui(flattened_workspace_t& flattened, double viewport_delta_seconds) {
+    void compose_frame_ui(frontend_workspace_view_t& flattened, double viewport_delta_seconds) {
         const auto frame_nuklear_previous =
             wormedit::sys::frame_timing().enter(wormedit::sys::frame_phase_t::nuklear);
         refresh_application_command_states(command_registry, session.history, session.workspace,
@@ -4699,13 +4698,13 @@ struct application_t::implementation_t {
 
     void compose_bound_frame(const composed_frame_inputs_t& frame) {
         auto flattened = prepare_bound_frame_view(frame.model);
-        wormedit::sys::flattened_workspace_t compare_first_pane(&views.frame_projection_arena);
+        wormedit::sys::frontend_workspace_view_t compare_first_pane(&views.frame_projection_arena);
         views.projection_feedback.publish(
             {session.history.document.id, session.history.document.revision,
              session.workspace.selected_chart.value_or(wormedit::chart_id_t{}),
              views.project_chart_runtime.session_generation},
             flattened.projection_feedback, platform.notification_sink);
-        wormedit::sys::flattened_workspace_t compare_second_pane(&views.frame_projection_arena);
+        wormedit::sys::frontend_workspace_view_t compare_second_pane(&views.frame_projection_arena);
         int compare_width = 0;
         int compare_height = 0;
         worm_window_get_size(&platform.lifetime.runtime.window, &compare_width, &compare_height);

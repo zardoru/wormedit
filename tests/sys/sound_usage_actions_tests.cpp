@@ -39,7 +39,7 @@ auto usage_history() -> document_history_t {
 
 auto usage_action(const document_history_t& history, bool source_row = false)
     -> WormUiWorkspaceAction {
-    const auto usage = build_sound_usage_view(history.document, resource_id_t{20});
+    const auto usage = sound_usage_view_t::from(history.document, resource_id_t{20});
     const auto kind =
         source_row ? sound_usage_kind_t::sound_channel_source : sound_usage_kind_t::note;
     const auto found = std::ranges::find(usage.rows, kind, &sound_usage_row_t::kind);

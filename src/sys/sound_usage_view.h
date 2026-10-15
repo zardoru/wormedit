@@ -29,7 +29,7 @@ struct sound_usage_row_t {
     asset_id_t referenced_asset;
 };
 
-struct sound_usage_projection_t {
+struct sound_usage_view_t {
     song_id_t song;
     std::uint64_t revision{};
     resource_id_t resource;
@@ -38,12 +38,12 @@ struct sound_usage_projection_t {
     std::size_t total_matching{};
     bool truncated{};
     std::vector<sound_usage_row_t> rows;
+
+    // Projects direct resource references and chart uses of the resource's shared audio asset.
+    [[nodiscard]] static auto from(const song_document_t& document, resource_id_t resource)
+        -> sound_usage_view_t;
 };
 
 inline constexpr std::size_t sound_usage_projection_limit = 1024;
-
-// Projects direct resource references and chart uses of the resource's shared audio asset.
-[[nodiscard]] auto build_sound_usage_view(const song_document_t& document, resource_id_t resource)
-    -> sound_usage_projection_t;
 
 } // namespace wormedit::sys

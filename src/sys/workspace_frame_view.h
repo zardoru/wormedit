@@ -49,7 +49,7 @@ struct workspace_frame_view_args_t {
 #endif
 };
 
-void populate_workspace_frame_view(flattened_workspace_t& flattened,
+void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
                                    const workspace_frame_view_args_t& args);
 
 } // namespace wormedit::sys

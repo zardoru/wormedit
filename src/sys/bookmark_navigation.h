@@ -65,7 +65,6 @@ struct bookmark_navigation_t {
         -> compose_action_outcome_t;
     [[nodiscard]] auto rename_bookmark(document_history_t&, std::uint64_t, chart_id_t, object_id_t,
                                        std::string_view) -> compose_action_outcome_t;
-    [[nodiscard]] static auto build_bookmark_chooser_view(const song_document_t&, chart_id_t,
-        std::size_t first_row, std::size_t row_limit, std::string_view query = {}) -> bookmark_chooser_outcome_t;
+
 };
 } // namespace wormedit::sys

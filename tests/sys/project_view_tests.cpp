@@ -25,7 +25,7 @@ auto project_song() -> song_document_t {
 
 TEST_CASE("Project chart table projects metadata layout groups notes and timing", "[unit][project-view]") {
     auto song = project_song();
-    const auto table = build_project_chart_table(song);
+    const auto table = project_chart_table_view_t::from(song);
     require_project(table.rows.size() == 1);
     const auto& row = table.rows[0];
     expect_project(row.chart == song.charts[0].id && row.name == "Normal" && row.author == "Author");
@@ -37,24 +37,24 @@ TEST_CASE("Project chart table projects metadata layout groups notes and timing"
 TEST_CASE("Project chart projection truncates rows without limiting the document", "[unit][project-view]") {
     auto song = project_song();
     song.charts.resize(257, song.charts[0]);
-    const auto table = build_project_chart_table(song);
+    const auto table = project_chart_table_view_t::from(song);
     expect_project(table.rows.size() == 256 && table.total_charts == 257 && table.rows_truncated);
     expect_project(song.charts.size() == 257);
     song.charts[0].metadata.name = std::string(5000, 'N');
-    const auto bounded = build_project_chart_table(song);
+    const auto bounded = project_chart_table_view_t::from(song);
     expect_project(bounded.rows[0].name.size() == 4096);
 }
 
 TEST_CASE("Project chart table cache refreshes revisions and reopened sessions", "[unit][project-view]") {
     auto song = project_song();
     project_chart_table_cache_t cache;
-    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Normal");
+    expect_project(project_chart_table_view_t::from(cache, song, 1).rows[0].name == "Normal");
     song.charts[0].metadata.name = "Unpublished";
-    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Normal");
+    expect_project(project_chart_table_view_t::from(cache, song, 1).rows[0].name == "Normal");
     ++song.revision;
-    expect_project(build_project_chart_table_view(cache, song, 1).rows[0].name == "Unpublished");
+    expect_project(project_chart_table_view_t::from(cache, song, 1).rows[0].name == "Unpublished");
     song.charts[0].metadata.name = "Reopened";
-    expect_project(build_project_chart_table_view(cache, song, 2).rows[0].name == "Reopened");
+    expect_project(project_chart_table_view_t::from(cache, song, 2).rows[0].name == "Reopened");
 }
 
 TEST_CASE("Project chart commands preserve atomic rejection and open newly created charts", "[unit][project-view]") {
@@ -156,7 +156,7 @@ TEST_CASE("Project New templates the selected four-key chart instead of the firs
     expect_project(chart.source_family == format_family_t::stepmania && chart.divisions_per_standard_measure == 3840);
     expect_project(chart.beat_zero_audio_offset_seconds == signed_rational_t{-7, 20});
     expect_project(chart.lane_layouts[0].layout.lanes.size() == 4 && chart.measures[0].notes.empty());
-    const auto table = build_project_chart_table(history.document);
+    const auto table = project_chart_table_view_t::from(history.document);
     expect_project(table.rows[0].key_count == 7 && table.rows.back().key_count == 4);
     expect_project(table.rows.back().mode == "4K");
     expect_project(validate_document(history.document).empty());

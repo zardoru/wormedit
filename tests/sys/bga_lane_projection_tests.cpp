@@ -71,7 +71,7 @@ void bga_scene_projection_is_ordered() {
     compose_scene_cache_t cache;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
     populate_compose_view(flattened, history, *binding.value, cache, 900, 600,
                           interaction, application, nullptr);

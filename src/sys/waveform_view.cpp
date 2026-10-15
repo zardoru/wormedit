@@ -24,7 +24,7 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                                    0.0L, static_cast<long double>(waveform.total_frames));
     return static_cast<double>(bounded / waveform.total_frames);
 }
-auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                               const audio::waveform_t& waveform,
                               const audio::aligned_waveform_request_t& request) -> bool {
     if (!std::isfinite(request.viewport_scroll_pixels) ||
@@ -76,7 +76,7 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible ? static_cast<double>(zero_fraction) : 0.0;
     return true;
 }
-void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
+void clear_frame_waveform_publication(frontend_workspace_view_t& flattened) {
     flattened.compose.waveform.row = {};
     flattened.compose.waveform.overview_row = {};
     flattened.compose.waveform.bar_row = {};
@@ -103,7 +103,7 @@ void clear_frame_waveform_publication(flattened_workspace_t& flattened) {
     view.waveform_beat_zero_visible = false;
     view.waveform_beat_zero_fraction = 0;
 }
-auto prepare_frame_waveform_storage(flattened_workspace_t& flattened) -> bool {
+auto prepare_frame_waveform_storage(frontend_workspace_view_t& flattened) -> bool {
     auto* arena = flattened.arena();
     if (!arena) return false;
     auto rows = arena_array<WormUiComposeWaveformRowView>(*arena,
@@ -320,7 +320,7 @@ void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t
 }
 // Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
 // their fraction of the song. Bookmarks outside the window are left out.
-void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_scene_cache_t& cache,
+void populate_bgm_bar_bookmarks(frontend_workspace_view_t& flattened, const compose_scene_cache_t& cache,
                                 const audio::waveform_t& waveform, bgm_bar_range_t range) {
     auto& view = flattened.view.compose;
     auto& out = flattened.compose.waveform.bar_bookmark;
@@ -350,7 +350,7 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     view.bgm_bar_bookmark_count = out.size();
 }
 // Publishes the BGM bar rows and measure marks for the requested song window.
-void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                       const audio::waveform_t& waveform, bgm_bar_range_t requested,
                       std::optional<bgm_bar_pan_override_t>* pan_override,
                       std::optional<bgm_bar_window_capture_t>* window_capture) {
@@ -403,7 +403,7 @@ void populate_bgm_bar(flattened_workspace_t& flattened, compose_scene_cache_t& c
 
 
 void populate_audio_waveform_views(
-    flattened_workspace_t& flattened,
+    frontend_workspace_view_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     int window_width, const WormUiAudioWaveformViewportRequest* viewport_request) {
     if (!flattened.view.audio_slices.visible && !flattened.view.metadata.visible)
@@ -465,7 +465,7 @@ void populate_audio_waveform_views(
 }
 
 auto populate_compose_waveform_projection(
-    flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+    frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     bool has_selected_audio_asset,
     const wormedit::editor_interaction_state_t* interaction_state,

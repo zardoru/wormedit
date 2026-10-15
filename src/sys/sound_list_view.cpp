@@ -32,7 +32,7 @@ auto sound_resource_metadata(const song_document_t& document) -> sound_resource_
         result.paths.emplace(asset.id.value, asset.source_path.generic_string());
     return result;
 }
-void append_keysound_metadata(keysound_list_t& list, const song_document_t& document,
+void append_keysound_metadata(keysound_list_view_t& list, const song_document_t& document,
                                const sound_resource_metadata_t& metadata) {
     std::unordered_map<std::uint64_t, asset_id_t> assets;
     for (const auto& resource : document.resources) assets.emplace(resource.id.value, resource.asset);
@@ -79,9 +79,9 @@ auto effective_sound_kind(const resource_entry_t& resource) -> sound_kind_t {
                                                       : sound_kind_t::keysound;
 }
 
-auto build_sound_list_view(const song_document_t& document, const sound_list_request_t& request)
-    -> sound_list_t {
-    sound_list_t list;
+auto sound_list_view_t::from(const song_document_t& document, const sound_list_request_t& request)
+    -> sound_list_view_t {
+    sound_list_view_t list;
     const auto search = ascii_lowercase(request.search);
     const auto tag = ascii_lowercase(request.tag);
     const auto counts = count_resource_references(document);
@@ -120,8 +120,8 @@ auto build_sound_list_view(const song_document_t& document, const sound_list_req
     return list;
 }
 
-auto build_sound_properties_view(const song_document_t& document, resource_id_t resource_id)
-    -> sound_properties_t {
+auto sound_properties_view_t::from(const song_document_t& document, resource_id_t resource_id)
+    -> sound_properties_view_t {
     const auto resource = std::ranges::find(document.resources, resource_id, &resource_entry_t::id);
     if (!resource_id || resource == document.resources.end()) return {};
     const auto* asset = document.find_audio_asset(resource->asset);
@@ -188,7 +188,7 @@ auto is_listed_sound(const song_document_t& document, const chart_document_t* ch
                             : document.find_audio_asset(resource.asset) != nullptr);
 }
 
-auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_t& list,
+auto keysound_layer_mask(const chart_document_t& chart, const keysound_list_view_t& list,
                          resource_id_t resource) -> std::uint64_t {
     const auto entry = std::ranges::find(chart.sound_layer_defaults, resource,
                                          &sound_layer_default_t::resource);
@@ -236,7 +236,7 @@ auto group_is_collapsed(const keysound_list_request_t& request, std::uint64_t gr
 }
 
 auto keysound_row_from_resource(const chart_document_t* chart,
-                                const keysound_list_t& list,
+                                const keysound_list_view_t& list,
                                 const resource_entry_t& resource) -> keysound_row_t {
     return {.resource = resource.id,
             .slot = keysound_slot(resource),
@@ -248,7 +248,7 @@ auto keysound_row_from_resource(const chart_document_t* chart,
 }
 
 auto note_conflicts(const note_t& note, const std::vector<layer_id_t>& defaults,
-                   const keysound_list_t& list) -> std::uint64_t {
+                   const keysound_list_view_t& list) -> std::uint64_t {
     const auto all = list.layers.size() == 64 ? ~std::uint64_t{0}
         : (std::uint64_t{1} << list.layers.size()) - 1;
     const auto contains_defaults = std::ranges::all_of(defaults, [&](auto id) {
@@ -266,7 +266,7 @@ auto note_conflicts(const note_t& note, const std::vector<layer_id_t>& defaults,
     return all & ~matching;
 }
 
-void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& list) {
+void populate_note_conflicts(const chart_document_t& chart, keysound_list_view_t& list) {
     std::unordered_map<std::uint64_t, keysound_row_t*> rows;
     for (auto& row : list.rows) rows.emplace(row.resource.value, &row);
     for (auto& row : list.selected_rows) rows.emplace(row.resource.value, &row);
@@ -295,11 +295,11 @@ void populate_note_conflicts(const chart_document_t& chart, keysound_list_t& lis
 } // namespace
 
 namespace {
-auto build_keysound_list_legacy_impl_view(const song_document_t& document,
+auto assemble_legacy_keysounds(const song_document_t& document,
     const chart_document_t* chart, std::size_t maximum_rows, dock_sort_t sort,
     bool ids_available, const std::unordered_set<std::uint64_t>* audio_asset_ids)
-    -> keysound_list_t {
-    keysound_list_t list;
+    -> keysound_list_view_t {
+    keysound_list_view_t list;
     list.bms_capacity = bms_identifier_capacity(document, "WAV");
     if (chart) {
         for (const auto& layer : chart->semantic_layers) {
@@ -335,10 +335,10 @@ auto build_keysound_list_legacy_impl_view(const song_document_t& document,
 }
 } // namespace
 
-auto build_keysound_list_view(const song_document_t& document, const chart_document_t* chart,
+auto keysound_list_view_t::from(const song_document_t& document, const chart_document_t* chart,
                            std::size_t maximum_rows, dock_sort_t sort,
-                           bool ids_available) -> keysound_list_t {
-    return build_keysound_list_legacy_impl_view(document, chart, maximum_rows, sort,
+                           bool ids_available) -> keysound_list_view_t {
+    return assemble_legacy_keysounds(document, chart, maximum_rows, sort,
                                               ids_available, nullptr);
 }
 
@@ -355,7 +355,7 @@ auto section_requested(const keysound_list_request_t& request, std::uint64_t id)
            std::ranges::find(request.group_ids, id) != request.group_ids.end();
 }
 
-void append_section_projection(keysound_list_t& list,
+void append_section_projection(keysound_list_view_t& list,
                                const keysound_section_projection_t& section,
                                std::size_t first, std::size_t last,
                                std::uint64_t primary_resource_id,
@@ -363,7 +363,7 @@ void append_section_projection(keysound_list_t& list,
     if (section.members.empty()) return;
     auto display_index = list.display_total++;
     if (display_index >= first && display_index < last)
-        list.display_rows.push_back({.kind = keysound_list_t::display_row_t::kind_t::group_header,
+        list.display_rows.push_back({.kind = keysound_list_view_t::display_row_t::kind_t::group_header,
             .group_id = section.id, .group_name = section.name,
             .group_sound_count = section.members.size(), .expanded = !section.collapsed});
     for (const auto* member : section.members) {
@@ -374,7 +374,7 @@ void append_section_projection(keysound_list_t& list,
         list.listed_resources.push_back(member->id);
         display_index = list.display_total++;
         if (display_index >= first && display_index < last) {
-            list.display_rows.push_back({.kind = keysound_list_t::display_row_t::kind_t::sound,
+            list.display_rows.push_back({.kind = keysound_list_view_t::display_row_t::kind_t::sound,
                 .group_id = section.id, .resource = member->id});
             list.rows.push_back(keysound_row_from_resource(chart, list, *member));
         }
@@ -404,7 +404,7 @@ auto make_keysound_sections(const song_document_t& document,
 auto collect_keysound_resources(const song_document_t& document,
                                 const chart_document_t* chart,
                                 const keysound_list_request_t& request,
-                                std::string_view search, keysound_list_t& list,
+                                std::string_view search, keysound_list_view_t& list,
                                 std::vector<keysound_section_projection_t>& sections,
                                 const std::unordered_map<std::uint64_t, std::size_t>& indices,
                                 std::size_t ungrouped_index,
@@ -447,7 +447,7 @@ void sort_keysound_sections(std::vector<keysound_section_projection_t>& sections
     });
 }
 
-void append_selected_keysounds(keysound_list_t& list, const chart_document_t* chart,
+void append_selected_keysounds(keysound_list_view_t& list, const chart_document_t* chart,
                                const keysound_list_request_t& request,
                                const document_id_index_t<resource_entry_t>& resources) {
     for (const auto id : request.selected_resource_ids) {
@@ -465,10 +465,10 @@ void append_selected_keysounds(keysound_list_t& list, const chart_document_t* ch
 } // namespace
 
 namespace {
-auto build_keysound_list_request_impl_view(const song_document_t& document,
+auto assemble_requested_keysounds(const song_document_t& document,
     const chart_document_t* chart, const keysound_list_request_t& request,
-    const std::unordered_set<std::uint64_t>* audio_asset_ids) -> keysound_list_t {
-    keysound_list_t list;
+    const std::unordered_set<std::uint64_t>* audio_asset_ids) -> keysound_list_view_t {
+    keysound_list_view_t list;
     list.bms_capacity = bms_identifier_capacity(document, "WAV");
     if (chart) {
         for (const auto& layer : chart->semantic_layers) {
@@ -520,9 +520,9 @@ auto build_keysound_list_request_impl_view(const song_document_t& document,
 }
 } // namespace
 
-auto build_keysound_list_view(const song_document_t& document, const chart_document_t* chart,
-                           const keysound_list_request_t& request) -> keysound_list_t {
-    return build_keysound_list_request_impl_view(document, chart, request, nullptr);
+auto keysound_list_view_t::from(const song_document_t& document, const chart_document_t* chart,
+                           const keysound_list_request_t& request) -> keysound_list_view_t {
+    return assemble_requested_keysounds(document, chart, request, nullptr);
 }
 
 namespace {
@@ -591,14 +591,14 @@ auto keysound_list_cache_t::asset_ids_for(const song_document_t& document)
     return audio_asset_ids_;
 }
 
-auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
+auto keysound_list_view_t::from(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
-    dock_sort_t sort, bool ids_available) -> const keysound_list_t& {
+    dock_sort_t sort, bool ids_available) -> const keysound_list_view_t& {
     const keysound_list_cache_t::legacy_key_t key{.identity = projection_identity(document, chart),
         .maximum_rows = maximum_rows, .sort = sort, .ids_available = ids_available};
     if (cache.legacy_valid_ && cache.legacy_key_ == key) return cache.legacy_result_;
     const auto& asset_ids = cache.asset_ids_for(document);
-    cache.legacy_result_ = build_keysound_list_legacy_impl_view(document, chart, maximum_rows,
+    cache.legacy_result_ = assemble_legacy_keysounds(document, chart, maximum_rows,
         sort, ids_available, &asset_ids);
     cache.legacy_key_ = key;
     cache.legacy_valid_ = true;
@@ -606,15 +606,15 @@ auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
     return cache.legacy_result_;
 }
 
-auto build_keysound_list_cached_view(keysound_list_cache_t& cache,
+auto keysound_list_view_t::from(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart,
-    const keysound_list_request_t& request) -> const keysound_list_t& {
+    const keysound_list_request_t& request) -> const keysound_list_view_t& {
     const auto identity = projection_identity(document, chart);
     if (cache.request_valid_ && cache.request_key_.identity == identity &&
         same_request(cache.request_key_, request)) return cache.request_result_;
     const auto owned_key = copy_request_key(identity, request);
     const auto& asset_ids = cache.asset_ids_for(document);
-    cache.request_result_ = build_keysound_list_request_impl_view(document, chart, request,
+    cache.request_result_ = assemble_requested_keysounds(document, chart, request,
                                                                 &asset_ids);
     cache.request_key_ = std::move(owned_key);
     cache.request_valid_ = true;
@@ -649,8 +649,8 @@ auto sound_slot_matches(const resource_entry_t* resource, std::size_t number,
 }
 } // namespace
 
-auto build_sound_slots_view(const song_document_t& document, const sound_slot_request_t& request)
-    -> sound_slot_list_t {
+auto sound_slots_view_t::from(const song_document_t& document, const sound_slot_request_t& request)
+    -> sound_slots_view_t {
     std::array<const resource_entry_t*, 1296> owners{};
     for (const auto& resource : document.resources)
         for (const auto& identity : resource.target_identities)
@@ -663,7 +663,7 @@ auto build_sound_slots_view(const song_document_t& document, const sound_slot_re
         if (sound_slot_matches(resource, number, metadata, request.use_filter, query))
             matching.push_back(number);
     }
-    sound_slot_list_t list;
+    sound_slots_view_t list;
     list.total_matching = matching.size();
     const auto selected = std::ranges::find(matching, request.selected_slot);
     if (selected != matching.end())

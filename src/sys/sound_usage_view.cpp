@@ -174,9 +174,9 @@ void append_asset_uses(const chart_document_t& chart, std::size_t chart_index, a
 
 } // namespace
 
-auto build_sound_usage_view(const song_document_t& document, resource_id_t resource)
-    -> sound_usage_projection_t {
-    sound_usage_projection_t projection{
+auto sound_usage_view_t::from(const song_document_t& document, resource_id_t resource)
+    -> sound_usage_view_t {
+    sound_usage_view_t projection{
         .song = document.id, .revision = document.revision, .resource = resource};
     const auto selected = std::ranges::find(document.resources, resource, &resource_entry_t::id);
     if (!resource || selected == document.resources.end())

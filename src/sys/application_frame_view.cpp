@@ -17,7 +17,7 @@
 namespace wormedit::sys {
 namespace {
 
-void build_hover_timing_view(flattened_workspace_t& flattened, const document_history_t& history,
+void build_hover_timing_view(frontend_workspace_view_t& flattened, const document_history_t& history,
                           const workspace_controller_t& workspace, compose_scene_cache_t& cache) {
     auto& view = flattened.view.compose;
     view.hover_timing_valid = false;
@@ -85,7 +85,7 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
 }
 
 auto prepare_frame_stems(const application_frame_projection_context_t& context,
-                         const flattened_workspace_t& flattened)
+                         const frontend_workspace_view_t& flattened)
     -> std::vector<const sound_channel_t*> {
     if (!flattened.view.compose.visible || !flattened.view.compose.scene_available ||
         !context.workspace.selected_chart || !context.compose_interaction_state ||
@@ -108,10 +108,10 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
 
 } // namespace
 
-auto build_application_frame_view(const application_frame_projection_context_t& context)
-    -> flattened_workspace_t {
+auto frontend_workspace_view_t::from(const application_frame_projection_context_t& context)
+    -> frontend_workspace_view_t {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     std::vector<const sound_channel_t*> frame_visible_stems;
 #endif
@@ -124,7 +124,7 @@ auto build_application_frame_view(const application_frame_projection_context_t& 
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
         WormUiBookmarkChooserRequest bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
-        flattened = flatten_workspace(
+        flattened = frontend_workspace_view_t::from(
             context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,

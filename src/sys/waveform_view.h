@@ -10,14 +10,14 @@ namespace wormedit::sys {
 
 // Populate the audio-slices and metadata views from the current waveform job result.
 void populate_audio_waveform_views(
-    flattened_workspace_t& flattened,
+    frontend_workspace_view_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     int window_width, const WormUiAudioWaveformViewportRequest* viewport_request = nullptr);
 
 // Populate the compose waveform and overview rows. The caller handles waveform offset and
 // beat-fit interaction overlays separately.
 [[nodiscard]] auto populate_compose_waveform_projection(
-    flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+    frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
     bool has_selected_audio_asset,
     const wormedit::editor_interaction_state_t* interaction_state,

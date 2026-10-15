@@ -20,7 +20,7 @@ struct bga_list_request_t {
     bool ids_available{true};
     resource_use_filter_t use_filter{resource_use_filter_t::all};
 };
-struct bga_list_t {
+struct bga_list_view_t {
     std::vector<bga_list_row_t> rows;
     std::vector<resource_id_t> matching_ids;
     std::vector<resource_id_t> all_resource_ids;
@@ -28,7 +28,9 @@ struct bga_list_t {
     std::vector<resource_id_t> advance_ids;
     std::size_t total_matching{}, first_row{};
     bms_identifier_capacity_t bms_capacity{};
+
+    [[nodiscard]] static auto from(const song_document_t& document,
+                                   const bga_list_request_t& request) -> bga_list_view_t;
 };
-[[nodiscard]] auto build_bga_list_view(const song_document_t& document,
-                                   const bga_list_request_t& request) -> bga_list_t;
+
 }

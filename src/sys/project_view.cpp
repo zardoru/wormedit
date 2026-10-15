@@ -28,7 +28,7 @@ auto decimal_value(signed_rational_t value, unsigned precision) -> std::string {
     return stream.str();
 }
 
-void build_project_chart_mode_view(const chart_document_t& chart, project_chart_row_t& row) {
+void build_project_chart_mode_view(const chart_document_t& chart, project_chart_row_view_t& row) {
     if (chart.lane_layouts.empty()) { row.mode = "No lane layout"; return; }
     const auto& layout = chart.lane_layouts.front().layout;
     row.mode = display_text(layout.display_name.empty() ? layout.profile_id : layout.display_name);
@@ -37,7 +37,7 @@ void build_project_chart_mode_view(const chart_document_t& chart, project_chart_
     }));
 }
 
-void build_project_chart_groups_view(const song_document_t& document, project_chart_row_t& row) {
+void build_project_chart_groups_view(const song_document_t& document, project_chart_row_view_t& row) {
     std::string names;
     for (const auto& group : document.output_groups) {
         if (std::ranges::find(group.charts, row.chart) == group.charts.end()) continue;
@@ -49,7 +49,7 @@ void build_project_chart_groups_view(const song_document_t& document, project_ch
     row.output_groups = names.empty() ? "Unassigned" : display_text(names);
 }
 
-void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_t& row) {
+void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_view_t& row) {
     const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
     if (!built.value) {
         row.length = "Unavailable";
@@ -68,9 +68,11 @@ void build_project_chart_length_view(const chart_document_t& chart, project_char
     row.length = stream.str();
 }
 
-auto build_project_chart_row_view(const song_document_t& document, const chart_document_t& chart)
-    -> project_chart_row_t {
-    project_chart_row_t row{.chart = chart.id, .name = display_text(chart.metadata.name),
+} // namespace
+
+auto project_chart_row_view_t::from(const song_document_t& document, const chart_document_t& chart)
+    -> project_chart_row_view_t {
+    project_chart_row_view_t row{.chart = chart.id, .name = display_text(chart.metadata.name),
         .author = display_text(chart.metadata.author),
         .rating = chart.metadata.rating ? decimal_value(*chart.metadata.rating, 2) : "Unset"};
     build_project_chart_mode_view(chart, row);
@@ -79,7 +81,6 @@ auto build_project_chart_row_view(const song_document_t& document, const chart_d
     build_project_chart_length_view(chart, row);
     return row;
 }
-} // namespace
 
 namespace {
 auto reorder_project_chart(document_history_t& history, const project_chart_command_t& action)
@@ -138,23 +139,23 @@ auto apply_project_chart_command(document_history_t& history,
                 apply_reorder_chart_command(history, action.chart, up ? index - 1 : index + 1)};
 }
 
-auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t {
+auto project_chart_table_view_t::from(const song_document_t& document) -> project_chart_table_view_t {
     const auto count = std::min(document.charts.size(), maximum_project_chart_rows);
-    project_chart_table_t table{.total_charts = document.charts.size(),
+    project_chart_table_view_t table{.total_charts = document.charts.size(),
         .rows_truncated = document.charts.size() > count};
     table.rows.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
-        table.rows.push_back(build_project_chart_row_view(document, document.charts[index]));
+        table.rows.push_back(project_chart_row_view_t::from(document, document.charts[index]));
     return table;
 }
 
-auto build_project_chart_table_view(project_chart_table_cache_t& cache,
+auto project_chart_table_view_t::from(project_chart_table_cache_t& cache,
                                     const song_document_t& document,
                                     std::uint64_t session_generation)
-    -> const project_chart_table_t& {
+    -> const project_chart_table_view_t& {
     if (!cache.populated || cache.song != document.id || cache.session_generation != session_generation ||
         cache.revision != document.revision) {
-        cache.table = build_project_chart_table(document);
+        cache.table = project_chart_table_view_t::from(document);
         cache.song = document.id;
         cache.session_generation = session_generation;
         cache.revision = document.revision;
@@ -342,7 +343,7 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
             });
         });
     const auto& table =
-        build_project_chart_table_view(runtime.cache, document, runtime.session_generation);
+        project_chart_table_view_t::from(runtime.cache, document, runtime.session_generation);
     runtime.rows.clear();
     runtime.rows.reserve(table.rows.size());
     for (const auto& row : table.rows) {

@@ -128,7 +128,7 @@ auto compare_local_difference_positions(const wormedit::chart_comparison_t& comp
 
 namespace {
 
-void build_pane_view(flattened_workspace_t& pane, wormedit::document_history_t& history,
+void build_pane_view(frontend_workspace_view_t& pane, wormedit::document_history_t& history,
                   const wormedit::workspace_controller_t& workspace, wormedit::chart_id_t chart,
                   compose_scene_cache_t& scene, std::optional<wormedit::editor_interaction_state_t>& state,
                   application_command_state_t& app, int width, int height,
@@ -145,8 +145,8 @@ void build_pane_view(flattened_workspace_t& pane, wormedit::document_history_t& 
 
 } // namespace
 
-void populate_compare_view(flattened_workspace_t& result, flattened_workspace_t& first_pane,
-                           flattened_workspace_t& second_pane,
+void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace_view_t& first_pane,
+                           frontend_workspace_view_t& second_pane,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compare_scene_cache_t& cache,

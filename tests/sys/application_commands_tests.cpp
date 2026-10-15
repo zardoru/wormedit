@@ -2373,7 +2373,7 @@ void check_placement_audition(bool enabled) {
     application.preferences.editor_preferences.audition_on_click = enabled;
     application.project.compose_gesture.note_paint_mode_active = true;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
     populate_compose_view(flattened, history, *binding.value, cache, 1280, 980, interaction,
                           application, nullptr);

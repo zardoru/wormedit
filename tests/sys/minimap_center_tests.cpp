@@ -65,7 +65,7 @@ struct projection_fixture_t {
     chart_document_t chart{minimap_chart()};
     timing_index_t timing{make_timing_index(chart)};
     compose_scene_cache_t cache;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     editor_interaction_state_t interaction;
     audio::waveform_analysis_result_t analysis{waveform_analysis()};
     std::optional<bgm_bar_pan_override_t> pan_override;
@@ -230,7 +230,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     cache.frame.bgm_bar_audio_seen = true;
     application_command_state_t application;
     std::optional<editor_interaction_state_t> interaction;
-    flattened_workspace_t flattened;
+    frontend_workspace_view_t flattened;
     const auto project = [&] {
         flattened = {};
         flattened.view.compose.visible = true;

@@ -98,10 +98,10 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 
 } // namespace
 
-auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& document, chart_id_t chart_id,
+auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t chart_id,
                               std::size_t first_row, std::size_t row_limit, std::string_view query)
-    -> bookmark_chooser_outcome_t {
-    bookmark_chooser_projection_t result{.chart = chart_id,
+    -> bookmark_chooser_view_outcome_t {
+    bookmark_chooser_view_t result{.chart = chart_id,
                                          .document_revision = document.revision,
                                          .first_row = first_row,
                                          .row_limit = row_limit};

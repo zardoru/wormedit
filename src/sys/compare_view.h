@@ -78,9 +78,9 @@ void cache_compare_diagnostics(compare_scene_cache_t& cache,
     const wormedit::chart_comparison_t& comparison, wormedit::chart_id_t chart)
     -> std::vector<wormedit::local_position_t>;
 
-void populate_compare_view(flattened_workspace_t& result,
-                           flattened_workspace_t& first_pane,
-                           flattened_workspace_t& second_pane,
+void populate_compare_view(frontend_workspace_view_t& result,
+                           frontend_workspace_view_t& first_pane,
+                           frontend_workspace_view_t& second_pane,
                            wormedit::document_history_t& history,
                            const wormedit::workspace_controller_t& workspace,
                            compare_scene_cache_t& cache,

@@ -16,7 +16,7 @@ namespace wormedit::sys {
 
 inline constexpr std::size_t maximum_project_chart_rows = 256;
 
-struct project_chart_row_t {
+struct project_chart_row_view_t {
     chart_id_t chart;
     std::string name;
     std::string author;
@@ -28,16 +28,29 @@ struct project_chart_row_t {
     std::uint64_t note_count{};
     std::string length;
     std::string diagnostic;
+
+    [[nodiscard]] static auto from(const song_document_t& document, const chart_document_t& chart)
+        -> project_chart_row_view_t;
 };
 
-struct project_chart_table_t {
-    std::vector<project_chart_row_t> rows;
+struct project_chart_table_cache_t;
+
+struct project_chart_table_view_t {
+    std::vector<project_chart_row_view_t> rows;
     std::size_t total_charts{};
     bool rows_truncated{};
+
+    [[nodiscard]] static auto from(const song_document_t& document) -> project_chart_table_view_t;
+
+    // Caller-owned session generation distinguishes reopened documents with identical IDs/revisions.
+    [[nodiscard]] static auto from(project_chart_table_cache_t& cache,
+                                   const song_document_t& document,
+                                   std::uint64_t session_generation)
+        -> const project_chart_table_view_t&;
 };
 
 struct project_chart_table_cache_t {
-    project_chart_table_t table;
+    project_chart_table_view_t table;
     song_id_t song;
     std::uint64_t session_generation{};
     std::uint64_t revision{};
@@ -111,12 +124,5 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
 [[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
     task_scheduler_t& scheduler) -> project_chart_ui_result_t;
-
-[[nodiscard]] auto build_project_chart_table(const song_document_t& document) -> project_chart_table_t;
-// Caller-owned session generation distinguishes reopened documents with identical IDs/revisions.
-[[nodiscard]] auto build_project_chart_table_view(project_chart_table_cache_t& cache,
-                                                  const song_document_t& document,
-                                                  std::uint64_t session_generation)
-    -> const project_chart_table_t&;
 
 } // namespace wormedit::sys

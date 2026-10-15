@@ -63,7 +63,7 @@ auto proposed_visible_source_rows(const wormedit::timing_index_t& original,
 
 struct proposed_grid_context_t {
     const compose_chart_scope_t<>& scope;
-    flattened_workspace_t& flattened;
+    frontend_workspace_view_t& flattened;
     const compose_scene_cache_t& cache;
     const wormedit::timing_index_t& original;
     const wormedit::timing_index_t& proposed;
@@ -363,7 +363,7 @@ void build_proposed_sections_view(proposed_grid_context_t& projection) {
         build_proposed_section_view(projection, index);
 }
 
-void build_compose_proposed_grid_view(flattened_workspace_t& flattened,
+void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
                                    const compose_scene_cache_t& cache,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::timing_index_t& original,
@@ -435,7 +435,7 @@ void rebuild_offset_timing_index(compose_scene_cache_t& cache,
     if (built.value) cache.timing.proposed_offset_timing_index = std::move(*built.value);
 }
 
-void build_offset_grid_view(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void build_offset_grid_view(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                          const document_history_t& history,
                          const workspace_controller_t& workspace,
                          const editor_interaction_state_t* interaction) {
@@ -447,7 +447,7 @@ void build_offset_grid_view(flattened_workspace_t& flattened, compose_scene_cach
                                       *cache.timing.proposed_offset_timing_index, *interaction);
 }
 
-void update_proposed_beat_zero(flattened_workspace_t& flattened,
+void update_proposed_beat_zero(frontend_workspace_view_t& flattened,
                                const audio_offset_drag_t& drag,
                                const audio::waveform_analysis_result_t* waveform_analysis) {
     auto& compose = flattened.view.compose;
@@ -466,7 +466,7 @@ void update_proposed_beat_zero(flattened_workspace_t& flattened,
         compose.waveform_proposed_beat_zero_fraction = static_cast<double>(fraction);
 }
 
-void populate_audio_offset_overlay(flattened_workspace_t& flattened,
+void populate_audio_offset_overlay(frontend_workspace_view_t& flattened,
                                    document_history_t& history,
                                    const workspace_controller_t& workspace,
                                    compose_scene_cache_t& cache,
@@ -551,7 +551,7 @@ void build_beat_fit_positions_view(WormUiComposeView& compose,
         source_y, compose.viewport_height_pixels, downscroll);
 }
 
-void populate_beat_fit_overlay(flattened_workspace_t& flattened,
+void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,
                                document_history_t& history,
                                const workspace_controller_t& workspace,
                                compose_scene_cache_t& cache,
@@ -575,7 +575,7 @@ void populate_beat_fit_overlay(flattened_workspace_t& flattened,
 } // namespace
 
 namespace {
-void populate_tap_apply_overlay(flattened_workspace_t& flattened,
+void populate_tap_apply_overlay(frontend_workspace_view_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const audio::waveform_analysis_result_t* analysis) {
@@ -614,7 +614,7 @@ void populate_tap_apply_overlay(flattened_workspace_t& flattened,
 } // namespace
 
 void populate_compose_waveform_overlays(
-    bool overview_available, flattened_workspace_t& flattened,
+    bool overview_available, frontend_workspace_view_t& flattened,
     document_history_t& history, const workspace_controller_t& workspace,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const std::optional<proposal_t<audio_offset_drag_t>>& audio_offset_drag,

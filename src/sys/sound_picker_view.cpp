@@ -90,9 +90,9 @@ void search(sound_picker_cache_t& cache, std::string_view query) {
 }
 } // namespace
 
-auto build_sound_picker_view(sound_picker_cache_t& cache, const song_document_t& document,
+auto sound_picker_view_result_t::from(sound_picker_cache_t& cache, const song_document_t& document,
                           const chart_document_t& chart, std::string_view query)
-    -> const sound_picker_result_t& {
+    -> const sound_picker_view_result_t& {
     if (!cache.valid || cache.document != &document || cache.chart_address != &chart ||
         cache.project != document.id.value || cache.revision != document.revision ||
         cache.chart != chart.id.value) rebuild_catalog(cache, document, chart);

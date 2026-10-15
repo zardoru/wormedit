@@ -85,7 +85,7 @@ void prepare_draw_stem_sources(compose_scene_cache_t& cache,
     }
 }
 
-auto draw_stem_source_name(flattened_workspace_t& flattened, std::string_view name) -> const char* {
+auto draw_stem_source_name(frontend_workspace_view_t& flattened, std::string_view name) -> const char* {
     const auto* owned = flattened.arena() ? arena_string(*flattened.arena(), name) : nullptr;
     if (!owned)
         flattened.view.compose.truncated = true;
@@ -108,7 +108,7 @@ auto bounded_draw_source_label(const wormedit::resource_entry_t& resource) -> st
     return text;
 }
 
-void populate_draw_source_label(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void populate_draw_source_label(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                                 const wormedit::song_document_t& document) {
     auto& view = flattened.view.compose;
     auto& source = cache.stems.draw_stem_sources;
@@ -155,7 +155,7 @@ auto compose_sound_missing(const compose_scene_cache_t& cache,
            document.resources[found->second].missing;
 }
 
-void populate_note_stem_sources(flattened_workspace_t& flattened,
+void populate_note_stem_sources(frontend_workspace_view_t& flattened,
                                 const compose_scene_cache_t& cache,
                                 const wormedit::song_document_t& document) {
     for (auto& note : flattened.compose.note) {
@@ -167,7 +167,7 @@ void populate_note_stem_sources(flattened_workspace_t& flattened,
                              !compose_sound_missing(cache, document, event.sound_id);
 }
 
-void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_cache_t& cache,
+void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                                 const wormedit::song_document_t& document,
                                 const wormedit::chart_document_t& chart) {
     prepare_draw_stem_sources(cache, document, chart);
@@ -209,7 +209,7 @@ void populate_draw_stem_sources(flattened_workspace_t& flattened, compose_scene_
     }
 }
 
-void populate_compose_keysound_fallbacks(flattened_workspace_t& flattened,
+void populate_compose_keysound_fallbacks(frontend_workspace_view_t& flattened,
                                          const wormedit::document_history_t& history,
                                          const std::filesystem::path& asset_base) {
     auto& view = flattened.view.compose;

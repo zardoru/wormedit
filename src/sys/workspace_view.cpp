@@ -27,7 +27,7 @@
 #include <vector>
 
 namespace wormedit::sys {
-auto flattened_workspace_t::arena() noexcept -> frame_arena_t* {
+auto frontend_workspace_view_t::arena() noexcept -> frame_arena_t* {
     if (arena_) return arena_;
     if (!owned_arena_) {
         try {
@@ -209,7 +209,7 @@ auto recovery_summary(frame_arena_t& arena,
 }
 
 auto populate_recovery_candidate(
-    flattened_workspace_t& result,
+    frontend_workspace_view_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery,
     std::size_t source_index, std::size_t index) -> bool {
     const auto& row = recovery.rows[source_index];
@@ -245,7 +245,7 @@ auto populate_recovery_candidate(
 }
 
 void populate_bounded_recovery_candidates(
-    flattened_workspace_t& result,
+    frontend_workspace_view_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery) {
     const auto capacity = result.view.recovery_candidate_count;
     result.view.recovery_candidate_count = 0;
@@ -263,7 +263,7 @@ void populate_bounded_recovery_candidates(
 }
 
 void populate_recovery_view(
-    flattened_workspace_t& result,
+    frontend_workspace_view_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery,
     bool recovery_scan_configured) {
     result.view.recovery_has_actionable_candidate =
@@ -308,7 +308,7 @@ void populate_recovery_view(
 }
 
 struct workspace_projection_context_t {
-    flattened_workspace_t& result;
+    frontend_workspace_view_t& result;
     const wormedit::workspace_view_t& source;
     const wormedit::song_document_t& document;
     const wormedit::stepmania_export_policy_t& stepmania_policy;
@@ -319,7 +319,7 @@ struct workspace_projection_context_t {
     keysound_list_cache_t* keysound_cache{};
 };
 
-void publish_workspace_summary(flattened_workspace_t& result, const char* text) {
+void publish_workspace_summary(frontend_workspace_view_t& result, const char* text) {
     if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
         return;
     if (!text) {
@@ -387,12 +387,12 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
 }
 
 template<class T>
-auto metadata_rows(flattened_workspace_t& result, std::size_t count) -> frame_span<T> {
+auto metadata_rows(frontend_workspace_view_t& result, std::size_t count) -> frame_span<T> {
     auto* arena = result.arena();
     return arena ? arena_array<T>(*arena, count) : frame_span<T>{};
 }
 
-void populate_metadata_search_tags(flattened_workspace_t& result,
+void populate_metadata_search_tags(frontend_workspace_view_t& result,
                                    const wormedit::workspace_metadata_view_t& tab,
                                    WormUiMetadataView& metadata) {
     if (!metadata.search_tags_editable) return;
@@ -417,7 +417,7 @@ void populate_metadata_search_tags(flattened_workspace_t& result,
     }
 }
 
-void populate_metadata_format_fields(flattened_workspace_t& result,
+void populate_metadata_format_fields(frontend_workspace_view_t& result,
                                      const wormedit::workspace_metadata_view_t& tab,
                                      WormUiMetadataView& metadata) {
     metadata.format_field_total_count = tab.format_fields.size();
@@ -451,7 +451,7 @@ void populate_metadata_format_fields(flattened_workspace_t& result,
     metadata.format_fields = result.metadata.format_field.data();
 }
 
-void append_metadata_format_targets(flattened_workspace_t& result, auto& metadata,
+void append_metadata_format_targets(frontend_workspace_view_t& result, auto& metadata,
                                     const auto& groups, bool chart_scoped) {
     std::array<const wormedit::format_metadata_t*, wormedit::format_families.size()> first_groups{};
     std::array<std::size_t, wormedit::format_families.size()> first_group_indices{};
@@ -586,7 +586,7 @@ void populate_timing_tab(const workspace_projection_context_t& projection, const
                        std::to_string(tab.bookmark_count + tab.section_count));
 
 }
-auto append_compose_output_group(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_compose_output_group(frontend_workspace_view_t& result, frame_arena_t& arena,
                                  const wormedit::output_group_t& group,
                                  std::size_t document_index) -> bool {
     const auto* name = arena_string(arena, group.name);
@@ -635,7 +635,7 @@ void populate_compose_output_groups(const workspace_projection_context_t& projec
     }
 }
 
-auto append_compose_resource(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_compose_resource(frontend_workspace_view_t& result, frame_arena_t& arena,
                              const compose_resource_entry_t& resource) -> bool {
     const auto* target = arena_string(arena, resource.target_index);
     const auto* name = arena_string(arena, resource.name);
@@ -681,7 +681,7 @@ void populate_compose_resources(const workspace_projection_context_t& projection
     }
 }
 
-auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_keysound_row(frontend_workspace_view_t& result, frame_arena_t& arena,
                          const wormedit::sys::keysound_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     const auto* name = arena_string(arena, row.name);
@@ -699,7 +699,7 @@ auto append_keysound_row(flattened_workspace_t& result, frame_arena_t& arena,
          .use_count = row.use_count, .source_path = path});
 }
 
-auto append_keysound_selected_row(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_keysound_selected_row(frontend_workspace_view_t& result, frame_arena_t& arena,
                                   const wormedit::sys::keysound_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     const auto* name = arena_string(arena, row.name);
@@ -712,7 +712,7 @@ auto append_keysound_selected_row(flattened_workspace_t& result, frame_arena_t& 
          .use_count = row.use_count, .source_path = path});
 }
 
-auto append_keysound_selection_row(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_keysound_selection_row(frontend_workspace_view_t& result, frame_arena_t& arena,
                                    const wormedit::sys::keysound_selection_row_t& row) -> bool {
     const auto* slot = arena_string(arena, row.slot);
     if (!slot) return false;
@@ -722,14 +722,14 @@ auto append_keysound_selection_row(flattened_workspace_t& result, frame_arena_t&
         .slot = slot, .missing = row.missing});
 }
 
-auto append_keysound_display_row(flattened_workspace_t& result, frame_arena_t& arena,
-                                 const wormedit::sys::keysound_list_t::display_row_t& row)
+auto append_keysound_display_row(frontend_workspace_view_t& result, frame_arena_t& arena,
+                                 const wormedit::sys::keysound_list_view_t::display_row_t& row)
     -> bool {
-    const auto* name = row.kind == wormedit::sys::keysound_list_t::display_row_t::kind_t::group_header
+    const auto* name = row.kind == wormedit::sys::keysound_list_view_t::display_row_t::kind_t::group_header
         ? arena_string(arena, row.group_name) : "";
     if (!name) return false;
     return result.compose.keysound.display_row.push_back({
-        .kind = row.kind == wormedit::sys::keysound_list_t::display_row_t::kind_t::group_header
+        .kind = row.kind == wormedit::sys::keysound_list_view_t::display_row_t::kind_t::group_header
             ? WORM_UI_COMPOSE_KEYSOUND_GROUP_HEADER : WORM_UI_COMPOSE_KEYSOUND_SOUND_ROW,
         .group_id = row.group_id, .group_name = name,
         .group_sound_count = row.group_sound_count, .expanded = row.expanded,
@@ -747,10 +747,10 @@ auto request_span(const T* data, std::size_t count) -> std::span<const T> {
     return data && count > 0 ? std::span<const T>{data, count} : std::span<const T>{};
 }
 
-auto build_compose_keysounds_view(const workspace_projection_context_t& projection,
+auto select_compose_keysounds(const workspace_projection_context_t& projection,
                                const wormedit::chart_document_t& chart,
-                               keysound_list_t& uncached)
-    -> const keysound_list_t& {
+                               keysound_list_view_t& uncached)
+    -> const keysound_list_view_t& {
     const auto& request = projection.keysound_request;
     if (request.slots_mode) {
         const auto sort = chart.source_family == wormedit::format_family_t::bms &&
@@ -758,9 +758,9 @@ auto build_compose_keysounds_view(const workspace_projection_context_t& projecti
             ? dock_sort_t::bms_id : dock_sort_t::natural_name;
         const bool ids = chart.source_family == wormedit::format_family_t::bms;
         if (projection.keysound_cache)
-            return build_keysound_list_cached_view(*projection.keysound_cache,
+            return keysound_list_view_t::from(*projection.keysound_cache,
                 projection.document, &chart, WORM_UI_COMPOSE_KEYSOUND_CAPACITY, sort, ids);
-        uncached = build_keysound_list_view(projection.document, &chart,
+        uncached = keysound_list_view_t::from(projection.document, &chart,
             WORM_UI_COMPOSE_KEYSOUND_CAPACITY, sort, ids);
         return uncached;
     }
@@ -794,13 +794,13 @@ auto build_compose_keysounds_view(const workspace_projection_context_t& projecti
                 : wormedit::sys::dock_sort_t::natural_name,
             .ids_available = chart.source_family == wormedit::format_family_t::bms};
     if (projection.keysound_cache)
-        return build_keysound_list_cached_view(*projection.keysound_cache,
+        return keysound_list_view_t::from(*projection.keysound_cache,
             projection.document, &chart, projected_request);
-    uncached = build_keysound_list_view(projection.document, &chart, projected_request);
+    uncached = keysound_list_view_t::from(projection.document, &chart, projected_request);
     return uncached;
 }
 
-auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_keysound_layer(frontend_workspace_view_t& result, frame_arena_t& arena,
                            const wormedit::sys::keysound_layer_t& layer) -> bool {
     const auto* name = arena_string(arena, layer.name);
     if (!name)
@@ -814,7 +814,7 @@ auto append_keysound_layer(flattened_workspace_t& result, frame_arena_t& arena,
                                                     .locked = layer.locked});
 }
 
-auto append_keysound_filter_layer(flattened_workspace_t& result, frame_arena_t& arena,
+auto append_keysound_filter_layer(frontend_workspace_view_t& result, frame_arena_t& arena,
                                   const wormedit::sys::keysound_layer_t& layer) -> bool {
     const auto* name = arena_string(arena, layer.name);
     if (!name) return false;
@@ -847,7 +847,7 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
     const auto& request = projection.keysound_request;
     view.sound_slots_mode = view.keysound_ids_available && request.slots_mode;
     if (!view.sound_slots_mode || !result.arena()) return;
-    const auto list = wormedit::sys::build_sound_slots_view(projection.document,
+    const auto list = wormedit::sys::sound_slots_view_t::from(projection.document,
         {.search = std::string{std::begin(request.search),
              std::find(std::begin(request.search), std::end(request.search), '\0')},
          .selected_slot = request.selected_slot,
@@ -872,8 +872,8 @@ void populate_compose_sound_slots(const workspace_projection_context_t& projecti
     view.sound_slot_count = rows.size();
 }
 
-auto reserve_compose_keysound_arrays(flattened_workspace_t& result, frame_arena_t& arena,
-                                     const wormedit::sys::keysound_list_t& list)
+auto reserve_compose_keysound_arrays(frontend_workspace_view_t& result, frame_arena_t& arena,
+                                     const wormedit::sys::keysound_list_view_t& list)
     -> bool {
     auto& rows = result.compose.keysound;
     rows.row = arena_array<WormUiComposeKeysoundRowView>(arena, list.rows.size());
@@ -925,8 +925,8 @@ void bind_compose_keysound_arrays(WormUiComposeView& view, KeysoundArrays& rows)
     view.keysound_filter_layers = rows.filter_layer.data();
 }
 
-void append_compose_keysound_payload(flattened_workspace_t& result, frame_arena_t& arena,
-                                     const wormedit::sys::keysound_list_t& list,
+void append_compose_keysound_payload(frontend_workspace_view_t& result, frame_arena_t& arena,
+                                     const wormedit::sys::keysound_list_view_t& list,
                                      WormUiComposeView& view) {
     for (const auto& layer : list.layers)
         if (!append_keysound_layer(result, arena, layer)) break;
@@ -963,8 +963,8 @@ void append_compose_keysound_payload(flattened_workspace_t& result, frame_arena_
     view.keysound_display_row_count = result.compose.keysound.display_row.size();
 }
 
-void append_compose_keysound_indices(flattened_workspace_t& result,
-                                     const wormedit::sys::keysound_list_t& list,
+void append_compose_keysound_indices(frontend_workspace_view_t& result,
+                                     const wormedit::sys::keysound_list_view_t& list,
                                      WormUiComposeView& view) {
     for (const auto& row : list.advance_rows)
         if (!result.compose.keysound.advance_row.push_back({.resource_id = row.resource.value,
@@ -1002,7 +1002,7 @@ void populate_sound_picker(const workspace_projection_context_t& projection,
         cache = stored.get();
     }
     const auto query = bounded_text(request.sound_picker_query, sizeof(request.sound_picker_query) - 1);
-    const auto& result = build_sound_picker_view(*cache, projection.document, chart, query);
+    const auto& result = sound_picker_view_result_t::from(*cache, projection.document, chart, query);
     std::copy(query.begin(), query.end(), view.query);
     view.total_count = result.total;
     for (const auto& row : result.rows) {
@@ -1025,8 +1025,8 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     view.keysounds_available = chart != nullptr;
     if (!arena || !view.keysounds_available) return;
     populate_sound_picker(projection, *chart);
-    keysound_list_t uncached;
-    const auto& list = build_compose_keysounds_view(projection, *chart, uncached);
+    keysound_list_view_t uncached;
+    const auto& list = select_compose_keysounds(projection, *chart, uncached);
     clear_compose_keysound_counts(view);
     view.keysound_section_projection_available = !projection.keysound_request.slots_mode;
     view.keysound_total_count = list.total;
@@ -1063,7 +1063,7 @@ void populate_compose_keysounds(const workspace_projection_context_t& projection
     populate_compose_sound_slots(projection);
 }
 
-void populate_compose_branch_rows(flattened_workspace_t& result,
+void populate_compose_branch_rows(frontend_workspace_view_t& result,
                                   const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.rows.size(),
@@ -1115,7 +1115,7 @@ auto compose_branch_choice_view(const wormedit::workspace_bms_branch_choice_t& c
         .has_next_value = choice.next_value.has_value(), .next_value = choice.next_value.value_or(0),
         .can_clear = choice.can_clear};
 }
-void populate_compose_branch_choices(flattened_workspace_t& result,
+void populate_compose_branch_choices(frontend_workspace_view_t& result,
                                      const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.choices.size(),
@@ -1139,7 +1139,7 @@ void populate_compose_branch_choices(flattened_workspace_t& result,
     }
 }
 void populate_compose_branch_diagnostics(
-    flattened_workspace_t& result, const wormedit::workspace_bms_branch_outline_view_t& outline) {
+    frontend_workspace_view_t& result, const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     const auto count = std::min(outline.diagnostics.size(),
         static_cast<std::size_t>(WORM_UI_COMPOSE_BRANCH_DIAGNOSTIC_CAPACITY));
@@ -1155,7 +1155,7 @@ void populate_compose_branch_diagnostics(
         view.branch_diagnostics[view.branch_diagnostic_count++] = text;
     }
 }
-void populate_compose_branch_outline(flattened_workspace_t& result,
+void populate_compose_branch_outline(frontend_workspace_view_t& result,
                                      const wormedit::workspace_bms_branch_outline_view_t& outline) {
     auto& view = result.view.compose;
     view.branch_outline_available = outline.available;
@@ -1173,7 +1173,7 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     view.document_revision = projection.document.revision;
     const auto& request = projection.bookmark_chooser_request;
     if (!request.open) return;
-    const auto page_outcome = bookmark_navigation_t::build_bookmark_chooser_view(projection.document, chart, request.first_row,
+    const auto page_outcome = bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
                                                std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query);
     const auto& page = page_outcome ? *page_outcome : page_outcome.error();
     view.total_count = page.total_count;
@@ -1250,7 +1250,7 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
     auto* arena = result.arena();
     wormedit::sys::sound_list_request_t request;
     request.row_limit = WORM_UI_SOUND_ROW_CAPACITY;
-    const auto list = wormedit::sys::build_sound_list_view(projection.document, request);
+    const auto list = wormedit::sys::sound_list_view_t::from(projection.document, request);
     audio.sound_rows_truncated = list.total_matching > list.rows.size();
     result.audio.sound_row = arena ? arena_array<WormUiSoundRowView>(*arena, list.rows.size())
                                    : frame_span<WormUiSoundRowView>{};
@@ -1265,7 +1265,7 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
                                ? wormedit::asset_id_t{}
                                : resource->asset;
         const auto properties =
-            wormedit::sys::build_sound_properties_view(projection.document, row.resource);
+            wormedit::sys::sound_properties_view_t::from(projection.document, row.resource);
         WormUiSoundRowView view{};
         view.resource_id = row.resource.value;
         view.asset_id = asset.value;
@@ -1311,7 +1311,7 @@ void populate_sound_usage(const workspace_projection_context_t& projection) {
     if (!request.find_uses_open || !request.selected_resource_id)
         return;
     const auto usage =
-        build_sound_usage_view(projection.document, resource_id_t{request.selected_resource_id});
+        sound_usage_view_t::from(projection.document, resource_id_t{request.selected_resource_id});
     view.usage_song_id = usage.song.value;
     view.usage_document_revision = usage.revision;
     view.usage_resource_id = usage.resource.value;
@@ -1421,7 +1421,7 @@ struct workspace_tab_visitor {
 
 } // namespace
 
-void flattened_workspace_t::rebind_view_pointers() {
+void frontend_workspace_view_t::rebind_view_pointers() {
     for (std::size_t index = 0; index < view.summary_line_count; ++index) {
         view.summary_lines[index] = summary.lines[index];
     }
@@ -1486,7 +1486,7 @@ auto build_notification_view(const notification_center_t& center, notification_t
     return result;
 }
 
-auto flatten_workspace(const wormedit::workspace_view_t& source,
+auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured,
@@ -1495,8 +1495,8 @@ auto flatten_workspace(const wormedit::workspace_view_t& source,
                        WormUiKeysoundDockRequest keysound_request,
                        WormUiSoundUsageRequest sound_usage_request,
                        WormUiBookmarkChooserRequest bookmark_chooser_request,
-                       keysound_list_cache_t* keysound_cache) -> flattened_workspace_t {
-    flattened_workspace_t result(arena);
+                       keysound_list_cache_t* keysound_cache) -> frontend_workspace_view_t {
+    frontend_workspace_view_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
     result.view.project_id = document.id.value;

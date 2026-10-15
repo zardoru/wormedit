@@ -10,7 +10,7 @@ gesture_requires_active_guard | 6 | src | requires an active gesture
 hand_rolled_job_generation | 9 | src,include | next_generation_
 variant_allow_list_probe | 24 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
 compatibility_forwarder | 7 | src,include | // Compatibility
-envelope_stamp_unpacked | 55 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
+envelope_stamp_unpacked | 0 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
 detail_namespace_reopen | 81 | src | ^using namespace [a-z_]+_detail;
-dispatch_probe_chain | 37 | src | if \(auto (result|response) = [a-z_]+\(context\)\)
+dispatch_probe_chain | 32 | src | if \(auto (result|response) = [a-z_]+\(context\)\)
 local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_id|next_paste_id|scan_chart_objects|conversion_object_id)\(

@@ -423,24 +423,13 @@ std::optional<compose_action_outcome_t> choose_no_semantic_layer(compose_action_
 std::optional<compose_action_outcome_t>
 dispatch_semantic_layer_palette_action(compose_action_context_t& context);
 
-std::optional<compose_action_outcome_t>
+compose_action_outcome_t
 semantic_layer_edit_status(compose_action_context_t& context,
                            wormedit::semantic_layer_edit_action_t edit, std::string_view success,
                            std::string_view unchanged, std::string_view rebind_failure);
 
-std::optional<compose_action_outcome_t> add_semantic_layer(compose_action_context_t& context);
-
 auto selected_catalog_layer(compose_action_context_t& context)
     -> std::pair<const wormedit::chart_document_t*, const wormedit::semantic_layer_t*>;
-
-std::optional<compose_action_outcome_t>
-update_semantic_layer_catalog_entry(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-delete_semantic_layer_catalog_entry(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-move_semantic_layer_catalog_entry(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_semantic_layer_catalog_action(compose_action_context_t& context);

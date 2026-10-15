@@ -249,13 +249,13 @@ auto compose_total_rows(timing_scene_cache_t& cache, const wormedit::chart_docum
     if (cache.compose_rows_attempted) return cache.compose_total_rows;
     cache.compose_rows_attempted = true;
     for (const auto& measure : chart.measures) {
-        const auto valid = wormedit::validate_measure(chart.divisions_per_standard_measure,
+        const auto valid = wormedit::measure_capacity_t::from(chart.divisions_per_standard_measure,
                                                      measure.definition);
-        if (!valid || *valid.row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
+        if (!valid || valid->row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
             cache.compose_total_rows = 0;
             return 0;
         }
-        cache.compose_total_rows += *valid.row_capacity;
+        cache.compose_total_rows += valid->row_capacity;
     }
     return cache.compose_total_rows;
 }

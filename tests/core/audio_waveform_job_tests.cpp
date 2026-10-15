@@ -102,21 +102,21 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     std::latch release_worker{1};
     task_scheduler_t scheduler{1, 1};
     task_graph_t blocker{1};
-    const auto blocker_task = blocker.add_task({}, [&](std::span<const task_result_t>,
+    const auto blocker_task = blocker.create_task({}, [&](std::span<const task_result_t>,
                                                        std::stop_token) {
         worker_started.count_down();
         release_worker.wait();
         return task_result_t::success();
     });
     REQUIRE(blocker_task);
-    auto blocker_submission = scheduler.submit(std::move(blocker));
+    auto blocker_submission = scheduler.begin(std::move(blocker));
     REQUIRE(blocker_submission);
     worker_started.wait();
 
     waveform_job_t job{sources, blocks, waveforms, scheduler};
     const auto rejected = job.begin(asset_id_t{1}, 32);
     release_worker.count_down();
-    REQUIRE(blocker_submission.graph.wait());
+    REQUIRE(blocker_submission.value().wait());
 
     CHECK_FALSE(rejected);
     CHECK(rejected.error().code == waveform_job_start_status_t::capacity_exceeded);

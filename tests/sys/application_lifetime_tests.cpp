@@ -44,11 +44,11 @@ auto observe_worker_shutdown(shutdown_observer_t& observer, std::stop_token stop
 void start_observed_worker(wormedit::task_scheduler_t& scheduler,
                            shutdown_observer_t& observer) {
     wormedit::task_graph_t graph{1};
-    const auto added = graph.add_task({}, [&observer](auto, std::stop_token stop) {
+    const auto added = graph.create_task({}, [&observer](auto, std::stop_token stop) {
         return observe_worker_shutdown(observer, stop);
     });
     require_lifetime(static_cast<bool>(added));
-    const auto submitted = scheduler.submit(std::move(graph));
+    const auto submitted = scheduler.begin(std::move(graph));
     require_lifetime(static_cast<bool>(submitted));
 }
 

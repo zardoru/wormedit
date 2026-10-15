@@ -10,12 +10,12 @@ namespace {
 
 auto pause_seconds(const timing_index_t& timing, std::uint64_t row, pause_kind_t kind)
     -> std::optional<signed_rational_t> {
-    const auto before = timing.seconds_at(row, timing_boundary_side_t::before_delays);
-    const auto event = timing.seconds_at(row, timing_boundary_side_t::event);
-    const auto after = timing.seconds_at(row, timing_boundary_side_t::after_stops);
-    if (!before.seconds || !event.seconds || !after.seconds) return std::nullopt;
-    return kind == pause_kind_t::delay ? timing_arithmetic::subtract_exact(*event.seconds, *before.seconds)
-                                       : timing_arithmetic::subtract_exact(*after.seconds, *event.seconds);
+    const auto before = timing.query_seconds(row, timing_boundary_side_t::before_delays);
+    const auto event = timing.query_seconds(row, timing_boundary_side_t::event);
+    const auto after = timing.query_seconds(row, timing_boundary_side_t::after_stops);
+    if (!before || !event || !after) return std::nullopt;
+    return kind == pause_kind_t::delay ? timing_arithmetic::subtract_exact(event->value, before->value)
+                                       : timing_arithmetic::subtract_exact(after->value, event->value);
 }
 
 struct pause_group_t {

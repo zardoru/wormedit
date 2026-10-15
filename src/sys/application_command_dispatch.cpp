@@ -562,8 +562,8 @@ auto selection_commands(command_context_t& context) -> std::optional<command_res
 auto marker_timing_index(const wormedit::chart_document_t& chart,
                          notification_sink_t& sink) -> std::optional<wormedit::timing_index_t> {
     if (!wormedit::sys::has_audio_marker_navigation(chart)) return std::nullopt;
-    auto built = wormedit::build_timing_index(chart);
-    if (built) return std::move(built.index);
+    auto built = wormedit::timing_index_t::from(chart);
+    if (built.value) return std::move(built.value);
     post_command_message(sink, notification_severity_t::warning, notification_source_t::input,
         "Audio-time bookmarks are skipped because the chart timing could not be built.");
     return std::nullopt;
@@ -883,19 +883,19 @@ auto workspace_tab_command(command_context_t& context) -> std::optional<command_
     case command_kind_t::workspace_open_compare_validate: tab = workspace_tab_t::compare_validate; break;
     default: return std::nullopt;
     }
-    const auto applied = apply_workspace_action(context.environment.document.workspace,
+    const auto applied = workspace_action_result_t::from(context.environment.document.workspace,
                                                 context.environment.document.history.document,
                                                 workspace_switch_tab_action_t{*tab});
     post_command_message(context.environment.document.notifications,
-                         applied.applied ? notification_severity_t::info
+                         applied.value ? notification_severity_t::info
                          : applied.diagnostics.empty()
                              ? notification_severity_t::warning
                              : to_notification_severity(applied.diagnostics.front().severity),
                          notification_source_t::input,
-                         applied.applied               ? "Workspace tab changed."
+                         applied.value               ? "Workspace tab changed."
                          : applied.diagnostics.empty() ? "Workspace tab change was rejected."
                                                        : applied.diagnostics.front().message);
-    return command_result_t{.value = applied.applied, .diagnostics = applied.diagnostics};
+    return command_result_t{.value = applied.value, .diagnostics = applied.diagnostics};
 }
 
 auto timing_lock_command(command_context_t& context) -> std::optional<command_result_t> {
@@ -928,13 +928,13 @@ auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
     const auto row = measures ? absolute_row(*measures, position) : std::nullopt;
     if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
-    const auto timing = build_timing_index(chart);
-    if (!timing) return std::nullopt;
-    const auto scroll = build_scroll_speed_index(chart, *timing.index);
-    if (!scroll) return std::nullopt;
-    const auto value = scroll_speed_at(*scroll.index, *timing.index,
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return std::nullopt;
+    const auto scroll = scroll_speed_index_t::from(chart, *timing.value);
+    if (!scroll.value) return std::nullopt;
+    const auto value = scroll_speed_state_t::from(*scroll.value, *timing.value,
                                        {static_cast<std::int64_t>(*row), 1});
-    return value && value.state ? std::optional{value.state->scroll_multiplier} : std::nullopt;
+    return value ? std::optional{value->value.scroll_multiplier} : std::nullopt;
 }
 
 auto timing_insert_command(command_context_t& context) -> std::optional<command_result_t> {

@@ -50,18 +50,18 @@ void build_project_chart_groups_view(const song_document_t& document, project_ch
 }
 
 void build_project_chart_length_view(const chart_document_t& chart, project_chart_row_t& row) {
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!built) {
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    if (!built.value) {
         row.length = "Unavailable";
         row.diagnostic = built.diagnostics.empty() ? "Chart timing is unavailable."
             : display_text(built.diagnostics.front().message);
         return;
     }
-    const auto begin = built.index->seconds_at(0, timing_boundary_side_t::before_delays);
+    const auto begin = built.value->query_seconds(0, timing_boundary_side_t::before_delays);
     const auto end =
-        built.index->seconds_at(built.index->total_rows, timing_boundary_side_t::after_stops);
+        built.value->query_seconds(built.value->total_rows, timing_boundary_side_t::after_stops);
     if (!begin || !end) { row.length = "Unavailable"; row.diagnostic = "Chart length query failed."; return; }
-    const auto seconds = to_long_double(*end.seconds) - to_long_double(*begin.seconds);
+    const auto seconds = to_long_double(end->value) - to_long_double(begin->value);
     std::ostringstream stream;
     stream.imbue(std::locale::classic());
     stream << std::fixed << std::setprecision(2) << seconds << " s";

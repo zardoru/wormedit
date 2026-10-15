@@ -260,9 +260,9 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
         return render_conversion_slice_plans(song, converted,
             {request.input.parent_path(), staging, {}});
     };
-    const auto published = publish_conversion_group_atomic(directory.parent_path(), group,
+    const auto published = create_conversion_group(directory.parent_path(), group,
         request.conversion, converted, std::move(options));
-    if (!published.published) return published.errors.empty() ? "Atomic publication failed" : published.errors.front();
+    if (!published.value.published) return published.diagnostics.errors.empty() ? "Atomic publication failed" : published.diagnostics.errors.front();
     for (const auto& output : converted.outputs)
         artifacts.push_back({{"path", (directory / output.suggested_filename).string()},
             {"filename", output.suggested_filename}, {"bytes", output.bytes.size()},

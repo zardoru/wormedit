@@ -207,23 +207,21 @@ auto video_frame_job_t::begin(song_id_t project, std::uint64_t document_revision
         generation = 1;
     }
     task_graph_t graph{1};
-    const auto task = graph.add_task(
+    const auto task = graph.create_task(
         {}, [this, decode_request = decode_request_t{project, document_revision, std::move(source),
                                                       clock, limits}](std::span<const task_result_t>,
                                                                       std::stop_token stop) {
             return run_decode(decode_request, stop);
         });
     if (!task) {
-        return std::unexpected(error_t<async_job_start_status_t>{video_job_start_status_t::scheduler_rejected, task.error ? task.error->message : "video frame task could not be created"});
+        return std::unexpected(error_t<async_job_start_status_t>{video_job_start_status_t::scheduler_rejected, task.error().message});
     }
-    auto submitted = scheduler_.submit(std::move(graph));
+    auto submitted = scheduler_.begin(std::move(graph));
     if (!submitted) {
-        const auto status = submitted.error &&
-                                    submitted.error->code == task_error_code_t::capacity_exceeded
+        const auto status = submitted.error().code == task_error_code_t::capacity_exceeded
                                 ? async_job_start_status_t::capacity_exceeded
                                 : async_job_start_status_t::scheduler_rejected;
-        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error ? submitted.error->message
-                                           : "video frame task could not be submitted"});
+        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error().message});
     }
     for (const auto& worker : workers_) {
         worker.graph.cancel();
@@ -233,8 +231,8 @@ auto video_frame_job_t::begin(song_id_t project, std::uint64_t document_revision
     workers_.push_back({.generation = generation,
                         .project = project,
                         .document_revision = document_revision,
-                        .graph = std::move(submitted.graph),
-                        .task = *task.id});
+                        .graph = std::move(submitted.value()),
+                        .task = *task});
     return generation;
 }
 

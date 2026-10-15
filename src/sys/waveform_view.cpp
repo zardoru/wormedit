@@ -16,10 +16,10 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                        long double row, timing_boundary_side_t side, bool round_up)
     -> std::optional<double> {
     row = std::clamp(row, 0.0L, static_cast<long double>(timing.total_rows));
-    const auto time = timing.seconds_at(static_cast<std::uint64_t>(row), side);
-    if (!time || !time.seconds || time.seconds->denominator == 0) return std::nullopt;
-    const auto frames = static_cast<long double>(time.seconds->numerator) * waveform.sample_rate /
-                        time.seconds->denominator;
+    const auto time = timing.query_seconds(static_cast<std::uint64_t>(row), side);
+    if (!time || time->value.denominator == 0) return std::nullopt;
+    const auto frames = static_cast<long double>(time->value.numerator) * waveform.sample_rate /
+                        time->value.denominator;
     const auto bounded = std::clamp(round_up ? std::ceil(frames) : std::floor(frames),
                                    0.0L, static_cast<long double>(waveform.total_frames));
     return static_cast<double>(bounded / waveform.total_frames);
@@ -68,10 +68,10 @@ auto populate_cached_overview(flattened_workspace_t& flattened, compose_scene_ca
     view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
-    const auto zero = timing.seconds_at(0, timing_boundary_side_t::before_delays);
-    const auto zero_fraction = zero && zero.seconds && zero.seconds->denominator != 0
-        ? static_cast<long double>(zero.seconds->numerator) * waveform.sample_rate /
-          zero.seconds->denominator / waveform.total_frames : -1.0L;
+    const auto zero = timing.query_seconds(0, timing_boundary_side_t::before_delays);
+    const auto zero_fraction = zero && zero && zero->value.denominator != 0
+        ? static_cast<long double>(zero->value.numerator) * waveform.sample_rate /
+          zero->value.denominator / waveform.total_frames : -1.0L;
     view.waveform_beat_zero_visible = std::isfinite(zero_fraction) && zero_fraction >= 0 && zero_fraction <= 1;
     view.waveform_beat_zero_fraction = view.waveform_beat_zero_visible ? static_cast<double>(zero_fraction) : 0.0;
     return true;
@@ -334,10 +334,10 @@ void populate_bgm_bar_bookmarks(flattened_workspace_t& flattened, const compose_
     if (cache.timing.marker_timing_index) {
         for (std::size_t index = 0; index < view.beat_bookmark_count; ++index) {
             const auto& bookmark = view.beat_bookmarks[index];
-            const auto time = cache.timing.marker_timing_index->seconds_at(bookmark.chart_row,
+            const auto time = cache.timing.marker_timing_index->query_seconds(bookmark.chart_row,
                                         timing_boundary_side_t::before_delays);
-            if (!time.seconds || time.seconds->denominator == 0) continue;
-            add(frames_to_fraction(wormedit::to_long_double(*time.seconds)),
+            if (!time || time->value.denominator == 0) continue;
+            add(frames_to_fraction(wormedit::to_long_double(time->value)),
                 bookmark.label, false);
         }
     }

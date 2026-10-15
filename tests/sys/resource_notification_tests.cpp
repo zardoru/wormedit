@@ -114,25 +114,25 @@ auto wait_for_export_result(runtime::output_group_export_t& exports,
 auto make_resource_task(task_scheduler_t& scheduler, task_result_t result)
     -> std::pair<task_graph_handle_t, task_id_t> {
     task_graph_t graph{1};
-    const auto added = graph.add_task({}, [result = std::move(result)](
+    const auto added = graph.create_task({}, [result = std::move(result)](
         std::span<const task_result_t>, std::stop_token) mutable { return std::move(result); });
     REQUIRE(added);
-    auto submitted = scheduler.submit(std::move(graph));
+    auto submitted = scheduler.begin(std::move(graph));
     REQUIRE(submitted);
-    return {std::move(submitted.graph), *added.id};
+    return {std::move(submitted.value()), *added};
 }
 
 auto make_export_task(runtime::output_group_export_t& runtime,
                       output_group_export_task_result_t result) -> pending_output_group_export_t {
     task_graph_t graph{1};
     const auto value = std::make_shared<const output_group_export_task_result_t>(std::move(result));
-    const auto added = graph.add_task({}, [value](std::span<const task_result_t>, std::stop_token) {
+    const auto added = graph.create_task({}, [value](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success(task_value_t::from(value));
     });
     REQUIRE(added);
-    auto submitted = runtime.scheduler.submit(std::move(graph));
+    auto submitted = runtime.scheduler.begin(std::move(graph));
     REQUIRE(submitted);
-    return {.graph = std::move(submitted.graph), .task = *added.id,
+    return {.graph = std::move(submitted.value()), .task = *added,
             .song = song_id_t{1}, .revision = 0};
 }
 } // namespace
@@ -272,14 +272,14 @@ TEST_CASE("resource copy stale completion warns once without changing document",
     auto copied = std::make_shared<const project_asset_copy_result_t>(project_asset_copy_result_t{
         .status = project_asset_copy_status_t::copied, .relative_path = "assets/1-source.wav"});
     task_graph_t graph{1};
-    const auto added = graph.add_task({}, [copied](std::span<const task_result_t>, std::stop_token) {
+    const auto added = graph.create_task({}, [copied](std::span<const task_result_t>, std::stop_token) {
         return task_result_t::success(task_value_t::from(copied));
     });
     require_resource_notification(static_cast<bool>(added));
-    auto submitted = fixture.scheduler.submit(std::move(graph));
+    auto submitted = fixture.scheduler.begin(std::move(graph));
     require_resource_notification(static_cast<bool>(submitted));
     const auto revision = fixture.history.document.revision;
-    require_resource_notification(fixture.resource_copy.start({.graph = std::move(submitted.graph), .task = *added.id,
+    require_resource_notification(fixture.resource_copy.start({.graph = std::move(submitted.value()), .task = *added,
         .asset = asset_id_t{1}, .song = fixture.history.document.id, .revision = revision - 1,
         .source_path = fixture.source, .export_copy = false}));
     const auto completed = wait_for_resource_result(fixture);

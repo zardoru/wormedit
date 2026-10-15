@@ -69,16 +69,17 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
         state->virtual_bms_cursor_row || !cache.timing.marker_timing_index || !cache.scene.cached_measure_index ||
         cache.scene.chart != state->chart)
         return std::nullopt;
-    const auto at = cache.timing.marker_timing_index->seconds_at(*cache.scene.cached_measure_index, state->cursor);
-    const auto end = cache.timing.marker_timing_index->seconds_at(cache.timing.marker_timing_index->total_rows);
-    if (!at.seconds || !end.seconds) return std::nullopt;
+    const auto at = cache.timing.marker_timing_index->query_seconds(*cache.scene.cached_measure_index, state->cursor);
+    const auto end = cache.timing.marker_timing_index->query_seconds(cache.timing.marker_timing_index->total_rows);
+    if (!at || !end) return std::nullopt;
     // Times before the audio start clamp to frame zero, as the preview start does.
     const auto to_frame = [](signed_rational_t seconds) -> std::optional<std::uint64_t> {
         if (seconds.numerator < 0) return std::uint64_t{0};
-        return sample_frame_at(seconds, audio::output_sample_rate).frame;
+        const auto converted = sample_frame_t::from(seconds, audio::output_sample_rate);
+        return converted ? std::optional{converted->value.frame} : std::nullopt;
     };
-    const auto frame = to_frame(*at.seconds);
-    const auto end_frame = to_frame(*end.seconds);
+    const auto frame = to_frame(at->value);
+    const auto end_frame = to_frame(end->value);
     if (!frame || !end_frame) return std::nullopt;
     return stopped_playhead_t{*frame, std::max(*end_frame, *frame)};
 }

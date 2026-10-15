@@ -202,11 +202,11 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
     }
     if (!timing)
         return std::nullopt;
-    const auto begin = timing->seconds_at(begin_row);
-    const auto end = timing->seconds_at(end_row);
-    if (!begin.seconds || !end.seconds)
+    const auto begin = timing->query_seconds(begin_row);
+    const auto end = timing->query_seconds(end_row);
+    if (!begin || !end)
         return std::nullopt;
-    return timing_arithmetic::subtract_exact<rational_t>(*end.seconds, *begin.seconds);
+    return timing_arithmetic::subtract_exact<rational_t>(end->value, begin->value);
 }
 
 auto edit_compose_speed_span(const WormUiComposeInputAction& input,

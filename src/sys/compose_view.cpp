@@ -1192,13 +1192,13 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
             cache.timing.recipe_areas = wormedit::sys::build_recipe_areas_view(
                 chart, cache.scene.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
         }
-        auto timing = wormedit::build_timing_index(chart, {.allow_bounded_clock = true});
-        if (timing) {
+        auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
+        if (timing.value) {
             cache.timing.dead_spans = wormedit::sys::build_dead_spans_view(
-                chart, cache.scene.index->measures, *timing.index, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+                chart, cache.scene.index->measures, *timing.value, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
             cache.timing.speed_spans = wormedit::sys::build_speed_spans_view(
-                chart, *timing.index, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
-            cache.timing.marker_timing_index = std::move(*timing.index);
+                chart, *timing.value, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
+            cache.timing.marker_timing_index = std::move(*timing.value);
         }
     }
     if (!cache.scene.index) {

@@ -299,23 +299,23 @@ auto prepare_player_preview_index(const Context& context) -> bool {
     state.decoded_video_content_id = 0;
     context.video_job.cancel();
 #endif
-    auto built = build_player_preview_index(chart, history.document.revision);
-    if (!built) {
+    auto built = player_preview_index_t::from(chart, history.document.revision);
+    if (!built.value || !built.diagnostics.empty()) {
         state.status = built.diagnostics.empty()
                            ? "The player-preview visual schedule could not be compiled."
                            : built.diagnostics.front().message;
         return false;
     }
-    state.index = std::move(*built.index);
-    auto schedule = build_preview_schedule(
+    state.index = std::move(*built.value);
+    auto schedule = preview_schedule_t::from(
         chart, state.index->timing, {.sample_rate = sample_rate, .include_metronome = false});
-    if (!schedule) {
+    if (!schedule.value) {
         state.status = schedule.diagnostics.empty()
                            ? "The visual preview schedule could not be compiled."
                            : schedule.diagnostics.front().message;
         return false;
     }
-    state.visual_schedule = std::move(*schedule.schedule);
+    state.visual_schedule = std::move(*schedule.value);
     state.visual_queue.emplace();
     const auto started = state.visual_queue->begin(*state.visual_schedule);
     if (!started) {
@@ -333,14 +333,14 @@ auto prepare_player_preview_storyboards(const Context& context) -> bool {
     state.storyboards.reserve(context.history.document.storyboards.size());
     for (const auto& storyboard : context.history.document.storyboards) {
         if (!storyboard.model) continue;
-        auto built = build_storyboard_preview_index(*storyboard.model);
-        if (!built) {
+        auto built = storyboard_preview_index_t::from(*storyboard.model);
+        if (!built.value) {
             state.status = built.diagnostics.empty()
                                ? "A storyboard preview index could not be built."
                                : built.diagnostics.front().message;
             return false;
         }
-        state.storyboards.emplace_back(storyboard.id, std::move(*built.index));
+        state.storyboards.emplace_back(storyboard.id, std::move(*built.value));
     }
     return true;
 }

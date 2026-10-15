@@ -513,10 +513,10 @@ void build_compose_beat_markers_view(const compose_projection_context_t<>& input
 std::optional<double>
 build_compose_audio_marker_y_view(const compose_projection_context_t<>& input,
                                const auto& timing_index, std::int64_t milliseconds) {
-    const auto projected = timing_index.row_at(wormedit::signed_rational_t{milliseconds, 1'000});
-    if (!projected || !projected.absolute_row || projected.absolute_row->denominator == 0)
+    const auto projected = timing_index.query_position(wormedit::signed_rational_t{milliseconds, 1'000});
+    if (!projected || projected->value.denominator == 0)
         return std::nullopt;
-    const auto row = wormedit::to_long_double(*projected.absolute_row);
+    const auto row = wormedit::to_long_double(projected->value);
     const auto pixels_per_row =
         static_cast<long double>(input.scope.interaction_view.pixels_per_standard_measure) /
         static_cast<long double>(input.scope.chart_scope.chart.divisions_per_standard_measure);

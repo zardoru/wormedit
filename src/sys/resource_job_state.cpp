@@ -72,7 +72,8 @@ auto complete_project_resource_copy(const pending_project_resource_copy_t& reque
     if (!relinked.diagnostics.empty())
         return {relinked.diagnostics.front().message,
                 to_notification_severity(relinked.diagnostics.front().severity)};
-    if (!rebind_workspace(workspace, history))
+    if (const auto rebound = workspace_action_result_t::rebind(workspace, history);
+        !rebound.value || !rebound.diagnostics.empty())
         return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
                 true, notification_source_t::document};
     return {copied.status == project_asset_copy_status_t::reused

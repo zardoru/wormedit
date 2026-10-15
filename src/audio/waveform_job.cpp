@@ -47,7 +47,7 @@ auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
     if (generation == 0)
         generation = 1;
     task_graph_t graph{1};
-    const auto task = graph.add_task({}, [this, asset, frames_per_bin, options](
+    const auto task = graph.create_task({}, [this, asset, frames_per_bin, options](
                                              std::span<const task_result_t>, std::stop_token stop) {
         auto analysis =
             sources_.analyze_waveform(asset, blocks_, waveforms_, frames_per_bin, options, stop);
@@ -56,17 +56,14 @@ auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
         return task_result_t::success(task_value_t::from(std::move(payload)));
     });
     if (!task) {
-        return std::unexpected(error_t<async_job_start_status_t>{waveform_job_start_status_t::scheduler_rejected, task.error ? task.error->message
-                                      : "waveform analysis task could not be created"});
+        return std::unexpected(error_t<async_job_start_status_t>{waveform_job_start_status_t::scheduler_rejected, task.error().message});
     }
-    auto submitted = scheduler_.submit(std::move(graph));
+    auto submitted = scheduler_.begin(std::move(graph));
     if (!submitted) {
-        const auto status = submitted.error &&
-                                    submitted.error->code == task_error_code_t::capacity_exceeded
+        const auto status = submitted.error().code == task_error_code_t::capacity_exceeded
                                 ? async_job_start_status_t::capacity_exceeded
                                 : async_job_start_status_t::scheduler_rejected;
-        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error ? submitted.error->message
-                                           : "waveform analysis task could not be submitted"});
+        return std::unexpected(error_t<async_job_start_status_t>{status, submitted.error().message});
     }
 
     for (const auto& worker : workers_)
@@ -75,8 +72,8 @@ auto waveform_job_t::begin(asset_id_t asset, std::uint32_t frames_per_bin,
     current_generation_ = generation;
     workers_.push_back({.generation = generation,
                         .asset = asset,
-                        .graph = std::move(submitted.graph),
-                        .task = *task.id});
+                        .graph = std::move(submitted.value()),
+                        .task = *task});
     return generation;
 }
 

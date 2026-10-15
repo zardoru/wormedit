@@ -109,8 +109,8 @@ auto link_imported_metadata_audio(
         severity = wormedit::notification_severity_t::error;
         return false;
     }
-    const auto rebound = wormedit::rebind_workspace(workspace, history);
-    if (!rebound) {
+    const auto rebound = wormedit::workspace_action_result_t::rebind(workspace, history);
+    if (!(rebound.value && rebound.diagnostics.empty())) {
         source = wormedit::notification_source_t::document;
         severity = rebound.diagnostics.empty()
                        ? wormedit::notification_severity_t::error
@@ -125,7 +125,7 @@ auto link_imported_metadata_audio(
             return std::ranges::find(resource.roles, wormedit::resource_role_t::music) !=
                    resource.roles.end();
         });
-        (void)wormedit::apply_workspace_action(
+        (void)wormedit::workspace_action_result_t::from(
             workspace, history.document,
             wormedit::workspace_select_asset_action_t{
                 .asset = music != resources.end() ? music->asset : request.asset,

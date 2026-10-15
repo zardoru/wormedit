@@ -11,11 +11,11 @@ auto navigation_frame(const chart_document_t& chart, const application_command_s
     if (target.preview_frame) return target.preview_frame;
     if (target.canvas_measure) return std::nullopt;
     const auto built = build_measure_index(chart);
-    const auto timing = build_timing_index(chart, {.allow_bounded_clock = true});
-    if (!std::holds_alternative<measure_index_t>(built) || !timing.index) return std::nullopt;
+    const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    if (!std::holds_alternative<measure_index_t>(built) || !timing.value) return std::nullopt;
     const auto end = application.services.transport_preview_end_frame
         ? application.services.transport_preview_end_frame() : std::nullopt;
-    return bookmark_preview_frame(*timing.index, std::get<measure_index_t>(built), target.position, end);
+    return bookmark_preview_frame(*timing.value, std::get<measure_index_t>(built), target.position, end);
 }
 }
 

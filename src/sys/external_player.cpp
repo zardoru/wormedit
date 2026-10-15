@@ -281,18 +281,20 @@ auto external_player_t::prepare_preview(const song_document_t& song, chart_id_t 
 auto external_player_t::launch(const external_player_definition_t& player,
     external_player_action_t action, const song_document_t& song, chart_id_t chart,
     const std::filesystem::path& source, std::uint64_t measure,
-    const std::filesystem::path& app) -> external_player_launch_result_t {
-    if (player.path.empty()) return {.open_preferences = true, .error = "Choose an external player in Preferences."};
+    const std::filesystem::path& app) -> external_player_launch_outcome_t {
+    if (player.path.empty())
+        return std::unexpected(external_player_launch_result_t{
+            .open_preferences = true, .error = "Choose an external player in Preferences."});
     if (player.path.find('\0') != std::string::npos)
-        return {.error = "Player path contains a NUL character."};
+        return std::unexpected(external_player_launch_result_t{.error = "Player path contains a NUL character."});
     // Validate template syntax before creating any file.
     auto expanded = expand_external_player_arguments(argument_template_for(player, action),
                                                      app.string(), "", measure);
-    if (!expanded) return {.error = expanded.error()};
+    if (!expanded) return std::unexpected(external_player_launch_result_t{.error = expanded.error()});
     external_player_launch_result_t result;
     if (action != external_player_action_t::stop) {
         result = prepare_preview(song, chart, source);
-        if (!result.error.empty()) return result;
+        if (!result.error.empty()) return std::unexpected(std::move(result));
     }
     expanded = expand_external_player_arguments(argument_template_for(player, action),
                                                 app.string(), result.preview_path.string(), measure);
@@ -301,7 +303,7 @@ auto external_player_t::launch(const external_player_definition_t& player,
             remove_temporary(temporary_files_.back());
             temporary_files_.pop_back();
         }
-        return {.error = expanded.error()};
+        return std::unexpected(external_player_launch_result_t{.error = expanded.error()});
     }
     expanded->insert(expanded->begin(), player.path);
     std::vector<const char*> arguments;
@@ -314,7 +316,7 @@ auto external_player_t::launch(const external_player_definition_t& player,
             remove_temporary(temporary_files_.back());
             temporary_files_.pop_back();
         }
-        return result;
+        return std::unexpected(std::move(result));
     }
     if (result.preview_path.empty()) SDL_DestroyProcess(process);
     else temporary_files_.back().process = process;

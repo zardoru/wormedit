@@ -64,9 +64,9 @@ auto make_row(const bookmark_t& bookmark, const measure_index_t& measures,
     } else if (bookmark.audio_milliseconds) {
         row.position_label = audio_position_label(*bookmark.audio_milliseconds);
         if (timing) {
-            const auto musical = timing->row_at(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
-            if (musical.absolute_row) {
-                absolute = wormedit::to_long_double(*musical.absolute_row);
+            const auto musical = timing->query_position(signed_rational_t{*bookmark.audio_milliseconds, 1'000});
+            if (musical) {
+                absolute = wormedit::to_long_double(musical->value);
             }
         }
     }
@@ -120,8 +120,8 @@ auto bookmark_navigation_t::build_bookmark_chooser_view(const song_document_t& d
         return std::unexpected(std::move(result));
     }
     const auto& measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = build_timing_index(*chart, {.allow_bounded_clock = true});
-    const auto* timing = timing_build.index ? &*timing_build.index : nullptr;
+    const auto timing_build = timing_index_t::from(*chart, {.allow_bounded_clock = true});
+    const auto* timing = timing_build.value ? &*timing_build.value : nullptr;
     std::vector<ordered_row_t> ordered;
     ordered.reserve(chart->bookmarks.size());
     for (const auto& bookmark : chart->bookmarks) {

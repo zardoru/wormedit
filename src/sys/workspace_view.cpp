@@ -365,7 +365,7 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
                     ui_stepmania_timing_syntax(stepmania_policy.timing_syntax);
                 setup.stepmania_implementation =
                     ui_stepmania_implementation(stepmania_policy.implementation_profile);
-                const auto resolved = wormedit::resolve_stepmania_export_policy(stepmania_policy);
+                const auto resolved = wormedit::stepmania_export_policy_result_t::from(stepmania_policy);
                 setup.stepmania_policy_valid = static_cast<bool>(resolved);
                 const auto status = resolved
                     ? std::string_view{
@@ -376,7 +376,7 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
                                      "legacy "
                               "encoding instead."
                             : "Compatible StepMania export policy."}
-                    : std::string_view{resolved.message};
+                    : std::string_view{resolved.error().message};
                 auto* arena = result.arena();
                 const auto* copied = arena ? arena_string(*arena, status) : nullptr;
                 result.setup.text_truncated = !copied;

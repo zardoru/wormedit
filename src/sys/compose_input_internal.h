@@ -1530,12 +1530,6 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
 
-auto revise_bga_draw_targets(application_command_state_t::bga_draw_stroke_t& stroke,
-                             const wormedit::chart_document_t& chart,
-                             const wormedit::measure_index_t& index,
-                             const wormedit::editor_interaction_state_t& state, uint64_t row,
-                             uint8_t kind) -> bool;
-
 auto bga_draw_geometry(const compose_input_context_t& context,
                        const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::measure_index_t, wormedit::diagnostic_list_t>;
@@ -1548,14 +1542,13 @@ auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context
                     const wormedit::chart_document_t& chart) -> bool;
 
 auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
-                           const application_command_state_t::bga_draw_stroke_t& stroke,
+                           const application_command_state_t::bga_draw_stroke_proposal_t& stroke,
                            uint64_t lane) -> wormedit::document_command_result_t;
 
 auto apply_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
                      wormedit::editor_interaction_result_t& result,
                      wormedit::document_command_transaction_t& transaction) -> void;
 
-auto bga_draw_lane_valid(const WormUiComposeInputAction& input) -> bool;
 
 auto bga_draw_stop(std::string_view text) -> compose_input_family_result_t;
 

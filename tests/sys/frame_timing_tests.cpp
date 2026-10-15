@@ -6539,7 +6539,7 @@ auto range_pause_routing(unsigned guard) -> bool {
     case 5: fixture.interaction->pending_editor_area_selection.emplace(); break;
     case 6: fixture.interaction->retained_selection_range.reset(); break;
     case 7: fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
-    case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_t{}; break;
+    case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_proposal_t{}; break;
     case 9: fixture.application.project.compose_gesture.bmson_razor_stroke = application_command_state_t::bmson_razor_stroke_proposal_t{}; break;
     default: break;
     }
@@ -7335,4 +7335,99 @@ TEST_CASE("Razor revision adopts an acknowledged staged cell without allocating"
     CHECK(counted == 0);
     CHECK(revised.value->stamp == stamp);
     CHECK(revised.value->payload.last_position == local_position_t{measure, 240});
+}
+
+namespace {
+auto make_draw_point_input(bool bgm = false) -> WormUiComposeInputAction {
+    WormUiComposeInputAction input{};
+    input.resource_role = bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
+    input.paint_intent = 2;
+    input.lane_id = 42;
+    input.bga_lane_kind_valid = true;
+    input.bga_lane_kind = static_cast<decltype(input.bga_lane_kind)>(visual_event_kind_t::layer);
+    return input;
+}
+
+auto make_prepared_draw_stroke(const document_history_t& history,
+    const editor_interaction_state_t& state, const WormUiComposeInputAction& input)
+    -> application_command_state_t::bga_draw_stroke_proposal_t {
+    const auto& chart = history.document.charts.front();
+    auto built = build_measure_index(chart);
+    auto* geometry = std::get_if<measure_index_t>(&built);
+    REQUIRE(geometry);
+    application_command_state_t::bga_draw_stroke_proposal_t initial{
+        .stamp = chart_stamp_t::from(history.document, chart.id),
+        .payload = {.erase = true, .geometry = std::move(*geometry)}};
+    auto proposed = initial.payload.revise(initial.stamp, input, chart, state, 120, true);
+    REQUIRE(proposed.value);
+    return std::move(*proposed.value);
+}
+} // namespace
+
+TEST_CASE("Draw proposal revision adds no allocations beyond the existing duplicate set insertion",
+          "[sys][draw-proposal][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    fixture.state.active_snap_denominator = 8;
+    fixture.state.snap_enabled = true;
+    const auto input = make_draw_point_input();
+    auto stroke = make_prepared_draw_stroke(fixture.history, fixture.state, input);
+    const auto* geometry = stroke.payload.geometry.entries.data();
+    const auto* targets = stroke.payload.targets.data();
+    const auto kind = static_cast<uint8_t>(input.bga_lane_kind);
+    std::set<std::pair<uint64_t, uint8_t>> control;
+    control.emplace(uint64_t{120}, kind);
+    allocations = 0;
+    count_allocations = true;
+    control.emplace(uint64_t{120}, kind);
+    count_allocations = false;
+    const auto previous_cost = allocations;
+    allocations = 0;
+    count_allocations = true;
+    const auto revised = stroke.payload.revise(stroke.stamp, input,
+        fixture.history.document.charts.front(), fixture.state, 120, false);
+    count_allocations = false;
+    const auto current_cost = allocations;
+    REQUIRE(revised.value);
+    CHECK(current_cost == previous_cost);
+    CHECK(revised.value->payload.geometry.entries.data() == geometry);
+    CHECK(revised.value->payload.targets.data() == targets);
+    CHECK(revised.value->payload.targets.size() == 1);
+    CHECK(revised.value->payload.visited.size() == 1);
+}
+
+TEST_CASE("Draw proposal begins at the first cell and preserves snap interpolation",
+          "[sys][draw-proposal][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    fixture.state.active_snap_denominator = 8;
+    fixture.state.snap_enabled = true;
+    const auto input = make_draw_point_input(true);
+    auto stroke = make_prepared_draw_stroke(fixture.history, fixture.state, input);
+    const auto* geometry = stroke.payload.geometry.entries.data();
+    const auto revised = stroke.payload.revise(stroke.stamp, input,
+        fixture.history.document.charts.front(), fixture.state, 360, false);
+    REQUIRE(revised.value);
+    CHECK(revised.value->payload.targets.size() == 3);
+    CHECK(revised.value->payload.targets.front().position.row == 120);
+    CHECK(revised.value->payload.last_row == 360);
+    CHECK(revised.value->payload.geometry.entries.data() == geometry);
+    CHECK(fixture.history.undo.empty());
+}
+
+TEST_CASE("Draw proposal rejects a missing cell without an applicable value or allocation",
+          "[sys][draw-proposal][proposal-shape]") {
+    auto fixture = bmson_marker_fixture_t::from();
+    fixture.state.active_snap_denominator = 8;
+    fixture.state.snap_enabled = true;
+    const auto input = make_draw_point_input();
+    auto stroke = make_prepared_draw_stroke(fixture.history, fixture.state, input);
+    allocations = 0;
+    count_allocations = true;
+    const auto rejected = stroke.payload.revise(stroke.stamp, input,
+        fixture.history.document.charts.front(), fixture.state, std::nullopt, false);
+    count_allocations = false;
+    const auto counted = allocations;
+    CHECK_FALSE(rejected.value);
+    CHECK(rejected.diagnostics.empty());
+    CHECK(counted == 0);
+    CHECK(fixture.history.undo.empty());
 }

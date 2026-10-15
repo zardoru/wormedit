@@ -57,6 +57,7 @@
 #include <vector>
 
 namespace wormedit::sys {
+namespace compose_input_detail { struct compose_input_context_t; }
 
 struct compose_bga_move_preview_input_t {
     std::uint64_t project_id{};
@@ -541,16 +542,32 @@ struct application_command_state_t {
             const bmson_marker_draft_proposal_t*, wormedit::object_id_t, std::uint64_t,
             wormedit::local_position_t>,
         std::tuple<wormedit::chart_stamp_t, wormedit::local_position_t>>);
+    struct bga_draw_stroke_t;
+    using bga_draw_stroke_proposal_t = wormedit::proposal_t<bga_draw_stroke_t>;
+    using bga_draw_stroke_outcome_t = wormedit::proposal_outcome_t<bga_draw_stroke_t>;
     struct bga_draw_stroke_t {
-        wormedit::chart_stamp_t stamp;
         std::optional<wormedit::resource_id_t> resource;
         bool erase{};
         uint64_t last_row{};
         wormedit::measure_index_t geometry;
         std::vector<wormedit::bga_stroke_target_t> targets;
         std::set<std::pair<uint64_t, uint8_t>> visited;
-        wormedit::diagnostic_list_t diagnostics;
+
+        [[nodiscard]] static auto propose(const WormUiComposeInputAction& input,
+            const compose_input_detail::compose_input_context_t& context,
+            const wormedit::chart_document_t& chart) -> bga_draw_stroke_outcome_t;
+        [[nodiscard]] static auto is_lane_valid(const WormUiComposeInputAction& input) -> bool;
+        [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
+            const WormUiComposeInputAction& input, const wormedit::chart_document_t& chart,
+            const wormedit::editor_interaction_state_t& state, std::optional<uint64_t> row,
+            bool is_beginning) -> bga_draw_stroke_outcome_t;
     };
+    static_assert(wormedit::staged_proposal<bga_draw_stroke_t,
+        std::tuple<const WormUiComposeInputAction&,
+            const compose_input_detail::compose_input_context_t&, const wormedit::chart_document_t&>,
+        std::tuple<wormedit::chart_stamp_t, const WormUiComposeInputAction&,
+            const wormedit::chart_document_t&, const wormedit::editor_interaction_state_t&,
+            std::optional<uint64_t>, bool>>);
     struct minimap_start_frame_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -613,7 +630,7 @@ struct application_command_state_t {
         struct compose_gesture_state_t {
             std::optional<bmson_marker_draft_proposal_t> bmson_marker_draft;
             std::optional<bmson_razor_stroke_proposal_t> bmson_razor_stroke;
-            std::optional<bga_draw_stroke_t> bga_draw_stroke;
+            std::optional<bga_draw_stroke_proposal_t> bga_draw_stroke;
             uint8_t draw_source_kind{};
             uint64_t draw_source_id{};
             bool note_paint_mode_active{};

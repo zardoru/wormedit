@@ -228,32 +228,11 @@ compose_action_outcome_t relink_sound_fallback(compose_action_context_t& context
 
 std::optional<compose_action_outcome_t> dispatch_compose_resource_action(compose_action_context_t& context);
 
-std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_context_t& context);
-
 auto selected_bmson_source_event(const compose_action_context_t& context,
                                  wormedit::object_id_t bgm_event)
     -> std::optional<wormedit::object_id_t>;
 
-std::optional<compose_action_outcome_t>
-set_bmson_selection_restart(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-move_bmson_selection_to_cursor(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-insert_bmson_marker_at_cursor(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-stage_bmson_marker_at_cursor(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t> apply_bmson_marker_batch(compose_action_context_t& context);
-
-std::optional<compose_action_outcome_t>
-delete_bmson_selected_marker(compose_action_context_t& context);
-
 auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::object_id_t;
-
-std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_context_t& context);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_bmson_action(compose_action_context_t& context);

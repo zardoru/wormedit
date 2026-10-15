@@ -659,19 +659,27 @@ dispatch_compose_view_action_group(compose_action_context_t& context) {
 // Points a missing sound at one of its fallback candidates through the shared relink command; the
 // authored token and every reference stay as they are.
 
-std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON sound assigned, but workspace rebinding failed.";
+struct assign_bmson_selection_action_t {
+    object_id_t event{};
+    bool to_lane{};
+    auto operator==(const assign_bmson_selection_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<assign_bmson_selection_action_t, compose_action_context_t>);
+
+auto assign_bmson_selection_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     auto& state = context.state;
-    const bool to_lane = context.action.compose_action ==
+    to_lane = context.action.compose_action ==
                          WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before assigning BMSON sound.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
-    const object_id_t event{context.action.compose_bmson_bgm_event_id};
+    event = object_id_t{context.action.compose_bmson_bgm_event_id};
     const auto kind = to_lane ? editor_selection_object_kind_t::bgm_event
                               : editor_selection_object_kind_t::note;
     if (state.selected_objects.size() != 1 || state.selected_objects.front().kind != kind ||
@@ -679,6 +687,15 @@ std::optional<compose_action_outcome_t> assign_bmson_selection(compose_action_co
         return compose_action_outcome_t::blocked(
             "Select one linked BMSON tap or BGM marker before assigning sound.",
             notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto assign_bmson_selection_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    auto& state = context.state;
+    constexpr std::string_view rebind_failure =
+        "BMSON sound assigned, but workspace rebinding failed.";
     auto assigned = assign_bmson_sound_event(
         context.environment.document.history,
         state.chart, event, to_lane ? std::optional<lane_id_t>{state.active_lane} : std::nullopt);
@@ -718,12 +735,19 @@ auto selected_bmson_source_event(const compose_action_context_t& context,
     return std::nullopt;
 }
 
-std::optional<compose_action_outcome_t>
-set_bmson_selection_restart(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON slice changed, but workspace rebinding failed.";
+struct set_bmson_selection_restart_action_t {
+    object_id_t event{};
+    std::optional<object_id_t> source_event{};
+    auto operator==(const set_bmson_selection_restart_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_bmson_selection_restart_action_t, compose_action_context_t>);
+
+auto set_bmson_selection_restart_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const object_id_t event{context.action.compose_bmson_bgm_event_id};
+    event = object_id_t{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before changing a BMSON slice.")) {
         blocked->source = notification_source_t::edit;
@@ -735,11 +759,19 @@ set_bmson_selection_restart(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked(
             "Select one BMSON BGM marker before changing its restart state.",
             notification_source_t::edit);
-    const auto source_event = selected_bmson_source_event(context, event);
+    source_event = selected_bmson_source_event(context, event);
     if (!source_event)
         return compose_action_outcome_t::blocked(
             "The selected BGM marker has no BMSON sound-channel slice.",
             notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto set_bmson_selection_restart_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "BMSON slice changed, but workspace rebinding failed.";
     const bool restart = context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART;
     auto applied = set_bmson_sound_channel_restart(
         context.environment.document.history,
@@ -761,12 +793,18 @@ set_bmson_selection_restart(compose_action_context_t& context) {
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-move_bmson_selection_to_cursor(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON marker moved, but workspace rebinding failed.";
+struct move_bmson_selection_to_cursor_action_t {
+    object_id_t event{};
+    auto operator==(const move_bmson_selection_to_cursor_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<move_bmson_selection_to_cursor_action_t, compose_action_context_t>);
+
+auto move_bmson_selection_to_cursor_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const object_id_t event{context.action.compose_bmson_bgm_event_id};
+    event = object_id_t{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before moving a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -777,6 +815,14 @@ move_bmson_selection_to_cursor(compose_action_context_t& context) {
         context.state.selected_objects.front().id != event)
         return compose_action_outcome_t::blocked("Select one BMSON BGM marker before moving it.",
                                                  notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto move_bmson_selection_to_cursor_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "BMSON marker moved, but workspace rebinding failed.";
     auto moved = move_bmson_bgm_marker(context.environment.document.history,
                                              context.state.chart, event, context.state.cursor);
     if (!moved.diagnostics.empty())
@@ -795,12 +841,18 @@ move_bmson_selection_to_cursor(compose_action_context_t& context) {
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-insert_bmson_marker_at_cursor(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON marker inserted, but workspace rebinding failed.";
+struct insert_bmson_marker_at_cursor_action_t {
+    object_id_t event{};
+    auto operator==(const insert_bmson_marker_at_cursor_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<insert_bmson_marker_at_cursor_action_t, compose_action_context_t>);
+
+auto insert_bmson_marker_at_cursor_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const auto event = object_id_t{context.action.compose_bmson_bgm_event_id};
+    event = object_id_t{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before inserting a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -812,6 +864,14 @@ insert_bmson_marker_at_cursor(compose_action_context_t& context) {
         return compose_action_outcome_t::blocked(
             "Select one BMSON BGM marker to choose its sound channel.",
             notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto insert_bmson_marker_at_cursor_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "BMSON marker inserted, but workspace rebinding failed.";
     auto inserted = insert_bmson_bgm_marker(
         context.environment.document.history,
         context.state.chart, event, context.state.cursor,
@@ -829,13 +889,25 @@ insert_bmson_marker_at_cursor(compose_action_context_t& context) {
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-stage_bmson_marker_at_cursor(compose_action_context_t& context) {
+struct stage_bmson_marker_at_cursor_action_t {
+    auto operator==(const stage_bmson_marker_at_cursor_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<stage_bmson_marker_at_cursor_action_t, compose_action_context_t>);
+
+auto stage_bmson_marker_at_cursor_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before staging a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto stage_bmson_marker_at_cursor_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     auto severity = notification_severity_t::warning;
     auto message = propose_bmson_bgm_marker(
         context.environment.document.history, context.state,
@@ -847,16 +919,29 @@ stage_bmson_marker_at_cursor(compose_action_context_t& context) {
                                           notification_source_t::input);
 }
 
-std::optional<compose_action_outcome_t>
-apply_bmson_marker_batch(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON markers inserted, but workspace rebinding failed.";
+struct apply_bmson_marker_batch_action_t {
+    auto operator==(const apply_bmson_marker_batch_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<apply_bmson_marker_batch_action_t, compose_action_context_t>);
+
+auto apply_bmson_marker_batch_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before committing BMSON markers.")) {
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto apply_bmson_marker_batch_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "BMSON markers inserted, but workspace rebinding failed.";
     auto& draft = context.environment.editor.commands.project.compose_gesture.bmson_marker_draft;
     if (!draft || draft->payload.markers.empty()) {
         draft.reset();
@@ -893,12 +978,18 @@ apply_bmson_marker_batch(compose_action_context_t& context) {
     return outcome;
 }
 
-std::optional<compose_action_outcome_t>
-delete_bmson_selected_marker(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure =
-        "BMSON marker deleted, but workspace rebinding failed.";
+struct delete_bmson_selected_marker_action_t {
+    object_id_t event{};
+    auto operator==(const delete_bmson_selected_marker_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<delete_bmson_selected_marker_action_t, compose_action_context_t>);
+
+auto delete_bmson_selected_marker_action_t::validate(compose_action_context_t& context)
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
-    const object_id_t event{context.action.compose_bmson_bgm_event_id};
+    event = object_id_t{context.action.compose_bmson_bgm_event_id};
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before deleting a BMSON marker.")) {
         blocked->source = notification_source_t::edit;
@@ -909,6 +1000,14 @@ delete_bmson_selected_marker(compose_action_context_t& context) {
         context.state.selected_objects.front().id != event)
         return compose_action_outcome_t::blocked("Select one BMSON BGM marker before deleting it.",
                                                  notification_source_t::edit);
+    return std::nullopt;
+}
+
+auto delete_bmson_selected_marker_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure =
+        "BMSON marker deleted, but workspace rebinding failed.";
     auto deleted = delete_bmson_bgm_marker(context.environment.document.history,
                                                  context.state.chart, event);
     if (!deleted.diagnostics.empty())
@@ -942,8 +1041,15 @@ auto lane_mode_channel(const compose_action_context_t& context) -> wormedit::obj
     return wormedit::object_id_t{context.action.compose_bmson_channel_id};
 }
 
-std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_context_t& context) {
-    constexpr std::string_view rebind_failure = "Channel changed, but workspace rebinding failed.";
+struct change_bmson_lane_mode_action_t {
+    auto operator==(const change_bmson_lane_mode_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<change_bmson_lane_mode_action_t, compose_action_context_t>);
+
+auto change_bmson_lane_mode_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     using namespace wormedit;
     if (context.action.compose_input_project_id !=
         context.environment.document.history.document.id.value)
@@ -954,6 +1060,13 @@ std::optional<compose_action_outcome_t> change_bmson_lane_mode(compose_action_co
         blocked->source = notification_source_t::edit;
         return std::move(*blocked);
     }
+    return std::nullopt;
+}
+
+auto change_bmson_lane_mode_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
+    using namespace wormedit;
+    constexpr std::string_view rebind_failure = "Channel changed, but workspace rebinding failed.";
     const auto kind = context.action.compose_action;
     auto result = set_bmson_channel_lane_mode(
         context.environment.document.history,
@@ -983,30 +1096,30 @@ dispatch_compose_bmson_action(compose_action_context_t& context) {
     case WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM:
     case WORM_UI_COMPOSE_ACTION_PACK_BMSON_CHANNEL:
     case WORM_UI_COMPOSE_ACTION_RESTART_AND_PACK_BMSON_CHANNEL:
-        return change_bmson_lane_mode(context);
+        return run_compose_action(change_bmson_lane_mode_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_RESTART:
     case WORM_UI_COMPOSE_ACTION_SET_BMSON_BGM_CONTINUE:
-        return set_bmson_selection_restart(context);
+        return run_compose_action(set_bmson_selection_restart_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_BGM_TO_ACTIVE_LANE:
     case WORM_UI_COMPOSE_ACTION_ASSIGN_BMSON_NOTE_TO_BGM:
-        return assign_bmson_selection(context);
+        return run_compose_action(assign_bmson_selection_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR:
-        return move_bmson_selection_to_cursor(context);
+        return run_compose_action(move_bmson_selection_to_cursor_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR:
     case WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR:
-        return insert_bmson_marker_at_cursor(context);
+        return run_compose_action(insert_bmson_marker_at_cursor_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_CONTINUE_AT_CURSOR:
     case WORM_UI_COMPOSE_ACTION_STAGE_BMSON_BGM_RESTART_AT_CURSOR:
-        return stage_bmson_marker_at_cursor(context);
+        return run_compose_action(stage_bmson_marker_at_cursor_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_COMMIT_STAGED_BMSON_BGM:
-        return apply_bmson_marker_batch(context);
+        return run_compose_action(apply_bmson_marker_batch_action_t{}, context);
     case WORM_UI_COMPOSE_ACTION_CANCEL_STAGED_BMSON_BGM:
         context.environment.editor.commands.project.compose_gesture.bmson_marker_draft.reset();
         return compose_action_outcome_t::from("BMSON marker batch canceled.",
                                               notification_severity_t::hint,
                                               notification_source_t::input);
     case WORM_UI_COMPOSE_ACTION_DELETE_BMSON_BGM_MARKER:
-        return delete_bmson_selected_marker(context);
+        return run_compose_action(delete_bmson_selected_marker_action_t{}, context);
     default:
         return std::nullopt;
     }

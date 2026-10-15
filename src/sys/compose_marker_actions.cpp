@@ -5,11 +5,11 @@ namespace wormedit::sys::compose_action_detail {
 std::optional<compose_action_outcome_t>
 dispatch_compose_marker_action(compose_action_context_t& context) {
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE)
-        return move_bar_line(context);
+        return run_compose_action(move_compose_bar_line_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER)
-        return set_measures_meter(context);
+        return run_compose_action(set_measures_meter_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER)
-        return set_cursor_measure_meter(context);
+        return run_compose_action(set_cursor_measure_meter_action_t{}, context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_PREVIEW_SV_RECIPE_FORM)
         return propose_recipe_form_action(context);
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_SV_RECIPE_FORM)
@@ -21,7 +21,7 @@ dispatch_compose_marker_action(compose_action_context_t& context) {
                                               notification_source_t::input);
     }
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_REMOVE_MEASURE_WITH_CONTENTS)
-        return edit_cursor_measure(context, cursor_measure_command_t::remove_with_contents);
+        return run_compose_action(edit_cursor_measure_action_t{.command = cursor_measure_command_t::remove_with_contents}, context);
     if (const auto transform = selection_transform_for(context.action.compose_action))
         return run_compose_action(transform_selected_notes_action_t{.transform = *transform}, context);
     switch (context.action.compose_action) {

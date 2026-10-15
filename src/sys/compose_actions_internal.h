@@ -337,8 +337,13 @@ struct transform_selected_notes_action_t {
 };
 static_assert(compose_action<transform_selected_notes_action_t, compose_action_context_t>);
 
-compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
-                                             cursor_measure_command_t command);
+struct edit_cursor_measure_action_t {
+    cursor_measure_command_t command;
+    auto operator==(const edit_cursor_measure_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<edit_cursor_measure_action_t, compose_action_context_t>);
 
 struct recipe_form_target_t {
     const chart_document_t* chart{};
@@ -351,11 +356,26 @@ compose_action_outcome_t propose_recipe_form_action(compose_action_context_t& co
 
 compose_action_outcome_t apply_recipe_form_action(compose_action_context_t& context);
 
-compose_action_outcome_t set_cursor_measure_meter(compose_action_context_t& context);
+struct set_cursor_measure_meter_action_t {
+    auto operator==(const set_cursor_measure_meter_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_cursor_measure_meter_action_t, compose_action_context_t>);
 
-compose_action_outcome_t set_measures_meter(compose_action_context_t& context);
+struct set_measures_meter_action_t {
+    auto operator==(const set_measures_meter_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<set_measures_meter_action_t, compose_action_context_t>);
 
-compose_action_outcome_t move_bar_line(compose_action_context_t& context);
+struct move_compose_bar_line_action_t {
+    auto operator==(const move_compose_bar_line_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t>;
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
+};
+static_assert(compose_action<move_compose_bar_line_action_t, compose_action_context_t>);
 
 std::optional<compose_action_outcome_t>
 dispatch_compose_marker_action(compose_action_context_t& context);

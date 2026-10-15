@@ -1,12 +1,17 @@
 #include "sys/compose_actions_internal.h"
 #include "sys/projection_notification_feedback.h"
 namespace wormedit::sys::compose_action_detail {
-compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
-                                             cursor_measure_command_t command) {
+auto edit_cursor_measure_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (const auto error = compose_measure_edit_rejection(
             context.state,
             context.environment.editor.commands.project.clipboard.paste_session.has_value()))
         return compose_action_outcome_t::blocked(*error);
+    return std::nullopt;
+}
+
+auto edit_cursor_measure_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     auto status = apply_cursor_measure_command(context.environment.document.history, context.state,
@@ -20,10 +25,16 @@ compose_action_outcome_t edit_cursor_measure(compose_action_context_t& context,
     return outcome;
 }
 
-auto set_cursor_measure_meter(compose_action_context_t& context) -> compose_action_outcome_t {
+auto set_cursor_measure_meter_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing measures."))
         return std::move(*blocked);
+    return std::nullopt;
+}
+
+auto set_cursor_measure_meter_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     auto status =
@@ -39,10 +50,16 @@ auto set_cursor_measure_meter(compose_action_context_t& context) -> compose_acti
     return outcome;
 }
 
-auto set_measures_meter(compose_action_context_t& context) -> compose_action_outcome_t {
+auto set_measures_meter_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing measures."))
         return std::move(*blocked);
+    return std::nullopt;
+}
+
+auto set_measures_meter_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     const auto ids = std::span<const std::uint64_t>{context.action.compose_measure_ids,
@@ -59,13 +76,19 @@ auto set_measures_meter(compose_action_context_t& context) -> compose_action_out
     return outcome;
 }
 
-compose_action_outcome_t move_bar_line(compose_action_context_t& context) {
+auto move_compose_bar_line_action_t::validate(compose_action_context_t& context) const
+    -> std::optional<compose_action_outcome_t> {
     if (auto blocked = context.require_no_gesture(
             "Finish or cancel the active Compose gesture before editing measures."))
         return std::move(*blocked);
     if (context.action.compose_measure_id_count != 1 || !context.action.compose_measure_ids)
         return compose_action_outcome_t::blocked(
             "Bar line move ignored because the document changed.");
+    return std::nullopt;
+}
+
+auto move_compose_bar_line_action_t::perform(compose_action_context_t& context) const
+    -> compose_action_outcome_t {
     const auto revision = context.environment.document.history.document.revision;
     auto severity = notification_severity_t::warning;
     const auto& action = context.action;

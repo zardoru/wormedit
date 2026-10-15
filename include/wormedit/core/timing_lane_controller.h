@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/bpm_editor.h>
-#include <wormedit/core/command.h>
+#include <wormedit/core/proposal.h>
 #include <wormedit/core/marker_editor.h>
 #include <wormedit/core/pause_warp_editor.h>
 #include <wormedit/core/scroll_speed_editor.h>
@@ -54,24 +54,54 @@ enum class timing_lane_pseudonote_status_t {
     rejected,
 };
 
-struct timing_lane_pseudonote_preview_t {
+// Editor data remains visible after a failed revision, independently of applicability.
+struct timing_lane_pseudonote_state_t {
     timing_lane_pseudonote_status_t status{timing_lane_pseudonote_status_t::inactive};
-    chart_stamp_t stamp;
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};
     local_position_t position;
     timing_lane_value_t value{timing_bpm_value_t{}};
     std::optional<object_id_t> existing_event;
     timing_lane_initial_value_source_t initial_value_source{
         timing_lane_initial_value_source_t::explicit_default};
-    diagnostic_list_t diagnostics;
+    auto operator==(const timing_lane_pseudonote_state_t&) const -> bool = default;
 
+    void normalize_value();
     void set_value(timing_lane_value_t&& next);
-
-    [[nodiscard]] auto is_valid() const noexcept -> bool {
-        return status == timing_lane_pseudonote_status_t::committed ||
-               (status == timing_lane_pseudonote_status_t::editing && diagnostics.empty());
-    }
 };
+
+struct timing_lane_pseudonote_preview_t;
+using timing_lane_pseudonote_diagnostics_t = proposal_diagnostics_t<timing_lane_pseudonote_state_t>;
+using timing_lane_pseudonote_outcome_t = proposal_outcome_t<timing_lane_pseudonote_preview_t,
+    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>;
+using timing_lane_pseudonote_proposal_t = proposal_t<timing_lane_pseudonote_preview_t>;
+
+struct timing_lane_pseudonote_preview_t {
+    [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
+        timing_lane_pseudonote_state_t initial, bool timing_locked) -> timing_lane_pseudonote_outcome_t;
+    [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
+        timing_lane_event_ref_t event, bool timing_locked) -> timing_lane_pseudonote_outcome_t;
+    [[nodiscard]] static auto revise(timing_lane_pseudonote_outcome_t previous,
+        const document_history_t& history, timing_lane_value_t value, bool timing_locked)
+        -> timing_lane_pseudonote_outcome_t;
+    [[nodiscard]] static auto revise(timing_lane_pseudonote_outcome_t previous,
+        const document_history_t& history, local_position_t exact_snapped_position, bool timing_locked)
+        -> timing_lane_pseudonote_outcome_t;
+
+    timing_lane_pseudonote_state_t report;
+    auto operator==(const timing_lane_pseudonote_preview_t&) const -> bool = default;
+};
+
+static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
+    std::tuple<const document_history_t&, chart_id_t, timing_lane_pseudonote_state_t, bool>,
+    std::tuple<timing_lane_pseudonote_outcome_t, const document_history_t&, timing_lane_value_t, bool>,
+    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>);
+static_assert(staged_proposal<timing_lane_pseudonote_preview_t,
+    std::tuple<const document_history_t&, chart_id_t, timing_lane_event_ref_t, bool>,
+    std::tuple<timing_lane_pseudonote_outcome_t, const document_history_t&, local_position_t, bool>,
+    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>);
+
+using timing_lane_pseudonote_view_t = proposal_preview_view_t<timing_lane_pseudonote_preview_t,
+    chart_stamp_t, timing_lane_pseudonote_diagnostics_t>;
 
 // BPM, scroll/SV, speed, stop, delay, warp, kiai, and timing-anchor lanes are
 // supported. Meter editing is outside this controller because the current
@@ -83,39 +113,6 @@ struct timing_lane_pseudonote_preview_t {
 // measure index cannot be built. Used as the default for a newly inserted BPM.
 [[nodiscard]] auto effective_bpm_at(const chart_document_t& chart, local_position_t position)
     -> std::optional<signed_rational_t>;
-
-[[nodiscard]] auto
-begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart,
-                             timing_lane_kind_t kind, local_position_t exact_snapped_position,
-                             timing_lane_value_t initial_value,
-                             timing_lane_initial_value_source_t initial_value_source,
-                             bool timing_locked) -> timing_lane_pseudonote_preview_t;
-
-// Opens an existing typed timing event for property editing. The event's exact
-// position and value are loaded from the document; the target ID is retained
-// so confirmation updates that event in place rather than inserting another.
-// A known object of another kind, an ambiguous ID, a missing event, or a lock
-// rejects the preview without changing history.
-[[nodiscard]] auto begin_existing_timing_lane_pseudonote(const document_history_t& history,
-                                                         chart_id_t chart, timing_lane_kind_t kind,
-                                                         object_id_t event, bool timing_locked)
-    -> timing_lane_pseudonote_preview_t;
-
-// Updates only the transient preview. Invalid typed values remain visible in
-// the preview with diagnostics and cannot be confirmed. A lock or revision
-// change cancels the preview immediately.
-[[nodiscard]] auto revise_timing_lane_pseudonote(const document_history_t& history,
-                                                 timing_lane_pseudonote_preview_t& preview,
-                                                 timing_lane_value_t value, bool timing_locked)
-    -> bool;
-
-// Moves an open existing marker through the same transient revision-checked
-// preview. The caller supplies an already-snapped exact position; confirmation
-// remains one typed update command and preserves the marker's stable ID and
-// source provenance. New pseudo-notes keep their insertion row fixed.
-[[nodiscard]] auto revise_existing_timing_lane_pseudonote_position(
-    const document_history_t& history, timing_lane_pseudonote_preview_t& preview,
-    local_position_t exact_snapped_position, bool timing_locked) -> bool;
 
 // Moves a bounded selection by the same signed number of chart rows. A staged
 // history applies each typed update; publication is one atomic undoable command.
@@ -129,7 +126,7 @@ begin_timing_lane_pseudonote(const document_history_t& history, chart_id_t chart
 // command API, using an update command for an existing event. No playable note
 // is ever created by this controller.
 [[nodiscard]] auto apply_timing_lane_pseudonote(document_history_t& history,
-                                                  timing_lane_pseudonote_preview_t& preview,
+                                                  timing_lane_pseudonote_outcome_t& preview,
                                                   bool timing_locked) -> document_command_result_t;
 
 // Deletes an existing marker through its typed editor command. The event kind,
@@ -158,6 +155,6 @@ struct speed_span_edit_t {
                                          object_id_t event, const speed_span_edit_t& edit,
                                          bool timing_locked) -> document_command_result_t;
 
-void cancel_timing_lane_pseudonote(timing_lane_pseudonote_preview_t& preview) noexcept;
+void cancel_timing_lane_pseudonote(timing_lane_pseudonote_outcome_t& preview) noexcept;
 
 } // namespace wormedit

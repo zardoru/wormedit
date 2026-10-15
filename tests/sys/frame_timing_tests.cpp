@@ -19,6 +19,7 @@
 #include "sys/options_runtime.h"
 #include "sys/recipe_form.h"
 #include "sys/timing_view.h"
+#include "sys/timing_edit_runtime.h"
 #include "sys/waveform_analysis_runtime.h"
 #include "sys/waveform_view.h"
 #include <algorithm>
@@ -837,10 +838,10 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     timing_scene_cache_t cache;
     timing_grid_state_t grid;
     grid.active_denominator = 4;
-    timing_lane_pseudonote_preview_t stage;
-    stage.status = timing_lane_pseudonote_status_t::editing;
-    stage.stamp = chart_stamp_t::from(history.document, chart_id_t{1});
-    stage.position = {measure_id_t{1}, 0};
+    timing_lane_pseudonote_outcome_t stage{.value = timing_lane_pseudonote_proposal_t{
+        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
+        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
+                              .position = {measure_id_t{1}, 0}}}}};
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
     const auto& view = flattened.view.timing;
@@ -2325,7 +2326,7 @@ auto invoke_compose_registered_command(compose_test_fixture_t& fixture,
     std::string_view command_id = "edit.delete") -> command_dispatch_result_t {
     notification_center_t center;
     notification_sink_t sink{center};
-    std::optional<timing_lane_pseudonote_preview_t> timing;
+    std::optional<timing_lane_pseudonote_outcome_t> timing;
     const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         const auto command = parse_application_command(context.command.value);
         if (!command) return command_invocation_result_t{};
@@ -6230,7 +6231,7 @@ TEST_CASE("Same sound registered command uses hover selection and dock adds with
     application.project.sound_selection.sound_selection_hover = notes[0].id;
     notification_center_t center;
     notification_sink_t sink{center};
-    std::optional<timing_lane_pseudonote_preview_t> timing;
+    std::optional<timing_lane_pseudonote_outcome_t> timing;
     const auto command = application_command_t{.kind = application_command_kind_t::selection_select_same_sound_chart};
     auto invoke = [&] {
         return invoke_application_command(command, fixture.history, *fixture.binding.workspace,
@@ -7129,12 +7130,11 @@ TEST_CASE("Timing stage converts transition fractions through the shared careful
     binding.workspace->selected_chart = chart_id_t{1};
     flattened_workspace_t flattened;
     timing_scene_cache_t cache;
-    timing_lane_pseudonote_preview_t stage{
-        .status = timing_lane_pseudonote_status_t::editing,
+    timing_lane_pseudonote_outcome_t stage{.value = timing_lane_pseudonote_proposal_t{
         .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
-        .kind = timing_lane_kind_t::speed,
-        .position = {measure_id_t{1}, 0},
-        .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}};
+        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
+            .kind = timing_lane_kind_t::speed, .position = {measure_id_t{1}, 0},
+            .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}}}}};
     populate_timing_view_for_compose(flattened, history, *binding.workspace, cache, 1280, 980, {}, &stage);
     CHECK(flattened.view.timing.stage_secondary_value == 3'002'399'751'580'331.0);
 }
@@ -7179,4 +7179,23 @@ TEST_CASE("Speed spans retain the full unsigned duration range", "[sys][shared-a
 TEST_CASE("Dead span labels use the guarded shared conversion for malformed fractions", "[sys][shared-arithmetic]") {
     const dead_span_band_t band{.kind = dead_span_kind_t::stop, .seconds = {1, 0}};
     CHECK(compose_projection_detail::dead_span_label(band) == "STOP 0.000s");
+}
+
+TEST_CASE("Timing stage borrowed owner survives rejected and repaired revisions",
+          "[sys][timing-stage][proposal-shape]") {
+    auto history = document_history_t::from(dense_song());
+    runtime::timing_edit_t editor;
+    editor.stage = timing_lane_pseudonote_preview_t::propose(
+        history, chart_id_t{1}, timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{2}}, false);
+    const auto* borrowed = editor.stage_view();
+    *editor.stage = timing_lane_pseudonote_preview_t::revise(
+        std::move(*editor.stage), history, timing_bpm_value_t{{0, 1}}, false);
+    CHECK(editor.stage_view() == borrowed);
+    CHECK_FALSE(borrowed->value);
+    CHECK(std::get<timing_bpm_value_t>(timing_lane_pseudonote_proposal_t::report(*borrowed)->value)
+              .beats_per_minute == signed_rational_t{0, 1});
+    *editor.stage = timing_lane_pseudonote_preview_t::revise(
+        std::move(*editor.stage), history, timing_bpm_value_t{{150, 1}}, false);
+    CHECK(borrowed->value.has_value());
+    CHECK(history.undo.empty());
 }

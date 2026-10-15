@@ -25,7 +25,7 @@ struct document_edit_inputs_t {
 struct command_editor_inputs_t {
     application_command_state_t& commands;
     std::optional<editor_interaction_state_t>& retained;
-    std::optional<timing_lane_pseudonote_preview_t>& timing_stage;
+    std::optional<timing_lane_pseudonote_outcome_t>& timing_stage;
 };
 struct command_dispatch_inputs_t {
     document_edit_inputs_t document;

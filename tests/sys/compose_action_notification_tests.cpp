@@ -118,7 +118,7 @@ struct action_notification_fixture_t {
     }
     auto invoke_registered(const char* id) -> bool {
         std::optional<editor_interaction_state_t> interaction = state;
-        std::optional<timing_lane_pseudonote_preview_t> timing;
+        std::optional<timing_lane_pseudonote_outcome_t> timing;
         const auto registry = command_registry_t::from([&](const auto& request) {
             const auto command = parse_application_command(request.command.value);
             return command ? invoke_application_command(*command, history, workspace, interaction,
@@ -1475,7 +1475,7 @@ TEST_CASE("Quantize grid and editing snap are one shared grid",
     // Next snap moves the quantize target with it and keeps the other settings.
     fixture.application.project.quantize.quantize_editor->request.tie = quantization_tie_t::later;
     std::optional<editor_interaction_state_t> compose = fixture.state;
-    std::optional<timing_lane_pseudonote_preview_t> preview;
+    std::optional<timing_lane_pseudonote_outcome_t> preview;
     const auto result = invoke_application_command(
         {.kind = application_command_kind_t::navigation_next_snap}, fixture.history,
         fixture.workspace, compose, preview, fixture.application, fixture.sink);

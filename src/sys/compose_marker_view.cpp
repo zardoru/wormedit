@@ -465,7 +465,7 @@ void populate_compose_timing_markers(
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage) {
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage) {
     flattened.compose.timing_marker.clear();
     flattened.compose.timing_marker_labels.clear();
     const auto marker_total = chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
@@ -534,19 +534,20 @@ void populate_compose_timing_markers(
     assign_compose_timing_marker_fractions(flattened);
     view.timing_markers = flattened.compose.timing_marker.data();
     view.timing_marker_count = flattened.compose.timing_marker.size();
-    if (timing_stage &&
-        timing_stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        timing_stage->stamp.is_current(chart.id, view.document_revision)) {
+    const auto* stage_report = timing_stage ? wormedit::timing_lane_pseudonote_proposal_t::report(*timing_stage) : nullptr;
+    if (stage_report &&
+        stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(*timing_stage).is_current(chart.id, view.document_revision)) {
         const auto stage_row =
-            (cache.scene.index->measures).row_of(timing_stage->position);
+            (cache.scene.index->measures).row_of(stage_report->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,
                                              view.viewport_height_pixels, downscroll);
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
-                view.timing_stage_valid = timing_stage->is_valid();
-                view.timing_stage_lane = timing_lane_kind_to_ui(timing_stage->kind);
+                view.timing_stage_valid = timing_stage->value.has_value();
+                view.timing_stage_lane = timing_lane_kind_to_ui(stage_report->kind);
                 view.timing_stage_y_pixels = y;
             }
         }

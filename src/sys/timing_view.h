@@ -35,6 +35,6 @@ void populate_timing_view_for_compose(
     const wormedit::workspace_controller_t& workspace, timing_scene_cache_t& cache,
     int window_width, int window_height,
     const timing_grid_state_t& timing_grid,
-    const wormedit::timing_lane_pseudonote_preview_t* stage);
+    const wormedit::timing_lane_pseudonote_outcome_t* stage);
 
 } // namespace wormedit::sys

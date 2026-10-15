@@ -732,7 +732,7 @@ struct compose_frame_inputs_t {
     compose_scene_cache_t& cache;
     std::optional<wormedit::editor_interaction_state_t>& retained_state;
     application_command_state_t& application_state;
-    const wormedit::timing_lane_pseudonote_preview_t* const& timing_stage;
+    const wormedit::timing_lane_pseudonote_outcome_t* const& timing_stage;
     const std::span<const wormedit::local_position_t>& comparison_rows;
     const compose_bga_move_preview_input_t* const& bga_move_preview;
 
@@ -797,7 +797,7 @@ void populate_compose_view(flattened_workspace_t& flattened,
                            compose_scene_cache_t& cache, int window_width, int window_height,
                            std::optional<wormedit::editor_interaction_state_t>& retained_state,
                            application_command_state_t& application_state,
-                           const wormedit::timing_lane_pseudonote_preview_t* timing_stage,
+                           const wormedit::timing_lane_pseudonote_outcome_t* timing_stage,
                            std::span<const wormedit::local_position_t> comparison_rows = {},
                            const compose_bga_move_preview_input_t* bga_move_preview = nullptr);
 

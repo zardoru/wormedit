@@ -993,11 +993,8 @@ auto timing_insert_command(command_context_t& context) -> std::optional<command_
                 notification_severity_t::warning, notification_source_t::edit);
         initial = timing_scroll_value_t{*multiplier};
     }
-    auto preview = begin_timing_lane_pseudonote(
-        context.environment.document.history, chart->id, lane, state->cursor, std::move(initial),
-        timing_lane_initial_value_source_t::effective_at_position,
-        context.environment.editor.commands.project.timing_recipe.timing_locked);
-    if (preview.status != timing_lane_pseudonote_status_t::editing) {
+    auto preview = timing_lane_pseudonote_preview_t::propose(context.environment.document.history, chart->id, wormedit::timing_lane_pseudonote_state_t{.kind = lane, .position = state->cursor, .value = std::move(initial), .initial_value_source = timing_lane_initial_value_source_t::effective_at_position}, context.environment.editor.commands.project.timing_recipe.timing_locked);
+    if (!preview.value) {
         const auto message = preview.diagnostics.empty()
                                  ? "Timing event could not be staged at the Compose cursor."
                                  : preview.diagnostics.front().message;

@@ -588,7 +588,7 @@ void populate_compose_timing_markers(
     const wormedit::chart_document_t& chart, const compose_scene_cache_t& cache,
     const wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view,
     bool downscroll, double pixels_per_row, std::uint64_t canvas_rows,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage);
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage);
 
 std::string dead_span_label(const wormedit::sys::dead_span_band_t& band);
 
@@ -1019,7 +1019,7 @@ void populate_bgm_only_compose_projection(
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t& measures,
     compose_scene_cache_t& cache, application_command_state_t& application_state,
     WormUiComposeView& view, bool downscroll,
-    const wormedit::timing_lane_pseudonote_preview_t* timing_stage);
+    const wormedit::timing_lane_pseudonote_outcome_t* timing_stage);
 
 void build_loop_selection_controls_view(WormUiComposeView& view,
                                      const application_command_state_t& application);

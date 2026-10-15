@@ -23,7 +23,7 @@ struct compose_notification_fixture_t {
     workspace_controller_t workspace;
     editor_interaction_state_t state;
     std::optional<editor_interaction_state_t> optional_state;
-    std::optional<timing_lane_pseudonote_preview_t> timing_stage;
+    std::optional<timing_lane_pseudonote_outcome_t> timing_stage;
     application_command_state_t application;
     compose_scene_cache_t cache;
     viewport_input_controller_t viewport;

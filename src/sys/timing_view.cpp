@@ -132,7 +132,7 @@ struct timing_stage_value_context_t {
     WormUiTimingView& view;
     const wormedit::chart_document_t& chart;
     const wormedit::measure_index_t* measures;
-    const wormedit::timing_lane_pseudonote_preview_t& stage;
+    const wormedit::timing_lane_pseudonote_state_t& stage;
     const timing_grid_state_t& timing_grid;
     std::optional<std::uint64_t> stage_row;
 };
@@ -212,29 +212,30 @@ template <typename RowToPixels>
 void populate_timing_stage_view(
     flattened_workspace_t& flattened, WormUiTimingView& view,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t* measures,
-    const wormedit::timing_lane_pseudonote_preview_t* stage,
+    const wormedit::timing_lane_pseudonote_outcome_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
-    if (stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing &&
-        stage->stamp.is_current(chart.id, revision)) {
+    const auto* report = stage ? wormedit::timing_lane_pseudonote_proposal_t::report(*stage) : nullptr;
+    if (report && report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        wormedit::timing_lane_pseudonote_proposal_t::captured_stamp(*stage).is_current(chart.id, revision)) {
         view.stage_active = true;
-        view.stage_valid = stage->is_valid();
+        view.stage_valid = stage->value.has_value();
         view.stage_existing_object_id =
-            stage->existing_event.has_value() ? stage->existing_event->value : 0;
-        view.stage_lane = timing_lane_kind_to_ui(stage->kind);
+            report->existing_event.has_value() ? report->existing_event->value : 0;
+        view.stage_lane = timing_lane_kind_to_ui(report->kind);
         const auto stage_row =
-            measures ? (*measures).row_of(stage->position) : std::nullopt;
+            measures ? (*measures).row_of(report->position) : std::nullopt;
         view.stage_marker_y_pixels =
             stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
         view.stage_transition_is_seconds = false;
         view.stage_toggle_primary = false;
         view.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
-        timing_stage_value_context_t value_context{view, chart, measures, *stage, timing_grid,
+        timing_stage_value_context_t value_context{view, chart, measures, *report, timing_grid,
                                                    stage_row};
         std::visit(
             [&](const auto& value) {
                 build_timing_stage_value_view(value_context, value);
             },
-            stage->value);
+            report->value);
         if (!stage->diagnostics.empty()) {
             view.stage_status_text = timing_display_text(flattened,
                 stage->diagnostics.front().message);
@@ -293,7 +294,7 @@ void populate_timing_view_for_compose(
     const wormedit::workspace_controller_t& workspace, timing_scene_cache_t& cache,
     int window_width, int window_height,
     const timing_grid_state_t& timing_grid,
-    const wormedit::timing_lane_pseudonote_preview_t* stage) {
+    const wormedit::timing_lane_pseudonote_outcome_t* stage) {
     if (!workspace.selected_chart) return;
     const auto selected = history.document.find_chart(*workspace.selected_chart);
     if (selected == nullptr) return;
@@ -309,7 +310,8 @@ void populate_timing_view_for_compose(
     view.active_snap_denominator = timing_grid.active_denominator;
     view.supported_snap_denominators = timing_grid.supported_denominators.data();
     view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
-    const bool editing_stage = stage && stage->status == wormedit::timing_lane_pseudonote_status_t::editing;
+    const auto* report = stage ? wormedit::timing_lane_pseudonote_proposal_t::report(*stage) : nullptr;
+    const bool editing_stage = report && report->status == wormedit::timing_lane_pseudonote_status_t::editing;
     if (!editing_stage) return;
     const auto* measures = cached_measures(cache, chart, history.document.revision);
     const auto row_to_pixels = [&](long double row) {

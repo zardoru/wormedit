@@ -956,10 +956,9 @@ dispatch_compose_resource_action(compose_action_context_t& context) {
             blocked->source = notification_source_t::edit;
             return std::move(*blocked);
         }
-        return dispatch_sound_edit_outcome(context.action, context.environment.document.history,
-                                           context.environment.document.workspace,
-                                           context.state.chart,
-                                           context.environment.editor.commands);
+        return dispatch_sound_edit_outcome(
+            {context.action, context.environment.document, context.state.chart},
+            context.environment.editor.commands);
     default:
         return std::nullopt;
     }

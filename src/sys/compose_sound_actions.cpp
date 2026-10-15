@@ -2,6 +2,8 @@
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/metadata_commands.h"
+#include "sys/resource_action_context.h"
+#include <wormedit/core/proposal.h>
 
 #include <wormedit/core/natural_order.h>
 #include <wormedit/core/resource_assignment.h>
@@ -314,294 +316,402 @@ auto sound_ids(const WormUiWorkspaceAction& action) -> std::vector<resource_id_t
     return ids;
 }
 
-auto assign_picked_slot(const WormUiWorkspaceAction& action, document_history_t& history,
-                        workspace_controller_t& workspace, chart_id_t chart_id)
-    -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(chart_id);
-    if (chart == nullptr || chart->source_family != format_family_t::bms)
-        return compose_action_outcome_t::blocked(
-            "Direct sound slots are available only for a BMS chart.");
-    if (!chart_stamp_t{.document = {.project = history.document.id,
-                                    .revision = action.compose_input_document_revision},
-                       .chart = chart_id_t{action.compose_input_chart_id}}
-             .is_current(history.document, chart_id))
-        return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-    if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
-        return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
-    if (action.compose_import_path_count != 1 || !action.compose_import_paths ||
-        !action.compose_import_paths[0])
-        return compose_action_outcome_t::blocked(
-            "Assign exactly one audio file to the selected slot.");
-    const auto path = std::filesystem::path{action.compose_import_paths[0]}.lexically_normal();
-    std::error_code error;
-    if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
-        return compose_action_outcome_t::blocked("The selected audio file is not readable.");
-    const auto stream = probe_audio(path);
-    if (!stream)
-        return compose_action_outcome_t::blocked("The selected file is not decodable audio.");
-    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const auto number = action.compose_sound_slot;
-    const auto identifier = std::string{digits[number / 36], digits[number % 36]};
-    auto name = path.filename().generic_string();
-    if (name.size() > 255)
-        name.clear();
-    auto applied = apply_bms_wav_slot_assignment(
-        history, {.identifier = identifier,
-                  .imported_file = {.source_path = path,
-                                    .role = resource_role_t::sample,
-                                    .name = std::move(name),
-                                    .audio_stream = stream},
-                  .confirm_replacement = action.compose_sound_slot_confirmed});
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "Sound slot assignment made no change.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Assigned audio to WAV " + identifier + ".");
-}
+struct assign_sound_slot_action_t {
+    auto operator==(const assign_sound_slot_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart_id = context.chart;
 
-auto assign_picked_slot_batch(const WormUiWorkspaceAction& action, document_history_t& history,
-                              workspace_controller_t& workspace, chart_id_t chart_id)
-    -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(chart_id);
-    if (chart == nullptr || chart->source_family != format_family_t::bms)
-        return compose_action_outcome_t::blocked(
-            "Direct sound slots are available only for a BMS chart.");
-    if (!chart_stamp_t{.document = {.project = history.document.id,
-                                    .revision = action.compose_input_document_revision},
-                       .chart = chart_id_t{action.compose_input_chart_id}}
-             .is_current(history.document, chart_id))
-        return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
-    if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
-        return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
-    if (!action.sound_import_items || action.sound_import_item_count == 0 ||
-        action.sound_import_item_count > maximum_bulk_sound_import)
-        return compose_action_outcome_t::blocked(
-            "Choose between 1 and 1295 audio files for the WAV slots.");
-
-    auto files = std::vector<import_resource_asset_action_t>{};
-    files.reserve(action.sound_import_item_count);
-    for (std::size_t index = 0; index < action.sound_import_item_count; ++index) {
-        const auto& item = action.sound_import_items[index];
-        if (!item.path || !item.name ||
-            item.kind != static_cast<std::uint8_t>(sound_kind_t::keysound))
+        const auto* chart = history.document.find_chart(chart_id);
+        if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
-                "The reviewed WAV slot list contains an invalid item.");
-        const auto path = std::filesystem::path{item.path}.lexically_normal();
+                "Direct sound slots are available only for a BMS chart.");
+        if (!chart_stamp_t{.document = {.project = history.document.id,
+                                        .revision = action.compose_input_document_revision},
+                           .chart = chart_id_t{action.compose_input_chart_id}}
+                 .is_current(history.document, chart_id))
+            return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
+        if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
+            return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
+        if (action.compose_import_path_count != 1 || !action.compose_import_paths ||
+            !action.compose_import_paths[0])
+            return compose_action_outcome_t::blocked(
+                "Assign exactly one audio file to the selected slot.");
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto path = std::filesystem::path{action.compose_import_paths[0]}.lexically_normal();
         std::error_code error;
         if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
-            return compose_action_outcome_t::blocked(
-                "A reviewed audio file is no longer readable: " + path.generic_string());
+            return compose_action_outcome_t::blocked("The selected audio file is not readable.");
         const auto stream = probe_audio(path);
         if (!stream)
+            return compose_action_outcome_t::blocked("The selected file is not decodable audio.");
+        constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const auto number = action.compose_sound_slot;
+        const auto identifier = std::string{digits[number / 36], digits[number % 36]};
+        auto name = path.filename().generic_string();
+        if (name.size() > 255)
+            name.clear();
+        auto applied = apply_bms_wav_slot_assignment(
+            history, {.identifier = identifier,
+                      .imported_file = {.source_path = path,
+                                        .role = resource_role_t::sample,
+                                        .name = std::move(name),
+                                        .audio_stream = stream},
+                      .confirm_replacement = action.compose_sound_slot_confirmed});
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "Sound slot assignment made no change.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Assigned audio to WAV " + identifier + ".");
+    }
+};
+static_assert(compose_action<assign_sound_slot_action_t, const resource_action_context_t>);
+
+struct assign_sound_slot_batch_action_t {
+    auto operator==(const assign_sound_slot_batch_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart_id = context.chart;
+
+        const auto* chart = history.document.find_chart(chart_id);
+        if (chart == nullptr || chart->source_family != format_family_t::bms)
             return compose_action_outcome_t::blocked(
-                "A reviewed file is no longer decodable audio: " + path.generic_string());
-        const auto name = std::string{item.name};
-        if (name.empty() || name.size() > 255)
-            return compose_action_outcome_t::blocked("Sound names must contain 1 to 255 bytes.");
-        files.push_back({.source_path = path,
-                         .role = resource_role_t::sample,
-                         .name = name,
-                         .audio_stream = stream});
+                "Direct sound slots are available only for a BMS chart.");
+        if (!chart_stamp_t{.document = {.project = history.document.id,
+                                        .revision = action.compose_input_document_revision},
+                           .chart = chart_id_t{action.compose_input_chart_id}}
+                 .is_current(history.document, chart_id))
+            return compose_action_outcome_t::blocked(stale_action_message("Sound slot assignment"));
+        if (action.compose_sound_slot == 0 || action.compose_sound_slot >= 1296)
+            return compose_action_outcome_t::blocked("Choose a sound slot from 01 through ZZ.");
+        if (!action.sound_import_items || action.sound_import_item_count == 0 ||
+            action.sound_import_item_count > maximum_bulk_sound_import)
+            return compose_action_outcome_t::blocked(
+                "Choose between 1 and 1295 audio files for the WAV slots.");
+
+        return std::nullopt;
     }
-    constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    const auto number = action.compose_sound_slot;
-    const auto identifier = std::string{digits[number / 36], digits[number % 36]};
-    auto applied = apply_bms_wav_slot_batch_assignment(
-        history, {.first_identifier = identifier,
-                  .imported_files = std::move(files),
-                  .confirm_replacements = action.compose_sound_slot_confirmed});
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "WAV slot batch made no document change.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Assigned " + sound_count_text(action.sound_import_item_count) + " starting at WAV " +
-            identifier + ".");
-}
-
-auto delete_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
-                   workspace_controller_t& workspace) -> compose_action_outcome_t {
-    const auto ids = sound_ids(action);
-    if (auto rejected = metadata_command_detail::stale_rejection(
-            history, action.compose_input_document_revision, "Resource deletion"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(),
-                                              notification_source_t::edit,
-                                              notification_severity_t::info);
-    auto applied = apply_resource_deletions(history, ids);
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "No sounds were removed.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Removed " + sound_count_text(ids.size()) + " from the list.");
-}
-
-auto change_sound_layers(const WormUiWorkspaceAction& action, document_history_t& history,
-                         workspace_controller_t& workspace, chart_id_t chart)
-    -> compose_action_outcome_t {
-    const auto ids = sound_ids(action);
-    const auto clear = action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS;
-    const auto add = action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
-    auto applied =
-        clear
-            ? apply_sound_layer_defaults(history, {.chart = chart, .resources = ids, .layers = {}})
-            : apply_sound_layer_membership(
-                  history, {.chart = chart,
-                            .resources = ids,
-                            .layer = layer_id_t{action.compose_semantic_layer_id},
-                            .member = add,
-                            .overwrite_note_layers = action.compose_sound_overwrite_note_layers});
-    const auto subject = sound_count_text(ids.size());
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "The sounds already had that layer state.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        clear ? "Cleared the layers of " + subject + "."
-        : add ? "Added the layer to " + subject + "."
-              : "Removed the layer from " + subject + ".");
-}
-
-auto group_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
-                  workspace_controller_t& workspace) -> compose_action_outcome_t {
-    if (!action.compose_sound_group_assignments || action.compose_sound_group_assignment_count == 0)
-        return compose_action_outcome_t::blocked("Choose at least one sound group.");
-    auto next_group = std::uint64_t{1};
-    for (const auto& group : history.document.sound_groups)
-        next_group = std::max(next_group, group.id.value + 1);
-    auto edits = std::vector<sound_group_edit_action_t>{};
-    edits.reserve(action.compose_sound_group_assignment_count);
-    for (std::size_t index = 0; index < action.compose_sound_group_assignment_count; ++index) {
-        const auto& assignment = action.compose_sound_group_assignments[index];
-        if (!assignment.sound_ids || assignment.sound_count == 0)
-            return compose_action_outcome_t::blocked("A sound group has no selected members.");
-        auto ids = std::vector<resource_id_t>{};
-        ids.reserve(assignment.sound_count);
-        for (std::size_t member = 0; member < assignment.sound_count; ++member)
-            ids.push_back(resource_id_t{assignment.sound_ids[member]});
-        if (assignment.group_id != 0) {
-            const auto group =
-                std::ranges::find(history.document.sound_groups,
-                                  sound_group_id_t{assignment.group_id}, &sound_group_t::id);
-            if (group == history.document.sound_groups.end())
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        auto files = std::vector<import_resource_asset_action_t>{};
+        files.reserve(action.sound_import_item_count);
+        for (std::size_t index = 0; index < action.sound_import_item_count; ++index) {
+            const auto& item = action.sound_import_items[index];
+            if (!item.path || !item.name ||
+                item.kind != static_cast<std::uint8_t>(sound_kind_t::keysound))
                 return compose_action_outcome_t::blocked(
-                    "The selected sound group no longer exists.");
-            if (assignment.name && assignment.name[0] != '\0' && assignment.name != group->name)
-                edits.emplace_back(
-                    rename_sound_group_action_t{.group = group->id, .name = assignment.name});
-            edits.emplace_back(add_sounds_to_group_action_t{
-                .group = sound_group_id_t{assignment.group_id}, .sounds = std::move(ids)});
-        } else {
-            if (!assignment.name)
-                return compose_action_outcome_t::blocked("A new sound group needs a name.");
-            edits.emplace_back(create_sound_group_action_t{.group = sound_group_id_t{next_group++},
-                                                           .name = assignment.name,
-                                                           .sounds = std::move(ids)});
+                    "The reviewed WAV slot list contains an invalid item.");
+            const auto path = std::filesystem::path{item.path}.lexically_normal();
+            std::error_code error;
+            if (!path.is_absolute() || !std::filesystem::is_regular_file(path, error) || error)
+                return compose_action_outcome_t::blocked(
+                    "A reviewed audio file is no longer readable: " + path.generic_string());
+            const auto stream = probe_audio(path);
+            if (!stream)
+                return compose_action_outcome_t::blocked(
+                    "A reviewed file is no longer decodable audio: " + path.generic_string());
+            const auto name = std::string{item.name};
+            if (name.empty() || name.size() > 255)
+                return compose_action_outcome_t::blocked(
+                    "Sound names must contain 1 to 255 bytes.");
+            files.push_back({.source_path = path,
+                             .role = resource_role_t::sample,
+                             .name = name,
+                             .audio_stream = stream});
         }
+        constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+        const auto number = action.compose_sound_slot;
+        const auto identifier = std::string{digits[number / 36], digits[number % 36]};
+        auto applied = apply_bms_wav_slot_batch_assignment(
+            history, {.first_identifier = identifier,
+                      .imported_files = std::move(files),
+                      .confirm_replacements = action.compose_sound_slot_confirmed});
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "WAV slot batch made no document change.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Assigned " + sound_count_text(action.sound_import_item_count) + " starting at WAV " +
+                identifier + ".");
     }
-    if (auto rejected = metadata_command_detail::stale_rejection(
-            history, action.compose_input_document_revision, "Sound group edit"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(),
-                                              notification_source_t::edit,
-                                              notification_severity_t::info);
-    auto applied =
-        apply_sound_group_edits(history, edits, action.compose_sound_group_keep_ids_together);
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "The selected sounds were already grouped.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Grouped selected sounds.");
-}
+};
+static_assert(compose_action<assign_sound_slot_batch_action_t, const resource_action_context_t>);
 
-auto ungroup_sounds(const WormUiWorkspaceAction& action, document_history_t& history,
-                    workspace_controller_t& workspace) -> compose_action_outcome_t {
-    const auto ids = sound_ids(action);
-    if (auto rejected = metadata_command_detail::stale_rejection(
-            history, action.compose_input_document_revision, "Sound group edit"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(),
-                                              notification_source_t::edit,
-                                              notification_severity_t::info);
-    auto applied = apply_sound_group_edit(history, ungroup_sounds_action_t{.sounds = ids});
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "The selected sounds were already ungrouped.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        "Ungrouped selected sounds.");
-}
+struct delete_compose_sounds_action_t {
+    std::vector<resource_id_t> ids{};
+    auto operator==(const delete_compose_sounds_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
 
-auto renumber_dock_ids(const WormUiWorkspaceAction& action, document_history_t& history,
-                       workspace_controller_t& workspace, chart_id_t chart_id)
-    -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(chart_id);
-    if (chart == nullptr || chart->source_family != format_family_t::bms)
-        return compose_action_outcome_t::blocked(
-            "BMS identifiers are available only for a BMS chart.");
-    if (!action.compose_renumber_all && action.compose_sound_resource_count == 0)
-        return compose_action_outcome_t::blocked("Select sounds or choose all before renumbering.");
-    std::vector<resource_id_t> ids;
-    if (!action.compose_renumber_all)
         ids = sound_ids(action);
-    const auto name_space = action.compose_renumber_bga ? "BMP" : "WAV";
-    if (auto rejected = metadata_command_detail::stale_rejection(
-            history, action.compose_input_document_revision, "BMS identifier renumber"))
-        return compose_action_outcome_t::from(rejected->diagnostics.front(),
-                                              notification_source_t::edit,
-                                              notification_severity_t::info);
-    auto applied = apply_bms_identifier_renumber(
-        history, {.name_space = name_space, .resources = std::move(ids)});
-    return compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .unchanged = "BMS IDs are already in name order.",
-            .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        std::string{"Renumbered "} + name_space + " IDs by name.");
-}
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "Resource deletion"))
+            return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                                  notification_source_t::edit,
+                                                  notification_severity_t::info);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        auto& history = context.document.history;
+        auto applied = apply_resource_deletions(history, ids);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "No sounds were removed.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Removed " + sound_count_text(ids.size()) + " from the list.");
+    }
+};
+static_assert(compose_action<delete_compose_sounds_action_t, const resource_action_context_t>);
 
-auto request_audition(const WormUiWorkspaceAction& action, const document_history_t& history,
-                      application_command_state_t& application_state) -> compose_action_outcome_t {
-    const resource_id_t resource{action.compose_resource_id};
-    const auto found =
-        std::ranges::find(history.document.resources, resource, &resource_entry_t::id);
-    if (!resource || found == history.document.resources.end())
-        return compose_action_outcome_t::blocked("That sound is no longer in the list.");
-    if (found->missing)
-        return compose_action_outcome_t::blocked("That sound's file is missing.");
-    application_state.project.sound_selection.pending_sound_audition = resource;
-    return compose_action_outcome_t::from(
-        "Playing " + (found->name.empty() ? std::string{"sound"} : found->name) + ".",
-        notification_severity_t::info);
-}
+struct change_compose_sound_layers_action_t {
+    auto operator==(const change_compose_sound_layers_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t&) -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart = context.chart;
+        const auto ids = sound_ids(action);
+        const auto clear = action.compose_action == WORM_UI_COMPOSE_ACTION_CLEAR_SOUND_LAYERS;
+        const auto add = action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER;
+        auto applied =
+            clear ? apply_sound_layer_defaults(history,
+                                               {.chart = chart, .resources = ids, .layers = {}})
+                  : apply_sound_layer_membership(
+                        history,
+                        {.chart = chart,
+                         .resources = ids,
+                         .layer = layer_id_t{action.compose_semantic_layer_id},
+                         .member = add,
+                         .overwrite_note_layers = action.compose_sound_overwrite_note_layers});
+        const auto subject = sound_count_text(ids.size());
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "The sounds already had that layer state.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            clear ? "Cleared the layers of " + subject + "."
+            : add ? "Added the layer to " + subject + "."
+                  : "Removed the layer from " + subject + ".");
+    }
+};
+static_assert(
+    compose_action<change_compose_sound_layers_action_t, const resource_action_context_t>);
 
-auto import_picked_files(const WormUiWorkspaceAction& action, document_history_t& history,
-                         workspace_controller_t& workspace, chart_id_t chart)
-    -> compose_action_outcome_t {
-    std::vector<std::string> paths;
-    for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
-        if (action.compose_import_paths && action.compose_import_paths[index])
-            paths.emplace_back(action.compose_import_paths[index]);
-    return import_keysound_feedback(history, workspace, chart, paths,
-                                    action.sound_import_kind ==
-                                            static_cast<std::uint8_t>(sound_kind_t::stem)
-                                        ? sound_kind_t::stem
-                                        : sound_kind_t::keysound);
-}
+struct group_compose_sounds_action_t {
+    std::vector<sound_group_edit_action_t> edits{};
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+
+        if (!action.compose_sound_group_assignments ||
+            action.compose_sound_group_assignment_count == 0)
+            return compose_action_outcome_t::blocked("Choose at least one sound group.");
+        auto next_group = std::uint64_t{1};
+        for (const auto& group : history.document.sound_groups)
+            next_group = std::max(next_group, group.id.value + 1);
+        edits.reserve(action.compose_sound_group_assignment_count);
+        for (std::size_t index = 0; index < action.compose_sound_group_assignment_count; ++index) {
+            const auto& assignment = action.compose_sound_group_assignments[index];
+            if (!assignment.sound_ids || assignment.sound_count == 0)
+                return compose_action_outcome_t::blocked("A sound group has no selected members.");
+            auto ids = std::vector<resource_id_t>{};
+            ids.reserve(assignment.sound_count);
+            for (std::size_t member = 0; member < assignment.sound_count; ++member)
+                ids.push_back(resource_id_t{assignment.sound_ids[member]});
+            if (assignment.group_id != 0) {
+                const auto group =
+                    std::ranges::find(history.document.sound_groups,
+                                      sound_group_id_t{assignment.group_id}, &sound_group_t::id);
+                if (group == history.document.sound_groups.end())
+                    return compose_action_outcome_t::blocked(
+                        "The selected sound group no longer exists.");
+                if (assignment.name && assignment.name[0] != '\0' && assignment.name != group->name)
+                    edits.emplace_back(
+                        rename_sound_group_action_t{.group = group->id, .name = assignment.name});
+                edits.emplace_back(add_sounds_to_group_action_t{
+                    .group = sound_group_id_t{assignment.group_id}, .sounds = std::move(ids)});
+            } else {
+                if (!assignment.name)
+                    return compose_action_outcome_t::blocked("A new sound group needs a name.");
+                edits.emplace_back(
+                    create_sound_group_action_t{.group = sound_group_id_t{next_group++},
+                                                .name = assignment.name,
+                                                .sounds = std::move(ids)});
+            }
+        }
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "Sound group edit"))
+            return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                                  notification_source_t::edit,
+                                                  notification_severity_t::info);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        auto applied =
+            apply_sound_group_edits(history, edits, action.compose_sound_group_keep_ids_together);
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "The selected sounds were already grouped.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Grouped selected sounds.");
+    }
+};
+static_assert(compose_action<group_compose_sounds_action_t, const resource_action_context_t>);
+
+struct ungroup_compose_sounds_action_t {
+    std::vector<resource_id_t> ids{};
+    auto operator==(const ungroup_compose_sounds_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+
+        ids = sound_ids(action);
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "Sound group edit"))
+            return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                                  notification_source_t::edit,
+                                                  notification_severity_t::info);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        auto& history = context.document.history;
+        auto applied = apply_sound_group_edit(history, ungroup_sounds_action_t{.sounds = ids});
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "The selected sounds were already ungrouped.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Ungrouped selected sounds.");
+    }
+};
+static_assert(compose_action<ungroup_compose_sounds_action_t, const resource_action_context_t>);
+
+struct renumber_sound_ids_action_t {
+    std::vector<resource_id_t> ids{};
+    const char* name_space{};
+    auto operator==(const renumber_sound_ids_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart_id = context.chart;
+
+        const auto* chart = history.document.find_chart(chart_id);
+        if (chart == nullptr || chart->source_family != format_family_t::bms)
+            return compose_action_outcome_t::blocked(
+                "BMS identifiers are available only for a BMS chart.");
+        if (!action.compose_renumber_all && action.compose_sound_resource_count == 0)
+            return compose_action_outcome_t::blocked(
+                "Select sounds or choose all before renumbering.");
+        if (!action.compose_renumber_all)
+            ids = sound_ids(action);
+        name_space = action.compose_renumber_bga ? "BMP" : "WAV";
+        if (auto rejected = metadata_command_detail::stale_rejection(
+                history, action.compose_input_document_revision, "BMS identifier renumber"))
+            return compose_action_outcome_t::from(rejected->diagnostics.front(),
+                                                  notification_source_t::edit,
+                                                  notification_severity_t::info);
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) -> compose_action_outcome_t {
+        auto& history = context.document.history;
+        auto applied = apply_bms_identifier_renumber(
+            history, {.name_space = name_space, .resources = std::move(ids)});
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "BMS IDs are already in name order.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            std::string{"Renumbered "} + name_space + " IDs by name.");
+    }
+};
+static_assert(compose_action<renumber_sound_ids_action_t, const resource_action_context_t>);
+
+struct audition_compose_sound_action_t {
+    application_command_state_t* application_state{};
+    resource_id_t resource{};
+    const resource_entry_t* selected{};
+    auto operator==(const audition_compose_sound_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+
+        resource = resource_id_t{action.compose_resource_id};
+        const auto found =
+            std::ranges::find(history.document.resources, resource, &resource_entry_t::id);
+        if (!resource || found == history.document.resources.end())
+            return compose_action_outcome_t::blocked("That sound is no longer in the list.");
+        if (found->missing)
+            return compose_action_outcome_t::blocked("That sound's file is missing.");
+        selected = &*found;
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        application_state->project.sound_selection.pending_sound_audition = resource;
+        return compose_action_outcome_t::from(
+            "Playing " + (selected->name.empty() ? std::string{"sound"} : selected->name) + ".",
+            notification_severity_t::info);
+    }
+};
+static_assert(compose_action<audition_compose_sound_action_t, const resource_action_context_t>);
+
+struct import_compose_sounds_action_t {
+    auto operator==(const import_compose_sounds_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t&) -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        auto& workspace = context.document.workspace;
+        const auto chart = context.chart;
+        std::vector<std::string> paths;
+        for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
+            if (action.compose_import_paths && action.compose_import_paths[index])
+                paths.emplace_back(action.compose_import_paths[index]);
+        return import_keysound_feedback(history, workspace, chart, paths,
+                                        action.sound_import_kind ==
+                                                static_cast<std::uint8_t>(sound_kind_t::stem)
+                                            ? sound_kind_t::stem
+                                            : sound_kind_t::keysound);
+    }
+};
+static_assert(compose_action<import_compose_sounds_action_t, const resource_action_context_t>);
 
 auto confirmed_import_entries(const WormUiWorkspaceAction& action, const song_document_t& document,
                               bool bms_chart, std::string& reason)
@@ -684,60 +794,76 @@ auto confirmed_import_groups(const WormUiWorkspaceAction& action, std::size_t en
     return groups;
 }
 
-auto confirm_import(const WormUiWorkspaceAction& action, document_history_t& history,
-                    workspace_controller_t& workspace, chart_id_t chart)
-    -> compose_action_outcome_t {
-    const chart_stamp_t stamp{.document = {.project = song_id_t{action.sound_import_project_id},
-                                           .revision = action.compose_input_document_revision},
-                              .chart = chart_id_t{action.compose_input_chart_id}};
-    if (!stamp.is_current(history.document, chart))
-        return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
-    const auto* target = history.document.find_chart(chart);
-    if (target == nullptr)
-        return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
-    auto reason = std::string{};
-    auto entries = confirmed_import_entries(action, history.document,
-                                            target->source_family == format_family_t::bms, reason);
-    if (!entries)
-        return compose_action_outcome_t::blocked(reason);
-    auto groups = confirmed_import_groups(action, entries->size(), reason);
-    if (!groups)
-        return compose_action_outcome_t::blocked(reason);
-    const bool bms_chart = target->source_family == format_family_t::bms;
-    const bool has_groups = !groups->empty();
-    const auto imported_resource_begin = history.document.resources.size();
-    const auto loose_entries = ungrouped_entry_indexes(entries->size(), *groups);
-    auto import = bulk_sound_import_action_t{
-        .chart = chart, .entries = std::move(*entries), .groups = std::move(*groups)};
-    auto applied = apply_bulk_sound_import(history, import);
-    if (!applied.diagnostics.empty())
-        return compose_action_outcome_t::from(
+struct confirm_compose_sound_import_action_t {
+    const chart_document_t* target{};
+    auto operator==(const confirm_compose_sound_import_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart = context.chart;
+
+        const chart_stamp_t stamp{.document = {.project = song_id_t{action.sound_import_project_id},
+                                               .revision = action.compose_input_document_revision},
+                                  .chart = chart_id_t{action.compose_input_chart_id}};
+        if (!stamp.is_current(history.document, chart))
+            return compose_action_outcome_t::blocked(stale_action_message("Sound import"));
+        target = history.document.find_chart(chart);
+        if (target == nullptr)
+            return compose_action_outcome_t::blocked("Select a difficulty before adding sounds.");
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto chart = context.chart;
+        auto reason = std::string{};
+        auto entries = confirmed_import_entries(
+            action, history.document, target->source_family == format_family_t::bms, reason);
+        if (!entries)
+            return compose_action_outcome_t::blocked(reason);
+        auto groups = confirmed_import_groups(action, entries->size(), reason);
+        if (!groups)
+            return compose_action_outcome_t::blocked(reason);
+        const bool bms_chart = target->source_family == format_family_t::bms;
+        const bool has_groups = !groups->empty();
+        const auto imported_resource_begin = history.document.resources.size();
+        const auto loose_entries = ungrouped_entry_indexes(entries->size(), *groups);
+        auto import = bulk_sound_import_action_t{
+            .chart = chart, .entries = std::move(*entries), .groups = std::move(*groups)};
+        auto applied = apply_bulk_sound_import(history, import);
+        if (!applied.diagnostics.empty())
+            return compose_action_outcome_t::from(
+                std::move(applied),
+                compose_action_description_t{
+                    .rebind_failure = "Sounds added, but workspace rebinding failed.",
+                    .unknown_severity = notification_severity_t::info,
+                    .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only});
+        if (!applied.applied)
+            return compose_action_outcome_t::from("Sound import made no document change.",
+                                                  notification_severity_t::info);
+        auto message = "Added " + sound_count_text(action.sound_import_item_count);
+        const auto range_count =
+            bms_chart
+                ? imported_bms_id_ranges(history.document, imported_resource_begin, loose_entries)
+                : 0;
+        if (range_count > 1) {
+            message += has_groups ? ". Ungrouped files split across " : ". Group split across ";
+            message += std::to_string(range_count) + " ID ranges; Renumber by name can rejoin them";
+        }
+        message += ".";
+        auto outcome = compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{
                 .rebind_failure = "Sounds added, but workspace rebinding failed.",
                 .unknown_severity = notification_severity_t::info,
-                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only});
-    if (!applied.applied)
-        return compose_action_outcome_t::from("Sound import made no document change.",
-                                              notification_severity_t::info);
-    auto message = "Added " + sound_count_text(action.sound_import_item_count);
-    const auto range_count =
-        bms_chart ? imported_bms_id_ranges(history.document, imported_resource_begin, loose_entries)
-                  : 0;
-    if (range_count > 1) {
-        message += has_groups ? ". Ungrouped files split across " : ". Group split across ";
-        message += std::to_string(range_count) + " ID ranges; Renumber by name can rejoin them";
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            std::move(message));
+        return outcome;
     }
-    message += ".";
-    auto outcome = compose_action_outcome_t::from(
-        std::move(applied),
-        compose_action_description_t{
-            .rebind_failure = "Sounds added, but workspace rebinding failed.",
-            .unknown_severity = notification_severity_t::info,
-            .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-        std::move(message));
-    return outcome;
-}
+};
+static_assert(
+    compose_action<confirm_compose_sound_import_action_t, const resource_action_context_t>);
 
 } // namespace
 
@@ -788,6 +914,55 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     return prepared;
 }
 
+namespace {
+struct edit_sound_properties_action_t {
+    const resource_entry_t* selected{};
+    const char* name_end{};
+    auto operator==(const edit_sound_properties_action_t&) const -> bool = default;
+    auto validate(const resource_action_context_t& context)
+        -> std::optional<compose_action_outcome_t> {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        const auto& workspace = context.document.workspace;
+        if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
+            action.sound_properties_project_id != history.document.id.value ||
+            action.sound_properties_chart_id != workspace.selected_chart->value ||
+            action.sound_properties_document_revision != history.document.revision) {
+            return compose_action_outcome_t::blocked(stale_action_message("Sound properties"));
+        }
+        const auto resource = std::ranges::find(history.document.resources,
+                                                resource_id_t{action.sound_properties_resource_id},
+                                                &resource_entry_t::id);
+        name_end = std::find(std::begin(action.sound_properties_name),
+                             std::end(action.sound_properties_name), '\0');
+        if (resource == history.document.resources.end() ||
+            name_end == std::end(action.sound_properties_name)) {
+            return compose_action_outcome_t::blocked("The sound properties draft is invalid.");
+        }
+        selected = &*resource;
+        return std::nullopt;
+    }
+    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+        const auto& action = context.action;
+        auto& history = context.document.history;
+        auto applied = apply_resource_sound_metadata(
+            history, {.resource = selected->id,
+                      .kind = static_cast<sound_kind_t>(action.sound_properties_kind),
+                      .tags = selected->tags,
+                      .name = std::string(std::begin(action.sound_properties_name), name_end)});
+        return compose_action_outcome_t::from(
+            std::move(applied),
+            compose_action_description_t{
+                .unchanged = "Sound properties are unchanged.",
+                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
+                .unknown_severity = notification_severity_t::info,
+                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
+            "Sound properties updated.");
+    }
+};
+static_assert(compose_action<edit_sound_properties_action_t, const resource_action_context_t>);
+} // namespace
+
 auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
                                       document_history_t& history,
                                       workspace_controller_t& workspace,
@@ -795,49 +970,17 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
     if (!action.sound_properties_apply)
         return false;
     const document_edit_inputs_t document{history, workspace, notifications};
-    if (workspace.active_tab != workspace_tab_t::audio_slices || !workspace.selected_chart ||
-        action.sound_properties_project_id != history.document.id.value ||
-        action.sound_properties_chart_id != workspace.selected_chart->value ||
-        action.sound_properties_document_revision != history.document.revision) {
-        static_cast<void>(finish_compose_action(
-            document, notifications,
-            compose_action_outcome_t::blocked(stale_action_message("Sound properties"))));
-        return true;
-    }
-    const auto resource = std::ranges::find(history.document.resources,
-                                            resource_id_t{action.sound_properties_resource_id},
-                                            &resource_entry_t::id);
-    const auto name_end = std::find(std::begin(action.sound_properties_name),
-                                    std::end(action.sound_properties_name), '\0');
-    if (resource == history.document.resources.end() ||
-        name_end == std::end(action.sound_properties_name)) {
-        static_cast<void>(finish_compose_action(
-            document, notifications,
-            compose_action_outcome_t::blocked("The sound properties draft is invalid.")));
-        return true;
-    }
-    auto applied = apply_resource_sound_metadata(
-        history, {.resource = resource->id,
-                  .kind = static_cast<sound_kind_t>(action.sound_properties_kind),
-                  .tags = resource->tags,
-                  .name = std::string(std::begin(action.sound_properties_name), name_end)});
+    const resource_action_context_t context{action, document, {}};
     static_cast<void>(finish_compose_action(
-        document, notifications,
-        compose_action_outcome_t::from(
-            std::move(applied),
-            compose_action_description_t{
-                .unchanged = "Sound properties are unchanged.",
-                .rebind_failure = "Sounds updated, but workspace rebinding failed.",
-                .unknown_severity = notification_severity_t::info,
-                .rebind_feedback_policy = compose_rebind_feedback_policy_t::action_only},
-            "Sound properties updated.")));
+        document, notifications, run_compose_action(edit_sound_properties_action_t{}, context)));
     return true;
 }
 
-auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action, document_history_t& history,
-                                 workspace_controller_t& workspace, chart_id_t chart,
+auto dispatch_sound_edit_outcome(const resource_action_context_t& context,
                                  application_command_state_t& application_state)
     -> std::optional<compose_action_outcome_t> {
+    const auto& action = context.action;
+    auto& history = context.document.history;
 
     const auto source =
         action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND
@@ -851,28 +994,29 @@ auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action, document_h
     std::optional<compose_action_outcome_t> outcome;
     switch (action.compose_action) {
     case WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES:
-        outcome = import_picked_files(action, history, workspace, chart);
+        outcome = run_compose_action(import_compose_sounds_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT:
-        outcome = confirm_import(action, history, workspace, chart);
+        outcome = run_compose_action(confirm_compose_sound_import_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT:
-        outcome = assign_picked_slot(action, history, workspace, chart);
+        outcome = run_compose_action(assign_sound_slot_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH:
-        outcome = assign_picked_slot_batch(action, history, workspace, chart);
+        outcome = run_compose_action(assign_sound_slot_batch_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_DELETE_SOUNDS:
-        outcome = delete_sounds(action, history, workspace);
+        outcome = run_compose_action(delete_compose_sounds_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS:
-        outcome = group_sounds(action, history, workspace);
+        outcome = run_compose_action(group_compose_sounds_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_UNGROUP_SOUNDS:
-        outcome = ungroup_sounds(action, history, workspace);
+        outcome = run_compose_action(ungroup_compose_sounds_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_AUDITION_SOUND:
-        outcome = request_audition(action, history, application_state);
+        outcome = run_compose_action(
+            audition_compose_sound_action_t{.application_state = &application_state}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_ADD_SOUND_LAYER:
     case WORM_UI_COMPOSE_ACTION_REMOVE_SOUND_LAYER:
@@ -882,10 +1026,10 @@ auto dispatch_sound_edit_outcome(const WormUiWorkspaceAction& action, document_h
             return compose_action_outcome_t::from(rejected->diagnostics.front(),
                                                   notification_source_t::edit,
                                                   notification_severity_t::info);
-        outcome = change_sound_layers(action, history, workspace, chart);
+        outcome = run_compose_action(change_compose_sound_layers_action_t{}, context);
         break;
     case WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS:
-        outcome = renumber_dock_ids(action, history, workspace, chart);
+        outcome = run_compose_action(renumber_sound_ids_action_t{}, context);
         break;
     default:
         return std::nullopt;
@@ -899,11 +1043,11 @@ auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document
                                    application_command_state_t& application_state,
                                    notification_sink_t notifications)
     -> std::optional<std::string> {
-    auto outcome =
-        dispatch_sound_edit_outcome(action, history, workspace, chart, application_state);
+    const document_edit_inputs_t document{history, workspace, notifications};
+    const resource_action_context_t context{action, document, chart};
+    auto outcome = dispatch_sound_edit_outcome(context, application_state);
     if (!outcome)
         return std::nullopt;
-    const document_edit_inputs_t document{history, workspace, notifications};
     auto finished = finish_compose_action(document, notifications, std::move(*outcome));
     return std::move(finished.message);
 }

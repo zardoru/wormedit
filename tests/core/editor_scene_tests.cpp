@@ -118,11 +118,12 @@ auto make_stale_scene_preview(int kind) -> wormedit::editor_interaction_view_mod
             .lane = lane_id_t{1}, .document_revision = 8, .adds_note = true};
         break;
     case 3:
-        result.pending_note_move_gesture = pending_note_move_gesture_t{
-            .reference_note = object_id_t{11}, .stamp = wormedit::document_stamp_t::from(8), .notes = {object_id_t{11}},
+        result.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(8), .payload = {
+            .reference_note = object_id_t{11}, .notes = {object_id_t{11}},
             .preview_position = {measure_id_t{2}, 240},
             .preview = {{object_id_t{11}, lane_id_t{2}, local_position_t{measure_id_t{2}, 240},
-                         local_position_t{measure_id_t{2}, 720}}}};
+                         local_position_t{measure_id_t{2}, 720}}}}};
         break;
     case 4:
         result.pending_note_paint_gesture = note_paint_gesture_preview_t{
@@ -589,15 +590,15 @@ TEST_CASE("field scene resolves semantic layer colors by visible palette order",
     CHECK(has_code(contradictory.diagnostics, wormedit::diagnostic_code_t::invalid_id));
 
     auto move_view = view();
-    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    move_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
-    };
+    }};
     const auto moved = wormedit::editor_field_scene_view_t::from(
         chart, std::get<wormedit::editor_field_scene_index_t>(built), move_view,
         {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
@@ -1023,15 +1024,15 @@ TEST_CASE("field scene renders exact hold and duration proposal ghosts",
           }) == 1);
 
     auto move_view = view();
-    move_view.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    move_view.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = wormedit::object_id_t{11},
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = {wormedit::object_id_t{11}},
         .preview_position = {wormedit::measure_id_t{2}, 240},
         .preview = {{wormedit::object_id_t{11}, wormedit::lane_id_t{2},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 240},
                      wormedit::local_position_t{wormedit::measure_id_t{2}, 720}}},
-    };
+    }};
     const auto moved = wormedit::editor_field_scene_view_t::from(
         chart, index, move_view, {.field_left_pixels = 10.0, .field_width_pixels = 200.0});
     REQUIRE(moved);
@@ -2063,14 +2064,14 @@ auto move_feedback_scene(const wormedit::chart_document_t& chart,
         projected.selected_objects.push_back(
             {wormedit::editor_selection_object_kind_t::note, proposal.note});
     }
-    projected.pending_note_move_gesture = wormedit::pending_note_move_gesture_t{
+    projected.active_gesture = wormedit::proposal_t<wormedit::pending_note_move_gesture_t, wormedit::document_stamp_t>{
+        .stamp = wormedit::document_stamp_t::from(7), .payload = {
         .reference_note = proposals.front().note,
-        .stamp = wormedit::document_stamp_t::from(7),
         .notes = projected.selected_notes,
         .preview_position = proposals.front().position,
         .preview = std::move(proposals),
         .occupants = std::move(occupants),
-    };
+    }};
     const auto built = wormedit::build_editor_field_scene_index(chart, 7);
     REQUIRE(std::holds_alternative<wormedit::editor_field_scene_index_t>(built));
     return wormedit::editor_field_scene_view_t::from(

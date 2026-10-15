@@ -6018,7 +6018,7 @@ struct move_feedback_dispatch_fixture_t {
         x = (source->bounds.left + source->bounds.right) * .5;
         pixels_per_row = view.pixels_per_standard_measure / 960;
         (void)dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_BEGIN, 240);
-        expect_compose_test(compose.interaction->pending_note_move_gesture.has_value());
+        expect_compose_test(compose.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
     }
     auto dispatch(WormUiComposeInputKind kind, double row, bool to_bgm = false) -> std::string {
         WormUiWorkspaceAction action{};
@@ -6069,7 +6069,7 @@ void check_move_release_warning(move_feedback_dispatch_fixture_t& fixture) {
     expect_compose_test(messages.size() == 1);
     expect_compose_test(messages.front().severity == notification_severity_t::warning);
     expect_compose_test(messages.front().message == "1 notes would overlap");
-    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
     expect_compose_test(fixture.compose.history.redo.empty());
@@ -6083,11 +6083,11 @@ TEST_CASE("Compose move motion projects all conflicts without notifications and 
         (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
     fixture.center.drain_inbox(notification_time_t{0});
     expect_compose_test(fixture.center.snapshot(notification_capacity).empty());
-    INFO("Actual move target " << fixture.compose.interaction->pending_note_move_gesture->preview_position.measure.value
-         << ":" << fixture.compose.interaction->pending_note_move_gesture->preview_position.row
+    INFO("Actual move target " << fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview_position.measure.value
+         << ":" << fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview_position.row
          << " snap=" << fixture.compose.interaction->snap_enabled
          << " scroll=" << fixture.compose.interaction->viewport_scroll_pixels);
-    expect_compose_test(fixture.compose.interaction->pending_note_move_gesture->preview_position ==
+    expect_compose_test(fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview_position ==
                         local_position_t{measure_id_t{1}, 600});
     check_projected_move_conflicts(fixture);
     const auto status = fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
@@ -6124,7 +6124,7 @@ TEST_CASE("Compose move release outside actual chart geometry cancels without ed
     move_feedback_dispatch_fixture_t fixture;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 120);
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 100000);
-    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
 }
@@ -6139,8 +6139,8 @@ TEST_CASE("Compose vertical move through an empty target layout keeps red propos
                                   .layout = {.profile_id = "empty-target"}});
     move_feedback_dispatch_fixture_t fixture{std::move(song)};
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 1000);
-    expect_compose_test(fixture.compose.interaction->pending_note_move_gesture.has_value());
-    const auto& pending = *fixture.compose.interaction->pending_note_move_gesture;
+    expect_compose_test(fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
+    const auto& pending = *fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>();
     INFO("Actual empty-layout target " << pending.preview_position.measure.value << ":" << pending.preview_position.row);
     expect_compose_test(pending.preview_position == local_position_t{measure_id_t{2}, 40});
     expect_compose_test(pending.preview.front().conflict == note_move_conflict_t::out_of_lane);
@@ -6155,7 +6155,7 @@ TEST_CASE("Compose no-hit move outside the horizontal field cancels without edit
     move_feedback_dispatch_fixture_t fixture;
     fixture.x = -10000;
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE, 600);
-    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     expect_compose_test(fixture.compose.history.document.revision == 1);
     expect_compose_test(fixture.compose.history.undo.empty());
 }
@@ -6174,7 +6174,7 @@ TEST_CASE("Compose routes a shifted BGM drop and projects transient amber hold g
     expect_compose_test(fixture.compose.history.undo.empty());
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 480, true);
     expect_compose_test(fixture.compose.history.undo.size() == 1);
-    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     const auto& measures = fixture.compose.history.document.charts.front().measures;
     const auto event = std::ranges::find(measures.front().bgm_events, object_id_t{101}, &bgm_event_t::id);
     expect_compose_test(event != measures.front().bgm_events.end());
@@ -6199,7 +6199,7 @@ TEST_CASE("Compose captures the collision preference and previews every displace
     }) == 2);
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
     expect_compose_test(fixture.compose.history.undo.size() == 1);
-    expect_compose_test(!fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(!fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
 }
 
 TEST_CASE("Compose shows rejected BGM displacement destinations in red and commits nothing", "[sys][compose][bgm-move]") {
@@ -6217,7 +6217,7 @@ TEST_CASE("Compose shows rejected BGM displacement destinations in red and commi
         return event.proposal_ghost && event.move_conflict;
     }));
     (void)fixture.dispatch(WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE, 600);
-    expect_compose_test(fixture.compose.history.undo.empty() && !fixture.compose.interaction->pending_note_move_gesture);
+    expect_compose_test(fixture.compose.history.undo.empty() && !fixture.compose.interaction->gesture<wormedit::pending_note_move_gesture_t>());
 }
 
 TEST_CASE("Same sound registered command uses hover selection and dock adds without Undo", "[sys][compose][select-same-sound]") {

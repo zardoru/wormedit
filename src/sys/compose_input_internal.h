@@ -377,8 +377,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     using namespace wormedit;
     auto& [environment, action, state, gesture_active] = context;
     auto& history = environment.document.history;
-    if (!state.pending_note_move_gesture ||
-        state.pending_note_move_gesture->reference_note != object_id_t{input.object_id})
+    if (!state.gesture<wormedit::pending_note_move_gesture_t>() ||
+        state.gesture<wormedit::pending_note_move_gesture_t>()->reference_note != object_id_t{input.object_id})
         return compose_input_family_result_t::from("BGM event drag expired before release.");
     const auto* chart = history.document.find_chart(state.chart);
     const auto view = compose_view_for_state(history, state);
@@ -386,7 +386,7 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                                              : std::nullopt;
     std::optional<std::uint64_t> virtual_row;
     if (state.y_lock)
-        position = state.pending_note_move_gesture->preview_position;
+        position = state.gesture<wormedit::pending_note_move_gesture_t>()->preview_position;
     else if (!position && chart != nullptr && view)
         virtual_row =
             virtual_bms_move_target(*chart, *view, input.y_pixels,
@@ -396,7 +396,7 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
         return compose_input_family_result_t::from(
             "Selected-object move fell outside chart geometry.");
     }
-    const auto target = position.value_or(state.pending_note_move_gesture->preview_position);
+    const auto target = position.value_or(state.gesture<wormedit::pending_note_move_gesture_t>()->preview_position);
     const auto lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt;
     const auto releasing = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE;
     const auto result = dispatch_editor_action(
@@ -510,7 +510,7 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE:
         return update_bmson_bgm_move(input, context, position_at_compose_y, virtual_bms_row_at);
     case WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_CANCEL:
-        if (context.state.pending_note_move_gesture)
+        if (context.state.gesture<wormedit::pending_note_move_gesture_t>())
             (void)wormedit::dispatch_editor_action(context.environment.document.history, context.state,
                                                    wormedit::cancel_editor_gesture_action_t{});
         return compose_input_family_result_t::stop_with_feedback(
@@ -645,7 +645,7 @@ struct compose_input_context_t {
         if (target || (kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE &&
                        kind != WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE))
             return target;
-        if (!state.pending_note_move_gesture || !std::isfinite(x_pixels) ||
+        if (!state.gesture<wormedit::pending_note_move_gesture_t>() || !std::isfinite(x_pixels) ||
             x_pixels < field_left_pixels || x_pixels >= field_left_pixels + field_width_pixels)
             return std::nullopt;
         const auto position = position_at_compose_y(chart, view, y_pixels);

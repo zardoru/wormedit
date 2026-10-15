@@ -7846,12 +7846,12 @@ TEST_CASE("Production off grid note drag commits its preview position and lane",
     const auto moved = f.harness.frame(std::span{&motion, 1});
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) != nullptr);
     (void)f.dispatch(moved);
-    expect_t422(f.interaction->pending_note_move_gesture.has_value());
-    const auto preview = f.interaction->pending_note_move_gesture->preview;
+    expect_t422(f.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
+    const auto preview = f.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview;
     expect_t422(preview.size() == 1);
     const auto up = button_event(false, target.first, target.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
-    expect_t422(!f.interaction->pending_note_move_gesture);
+    expect_t422(!f.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     const auto* changed = t422_note(f.history, 101);
     expect_t422(changed != nullptr);
     expect_t422(changed->position == preview.front().position);

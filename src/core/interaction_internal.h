@@ -925,8 +925,7 @@ auto make_move_plan(editor_edit_context_t& context, std::vector<object_id_t> tar
     -> std::variant<note_move_plan_t, diagnostic_list_t>;
 auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
     -> editor_interaction_result_t;
-auto apply_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan)
-    -> editor_interaction_result_t;
+
 struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> notes;
     std::unordered_set<std::uint64_t> bgm_events;
@@ -1027,18 +1026,6 @@ void prepare_selected_bgm_preview(editor_edit_context_t& context, const note_mov
                                   pending_note_move_gesture_t& pending);
 auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_plan_t& plan,
                               pending_note_move_gesture_t& pending) -> void;
-auto begin_note_move_gesture(editor_edit_context_t& context, object_id_t reference_id,
-                             bool displace_to_bgm) -> editor_interaction_result_t;
-auto update_note_move_gesture(editor_edit_context_t& context, local_position_t requested_position,
-                              lane_id_t requested_lane, bool to_bgm,
-                              std::optional<object_id_t> preferred_bgm_lane,
-                              std::optional<std::uint64_t> virtual_bgm_row)
-    -> editor_interaction_result_t;
-auto release_note_move_gesture(editor_edit_context_t& context, local_position_t requested_position,
-                               lane_id_t requested_lane, bool to_bgm,
-                               std::optional<object_id_t> preferred_bgm_lane,
-                               std::optional<std::uint64_t> virtual_bgm_row)
-    -> editor_interaction_result_t;
 auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row,
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)

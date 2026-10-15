@@ -537,19 +537,6 @@ struct pending_note_duration_gesture_t {
     auto operator==(const pending_note_duration_gesture_t&) const -> bool = default;
 };
 
-// Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
-using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>>;
-
-template<class Gesture>
-[[nodiscard]] auto gesture_payload(active_gesture_t* active) -> Gesture* {
-    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
-    return proposal ? &proposal->payload : nullptr;
-}
-template<class Gesture>
-[[nodiscard]] auto gesture_payload(const active_gesture_t* active) -> const Gesture* {
-    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
-    return proposal ? &proposal->payload : nullptr;
-}
 
 enum class note_move_conflict_t { none, occupied, out_of_lane, out_of_chart, other };
 
@@ -587,10 +574,12 @@ struct note_move_bgm_lane_preview_t {
 };
 
 struct pending_note_move_gesture_t {
+    static constexpr auto kind = editor_gesture_kind_t::move;
+    static constexpr auto update_message = "note move update requires an active gesture";
     object_id_t reference_note;
-    document_stamp_t stamp;
     std::vector<object_id_t> notes;
     local_position_t preview_position;
+    lane_id_t preview_lane;
     std::vector<note_move_preview_t> preview;
     std::vector<object_id_t> occupants;
     std::size_t conflicting_notes{};
@@ -602,8 +591,28 @@ struct pending_note_move_gesture_t {
     std::vector<std::string> bgm_diagnostics;
     std::optional<std::uint64_t> virtual_bgm_row;
 
+    [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t, bool displace_to_bgm = false)
+        -> diagnosed_t<std::optional<pending_note_move_gesture_t>>;
+    [[nodiscard]] auto update(editor_edit_context_t&, local_position_t, lane_id_t, bool,
+                              std::optional<object_id_t>, std::optional<std::uint64_t>) -> diagnostic_list_t;
+    [[nodiscard]] auto apply(editor_edit_context_t&) const -> editor_interaction_result_t;
     auto operator==(const pending_note_move_gesture_t&) const -> bool = default;
 };
+
+// Temporary: remaining alternatives migrate here and legacy fields are removed by T-634.
+using active_gesture_t = std::variant<proposal_t<pending_note_duration_gesture_t, document_stamp_t>,
+                                      proposal_t<pending_note_move_gesture_t, document_stamp_t>>;
+
+template<class Gesture>
+[[nodiscard]] auto gesture_payload(active_gesture_t* active) -> Gesture* {
+    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
+    return proposal ? &proposal->payload : nullptr;
+}
+template<class Gesture>
+[[nodiscard]] auto gesture_payload(const active_gesture_t* active) -> const Gesture* {
+    const auto proposal = active ? std::get_if<proposal_t<Gesture, document_stamp_t>>(active) : nullptr;
+    return proposal ? &proposal->payload : nullptr;
+}
 
 struct pending_note_paint_gesture_t {
     document_stamp_t stamp;
@@ -733,7 +742,6 @@ struct editor_interaction_state_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<pending_note_paint_gesture_t> pending_note_paint_gesture;
     std::optional<pending_semantic_layer_paint_gesture_t> pending_semantic_layer_paint_gesture;
     std::optional<pending_editor_area_selection_t> pending_editor_area_selection;
@@ -809,7 +817,6 @@ struct editor_interaction_view_model_t {
     template<class Gesture> [[nodiscard]] auto gesture() const -> const Gesture* {
         return gesture_payload<Gesture>(active_gesture ? &*active_gesture : nullptr);
     }
-    std::optional<pending_note_move_gesture_t> pending_note_move_gesture;
     std::optional<note_paint_gesture_preview_t> pending_note_paint_gesture;
     std::optional<editor_area_selection_preview_t> pending_editor_area_selection;
     std::optional<space_range_selection_preview_t> pending_space_range_selection;

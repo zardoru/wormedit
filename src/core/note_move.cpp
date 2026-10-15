@@ -956,7 +956,6 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
                             ? diagnostic_list_t{}
                             : relocate_selected_bgm(proposed, state.chart, plan);
         if (!failures.empty()) {
-            state.pending_note_move_gesture.reset();
             return diagnostic_result(history, state, std::move(failures));
         }
         auto command = transaction.commit(plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
@@ -964,7 +963,6 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
         if (!command)
             return diagnostic_result(history, state, std::move(command.diagnostics));
     }
-    state.pending_note_move_gesture.reset();
     set_selected_notes(state, plan.notes);
     for (const auto& moved : plan.bgm_moves)
         state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});

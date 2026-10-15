@@ -12,7 +12,6 @@ void visit_editor_gestures(State& state, Visitor&& visit) {
     const auto fields = std::tuple{
         std::pair{editor_gesture_kind_t::hold, &editor_interaction_state_t::pending_hold},
         std::pair{editor_gesture_kind_t::keyboard_holds, &editor_interaction_state_t::additional_keyboard_holds},
-        std::pair{editor_gesture_kind_t::move, &editor_interaction_state_t::pending_note_move_gesture},
         std::pair{editor_gesture_kind_t::paint, &editor_interaction_state_t::pending_note_paint_gesture},
         std::pair{editor_gesture_kind_t::semantic_paint, &editor_interaction_state_t::pending_semantic_layer_paint_gesture},
         std::pair{editor_gesture_kind_t::area, &editor_interaction_state_t::pending_editor_area_selection},

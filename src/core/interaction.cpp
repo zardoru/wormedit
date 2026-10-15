@@ -428,7 +428,6 @@ auto make_view(const document_history_t& history, const editor_interaction_state
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
         .active_gesture = state.active_gesture,
-        .pending_note_move_gesture = state.pending_note_move_gesture,
         .pending_note_paint_gesture =
             state.pending_note_paint_gesture
                 ? std::optional{note_paint_gesture_preview_t{
@@ -790,10 +789,7 @@ auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_p
     -> editor_interaction_result_t {
     return apply_duration_resize_plan(context.history, context.state, plan);
 }
-auto apply_move_plan(editor_edit_context_t& context, const note_move_plan_t& plan)
-    -> editor_interaction_result_t {
-    return apply_note_move_plan(context.history, context.state, plan);
-}
+
 
 
 auto collect_delete_object_ids(const std::vector<editor_selection_object_t>& objects)
@@ -1542,7 +1538,7 @@ auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id,
             {error(diagnostic_code_t::invalid_hold,
                    "pointer capture is required to begin semantic-layer painting")});
     if (state.pending_hold || state.gesture<pending_note_duration_gesture_t>() ||
-        state.pending_note_move_gesture || state.pending_note_paint_gesture ||
+        state.gesture<pending_note_move_gesture_t>() || state.pending_note_paint_gesture ||
         state.pending_semantic_layer_paint_gesture || state.pending_editor_area_selection ||
         state.pending_space_range_selection)
         return diagnostic_result(history, state,
@@ -2090,17 +2086,17 @@ auto handle(editor_edit_context_t& context, const update_note_duration_gesture_a
 
 auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)
     -> editor_interaction_result_t {
-    return begin_note_move_gesture(context, action.reference_note, action.displace_to_bgm);
+    return begin_gesture<pending_note_move_gesture_t>(context, action.reference_note, action.displace_to_bgm);
 }
 
 auto handle(editor_edit_context_t& context, const update_note_move_gesture_action_t& action)
     -> editor_interaction_result_t {
     if (action.phase == editor_gesture_phase_t::commit) {
-        return release_note_move_gesture(context, action.reference_position, action.reference_lane,
+        return commit_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                          action.to_bgm, action.preferred_bgm_lane,
                                          action.virtual_bgm_row);
     }
-    return update_note_move_gesture(context, action.reference_position, action.reference_lane,
+    return update_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
                                     action.to_bgm, action.preferred_bgm_lane,
                                     action.virtual_bgm_row);
 }

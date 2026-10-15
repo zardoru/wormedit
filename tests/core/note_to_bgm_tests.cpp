@@ -1060,7 +1060,7 @@ TEST_CASE("Core Move to BGM rejects missing notes and active gestures atomically
     state.chart = chart_id_t{1};
     state.selected_notes = {object_id_t{1}, object_id_t{2}};
     if (rejected_kind == 0) state.selected_notes.push_back(object_id_t{999});
-    if (rejected_kind == 2) state.pending_note_move_gesture.emplace();
+    if (rejected_kind == 2) state.active_gesture.emplace(std::in_place_type<proposal_t<pending_note_move_gesture_t, document_stamp_t>>);
     const auto selection = state.selected_notes;
     const auto result = move_editor_selection_to_bgm(history, state, std::nullopt, true);
     require_move(result.payload.handled && !result.command.applied && !result.command.diagnostics.empty());

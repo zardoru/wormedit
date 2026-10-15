@@ -1449,7 +1449,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     const auto hover_gesture_active =
         retained_state->pending_hold.has_value() ||
         retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
-        retained_state->pending_note_move_gesture.has_value() ||
+        retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
         retained_state->pending_note_paint_gesture.has_value() ||
         retained_state->pending_semantic_layer_paint_gesture.has_value() ||
         retained_state->pending_editor_area_selection.has_value() ||
@@ -1923,8 +1923,8 @@ void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart,
 auto compose_has_bgm_pane(const chart_document_t& chart,
                            const editor_interaction_view_model_t& view) -> bool {
     return !chart.bgm_source_lanes.empty() || chart.source_family == format_family_t::bms ||
-        chart.source_family == format_family_t::bmson || (view.pending_note_move_gesture &&
-        !view.pending_note_move_gesture->new_bgm_lanes.empty());
+        chart.source_family == format_family_t::bmson || (view.gesture<wormedit::pending_note_move_gesture_t>() &&
+        !view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.empty());
 }
 
 bool compose_project_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
@@ -2025,8 +2025,8 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     prepare_compose_bgm_widths(chart, history.document.id.value, cache, application_state);
     const auto bgm_content = wormedit::editor_bgm_content_width_pixels(chart,
         {.bgm_lane_widths_pixels = cache.scene.bgm_lane_widths_pixels});
-    const auto preview_lane_count = interaction_view.pending_note_move_gesture
-        ? interaction_view.pending_note_move_gesture->new_bgm_lanes.size() : 0;
+    const auto preview_lane_count = interaction_view.gesture<wormedit::pending_note_move_gesture_t>()
+        ? interaction_view.gesture<wormedit::pending_note_move_gesture_t>()->new_bgm_lanes.size() : 0;
     const auto maximum_bgm_scroll = std::max(0.0,
         bgm_content + preview_lane_count * compose_bgm_lane_width_pixels - bgm_pane_width);
     auto& bgm_horizontal_scroll = application_state.project.compose_view.bgm_horizontal_scroll_pixels[chart.id.value];

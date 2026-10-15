@@ -1,14 +1,14 @@
 #include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
 auto converted_bgm_preview_count(const wormedit::editor_interaction_state_t& state) -> std::size_t {
-    if (!state.pending_note_move_gesture)
+    if (!state.gesture<wormedit::pending_note_move_gesture_t>())
         return 0;
     std::unordered_set<std::uint64_t> selected_bgm;
     for (const auto& object : state.selected_objects)
         if (object.kind == wormedit::editor_selection_object_kind_t::bgm_event)
             selected_bgm.insert(object.id.value);
     return std::ranges::count_if(
-        state.pending_note_move_gesture->bgm_preview,
+        state.gesture<wormedit::pending_note_move_gesture_t>()->bgm_preview,
         [&](const auto& preview) { return !selected_bgm.contains(preview.note.value); });
 }
 
@@ -18,7 +18,6 @@ void populate_compose_selection_preview(
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
     interaction_view.pending_hold = retained_state->pending_hold;
     interaction_view.active_gesture = retained_state->active_gesture;
-    interaction_view.pending_note_move_gesture = retained_state->pending_note_move_gesture;
     interaction_view.pending_note_paint_gesture =
         retained_state->pending_note_paint_gesture
             ? std::optional{wormedit::note_paint_gesture_preview_t{
@@ -76,8 +75,8 @@ void populate_compose_selection_preview(
             interaction_view.retained_canvas_selection_range.reset();
         }
     }
-    view.move_conflict_count = retained_state->pending_note_move_gesture
-                                   ? retained_state->pending_note_move_gesture->conflicting_notes
+    view.move_conflict_count = retained_state->gesture<wormedit::pending_note_move_gesture_t>()
+                                   ? retained_state->gesture<wormedit::pending_note_move_gesture_t>()->conflicting_notes
                                    : 0;
     view.move_to_bgm_count = converted_bgm_preview_count(*retained_state);
     view.selected_note_count = retained_state->selected_notes.size();

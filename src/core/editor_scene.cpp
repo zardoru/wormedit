@@ -1060,9 +1060,9 @@ auto append_move_proposal(scene_geometry_context_t& context, const note_move_pre
 
 void mark_scene_move_occupants(editor_field_scene_view_t& scene,
                                const editor_interaction_view_model_t& view) {
-    if (!view.pending_note_move_gesture)
+    if (!view.gesture<pending_note_move_gesture_t>())
         return;
-    const auto& pending = *view.pending_note_move_gesture;
+    const auto& pending = *view.gesture<pending_note_move_gesture_t>();
     std::unordered_set<std::uint64_t> occupants;
     for (const auto id : pending.occupants)
         occupants.insert(id.value);
@@ -1080,10 +1080,10 @@ void mark_scene_move_occupants(editor_field_scene_view_t& scene,
 template <typename Operate>
 auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t& moves,
                             Operate&& operate) -> bool {
-    if (!context.view.pending_note_move_gesture) {
+    if (!context.view.gesture<pending_note_move_gesture_t>()) {
         return true;
     }
-    const auto& pending = *context.view.pending_note_move_gesture;
+    const auto& pending = *context.view.gesture<pending_note_move_gesture_t>();
     if ((pending.notes.empty() && std::ranges::find(context.index.bgm_events, pending.reference_note,
             &editor_field_scene_bgm_source_t::event) == context.index.bgm_events.end()) ||
         pending.notes.size() != pending.preview.size() ||
@@ -1092,7 +1092,7 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
                                             "field-scene note move preview is malformed or stale"));
         return false;
     }
-    if (!pending.stamp.is_revision_current(context.index.document_revision)) {
+    if (!std::get<proposal_t<pending_note_move_gesture_t, document_stamp_t>>(*context.view.active_gesture).stamp.is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -1737,7 +1737,7 @@ auto append_visible_layout_band(scene_geometry_context_t& context,
                                 std::vector<visible_band_t>& visible_bands) -> bool {
     const auto& request = context.request;
     const auto lanes = editor_presented_lanes(source.layout, request.scratch_on_right);
-    if (lanes.empty() && !context.view.pending_note_move_gesture) {
+    if (lanes.empty() && !context.view.gesture<pending_note_move_gesture_t>()) {
         return true;
     }
     const auto split = source.layout.split_stage && source.layout.split_after_column
@@ -2060,10 +2060,10 @@ auto append_visible_bgm_events(scene_geometry_context_t& context, const visible_
 template <typename Operate, typename Consume>
 auto append_bgm_preview_lanes(scene_geometry_context_t& context, visible_bgm_lanes_t& lanes,
                               Operate&& operate, Consume&& consume) -> bool {
-    if (!context.view.pending_note_move_gesture) return true;
+    if (!context.view.gesture<pending_note_move_gesture_t>()) return true;
     const auto& request = context.request;
     auto offset = editor_bgm_content_width_pixels(context.chart, request);
-    for (const auto& lane : context.view.pending_note_move_gesture->new_bgm_lanes) {
+    for (const auto& lane : context.view.gesture<pending_note_move_gesture_t>()->new_bgm_lanes) {
         if (!operate()) return false;
         const auto left = request.bgm_pane_left_pixels + offset - request.bgm_horizontal_scroll_pixels;
         const auto right = left + request.bgm_lane_width_pixels;
@@ -2083,8 +2083,8 @@ auto append_bgm_preview_lanes(scene_geometry_context_t& context, visible_bgm_lan
 template <typename Operate, typename Consume, typename YForRow>
 auto append_bgm_move_previews(scene_geometry_context_t& context, const visible_bgm_lanes_t& lanes,
                               Operate&& operate, Consume&& consume, YForRow&& y_for_row) -> bool {
-    if (!context.view.pending_note_move_gesture) return true;
-    const auto& pending = *context.view.pending_note_move_gesture;
+    if (!context.view.gesture<pending_note_move_gesture_t>()) return true;
+    const auto& pending = *context.view.gesture<pending_note_move_gesture_t>();
     for (const auto& preview : pending.bgm_preview) {
         if (!operate()) return false;
         const auto begin = preview.canvas_begin_row ? preview.canvas_begin_row : absolute_row(context.index.measures, preview.position);
@@ -2114,8 +2114,8 @@ auto compose_bgm_pane(scene_geometry_context_t& context, Operate&& operate, Cons
         ? static_cast<long double>(context.chart.bgm_source_lanes.size()) *
               static_cast<long double>(request.bgm_lane_width_pixels)
         : static_cast<long double>(editor_bgm_content_width_pixels(context.chart, request));
-    const auto preview_width = context.view.pending_note_move_gesture
-        ? context.view.pending_note_move_gesture->new_bgm_lanes.size() * request.bgm_lane_width_pixels : 0.0;
+    const auto preview_width = context.view.gesture<pending_note_move_gesture_t>()
+        ? context.view.gesture<pending_note_move_gesture_t>()->new_bgm_lanes.size() * request.bgm_lane_width_pixels : 0.0;
     const auto maximum_scroll =
         std::max(0.0L, content_width + preview_width - static_cast<long double>(request.bgm_pane_width_pixels));
     if (static_cast<long double>(request.bgm_horizontal_scroll_pixels) > maximum_scroll) {
@@ -2361,7 +2361,7 @@ auto is_valid_note_transform_previews(const editor_interaction_view_model_t& vie
                                              view.pending_virtual_hold.has_value() ||
                                              !view.pending_canvas_keyboard_holds.empty()) +
                        static_cast<unsigned>(view.gesture<pending_note_duration_gesture_t>() != nullptr) +
-                       static_cast<unsigned>(view.pending_note_move_gesture.has_value());
+                       static_cast<unsigned>(view.gesture<pending_note_move_gesture_t>() != nullptr);
     if (count > 1) {
         diagnostics.push_back(
             error(diagnostic_code_t::invalid_hold,
@@ -2557,7 +2557,7 @@ auto window_request_scalars(const editor_field_scene_request_t& request) {
 auto has_window_edit_preview(const editor_interaction_view_model_t& view) -> bool {
     return view.pending_hold || !view.additional_keyboard_holds.empty() ||
         view.pending_virtual_hold || !view.pending_canvas_keyboard_holds.empty() ||
-        view.gesture<pending_note_duration_gesture_t>() || view.pending_note_move_gesture ||
+        view.gesture<pending_note_duration_gesture_t>() || view.gesture<pending_note_move_gesture_t>() ||
         view.pending_note_paint_gesture;
 }
 auto is_window_bgm_width_current(const editor_field_scene_window_t& window,

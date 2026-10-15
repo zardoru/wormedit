@@ -108,3 +108,18 @@ TEST_CASE("Gesture terminal errors clear captures and ordinary update errors ret
     CHECK_FALSE(commit_gesture<pending_note_duration_gesture_t>(context, invalid_end));
     fixture.check_capture_ended(0);
 }
+
+static_assert(editor_gesture<pending_note_move_gesture_t, object_id_t, local_position_t,
+                            lane_id_t, bool, std::optional<object_id_t>, std::optional<std::uint64_t>>);
+
+TEST_CASE("Gesture kind mismatch retains the original capture", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    auto context = fixture.context();
+    REQUIRE(begin_gesture<pending_note_move_gesture_t>(context, object_id_t{101}, false));
+    const auto rejected = update_gesture<pending_note_duration_gesture_t>(context,
+        local_position_t{measure_id_t{1}, 240});
+    CHECK_FALSE(rejected);
+    CHECK(fixture.state.gesture<pending_note_move_gesture_t>() != nullptr);
+    CHECK(fixture.state.gesture<pending_note_duration_gesture_t>() == nullptr);
+    CHECK(fixture.history.undo.empty());
+}

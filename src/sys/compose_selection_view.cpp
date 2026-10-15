@@ -17,8 +17,11 @@ void populate_compose_selection_preview(
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
     interaction_view.pending_hold = retained_state->pending_hold;
+    std::optional<wormedit::space_range_selection_preview_t> range_preview;
+    if (auto* preview = interaction_view.gesture<wormedit::space_range_selection_preview_t>())
+        range_preview = std::move(*preview);
     interaction_view.active_gesture = wormedit::build_editor_gesture_preview(retained_state->active_gesture,
-        retained_state->viewport_scroll_pixels, wormedit::editor_area_preview_anchor_policy_t::captured_coordinates);
+        retained_state->viewport_scroll_pixels, wormedit::editor_area_preview_anchor_policy_t::captured_coordinates, std::move(range_preview));
     interaction_view.retained_selection_range = retained_state->retained_selection_range;
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;

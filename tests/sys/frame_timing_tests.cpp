@@ -4472,7 +4472,7 @@ void check_latched_range_projection(bool downscroll) {
     editor_navigation_input_controller_t navigation;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
         state, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(state.pending_space_range_selection.has_value());
+    expect_compose_test(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(view.space_range_preview_visible);
@@ -4480,7 +4480,7 @@ void check_latched_range_projection(bool downscroll) {
     expect_compose_test(std::abs(height - state.pixels_per_standard_measure / 4) < 1e-9);
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.workspace,
         state, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(!state.pending_space_range_selection.has_value());
+    expect_compose_test(!static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     expect_compose_test(state.retained_canvas_selection_range.has_value());
     const auto range = *state.retained_canvas_selection_range;
     expect_compose_test(range.end_row - range.begin_row ==

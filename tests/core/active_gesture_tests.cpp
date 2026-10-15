@@ -197,3 +197,32 @@ TEST_CASE("Area previews preserve both existing anchor projection policies", "[c
     CHECK((relative.top_pixels == 50 && relative.bottom_pixels == 50));
     CHECK((captured.top_pixels == 50 && captured.bottom_pixels == 100));
 }
+
+TEST_CASE("Legacy hold blocks starting a Space range capture", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
+        begin_hold_action_t{{measure_id_t{1}, 240}}));
+    const auto rejected = dispatch_editor_action(fixture.history, fixture.state,
+        space_range_selection_action_t{});
+    CHECK_FALSE(rejected);
+    CHECK(fixture.state.pending_hold.has_value());
+    CHECK_FALSE(static_cast<bool>(fixture.state.gesture<wormedit::pending_space_range_selection_t>()));
+    CHECK(fixture.history.undo.empty());
+}
+
+static_assert(editor_gesture<pending_space_range_selection_t, space_range_selection_action_t>);
+
+TEST_CASE("Space commits its captured range preview without a document edit", "[core][active-gesture]") {
+    auto fixture = gesture_fixture_t::from();
+    REQUIRE(dispatch_editor_action(fixture.history, fixture.state, space_range_selection_action_t{}));
+    place_cursor_at(fixture.state, {measure_id_t{1}, 480});
+    const auto initial = inspect_editor_interaction(fixture.history, fixture.state);
+    REQUIRE(std::holds_alternative<editor_interaction_view_model_t>(initial));
+    auto context = fixture.context();
+    context.initial_view = &std::get<editor_interaction_view_model_t>(initial);
+    const auto objects = context.initial_view->gesture<space_range_selection_preview_t>()->objects;
+    REQUIRE(commit_gesture<pending_space_range_selection_t>(context,
+        editor_gesture_commit_view_policy_t::captured));
+    CHECK(fixture.state.selected_objects == *objects);
+    fixture.check_capture_ended(0);
+}

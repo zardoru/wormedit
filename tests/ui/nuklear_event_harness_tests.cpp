@@ -7821,8 +7821,8 @@ TEST_CASE("Production latched range uses the same selection for preview and comm
     (void)f.dispatch(f.harness.frame(std::span{&down, 1}));
     const auto inspected = inspect_editor_interaction(f.history, *f.interaction);
     const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
-    expect_t422(view && view->pending_space_range_selection && view->pending_space_range_selection->objects);
-    const auto preview = *view->pending_space_range_selection->objects;
+    expect_t422(view && view->gesture<wormedit::space_range_selection_preview_t>() && view->gesture<wormedit::space_range_selection_preview_t>()->objects);
+    const auto preview = *view->gesture<wormedit::space_range_selection_preview_t>()->objects;
     expect_t422(!preview.empty());
     const auto committed = ctrl_space_frame(f.harness);
     (void)f.dispatch(committed);

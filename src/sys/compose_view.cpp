@@ -1453,7 +1453,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr ||
         static_cast<bool>(retained_state->gesture<wormedit::pending_editor_area_selection_t>()) ||
-        retained_state->pending_space_range_selection.has_value();
+        static_cast<bool>(retained_state->gesture<wormedit::pending_space_range_selection_t>());
     if (!hover_gesture_active && cache.frame.hover &&
         cache.frame.hover->document_revision == history.document.revision &&
         cache.frame.hover->object.kind == wormedit::editor_selection_object_kind_t::note) {
@@ -1491,14 +1491,14 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
                        0.0, view.viewport_height_pixels),
         };
     }
-    if (retained_state->pending_space_range_selection && interaction_view.pending_space_range_selection) {
-        const auto& pending = *retained_state->pending_space_range_selection;
+    if (retained_state->gesture<wormedit::pending_space_range_selection_t>() && interaction_view.gesture<wormedit::space_range_selection_preview_t>()) {
+        const auto& pending = *retained_state->gesture<wormedit::pending_space_range_selection_t>();
         const auto cursor_row = retained_state->virtual_bms_cursor_row
                                     ? retained_state->virtual_bms_cursor_row
                                     : (measures).row_of(retained_state->cursor);
         if (cursor_row) {
             const auto pixels_per_row = input.scope.pixels_per_row;
-            const auto& preview = *interaction_view.pending_space_range_selection;
+            const auto& preview = *interaction_view.gesture<wormedit::space_range_selection_preview_t>();
             const auto first_row = preview.first_row;
             const auto last_row = preview.last_row;
             const auto first_y = compose_project_y(first_row, pixels_per_row,

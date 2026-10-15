@@ -1130,19 +1130,6 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    editor_area_selection_mode_t mode,
                                    const editor_hit_test_index_t& hit_index)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
-struct space_range_selection_context_t {
-    editor_edit_context_t& edit;
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-    const std::uint64_t& absolute;
-};
-auto begin_space_range_selection(space_range_selection_context_t& context,
-                                 const space_range_selection_action_t& action)
-    -> editor_interaction_result_t;
-auto commit_space_range_selection(space_range_selection_context_t& context)
-    -> editor_interaction_result_t;
-auto update_space_range_selection(space_range_selection_context_t& context,
-                                  const space_range_selection_action_t& action)
-    -> editor_interaction_result_t;
 auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t>;

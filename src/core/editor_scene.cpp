@@ -699,7 +699,7 @@ auto collect_duration_proposals(scene_geometry_context_t& context, duration_prop
                                             "field-scene duration preview is malformed or stale"));
         return false;
     }
-    if (!std::get<proposal_t<pending_note_duration_gesture_t, document_stamp_t>>(*context.view.active_gesture).stamp.is_revision_current(context.index.document_revision)) {
+    if (!context.view.gesture_stamp<pending_note_duration_gesture_t>()->is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;
@@ -1092,7 +1092,7 @@ auto collect_move_proposals(scene_geometry_context_t& context, move_proposals_t&
                                             "field-scene note move preview is malformed or stale"));
         return false;
     }
-    if (!std::get<proposal_t<pending_note_move_gesture_t, document_stamp_t>>(*context.view.active_gesture).stamp.is_revision_current(context.index.document_revision)) {
+    if (!context.view.gesture_stamp<pending_note_move_gesture_t>()->is_revision_current(context.index.document_revision)) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             stale_action_message("Field scene preview")));
         return false;

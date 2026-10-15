@@ -323,13 +323,14 @@ auto make_space_range_preview(const document_history_t& history,
                               const editor_interaction_state_t& state,
                               const view_geometry_t& geometry)
     -> std::variant<std::optional<space_range_selection_preview_t>, diagnostic_list_t> {
-    if (!state.pending_space_range_selection)
+    if (!state.gesture<pending_space_range_selection_t>())
         return std::optional<space_range_selection_preview_t>{};
-    const auto& pending = *state.pending_space_range_selection;
+    const auto& pending = *state.gesture<pending_space_range_selection_t>();
+    const auto& stamp = *state.gesture_stamp<pending_space_range_selection_t>();
     if (!pending.hit_index)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                        "Space range selection is stale after a document edit")};
-    if (!pending.stamp.is_revision_current(history.document.revision) ||
+    if (!stamp.is_revision_current(history.document.revision) ||
         pending.hit_index->document_revision != history.document.revision ||
         pending.hit_index->chart != geometry.chart->id)
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
@@ -347,7 +348,7 @@ auto make_space_range_preview(const document_history_t& history,
     auto objects = std::get<std::vector<editor_selection_object_t>>(std::move(combined));
     auto notes = notes_from_objects(objects);
     return std::optional{space_range_selection_preview_t{
-        .stamp = pending.stamp, .anchor = pending.anchor,
+        .stamp = stamp, .anchor = pending.anchor,
         .cursor = state.cursor, .anchor_canvas_row = pending.anchor_canvas_row,
         .cursor_canvas_row = geometry.absolute_row, .first_row = first, .last_row = last,
         .mode = pending.mode,
@@ -427,8 +428,8 @@ auto make_view(const document_history_t& history, const editor_interaction_state
         .pending_canvas_keyboard_holds =
             std::get<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>>(
                 std::move(keyboard_previews)),
-        .active_gesture = build_editor_gesture_preview(state.active_gesture, state.viewport_scroll_pixels),
-        .pending_space_range_selection = std::move(space_preview),
+        .active_gesture = build_editor_gesture_preview(state.active_gesture, state.viewport_scroll_pixels,
+            editor_area_preview_anchor_policy_t::viewport_relative, std::move(space_preview)),
         .retained_selection_range = retained_selection_range,
         .retained_canvas_selection_range = state.retained_canvas_selection_range,
         .selected_canvas_measure = state.selected_canvas_measure,
@@ -1270,8 +1271,7 @@ auto preserve_keyboard_hold_after_scroll(editor_edit_context_t& context,
         proposed.virtual_bms_cursor_row || context.state.pending_hold->anchor_canvas_row ||
         std::ranges::any_of(context.state.additional_keyboard_holds,
                             [](const auto& hold) { return hold.anchor_canvas_row.has_value(); });
-    const auto cursor_row = proposed.virtual_bms_cursor_row.value_or(
-        *absolute_row(context.scope.measures, proposed.cursor));
+    const auto cursor_row = *proposed.cursor_canvas_row(context.scope.measures);
     context.state = proposed;
     const auto updated = canvas_hold
                              ? interaction_detail::update_canvas_keyboard_holds(context, cursor_row)
@@ -1781,7 +1781,7 @@ auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
            std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
            std::holds_alternative<update_editor_area_selection_action_t>(action) ||
-           (state.pending_space_range_selection &&
+           (state.gesture<wormedit::pending_space_range_selection_t>() &&
             std::holds_alternative<space_range_selection_action_t>(action));
 }
 
@@ -1972,11 +1972,11 @@ auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&
     return {};
 }
 
-auto handle(editor_edit_context_t& context, const space_range_selection_action_t& typed_action,
-            const editor_initial_view_t& initial_view, const std::uint64_t& absolute)
+auto handle(editor_edit_context_t& context, const space_range_selection_action_t& action)
     -> editor_interaction_result_t {
-    space_range_selection_context_t space_selection{context, initial_view, absolute};
-    return update_space_range_selection(space_selection, typed_action);
+    if (context.state.gesture<pending_space_range_selection_t>())
+        return commit_gesture<pending_space_range_selection_t>(context, editor_gesture_commit_view_policy_t::captured);
+    return begin_gesture<pending_space_range_selection_t>(context, action);
 }
 
 auto handle(editor_edit_context_t&, const cancel_editor_gesture_action_t&)
@@ -2073,7 +2073,6 @@ auto handle(editor_edit_context_t& context, const end_note_paint_gesture_action_
 
 struct editor_action_visitor_t {
     editor_edit_context_t& context;
-    const editor_initial_view_t& initial_view;
     const std::uint64_t& absolute;
     template <class Action>
     auto operator()(const Action& action) const -> editor_interaction_result_t {
@@ -2096,10 +2095,7 @@ struct editor_action_visitor_t {
         -> editor_interaction_result_t {
         return handle(context, action, absolute);
     }
-    auto operator()(const space_range_selection_action_t& action) const
-        -> editor_interaction_result_t {
-        return handle(context, action, initial_view, absolute);
-    }
+
 };
 
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
@@ -2117,10 +2113,10 @@ auto dispatch_editor_action_impl(document_history_t& history, editor_interaction
     }
     const auto built_index = build_measure_index(*chart);
     const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = state.virtual_bms_cursor_row.value_or(*absolute_row(index, state.cursor));
+    const auto absolute = *state.cursor_canvas_row(index);
     editor_edit_context_t context{history, state, {*chart, index},
                                   &std::get<editor_interaction_view_model_t>(initial_view)};
-    return std::visit(editor_action_visitor_t{context, initial_view, absolute}, action);
+    return std::visit(editor_action_visitor_t{context, absolute}, action);
 }
 } // namespace
 

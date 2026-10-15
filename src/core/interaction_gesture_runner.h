@@ -47,21 +47,42 @@ template<class Gesture, class... Arguments>
     return editor_interaction_result_t::from(context.history, context.state);
 }
 
+template<class Gesture>
+[[nodiscard]] auto require_active_gesture(editor_edit_context_t& context)
+    -> result_t<Gesture*, editor_interaction_result_t> {
+    if (auto stale = validate_gesture_capture<Gesture>(context))
+        return std::unexpected{std::move(*stale)};
+    auto* gesture = context.state.gesture<Gesture>();
+    if (!gesture)
+        return std::unexpected{interaction_detail::diagnostic_result(context.history, context.state,
+            {error(diagnostic_code_t::invalid_hold, std::string(Gesture::update_message))})};
+    return gesture;
+}
+
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
     { gesture.update(context, arguments...) } -> std::same_as<diagnostic_list_t>;
     { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
 }
 [[nodiscard]] auto update_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
-    if (auto stale = validate_gesture_capture<Gesture>(context)) return std::move(*stale);
-    auto* gesture = context.state.gesture<Gesture>();
-    if (!gesture)
-        return interaction_detail::diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, std::string(Gesture::update_message))});
-    auto diagnostics = gesture->update(context, std::forward<Arguments>(arguments)...);
+    auto active = require_active_gesture<Gesture>(context);
+    if (!active) return std::move(active.error());
+    auto diagnostics = (*active)->update(context, std::forward<Arguments>(arguments)...);
     if (diagnostic_queries::has_errors(diagnostics))
         return interaction_detail::diagnostic_result(context.history, context.state, std::move(diagnostics));
     return editor_interaction_result_t::from(context.history, context.state);
+}
+
+template<class Gesture>
+[[nodiscard]] auto finish_gesture(editor_edit_context_t& context, bool is_valid,
+                                  diagnostic_list_t diagnostics) -> editor_interaction_result_t {
+    if (!is_valid) {
+        clear_editor_gestures(context.state);
+        return interaction_detail::diagnostic_result(context.history, context.state, std::move(diagnostics));
+    }
+    auto gesture = std::move(*context.state.gesture<Gesture>());
+    context.state.active_gesture.reset();
+    return gesture.apply(context);
 }
 
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
@@ -71,14 +92,25 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
 [[nodiscard]] auto commit_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
     auto updated = update_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
-    if (!updated) {
-        clear_editor_gestures(context.state);
-        return interaction_detail::diagnostic_result(context.history, context.state, std::move(updated.diagnostics));
-    }
-    // End the capture before applying so the returned view cannot retain a ghost preview.
-    auto gesture = std::move(*context.state.gesture<Gesture>());
-    context.state.active_gesture.reset();
-    return gesture.apply(context);
+    return finish_gesture<Gesture>(context, static_cast<bool>(updated), std::move(updated.diagnostics));
+}
+
+enum class editor_gesture_commit_view_policy_t { rebuild, captured };
+
+template<class Gesture> requires requires(Gesture& gesture, editor_edit_context_t& context) {
+    { gesture.update(context) } -> std::same_as<diagnostic_list_t>;
+    { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
+}
+[[nodiscard]] auto commit_gesture(editor_edit_context_t& context, editor_gesture_commit_view_policy_t policy)
+    -> editor_interaction_result_t {
+    if (policy == editor_gesture_commit_view_policy_t::rebuild)
+        return commit_gesture<Gesture>(context);
+    auto active = require_active_gesture<Gesture>(context);
+    if (!active)
+        return finish_gesture<Gesture>(context, false, std::move(active.error().diagnostics));
+    auto diagnostics = (*active)->update(context);
+    const auto is_valid = !diagnostic_queries::has_errors(diagnostics);
+    return finish_gesture<Gesture>(context, is_valid, std::move(diagnostics));
 }
 
 inline auto cancel_gesture(document_history_t& history, editor_interaction_state_t& state)

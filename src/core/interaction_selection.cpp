@@ -561,87 +561,80 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
 
 namespace wormedit {
 using namespace interaction_detail;
-auto begin_space_range_selection(space_range_selection_context_t& context,
+auto pending_space_range_selection_t::begin(editor_edit_context_t& context,
                                  const space_range_selection_action_t& action)
-    -> editor_interaction_result_t {
-    auto& history = context.edit.history;
-    auto& state = context.edit.state;
+    -> diagnosed_t<std::optional<pending_space_range_selection_t>> {
+    auto& history = context.history;
+    auto& state = context.state;
     if (action.mode != editor_area_selection_mode_t::replace &&
         action.mode != editor_area_selection_mode_t::add &&
         action.mode != editor_area_selection_mode_t::toggle) {
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_id, "unknown Space range selection mode")});
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id, "unknown Space range selection mode")}};
     }
-    auto built = build_editor_hit_test_index(context.edit.scope.chart, history.document.revision);
+    const auto anchor_row = state.cursor_canvas_row(context.scope.measures);
+    if (!anchor_row)
+        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                     "Space range anchor lies outside chart geometry")}};
+    auto built = build_editor_hit_test_index(context.scope.chart, history.document.revision);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
-        return diagnostic_result(history, state, *diagnostics);
-    state.pending_space_range_selection = pending_space_range_selection_t{
-        .stamp = document_stamp_t::from(history.document.revision),
+        return {.diagnostics = *diagnostics};
+    return {.value = pending_space_range_selection_t{
         .hit_index = std::make_shared<editor_hit_test_index_t>(
             std::move(std::get<editor_hit_test_index_t>(built))),
         .anchor = state.cursor,
-        .anchor_canvas_row = context.absolute,
+        .anchor_canvas_row = *anchor_row,
         .mode = action.mode,
         .scope = action.scope,
         .minimum_span_rows = action.minimum_snap_width
-                                 ? context.edit.scope.chart.divisions_per_standard_measure /
+                                 ? context.scope.chart.divisions_per_standard_measure /
                                        state.active_snap_denominator
                                  : 0,
-    };
-    return editor_interaction_result_t::from(history, state);
+    }};
 }
 } // namespace wormedit
 
 namespace wormedit {
 using namespace interaction_detail;
-auto commit_space_range_selection(space_range_selection_context_t& context)
-    -> editor_interaction_result_t {
-    auto& history = context.edit.history;
-    auto& state = context.edit.state;
-    const auto pending = *state.pending_space_range_selection;
+auto pending_space_range_selection_t::update(editor_edit_context_t& context) -> diagnostic_list_t {
+    const auto& pending = *this;
+    const auto& history = context.history;
     if (pending.hit_index == nullptr)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "Space range selection is stale after a document edit")});
-    if (!pending.stamp.is_revision_current(history.document.revision) ||
-        pending.hit_index->document_revision != history.document.revision)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        stale_action_message("Editor gesture"))});
-    const auto& current_view = std::get<editor_interaction_view_model_t>(context.initial_view);
-    if (!current_view.pending_space_range_selection.has_value() ||
-        current_view.pending_space_range_selection->objects == nullptr) {
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "Space range preview is unavailable for commit")});
+        return {error(diagnostic_code_t::invalid_hold,
+                                        "Space range selection is stale after a document edit")};
+    if (pending.hit_index->document_revision != history.document.revision)
+        return {error(diagnostic_code_t::invalid_hold,
+                                        stale_action_message("Editor gesture"))};
+    const auto& current_view = *context.initial_view;
+    if (!current_view.gesture<space_range_selection_preview_t>() ||
+        current_view.gesture<space_range_selection_preview_t>()->objects == nullptr) {
+        return {error(diagnostic_code_t::invalid_hold,
+                                        "Space range preview is unavailable for commit")};
     }
-    set_selected_objects(state, *current_view.pending_space_range_selection->objects);
-    const auto first_row = current_view.pending_space_range_selection->first_row;
-    const auto last_row = current_view.pending_space_range_selection->last_row;
+    return {};
+}
+} // namespace wormedit
+
+namespace wormedit {
+using namespace interaction_detail;
+auto pending_space_range_selection_t::apply(editor_edit_context_t& context) const
+    -> editor_interaction_result_t {
+    auto& state = context.state;
+    const auto& preview = *context.initial_view->gesture<space_range_selection_preview_t>();
+    const auto& pending = *this;
+    set_selected_objects(state, *preview.objects);
+    const auto first_row = preview.first_row;
+    const auto last_row = preview.last_row;
     state.retained_canvas_selection_range =
         first_row < last_row ? std::optional{canvas_row_span_t{first_row, last_row}} : std::nullopt;
     const auto anchor_position =
-        position_at(context.edit.scope.measures, pending.anchor_canvas_row);
-    const auto cursor_position = position_at(context.edit.scope.measures, context.absolute);
+        position_at(context.scope.measures, pending.anchor_canvas_row);
+    const auto cursor_position = position_at(context.scope.measures, preview.cursor_canvas_row);
     state.retained_selection_range =
         anchor_position && cursor_position
-            ? normalized_position_span(context.edit.scope.measures, *anchor_position,
+            ? normalized_position_span(context.scope.measures, *anchor_position,
                                        *cursor_position)
             : std::nullopt;
-    state.pending_space_range_selection.reset();
-    return editor_interaction_result_t::from(history, state);
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto update_space_range_selection(space_range_selection_context_t& context,
-                                  const space_range_selection_action_t& action)
-    -> editor_interaction_result_t {
-    return context.edit.state.pending_space_range_selection
-               ? commit_space_range_selection(context)
-               : begin_space_range_selection(context, action);
+    return editor_interaction_result_t::from(context.history, state);
 }
 } // namespace wormedit
 

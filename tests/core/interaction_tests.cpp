@@ -128,12 +128,12 @@ TEST_CASE("Space range cache expiry remains separate from absent geometry",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
-    REQUIRE(state.pending_space_range_selection.has_value());
-    if (missing) state.pending_space_range_selection->hit_index.reset();
+    REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
+    if (missing) state.gesture<wormedit::pending_space_range_selection_t>()->hit_index.reset();
     else {
-        auto cache = std::make_shared<editor_hit_test_index_t>(*state.pending_space_range_selection->hit_index);
+        auto cache = std::make_shared<editor_hit_test_index_t>(*state.gesture<wormedit::pending_space_range_selection_t>()->hit_index);
         ++cache->document_revision;
-        state.pending_space_range_selection->hit_index = std::move(cache);
+        state.gesture<wormedit::pending_space_range_selection_t>()->hit_index = std::move(cache);
     }
     const auto inspected = inspect_editor_interaction(history, state);
     const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected);
@@ -189,16 +189,16 @@ TEST_CASE("Latched cursor range begins one snap wide follows navigation and comm
     const space_range_selection_action_t toggle{.minimum_snap_width = true};
     const auto started = dispatch_editor_action(history, state, toggle);
     expect_cursor_gesture(started.accepted);
-    const auto& initial = *started.view->pending_space_range_selection;
+    const auto& initial = *started.view->gesture<wormedit::space_range_selection_preview_t>();
     expect_cursor_gesture(initial.first_row == 480 && initial.last_row == 720);
     expect_cursor_gesture(*initial.notes == std::vector<object_id_t>{object_id_t{501}});
     const auto moved = dispatch_editor_action(history, state,
         jump_edit_cursor_action_t{{measure_id_t{2}, 240}, history.document.revision});
     expect_cursor_gesture(moved.accepted);
-    expect_cursor_gesture(moved.view->pending_space_range_selection->first_row == 480);
-    expect_cursor_gesture(moved.view->pending_space_range_selection->last_row == 1200);
+    expect_cursor_gesture(moved.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 480);
+    expect_cursor_gesture(moved.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1200);
     const auto committed = dispatch_editor_action(history, state, toggle);
-    expect_cursor_gesture(committed.accepted && !state.pending_space_range_selection);
+    expect_cursor_gesture(committed.accepted && !state.gesture<wormedit::pending_space_range_selection_t>());
     expect_cursor_gesture(state.retained_canvas_selection_range == canvas_row_span_t{480, 1200});
     expect_cursor_gesture(state.selected_notes == std::vector<object_id_t>{object_id_t{501}, object_id_t{502}});
     expect_cursor_gesture(history.undo.empty());
@@ -215,7 +215,7 @@ TEST_CASE("Latched range commits without movement and Escape cancels its preview
     const auto before = state.retained_canvas_selection_range;
     expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
     expect_cursor_gesture(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}).accepted);
-    expect_cursor_gesture(!state.pending_space_range_selection);
+    expect_cursor_gesture(!state.gesture<wormedit::pending_space_range_selection_t>());
     expect_cursor_gesture(state.retained_canvas_selection_range == before);
 }
 
@@ -770,10 +770,10 @@ TEST_CASE("Space selection crosses into virtual BMS measures without authoring t
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
-    REQUIRE(moved.view->pending_space_range_selection);
-    CHECK(moved.view->pending_space_range_selection->first_row == 1'680);
-    CHECK(moved.view->pending_space_range_selection->last_row == 1'920);
-    CHECK(*moved.view->pending_space_range_selection->notes ==
+    REQUIRE(moved.view->gesture<wormedit::space_range_selection_preview_t>());
+    CHECK(moved.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 1'680);
+    CHECK(moved.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1'920);
+    CHECK(*moved.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{201}});
     const auto committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{});
@@ -1560,10 +1560,10 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto armed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(armed);
-    REQUIRE(armed.view->pending_space_range_selection.has_value());
-    CHECK(armed.view->pending_space_range_selection->anchor ==
+    REQUIRE(static_cast<bool>(armed.view->gesture<wormedit::space_range_selection_preview_t>()));
+    CHECK(armed.view->gesture<wormedit::space_range_selection_preview_t>()->anchor ==
           local_position_t{measure_id_t{1}, 480});
-    CHECK(*armed.view->pending_space_range_selection->notes ==
+    CHECK(*armed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(history.document.revision == 1);
@@ -1571,11 +1571,11 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto extended = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(extended);
-    REQUIRE(extended.view->pending_space_range_selection.has_value());
+    REQUIRE(static_cast<bool>(extended.view->gesture<wormedit::space_range_selection_preview_t>()));
     CHECK(extended.view->cursor == local_position_t{measure_id_t{1}, 720});
-    CHECK(extended.view->pending_space_range_selection->first_row == 480);
-    CHECK(extended.view->pending_space_range_selection->last_row == 720);
-    CHECK(*extended.view->pending_space_range_selection->notes ==
+    CHECK(extended.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 480);
+    CHECK(extended.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 720);
+    CHECK(*extended.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
@@ -1586,7 +1586,7 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
           std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(committed.view->retained_selection_range ==
           position_span_t{{measure_id_t{1}, 480}, {measure_id_t{1}, 720}});
-    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::space_range_selection_preview_t>()));
     CHECK_FALSE(committed.document_changed);
     CHECK(history.document.revision == 1);
 
@@ -1599,15 +1599,15 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto reverse_armed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(reverse_armed);
-    CHECK(*reverse_armed.view->pending_space_range_selection->notes ==
+    CHECK(*reverse_armed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{});
     const auto reversed = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(reversed);
     CHECK(reversed.view->cursor == local_position_t{measure_id_t{2}, 0});
-    CHECK(reversed.view->pending_space_range_selection->first_row == 960);
-    CHECK(reversed.view->pending_space_range_selection->last_row == 1200);
-    CHECK(*reversed.view->pending_space_range_selection->notes ==
+    CHECK(reversed.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 960);
+    CHECK(reversed.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1200);
+    CHECK(*reversed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
     const auto reverse_committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
@@ -1800,8 +1800,8 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
-    REQUIRE(moved.view->pending_space_range_selection.has_value());
-    const auto preview = moved.view->pending_space_range_selection->objects;
+    REQUIRE(static_cast<bool>(moved.view->gesture<wormedit::space_range_selection_preview_t>()));
+    const auto preview = moved.view->gesture<wormedit::space_range_selection_preview_t>()->objects;
     REQUIRE(preview != nullptr);
     CHECK(std::ranges::none_of(*preview, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::warp_event &&
@@ -1814,7 +1814,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         return object.kind == editor_selection_object_kind_t::bgm_event &&
                object.id == object_id_t{201};
     }));
-    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::space_range_selection_preview_t>()));
 }
 
 TEST_CASE("typed object selection validates BGM events and synchronizes note selection",
@@ -1961,21 +1961,21 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         history, state, cycle_edit_snap_action_t{interaction_direction_t::forward});
     REQUIRE(finer_snap);
     CHECK(finer_snap.view->active_snap_denominator == 8);
-    CHECK(finer_snap.view->pending_space_range_selection->anchor ==
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->anchor ==
           local_position_t{measure_id_t{1}, 240});
-    CHECK(finer_snap.view->pending_space_range_selection->first_row == 240);
-    CHECK(finer_snap.view->pending_space_range_selection->last_row == 240);
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 240);
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 240);
     const auto first_step = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(first_step);
     CHECK(first_step.view->cursor == local_position_t{measure_id_t{1}, 360});
-    CHECK(*first_step.view->pending_space_range_selection->notes ==
+    CHECK(*first_step.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{101}});
     const auto second_step = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(second_step);
     CHECK(second_step.view->cursor == local_position_t{measure_id_t{1}, 480});
-    CHECK(*second_step.view->pending_space_range_selection->notes ==
+    CHECK(*second_step.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{101}});
     const auto added = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
@@ -2000,7 +2000,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     const auto cancelled = dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2014,10 +2014,10 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
 
@@ -2053,8 +2053,8 @@ TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
     auto state = std::move(*setup.state);
     const auto selected = advance_sparse_space_selection(history, state);
     REQUIRE(selected);
-    REQUIRE(selected.view->pending_space_range_selection.has_value());
-    CHECK(*selected.view->pending_space_range_selection->notes ==
+    REQUIRE(static_cast<bool>(selected.view->gesture<wormedit::space_range_selection_preview_t>()));
+    CHECK(*selected.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{13'000}});
     CHECK(state.selected_notes.empty());
 }
@@ -2365,7 +2365,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
             REQUIRE(dispatch_editor_action(
                 history, state,
                 space_range_selection_action_t{editor_area_selection_mode_t::replace}));
-            REQUIRE(state.pending_space_range_selection.has_value());
+            REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
         }
 
         const auto rejected = dispatch_editor_action(
@@ -2375,7 +2375,7 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
         CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
         CHECK(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()) == (selection_kind == 0));
-        CHECK(state.pending_space_range_selection.has_value() == (selection_kind == 1));
+        CHECK(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()) == (selection_kind == 1));
         CHECK(note_count(history) == 0);
     }
 }

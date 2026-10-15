@@ -376,10 +376,4 @@ struct editor_field_scene_window_metadata_view_t {
         -> editor_field_scene_window_metadata_view_t;
 };
 
-// Temporary: removed by T-634 after its interaction test caller migrates.
-inline constexpr auto make_editor_field_scene = static_cast<editor_field_scene_view_result_t (*)(
-    const chart_document_t&, const editor_field_scene_index_t&,
-    const editor_interaction_view_model_t&, const editor_field_scene_request_t&)>(
-    &editor_field_scene_view_t::from);
-
 } // namespace wormedit

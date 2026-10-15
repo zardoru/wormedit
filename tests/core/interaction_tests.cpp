@@ -6637,7 +6637,7 @@ void check_virtual_bgm_scene(const document_history_t& history, editor_interacti
     view.viewport_height_pixels = 480;
     const auto built = build_editor_field_scene_index(chart, history.document.revision);
     feedback_require(std::holds_alternative<editor_field_scene_index_t>(built));
-    const auto scene = make_editor_field_scene(chart, std::get<editor_field_scene_index_t>(built), view,
+    const auto scene = editor_field_scene_view_t::from(chart, std::get<editor_field_scene_index_t>(built), view,
         {.field_left_pixels = 0, .field_width_pixels = 400,
          .bgm_pane_left_pixels = 400, .bgm_pane_width_pixels = 100, .bgm_lane_width_pixels = 40,
          .include_virtual_bms_tail = true});

@@ -2073,16 +2073,16 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         return true;
     }
     const auto prior_window_work=cache.scene.scene_window.rebuild_count+cache.scene.scene_window.reuse_count;
-    const auto composed = wormedit::editor_field_scene_view_t::from(
+    const auto composed = wormedit::editor_field_scene_view_result_t::from(
         chart, *cache.scene.index, interaction_view, cache.frame.preview_scene_request,
         cache.scene.scene_window);
     frame_timing().restore(frame_scene_previous);
-    if (!composed.scene || composed.has_errors()) {
+    if (!composed.value || !composed.ok()) {
         report_compose_diagnostic(flattened, projection_feedback_kind_t::field_scene,
                                  composed.diagnostics, "The chart field could not be composed.");
         return false;
     }
-    const auto& scene = *composed.scene;
+    const auto& scene = *composed.value;
     view.scene_available = true;
     populate_quantize_ghost_geometry(cache, history.document, chart, application_state,
         *retained_state, interaction_view, view, pixels_per_row, downscroll);
@@ -2276,18 +2276,18 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         : session.anchor_error.c_str();
     session.ghosts.clear();
     if (!session.index) return;
-    const auto composed = wormedit::editor_field_scene_view_t::from(
+    const auto composed = wormedit::editor_field_scene_view_result_t::from(
         session.geometry, *session.index, input.scope.interaction_view,
         input.frame.cache.frame.preview_scene_request);
-    if (!composed.scene) return;
+    if (!composed.value) return;
     const auto append = [&session](const auto& object, std::uint8_t kind, std::uint8_t glyph = 0) {
         const auto& b = object.bounds;
         session.ghosts.push_back({{b.left, b.top, b.right, b.bottom}, kind, glyph});
     };
-    for (const auto& hold : composed.scene->hold_bodies) append(hold, 1);
-    for (const auto& note : composed.scene->note_endpoints)
+    for (const auto& hold : composed.value->hold_bodies) append(hold, 1);
+    for (const auto& note : composed.value->note_endpoints)
         append(note, 0, static_cast<std::uint8_t>(note.glyph));
-    for (const auto& event : composed.scene->bgm_events) append(event, 2);
+    for (const auto& event : composed.value->bgm_events) append(event, 2);
     append_paste_timing_ghosts(input, session);
     view.paste_ghosts = session.ghosts.data();
     view.paste_ghost_count = session.ghosts.size();

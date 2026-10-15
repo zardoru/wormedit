@@ -741,11 +741,11 @@ struct compose_input_context_t {
             return std::nullopt;
         auto request = environment.controls.cache.frame.preview_scene_request;
         request.include_virtual_bms_tail = true;
-        const auto composed = wormedit::editor_field_scene_view_t::from(
+        const auto composed = wormedit::editor_field_scene_view_result_t::from(
             chart, *environment.controls.cache.scene.index, view, request);
-        if (!composed.scene || composed.has_errors())
+        if (!composed.value || !composed.ok())
             return std::nullopt;
-        for (const auto& lane : composed.scene->lanes) {
+        for (const auto& lane : composed.value->lanes) {
             if (x_pixels >= lane.bounds.left && x_pixels < lane.bounds.right &&
                 y_pixels >= lane.bounds.top && y_pixels < lane.bounds.bottom)
                 return std::pair{*row, lane.lane};

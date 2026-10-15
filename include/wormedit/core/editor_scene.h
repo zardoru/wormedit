@@ -254,13 +254,13 @@ struct editor_field_scene_view_t {
     // Composes backend-neutral screen geometry from one immutable index. The
     // result is safe to pass to Nuklear, ImGui, Clay, SDL GPU, or a test renderer;
     // it contains no backend-owned types or pointers into the document.
-    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    // Temporary: removed by T-642 after core scene consumers migrate to diagnosed values.
     [[nodiscard]] static auto from(const chart_document_t& chart,
                                    const editor_field_scene_index_t& index,
                                    const editor_interaction_view_model_t& view,
                                    const editor_field_scene_request_t& request = {})
         -> editor_field_scene_view_result_t;
-    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    // Temporary: removed by T-642 after core scene consumers migrate to diagnosed values.
     [[nodiscard]] static auto
     from(const chart_document_t& chart, const editor_field_scene_index_t& index,
          const editor_interaction_view_model_t& view, const editor_field_scene_request_t& request,
@@ -293,10 +293,10 @@ struct editor_field_scene_view_result_t {
                                    const editor_interaction_view_model_t& view,
                                    const editor_field_scene_request_t& request = {})
         -> editor_field_scene_view_outcome_t;
-    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    // Temporary: removed by T-642 after core scene consumers migrate to diagnosed values.
     [[nodiscard]] static auto from(editor_field_scene_view_outcome_t&& outcome)
         -> editor_field_scene_view_result_t;
-    // Temporary: removed by T-642 after sys callers migrate to diagnosed values.
+    // Temporary: removed by T-642 after core scene consumers migrate to diagnosed values.
     [[nodiscard]] auto into_outcome() && -> editor_field_scene_view_outcome_t;
     [[nodiscard]] static auto
     from(const chart_document_t& chart, const editor_field_scene_index_t& index,

@@ -389,16 +389,16 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
     source_view.viewport_height_pixels = std::max(
         1.0, std::min(remaining_height,
                       static_cast<double>(rows->second - rows->first) * pixels_per_row + 32.0));
-    const auto composed = wormedit::editor_field_scene_view_t::from(
+    const auto composed = wormedit::editor_field_scene_view_result_t::from(
         chart, *cache.scene.index, source_view, cache.frame.preview_scene_request);
-    if (!composed) {
+    if (!composed.value || !composed.ok()) {
         view.truncated = true;
         return;
     }
     const auto scope = compose_chart_scope_t<>::from(
         {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row);
     proposed_grid_context_t projection{scope,    flattened,   cache,           original,
-                                       proposed, interaction, *composed.scene, *rows};
+                                       proposed, interaction, *composed.value, *rows};
     append_proposed_grid_lines(projection);
     append_note_and_bgm_preview_rects(projection);
     append_hold_preview_rects(projection);

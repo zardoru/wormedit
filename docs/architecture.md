@@ -69,6 +69,6 @@ every edit gets it.
 | A proposal | `proposal_t<` and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h` |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
-| Background work | `async_job_t` in `include/wormedit/core/async_job.h` *(T-635)* |
+| Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).

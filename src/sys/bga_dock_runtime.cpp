@@ -55,7 +55,7 @@ struct bga_dock_runtime_t::state_t {
 void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
                                               const std::filesystem::path& base) {
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    if (auto completion = job.poll_completion(); completion && *completion &&
+    if (auto completion = job.poll(); completion && *completion &&
         completion->value().identity.project == document.id && completion->value().identity.document_revision == document.revision) {
         for (const auto& item : completion->value().payload->items) {
             if (item) {
@@ -77,7 +77,7 @@ void bga_dock_runtime_t::state_t::update_images(const song_document_t& document,
         request.push_back(*source);
         if (request.size() == 4) break;
     }
-    if (!job.is_busy() && !request.empty()) (void)job.begin(document.id, document.revision, request);
+    if (!job.is_busy() && !request.empty()) (void)job.request(document.id, document.revision, request);
 #else
     (void)document; (void)base;
 #endif

@@ -9,6 +9,7 @@
 #include <ranges>
 #include <span>
 #include <vector>
+#include <functional>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -91,7 +92,9 @@ template <class Request, class Payload, class Identity> class async_job_t {
     async_job_t(const async_job_t&) = delete;
     auto operator=(const async_job_t&) -> async_job_t& = delete;
 
-    [[nodiscard]] auto request(Request request, Identity identity, work_function_t work)
+    // Capture runs once, only after admission; rejected image batches allocate no source copy.
+    template <class Capture>
+    [[nodiscard]] auto request(Capture&& capture, Identity identity, work_function_t work)
         -> async_job_start_outcome_t {
         if (maximum_in_flight_ == 0)
             return std::unexpected(error_t<async_job_start_status_t>{
@@ -102,7 +105,7 @@ template <class Request, class Payload, class Identity> class async_job_t {
                 async_job_start_status_t::capacity_exceeded, std::string(capacity_message_)});
         task_graph_t graph{1};
         const auto task = graph.create_task({},
-            [request = std::move(request), work](std::span<const task_result_t>, std::stop_token stop) {
+            [request = std::invoke(std::forward<Capture>(capture)), work](std::span<const task_result_t>, std::stop_token stop) {
                 auto result = work(request, stop);
                 if (!result) return task_result_t::failure(result.error().code,
                                                           std::move(result.error().message));

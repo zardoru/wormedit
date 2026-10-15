@@ -538,7 +538,7 @@ void request_player_preview_images(const Context& context) {
             context.image_job.cancel();
             state.requested_visual_resources.clear();
             state.decoded_visuals.reset();
-        } else if (context.image_job.begin(context.history.document.id,
+        } else if (context.image_job.request(context.history.document.id,
                                              context.history.document.revision,
                                              requested_sources)) {
             state.requested_visual_resources = std::move(requested_resources);
@@ -720,7 +720,7 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
     view.visual_layers = state.visual_layers.data();
     view.storyboard_sprites = state.storyboard_sprites.data();
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    if (auto completion = image_job.poll_completion(); completion && *completion &&
+    if (auto completion = image_job.poll(); completion && *completion &&
                                             completion->value().identity.project == history.document.id &&
                                             completion->value().identity.document_revision == state.revision) {
         state.decoded_visuals = std::move(completion->value().payload);

@@ -32,7 +32,9 @@ auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
             async_job_start_status_t::invalid_request, "waveform analysis request is incomplete"});
     }
     return async_job_t::request(
-        {sources_, blocks_, waveforms_, asset, frames_per_bin, options}, asset, analyze);
+        [this, asset, frames_per_bin, options] {
+            return waveform_request_t{sources_, blocks_, waveforms_, asset, frames_per_bin, options};
+        }, asset, analyze);
 }
 
 } // namespace wormedit::audio

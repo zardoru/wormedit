@@ -104,14 +104,14 @@ TEST_CASE("image job publishes only the newest revision-bound request",
     task_scheduler_t scheduler{1, 4};
     image_job_t job{cache, scheduler};
 
-    const auto superseded = job.begin(song_id_t{3}, 10, std::span{&source_a, 1U});
+    const auto superseded = job.request(song_id_t{3}, 10, std::span{&source_a, 1U});
     REQUIRE(superseded);
-    const auto current = job.begin(song_id_t{3}, 11, std::span{&source_b, 1U});
+    const auto current = job.request(song_id_t{3}, 11, std::span{&source_b, 1U});
     REQUIRE(current);
     CHECK(*current != *superseded);
     CHECK(job.is_busy());
 
-    const auto completion = job.wait_completion();
+    const auto completion = job.wait();
     REQUIRE(completion);
     REQUIRE(*completion);
     CHECK(completion->value().generation == *current);
@@ -135,8 +135,8 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     image_job_options_t options;
     options.maximum_result_rgba_bytes = 7;
 
-    REQUIRE(job.begin(song_id_t{3}, 20, sources, options));
-    const auto completion = job.wait_completion();
+    REQUIRE(job.request(song_id_t{3}, 20, sources, options));
+    const auto completion = job.wait();
     REQUIRE(completion);
     REQUIRE(*completion);
     REQUIRE(completion->value().payload->items.size() == 2);
@@ -144,15 +144,15 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     CHECK(has_item_error(completion->value().payload->items[1], image_status_t::read_failed, missing));
     CHECK(cache.size() == 0);
 
-    CHECK(job.begin(song_id_t{}, 20, sources).error().code ==
+    CHECK(job.request(song_id_t{}, 20, sources).error().code ==
           image_job_start_status_t::invalid_request);
-    CHECK(job.begin(song_id_t{3}, 0, sources).error().code ==
+    CHECK(job.request(song_id_t{3}, 0, sources).error().code ==
           image_job_start_status_t::invalid_request);
-    CHECK(job.begin(song_id_t{3}, 20, std::span<const resolved_visual_asset_t>{}).error().code ==
+    CHECK(job.request(song_id_t{3}, 20, std::span<const resolved_visual_asset_t>{}).error().code ==
           image_job_start_status_t::invalid_request);
 
     image_job_t disabled{cache, scheduler, 5, 0};
-    CHECK(disabled.begin(song_id_t{3}, 20, sources).error().code ==
+    CHECK(disabled.request(song_id_t{3}, 20, sources).error().code ==
           image_job_start_status_t::invalid_request);
 }
 

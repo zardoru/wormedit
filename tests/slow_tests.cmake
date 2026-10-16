@@ -15,3 +15,11 @@ wormedit_label_slow_tests(wormedit_core_tests_TESTS
     "core.chart comparison keeps fifty-thousand-note equal difficulties bounded"
     "core.lane assignment remains bounded for fifty thousand selected notes"
     "core.loss matrix classifies every diagnostic for every fixture and writer")
+
+# audio: preserve regression sizes and matrices; keep these in the full gate.
+wormedit_label_slow_tests(wormedit_audio_tests_TESTS
+    "audio.BMSON channel waveform maps exact source cuts into its musical viewport"
+    "audio.Large keysound inventories register every asset and metronome accent"
+    "audio.audio.time_stretch all supported rates are deterministic for partial stereo transients"
+    "audio.pending registration opens no decoder until a probe runs"
+)

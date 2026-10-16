@@ -327,7 +327,7 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const auto snapped = snap_canvas_row(chart, index, bounded, state.active_snap_denominator, *rows);
     if (!snapped) return false;
     const auto row = *snapped;
-    const auto position = position_at_absolute_row(index, row);
+    const auto position = index.position_at(row);
     const auto from = state.cursor;
     place_cursor_on_canvas_row(state, position, row, static_cast<double>(bounded - row));
     if (position) {

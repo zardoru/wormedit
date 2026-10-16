@@ -4812,8 +4812,8 @@ auto note_paint_intent_stroke(document_history_t& history,
                               std::optional<resource_id_t> sound = std::nullopt)
     -> editor_interaction_result_t {
     const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
-    const auto begin = position_at_absolute_row(index, begin_row);
-    const auto end = position_at_absolute_row(index, end_row);
+    const auto begin = index.position_at(begin_row);
+    const auto end = index.position_at(end_row);
     require_note_paint_intent(begin && end);
     const auto begun = dispatch_editor_action(history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, *begin,

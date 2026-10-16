@@ -1284,7 +1284,7 @@ auto positive_hold_end(const measure_index_t& measures, local_position_t head,
     const auto begin = absolute_row(measures, head);
     const auto end = absolute_row(measures, tail);
     if (begin && end && *end > *begin) return tail;
-    const auto next = begin ? position_at_absolute_row(measures, *begin + 1) : std::nullopt;
+    const auto next = begin ? measures.position_at(*begin + 1) : std::nullopt;
     if (!next)
         fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
              "positive hold has no bounded editable endpoint", order);

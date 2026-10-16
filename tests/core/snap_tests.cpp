@@ -50,7 +50,6 @@ TEST_CASE("snapped positions resolve across measures and reject rows past the ch
     REQUIRE(fine);
     CHECK((*fine == local_position_t{measure_id_t{4}, 130}));
     CHECK_FALSE(snap_position(chart, index, {measure_id_t{9}, 0}, 4));
-    CHECK_FALSE(position_at_absolute_row(index, index.total_rows));
 }
 
 namespace {

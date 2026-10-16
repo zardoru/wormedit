@@ -6,7 +6,7 @@
 namespace wormedit {
 
 inline auto position_at(const measure_index_t& index, std::uint64_t absolute) -> std::optional<local_position_t> {
-    return position_at_absolute_row(index, absolute);
+    return index.position_at(absolute);
 }
 template<class RowOf>
 auto effective_layout_by_row(const chart_document_t& chart, local_position_t position, const RowOf& row_of)

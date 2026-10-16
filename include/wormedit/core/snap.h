@@ -53,10 +53,6 @@ namespace wormedit {
     const measure_index_t& index, long double absolute_row, std::uint64_t denominator,
     std::uint64_t canvas_rows, bool forward) noexcept -> std::optional<std::uint64_t>;
 
-// The position of an absolute row, or nullopt when it lies beyond the chart.
-[[nodiscard]] auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolute)
-    -> std::optional<local_position_t>; // Temporary: removed by T-632.
-
 // Snaps a chart position. The result is nullopt when the position, denominator or resulting row
 // is outside the chart.
 [[nodiscard]] auto snap_position(const chart_document_t& chart, const measure_index_t& index,

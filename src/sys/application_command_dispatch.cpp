@@ -566,7 +566,7 @@ auto navigation_commands(command_context_t& context) -> command_result_t {
                                ? marker_navigation_direction_t::previous
                                : marker_navigation_direction_t::next;
     const auto marker = navigate_active_markers(context, *state, direction);
-    if (marker.value.status == marker_navigation_status_t::no_result) {
+    if (marker.value.status == marker_navigation_phase_t::no_result) {
         return compose_action_outcome_t::from(
             direction == marker_navigation_direction_t::previous
                 ? "No previous beat-anchored bookmark or section boundary."
@@ -574,7 +574,7 @@ auto navigation_commands(command_context_t& context) -> command_result_t {
             notification_severity_t::info, notification_source_t::input,
             compose_message_lifetime_t::borrowed);
     }
-    if (marker.value.status != marker_navigation_status_t::found || !marker.value.item ||
+    if (marker.value.status != marker_navigation_phase_t::found || !marker.value.item ||
         !marker.value.item->beat_position)
         return compose_action_outcome_t::from(
             marker.diagnostics.empty() ? "Bookmark navigation could not resolve an exact beat row."

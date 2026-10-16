@@ -126,7 +126,7 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
                                                   {.include_bookmarks = true,
                                                    .include_section_begins = false,
                                                    .include_section_ends = false});
-    if (marker.value.status == marker_navigation_status_t::no_result)
+    if (marker.value.status == marker_navigation_phase_t::no_result)
         return compose_action_outcome_t::from(
             previous ? "No previous bookmark." : "No next bookmark.", notification_severity_t::hint,
             notification_source_t::input, false, true);

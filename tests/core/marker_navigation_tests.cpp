@@ -116,7 +116,7 @@ TEST_CASE("marker navigation filters marker kinds and reports explicit no-result
                          {.include_bookmarks = false,
                           .include_section_begins = false,
                           .include_section_ends = false});
-    CHECK(no_markers.value.status == marker_navigation_status_t::no_result);
+    CHECK(no_markers.value.status == marker_navigation_phase_t::no_result);
     CHECK_FALSE(no_markers.value.item.has_value());
     CHECK(no_markers.diagnostics.empty());
     CHECK_FALSE(no_markers.value.is_found());
@@ -153,18 +153,18 @@ TEST_CASE("marker navigation validates chart revision and beat cursor geometry",
     const auto stale =
         marker_navigation_match_t::from(song, 8, chart_id_t{2}, local_position_t{measure_id_t{11}, 0},
                          marker_navigation_direction_t::next);
-    CHECK(stale.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(stale.value.status == failure_code_t::invalid_request);
     CHECK_FALSE(stale.diagnostics.empty());
 
     const auto unknown =
         marker_navigation_match_t::from(song, 9, chart_id_t{99}, local_position_t{measure_id_t{11}, 0},
                          marker_navigation_direction_t::next);
-    CHECK(unknown.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(unknown.value.status == failure_code_t::invalid_request);
 
     const auto unknown_measure =
         marker_navigation_match_t::from(song, 9, chart_id_t{2}, local_position_t{measure_id_t{99}, 0},
                          marker_navigation_direction_t::next);
-    CHECK(unknown_measure.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(unknown_measure.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(unknown_measure.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::unknown_measure;
     }));
@@ -172,7 +172,7 @@ TEST_CASE("marker navigation validates chart revision and beat cursor geometry",
     const auto out_of_range =
         marker_navigation_match_t::from(song, 9, chart_id_t{2}, local_position_t{measure_id_t{11}, 480},
                          marker_navigation_direction_t::next);
-    CHECK(out_of_range.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(out_of_range.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(out_of_range.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::row_out_of_range;
     }));
@@ -186,7 +186,7 @@ TEST_CASE("marker navigation enforces marker caps and chart-wide returned IDs",
         marker_navigation_direction_t::next,
         {.include_bookmarks = true, .include_section_begins = false, .include_section_ends = false},
         {.maximum_marker_objects = 4});
-    CHECK(capped.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(capped.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(capped.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::invalid_resolution;
     }));
@@ -194,7 +194,7 @@ TEST_CASE("marker navigation enforces marker caps and chart-wide returned IDs",
     const auto zero_cap =
         marker_navigation_match_t::from(song, 9, chart_id_t{2}, std::int64_t{0},
                          marker_navigation_direction_t::next, {}, {.maximum_marker_objects = 0});
-    CHECK(zero_cap.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(zero_cap.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(zero_cap.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::invalid_resolution;
     }));
@@ -208,7 +208,7 @@ TEST_CASE("marker navigation enforces marker caps and chart-wide returned IDs",
                                                      {.include_bookmarks = true,
                                                       .include_section_begins = false,
                                                       .include_section_ends = false});
-    CHECK(ambiguous_bookmark.value.status == marker_navigation_status_t::invalid_request);
+    CHECK(ambiguous_bookmark.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(ambiguous_bookmark.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::duplicate_id;
     }));
@@ -218,7 +218,7 @@ TEST_CASE("marker navigation enforces marker caps and chart-wide returned IDs",
         {.id = object_id_t{70}, .position = {measure_id_t{11}, 0}});
     const auto ambiguous_section =
         section_selection_t::from(duplicate_section_id, 9, chart_id_t{2}, object_id_t{70});
-    CHECK(ambiguous_section.value.status == section_selection_status_t::invalid_request);
+    CHECK(ambiguous_section.value.status == failure_code_t::invalid_request);
     CHECK(std::ranges::any_of(ambiguous_section.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == diagnostic_code_t::duplicate_id;
     }));
@@ -234,13 +234,13 @@ TEST_CASE("section selection resolves beat spans and requires projection for aud
     CHECK(beat.value.beat_span->end == local_position_t{measure_id_t{12}, 500});
 
     const auto audio = section_selection_t::from(song, 9, chart_id_t{2}, object_id_t{110});
-    CHECK(audio.value.status == section_selection_status_t::timing_projection_required);
+    CHECK(audio.value.status == section_selection_phase_t::timing_projection_required);
     CHECK_FALSE(audio.value.beat_span.has_value());
     CHECK(audio.diagnostics.empty());
 
     const auto stale = section_selection_t::from(song, 8, chart_id_t{2}, object_id_t{70});
     test::check_stale_action_message(stale.diagnostics, "Marker navigation");
-    CHECK(stale.value.status == section_selection_status_t::invalid_request);
+    CHECK(stale.value.status == failure_code_t::invalid_request);
     CHECK_FALSE(stale.diagnostics.empty());
 }
 
@@ -323,7 +323,7 @@ TEST_CASE("timing projection adds audio-time markers at exact rows",
 
     // 120 BPM: 250 ms is row 120, 500 ms row 240, 750 ms row 360.
     const auto first = next_from(song, 0, timing);
-    REQUIRE(first.value.status == marker_navigation_status_t::found);
+    REQUIRE(first.value.status == marker_navigation_phase_t::found);
     CHECK(first.value.item->object == object_id_t{2});
     CHECK(first.value.item->beat_position == local_position_t{measure_id_t{1}, 120});
     CHECK(first.value.item->audio_milliseconds == 250);
@@ -352,7 +352,7 @@ TEST_CASE("timing projection skips out-of-range markers with a diagnostic",
     REQUIRE(built);
 
     const auto result = next_from(song, 480, &*built.index);
-    REQUIRE(result.value.status == marker_navigation_status_t::found);
+    REQUIRE(result.value.status == marker_navigation_phase_t::found);
     CHECK(result.value.item->object == object_id_t{1});
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);
@@ -371,7 +371,7 @@ TEST_CASE("beat navigation without a timing index ignores audio-time markers",
     const auto previous = marker_navigation_match_t::from(
         song, 4, chart_id_t{2}, local_position_t{measure_id_t{2}, 0},
         marker_navigation_direction_t::previous, {}, {}, &*built.index);
-    REQUIRE(previous.value.status == marker_navigation_status_t::found);
+    REQUIRE(previous.value.status == marker_navigation_phase_t::found);
     CHECK(previous.value.item->object == object_id_t{3});
 }
 
@@ -390,7 +390,7 @@ TEST_CASE("an unusable timing index falls back to beat markers with one warning"
     const auto song = projected_song();
     const timing_index_t unusable{};
     const auto result = next_from(song, 0, &unusable);
-    REQUIRE(result.value.status == marker_navigation_status_t::found);
+    REQUIRE(result.value.status == marker_navigation_phase_t::found);
     CHECK(result.value.item->object == object_id_t{1});
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().severity == diagnostic_severity_t::warning);

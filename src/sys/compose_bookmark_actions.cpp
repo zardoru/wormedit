@@ -370,7 +370,7 @@ auto navigate_audio_marker_action_t::perform(compose_action_context_t& context) 
         marker_navigation_match_t::from(context.environment.document.history.document,
                                         context.environment.document.history.document.revision,
                                         context.state.chart, *cursor, direction);
-    if (marker.value.status == marker_navigation_status_t::no_result)
+    if (marker.value.status == marker_navigation_phase_t::no_result)
         return compose_action_outcome_t::from(
             direction == marker_navigation_direction_t::previous
                 ? "No previous audio-time bookmark or section boundary."

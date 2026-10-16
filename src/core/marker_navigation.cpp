@@ -418,18 +418,18 @@ auto navigate_impl(const song_document_t& song, chart_query_t&& query,
     marker_navigation_outcome_t result{
         .value = {.document_revision = song.revision, .chart = chart_id}};
     if (!query.diagnostics.empty()) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         result.diagnostics = std::move(query.diagnostics);
         return result;
     }
     if (!is_valid_direction(direction)) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "marker navigation direction is unknown"));
         return result;
     }
     if (anchor == marker_anchor_t::beat && !measures) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_measure, "beat navigation requires a measure index"));
         return result;
@@ -443,7 +443,7 @@ auto navigate_impl(const song_document_t& song, chart_query_t&& query,
             collect_projected_audio_markers(search, *projection, *query.value);
     }
     if (!result.diagnostics.empty()) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         return result;
     }
     if (projection)
@@ -452,10 +452,10 @@ auto navigate_impl(const song_document_t& song, chart_query_t&& query,
     if (!search.best)
         return result;
     if (!validate_selected_marker(*query.value, search.best->item, result)) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         return result;
     }
-    result.value.status = marker_navigation_status_t::found;
+    result.value.status = marker_navigation_phase_t::found;
     result.value.item = std::move(search.best->item);
     return result;
 }
@@ -472,13 +472,13 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
         .value = {.document_revision = song.revision, .chart = chart}};
     auto query = validate_chart_query(song, expected_revision, chart, limits);
     if (!query.diagnostics.empty()) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         result.diagnostics = std::move(query.diagnostics);
         return result;
     }
     const auto built = measure_index_t::from(*query.value);
     if (!built) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         result.diagnostics = built.error();
         return result;
     }
@@ -487,7 +487,7 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
     const auto cursor_row =
         resolve_marker_position_row(measure_lookup, beat_cursor, std::nullopt, result.diagnostics);
     if (!cursor_row.has_value()) {
-        result.value.status = marker_navigation_status_t::invalid_request;
+        result.value.status = failure_code_t::invalid_request;
         return result;
     }
     audio_projection_t projection{.timing = timing, .measures = &measures};
@@ -510,7 +510,7 @@ auto section_selection_t::from(const song_document_t& song, std::uint64_t expect
                                chart_id_t chart_id, object_id_t section_id,
                                marker_navigation_limits_t limits) -> section_selection_outcome_t {
     section_selection_outcome_t result{
-        .value = {.status = section_selection_status_t::invalid_request,
+        .value = {.status = failure_code_t::invalid_request,
                   .document_revision = song.revision,
                   .chart = chart_id,
                   .section = section_id}};
@@ -551,7 +551,7 @@ auto section_selection_t::from(const song_document_t& song, std::uint64_t expect
                                                section_id));
             return result;
         }
-        result.value.status = section_selection_status_t::timing_projection_required;
+        result.value.status = section_selection_phase_t::timing_projection_required;
         return result;
     }
     if (found->anchor != marker_anchor_t::beat || !found->beat_span.has_value() ||
@@ -582,7 +582,7 @@ auto section_selection_t::from(const song_document_t& song, std::uint64_t expect
                                            section_id));
         return result;
     }
-    result.value.status = section_selection_status_t::resolved;
+    result.value.status = section_selection_phase_t::resolved;
     result.value.beat_span = found->beat_span;
     return result;
 }

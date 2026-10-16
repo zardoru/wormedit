@@ -689,37 +689,56 @@ auto sound_slots_view_t::from(const song_document_t& document, const sound_slot_
 namespace wormedit::sys {
 
 namespace {
-struct fallback_cache_t {
-    std::uint64_t song{};
-    std::uint64_t revision{};
-    std::filesystem::path base;
-    std::vector<keysound_fallback_t> entries;
-    bool valid{};
-    std::vector<resource_id_t> missing_resources;
+struct fallback_query_t {
+    document_stamp_t stamp;
+    const std::filesystem::path& base;
+    std::vector<resource_id_t>& missing_resources;
 };
+struct fallback_key_t {
+    document_stamp_t stamp;
+    std::filesystem::path base;
+    std::vector<resource_id_t> missing_resources;
+    auto operator==(const fallback_key_t&) const -> bool = default;
+    auto operator==(const fallback_query_t& query) const -> bool {
+        return stamp == query.stamp && base == query.base && missing_resources == query.missing_resources;
+    }
+    static auto from(const fallback_query_t& query) -> fallback_key_t {
+        return {query.stamp, query.base, std::move(query.missing_resources)};
+    }
+    void assign(const fallback_query_t& query) {
+        stamp = query.stamp;
+        base = query.base;
+        missing_resources = std::move(query.missing_resources);
+    }
+};
+
+void build_fallback_entries(const song_document_t& document, const std::filesystem::path& asset_base,
+                            std::vector<keysound_fallback_t>& entries) {
+    entries = std::vector<keysound_fallback_t>{};
+    audio_directory_cache_t listings;
+    for (const auto& resource : document.resources) {
+        const auto* asset = document.find_audio_asset(resource.asset);
+        if (!asset || !resource.missing) continue;
+        auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
+        if (result.outcome == audio_fallback_outcome_t::fallback ||
+            result.outcome == audio_fallback_outcome_t::ambiguous)
+            entries.push_back({resource.id, std::move(result)});
+    }
+}
+
 } // namespace
 
 auto build_keysound_fallbacks_view(const song_document_t& document,
                                 const std::filesystem::path& asset_base, std::size_t limit)
     -> std::vector<keysound_fallback_t> {
-    static thread_local fallback_cache_t cache;
+    static thread_local keyed_cache_t<fallback_key_t, std::vector<keysound_fallback_t>> cache;
     std::vector<resource_id_t> missing_resources;
     for (const auto& resource : document.resources)
         if (resource.missing) missing_resources.push_back(resource.id);
-    if (!cache.valid || cache.missing_resources != missing_resources || cache.song != document.id.value || cache.revision != document.revision ||
-        cache.base != asset_base) {
-        cache = {document.id.value, document.revision, asset_base, {}, true, std::move(missing_resources)};
-        audio_directory_cache_t listings;
-        for (const auto& resource : document.resources) {
-            const auto* asset = document.find_audio_asset(resource.asset);
-            if (!asset || !resource.missing) continue;
-            auto result = resolve_audio_fallback(asset->source_path, asset_base, &listings);
-            if (result.outcome == audio_fallback_outcome_t::fallback ||
-                result.outcome == audio_fallback_outcome_t::ambiguous)
-                cache.entries.push_back({resource.id, std::move(result)});
-        }
-    }
-    auto entries = cache.entries;
+    const auto& cached = cache.get_or_build(
+        fallback_query_t{document_stamp_t::from(document), asset_base, missing_resources},
+        std::bind_front(build_fallback_entries, std::cref(document), std::cref(asset_base)));
+    auto entries = cached;
     if (entries.size() > limit) entries.resize(limit);
     return entries;
 }

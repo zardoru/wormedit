@@ -198,7 +198,7 @@ auto set_bmson_channel_lane_mode(document_history_t& history,
     -> document_command_result_t {
     const auto revision = history.document.revision;
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(chart_id);
     if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id, "Lane mode requires a known BMSON chart");

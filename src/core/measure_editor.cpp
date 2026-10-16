@@ -958,7 +958,7 @@ auto apply_measure_edit(document_history_t& history,
         return result;
     }
 
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     measure_edit_context_t context{.proposed = proposed,
                                    .limits = limits,
                                    .result = result,

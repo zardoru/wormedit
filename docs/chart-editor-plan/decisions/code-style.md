@@ -91,6 +91,11 @@ it in new code even before the card lands.
 - **Document commands run through `document_command_transaction_t`:** build it with
   `::from(history)`, reject through it, copy the document lazily and only once, commit through it.
   Never hand-write the stamp/copy/commit sequence. Staged edits are orchestration around it.
+  Three reads, three guarantees: `document()` is the working copy (the first call copies the
+  committed document, once); `current_document()` reads what the transaction sees now (the working
+  copy if one exists, otherwise the committed document) without copying, for validation, ID
+  allocation and stale checks; `source_document()`/`source_chart(id)` are always the committed
+  version. Read with `current_document()` unless you are about to change something.
 - **Check a revision once, at the boundary.** Each entry point (and each item of an input batch)
   checks the action's stamp once; handlers below it don't. Synchronous core calls take no stamp.
   State captured earlier (gestures, previews, proposals, async results) carries a

@@ -875,7 +875,7 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     std::optional<object_id_t> id;
     if (placement.adds_note) {

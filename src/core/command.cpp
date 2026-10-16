@@ -224,7 +224,7 @@ auto document_command_transaction_t::has_copy() const noexcept -> bool {
     return proposed.has_value();
 }
 
-auto document_command_transaction_t::document() const noexcept -> const song_document_t& {
+auto document_command_transaction_t::current_document() const noexcept -> const song_document_t& {
     return proposed ? *proposed : history.document;
 }
 
@@ -233,7 +233,7 @@ auto document_command_transaction_t::source_chart(chart_id_t id) const -> const 
     return found == nullptr ? nullptr : &*found;
 }
 
-auto document_command_transaction_t::copy_document() -> song_document_t& {
+auto document_command_transaction_t::document() -> song_document_t& {
     if (!proposed) {
         proposed.emplace(history.document);
         proposed->reset_chart_indices();
@@ -248,8 +248,7 @@ void document_command_transaction_t::adopt_document(song_document_t&& document) 
 
 auto document_command_transaction_t::chart(chart_id_t id) -> chart_document_t* {
     if (!source_chart(id)) return nullptr;
-    auto& document = copy_document();
-    const auto found = document.find_chart(id);
+    const auto found = document().find_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
@@ -331,7 +330,7 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
     if (request.selection && !is_quantized_stem_audio_valid(history.document, *chart, *proposal.value.chart,
                                                         result.command.diagnostics)) return result;
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed_document = transaction.copy_document();
+    auto& proposed_document = transaction.document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.value.chart);
     result.command =
@@ -362,7 +361,7 @@ auto apply_redivision_command(document_history_t& history,
     result.payload.moves = std::move(proposal.value.moves);
 
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed_document = transaction.copy_document();
+    auto& proposed_document = transaction.document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.value.chart);
     result.command =

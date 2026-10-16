@@ -1355,7 +1355,7 @@ struct sv_recipe_edit_context_t {
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> const chart_document_t* {
-    const auto chart = context.transaction.document().find_chart(id);
+    const auto chart = context.transaction.current_document().find_chart(id);
     if (!id || chart == nullptr) {
         reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
@@ -1408,20 +1408,20 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     }
     auto recipe = edit.value;
     if (!recipe.id) {
-        const auto id = next_recipe_id(context.transaction.document());
+        const auto id = next_recipe_id(context.transaction.current_document());
         if (!id) {
             reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe ID sequence is exhausted");
             return;
         }
         recipe.id = *id;
-    } else if (is_globally_used_recipe_id(context.transaction.document(), recipe.id)) {
+    } else if (is_globally_used_recipe_id(context.transaction.current_document(), recipe.id)) {
         reject(context.transaction.outcome.diagnostics, diagnostic_code_t::duplicate_id,
                "SV recipe ID is already used by a generator recipe");
         return;
     }
     if (!append_recipe_validation(context.transaction.outcome, *chart, recipe)) return;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    auto* target = context.transaction.document().find_chart(edit.chart);
     target->sv_recipes.push_back(std::move(recipe));
     context.label = "Insert SV recipe";
     context.changed = true;
@@ -1437,7 +1437,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     replacement.id = edit.id;
     if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
     context.changed = *recipe != replacement;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
         *recipe_by_id(*target, edit.id) = std::move(replacement);
         context.label = "Update SV recipe";
@@ -1499,7 +1499,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     replacement.range = edit.range;
     if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
     context.changed = replacement.range != recipe->range;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
         recipe_by_id(*target, edit.id)->range = edit.range;
         context.label = "Move SV recipe range";
@@ -1556,7 +1556,7 @@ template <typename Edit>
 void apply_recipe_operation(sv_recipe_edit_context_t& context, const Edit& edit) {
     const auto* source = editable_recipe_chart(context, edit.chart);
     if (!source || !editable_recipe(context, *source, edit.id)) return;
-    auto* chart = context.transaction.copy_document().find_chart(edit.chart);
+    auto* chart = context.transaction.document().find_chart(edit.chart);
     apply_recipe_operation(context, *chart, edit);
 }
 

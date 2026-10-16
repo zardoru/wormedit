@@ -89,9 +89,9 @@ TEST_CASE("A working document drops committed indices before mutation", "[core][
     const auto* first = history.indices(chart_id_t{1});
     REQUIRE(first != nullptr);
     auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().divisions_per_standard_measure = 960;
+    transaction.document().charts.front().divisions_per_standard_measure = 960;
     // Observe a detached copy without from(), whose reset would mask this boundary.
-    const document_history_t detached{.document = std::as_const(transaction).document()};
+    const document_history_t detached{.document = std::as_const(transaction).current_document()};
     const auto* rebuilt = detached.indices(chart_id_t{1});
     REQUIRE(rebuilt != nullptr);
     CHECK(rebuilt != first);
@@ -107,9 +107,9 @@ TEST_CASE("Adoption drops indices when replacing an existing working document",
     auto candidate = history.document;
     candidate.charts.front().divisions_per_standard_measure = 960;
     auto transaction = document_command_transaction_t::from(history);
-    static_cast<void>(transaction.copy_document());
+    static_cast<void>(transaction.document());
     transaction.adopt_document(std::move(candidate));
-    const document_history_t detached{.document = std::as_const(transaction).document()};
+    const document_history_t detached{.document = std::as_const(transaction).current_document()};
     const auto* rebuilt = detached.indices(chart_id_t{1});
     REQUIRE(rebuilt != nullptr);
     CHECK(rebuilt != first);
@@ -126,8 +126,8 @@ TEST_CASE("Working copies also drop the indices of untouched charts", "[core][ch
     REQUIRE(first != nullptr);
     REQUIRE(untouched != nullptr);
     auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().divisions_per_standard_measure = 960;
-    const document_history_t detached{.document = std::as_const(transaction).document()};
+    transaction.document().charts.front().divisions_per_standard_measure = 960;
+    const document_history_t detached{.document = std::as_const(transaction).current_document()};
     CHECK(detached.indices(chart_id_t{1}) != first);
     CHECK(detached.indices(chart_id_t{2}) != untouched);
     CHECK(detached.indices(chart_id_t{2})->measures->total_rows == 480);

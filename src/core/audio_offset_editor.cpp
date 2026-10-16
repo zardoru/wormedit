@@ -126,7 +126,7 @@ struct audio_offset_edit_t {
         if (offset.denominator == 0)
             return {.diagnostics = {error(diagnostic_code_t::invalid_rational,
                 "audio offset must be an exact signed rational")}};
-        auto& proposed = transaction.copy_document();
+        auto& proposed = transaction.document();
         const auto selected = proposed.find_chart(chart);
         if (!chart || selected == nullptr)
             return {.diagnostics = {error(diagnostic_code_t::invalid_id,

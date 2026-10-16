@@ -839,7 +839,7 @@ auto apply_semantic_layer_edit(document_history_t& history,
         return result;
     }
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto outcome = apply_semantic_layer_action(proposed, action, limits, result);
     if (!result.diagnostics.empty() || !outcome.changed) {
         return result;
@@ -939,7 +939,7 @@ auto apply_sound_layer_defaults(document_history_t& history,
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id,
@@ -1027,7 +1027,7 @@ auto apply_sound_layer_membership(document_history_t& history,
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision};
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id,

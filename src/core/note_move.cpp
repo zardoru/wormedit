@@ -819,7 +819,7 @@ using namespace interaction_detail;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     auto changed = false;
     for (const auto& candidate : plan.resized) {
@@ -943,7 +943,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
                           const note_move_plan_t& plan) -> editor_interaction_result_t {
     auto transaction = document_command_transaction_t::from(history);
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     const auto changed = plan.staged_bgm_document.has_value() || has_note_move_changes(*chart, plan) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {

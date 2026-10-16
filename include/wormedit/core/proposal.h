@@ -211,7 +211,7 @@ template<class Stamp> class proposal_edit_scope_t : public document_edit_scope_t
 public:
     proposal_edit_scope_t(document_command_transaction_t& transaction, const Stamp& captured,
                           const proposal_application_input_t& input)
-        : document_edit_scope_t(transaction), proposal_read_scope_t<Stamp>(transaction.document(), captured),
+        : document_edit_scope_t(transaction), proposal_read_scope_t<Stamp>(transaction.current_document(), captured),
           input_(input) {}
     [[nodiscard]] auto input() const noexcept -> const proposal_application_input_t& { return input_; }
     [[nodiscard]] auto target() const noexcept -> const chart_document_t* { return target_; }
@@ -293,7 +293,7 @@ public:
         if constexpr (requires { edit.is_unchanged(); }) {
             if (edit.is_unchanged()) return proposal_application_stage_t::unchanged;
         }
-        auto target = edit.validate_target(scope.transaction().document(), scope.captured_stamp().chart,
+        auto target = edit.validate_target(scope.transaction().current_document(), scope.captured_stamp().chart,
                                            proposal_operation_t::apply);
         if (!target) {
             diagnostics.push_back(std::move(target.error()));

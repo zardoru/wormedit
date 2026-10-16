@@ -297,9 +297,9 @@ TEST_CASE("document transaction source queries do not copy", "[unit][core][comma
 TEST_CASE("document transactions reuse their working snapshot", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
-    auto& copy = transaction.copy_document();
+    auto& copy = transaction.document();
     copy.charts.front().metadata.name = "Edited";
-    CHECK(&transaction.copy_document() == &copy);
+    CHECK(&transaction.document() == &copy);
     CHECK(transaction.chart(chart_id_t{1})->metadata.name == "Edited");
     CHECK(history.document.charts.front().metadata.name.empty());
 }
@@ -307,7 +307,7 @@ TEST_CASE("document transactions reuse their working snapshot", "[unit][core][co
 TEST_CASE("document transactions publish one reversible edit", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().metadata.name = "Edited";
+    transaction.document().charts.front().metadata.name = "Edited";
     REQUIRE(transaction.commit("Edit name"));
     CHECK(history.document.charts.front().metadata.name == "Edited");
     REQUIRE(history.undo.size() == 1);
@@ -398,7 +398,7 @@ TEST_CASE("Finishing an unpublished transaction closes and discards its snapshot
           "[core][command][stamped-transaction]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().metadata.title = "Unpublished";
+    transaction.document().metadata.title = "Unpublished";
     const auto result = transaction.finish_without_commit();
     CHECK_FALSE(result.applied);
     CHECK_FALSE(transaction.is_ready());
@@ -444,7 +444,7 @@ TEST_CASE("command diagnosed adapters retain warnings independently of applicati
 TEST_CASE("command primary commit publishes one undoable document", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().measures.front().notes.front().position.row = 240;
+    transaction.document().charts.front().measures.front().notes.front().position.row = 240;
     const auto outcome = transaction.commit_outcome("Move note");
     REQUIRE(outcome.ok());
     CHECK((outcome.value.applied && outcome.value.revision == history.document.revision));
@@ -469,7 +469,7 @@ TEST_CASE("command payload outcomes preserve domain metadata and command diagnos
 TEST_CASE("failed command publication consumes its public working snapshot", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t::from(history);
-    auto& working = transaction.copy_document();
+    auto& working = transaction.document();
     const auto revision = working.revision;
     working.charts.front().measures.front().notes.front().lane = lane_id_t{999};
     const auto result = transaction.commit("Invalid note");

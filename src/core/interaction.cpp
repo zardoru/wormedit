@@ -876,7 +876,7 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
 
     auto transaction = document_command_transaction_t::from(context.history);
 
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto staged = stage_delete_stem_points(proposed, context, ids);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
         return diagnostic_result(context.history, context.state, *diagnostics);
@@ -1046,7 +1046,7 @@ auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t
     std::span<const assignment_candidate_t> candidates, lane_id_t lane, std::string label)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(chart_id);
     note_move_plan_t plan;
     plan.moved.reserve(candidates.size());

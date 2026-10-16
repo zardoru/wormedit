@@ -1060,7 +1060,7 @@ TEST_CASE("A rejected typed timing transaction cannot publish its abandoned snap
     const auto stamp = chart_stamp_t::from(history.document, chart_id_t{2});
     auto transaction = document_command_transaction_t::from(history, stamp, "Timing proposal",
         document_identity_policy_t::revision_only);
-    transaction.copy_document().metadata.title = "Unpublished";
+    transaction.document().metadata.title = "Unpublished";
     const wormedit::insert_edit_t<wormedit::scroll_edit_value_t> edit{
         .chart = chart_id_t{2},
         .value = {.position = pos(120), .settings = {.multiplier = {2, 1}}}};

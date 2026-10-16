@@ -595,7 +595,7 @@ auto lane_migration_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scop
     const auto chart = transaction.source_chart(canonical.stamp.chart);
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
     for (const auto& item : canonical.mapping) mapping.emplace(item.source_lane.value, item.target_lane);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto updated = apply_mapping(*chart, mapping, canonical.target);
     *proposed.find_chart(canonical.stamp.chart) = updated;
     return {.value = "Migrate chart lane profile"};

@@ -20,8 +20,8 @@ struct metadata_payload_t {
         auto& transaction = scope.transaction();
         if (title.empty())
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Title is empty.")}};
-        if (transaction.document().metadata.title == title) return {};
-        transaction.copy_document().metadata.title = title;
+        if (transaction.current_document().metadata.title == title) return {};
+        transaction.document().metadata.title = title;
         if (is_rejected_after_edit)
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Prepared title rejected.")}};
         if (is_rejected_by_transaction)
@@ -61,10 +61,10 @@ struct consuming_title_t {
     auto apply(proposal_edit_scope_t<document_stamp_t>& scope) &&
         -> diagnosed_t<std::optional<std::string>> {
         auto& transaction = scope.transaction();
-        if (scope.captured_stamp().project != transaction.document().id)
+        if (scope.captured_stamp().project != transaction.current_document().id)
             return {.diagnostics = {error(diagnostic_code_t::collision, "Title belongs to another project.")}};
         auto consumed = std::move(title);
-        transaction.copy_document().metadata.title = std::move(*consumed);
+        transaction.document().metadata.title = std::move(*consumed);
         return {.value = "Consume title"};
     }
 };
@@ -271,7 +271,7 @@ struct action_test_t {
     }
     auto perform(action_test_context_t& context) const -> document_command_result_t {
         ++context.performed;
-        context.transaction.copy_document();
+        context.transaction.document();
         return context.transaction.finish_without_commit();
     }
 };

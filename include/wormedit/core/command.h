@@ -322,9 +322,9 @@ struct document_command_transaction_t {
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;
     // The current transaction document, including an already prepared snapshot.
-    [[nodiscard]] auto document() const noexcept -> const song_document_t&;
+    [[nodiscard]] auto current_document() const noexcept -> const song_document_t&;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
-    auto copy_document() -> song_document_t&;
+    auto document() -> song_document_t&;
     // Staged editors hand over their existing snapshot without copying the live document.
     void adopt_document(song_document_t&& document);
     auto chart(chart_id_t id) -> chart_document_t*;
@@ -345,7 +345,7 @@ struct document_command_transaction_t {
         const Limits& limits;
 
         template <class Edit> auto operator()(const Edit& edit) const -> document_command_result_t {
-            auto& proposed = transaction.copy_document();
+            auto& proposed = transaction.document();
             auto* chart = proposed.find_chart(edit.chart);
             bool invalid_chart = !edit.chart || chart == nullptr;
             if constexpr (requires { Operation::requires_unique_chart; }) {
@@ -402,8 +402,8 @@ struct document_command_transaction_t {
         } else {
             if (!outcome.diagnostics.empty() || !effect.changed)
                 return finish_without_commit();
-            if constexpr (requires { operation.postvalidate(chart, copy_document()); }) {
-                if (!operation.postvalidate(chart, copy_document()))
+            if constexpr (requires { operation.postvalidate(chart, document()); }) {
+                if (!operation.postvalidate(chart, document()))
                     return finish_without_commit();
             }
             return commit(std::move(effect.command_label));

@@ -356,7 +356,7 @@ auto channel_map_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
             .message = view.diagnostic && !view.diagnostic->message.empty()
                 ? view.diagnostic->message : stale_action_message("Channel-map edit")}};
     }
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto chart = proposed.find_chart(canonical.stamp.chart);
     auto segment = std::ranges::find(chart->lane_layouts, canonical.segment, &lane_layout_segment_t::id);
     if (!overlay_replacements(segment->layout, canonical.replacements))

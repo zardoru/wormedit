@@ -132,7 +132,7 @@ auto apply_lane_assignment(document_history_t& history,
                            : "lane transform selection exceeds its configured cap");
         return result;
     }
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(chart_id);
     if (!chart_id || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "lane transform refers to an unknown chart");

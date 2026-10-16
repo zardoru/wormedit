@@ -2208,7 +2208,7 @@ TEST_CASE("rejected BGA stroke closes its supplied transaction and discards a wo
     auto history = document_history_t::from(assignment_song());
     auto transaction = document_command_transaction_t::from(history);
     const auto original = history.document.metadata.title;
-    transaction.copy_document().metadata.title = "Unpublished";
+    transaction.document().metadata.title = "Unpublished";
     const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
     const auto rejected = apply_bga_stroke(transaction, chart_id_t{99}, resource_id_t{3}, targets);
     check_bga_stroke(!rejected.applied);

@@ -66,7 +66,7 @@ auto apply_bmson_restart_state(document_history_t& history,
     });
     if (!needs_change) return {.revision = history.document.revision};
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto& events = proposed.charts[target.chart_offset].sound_channels[target.channel_offset].events;
     for (auto& event : events) {
         if (event.position == target.position) event.continuation = !restart;
@@ -254,7 +254,7 @@ auto move_bmson_bgm_marker(document_history_t& history,
                         "Another event in this BMSON sound channel occupies the target row");
     }
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
@@ -511,7 +511,7 @@ auto run_insert_bmson_sound_markers(document_command_transaction_t& transaction,
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON chart object ID space is exhausted");
 
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset = static_cast<std::size_t>(
@@ -576,7 +576,7 @@ auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
                         "BGM marker and retained source event disagree");
     }
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
@@ -851,7 +851,7 @@ auto assign_bmson_sound_event(document_history_t& history,
         return *failure;
     const auto source = std::get<linked_sound_source_t>(source_result);
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart_offset =
         static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
@@ -1228,7 +1228,7 @@ auto insert_bmson_stem_point(document_history_t& history,
     if (const auto* failure = std::get_if<document_command_result_t>(&classified)) return *failure;
     const bool restart = std::get<bool>(classified);
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto& changed = proposed.charts[context.chart_offset];
     auto& changed_channel = *std::ranges::find(changed.sound_channels, channel_id,
                                                  &sound_channel_t::id);
@@ -1367,7 +1367,7 @@ auto insert_bmson_packed_one_shot(document_history_t& history, chart_id_t chart_
         })) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::collision,
                             "Packed BMSON source channel already has a point at this row");
     auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto& changed = proposed.charts[chart_offset];
     std::uint64_t largest{};
     const auto ids_needed = channel == original_chart->sound_channels.end() ? 4U : 2U;
@@ -1571,7 +1571,7 @@ auto commit_packed_stroke_draw(document_command_transaction_t& transaction, cons
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::collision, *message);
     const auto& cells = std::get<std::vector<packed_stroke_cell_t>>(additions);
     if (cells.empty()) return packed_stroke_unchanged(history);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto& changed = proposed.charts[context.chart_offset];
     std::uint64_t largest{};
     if (!allocate_two_ids(changed, largest, cells.size() * 2 + (channel ? 0 : 2)))
@@ -1604,7 +1604,7 @@ auto commit_packed_stroke_erase(document_command_transaction_t& transaction, con
     auto& history = transaction.history;
     std::unordered_set<std::uint64_t> rows;
     for (const auto& cell : context.cells) rows.insert(cell.row);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto& changed = proposed.charts[context.chart_offset];
     std::unordered_set<std::uint64_t> removed_events;
     for (auto& measure : changed.measures)

@@ -735,13 +735,13 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
     -> diagnosed_t<std::optional<std::string>> {
     auto& transaction = scope.transaction();
     const auto& stamp = scope.captured_stamp();
-    if (stamp.document.project != transaction.document().id)
+    if (stamp.document.project != transaction.current_document().id)
         return {.diagnostics = {error(diagnostic_code_t::collision,
             "Clipboard resources belong to another project.")}};
     if (report.objects.empty()) return {};
     if (!transaction.source_chart(stamp.chart))
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(stamp.chart);
     for (auto& object : report.objects) append_paste_object(*chart, std::move(object));
     append_stem_events(*chart, stem_events);

@@ -400,7 +400,7 @@ auto apply_chart_import(document_history_t& history,
         result.command.diagnostics = plan.proposal.diagnostics;
         return result;
     }
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     merge_maps_t maps;
     if (!merge_resources(proposed, source, plan, paths, maps)) {
         result.command = transaction.reject(diagnostic_code_t::invalid_id, "the resource catalog is full");

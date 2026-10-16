@@ -860,9 +860,9 @@ TEST_CASE("SV preparation reads an already staged transaction document",
           "[unit][sv-recipe][proposal-stamp]") {
     auto history = document_history_t::from(make_recipe_song());
     auto transaction = document_command_transaction_t::from(history);
-    CHECK(&transaction.document() == &history.document);
-    auto& staged = transaction.copy_document();
-    CHECK(&transaction.document() == &staged);
+    CHECK(&transaction.current_document() == &history.document);
+    auto& staged = transaction.document();
+    CHECK(&transaction.current_document() == &staged);
     staged.charts.front().sv_recipes.push_back(
         make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {2, 1}));
     const auto applied = apply_sv_recipe_edit(transaction,

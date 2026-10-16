@@ -561,7 +561,7 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
             continue;
         }
         auto scratch_transaction = document_command_transaction_t::from(scratch);
-        auto& proposed = scratch_transaction.copy_document();
+        auto& proposed = scratch_transaction.document();
         auto& proposed_chart = *proposed.find_chart(chart_id);
         if (!convert_bgm_event(proposed_chart, id, lane))
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::collision,

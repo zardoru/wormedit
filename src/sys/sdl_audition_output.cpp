@@ -229,8 +229,8 @@ void sdl_audition_output_t::render_requested(SDL_AudioStream* stream,
         const auto bytes = samples * sizeof(float);
         const auto rendered_outcome = session_.render_frames(std::span{scratch_.data(), samples});
         const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
-        if (rendered.status == audio::session_render_status_t::underrun ||
-            rendered.status == audio::session_render_status_t::transport_failed) {
+        if (rendered.has_failure(failure_code_t::underrun) ||
+            rendered.has_failure(failure_code_t::transport_failed)) {
             callback_failure_.store(sdl_callback_failure_t::render, std::memory_order_release);
             static_cast<void>(session_.stop());
             return;

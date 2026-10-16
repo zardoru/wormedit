@@ -646,15 +646,15 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
     const auto rendered_outcome = session_.render_frames(
         std::span{source_scratch_.data(), count * 2}, output_generation_);
     const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
-    if (rendered.status == audio::session_render_status_t::priming) return 0;
-    if (rendered.status == audio::session_render_status_t::underrun) {
+    if (rendered.is_in_phase(audio::session_render_phase_t::priming)) return 0;
+    if (rendered.has_failure(failure_code_t::underrun)) {
         silenced_voices_.fetch_add(rendered.mix.dropped_voices, std::memory_order_relaxed);
         silenced_music_voices_.fetch_add(rendered.mix.dropped_music_voices, std::memory_order_relaxed);
     }
     if (count > std::numeric_limits<std::uint64_t>::max() - rendered_source_frame_.load(std::memory_order_acquire) ||
-        rendered.status == audio::session_render_status_t::transport_failed ||
-        rendered.status == audio::session_render_status_t::stale_generation ||
-        rendered.status == audio::session_render_status_t::stopped) {
+        rendered.has_failure(failure_code_t::transport_failed) ||
+        rendered.has_failure(failure_code_t::stale_generation) ||
+        rendered.is_in_phase(audio::session_render_phase_t::stopped)) {
         callback_failure_.store(sdl_callback_failure_t::render, std::memory_order_release);
         output_playing_.store(false, std::memory_order_release);
         output_playhead_cleared_.store(true, std::memory_order_release);
@@ -662,7 +662,7 @@ auto sdl_preview_output_t::render_source(std::size_t frames) noexcept -> std::si
         return 0;
     }
     rendered_source_frame_.fetch_add(count, std::memory_order_release);
-    if (rendered.status == audio::session_render_status_t::complete ||
+    if (rendered.is_in_phase(audio::session_render_phase_t::complete) ||
         (!loop_enabled && cursor + count == source_end_frame_))
         source_finished_ = true;
     return count;

@@ -390,7 +390,7 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     std::array<float, 32> stopped{};
     stopped.fill(1.0F);
     const auto silence = session.render_frames(stopped);
-    const bool hard_stop = silence.value().status == session_render_status_t::stopped &&
+    const bool hard_stop = silence.value().is_in_phase(session_render_phase_t::stopped) &&
         std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
     output.close();
     return repeated && hard_stop;
@@ -773,7 +773,7 @@ void exercise_background_refill() {
     std::array<float, 256> silence;
     silence.fill(1.0F);
     const auto rendered = session.render_frames(silence);
-    expect_pitch(rendered.value().status == session_render_status_t::stopped);
+    expect_pitch(rendered.value().is_in_phase(session_render_phase_t::stopped));
     expect_pitch(std::ranges::all_of(silence, [](float value) { return value == 0.0F; }));
 }
 void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std::uint64_t seek) {
@@ -1731,7 +1731,7 @@ auto stale_loop_work_preserves_replacement() -> bool {
     const auto hidden = access::snapshot(fixture.output);
     const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
-        !rendered && rendered.error().status == session_render_status_t::stale_generation &&
+        !rendered && rendered.error().has_failure(failure_code_t::stale_generation) &&
         std::ranges::all_of(samples, [](float sample) { return sample == 0; });
     access::unlock_stream(fixture.output);
     SDL_Delay(30);

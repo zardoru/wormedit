@@ -43,9 +43,9 @@ auto prime_offline_session(preview_session_t& session, preview_session_start_out
                            preview_pump_options_t options) -> preview_session_start_outcome_t {
     if (!started) return started;
     const auto pumped = session.pump_session(options);
-    const auto& effect = pumped ? *pumped : pumped.error();
+    const auto& effect = pumped;
     started->detail.prime = effect.decode;
-    if (!pumped) {
+    if (!pumped.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) {
         return std::unexpected(preview_session_start_error_t{
             .code = failure_code_t::prime_failed,
             .detail = std::move(started->detail),
@@ -71,12 +71,12 @@ auto pump_session(preview_session_t& session, preview_pump_options_t options,
     options.lookahead_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(chunk_frames, end - current));
     const auto pumped = session.pump_session(options);
-    const auto& effect = pumped ? *pumped : pumped.error();
+    const auto& effect = pumped;
     if (effect.materialize) {
         const auto status = materialization_status(*effect.materialize);
         if (status) return status;
     }
-    if (pumped) return std::nullopt;
+    if (pumped.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) return std::nullopt;
     if (effect.decode) {
         const auto& decoded = *effect.decode;
         if (decoded.status == failure_code_t::capacity_exceeded)

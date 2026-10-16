@@ -863,7 +863,8 @@ void exercise_pending_refill_failure() {
     expect_pitch(!session.is_active());
     const auto failed = output.service();
     expect_pitch(failed && !*failed && failed->error().status.has_failure(wormedit::failure_code_t::pump_failed));
-    expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == wormedit::failure_code_t::decode_failed);
+    expect_pitch(failed->error().pump && !failed->error().pump->status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready) && failed->error().pump->status == wormedit::failure_code_t::decode_failed);
     static_cast<void>(output.stop());
 }
 

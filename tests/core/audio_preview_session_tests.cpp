@@ -25,7 +25,7 @@ auto start_primed(wormedit::audio::preview_session_t& session,
     auto result = session.start_session(schedule, objects, metronome, frame, options, end);
     if (result) {
         auto pumped = session.pump_session();
-        auto& effect = pumped ? *pumped : pumped.error();
+        auto& effect = pumped;
         result->detail.prime = std::move(effect.decode);
     }
     return result;
@@ -37,7 +37,7 @@ auto seek_primed(wormedit::audio::preview_session_t& session, std::uint64_t fram
     auto result = session.seek_session(frame, options);
     if (result) {
         auto pumped = session.pump_session();
-        auto& effect = pumped ? *pumped : pumped.error();
+        auto& effect = pumped;
         result->detail.prime = std::move(effect.decode);
     }
     return result;
@@ -192,7 +192,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         return false;
     while (session.timeline_frame() < region.end_frame) {
         const auto pump = session.pump_session({.lookahead_frames = chunk_frames});
-        if (pump.value().status != preview_session_pump_phase_t::ready) return false;
+        if (pump.status != preview_session_pump_phase_t::ready) return false;
         const auto remaining = region.end_frame - session.timeline_frame();
         const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, chunk_frames));
         std::vector<float> block(frames * output_channel_count);
@@ -201,7 +201,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
             return false;
     }
     const auto boundary = session.pump_session({.lookahead_frames = chunk_frames});
-    const auto& boundary_effect = boundary ? *boundary : boundary.error();
+    const auto& boundary_effect = boundary;
     if (boundary_effect.status != preview_session_pump_phase_t::loop_boundary) return false;
     const auto restarted = seek_primed(session, region.begin_frame, {.lookahead_frames = chunk_frames});
     if (!restarted || session.timeline_frame() != region.begin_frame) return false;
@@ -358,7 +358,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     CHECK(session.timeline_frame() == 512);
 
     const auto refilled = session.pump_session({.lookahead_frames = 512});
-    REQUIRE(refilled);
+    REQUIRE(refilled.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready));
     std::vector<float> tail(256 * output_channel_count);
     const auto completed = session.render_frames(tail);
     CHECK(completed.status.is_in_phase(session_render_phase_t::complete));
@@ -550,7 +550,8 @@ TEST_CASE("preview start and rapid seeks defer decoding and prime only the lates
         expect_pending(!fixture.transport.is_current(started.value().token));
     }
     verify_pending_silence(fixture.session, 100);
-    expect_pending(fixture.session.pump_session());
+    expect_pending(fixture.session.pump_session().status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready));
     std::array<float, 64> output;
     const auto rendered = fixture.session.render_frames(output);
     expect_pending(rendered.first_timeline_frame == 100);
@@ -563,7 +564,8 @@ TEST_CASE("Stop cancels pending preview work and external generation changes cle
     pending_preview_fixture_t fixture;
     expect_pending(fixture.session.start_session(fixture.schedule, std::span{&fixture.binding, 1}));
     static_cast<void>(fixture.session.stop());
-    expect_pending(!fixture.session.pump_session());
+    expect_pending(!fixture.session.pump_session().status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready));
     expect_pending(fixture.cache.stats().entries == 0);
     expect_pending(fixture.session.start_session(fixture.schedule, std::span{&fixture.binding, 1}));
     static_cast<void>(fixture.transport.stop());
@@ -599,7 +601,8 @@ struct in_flight_preview_fixture_t {
                     {.object = wormedit::object_id_t{2},
                      .voices = {{.source = source, .source_start_frame = 500, .frame_count = 500}}}};
         expect_pending(session.start_session(schedule, bindings, {}, 0, {.lookahead_frames = 64}));
-        expect_pending(session.pump_session());
+        expect_pending(session.pump_session().status.is_in_phase(
+            ::wormedit::audio::preview_session_pump_phase_t::ready));
     }
 
     auto wait_for_old_materialization() -> bool {
@@ -621,8 +624,7 @@ struct in_flight_preview_fixture_t {
     }
 
     auto supersede_blocked_pump(bool stop) -> bool {
-        wormedit::audio::preview_session_pump_outcome_t old_result =
-            std::unexpected(wormedit::audio::preview_session_pump_effect_t{});
+        wormedit::audio::preview_session_pump_effect_t old_result;
         std::jthread worker, controller;
         std::atomic<bool> finished{};
         bool materialized{}, completed_while_locked{}, control_result{};
@@ -642,8 +644,8 @@ struct in_flight_preview_fixture_t {
         if (worker.joinable()) worker.join();
         if (controller.joinable()) controller.join();
         return gated && materialized && completed_while_locked && control_result &&
-               !old_result &&
-               old_result.error().status == wormedit::failure_code_t::not_started;
+               !old_result.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready) &&
+               old_result.status == wormedit::failure_code_t::not_started;
     }
 
 };
@@ -654,7 +656,8 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     in_flight_preview_fixture_t latest;
     expect_pending(latest.supersede_blocked_pump(false));
     verify_pending_silence(latest.session, 209);
-    expect_pending(latest.session.pump_session());
+    expect_pending(latest.session.pump_session().status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready));
     std::array<float, 64> output;
     const auto mixed = latest.session.render_frames(output);
     expect_pending(mixed.first_timeline_frame == 209);
@@ -662,7 +665,8 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     in_flight_preview_fixture_t stopped;
     expect_pending(stopped.supersede_blocked_pump(true));
     expect_pending(!stopped.session.is_active());
-    expect_pending(!stopped.session.pump_session());
+    expect_pending(!stopped.session.pump_session().status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready));
 }
 
 TEST_CASE("Loop region presence is readable without the session mutex and clears on Stop",

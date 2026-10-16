@@ -48,8 +48,6 @@ struct preview_session_pump_effect_t {
     }
     auto operator==(const preview_session_pump_effect_t&) const -> bool = default;
 };
-using preview_session_pump_outcome_t =
-    result_t<preview_session_pump_effect_t, preview_session_pump_effect_t>;
 
 struct preview_loop_region_t {
     std::uint64_t begin_frame{};
@@ -79,7 +77,7 @@ class preview_session_t {
     [[nodiscard]] auto restart_session_loop(std::uint64_t expected_generation)
         -> preview_session_start_outcome_t;
     [[nodiscard]] auto pump_session(preview_pump_options_t options = {})
-        -> preview_session_pump_outcome_t;
+        -> preview_session_pump_effect_t;
     // Output producers can require their owned generation; stale work emits
     // silence and leaves a replacement session untouched.
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,

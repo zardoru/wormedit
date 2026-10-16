@@ -67,7 +67,7 @@ auto preview_failure_message(const sdl_preview_service_result_t& result) -> cons
     else if (result.status.has_failure(failure_code_t::render_failed))
         return "Chart preview stopped after a realtime mix failure.";
     else if (result.pump) {
-        const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
+        const auto& pumped = *result.pump;
         if (pumped.decode) {
             const auto& decoded = *pumped.decode;
             if (decoded.status == failure_code_t::unavailable)

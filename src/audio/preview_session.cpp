@@ -113,17 +113,17 @@ auto preview_session_t::prime_started(preview_bridge_start_outcome_t started,
 }
 
 auto preview_session_t::pump_session(preview_pump_options_t options)
-    -> preview_session_pump_outcome_t {
+    -> preview_session_pump_effect_t {
     std::optional<session_token_t> token;
     std::uint64_t timeline_frame{};
     preview_session_pump_effect_t result;
     {
         const std::scoped_lock lock(mutex_);
         if (!token_.has_value())
-            return std::unexpected(std::move(result));
+            return result;
         if (loop_region_ && timeline_frame_ >= loop_region_->end_frame) {
             result.status = preview_session_pump_phase_t::loop_boundary;
-            return std::unexpected(std::move(result));
+            return result;
         }
         token = token_;
         timeline_frame = timeline_frame_;
@@ -132,27 +132,27 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
         const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
         if (!window_end.has_value()) {
             result.status = failure_code_t::invalid_request;
-            return std::unexpected(std::move(result));
+            return result;
         }
         result.materialize = bridge_.materialize_preview(*window_end, timeline_frame);
         const auto& materialized = *result.materialize;
         const auto& materialized_effect = materialized;
         if (!is_materialize_succeeded(materialized_effect.status)) {
             result.status = failure_code_t::materialize_failed;
-            return std::unexpected(std::move(result));
+            return result;
         }
     }
     result.decode = pump_preview_blocks(sources_, transport_, *token, timeline_frame, options);
     {
         const std::scoped_lock lock(mutex_);
         if (token_ != token)
-            return std::unexpected(preview_session_pump_effect_t{});
+            return preview_session_pump_effect_t{};
         if (result.has_ready_decode())
             prime_pending_ = false;
     }
     if (!result.has_ready_decode()) {
         result.status = failure_code_t::decode_failed;
-        return std::unexpected(std::move(result));
+        return result;
     }
     result.status = preview_session_pump_phase_t::ready;
     return result;

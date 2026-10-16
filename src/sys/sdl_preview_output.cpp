@@ -102,7 +102,7 @@ void sdl_preview_output_t::set_refill_enabled(bool enabled) noexcept {
 }
 
 auto sdl_preview_output_t::take_refill_result()
-    -> std::optional<audio::preview_session_pump_outcome_t> {
+    -> std::optional<audio::preview_session_pump_effect_t> {
     const std::scoped_lock lock(refill_mutex_);
     return std::exchange(refill_result_, std::nullopt);
 }
@@ -115,21 +115,19 @@ void sdl_preview_output_t::refill_loop(std::stop_token stop) {
         if (stop.stop_requested()) return;
         const auto generation = refill_generation_.load(std::memory_order_acquire);
         lock.unlock();
-        audio::preview_session_pump_outcome_t result =
-            std::unexpected(audio::preview_session_pump_effect_t{});
+        audio::preview_session_pump_effect_t result;
         try {
             result = session_.pump_session();
             if (loop_enabled_.load(std::memory_order_acquire) && playing())
                 result = refill_loop_output(generation, std::move(result));
         } catch (...) {
-            auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = failure_code_t::decode_failed;
-            result = std::unexpected(std::move(failed));
+            result.status = failure_code_t::decode_failed;
         }
         lock.lock();
         if (generation == refill_generation_ && refill_enabled_ &&
-            (!refill_result_ || static_cast<bool>(*refill_result_))) {
-            const auto& effect = result ? *result : result.error();
+            (!refill_result_ || refill_result_->status.is_in_phase(
+                ::wormedit::audio::preview_session_pump_phase_t::ready))) {
+            const auto& effect = result;
             if (effect.status == failure_code_t::not_started)
                 refill_enabled_ = false;
             refill_result_ = std::move(result);
@@ -183,22 +181,22 @@ auto sdl_preview_output_t::fill_loop_queue(std::uint64_t generation) -> bool {
 }
 
 auto sdl_preview_output_t::refill_loop_output(std::uint64_t generation,
-    audio::preview_session_pump_outcome_t result) -> audio::preview_session_pump_outcome_t {
-    if (!result && result.error().status != audio::preview_session_pump_phase_t::loop_boundary) return result;
+    audio::preview_session_pump_effect_t result) -> audio::preview_session_pump_effect_t {
+    if (!result.status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready) && result.status != audio::preview_session_pump_phase_t::loop_boundary) return result;
     const auto expected = output_playhead_.read().generation;
     while (fill_loop_queue(generation)) {
         const auto restarted = session_.restart_session_loop(expected);
         if (!restarted) {
-            auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = failure_code_t::materialize_failed;
-            return std::unexpected(std::move(failed));
+            result.status = failure_code_t::materialize_failed;
+            return result;
         }
         result = session_.pump_session();
-        if (!result) return result;
+        if (!result.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) return result;
     }
-    if (!result && result.error().status == audio::preview_session_pump_phase_t::loop_boundary) {
-        result.error().status = audio::preview_session_pump_phase_t::ready;
-        return std::move(result.error());
+    if (result.status == audio::preview_session_pump_phase_t::loop_boundary) {
+        result.status = audio::preview_session_pump_phase_t::ready;
+        return result;
     }
     return result;
 }
@@ -425,12 +423,12 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_outcom
 }
 
 auto sdl_preview_output_t::service_refill_result(
-    std::optional<audio::preview_session_pump_outcome_t> pumped,
+    std::optional<audio::preview_session_pump_effect_t> pumped,
     bool rate_unavailable, std::uint64_t silenced_voices,
     std::uint64_t silenced_music_voices)
     -> std::optional<sdl_preview_service_outcome_t> {
     if (pumped) {
-        const auto& effect = *pumped ? pumped->value() : pumped->error();
+        const auto& effect = *pumped;
         if (effect.status == failure_code_t::not_started)
             pumped.reset();
     }
@@ -442,7 +440,7 @@ auto sdl_preview_output_t::service_refill_result(
                               .silenced_music_voices = silenced_music_voices}};
         return std::nullopt;
     }
-    const auto& effect = *pumped ? pumped->value() : pumped->error();
+    const auto& effect = *pumped;
     if (effect.decode) {
         const auto& decoded = *effect.decode;
         if (decoded.status == failure_code_t::stale_generation)
@@ -454,7 +452,7 @@ auto sdl_preview_output_t::service_refill_result(
                       .silenced_voices = silenced_voices,
                       .silenced_music_voices = silenced_music_voices},
     };
-    if (!*result.pump) {
+    if (!result.pump->status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) {
         result.status = failure_code_t::pump_failed;
         return std::unexpected(std::move(result));
     }

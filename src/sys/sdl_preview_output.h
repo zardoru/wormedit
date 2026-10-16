@@ -29,10 +29,10 @@ struct preview_output_telemetry_t {
     std::uint64_t silenced_music_voices{};
 };
 using sdl_preview_service_result_t =
-    sdl_session_service_result_t<audio::preview_session_pump_outcome_t, preview_output_telemetry_t>;
+    sdl_session_service_result_t<audio::preview_session_pump_effect_t, preview_output_telemetry_t>;
 // Temporary: removed by T-633.
 using sdl_preview_service_outcome_t =
-    sdl_session_service_outcome_t<audio::preview_session_pump_outcome_t, preview_output_telemetry_t>;
+    sdl_session_service_outcome_t<audio::preview_session_pump_effect_t, preview_output_telemetry_t>;
 
 // SDL3 output for an owned chart-preview timeline. The stream lock serializes
 // rendering with start/seek/Stop. The refill worker decodes and queues loop PCM
@@ -91,7 +91,7 @@ class sdl_preview_output_t {
     [[nodiscard]] auto resume_device() noexcept -> bool;
     [[nodiscard]] auto finish_start(sdl_preview_start_result_t::value_type result) -> sdl_preview_start_result_t;
     [[nodiscard]] auto service_refill_result(
-        std::optional<audio::preview_session_pump_outcome_t> pumped,
+        std::optional<audio::preview_session_pump_effect_t> pumped,
         bool rate_unavailable, std::uint64_t silenced_voices,
         std::uint64_t silenced_music_voices)
         -> std::optional<sdl_preview_service_outcome_t>;
@@ -107,12 +107,12 @@ class sdl_preview_output_t {
 
     void refill_loop(std::stop_token stop);
     [[nodiscard]] auto refill_loop_output(std::uint64_t generation,
-        audio::preview_session_pump_outcome_t result) -> audio::preview_session_pump_outcome_t;
+        audio::preview_session_pump_effect_t result) -> audio::preview_session_pump_effect_t;
     [[nodiscard]] auto fill_loop_queue(std::uint64_t generation) -> bool;
     [[nodiscard]] auto loop_queue_target_bytes() const noexcept -> std::uint64_t;
     [[nodiscard]] auto set_loop_output_region(std::optional<audio::preview_loop_region_t> region) -> bool;
     void set_refill_enabled(bool enabled) noexcept;
-    [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_outcome_t>;
+    [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_effect_t>;
 
     static constexpr std::size_t callback_frames = 4'096;
     audio::preview_session_t& session_;
@@ -126,7 +126,7 @@ class sdl_preview_output_t {
     std::atomic<std::uint64_t> refill_generation_{};
     std::atomic<bool> refill_requested_{};
     bool refill_enabled_{};
-    std::optional<audio::preview_session_pump_outcome_t> refill_result_;
+    std::optional<audio::preview_session_pump_effect_t> refill_result_;
     SDL_AudioStream* stream_{};
     std::atomic<sdl_callback_failure_t> callback_failure_{std::nullopt};
     std::atomic<std::uint64_t> silenced_voices_{};

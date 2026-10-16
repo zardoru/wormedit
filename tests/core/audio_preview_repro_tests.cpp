@@ -90,8 +90,8 @@ auto percentile(std::vector<double> values, double fraction) -> double {
     return values[std::min(index, values.size() - 1)];
 }
 
-void print_pump(const preview_session_pump_outcome_t& pumped, double elapsed_ms) {
-    const auto& effect = pumped ? *pumped : pumped.error();
+void print_pump(const preview_session_pump_effect_t& pumped, double elapsed_ms) {
+    const auto& effect = pumped;
     std::cout << "pump status=" << pump_status(effect.status);
     if (effect.decode) {
         const auto& decoded = *effect.decode;
@@ -121,11 +121,11 @@ struct render_result_t {
 
 auto render_elapsed(preview_session_t& session, std::span<float> scratch,
                     std::uint64_t frames_to_render, const timing_index_t& timing,
-                    const measure_index_t& measures, const preview_session_pump_outcome_t& pumped,
+                    const measure_index_t& measures, const preview_session_pump_effect_t& pumped,
                     double wall_ms) -> render_result_t {
     constexpr std::size_t callback_frames = 4'096;
     render_result_t result;
-    const auto& pump_effect = pumped ? *pumped : pumped.error();
+    const auto& pump_effect = pumped;
     std::size_t active_voices{};
     if (pump_effect.decode) {
         const auto& decoded = *pump_effect.decode;
@@ -168,9 +168,9 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
     return result;
 }
 
-void report_pump_failure(const preview_session_pump_outcome_t& pumped, double wall_ms,
+void report_pump_failure(const preview_session_pump_effect_t& pumped, double wall_ms,
                          std::size_t iteration) {
-    if (pumped) return;
+    if (pumped.status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) return;
     std::cout << "PUMP_FAILURE iteration=" << iteration << " ";
     print_pump(pumped, wall_ms);
     std::cout << '\n';

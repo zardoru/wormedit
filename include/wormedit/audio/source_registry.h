@@ -41,20 +41,9 @@ struct generated_source_registration_t {
     std::vector<float> interleaved_stereo;
 };
 
-enum class source_registration_status_t {
-    registered,
-    invalid_request,
-    duplicate_asset,
-    duplicate_source,
-    capacity_exceeded,
-    open_failed,
-    // create_pending_source() accepted the source; its geometry is not probed yet.
-    pending,
-};
-
 using source_registration_outcome_t =
-    result_t<decoded_source_binding_t, error_t<source_registration_status_t>>;
-using pending_source_registration_outcome_t = result_t<void, error_t<source_registration_status_t>>;
+    result_t<decoded_source_binding_t, error_t<failure_code_t>>;
+using pending_source_registration_outcome_t = result_t<void, error_t<failure_code_t>>;
 
 // One failed geometry probe, reported once through take_probe_failures().
 struct source_probe_failure_t {

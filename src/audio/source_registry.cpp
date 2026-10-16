@@ -84,8 +84,8 @@ auto decoded_source_registry_t::settled_registration(const std::shared_ptr<entry
         return source_registration_outcome_t{entry->binding};
     }
     if (entry->state == probe_state_t::failed) {
-        return source_registration_outcome_t{std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::open_failed, entry->failure})};
+        return source_registration_outcome_t{std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed, entry->failure})};
     }
     return std::nullopt;
 }
@@ -97,18 +97,18 @@ auto decoded_source_registry_t::add_entry(std::shared_ptr<entry_t> candidate)
             return !entry->generated && entry->asset == candidate->asset;
         })) {
         return std::unexpected(
-            error_t<source_registration_status_t>{source_registration_status_t::duplicate_asset,
+            error_t<failure_code_t>{failure_code_t::conflict,
                                                   "audio asset already has a decoded source"});
     }
     if (std::ranges::any_of(
             entries_, [&](const auto& entry) { return entry->source == candidate->source; })) {
         return std::unexpected(
-            error_t<source_registration_status_t>{source_registration_status_t::duplicate_source,
+            error_t<failure_code_t>{failure_code_t::conflict,
                                                   "decoded source identity is already registered"});
     }
     if (entries_.size() >= maximum_sources_) {
         return std::unexpected(
-            error_t<source_registration_status_t>{source_registration_status_t::capacity_exceeded,
+            error_t<failure_code_t>{failure_code_t::capacity_exceeded,
                                                   "decoded source registry capacity is exhausted"});
     }
     entries_.push_back(std::move(candidate));
@@ -119,7 +119,7 @@ auto decoded_source_registry_t::create_pending_source(decoded_source_registratio
     -> pending_source_registration_outcome_t {
     if (!registration.asset || registration.path.empty() || !is_valid_source(registration.source)) {
         return std::unexpected(
-            error_t<source_registration_status_t>{source_registration_status_t::invalid_request,
+            error_t<failure_code_t>{failure_code_t::invalid_request,
                                                   "decoded source registration is incomplete"});
     }
     auto candidate = std::make_shared<entry_t>();
@@ -145,8 +145,8 @@ auto decoded_source_registry_t::create_source(decoded_source_registration_t regi
         const auto found = std::ranges::find_if(
             entries_, [&](const auto& candidate) { return candidate->source == source; });
         if (found == entries_.end()) {
-            return std::unexpected(error_t<source_registration_status_t>{
-                source_registration_status_t::invalid_request,
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::invalid_request,
                 "audio source was removed during registration"});
         }
         entry = *found;
@@ -190,8 +190,8 @@ auto decoded_source_registry_t::probe_entry(const std::shared_ptr<entry_t>& entr
         if (report_failure && std::ranges::find(entries_, entry) != entries_.end()) {
             probe_failures_.push_back({entry->asset, entry->path, message});
         }
-        return std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::open_failed, std::move(message)});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed, std::move(message)});
     }
     const std::scoped_lock lock(mutex_);
     entry->binding = {
@@ -214,8 +214,8 @@ auto decoded_source_registry_t::open_source_binding(asset_id_t asset)
     -> source_registration_outcome_t {
     const auto entry = asset ? find_entry(asset) : nullptr;
     if (!entry) {
-        return std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::invalid_request, "audio asset is not registered"});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, "audio asset is not registered"});
     }
     return probe_entry(entry);
 }
@@ -357,20 +357,20 @@ auto decoded_source_registry_t::create_generated_source(
     generated_source_registration_t registration) -> source_registration_outcome_t {
     if (!is_valid_source(registration.source) || registration.interleaved_stereo.empty() ||
         registration.interleaved_stereo.size() % output_channel_count != 0) {
-        return std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "generated decoded source registration is incomplete"});
     }
     auto candidate = std::make_shared<entry_t>();
     std::string message;
     if (!candidate->decoder.open_pcm(registration.interleaved_stereo, &message)) {
-        return std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::open_failed, std::move(message)});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed, std::move(message)});
     }
     const auto info = candidate->decoder.info();
     if (!info.has_value()) {
-        return std::unexpected(error_t<source_registration_status_t>{
-            source_registration_status_t::open_failed,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed,
             "generated decoded source metadata is unavailable"});
     }
     candidate->generated = true;

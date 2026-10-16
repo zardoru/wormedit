@@ -25,6 +25,13 @@ auto registration(wormedit::asset_id_t asset, std::string_view name)
             .source = {"fixture:" + std::string(name), "generated-v1:" + std::string(name)}};
 }
 
+void check_registration_conflict(const wormedit::audio::source_registration_outcome_t& outcome,
+                                 std::string_view message) {
+    REQUIRE_FALSE(outcome);
+    CHECK(outcome.error().code == wormedit::failure_code_t::conflict);
+    CHECK(outcome.error().message == message);
+}
+
 } // namespace
 
 TEST_CASE("decoded source registry exposes authoritative geometry and exact identity decoding",
@@ -69,11 +76,11 @@ TEST_CASE("decoded source registry rejects malformed duplicate and over-cap regi
           "[unit][audio][source-registry][bounds]") {
     using namespace wormedit::audio;
     decoded_source_registry_t registry{1};
-    CHECK(registry.create_source({}).error().code == source_registration_status_t::invalid_request);
+    CHECK(registry.create_source({}).error().code == wormedit::failure_code_t::invalid_request);
 
     auto missing = registration(wormedit::asset_id_t{1}, "does-not-exist.ogg");
     CHECK(registry.create_source(std::move(missing)).error().code ==
-          source_registration_status_t::open_failed);
+          wormedit::failure_code_t::io_failed);
     CHECK(registry.size() == 0);
 
     const auto first =
@@ -81,17 +88,17 @@ TEST_CASE("decoded source registry rejects malformed duplicate and over-cap regi
     REQUIRE(first);
 
     auto duplicate_asset = registration(wormedit::asset_id_t{1}, "keysound-e4.ogg");
-    CHECK(registry.create_source(std::move(duplicate_asset)).error().code ==
-          source_registration_status_t::duplicate_asset);
+    check_registration_conflict(registry.create_source(std::move(duplicate_asset)),
+                                "audio asset already has a decoded source");
 
     auto duplicate_source = registration(wormedit::asset_id_t{2}, "keysound-g4.ogg");
     duplicate_source.source = first->source;
-    CHECK(registry.create_source(std::move(duplicate_source)).error().code ==
-          source_registration_status_t::duplicate_source);
+    check_registration_conflict(registry.create_source(std::move(duplicate_source)),
+                                "decoded source identity is already registered");
 
     CHECK(
         registry.create_source(registration(wormedit::asset_id_t{2}, "keysound-g4.ogg")).error().code ==
-        source_registration_status_t::capacity_exceeded);
+        wormedit::failure_code_t::capacity_exceeded);
     CHECK(registry.size() == 1);
     registry.clear();
     CHECK(registry.size() == 0);
@@ -164,7 +171,7 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
     CHECK(
         registry
             .create_generated_source({.source = added->source, .interleaved_stereo = pcm})
-            .error().code == source_registration_status_t::duplicate_source);
+            .error().code == wormedit::failure_code_t::conflict);
 }
 
 TEST_CASE("decoded source registry retains project decoders for waveform analysis",
@@ -211,7 +218,7 @@ void check_pending_inventory(wormedit::audio::decoded_source_registry_t& registr
     CHECK_FALSE(registry.binding(wormedit::asset_id_t{1}));
 
     CHECK(registry.create_pending_source(pending_registration(1)).error().code ==
-          source_registration_status_t::duplicate_asset);
+          wormedit::failure_code_t::conflict);
 
 }
 } // namespace
@@ -248,7 +255,7 @@ namespace {
 void check_failure_is_reported_once(wormedit::audio::decoded_source_registry_t& registry) {
     using namespace wormedit::audio;
     CHECK(registry.take_probe_failures().empty());
-    CHECK(registry.open_source_binding(wormedit::asset_id_t{2}).error().code == source_registration_status_t::open_failed);
+    CHECK(registry.open_source_binding(wormedit::asset_id_t{2}).error().code == wormedit::failure_code_t::io_failed);
     CHECK(registry.take_probe_failures().empty());
 }
 void check_failure_queue(wormedit::audio::decoded_source_registry_t& registry) {

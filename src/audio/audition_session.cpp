@@ -77,8 +77,7 @@ auto audition_session_t::render_frames(std::span<float> interleaved_stereo)
     if (prime_pending_)
         return session_render_effect_t::from(session_render_phase_t::priming,
                                                       first_frame);
-    const auto mixed_outcome = transport_.mix_frames(*token_, first_frame, interleaved_stereo);
-    const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
+    const auto mixed = transport_.mix_frames(*token_, first_frame, interleaved_stereo);
     if (mixed.status.has_failure(failure_code_t::stale_generation)) {
         clear_state();
         return session_render_effect_t::from(

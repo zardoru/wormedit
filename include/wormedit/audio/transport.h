@@ -47,8 +47,6 @@ using active_voice_snapshot_outcome_t =
     result_t<std::vector<transport_voice_t>, failure_code_t>;
 
 struct transport_mix_result_t {
-    [[nodiscard]] static auto from(transport_mix_result_t&& report)
-        -> result_t<transport_mix_result_t, transport_mix_result_t>;
     operation_state_t<std::monostate> status{failure_code_t::stale_generation};
     std::size_t frames{};
     std::size_t voices_mixed{};
@@ -59,7 +57,6 @@ struct transport_mix_result_t {
     auto operator==(const transport_mix_result_t&) const -> bool = default;
 };
 static_assert(std::is_trivially_copyable_v<transport_mix_result_t>);
-using transport_mix_outcome_t = result_t<transport_mix_result_t, transport_mix_result_t>;
 
 struct transport_stop_result_t {
     std::size_t scheduled_voices{};
@@ -109,7 +106,7 @@ class transport_t {
                                        std::span<const transport_voice_t> voices)
         -> operation_state_t<std::monostate>;
     [[nodiscard]] auto mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
-                                 std::span<float> interleaved_stereo) -> transport_mix_outcome_t;
+                                 std::span<float> interleaved_stereo) -> transport_mix_result_t;
 
     // Control-thread snapshot for bounded decoder lookahead. Realtime mixing
     // never calls this allocating API.

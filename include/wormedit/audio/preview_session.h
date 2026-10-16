@@ -134,7 +134,7 @@ class preview_session_t {
         -> preview_session_start_outcome_t;
     [[nodiscard]] auto mix_render_frames(std::uint64_t first_frame,
                                          std::span<float> interleaved_stereo)
-        -> transport_mix_outcome_t;
+        -> transport_mix_result_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
 

@@ -173,8 +173,8 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     for (std::size_t frame = 0; frame < maximum_read_frames; frame += render_chunk_frames) {
         const auto mixed = transport.mix_frames(*token, frame, chunk);
         INFO("render chunk starts at frame " << frame);
-        CHECK(mixed.value().status == std::monostate{});
-        CHECK(mixed.value().missing_blocks == 0);
+        CHECK(mixed.status == std::monostate{});
+        CHECK(mixed.missing_blocks == 0);
     }
 }
 

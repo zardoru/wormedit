@@ -130,7 +130,7 @@ TEST_CASE("the mixer reads resident samples and prefers them over the block cach
             std::monostate{});
     std::vector<float> output(sample_frames * output_channel_count);
     const auto mixed = transport.mix_frames(*token, 0, output);
-    CHECK(mixed.value().missing_blocks == 0);
+    CHECK(mixed.missing_blocks == 0);
     const auto pcm = make_pcm(sample_frames, 0.25F);
     for (std::size_t index = 0; index < output.size(); ++index) {
         REQUIRE(output[index] == std::clamp(pcm[index] * 0.5F, -1.0F, 1.0F));

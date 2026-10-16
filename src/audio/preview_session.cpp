@@ -160,9 +160,9 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
 
 auto preview_session_t::mix_render_frames(std::uint64_t first_frame,
                                            std::span<float> interleaved_stereo)
-    -> transport_mix_outcome_t {
+    -> transport_mix_result_t {
     if (loop_region_ && first_frame >= loop_region_->end_frame)
-        return transport_mix_result_t::from({.status = std::monostate{}});
+        return {.status = std::monostate{}};
     auto render_samples = interleaved_stereo;
     if (loop_region_) {
         const auto remaining_frames = loop_region_->end_frame - first_frame;
@@ -206,8 +206,7 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
         return session_render_effect_t::from(session_render_phase_t::priming,
                                                      first_frame);
     }
-    const auto mixed_outcome = mix_render_frames(first_frame, interleaved_stereo);
-    const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
+    const auto mixed = mix_render_frames(first_frame, interleaved_stereo);
     if (mixed.status.has_failure(failure_code_t::stale_generation)) {
         clear_state();
         return session_render_effect_t::from(

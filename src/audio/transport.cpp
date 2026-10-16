@@ -201,12 +201,6 @@ struct transport_t::snapshot_operation_t {
     }
 };
 
-auto transport_mix_result_t::from(transport_mix_result_t&& report) -> transport_mix_outcome_t {
-    if (report.status.has_failure())
-        return std::unexpected(std::move(report));
-    return std::move(report);
-}
-
 transport_t::transport_t(decoded_block_cache_t& block_cache, std::size_t maximum_scheduled_voices)
     : block_cache_(block_cache),
       decode_session_(std::max<std::size_t>(maximum_scheduled_voices, 1)),
@@ -364,16 +358,14 @@ auto transport_t::schedule_voices(session_token_t token, std::span<const transpo
 }
 
 auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
-                             std::span<float> interleaved_stereo) -> transport_mix_outcome_t {
+                             std::span<float> interleaved_stereo) -> transport_mix_result_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     if (interleaved_stereo.size() % output_channel_count != 0) {
-        return std::unexpected(
-            transport_mix_result_t{.status = failure_code_t::invalid_request});
+        return {.status = failure_code_t::invalid_request};
     }
     const auto frame_count = interleaved_stereo.size() / output_channel_count;
     if (frame_count > std::numeric_limits<std::uint64_t>::max() - first_timeline_frame) {
-        return std::unexpected(
-            transport_mix_result_t{.status = failure_code_t::arithmetic_overflow});
+        return {.status = failure_code_t::arithmetic_overflow};
     }
     transport_mix_result_t result{
         .status = failure_code_t::stale_generation,
@@ -395,7 +387,7 @@ auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline
         result.dropped_music_voices = 0;
         result.clipped_samples = 0;
     }
-    return transport_mix_result_t::from(std::move(result));
+    return result;
 }
 
 auto transport_t::scheduled_voice_count() const -> std::size_t {

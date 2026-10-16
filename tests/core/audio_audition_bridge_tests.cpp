@@ -41,9 +41,9 @@ TEST_CASE("audition bridge mixes exact source ranges and simultaneous layers",
     CHECK(started.value().scheduled_layers == 2);
     std::array<float, 8> output{};
     const auto mixed = transport.mix_frames(started.value().token, 0, output);
-    CHECK(mixed.value().status == std::monostate{});
-    CHECK(mixed.value().voices_mixed == 2);
-    CHECK(mixed.value().missing_blocks == 0);
+    CHECK(mixed.status == std::monostate{});
+    CHECK(mixed.voices_mixed == 2);
+    CHECK(mixed.missing_blocks == 0);
     for (const auto sample : output) {
         CHECK(sample == Catch::Approx(0.5F));
     }

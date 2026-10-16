@@ -149,10 +149,10 @@ struct transport_t::mix_operation_t {
         const std::scoped_lock lock(owner.mutex_);
         if (owner.next_timeline_frame_.has_value() &&
             first_timeline_frame < *owner.next_timeline_frame_) {
-            result.status = transport_mix_status_t::non_monotonic_callback;
+            result.status = failure_code_t::invalid_state;
             return;
         }
-        result.status = transport_mix_status_t::mixed;
+        result.status = std::monostate{};
         transport_mix_context_t context{owner.block_cache_,   owner.resident_.get(),
                                         first_timeline_frame, callback_end,
                                         interleaved_stereo,   result};
@@ -189,7 +189,7 @@ struct transport_t::snapshot_operation_t {
     void operator()() {
         const std::scoped_lock lock(owner.mutex_);
         if (owner.active_scheduled_voices_ > maximum_voices) {
-            result = std::unexpected(active_voice_snapshot_status_t::capacity_exceeded);
+            result = std::unexpected(failure_code_t::capacity_exceeded);
             return;
         }
         auto& voices = result.emplace();
@@ -202,7 +202,7 @@ struct transport_t::snapshot_operation_t {
 };
 
 auto transport_mix_result_t::from(transport_mix_result_t&& report) -> transport_mix_outcome_t {
-    if (report.status != transport_mix_status_t::mixed)
+    if (report.status.has_failure())
         return std::unexpected(std::move(report));
     return std::move(report);
 }
@@ -318,23 +318,23 @@ auto transport_t::resident_block_hit(session_token_t token, const audio_block_ke
 }
 
 auto transport_t::schedule_voice(session_token_t token, transport_voice_t voice)
-    -> voice_schedule_status_t {
+    -> operation_state_t<std::monostate> {
     return schedule_voices(token, std::span<const transport_voice_t>{&voice, 1});
 }
 
 auto transport_t::schedule_voices(session_token_t token, std::span<const transport_voice_t> voices)
-    -> voice_schedule_status_t {
+    -> operation_state_t<std::monostate> {
     if (voices.empty() || !std::ranges::all_of(voices, is_valid_voice)) {
-        return voice_schedule_status_t::invalid_voice;
+        return failure_code_t::invalid_request;
     }
     for (std::size_t index = 0; index < voices.size(); ++index) {
         if (std::ranges::any_of(voices.subspan(index + 1), [&](const auto& candidate) {
                 return candidate.id == voices[index].id;
             })) {
-            return voice_schedule_status_t::duplicate_id;
+            return failure_code_t::conflict;
         }
     }
-    auto status = voice_schedule_status_t::stale_generation;
+    operation_state_t<std::monostate> status{failure_code_t::stale_generation};
     const auto current = decode_session_.with_current(token, [&] {
         const std::scoped_lock lock(mutex_);
         if (std::ranges::any_of(voices, [&](const auto& voice) {
@@ -342,9 +342,9 @@ auto transport_t::schedule_voices(session_token_t token, std::span<const transpo
                     return entry.active && entry.voice.id == voice.id;
                 });
             })) {
-            status = voice_schedule_status_t::duplicate_id;
+            status = failure_code_t::conflict;
         } else if (voices.size() > maximum_scheduled_voices_ - active_scheduled_voices_) {
-            status = voice_schedule_status_t::capacity_exceeded;
+            status = failure_code_t::capacity_exceeded;
         } else {
             for (const auto& voice : voices) {
                 const auto reusable = std::ranges::find_if(
@@ -357,10 +357,10 @@ auto transport_t::schedule_voices(session_token_t token, std::span<const transpo
                 }
             }
             active_scheduled_voices_ += voices.size();
-            status = voice_schedule_status_t::scheduled;
+            status = std::monostate{};
         }
     });
-    return current ? status : voice_schedule_status_t::stale_generation;
+    return current ? status : failure_code_t::stale_generation;
 }
 
 auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
@@ -368,15 +368,15 @@ auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline
     std::ranges::fill(interleaved_stereo, 0.0F);
     if (interleaved_stereo.size() % output_channel_count != 0) {
         return std::unexpected(
-            transport_mix_result_t{.status = transport_mix_status_t::invalid_buffer});
+            transport_mix_result_t{.status = failure_code_t::invalid_request});
     }
     const auto frame_count = interleaved_stereo.size() / output_channel_count;
     if (frame_count > std::numeric_limits<std::uint64_t>::max() - first_timeline_frame) {
         return std::unexpected(
-            transport_mix_result_t{.status = transport_mix_status_t::timeline_overflow});
+            transport_mix_result_t{.status = failure_code_t::arithmetic_overflow});
     }
     transport_mix_result_t result{
-        .status = transport_mix_status_t::stale_generation,
+        .status = failure_code_t::stale_generation,
         .frames = frame_count,
     };
     const auto callback_end = first_timeline_frame + frame_count;
@@ -388,7 +388,7 @@ auto transport_t::mix_frames(session_token_t token, std::uint64_t first_timeline
     const auto current = decode_session_.with_current(token, operation);
     if (!current) {
         std::ranges::fill(interleaved_stereo, 0.0F);
-        result.status = transport_mix_status_t::stale_generation;
+        result.status = failure_code_t::stale_generation;
         result.voices_mixed = 0;
         result.missing_blocks = 0;
         result.dropped_voices = 0;
@@ -410,11 +410,11 @@ auto transport_t::block_cache_limits() const noexcept -> block_cache_limits_t {
 auto transport_t::snapshot_voices(session_token_t token, std::size_t maximum_voices)
     -> active_voice_snapshot_outcome_t {
     active_voice_snapshot_outcome_t result{
-        std::unexpected(active_voice_snapshot_status_t::stale_generation)};
+        std::unexpected(failure_code_t::stale_generation)};
     snapshot_operation_t operation{
         .owner = *this, .maximum_voices = maximum_voices, .result = result};
     if (!decode_session_.with_current(token, operation))
-        result = std::unexpected(active_voice_snapshot_status_t::stale_generation);
+        result = std::unexpected(failure_code_t::stale_generation);
     return result;
 }
 

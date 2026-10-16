@@ -92,7 +92,7 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
         const auto& effect = pumped ? *pumped : pumped.error();
         scheduled += effect.scheduled_events;
         const auto mixed = transport.mix_frames(started.value(), frame, output);
-        REQUIRE(mixed.value().status == transport_mix_status_t::mixed);
+        REQUIRE(mixed.value().status == std::monostate{});
         CHECK((effect.status == preview_bridge_pump_status_t::ready ||
                effect.status == preview_bridge_pump_status_t::capacity_limited));
     }
@@ -133,7 +133,7 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
 
     std::array<float, 64 * output_channel_count> output{};
     const auto mixed = transport.mix_frames(started.value(), 0, output);
-    CHECK(mixed.value().status == transport_mix_status_t::mixed);
+    CHECK(mixed.value().status == std::monostate{});
     CHECK(mixed.value().voices_mixed == 6);
     CHECK(mixed.value().missing_blocks == 0);
     CHECK(transport.scheduled_voice_count() == 0);
@@ -229,7 +229,7 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     const auto stale_mix = transport.mix_frames(first.value(), 20, stale_output);
     require_audio_condition(!stale_mix);
     check_audio_condition(stale_mix.error().status ==
-          transport_mix_status_t::stale_generation);
+          wormedit::failure_code_t::stale_generation);
     check_audio_condition(stale_output[0] == 0.0F);
 
     const auto restarted = bridge.seek_preview(0);
@@ -242,7 +242,7 @@ TEST_CASE("preview bridge seeks and restarts with fresh session generations",
     const auto stopped_mix = transport.mix_frames(restarted.value(), 0, stopped_output);
     require_audio_condition(!stopped_mix);
     check_audio_condition(stopped_mix.error().status ==
-          transport_mix_status_t::stale_generation);
+          wormedit::failure_code_t::stale_generation);
     check_audio_condition(std::ranges::all_of(stopped_output, [](float sample) { return sample == 0.0F; }));
 }
 
@@ -268,7 +268,7 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
     const auto stopped_mix = transport.mix_frames(started.value(), 0, output);
     require_audio_condition(!stopped_mix);
     CHECK(stopped_mix.error().status ==
-          transport_mix_status_t::stale_generation);
+          wormedit::failure_code_t::stale_generation);
     CHECK(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 
     const auto new_session = bridge.start_preview(chart, objects);
@@ -324,7 +324,7 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
     CHECK(initial.error().scheduled_events == 2);
     CHECK(transport.scheduled_voice_count() == 2);
     std::array<float, 8> output{};
-    REQUIRE(transport.mix_frames(started.value(), 0, output).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(started.value(), 0, output).value().status == std::monostate{});
     const auto resumed = bridge.materialize_preview(11);
     CHECK(resumed.value().status == preview_bridge_pump_status_t::ready);
     CHECK(resumed.value().scheduled_events == 1);
@@ -440,13 +440,13 @@ TEST_CASE("preview bridge volume scales chart and assist clicks through one clic
     REQUIRE(started);
     REQUIRE(bridge.materialize_preview(32).value().scheduled_events == 1);
     std::array<float, 16> chart_mix{};
-    REQUIRE(transport.mix_frames(started.value(), 0, chart_mix).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(started.value(), 0, chart_mix).value().status == std::monostate{});
     CHECK(chart_mix.front() == 0.125F);
 
     REQUIRE(bridge.set_assist_grid(true, assist_grid(32.0), 32));
     REQUIRE(bridge.materialize_preview(96, 32).value().scheduled_events == 1);
     std::array<float, 16> assist_mix{};
-    REQUIRE(transport.mix_frames(started.value(), 32, assist_mix).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(started.value(), 32, assist_mix).value().status == std::monostate{});
     CHECK(assist_mix.front() == 0.125F);
 
     const auto sought = bridge.seek_preview(0);
@@ -470,7 +470,7 @@ TEST_CASE("preview bridge disabling retires queued clicks while preserving music
     require_metronome(transport.schedule_voice(started.value(),
         {.id = 999, .kind = voice_kind_t::music,
          .source = {"asset:key", "revision:1"}, .frame_count = 64}) ==
-        voice_schedule_status_t::scheduled);
+        std::monostate{});
     bridge.set_metronome_enabled(false, 0);
     const auto voices = transport.snapshot_voices(started.value());
     require_metronome(static_cast<bool>(voices));
@@ -478,7 +478,7 @@ TEST_CASE("preview bridge disabling retires queued clicks while preserving music
     require_metronome(voices.value().front().kind == voice_kind_t::music);
     std::array<float, 32 * output_channel_count> output{};
     const auto mixed = transport.mix_frames(started.value(), 0, output);
-    require_metronome(mixed.value().status == transport_mix_status_t::mixed);
+    require_metronome(mixed.value().status == std::monostate{});
     require_metronome(mixed.value().voices_mixed == 1 && mixed.value().missing_blocks == 0);
     require_metronome(output.front() == 0.25F);
     bridge.set_metronome_enabled(true, 32);
@@ -566,7 +566,7 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
     require_metronome(blocked.error().status == preview_bridge_pump_status_t::capacity_limited);
     require_metronome(bridge.set_assist_grid(true, assist_grid(200), 0));
     std::array<float, 64 * output_channel_count> output{};
-    require_metronome(transport.mix_frames(started.value(), 0, output).value().status == transport_mix_status_t::mixed);
+    require_metronome(transport.mix_frames(started.value(), 0, output).value().status == std::monostate{});
     require_metronome(bridge.materialize_preview(10'000, 64).value().scheduled_events == 1);
     const auto voices = transport.snapshot_voices(started.value());
     require_metronome(voices.value().size() == 1 && voices.value().front().timeline_start_frame == 200);

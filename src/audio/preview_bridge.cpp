@@ -182,18 +182,15 @@ auto candidate_voices(const event_candidate_t& candidate,
     return voices;
 }
 
-auto pump_error_for_schedule(voice_schedule_status_t status)
+auto pump_error_for_schedule(operation_state_t<std::monostate> status)
     -> std::optional<preview_bridge_pump_status_t> {
-    switch (status) {
-    case voice_schedule_status_t::scheduled:
+    if (!status.has_failure())
         return std::nullopt;
-    case voice_schedule_status_t::capacity_exceeded:
+    if (status.has_failure(failure_code_t::capacity_exceeded))
         return preview_bridge_pump_status_t::capacity_limited;
-    case voice_schedule_status_t::stale_generation:
+    if (status.has_failure(failure_code_t::stale_generation))
         return preview_bridge_pump_status_t::stale_generation;
-    default:
-        return preview_bridge_pump_status_t::transport_rejected_voice;
-    }
+    return preview_bridge_pump_status_t::transport_rejected_voice;
 }
 
 auto is_valid_source(const audio_source_identity_t& source) -> bool {

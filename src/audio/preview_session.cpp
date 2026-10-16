@@ -162,7 +162,7 @@ auto preview_session_t::mix_render_frames(std::uint64_t first_frame,
                                            std::span<float> interleaved_stereo)
     -> transport_mix_outcome_t {
     if (loop_region_ && first_frame >= loop_region_->end_frame)
-        return transport_mix_result_t::from({.status = transport_mix_status_t::mixed});
+        return transport_mix_result_t::from({.status = std::monostate{}});
     auto render_samples = interleaved_stereo;
     if (loop_region_) {
         const auto remaining_frames = loop_region_->end_frame - first_frame;
@@ -184,7 +184,7 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
         interleaved_stereo.size() / samples_per_frame > maximum_read_frames) {
         return session_render_effect_t::from(
             failure_code_t::invalid_request, 0,
-            {.status = transport_mix_status_t::invalid_buffer});
+            {.status = failure_code_t::invalid_request});
     }
 
     const std::scoped_lock lock(mutex_);
@@ -194,7 +194,7 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
     if (!token_.has_value()) {
         return session_render_effect_t::from(
             session_render_phase_t::stopped, timeline_frame_,
-            {.status = transport_mix_status_t::stale_generation});
+            {.status = failure_code_t::stale_generation});
     }
     const auto first_frame = timeline_frame_;
     if (!transport_.is_current(*token_)) {
@@ -208,12 +208,12 @@ auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
     }
     const auto mixed_outcome = mix_render_frames(first_frame, interleaved_stereo);
     const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
-    if (mixed.status == transport_mix_status_t::stale_generation) {
+    if (mixed.status.has_failure(failure_code_t::stale_generation)) {
         clear_state();
         return session_render_effect_t::from(
             failure_code_t::stale_generation, first_frame, mixed);
     }
-    if (mixed.status != transport_mix_status_t::mixed) {
+    if (mixed.status.has_failure()) {
         return session_render_effect_t::from(
             failure_code_t::transport_failed, first_frame, mixed);
     }

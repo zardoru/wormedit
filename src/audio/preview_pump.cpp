@@ -164,11 +164,11 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
             preview_pump_effect_t{.status = preview_pump_status_t::invalid_request});
 
     auto snapshot = transport.snapshot_voices(token, options.maximum_voices);
-    const auto snapshot_status = snapshot ? active_voice_snapshot_status_t::ready : snapshot.error();
-    if (snapshot_status == active_voice_snapshot_status_t::stale_generation)
+    const auto snapshot_status = snapshot ? std::nullopt : std::optional{snapshot.error()};
+    if (snapshot_status == failure_code_t::stale_generation)
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::stale_generation});
-    if (snapshot_status == active_voice_snapshot_status_t::capacity_exceeded) {
+    if (snapshot_status == failure_code_t::capacity_exceeded) {
         return std::unexpected(
             preview_pump_effect_t{.status = preview_pump_status_t::capacity_exceeded,
                                   .active_voices = options.maximum_voices + 1});

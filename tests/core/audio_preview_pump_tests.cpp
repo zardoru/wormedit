@@ -49,7 +49,7 @@ TEST_CASE("preview lookahead decodes only active timeline overlaps and reuses sh
         transport_voice_t{
             .id = 3, .source = binding.source, .timeline_start_frame = 2'000, .frame_count = 200},
     };
-    REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    REQUIRE(transport.schedule_voices(*token, voices) == std::monostate{});
 
     const auto first =
         pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
@@ -83,7 +83,7 @@ TEST_CASE("preview lookahead rejects bounds and stale generations before cache p
                           .frame_count = 128},
         transport_voice_t{.id = 2, .source = second_binding.source, .frame_count = 128},
     };
-    REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    REQUIRE(transport.schedule_voices(*token, voices) == std::monostate{});
 
     const auto voice_bound = pump_preview_blocks(sources, transport, *token, 0,
                                                     {.lookahead_frames = 128, .maximum_voices = 1});
@@ -112,7 +112,7 @@ constexpr std::size_t overlapping_source_count = 24;
 
 auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
                                              transport_t& transport, session_token_t token)
-    -> voice_schedule_status_t {
+    -> wormedit::operation_state_t<std::monostate> {
     std::vector<transport_voice_t> voices;
     voices.reserve(overlapping_source_count);
     const std::vector<float> samples(maximum_read_frames * output_channel_count, 0.125F);
@@ -123,7 +123,7 @@ auto schedule_overlapping_generated_sources(decoded_source_registry_t& sources,
             .interleaved_stereo = samples,
         });
         if (!generated) {
-            return voice_schedule_status_t::invalid_voice;
+            return wormedit::failure_code_t::invalid_request;
         }
         voices.push_back({
             .id = index + 1U,
@@ -159,7 +159,7 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     const auto token = transport.start();
     REQUIRE(token.has_value());
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
-            voice_schedule_status_t::scheduled);
+            std::monostate{});
 
     const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
@@ -173,7 +173,7 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
     for (std::size_t frame = 0; frame < maximum_read_frames; frame += render_chunk_frames) {
         const auto mixed = transport.mix_frames(*token, frame, chunk);
         INFO("render chunk starts at frame " << frame);
-        CHECK(mixed.value().status == transport_mix_status_t::mixed);
+        CHECK(mixed.value().status == std::monostate{});
         CHECK(mixed.value().missing_blocks == 0);
     }
 }
@@ -187,7 +187,7 @@ TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
     const auto token = transport.start();
     REQUIRE(token.has_value());
     REQUIRE(schedule_overlapping_generated_sources(sources, transport, *token) ==
-            voice_schedule_status_t::scheduled);
+            std::monostate{});
 
     const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
@@ -208,7 +208,7 @@ TEST_CASE("preview pump expected capacity errors retain voice and block counts",
     REQUIRE(transport.schedule_voice(*token,
         {.id = 1, .source = {"fixture:source", "decoded:v1"},
          .source_start_frame = 1, .frame_count = maximum_read_frames}) ==
-        voice_schedule_status_t::scheduled);
+        std::monostate{});
     const auto rejected = pump_preview_blocks(sources, transport, *token, 0,
         {.lookahead_frames = maximum_read_frames, .maximum_voices = 1, .maximum_blocks = 1});
     REQUIRE_FALSE(rejected.has_value());

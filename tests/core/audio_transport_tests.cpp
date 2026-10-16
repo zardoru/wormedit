@@ -57,7 +57,7 @@ auto transport_drops_missing_voice_without_affecting_other_voices() -> bool {
                           .source = other_source,
                           .frame_count = 3U * maximum_read_frames},
     };
-    if (transport.schedule_voices(*token, voices) != voice_schedule_status_t::scheduled)
+    if (transport.schedule_voices(*token, voices) != std::monostate{})
         return false;
 
     std::vector<float> output(2U * maximum_read_frames * output_channel_count);
@@ -84,7 +84,7 @@ auto transport_counts_dropped_music_voices_by_kind() -> bool {
                                               .kind = voice_kind_t::music,
                                               .source = source("missing-music.ogg"),
                                               .frame_count = 64}};
-    if (transport.schedule_voices(*token, voices) != voice_schedule_status_t::scheduled)
+    if (transport.schedule_voices(*token, voices) != std::monostate{})
         return false;
     std::vector<float> output(64U * output_channel_count);
     const auto mixed = transport.mix_frames(*token, 0, output);
@@ -120,12 +120,12 @@ TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache bloc
                                 .timeline_start_frame = 128,
                                 .source_start_frame = 0,
                                 .frame_count = decoders[index].info()->output_frame_count,
-                            }) == wormedit::audio::voice_schedule_status_t::scheduled);
+                            }) == std::monostate{});
     }
 
     std::vector<float> output(4096U * wormedit::audio::output_channel_count);
     const auto mixed = transport.mix_frames(*token, 128, output);
-    CHECK(mixed.value().status == wormedit::audio::transport_mix_status_t::mixed);
+    CHECK(mixed.value().status == std::monostate{});
     CHECK(mixed.value().voices_mixed == 3);
     CHECK(mixed.value().missing_blocks == 0);
     CHECK(transport.scheduled_voice_count() == 3);
@@ -169,7 +169,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
                                              .source = key.source,
                                              .frame_count = decoder.info()->output_frame_count,
                                              .gain = 0.2F,
-                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
+                                         }) == std::monostate{});
     }
     std::vector<float> before_stop(512U * wormedit::audio::output_channel_count);
     CHECK(transport.mix_frames(*token, 0, before_stop).value().voices_mixed == kinds.size());
@@ -185,7 +185,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
     std::vector<float> after_stop(512U * wormedit::audio::output_channel_count, 1.0F);
     const auto silent = transport.mix_frames(*token, 0, after_stop);
     require_transport(!silent);
-    CHECK(silent.error().status == wormedit::audio::transport_mix_status_t::stale_generation);
+    CHECK(silent.error().status == wormedit::failure_code_t::stale_generation);
     CHECK(all_zero(after_stop));
     CHECK(transport.decode_source_block(decoder, *token, key) ==
           std::unexpected(wormedit::audio::block_decode_result_t{.status = wormedit::audio::block_decode_status_t::stale_generation}));
@@ -199,7 +199,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
                           .id = 99,
                           .source = key.source,
                           .frame_count = 1,
-                      }) == wormedit::audio::voice_schedule_status_t::stale_generation);
+                      }) == wormedit::failure_code_t::stale_generation);
 }
 
 TEST_CASE("transport metronome volume changes scheduled chart and assist clicks without changing music",
@@ -224,16 +224,16 @@ TEST_CASE("transport metronome volume changes scheduled chart and assist clicks 
         transport_voice_t{.id = 2, .kind = voice_kind_t::music,
                           .source = music_source, .frame_count = 8},
     };
-    REQUIRE(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    REQUIRE(transport.schedule_voices(*token, voices) == std::monostate{});
     std::array<float, 8> first{};
-    REQUIRE(transport.mix_frames(*token, 0, first).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*token, 0, first).value().status == std::monostate{});
     CHECK(first.front() == 0.5F);
 
     REQUIRE(transport.set_click_preview_volume(50));
     CHECK_FALSE(transport.set_click_preview_volume(101));
     CHECK(transport.click_preview_volume() == 50);
     std::array<float, 8> midpoint{};
-    REQUIRE(transport.mix_frames(*token, 4, midpoint).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*token, 4, midpoint).value().status == std::monostate{});
     CHECK(midpoint.front() == 0.375F);
 
     const std::array later_voices{
@@ -244,10 +244,10 @@ TEST_CASE("transport metronome volume changes scheduled chart and assist clicks 
                           .source = music_source, .timeline_start_frame = 8,
                           .source_start_frame = 8, .frame_count = 4},
     };
-    REQUIRE(transport.schedule_voices(*token, later_voices) == voice_schedule_status_t::scheduled);
+    REQUIRE(transport.schedule_voices(*token, later_voices) == std::monostate{});
     REQUIRE(transport.set_click_preview_volume(0));
     std::array<float, 8> silent_click{};
-    REQUIRE(transport.mix_frames(*token, 8, silent_click).value().status == transport_mix_status_t::mixed);
+    REQUIRE(transport.mix_frames(*token, 8, silent_click).value().status == std::monostate{});
     CHECK(silent_click.front() == 0.25F);
 }
 
@@ -262,17 +262,17 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
                                              .id = 1,
                                              .source = source("missing.ogg"),
                                              .frame_count = 128,
-                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
+                                         }) == std::monostate{});
     CHECK(transport.schedule_voice(
               *token, {
                           .id = 2,
                           .source = source("other.ogg"),
                           .frame_count = 128,
-                      }) == wormedit::audio::voice_schedule_status_t::capacity_exceeded);
+                      }) == wormedit::failure_code_t::capacity_exceeded);
 
     std::vector<float> output(128U * wormedit::audio::output_channel_count, 1.0F);
     const auto mixed = transport.mix_frames(*token, 0, output);
-    CHECK(mixed.value().status == wormedit::audio::transport_mix_status_t::mixed);
+    CHECK(mixed.value().status == std::monostate{});
     CHECK(mixed.value().voices_mixed == 1);
     CHECK(mixed.value().missing_blocks == 1);
     CHECK(all_zero(output));
@@ -284,13 +284,13 @@ TEST_CASE("transport reports missing source blocks without emitting garbage",
                                              .source = source("other.ogg"),
                                              .timeline_start_frame = 256,
                                              .frame_count = 128,
-                                         }) == wormedit::audio::voice_schedule_status_t::scheduled);
+                                         }) == std::monostate{});
     CHECK(transport.scheduled_voice_count() == 1);
     std::ranges::fill(output, 1.0F);
     const auto repeated = transport.mix_frames(*token, 0, output);
     require_transport(!repeated);
     CHECK(repeated.error().status ==
-          wormedit::audio::transport_mix_status_t::non_monotonic_callback);
+          wormedit::failure_code_t::invalid_state);
     CHECK(all_zero(output));
 }
 
@@ -317,7 +317,7 @@ TEST_CASE("transport publishes layered voice batches atomically",
         transport_voice_t{.id = 3, .source = source("three.ogg"), .frame_count = 64},
     };
     CHECK(transport.schedule_voices(*token, too_many) ==
-          voice_schedule_status_t::capacity_exceeded);
+          wormedit::failure_code_t::capacity_exceeded);
     CHECK(transport.scheduled_voice_count() == 0);
 
     const std::array duplicate_ids{
@@ -325,11 +325,11 @@ TEST_CASE("transport publishes layered voice batches atomically",
         transport_voice_t{.id = 7, .source = source("two.ogg"), .frame_count = 64},
     };
     CHECK(transport.schedule_voices(*token, duplicate_ids) ==
-          voice_schedule_status_t::duplicate_id);
+          wormedit::failure_code_t::conflict);
     CHECK(transport.scheduled_voice_count() == 0);
 
     const auto accepted = std::span{too_many}.first<2>();
-    CHECK(transport.schedule_voices(*token, accepted) == voice_schedule_status_t::scheduled);
+    CHECK(transport.schedule_voices(*token, accepted) == std::monostate{});
     CHECK(transport.scheduled_voice_count() == 2);
 }
 
@@ -355,7 +355,7 @@ TEST_CASE("BGM mix groups silence active and future voices without losing their 
         transport_voice_t{.id = 2, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64, .mix_group = 22},
         transport_voice_t{.id = 3, .source = shared, .frame_count = 64, .mix_group = 11},
         transport_voice_t{.id = 4, .kind = voice_kind_t::music, .source = shared, .frame_count = 64}};
-    require_transport(transport.schedule_voices(*token, voices) == voice_schedule_status_t::scheduled);
+    require_transport(transport.schedule_voices(*token, voices) == std::monostate{});
     transport.set_muted_mix_groups(std::array<std::uint64_t, 2>{0, 11});
     std::array<float, 16> output{};
     check_bgm_mix(transport.mix_frames(*token, 0, output).value().voices_mixed == 2);
@@ -366,7 +366,7 @@ TEST_CASE("BGM mix groups silence active and future voices without losing their 
     check_bgm_mix(output.front() == 36.0F / 1024);
     transport.set_muted_mix_groups(std::array<std::uint64_t, 1>{22});
     require_transport(transport.schedule_voice(*token, {.id = 5, .kind = voice_kind_t::bgm,
-        .source = shared, .timeline_start_frame = 16, .frame_count = 8, .mix_group = 22}) == voice_schedule_status_t::scheduled);
+        .source = shared, .timeline_start_frame = 16, .frame_count = 8, .mix_group = 22}) == std::monostate{});
     check_bgm_mix(transport.mix_frames(*token, 16, output).value().voices_mixed == 3);
     check_bgm_mix(output.front() == 51.0F / 1024);
     check_bgm_mix(transport.scheduled_voice_count() == 4);
@@ -388,10 +388,10 @@ auto stale_transport_outcomes_keep_frames_and_silence() -> bool {
     const auto mixed = transport.mix_frames(*token, 0, output);
     if (mixed.has_value()) return false;
     const auto snapshot = transport.snapshot_voices(*token, 4);
-    return mixed.error().status == transport_mix_status_t::stale_generation &&
+    return mixed.error().status == wormedit::failure_code_t::stale_generation &&
            mixed.error().frames == 32 &&
            std::ranges::count(output, 0.0F) == static_cast<std::ptrdiff_t>(output.size()) &&
-           !snapshot.has_value() && snapshot.error() == active_voice_snapshot_status_t::stale_generation;
+           !snapshot.has_value() && snapshot.error() == wormedit::failure_code_t::stale_generation;
 }
 } // namespace
 

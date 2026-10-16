@@ -127,7 +127,7 @@ TEST_CASE("the mixer reads resident samples and prefers them over the block cach
                                               .source = wanted.source,
                                               .frame_count = sample_frames,
                                               .gain = 0.5F}) ==
-            voice_schedule_status_t::scheduled);
+            std::monostate{});
     std::vector<float> output(sample_frames * output_channel_count);
     const auto mixed = transport.mix_frames(*token, 0, output);
     CHECK(mixed.value().missing_blocks == 0);

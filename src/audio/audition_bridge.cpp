@@ -48,10 +48,10 @@ auto audition_transport_bridge_t::start_clips(std::span<const audition_clip_t> c
                           .gain = clip.gain});
     }
     const auto status = transport_.schedule_voices(*token, voices);
-    if (status != voice_schedule_status_t::scheduled) {
+    if (status.has_failure()) {
         static_cast<void>(transport_.stop());
         token_.reset();
-        return std::unexpected(status == voice_schedule_status_t::capacity_exceeded
+        return std::unexpected(status.has_failure(failure_code_t::capacity_exceeded)
                                    ? audition_start_status_t::transport_capacity_exceeded
                                    : audition_start_status_t::transport_rejected_clip);
     }

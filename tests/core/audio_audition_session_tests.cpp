@@ -451,10 +451,10 @@ TEST_CASE("render phases preserve stopped acceptance and failed mix metadata",
     using namespace wormedit::audio;
     const auto stopped = session_render_effect_t::from(
         session_render_phase_t::stopped, 17,
-        {.status = transport_mix_status_t::stale_generation});
+        {.status = wormedit::failure_code_t::stale_generation});
     REQUIRE(stopped);
     CHECK(stopped->status.is_in_phase(session_render_phase_t::stopped));
-    CHECK(stopped->mix.status == transport_mix_status_t::stale_generation);
+    CHECK(stopped->mix.status == wormedit::failure_code_t::stale_generation);
 
     const auto failed = session_render_effect_t::from(
         wormedit::failure_code_t::underrun, 17, {.frames = 4, .missing_blocks = 2});

@@ -137,7 +137,7 @@ auto seek_music_segment_starts_at_source_frame(wormedit::audio::preview_session_
     const auto seek = seek_primed(session, 500, {.lookahead_frames = maximum_read_frames});
     const auto current_token = bridge.session_token();
     const auto active = seek && current_token ? transport.snapshot_voices(*current_token)
-                                               : active_voice_snapshot_outcome_t{std::unexpected(active_voice_snapshot_status_t::stale_generation)};
+                                               : active_voice_snapshot_outcome_t{std::unexpected(wormedit::failure_code_t::stale_generation)};
     return seek && active && !active.value().empty() &&
            active.value().front().timeline_start_frame == 500 &&
            active.value().front().source_start_frame == 500 &&

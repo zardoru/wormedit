@@ -2,7 +2,7 @@
 
 #include <wormedit/audio/block_cache.h>
 #include <wormedit/audio/resident_samples.h>
-#include <wormedit/core/result.h>
+#include <wormedit/core/operation_state.h>
 
 #include <array>
 #include <atomic>
@@ -11,6 +11,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <vector>
 #include <unordered_set>
 
@@ -39,35 +40,16 @@ struct transport_voice_t {
     auto operator==(const transport_voice_t&) const -> bool = default;
 };
 
-enum class voice_schedule_status_t {
-    scheduled,
-    stale_generation,
-    invalid_voice,
-    duplicate_id,
-    capacity_exceeded,
-};
-
-enum class transport_mix_status_t {
-    mixed,
-    stale_generation,
-    invalid_buffer,
-    timeline_overflow,
-    non_monotonic_callback,
-};
-
-enum class active_voice_snapshot_status_t {
-    ready,
-    stale_generation,
-    capacity_exceeded,
-};
+static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
+static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 using active_voice_snapshot_outcome_t =
-    result_t<std::vector<transport_voice_t>, active_voice_snapshot_status_t>;
+    result_t<std::vector<transport_voice_t>, failure_code_t>;
 
 struct transport_mix_result_t {
     [[nodiscard]] static auto from(transport_mix_result_t&& report)
         -> result_t<transport_mix_result_t, transport_mix_result_t>;
-    transport_mix_status_t status{transport_mix_status_t::stale_generation};
+    operation_state_t<std::monostate> status{failure_code_t::stale_generation};
     std::size_t frames{};
     std::size_t voices_mixed{};
     std::size_t missing_blocks{};
@@ -76,6 +58,7 @@ struct transport_mix_result_t {
     std::size_t clipped_samples{};
     auto operator==(const transport_mix_result_t&) const -> bool = default;
 };
+static_assert(std::is_trivially_copyable_v<transport_mix_result_t>);
 using transport_mix_outcome_t = result_t<transport_mix_result_t, transport_mix_result_t>;
 
 struct transport_stop_result_t {
@@ -119,12 +102,12 @@ class transport_t {
     [[nodiscard]] auto resident_block_hit(session_token_t token, const audio_block_key_t& key)
         -> std::optional<block_decode_result_t>;
     [[nodiscard]] auto schedule_voice(session_token_t token, transport_voice_t voice)
-        -> voice_schedule_status_t;
+        -> operation_state_t<std::monostate>;
     // Validates the complete batch before publishing any voice. This keeps a
     // layered chart event atomic when the bounded slot pool is exhausted.
     [[nodiscard]] auto schedule_voices(session_token_t token,
                                        std::span<const transport_voice_t> voices)
-        -> voice_schedule_status_t;
+        -> operation_state_t<std::monostate>;
     [[nodiscard]] auto mix_frames(session_token_t token, std::uint64_t first_timeline_frame,
                                  std::span<float> interleaved_stereo) -> transport_mix_outcome_t;
 

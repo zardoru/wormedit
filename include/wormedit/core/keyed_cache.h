@@ -13,7 +13,7 @@ namespace wormedit {
 // the retained storage only on a miss, allowing capacity reuse or early release.
 // A bool(Value&) refill publishes its key only on success, preserving the last
 // binding on failure. The builder owns any partial changes to the retained value.
-// A bound lookup permits owner updates; value() remains read-only inspection.
+// Owner updates may change incremental products; the runner owns their binding.
 // Nullary builds capture borrowed keys before replacing the retained value.
 // An optional predicate controls reuse of a key-equal entry. Failures and
 // partial products remain stored, and later lookups may choose to rebuild them.
@@ -48,9 +48,10 @@ class keyed_cache_t {
     }
 
     // Invalidate the binding while allowing an owner to retain selected storage/metrics.
-    template <class Reset>
-    void invalidate(Reset&& reset) {
-        std::forward<Reset>(reset)(value_);
+    template <class Reset = std::nullptr_t>
+    void invalidate(Reset&& reset = nullptr) {
+        if constexpr (!std::is_same_v<std::remove_cvref_t<Reset>, std::nullptr_t>)
+            std::forward<Reset>(reset)(value_);
         valid_ = false;
     }
 
@@ -63,6 +64,7 @@ class keyed_cache_t {
 
     [[nodiscard]] auto has_value() const noexcept -> bool { return valid_; }
     [[nodiscard]] auto key() const noexcept -> const std::optional<Key>& { return key_; }
+    [[nodiscard]] auto value() noexcept -> Value& { return value_; }
     [[nodiscard]] auto value() const noexcept -> const Value& { return value_; }
     [[nodiscard]] auto build_count() const noexcept -> std::size_t { return build_count_; }
 

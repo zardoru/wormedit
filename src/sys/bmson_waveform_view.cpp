@@ -81,16 +81,16 @@ void build_channel_ring_range_view(const channel_ring_context_t& context, std::i
          .maximum_rows = WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY},
         *context.target.slices, context.source);
     const auto& projected_data = projected ? *projected : projected.error();
-    ring.projected_rows += count;
-    ++ring.projection_calls;
+    ring.value().projected_rows += count;
+    ++ring.value().projection_calls;
     for (std::size_t index = 0; index < count; ++index) {
         const auto world = begin + static_cast<std::int64_t>(index);
-        ring.rows[channel_ring_slot(world, ring.rows.size())] = {world, {}, false, false};
+        ring.value().rows[channel_ring_slot(world, ring.value().rows.size())] = {world, {}, false, false};
     }
     for (const auto& row : projected_data.rows) {
         const auto world = begin + static_cast<std::int64_t>(std::floor(row.y_pixels));
         if (world < begin || world >= begin + static_cast<std::int64_t>(count)) continue;
-        ring.rows[channel_ring_slot(world, ring.rows.size())] = {world,
+        ring.value().rows[channel_ring_slot(world, ring.value().rows.size())] = {world,
             {.y_pixels = static_cast<double>(world) + .5,
              .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                                std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -109,36 +109,29 @@ auto populate_channel_ring(const channel_ring_context_t& context, bool downscrol
     const auto project = context.application.history.document.id.value;
     const auto chart = context.application.workspace.selected_chart->value;
     const auto channel = context.channel.id.value;
-    if (!ring.valid || ring.rows.size() != count || ring.source_identity != &context.waveform ||
-        ring.source_key != context.waveform.key || ring.revision != revision || ring.zoom != context.zoom ||
-        ring.project != project || ring.chart != chart || ring.channel != channel ||
-        ring.source_generation != context.application.audition_source_generation)
-        ring.rows.assign(count, {});
-    ring.valid = true;
-    ring.source_identity = &context.waveform;
-    ring.source_key = context.waveform.key;
-    ring.revision = revision;
-    ring.project = project;
-    ring.chart = chart;
-    ring.channel = channel;
-    ring.source_generation = context.application.audition_source_generation;
-    ring.zoom = context.zoom;
-    ring.projected_rows = ring.reused_rows = ring.projection_calls = 0;
+    const auto geometry = envelope_projection_geometry_t::from(
+        {.document = {.project = wormedit::song_id_t{project}, .revision = revision},
+         .chart = wormedit::chart_id_t{chart}},
+        channel, context.application.audition_source_generation, context.zoom, false, count);
+    static_cast<void>(ring.get_or_build(envelope_projection_lookup_t{context.waveform.key, &context.waveform, geometry},
+        [count](auto& data) { data.rows.assign(count, {}); },
+        [count](const auto& data) { return data.rows.size() == count; }));
+    ring.value().projected_rows = ring.value().reused_rows = ring.value().projection_calls = 0;
     const auto first = static_cast<std::int64_t>(std::floor(context.scroll)) - 1;
     std::size_t index = 0;
     while (index < count) {
         const auto world = first + static_cast<std::int64_t>(index);
-        if (ring.rows[channel_ring_slot(world, count)].world_row == world) {
-            ++ring.reused_rows; ++index; continue;
+        if (ring.value().rows[channel_ring_slot(world, count)].world_row == world) {
+            ++ring.value().reused_rows; ++index; continue;
         }
         const auto begin = index++;
-        while (index < count && ring.rows[channel_ring_slot(first + static_cast<std::int64_t>(index), count)].world_row !=
+        while (index < count && ring.value().rows[channel_ring_slot(first + static_cast<std::int64_t>(index), count)].world_row !=
                                     first + static_cast<std::int64_t>(index)) ++index;
         build_channel_ring_range_view(context, first + static_cast<std::int64_t>(begin), index - begin);
     }
     rows.reserve(count);
     for (std::size_t row = 0; row < count; ++row) {
-        const auto& stored = ring.rows[channel_ring_slot(first + static_cast<std::int64_t>(row), count)];
+        const auto& stored = ring.value().rows[channel_ring_slot(first + static_cast<std::int64_t>(row), count)];
         if (!stored.present) continue;
         auto value = stored.value;
         value.y_pixels = compose_source_y(value.y_pixels - std::floor(context.scroll), context.height, downscroll);
@@ -254,7 +247,7 @@ auto build_stem_view(const bmson_waveform_projection_context_t& context, const c
         entry.revision = revision;
         entry.slices = derive_sound_channel_slices(chart, channel, source.sample_rate, source.total_frames);
         entry.valid = false;
-        entry.ring.valid = false;
+        entry.ring.invalidate();
         entry.rows.clear();
     }
     if (entry.refs_revision != revision || entry.refs.empty()) {
@@ -454,7 +447,7 @@ auto build_packed_piece_view(const bmson_waveform_projection_context_t& context,
         entry.revision != revision || !packed_slice_matches(entry.slices, piece)) {
         entry.source = &waveform; entry.source_generation = context.audition_source_generation;
         entry.revision = revision; entry.slices = packed_slices(piece);
-        entry.valid = entry.ring.valid = false;
+        entry.valid = false; entry.ring.invalidate();
     }
     const auto& view = context.flattened.view.compose;
     const auto scroll = context.interaction_state->viewport_scroll_pixels;
@@ -534,12 +527,16 @@ auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
     const auto prepared = audio::prepare_display_row_table(cache.waveform.waveform_row_table,
         *cache.timing.marker_timing_index, request, identity);
     if (!prepared || previous != cache.waveform.waveform_row_table.clock_generation) {
-        cache.waveform.waveform_envelope_ring.valid = cache.waveform.channel_envelope_ring.valid = false;
+        cache.waveform.waveform_envelope_ring.invalidate();
+        cache.waveform.channel_envelope_ring.invalidate();
         cache.waveform.channel_waveform_projection_valid = false;
         cache.waveform.channel_waveform_slices.reset();
-        for (auto& entry : cache.stems.packed_waveforms) entry.valid = entry.ring.valid = false;
+        for (auto& entry : cache.stems.packed_waveforms) {
+            entry.valid = false;
+            entry.ring.invalidate();
+        }
         for (auto& entry : cache.stems.stem_waveforms) {
-            entry.valid = entry.ring.valid = false;
+            entry.valid = false; entry.ring.invalidate();
             entry.slices.reset();
         }
     }
@@ -606,7 +603,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
         cache.waveform.channel_waveform_slices = wormedit::derive_sound_channel_slices(
             *chart, *channel, source.sample_rate, source.total_frames);
         cache.waveform.channel_waveform_projection_valid = false;
-        cache.waveform.channel_envelope_ring.valid = false;
+        cache.waveform.channel_envelope_ring.invalidate();
         cache.waveform.channel_waveform_rows.clear();
     }
 

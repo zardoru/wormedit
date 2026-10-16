@@ -336,3 +336,29 @@ TEST_CASE("Owner invalidation preserves selected storage and metrics", "[core][k
     static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}));
     CHECK(cache.build_count() == 2);
 }
+
+TEST_CASE("Owner product updates preserve the cache binding", "[core][keyed-cache]") {
+    keyed_cache_t<int, std::vector<int>> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1, 2}}));
+    cache.value().back() = 3;
+    CHECK(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}).back() == 3);
+    CHECK(cache.key() == std::optional<int>{1});
+    CHECK(cache.build_count() == 1);
+    CHECK(calls == 1);
+}
+
+TEST_CASE("Binding invalidation retains the incremental product and retries", "[core][keyed-cache]") {
+    keyed_cache_t<int, std::vector<int>> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1, 2}}));
+    const auto* storage = cache.value().data();
+    cache.invalidate();
+    CHECK_FALSE(cache.has_value());
+    CHECK(cache.key() == std::optional<int>{1});
+    CHECK(cache.value().data() == storage);
+    CHECK(cache.value().size() == 2);
+    CHECK(cache.build_count() == 1);
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}));
+    CHECK(calls == 2);
+}

@@ -95,22 +95,37 @@ struct bmson_draft_audition_request_t {
 };
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 // A bounded CPU envelope ring. Geometry and GPU textures live in the frontend.
-struct envelope_projection_ring_t {
+struct envelope_projection_geometry_t {
+    wormedit::chart_stamp_t stamp;
+    std::uint64_t channel{}, source_generation{};
+    double zoom{};
+    bool detail_level{};
+    std::size_t count{};
+    auto operator==(const envelope_projection_geometry_t&) const -> bool = default;
+    static auto from(wormedit::chart_stamp_t stamp, std::uint64_t channel,
+                     std::uint64_t source_generation, double zoom, bool detail_level,
+                     std::size_t count) -> envelope_projection_geometry_t {
+        return {stamp, channel, source_generation, zoom, detail_level, count};
+    }
+};
+struct envelope_projection_data_t {
     struct row_t {
         std::int64_t world_row{std::numeric_limits<std::int64_t>::min()};
         WormUiComposeWaveformRowView value{};
         bool present{}, incomplete{};
     };
     std::vector<row_t> rows;
-    std::optional<audio::waveform_key_t> source_key, detail_key;
-    const void* source_identity{};
+    std::optional<audio::waveform_key_t> detail_key;
     const void* detail_identity{};
-    std::uint64_t revision{}, project{}, chart{}, channel{}, source_generation{}, availability_evictions{};
+    std::uint64_t availability_evictions{};
     std::size_t availability_entries{}, availability_frames{};
-    double zoom{};
-    bool detail_level{}, valid{};
     std::size_t projected_rows{}, reused_rows{}, projection_calls{};
 };
+using envelope_projection_ring_t = wormedit::keyed_cache_t<
+    std::tuple<audio::waveform_key_t, const void*, envelope_projection_geometry_t>,
+    envelope_projection_data_t>;
+using envelope_projection_lookup_t = std::tuple<const audio::waveform_key_t&, const void*,
+                                               envelope_projection_geometry_t>;
 #endif
 
 // Owned marker text and absolute rows; viewport placement/selection stay per frame.

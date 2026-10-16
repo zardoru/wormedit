@@ -993,32 +993,32 @@ TEST_CASE("Compose envelope projects only exposed stable world rows during follo
                                                     &interaction, nullptr, &blocks, &style);
     };
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 202);
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projection_calls == 1);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projection_calls == 1);
     interaction.viewport_scroll_pixels = 10.75;
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 0);
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.reused_rows == 202);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().reused_rows == 202);
     interaction.viewport_scroll_pixels = 11.25;
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 1);
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.reused_rows == 201);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 1);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().reused_rows == 201);
     const audio::audio_block_key_t key{{"unrelated", "immutable"}, 0};
     std::array<float, 16> pcm{};
     expect_gpu_work(blocks.store(key, 8, pcm) == audio::block_store_status_t::stored);
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     interaction.viewport_scroll_pixels = 10.75;
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 1);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 1);
     interaction.viewport_scroll_pixels = 2000;
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 202);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
     auto scene_binding = cache.scene.index.key().value_or(compose_scene_source_key_t{});
     ++scene_binding.stamp.document.revision;
     static_cast<void>(cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     expect_gpu_work(project());
-    expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 202);
+    expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
 }
 namespace {
 struct envelope_projection_fixture_t {
@@ -1112,7 +1112,7 @@ void check_waveform_scroll(envelope_projection_fixture_t& fixture) {
     const auto chart_y = compose_project_y(world_row, pixels_per_row,
         fixture.interaction.viewport_scroll_pixels, fixture.flattened.view.compose.viewport_height_pixels, true);
     expect_gpu_work(std::abs(chart_y - after.y_pixels) < 1e-8);
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 25);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 25);
 }
 void prepare_waveform_sample_points(envelope_projection_fixture_t& fixture) {
     fixture.flattened.view.compose.pixels_per_standard_measure = 200'000;
@@ -1153,7 +1153,7 @@ TEST_CASE("MP3 project 7K waveform follows downscroll chart movement while reusi
     envelope_projection_fixture_t fixture;
     prepare_seven_key_mp3_project(fixture);
     check_waveform_axis(fixture, false);
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     check_waveform_scroll(fixture);
 }
 TEST_CASE("Compose waveform sample points follow the downscroll chart axis",
@@ -1169,19 +1169,19 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     fixture.flattened.view.compose.pixels_per_standard_measure = 32000;
     fixture.style.detail_level = true;
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 34);
-    expect_gpu_work(std::ranges::any_of(fixture.cache.waveform.waveform_envelope_ring.rows,
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 34);
+    expect_gpu_work(std::ranges::any_of(fixture.cache.waveform.waveform_envelope_ring.value().rows,
         [](const auto& row) { return row.incomplete; }));
     const auto coarse_peak = fixture.flattened.compose.waveform.row.front().absolute_peak[0];
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
     const std::vector<float> pcm(32768, .8f);
     expect_gpu_work(fixture.blocks.store(key, 16384, pcm) == audio::block_store_status_t::stored);
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 34);
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projection_calls == 1);
-    expect_gpu_work(std::ranges::all_of(fixture.cache.waveform.waveform_envelope_ring.rows,
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 34);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projection_calls == 1);
+    expect_gpu_work(std::ranges::all_of(fixture.cache.waveform.waveform_envelope_ring.value().rows,
         [](const auto& row) { return row.present && !row.incomplete; }));
     const auto& resolved = fixture.flattened.compose.waveform.row.front();
     expect_gpu_work(std::abs(resolved.absolute_peak[0] - .8f) < .00001f);
@@ -1190,8 +1190,8 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     const audio::audio_block_key_t unrelated{{"elsewhere", "unchanged"}, 0};
     expect_gpu_work(fixture.blocks.store(unrelated, 16384, pcm) == audio::block_store_status_t::stored);
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.reused_rows == 34);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().reused_rows == 34);
     expect_gpu_work(std::abs(fixture.flattened.compose.waveform.row.front().absolute_peak[0] - .8f) < .00001f);
 }
 TEST_CASE("Compose envelope chart identity changes recompute actual source timing at unchanged revision",
@@ -1210,14 +1210,14 @@ TEST_CASE("Compose envelope chart identity changes recompute actual source timin
     fixture.cache.timing.marker_timing_index = build_timing_index(second).index;
     expect_gpu_work(fixture.cache.timing.marker_timing_index.has_value());
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
     compare_cached_envelope_source(fixture);
     expect_gpu_work(fixture.flattened.compose.waveform.row.front().absolute_peak[0] < peak);
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     ++fixture.flattened.view.compose.project_id;
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
 }
 TEST_CASE("Compose envelope padding stays private at zero fractional and normal viewport scroll",
           "[sys][waveform-projection]") {
@@ -1230,7 +1230,7 @@ TEST_CASE("Compose envelope padding stays private at zero fractional and normal 
         expect_gpu_work(fixture.flattened.compose.waveform.row.size() <= 532);
     }
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
 }
 namespace {
 struct channel_projection_fixture_t : envelope_projection_fixture_t {
@@ -1297,16 +1297,16 @@ TEST_CASE("BMSON channel switches sharing an asset preserve independent timing a
     const auto first = fixture.cache.waveform.channel_waveform_rows.front().y_pixels;
     fixture.flattened.view.compose.selected_bmson_bgm_event_id = 74001;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.channel == 71001);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 202);
+    expect_gpu_work(std::get<2>(*fixture.cache.waveform.channel_envelope_ring.key()).channel == 71001);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 202);
     expect_gpu_work(!fixture.cache.waveform.channel_waveform_rows.empty());
     expect_gpu_work(fixture.cache.waveform.channel_waveform_rows.front().y_pixels > first + 40);
     fixture.interaction.viewport_scroll_pixels = .75;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 0);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 0);
     fixture.interaction.viewport_scroll_pixels = 1.25;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 1);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 1);
     fixture.history.document.charts.front().lane_layouts.front().layout.lanes.front().glyph = lane_glyph_t::bar;
     fixture.flattened.view.compose.downscroll = true;
     fixture.cache.waveform.channel_waveform_projection_valid = false;
@@ -3891,9 +3891,9 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     expect_waveform_arena(project_waveform_frame(fixture));
     compare_cached_envelope_source(fixture);
     const auto* persistent_overview = fixture.cache.waveform.overview.value().rows.data();
-    const auto* persistent_envelope = fixture.cache.waveform.waveform_envelope_ring.rows.data();
+    const auto* persistent_envelope = fixture.cache.waveform.waveform_envelope_ring.value().rows.data();
     const auto generation = fixture.flattened.view.compose.waveform_overview_generation;
-    const auto projected = fixture.cache.waveform.waveform_envelope_ring.projected_rows;
+    const auto projected = fixture.cache.waveform.waveform_envelope_ring.value().projected_rows;
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
     bool stable = true;
     std::size_t minimum_allocations = std::numeric_limits<std::size_t>::max(), maximum_allocations{};
@@ -3917,8 +3917,8 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     expect_waveform_arena(projected > 0);
     expect_waveform_arena(fixture.cache.waveform.overview.value().rows.data() == persistent_overview);
     expect_waveform_arena(fixture.flattened.view.compose.waveform_overview_rows != persistent_overview);
-    expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.rows.data() == persistent_envelope);
-    expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
+    expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().rows.data() == persistent_envelope);
+    expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     expect_waveform_arena(static_cast<const void*>(fixture.flattened.view.compose.waveform_rows) !=
         static_cast<const void*>(persistent_envelope));
     compare_cached_envelope_source(fixture);
@@ -3927,7 +3927,7 @@ TEST_CASE("Compose waveform arena exhaustion clears both output arrays without c
           "[sys][waveform-arena]") {
     envelope_projection_fixture_t fixture;
     fixture.project();
-    const auto projected = fixture.cache.waveform.waveform_envelope_ring.projected_rows;
+    const auto projected = fixture.cache.waveform.waveform_envelope_ring.value().projected_rows;
     const auto generation = fixture.cache.waveform.overview.value().generation;
     for (const auto limit : {std::size_t{64}, sizeof(WormUiComposeWaveformRowView) * WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY}) {
         frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
@@ -3935,7 +3935,7 @@ TEST_CASE("Compose waveform arena exhaustion clears both output arrays without c
         expect_waveform_arena(!project_waveform_frame(fixture));
         check_empty_frame_waveform(fixture.flattened.view.compose);
         expect_waveform_arena(fixture.flattened.view.compose.truncated);
-        expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.projected_rows == projected);
+        expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == projected);
         expect_waveform_arena(fixture.cache.waveform.overview.value().generation == generation);
     }
 }
@@ -5327,12 +5327,12 @@ TEST_CASE("Shared stem row table is prepared once for song and selected channel 
     const auto scrolled_generation = fixture.cache.waveform.waveform_row_table.generation;
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.generation == scrolled_generation);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 1);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.reused_rows == 201);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 1);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().reused_rows == 201);
     fixture.flattened.view.compose.pixels_per_standard_measure *= 2;
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.built_rows == 202);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 202);
 }
 
 TEST_CASE("Stem row table retires display rings and native cut derivation when timing identity changes",
@@ -5346,16 +5346,16 @@ TEST_CASE("Stem row table retires display rings and native cut derivation when t
     REQUIRE(fixture.cache.timing.marker_timing_index);
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock_generation == generation + 1);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == 202);
     expect_gpu_work(fixture.cache.waveform.channel_waveform_slices.has_value());
     const auto unchanged = fixture.cache.waveform.waveform_row_table.generation;
-    const auto projected = fixture.cache.waveform.channel_envelope_ring.projected_rows;
-    const auto calls = fixture.cache.waveform.channel_envelope_ring.projection_calls;
+    const auto projected = fixture.cache.waveform.channel_envelope_ring.value().projected_rows;
+    const auto calls = fixture.cache.waveform.channel_envelope_ring.value().projection_calls;
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.generation == unchanged);
     // A cache hit leaves the last projection counters intact.
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projected_rows == projected);
-    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.projection_calls == calls);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projected_rows == projected);
+    expect_gpu_work(fixture.cache.waveform.channel_envelope_ring.value().projection_calls == calls);
 }
 #endif
 
@@ -5654,15 +5654,15 @@ TEST_CASE("BMSON packed waveform uses its native clip and next column event",
     fixture.project_packed();
     expect_gpu_work(fixture.piece().stem_key == key);
     expect_gpu_work(fixture.cache.stems.packed_waveform_index.build_count() == builds);
-    INFO("Scrolled packed rows: " << fixture.cache.stems.packed_waveforms.front().ring.projected_rows);
-    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projected_rows == 1);
-    const auto projected = fixture.cache.stems.packed_waveforms.front().ring.projected_rows;
-    const auto calls = fixture.cache.stems.packed_waveforms.front().ring.projection_calls;
+    INFO("Scrolled packed rows: " << fixture.cache.stems.packed_waveforms.front().ring.value().projected_rows);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.value().projected_rows == 1);
+    const auto projected = fixture.cache.stems.packed_waveforms.front().ring.value().projected_rows;
+    const auto calls = fixture.cache.stems.packed_waveforms.front().ring.value().projection_calls;
     const auto rows = fixture.cache.stems.packed_waveforms.front().rows.data();
     const auto source = fixture.cache.stems.packed_waveforms.front().source;
     fixture.project_packed();
-    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projected_rows == projected);
-    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projection_calls == calls);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.value().projected_rows == projected);
+    expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.value().projection_calls == calls);
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().rows.data() == rows);
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().source == source);
     expect_gpu_work(fixture.cache.stems.packed_waveform_index.build_count() == builds);

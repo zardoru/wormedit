@@ -149,32 +149,27 @@ auto cpu_row_slot(std::int64_t row, std::size_t count) -> std::size_t {
 }
 auto prepare_cpu_envelope(const envelope_projection_context_t& context, std::size_t count) -> bool {
     auto& ring = context.ring;
-    const bool reset = !ring.valid || ring.rows.size() != count ||
-        ring.source_key != context.overview.key || ring.source_identity != &context.overview ||
-        ring.project != context.project || ring.chart != context.chart ||
-        ring.revision != context.revision || ring.zoom != context.request.pixels_per_standard_measure ||
-        ring.detail_level != context.style.detail_level;
-    if (reset) ring.rows.assign(count, {});
-    ring.valid = true;
-    ring.source_key = context.overview.key;
-    ring.source_identity = &context.overview;
-    ring.revision = context.revision;
-    ring.project = context.project;
-    ring.chart = context.chart;
-    ring.zoom = context.request.pixels_per_standard_measure;
-    ring.detail_level = context.style.detail_level;
+    const auto builds = ring.build_count();
+    const auto geometry = envelope_projection_geometry_t::from(
+        {.document = {.project = wormedit::song_id_t{context.project}, .revision = context.revision},
+         .chart = wormedit::chart_id_t{context.chart}},
+        0, 0, context.request.pixels_per_standard_measure, context.style.detail_level, count);
+    static_cast<void>(ring.get_or_build(envelope_projection_lookup_t{context.overview.key, &context.overview, geometry},
+        [count](auto& data) { data.rows.assign(count, {}); },
+        [count](const auto& data) { return data.rows.size() == count; }));
+    const bool reset = ring.build_count() != builds;
     const auto stats = context.blocks ? context.blocks->stats() : audio::block_cache_stats_t{};
-    const bool changed = reset || ring.detail_identity != context.detail ||
-        (context.detail && ring.detail_key != context.detail->key) ||
-        ring.availability_entries != stats.entries || ring.availability_frames != stats.cached_frames ||
-        ring.availability_evictions != stats.evictions;
-    ring.detail_identity = context.detail;
-    if (context.detail) ring.detail_key = context.detail->key;
-    else ring.detail_key.reset();
-    ring.availability_entries = stats.entries;
-    ring.availability_frames = stats.cached_frames;
-    ring.availability_evictions = stats.evictions;
-    ring.projected_rows = ring.reused_rows = ring.projection_calls = 0;
+    const bool changed = reset || ring.value().detail_identity != context.detail ||
+        (context.detail && ring.value().detail_key != context.detail->key) ||
+        ring.value().availability_entries != stats.entries || ring.value().availability_frames != stats.cached_frames ||
+        ring.value().availability_evictions != stats.evictions;
+    ring.value().detail_identity = context.detail;
+    if (context.detail) ring.value().detail_key = context.detail->key;
+    else ring.value().detail_key.reset();
+    ring.value().availability_entries = stats.entries;
+    ring.value().availability_frames = stats.cached_frames;
+    ring.value().availability_evictions = stats.evictions;
+    ring.value().projected_rows = ring.value().reused_rows = ring.value().projection_calls = 0;
     return changed;
 }
 void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
@@ -187,17 +182,17 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
     auto projected = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
         context.row_table, request, context.blocks, context.style);
     const auto& projected_data = projected ? *projected : projected.error();
-    ++ring.projection_calls;
-    ring.projected_rows += count;
+    ++ring.value().projection_calls;
+    ring.value().projected_rows += count;
     for (std::size_t index = 0; index < count; ++index) {
         const auto world = first + static_cast<std::int64_t>(index);
-        ring.rows[cpu_row_slot(world, ring.rows.size())] = {world, {}, false, false};
+        ring.value().rows[cpu_row_slot(world, ring.value().rows.size())] = {world, {}, false, false};
     }
     const bool incomplete = context.style.detail_level && projected_data.overview_spans != 0;
     for (const auto& row : projected_data.rows) {
         const auto world = first + static_cast<std::int64_t>(std::floor(row.y_pixels));
         if (world < first || world >= first + static_cast<std::int64_t>(count)) continue;
-        auto& stored = ring.rows[cpu_row_slot(world, ring.rows.size())];
+        auto& stored = ring.value().rows[cpu_row_slot(world, ring.value().rows.size())];
         stored = {world, {.y_pixels = static_cast<double>(world) + .5,
             .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                               std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -208,7 +203,7 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
 }
 auto cpu_row_needs_projection(const envelope_projection_ring_t& ring, std::int64_t world,
                               bool changed) -> bool {
-    const auto& row = ring.rows[cpu_row_slot(world, ring.rows.size())];
+    const auto& row = ring.value().rows[cpu_row_slot(world, ring.value().rows.size())];
     return row.world_row != world || (row.incomplete && changed);
 }
 auto populate_cpu_envelope(const envelope_projection_context_t& context,
@@ -224,7 +219,7 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
     std::size_t index = 0;
     while (index < count) {
         const auto world = first + static_cast<std::int64_t>(index);
-        if (!cpu_row_needs_projection(ring, world, changed)) { ++ring.reused_rows; ++index; continue; }
+        if (!cpu_row_needs_projection(ring, world, changed)) { ++ring.value().reused_rows; ++index; continue; }
         const auto begin = index++;
         while (index < count && cpu_row_needs_projection(ring, first + static_cast<std::int64_t>(index), changed))
             ++index;
@@ -232,7 +227,7 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
     }
     for (std::size_t row = 0; row < count; ++row) {
         const auto world = first + static_cast<std::int64_t>(row);
-        const auto& stored = ring.rows[cpu_row_slot(world, count)];
+        const auto& stored = ring.value().rows[cpu_row_slot(world, count)];
         if (!stored.present) continue;
         auto value = stored.value;
         value.y_pixels -= std::floor(request.viewport_scroll_pixels);
@@ -525,7 +520,7 @@ auto populate_compose_waveform_projection(
             compose.project_id, cache.stamp().chart.value, cache.waveform.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
     } else {
-        cache.waveform.waveform_envelope_ring.valid = false;
+        cache.waveform.waveform_envelope_ring.invalidate();
     }
     if (!cached_envelope)
         populate_direct_envelope(flattened.compose.waveform.row, waveform, selected_waveform,

@@ -6,16 +6,18 @@
 
 namespace wormedit::sys {
 namespace {
-auto navigation_frame(const chart_document_t& chart, const application_command_state_t& application,
-                       const compose_navigation_target_t& target) -> std::optional<std::uint64_t> {
+auto navigation_frame(const chart_document_t& chart,
+                       const application_command_state_t& application,
+                       const compose_navigation_target_t& target,
+                       const measure_index_t* measures) -> std::optional<std::uint64_t> {
     if (target.preview_frame) return target.preview_frame;
     if (target.canvas_measure) return std::nullopt;
-    const auto built = build_measure_index(chart);
+    if (!measures) return std::nullopt;
     const auto timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
-    if (!std::holds_alternative<measure_index_t>(built) || !timing.value) return std::nullopt;
+    if (!timing.value) return std::nullopt;
     const auto end = application.services.transport_preview_end_frame
         ? application.services.transport_preview_end_frame() : std::nullopt;
-    return bookmark_preview_frame(*timing.value, std::get<measure_index_t>(built), target.position, end);
+    return bookmark_preview_frame(*timing.value, *measures, target.position, end);
 }
 }
 
@@ -100,11 +102,17 @@ auto reset_compose_navigation_view(document_history_t& history, editor_interacti
     return result;
 }
 
-auto seek_compose_navigation_position(const chart_document_t& chart,
+auto seek_compose_navigation_position(const document_history_t& history,
+                                      const chart_document_t& chart,
                                       application_command_state_t& application,
-                                      const compose_navigation_target_t& target)
+                                      const compose_navigation_target_t& target,
+                                      const measure_index_t* measures)
     -> compose_action_outcome_t {
-    const auto frame = target.audio_milliseconds ? std::nullopt : navigation_frame(chart, application, target);
+    if (!measures && !target.audio_milliseconds && !target.preview_frame && !target.canvas_measure) {
+        const auto* indices = history.indices(chart.id);
+        measures = indices && indices->measures ? &*indices->measures : nullptr;
+    }
+    const auto frame = target.audio_milliseconds ? std::nullopt : navigation_frame(chart, application, target, measures);
     return apply_compose_navigation_transport(application, compose_navigation_transport_t::seek,
                                                frame, target.audio_milliseconds);
 }
@@ -138,7 +146,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
                 notification_source_t::input, compose_interaction_message_policy_t::supplied);
     }
     auto outcome = policy == compose_navigation_transport_t::seek
-        ? seek_compose_navigation_position(*chart, application, target)
+        ? seek_compose_navigation_position(history, *chart, application, target)
         : apply_compose_navigation_transport(application, policy, std::nullopt);
     if (outcome.accepted && outcome.message.empty())
         outcome.message = playing ? "Compose playhead moved." : "Compose cursor moved.";

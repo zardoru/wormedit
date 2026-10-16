@@ -388,7 +388,7 @@ struct mixed_navigation_fixture_t {
     }
     auto skip(double live_row, double amount) -> bool {
         fixture.application.project.transport.preview_playhead_absolute_row = live_row;
-        return skip_playing_playhead(fixture.application,
+        return skip_playing_playhead(fixture.history, fixture.application,
                                      fixture.history.document.charts.front(), 4,
                                      playhead_skip_unit_t::snap, amount).accepted;
     }

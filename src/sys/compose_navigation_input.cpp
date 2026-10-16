@@ -95,7 +95,7 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                          action == editor_navigation_action_t::double_page_forward;
     const auto measures = navigation_measure_count(action);
     const auto paged = measures != 0;
-    return skip_playing_playhead(application, *found, state.active_snap_denominator,
+    return skip_playing_playhead(history, application, *found, state.active_snap_denominator,
                                  paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
                                  (forward ? 1.0 : -1.0) *
                                      (paged ? static_cast<double>(measures) : 1.0));

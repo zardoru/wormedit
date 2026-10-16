@@ -315,14 +315,15 @@ auto inline_preview_active(const application_command_state_t& state) -> bool {
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-auto loop_region_for_selection(const wormedit::chart_document_t& chart,
+auto loop_region_for_selection(const wormedit::document_history_t& history,
+                               const wormedit::chart_document_t& chart,
                                wormedit::position_span_t selection,
                                std::uint64_t requested_begin_row,
                                std::uint64_t requested_end_row)
     -> std::optional<wormedit::audio::preview_loop_region_t> {
     using namespace wormedit;
-    const auto built_measures = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built_measures);
+    const auto* indices = history.indices(chart.id);
+    const auto* measures = indices && indices->measures ? &*indices->measures : nullptr;
     if (!measures) return std::nullopt;
     const auto begin_row = (*measures).row_of(selection.begin);
     const auto end_row = (*measures).row_of(selection.end);
@@ -330,8 +331,8 @@ auto loop_region_for_selection(const wormedit::chart_document_t& chart,
         *end_row != requested_end_row || *begin_row >= *end_row) return std::nullopt;
     const auto built_timing = timing_index_t::from(chart, {.allow_bounded_clock = true});
     if (!built_timing.value) return std::nullopt;
-    const auto begin = sys::preview_cursor_frame(chart, *built_timing.value, selection.begin);
-    const auto end = sys::preview_cursor_frame(chart, *built_timing.value, selection.end);
+    const auto begin = sys::preview_cursor_frame(chart, *built_timing.value, selection.begin, 0.0, &indices->measures);
+    const auto end = sys::preview_cursor_frame(chart, *built_timing.value, selection.end, 0.0, &indices->measures);
     const auto* begin_frame = std::get_if<std::uint64_t>(&begin);
     const auto* end_frame = std::get_if<std::uint64_t>(&end);
     if (!begin_frame || !end_frame || *begin_frame >= *end_frame) return std::nullopt;
@@ -3243,7 +3244,7 @@ struct application_t::implementation_t {
             !views.compose_interaction_state->retained_selection_range)
             return false;
         const auto region = loop_region_for_selection(
-            *chart, *views.compose_interaction_state->retained_selection_range, begin_row, end_row);
+            session.history, *chart, *views.compose_interaction_state->retained_selection_range, begin_row, end_row);
         if (!region || (audio_runtime.preview_output.playing() &&
                         !audio_runtime.preview_state.matches_selection(session.history.document,
                                                                        session.workspace)))

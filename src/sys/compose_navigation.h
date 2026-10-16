@@ -35,9 +35,11 @@ enum class compose_navigation_transport_t { keep, seek, stop };
 [[nodiscard]] auto reset_compose_navigation_view(document_history_t& history,
     editor_interaction_state_t& state) -> editor_interaction_result_t;
 
-[[nodiscard]] auto seek_compose_navigation_position(const chart_document_t& chart,
+[[nodiscard]] auto seek_compose_navigation_position(const document_history_t& history,
+                                      const chart_document_t& chart,
                                                     application_command_state_t& application,
-                                                    const compose_navigation_target_t& target)
+                                                    const compose_navigation_target_t& target,
+                                                    const measure_index_t* measures = nullptr)
     -> compose_action_outcome_t;
 
 [[nodiscard]] auto navigate_compose_position(document_history_t& history,

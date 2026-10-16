@@ -1,4 +1,5 @@
 #include "sys/compose_playhead_skip.h"
+#include "sys/preview_cursor_frame.h"
 
 #include <wormedit/audio/decoder.h>
 
@@ -71,6 +72,9 @@ auto skip_chart() -> chart_document_t {
 TEST_CASE("repeated playing skips within 300 ms continue from the last target",
           "[sys][playhead-skip]") {
     const auto chart = skip_chart();
+    song_document_t document;
+    document.charts.push_back(chart);
+    const auto history = document_history_t::from(std::move(document));
     application_command_state_t application;
     auto now = std::chrono::steady_clock::time_point{} + std::chrono::seconds{5};
     application.bookmarks.fixed_clock = &now;
@@ -84,7 +88,7 @@ TEST_CASE("repeated playing skips within 300 ms continue from the last target",
     const auto notch = [&](double amount) {
         // The audio clock has not caught up: the live playhead stays at row 10.
         application.project.transport.preview_playhead_absolute_row = 10.0;
-        REQUIRE(skip_playing_playhead(application, chart, 4, playhead_skip_unit_t::snap, amount)
+        REQUIRE(skip_playing_playhead(history, application, history.document.charts.front(), 4, playhead_skip_unit_t::snap, amount)
                     .accepted);
     };
     for (int count = 0; count < 3; ++count) {
@@ -160,4 +164,13 @@ TEST_CASE("Playing snap and beat skips restart at shortened measure heads",
         check_beat_skip(playhead_skip_target_row(index, 330, unit, 1e30, 960, 4) == 1280);
         check_beat_skip(playhead_skip_target_row(index, 330, unit, -1e30, 960, 4) == 0);
     }
+}
+
+TEST_CASE("Preview cursor retains a supplied geometry failure", "[sys][playhead-skip]") {
+    const auto chart = skip_chart();
+    const result_t<measure_index_t, diagnostic_list_t> failed{std::unexpected(diagnostic_list_t{})};
+    const auto result = preview_cursor_frame(chart, timing_index_t{},
+        {chart.measures.front().id, 0}, 0.0, &failed);
+    REQUIRE(std::holds_alternative<std::string>(result));
+    CHECK(std::get<std::string>(result) == "Chart cursor has invalid measure geometry.");
 }

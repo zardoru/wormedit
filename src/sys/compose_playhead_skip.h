@@ -24,7 +24,8 @@ enum class playhead_skip_unit_t { snap, beat, measure, page, rows };
 
 // Moves the playing preview to the skip target with a single seek. Playback continues from the
 // new point. A failed seek keeps playing from the prior position and reports the seek message.
-[[nodiscard]] auto skip_playing_playhead(application_command_state_t& application,
+[[nodiscard]] auto skip_playing_playhead(const document_history_t& history,
+                           application_command_state_t& application,
                                          const chart_document_t& chart,
                                          std::uint64_t snap_denominator, playhead_skip_unit_t unit,
                                          double amount) -> compose_action_outcome_t;

@@ -115,19 +115,20 @@ auto playhead_skip_target_row(const measure_index_t& measures, double playhead_r
     return std::nullopt;
 }
 
-auto skip_playing_playhead(application_command_state_t& application, const chart_document_t& chart,
+auto skip_playing_playhead(const document_history_t& history,
+                           application_command_state_t& application, const chart_document_t& chart,
                            std::uint64_t snap_denominator, playhead_skip_unit_t unit, double amount)
     -> compose_action_outcome_t {
     if (!application.project.transport.preview_playhead_absolute_row)
         return compose_action_outcome_t::from("The playhead row is not available yet.",
                                               notification_severity_t::warning,
                                               notification_source_t::input, false, false);
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    const auto* indices = history.indices(chart.id);
+    if (!indices || !indices->measures)
         return compose_action_outcome_t::from("The playhead could not be moved.",
                                               notification_severity_t::warning,
                                               notification_source_t::input, false, false);
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto& measures = *indices->measures;
     const auto forward = amount > 0.0;
     const auto row = playhead_skip_target_row(measures,
                                               skip_origin_row(application, chart.id, forward),
@@ -140,7 +141,7 @@ auto skip_playing_playhead(application_command_state_t& application, const chart
                                               notification_severity_t::warning,
                                               notification_source_t::input, false, false);
     }
-    auto outcome = seek_compose_navigation_position(chart, application, {.position = *position});
+    auto outcome = seek_compose_navigation_position(history, chart, application, {.position = *position}, &measures);
     if (!outcome.accepted) {
         application.project.transport.last_playhead_skip.reset();
         return outcome;

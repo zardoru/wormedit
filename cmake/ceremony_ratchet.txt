@@ -17,3 +17,6 @@ local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_
 
 # Cursor writes belong to the helpers in interaction.h (the existing owner writes count here).
 raw_cursor_write | 18 | src,include | (^|[^A-Za-z0-9_])([A-Za-z0-9_]*state|temporary|candidate|proposed)(\.|->)(cursor(\.[A-Za-z0-9_]+)*|cursor_subrow|virtual_bms_cursor_row|viewport_scroll_pixels|fixed_cursor_screen_y_pixels|scroll_direction|viewport_height_pixels|pixels_per_standard_measure)[ \t]*(=[^=]|\.reset\(|\.emplace\(|\+=|-=)
+
+# Native dropdown calls belong to chrome.h; popup callers use its safe guard.
+native_dropdown_call | 2 | src | (^|[^A-Za-z0-9_])nk_(combo(_begin(_[A-Za-z0-9]+)?|_end|_string|_separator|_callback)?|combobox(_[A-Za-z0-9]+)?)[ \t]*\(

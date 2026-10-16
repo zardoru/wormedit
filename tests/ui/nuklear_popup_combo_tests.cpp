@@ -3,14 +3,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <filesystem>
-#include <fstream>
-#include <iterator>
-#include <regex>
 #include <source_location>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace {
 void expect_combo(bool value, std::source_location where = std::source_location::current()) {
@@ -75,20 +70,6 @@ auto ordinary_combo_frame(nk_context& context) -> bool {
     return open;
 }
 
-auto unguarded_dropdown_files() -> std::vector<std::string> {
-    const auto directory = std::filesystem::path(WORMEDIT_SOURCE_ROOT) / "src/ui/nuklear";
-    const std::regex direct_call(R"(\bnk_(?:combo(?:_begin(?:_[A-Za-z0-9]+)?|_end|_string|_separator|_callback)?|combobox(?:_[A-Za-z0-9]+)?)\s*\()");
-    std::vector<std::string> unexpected;
-    for (const auto& entry : std::filesystem::recursive_directory_iterator(directory)) {
-        const auto path = entry.path();
-        if (!entry.is_regular_file() || path.filename() == "chrome.h") continue;
-        if (path.extension() != ".cpp" && path.extension() != ".h") continue;
-        std::ifstream file(path);
-        const std::string source{std::istreambuf_iterator<char>(file), {}};
-        if (std::regex_search(source, direct_call)) unexpected.push_back(path.string());
-    }
-    return unexpected;
-}
 }
 
 TEST_CASE("Popup combo guard selects inline choices without creating a nested popup", "[unit][frontend][popup-combo]") {
@@ -134,11 +115,6 @@ TEST_CASE("Popup label-combo guard rejects nesting safely", "[unit][frontend][po
     static_cast<void>(text_position(context, "Retained choice"));
 }
 
-TEST_CASE("Nuklear dropdown entry points are owned only by the central chrome guard", "[unit][frontend][popup-combo][architecture]") {
-    const auto unexpected = unguarded_dropdown_files();
-    for (const auto& path : unexpected) INFO(path);
-    expect_combo(unexpected.empty());
-}
 
 namespace {
 void check_active_edit(nk_flags flags, bool focus_pending) {

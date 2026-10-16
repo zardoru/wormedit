@@ -479,8 +479,6 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/tooltip.cpp)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
-    target_compile_definitions(wormedit_nuklear_popup_combo_tests PRIVATE
-        WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
         wormedit::core wormedit::ui_frontend nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_popup_combo_tests

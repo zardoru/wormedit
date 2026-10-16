@@ -55,11 +55,11 @@ template <class Code, Code DefaultCode> struct object_diagnostic_t {
     auto operator==(const object_diagnostic_t&) const -> bool = default;
 };
 
-template <class Code, Code DefaultCode> struct path_diagnostic_t {
+template <class Code, Code DefaultCode, class Path = std::string> struct path_diagnostic_t {
     diagnostic_severity_t severity{diagnostic_severity_t::error};
     Code code{DefaultCode};
     std::string message;
-    std::string path;
+    Path path{};
     auto operator==(const path_diagnostic_t&) const -> bool = default;
 };
 

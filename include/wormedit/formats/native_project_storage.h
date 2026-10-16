@@ -1,5 +1,6 @@
 #pragma once
 
+#include <wormedit/core/diagnostic.h>
 #include <wormedit/formats/native_project.h>
 
 #include <chrono>
@@ -35,13 +36,10 @@ enum class native_project_storage_diagnostic_code_t {
     recovery_quarantine_failure,
 };
 
-struct native_project_storage_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    native_project_storage_diagnostic_code_t code{
-        native_project_storage_diagnostic_code_t::serialization_failure};
-    std::string message;
-    std::filesystem::path path;
-};
+using native_project_storage_diagnostic_t = path_diagnostic_t<
+    native_project_storage_diagnostic_code_t,
+    native_project_storage_diagnostic_code_t::serialization_failure,
+    std::filesystem::path>;
 
 enum class native_project_storage_stage_t {
     serialize,

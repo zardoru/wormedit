@@ -292,8 +292,8 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
                  const std::optional<compose_scene_cache_t::channel_waveform_selection_t>& selected)
     -> std::vector<drawn_stem_t> {
     std::vector<drawn_stem_t> drawn;
-    const bool cache_matches = context.cache.scene.chart == chart.id &&
-                               context.cache.scene.revision == context.history.document.revision;
+    const bool cache_matches = context.cache.stamp().chart == chart.id &&
+                               context.cache.stamp().document.revision == context.history.document.revision;
     const auto* timing = cache_matches && context.cache.timing.marker_timing_index
                              ? &*context.cache.timing.marker_timing_index
                              : nullptr;
@@ -547,7 +547,7 @@ void populate_bmson_waveform_projection(const bmson_waveform_projection_context_
         (void)prepare_compose_display_row_table(context.cache,
             {context.interaction_state->viewport_scroll_pixels, compose.viewport_height_pixels,
              compose.pixels_per_standard_measure},
-            {compose.project_id, context.cache.scene.chart.value, context.history.document.revision});
+            {compose.project_id, context.cache.stamp().chart.value, context.history.document.revision});
     }
     populate_stem_waveforms(context);
     populate_packed_waveforms(context);

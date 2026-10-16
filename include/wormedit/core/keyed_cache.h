@@ -16,7 +16,7 @@ class keyed_cache_t {
   public:
     template <class Lookup, class Builder>
     [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder) -> const Value& {
-        if (key_ && *key_ == key) return value_;
+        if (valid_ && *key_ == key) return value_;
         if constexpr (std::is_invocable_v<Builder>) {
             auto value = std::forward<Builder>(builder)();
             assign_key(key);
@@ -27,11 +27,19 @@ class keyed_cache_t {
             std::forward<Builder>(builder)(value_);
             assign_key(key);
         }
+        valid_ = true;
         ++build_count_;
         return value_;
     }
 
-    [[nodiscard]] auto has_value() const noexcept -> bool { return key_.has_value(); }
+    // Preserve the last source binding for owners with narrower stamp policies.
+    // The next lookup rebuilds even when that key is unchanged.
+    void invalidate_value() {
+        valid_ = false;
+        value_ = Value{};
+    }
+
+    [[nodiscard]] auto has_value() const noexcept -> bool { return valid_; }
     [[nodiscard]] auto key() const noexcept -> const std::optional<Key>& { return key_; }
     [[nodiscard]] auto value() const noexcept -> const Value& { return value_; }
     [[nodiscard]] auto build_count() const noexcept -> std::size_t { return build_count_; }
@@ -51,6 +59,7 @@ class keyed_cache_t {
     std::optional<Key> key_;
     Value value_{};
     std::size_t build_count_{};
+    bool valid_{};
 };
 
 } // namespace wormedit

@@ -26,6 +26,10 @@ struct counting_builder_t {
         ++calls;
         retained = value;
     }
+    void invalidate_then_refill(keyed_cache_t<int, Value>& cache, Value& retained) {
+        cache.invalidate_value();
+        refill(retained);
+    }
 };
 
 struct key_view_t {
@@ -185,4 +189,31 @@ TEST_CASE("In-place cache refills retain failures until the key changes", "[core
     CHECK(cache.get_or_build(2, refill) == value_t{23});
     CHECK(calls == 2);
     CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("Value invalidation retains the last key and rebuilds an equal lookup", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<int>{calls, 17}));
+    cache.invalidate_value();
+    CHECK_FALSE(cache.has_value());
+    CHECK(cache.value() == 0);
+    CHECK(cache.key() == std::optional<int>{1});
+    CHECK(cache.build_count() == 1);
+    CHECK(cache.get_or_build(1, counting_builder_t<int>{calls, 23}) == 23);
+    CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("A refill may invalidate its old value without losing key publication", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<int>{calls, 17}));
+    counting_builder_t<int> builder{calls, 23};
+    const auto refill = std::bind_front(&counting_builder_t<int>::invalidate_then_refill,
+                                       std::ref(builder), std::ref(cache));
+    CHECK(cache.get_or_build(2, refill) == 23);
+    CHECK(cache.has_value());
+    CHECK(cache.key() == std::optional<int>{2});
+    CHECK(cache.build_count() == 2);
+    CHECK(calls == 2);
 }

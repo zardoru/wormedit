@@ -230,13 +230,13 @@ auto begin_compose_beat_fit(
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t {
     using namespace wormedit;
     if (application_state.project.timing_recipe.timing_locked || scene_cache.timing.beat_fit_drag ||
-        editor_interaction_has_pending_gesture(state) || !scene_cache.scene.index ||
+        editor_interaction_has_pending_gesture(state) || !scene_cache.scene.index.value() ||
         !scene_cache.timing.marker_timing_index || scene_cache.waveform.waveform_overview_sample_rate == 0 ||
         scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
         return compose_input_family_result_t::from(
             "Beat fitting requires an unlocked waveform and idle chart gesture.");
     }
-    const auto& measures = scene_cache.scene.index->measures;
+    const auto& measures = scene_cache.scene.index.value()->measures;
     const auto beat_row = input.object_id;
     const auto measure = std::ranges::upper_bound(measures.entries, beat_row, {},
                                                   &measure_index_entry_t::absolute_begin_row);
@@ -414,7 +414,7 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     if (input.overview_shift)
         return seek_compose_waveform(input, context, result, accepted);
     auto& cache = context.environment.controls.cache;
-    if (!cache.timing.marker_timing_index || !cache.scene.index || !context.input_chart ||
+    if (!cache.timing.marker_timing_index || !cache.scene.index.value() || !context.input_chart ||
         editor_interaction_has_pending_gesture(context.state))
         return compose_input_family_result_t::from(
             "Waveform overview seek is unavailable during an active gesture.");
@@ -425,10 +425,10 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     const auto target = compose_minimap_target(
         input.audio_fraction, cache.waveform.waveform_overview_total_frames,
         cache.waveform.waveform_overview_sample_rate, audio::output_sample_rate, *cache.timing.marker_timing_index,
-        cache.scene.index->measures, edit_snap_denominator(*context.input_chart, context.state), end);
+        cache.scene.index.value()->measures, edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
-    const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
+    const auto position = (cache.scene.index.value()->measures).position_at(target->snapped_row);
     if (!position)
         return compose_input_family_result_t::from("Waveform cursor position is unavailable.");
     auto outcome = navigate_compose_position(

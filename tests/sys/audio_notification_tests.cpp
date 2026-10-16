@@ -1,3 +1,4 @@
+#include "compose_scene_cache_fixture.h"
 #include "sys/audio_source_registration.h"
 #include "sys/waveform_analysis_runtime.h"
 
@@ -735,8 +736,9 @@ void prepare_t459_packed_runtime_fixture(t459_packed_runtime_fixture_t& fixture)
     const auto timing = build_timing_index(stored_chart);
     check_audio_worker(timing.index.has_value());
     if (timing.index) {
-        fixture.cache.scene.chart = stored_chart.id;
-        fixture.cache.scene.revision = fixture.document.revision;
+        static_cast<void>(fixture.cache.scene.index.get_or_build(wormedit::sys::compose_scene_source_key_t{
+            .stamp = {.document = {.revision = fixture.document.revision}, .chart = stored_chart.id}},
+            wormedit::sys::retained_scene_fixture_t{}));
         fixture.cache.timing.marker_timing_index = *timing.index;
     }
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";

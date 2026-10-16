@@ -1,3 +1,4 @@
+#include "compose_scene_cache_fixture.h"
 #include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "compose_area_dispatch_fixture.h"
@@ -918,10 +919,12 @@ void check_overview_replacement(frontend_workspace_view_t& flattened, compose_sc
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &replacement, false,
                                                  true, &interaction));
     CHECK(flattened.compose.waveform.overview_row.front().absolute_peak == 0.75f);
-    ++cache.scene.revision;
+    auto scene_binding = cache.scene.index.key().value_or(compose_scene_source_key_t{});
+    ++scene_binding.stamp.document.revision;
+    static_cast<void>(cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &replacement, false,
                                                  true, &interaction));
-    CHECK(cache.waveform.waveform_overview_revision == cache.scene.revision);
+    CHECK(cache.waveform.waveform_overview_revision == cache.stamp().document.revision);
 }
 }
 TEST_CASE("Compose overview keeps cached rows while moving its visible range", "[sys][waveform-projection]") {
@@ -1012,7 +1015,9 @@ TEST_CASE("Compose envelope projects only exposed stable world rows during follo
     interaction.viewport_scroll_pixels = 2000;
     expect_gpu_work(project());
     expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 202);
-    ++cache.scene.revision;
+    auto scene_binding = cache.scene.index.key().value_or(compose_scene_source_key_t{});
+    ++scene_binding.stamp.document.revision;
+    static_cast<void>(cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     expect_gpu_work(project());
     expect_gpu_work(cache.waveform.waveform_envelope_ring.projected_rows == 202);
 }
@@ -1026,8 +1031,9 @@ struct envelope_projection_fixture_t {
     audio::decoded_block_cache_t blocks;
     audio::aligned_waveform_style_t style;
     envelope_projection_fixture_t() {
-        cache.scene.chart = history.document.charts.front().id;
-        cache.scene.revision = history.document.revision;
+        static_cast<void>(cache.scene.index.get_or_build(compose_scene_source_key_t{
+            .stamp = {.document = {.revision = history.document.revision},
+                      .chart = history.document.charts.front().id}}, retained_scene_fixture_t{}));
         cache.timing.marker_timing_index = build_timing_index(history.document.charts.front()).index;
         expect_gpu_work(cache.timing.marker_timing_index.has_value());
         auto& view = flattened.view.compose;
@@ -1130,8 +1136,9 @@ void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     const auto& chart = fixture.history.document.charts.front();
     expect_gpu_work(chart.lane_layouts.front().layout.lanes.size() == 7);
     fixture.cache = {};
-    fixture.cache.scene.chart = chart.id;
-    fixture.cache.scene.revision = fixture.history.document.revision;
+    static_cast<void>(fixture.cache.scene.index.get_or_build(compose_scene_source_key_t{
+        .stamp = {.document = {.revision = fixture.history.document.revision}, .chart = chart.id}},
+        retained_scene_fixture_t{}));
     fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
     fixture.flattened.view.compose.downscroll = compose_field_downscroll(chart);
     expect_gpu_work(fixture.flattened.view.compose.downscroll);
@@ -1198,7 +1205,9 @@ TEST_CASE("Compose envelope chart identity changes recompute actual source timin
     auto second = fixture.history.document.charts.front();
     second.id = chart_id_t{2};
     second.bpms.front().beats_per_minute = {240, 1};
-    fixture.cache.scene.chart = second.id;
+    auto scene_binding = fixture.cache.scene.index.key().value_or(compose_scene_source_key_t{});
+    scene_binding.stamp.chart = second.id;
+    static_cast<void>(fixture.cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     fixture.cache.timing.marker_timing_index = build_timing_index(second).index;
     expect_gpu_work(fixture.cache.timing.marker_timing_index.has_value());
     fixture.project();
@@ -1600,11 +1609,12 @@ TEST_CASE("Compose controls retain measure geometry until the document revision 
     CHECK(cache.scene.cached_measure_index->entries.data() == entries);
     history.document.charts.front().measures.back().definition = {{2, 1}, meter_t{8, 4}};
     ++history.document.revision;
+    history.document.reset_chart_indices(); // Match publication through the transaction runner.
     static_cast<void>(rebind_workspace(workspace, history));
     interaction.reset(); // Match the application stale-interaction boundary after an edit.
     populate_measure_cache_frame(history, workspace, cache, interaction);
     CHECK(cache.scene.cached_measure_index->total_rows == 960960);
-    CHECK(cache.scene.revision == history.document.revision);
+    CHECK(cache.stamp().document.revision == history.document.revision);
 }
 
 namespace {
@@ -2874,9 +2884,9 @@ TEST_CASE("Compose overview BGM presence follows the full cached chart index",
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
     expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
-    const auto* full_index = &*fixture.cache.scene.index;
+    const auto* full_index = &*fixture.cache.scene.index.value();
     fixture.project();
-    expect_compose_test(&*fixture.cache.scene.index == full_index);
+    expect_compose_test(&*fixture.cache.scene.index.value() == full_index);
     expect_compose_test(fixture.flattened.view.compose.has_bgm_events);
     expect_compose_test(fixture.flattened.view.compose.bgm_event_count == 0);
 
@@ -2967,11 +2977,13 @@ TEST_CASE("Compose overview generation ignores playback scroll timing offsets an
     fixture.interaction.viewport_scroll_pixels = 200;
     expect_compose_test(fixture.project() == generation);
     expect_compose_test(fixture.flattened.view.compose.waveform_overview_visible_begin_fraction > fraction);
-    ++fixture.cache.scene.revision;
+    auto scene_binding = fixture.cache.scene.index.key().value_or(compose_scene_source_key_t{});
+    ++scene_binding.stamp.document.revision;
+    static_cast<void>(fixture.cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     fixture.song.charts.front().beat_zero_audio_offset_seconds = {1, 10};
     fixture.update_timing();
     expect_compose_test(fixture.project() == generation);
-    expect_compose_test(fixture.cache.waveform.waveform_overview_revision == fixture.cache.scene.revision);
+    expect_compose_test(fixture.cache.waveform.waveform_overview_revision == fixture.cache.stamp().document.revision);
     frontend_workspace_view_t second;
     second.view.compose = fixture.flattened.view.compose;
     expect_compose_test(fixture.project(second) == generation);
@@ -5413,8 +5425,8 @@ void t475_compare_fresh(compose_test_fixture_t& retained) {
     }
     INFO(labels);
     std::string sources = "doc revision=" + std::to_string(retained.history.document.revision) +
-        " scene revision=" + std::to_string(retained.cache.scene.index->document_revision);
-    for (const auto& note : retained.cache.scene.index->notes)
+        " scene revision=" + std::to_string(retained.cache.scene.index.value()->document_revision);
+    for (const auto& note : retained.cache.scene.index.value()->notes)
         sources += " id=" + std::to_string(note.note.value) + " sound=" +
             std::to_string(note.sound.value_or(resource_id_t{}).value);
     if (retained.cache.scene.static_scene_storage) {
@@ -5518,7 +5530,7 @@ TEST_CASE("Dense inspector geometry belongs to the actual document and chart sou
     replacement.interaction = prior.interaction;
     t475_project(replacement);
     t475_check(std::string_view(replacement.flattened.view.compose.selected_note_label) == "replacement");
-    t475_check(replacement.cache.scene.scene_document_identity == &replacement.history.document);
+    t475_check(replacement.cache.scene.index.key()->document_identity == &replacement.history.document);
     t475_compare_fresh(replacement);
     auto& charts = replacement.history.document.charts;
     auto chart = charts.front();
@@ -7066,7 +7078,8 @@ TEST_CASE("Registered note selection respects active editable lanes",
 TEST_CASE("Compose scene keys invalidate only on document or chart changes", "[unit][sys][commands]") {
     wormedit::song_document_t document;
     document.id = wormedit::song_id_t{51};
-    document.charts.push_back({.id = wormedit::chart_id_t{7}});
+    document.charts.push_back(compose_test_song().charts.front());
+    document.charts.front().id = wormedit::chart_id_t{7};
     auto& chart = document.charts.front();
     compose_scene_cache_t cache;
     expect_compose_test(!cache.is_scene_key_current(document, chart));
@@ -7475,4 +7488,20 @@ TEST_CASE("Compose hit-test cache retries failed geometry without retaining a fa
     chart.divisions_per_standard_measure = divisions;
     CHECK(cache.hit_test_index_for(chart, song.revision));
     CHECK(cache.scene.hit_test_index.build_count() == 1);
+}
+
+TEST_CASE("Compose measure geometry is shared with the committed snapshot",
+          "[sys][timing-projection][chart-indices]") {
+    auto history = document_history_t::from(compose_test_song());
+    auto workspace = workspace_controller_t::from(history).value.value();
+    workspace.active_tab = workspace_tab_t::compose;
+    workspace.selected_chart = chart_id_t{1};
+    compose_scene_cache_t cache;
+    std::optional<editor_interaction_state_t> interaction;
+    populate_measure_cache_frame(history, workspace, cache, interaction);
+    const auto* indices = history.indices(chart_id_t{1});
+    REQUIRE(indices);
+    CHECK(cache.scene.cached_measure_index.get() == &indices->measures.value());
+    history = document_history_t::from(compose_test_song());
+    CHECK(cache.scene.cached_measure_index->total_rows == 960);
 }

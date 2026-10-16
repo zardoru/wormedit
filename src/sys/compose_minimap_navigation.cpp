@@ -69,7 +69,7 @@ auto seek_stopped_compose_transport(document_history_t& history, editor_interact
     -> compose_action_outcome_t {
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr) {
-        if (cache.scene.chart != state.chart || cache.scene.revision != history.document.revision ||
+        if (cache.stamp().chart != state.chart || cache.stamp().document.revision != history.document.revision ||
             !cache.timing.marker_timing_index || !cache.scene.cached_measure_index)
             return compose_action_outcome_t::blocked(
                 "Compose seek is unavailable until the chart is ready.",

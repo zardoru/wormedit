@@ -47,7 +47,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         static std::atomic<std::uint64_t> next_generation{1};
         cache.waveform.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
     }
-    cache.waveform.waveform_overview_revision = cache.scene.revision;
+    cache.waveform.waveform_overview_revision = cache.stamp().document.revision;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                request.pixels_per_standard_measure;
     const auto begin = overview_fraction(waveform, timing,
@@ -305,11 +305,11 @@ auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
 void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
                            bgm_bar_range_t range) {
     auto& bar = cache.waveform.bgm_bar;
-    if (bar.marks_valid && bar.marks_revision == cache.scene.revision &&
+    if (bar.marks_valid && bar.marks_revision == cache.stamp().document.revision &&
         bar.marks_total_frames == waveform.total_frames && bar.marks_range == range) return;
     bar.marks.clear();
     bar.marks_valid = true;
-    bar.marks_revision = cache.scene.revision;
+    bar.marks_revision = cache.stamp().document.revision;
     bar.marks_total_frames = waveform.total_frames;
     bar.marks_range = range;
     if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
@@ -358,7 +358,7 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
     const auto& projection_view = flattened.view.compose;
     const bool keep_capture = window_capture && *window_capture &&
         bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id},
-            chart_id_t{cache.scene.chart.value}, cache.scene.revision,
+            chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
             asset_id_t{projection_view.selected_audio_asset_id}, waveform.total_frames,
             waveform.sample_rate);
     if (window_capture && *window_capture && !keep_capture) window_capture->reset();
@@ -366,7 +366,7 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
         bgm_bar_pan_override_matches(**pan_override,
             projection_view.waveform_overview_visible_begin_fraction,
             projection_view.waveform_overview_visible_end_fraction,
-            song_id_t{projection_view.project_id}, chart_id_t{cache.scene.chart.value}, cache.scene.revision,
+            song_id_t{projection_view.project_id}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
             asset_id_t{projection_view.selected_audio_asset_id});
     if (pan_override && *pan_override && !keep_pan) pan_override->reset();
     const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
@@ -498,7 +498,7 @@ auto populate_compose_waveform_projection(
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
     (void)prepare_compose_display_row_table(cache,
-        request, {compose.project_id, cache.scene.chart.value, cache.scene.revision});
+        request, {compose.project_id, cache.stamp().chart.value, cache.stamp().document.revision});
     const auto window = audio::aligned_waveform_window(waveform, *cache.timing.marker_timing_index, request);
     const auto* selected_waveform = &waveform;
     if (window && detail_analysis && detail_analysis->waveform &&
@@ -511,8 +511,8 @@ auto populate_compose_waveform_projection(
     if (!style.sample_points) {
         const envelope_projection_context_t projection{cache.waveform.waveform_envelope_ring, waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
-            *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.scene.revision,
-            compose.project_id, cache.scene.chart.value, cache.waveform.waveform_row_table};
+            *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.stamp().document.revision,
+            compose.project_id, cache.stamp().chart.value, cache.waveform.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
     } else {
         cache.waveform.waveform_envelope_ring.valid = false;

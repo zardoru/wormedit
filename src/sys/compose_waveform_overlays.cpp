@@ -127,7 +127,7 @@ void append_proposed_grid_lines(proposed_grid_context_t& projection) {
         if (y < 0.0 || y > projection.view().viewport_height_pixels) continue;
         std::uint32_t measure_number{};
         if (line.kind == wormedit::editor_grid_line_kind_t::measure) {
-            const auto& measures = projection.cache.scene.index->measures.entries;
+            const auto& measures = projection.cache.scene.index.value()->measures.entries;
             const auto found = std::ranges::lower_bound(
                 measures, line.chart_row.whole_rows, {},
                 &wormedit::measure_index_entry_t::absolute_begin_row);
@@ -169,10 +169,10 @@ void append_note_and_bgm_preview_rects(proposed_grid_context_t& projection) {
     rects.reserve(projection.source_scene.note_endpoints.size() +
                   projection.source_scene.bgm_events.size());
     for (const auto& note : projection.source_scene.note_endpoints) {
-        const auto source = projection.cache.scene.index->note_indices_by_id.find(note.note.value);
-        if (source == projection.cache.scene.index->note_indices_by_id.end() || note.proposal_ghost)
+        const auto source = projection.cache.scene.index.value()->note_indices_by_id.find(note.note.value);
+        if (source == projection.cache.scene.index.value()->note_indices_by_id.end() || note.proposal_ghost)
             continue;
-        const auto& indexed = projection.cache.scene.index->notes[source->second];
+        const auto& indexed = projection.cache.scene.index.value()->notes[source->second];
         append_preview_rect(projection, to_frontend_rect(note.bounds),
                             note.tail ? indexed.end_row : indexed.begin_row, 0);
     }
@@ -238,7 +238,7 @@ void append_proposed_marker(proposed_grid_context_t& projection,
         projection.view().truncated = true;
         return;
     }
-    const auto row = (projection.cache.scene.index->measures).row_of(position);
+    const auto row = (projection.cache.scene.index.value()->measures).row_of(position);
     if (!row || *row < projection.rows.first || *row > projection.rows.second) return;
     const auto y = projection.proposed_y(*row);
     if (!y || std::abs(*y - projection.old_y(*row)) < 0.5 || *y < 0.0 ||
@@ -373,7 +373,7 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
     flattened.compose.grid.proposed.clear();
     flattened.compose.timing_preview_rect.clear();
     flattened.compose.timing_preview_marker.clear();
-    if (!cache.scene.index || !cache.frame.interaction_view) return;
+    if (!cache.scene.index.value() || !cache.frame.interaction_view) return;
     const auto downscroll = compose_field_downscroll(chart);
     const auto rows = proposed_visible_source_rows(
         original, proposed, interaction.viewport_scroll_pixels,
@@ -390,13 +390,13 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
         1.0, std::min(remaining_height,
                       static_cast<double>(rows->second - rows->first) * pixels_per_row + 32.0));
     const auto composed = wormedit::editor_field_scene_view_result_t::from(
-        chart, *cache.scene.index, source_view, cache.frame.preview_scene_request);
+        chart, *cache.scene.index.value(), source_view, cache.frame.preview_scene_request);
     if (!composed.value || !composed.ok()) {
         view.truncated = true;
         return;
     }
     const auto scope = compose_chart_scope_t<>::from(
-        {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row);
+        {chart, cache.scene.index.value()->measures}, source_view, downscroll, pixels_per_row);
     proposed_grid_context_t projection{scope,    flattened,   cache,           original,
                                        proposed, interaction, *composed.value, *rows};
     append_proposed_grid_lines(projection);
@@ -528,8 +528,8 @@ void build_beat_fit_positions_view(WormUiComposeView& compose,
                                 const editor_interaction_state_t& interaction,
                                 const beat_interval_drag_t& drag) {
     const auto& timing = *cache.timing.marker_timing_index;
-    compose.beat_fit_chart_row = (cache.scene.index->measures).row_of(drag.beat).value_or(0);
-    const auto anchor_row = (cache.scene.index->measures).row_of(drag.original_bpm_position);
+    compose.beat_fit_chart_row = (cache.scene.index.value()->measures).row_of(drag.beat).value_or(0);
+    const auto anchor_row = (cache.scene.index.value()->measures).row_of(drag.original_bpm_position);
     const auto pixels_per_row = compose.pixels_per_standard_measure /
                                 timing.divisions_per_standard_measure;
     const auto downscroll = compose_field_downscroll(chart);
@@ -563,7 +563,7 @@ void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,
     populate_beat_fit_fields(compose, drag.payload);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
     const auto chart = history.document.find_chart(drag.stamp.chart);
-    if (chart == nullptr || !cache.scene.index || !interaction ||
+    if (chart == nullptr || !cache.scene.index.value() || !interaction ||
         !cache.timing.marker_timing_index) return;
     build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag.payload);
     rebuild_beat_fit_timing_index(cache, *chart, drag.payload);

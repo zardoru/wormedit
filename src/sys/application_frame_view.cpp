@@ -67,7 +67,7 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
     const auto* state = context.compose_interaction_state ? &*context.compose_interaction_state : nullptr;
     if (!state || !context.workspace.selected_chart || state->chart != *context.workspace.selected_chart ||
         state->virtual_bms_cursor_row || !cache.timing.marker_timing_index || !cache.scene.cached_measure_index ||
-        cache.scene.chart != state->chart)
+        cache.stamp().chart != state->chart)
         return std::nullopt;
     const auto at = cache.timing.marker_timing_index->query_seconds(*cache.scene.cached_measure_index, state->cursor);
     const auto end = cache.timing.marker_timing_index->query_seconds(cache.timing.marker_timing_index->total_rows);
@@ -94,8 +94,8 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
     const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return {};
-    const auto timing_matches = context.compose_scene_cache.scene.chart == chart->id &&
-        context.compose_scene_cache.scene.revision == context.history.document.revision &&
+    const auto timing_matches = context.compose_scene_cache.stamp().chart == chart->id &&
+        context.compose_scene_cache.stamp().document.revision == context.history.document.revision &&
         context.compose_scene_cache.timing.marker_timing_index.has_value();
     const auto* timing = timing_matches ? &*context.compose_scene_cache.timing.marker_timing_index : nullptr;
     const auto bindings = context.audition_sources.bindings(context.history.document);

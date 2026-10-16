@@ -1745,7 +1745,7 @@ auto close_confirmation_view(const pending_close_t& pending, bool has_native_pat
 
 auto retained_compose_geometry(const compose_scene_cache_t& cache)
     -> wormedit::editor_measure_geometry_t {
-    return {cache.scene.chart, cache.scene.revision,
+    return {cache.stamp().chart, cache.stamp().document.revision,
             cache.scene.cached_measure_index ? &*cache.scene.cached_measure_index : nullptr};
 }
 

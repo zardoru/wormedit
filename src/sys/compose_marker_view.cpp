@@ -442,11 +442,11 @@ auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
     stored.valid = false;
     stored.markers.clear();
     append_compose_chart_timing_markers(
-        chart, cache.scene.index->measures,
+        chart, cache.scene.index.value()->measures,
         [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
             std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
             std::string detail, bool fixed_initial) {
-            stored.markers.push_back({(cache.scene.index->measures).row_of(position), id,
+            stored.markers.push_back({(cache.scene.index.value()->measures).row_of(position), id,
                                       source_order, storage_order, lane, std::move(short_label),
                                       std::move(detail), fixed_initial});
         });
@@ -522,11 +522,11 @@ void populate_compose_timing_markers(
                                  marker.fixed_initial);
     } else {
         append_compose_chart_timing_markers(
-            chart, cache.scene.index->measures,
+            chart, cache.scene.index.value()->measures,
             [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
                 std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
                 std::string detail, bool fixed_initial) {
-                append_timing_marker((cache.scene.index->measures).row_of(position), id,
+                append_timing_marker((cache.scene.index.value()->measures).row_of(position), id,
                                      source_order, storage_order, lane, std::move(short_label),
                                      std::move(detail), fixed_initial);
             });
@@ -539,7 +539,7 @@ void populate_compose_timing_markers(
         stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
         timing_stage->captured_stamp().is_current(chart.id, view.document_revision)) {
         const auto stage_row =
-            (cache.scene.index->measures).row_of(stage_report->position);
+            (cache.scene.index.value()->measures).row_of(stage_report->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,

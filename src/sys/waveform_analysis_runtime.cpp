@@ -542,7 +542,7 @@ void append_packed_waveform_assets(const song_document_t& document,
         interaction->chart != *workspace.selected_chart || !cache.timing.marker_timing_index) return;
     const auto chart = document.find_chart(*workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson ||
-        cache.scene.chart != chart->id || cache.scene.revision != document.revision) return;
+        cache.stamp().chart != chart->id || cache.stamp().document.revision != document.revision) return;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, document, *chart,
                                  sources.bindings(), *cache.timing.marker_timing_index);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,

@@ -1,3 +1,4 @@
+#include "compose_scene_cache_fixture.h"
 #include "sys/compose_sound_actions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
@@ -1036,8 +1037,9 @@ void prepare_t463_stem(bga_input_fixture_t& fixture) {
     chart.measures.front().bgm_events = {{.id = object_id_t{87}, .position = {measure_id_t{1}, 0},
         .source_lane = object_id_t{84}, .sound = resource_id_t{82}, .sound_channel_event = object_id_t{86}}};
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
-    fixture.cache.scene.scene_document_identity = &fixture.history.document;
-    fixture.cache.scene.scene_chart_identity = &chart;
+    static_cast<void>(fixture.cache.scene.index.get_or_build(compose_scene_source_key_t{
+        .document_identity = &fixture.history.document, .chart_identity = &chart},
+        retained_scene_fixture_t{}));
     fixture.cache.stems.stem_index.built = true;
     fixture.cache.stems.stem_index.document = fixture.history.document.id;
     fixture.cache.stems.stem_index.chart = chart.id;

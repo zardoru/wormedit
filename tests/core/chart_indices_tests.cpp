@@ -217,3 +217,22 @@ TEST_CASE("Reopening an equal revision also drops cached index failures",
     CHECK(rebuilt->measures.has_value());
     CHECK(rebuilt->timing.value.has_value());
 }
+
+TEST_CASE("An index lease retains aliased measure geometry through equal-revision replacement",
+          "[core][chart-indices]") {
+    auto history = document_history_t::from(make_indices_song());
+    auto lease = history.indices_snapshot(chart_id_t{1});
+    REQUIRE(lease);
+    const auto* original = lease.get();
+    CHECK(original == history.indices(chart_id_t{1}));
+    std::shared_ptr<const measure_index_t> measures{lease, &lease->measures.value()};
+    auto replacement = make_indices_song();
+    replacement.charts.front().divisions_per_standard_measure = 960;
+    history = document_history_t::from(std::move(replacement));
+    lease.reset();
+    const auto* rebuilt = history.indices(chart_id_t{1});
+    REQUIRE(rebuilt);
+    CHECK(measures->total_rows == 480);
+    CHECK(rebuilt->measures.value().total_rows == 960);
+    CHECK(rebuilt != original);
+}

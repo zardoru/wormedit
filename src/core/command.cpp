@@ -129,12 +129,22 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     };
 }
 
+auto document_history_t::indices_storage(const chart_document_t& chart) const
+    -> const std::shared_ptr<const chart_indices_t>& {
+    auto& slot = chart.indices_slot.value_;
+    if (!slot) slot = std::make_shared<const chart_indices_t>(chart_indices_t::from(chart));
+    return slot;
+}
+
 auto document_history_t::indices(chart_id_t id) const -> const chart_indices_t* {
     const auto* chart = document.find_chart(id);
-    if (!chart) return nullptr;
-    auto& slot = chart->indices_slot.value_;
-    if (!slot) slot = std::make_shared<const chart_indices_t>(chart_indices_t::from(*chart));
-    return slot.get();
+    return chart ? indices_storage(*chart).get() : nullptr;
+}
+
+auto document_history_t::indices_snapshot(chart_id_t id) const
+    -> std::shared_ptr<const chart_indices_t> {
+    const auto* chart = document.find_chart(id);
+    return chart ? indices_storage(*chart) : std::shared_ptr<const chart_indices_t>{};
 }
 
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {

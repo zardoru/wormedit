@@ -10,6 +10,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -193,6 +194,9 @@ struct document_history_t {
 
     // Main-loop-only lazy read. The returned value belongs to the committed snapshot.
     [[nodiscard]] auto indices(chart_id_t chart) const -> const chart_indices_t*;
+    // Main-loop-only lazy read; the handle retains immutable indices through source replacement.
+    [[nodiscard]] auto indices_snapshot(chart_id_t chart) const
+        -> std::shared_ptr<const chart_indices_t>;
 
     song_document_t document;
     std::vector<document_command_record_t> undo;
@@ -200,6 +204,10 @@ struct document_history_t {
     std::uint64_t next_revision{1};
     std::optional<std::uint64_t> saved_revision;
     std::size_t maximum_undo_entries{128};
+
+  private:
+    [[nodiscard]] auto indices_storage(const chart_document_t& chart) const
+        -> const std::shared_ptr<const chart_indices_t>&;
 };
 
 struct document_command_effect_t {

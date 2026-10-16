@@ -52,7 +52,7 @@ using namespace compose_projection_detail;
 
 
 void compose_scene_cache_t::invalidate_scene_cache() {
-    scene.index.reset();
+    scene.index.invalidate_value();
     scene.scene_window.scene.reset();
     discard_compose_static_source(*this);
     scene.cached_measure_index.reset();
@@ -85,20 +85,51 @@ void compose_scene_cache_t::invalidate_scene_cache() {
     frame.viewport_autoscroll_active = false;
     frame.projection_error.clear();
     frame.paint_pointer.reset();
-    scene.attempted = false;
 }
 
 bool compose_scene_cache_t::ensure_scene_key(const wormedit::song_document_t& document,
     const wormedit::chart_document_t& chart) {
     if (is_scene_key_current(document, chart)) return false;
-    invalidate_scene_cache();
-    scene.scene_document_identity = &document;
-    scene.scene_chart_identity = &chart;
-    scene.scene_song = document.id;
-    scene.chart = chart.id;
-    scene.revision = document.revision;
-    scene.attempted = true;
+    static_cast<void>(scene.index.get_or_build(compose_scene_source_key_t::from(document, chart),
+        std::bind_front(&compose_scene_cache_t::build_scene_index, this, std::cref(document),
+                        std::cref(chart))));
     return true;
+}
+
+void compose_scene_cache_t::build_scene_index(const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart,
+    std::optional<wormedit::editor_field_scene_index_t>& index) {
+    frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
+    invalidate_scene_cache();
+    const auto built = wormedit::editor_field_scene_index_t::from(chart, document.revision);
+    if (built) {
+        index = *built;
+        scene.bgm_rows_by_id.reserve(index->bgm_events.size());
+        for (const auto& event : index->bgm_events) {
+            scene.bgm_rows_by_id.emplace(event.event.value, event.row);
+        }
+    } else {
+        const auto& diagnostics = built.error();
+        frame.projection_error = diagnostics.empty() ? "The field layout could not be indexed."
+                                           : diagnostics.front().message;
+        frame.projection_error_severity = to_notification_severity(diagnostics);
+    }
+    if (index) {
+        this->timing.kiai_spans = wormedit::sys::kiai_spans_view_t::from(
+            chart, index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
+        this->timing.sv_steps = wormedit::sys::sv_steps_view_t::from(
+            chart, index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
+        this->timing.recipe_areas = wormedit::sys::recipe_areas_view_t::from(
+            chart, index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
+    }
+    auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
+    if (timing.value) {
+        this->timing.dead_spans = wormedit::sys::dead_spans_view_t::from(
+            chart, index->measures, *timing.value, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
+        this->timing.speed_spans = wormedit::sys::speed_spans_view_t::from(
+            chart, *timing.value, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
+        this->timing.marker_timing_index = std::move(*timing.value);
+    }
 }
 
 auto compose_scene_cache_t::hit_test_index_for(const wormedit::chart_document_t& chart,
@@ -1146,17 +1177,20 @@ void populate_compose_selected_note(
 
 auto cached_compose_measures(frontend_workspace_view_t& flattened,
                              const wormedit::chart_document_t& chart,
+                             const wormedit::document_history_t& history,
                              compose_scene_cache_t& cache) -> const wormedit::measure_index_t* {
-    if (cache.scene.cached_measure_index) return &*cache.scene.cached_measure_index;
-    auto measure_index = wormedit::build_measure_index(chart);
-    if (!std::holds_alternative<wormedit::measure_index_t>(measure_index)) {
-        const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(measure_index);
+    if (cache.scene.cached_measure_index) return cache.scene.cached_measure_index.get();
+    const auto indices = history.indices_snapshot(chart.id);
+    if (!indices || !indices->measures) {
+        const wormedit::diagnostic_list_t unavailable;
         report_compose_diagnostic(flattened, projection_feedback_kind_t::measure_geometry,
-                                 diagnostics, "The chart measure geometry is invalid.");
+            indices ? indices->measures.error() : unavailable,
+            "The chart measure geometry is invalid.");
         return nullptr;
     }
-    cache.scene.cached_measure_index = std::move(std::get<wormedit::measure_index_t>(measure_index));
-    return &*cache.scene.cached_measure_index;
+    cache.scene.cached_measure_index = std::shared_ptr<const wormedit::measure_index_t>{
+        indices, &*indices->measures};
+    return cache.scene.cached_measure_index.get();
 }
 
 
@@ -1194,53 +1228,20 @@ const wormedit::measure_index_t* prepare_compose_chart_view(
     if (!populate_semantic_layer_palette(flattened, chart, cache, history, application_state)) {
         return nullptr;
     }
-    if (!cache.is_scene_key_current(history.document, chart)) {
-        frame_phase_scope_t frame_scene_index(frame_phase_t::scene);
-        cache.ensure_scene_key(history.document, chart);
-        const auto built =
-            wormedit::build_editor_field_scene_index(chart, history.document.revision);
-        if (std::holds_alternative<wormedit::editor_field_scene_index_t>(built)) {
-            cache.scene.index = std::get<wormedit::editor_field_scene_index_t>(built);
-            cache.scene.bgm_rows_by_id.reserve(cache.scene.index->bgm_events.size());
-            for (const auto& event : cache.scene.index->bgm_events) {
-                cache.scene.bgm_rows_by_id.emplace(event.event.value, event.row);
-            }
-        } else {
-            const auto& diagnostics = std::get<wormedit::diagnostic_list_t>(built);
-            cache.frame.projection_error = diagnostics.empty() ? "The field layout could not be indexed."
-                                               : diagnostics.front().message;
-            cache.frame.projection_error_severity = to_notification_severity(diagnostics);
-        }
-        if (cache.scene.index) {
-            cache.timing.kiai_spans = wormedit::sys::kiai_spans_view_t::from(
-                chart, cache.scene.index->measures, WORM_UI_COMPOSE_KIAI_SPAN_CAPACITY);
-            cache.timing.sv_steps = wormedit::sys::sv_steps_view_t::from(
-                chart, cache.scene.index->measures, WORM_UI_COMPOSE_SV_GRAPH_CAPACITY);
-            cache.timing.recipe_areas = wormedit::sys::recipe_areas_view_t::from(
-                chart, cache.scene.index->measures, WORM_UI_COMPOSE_RECIPE_AREA_CAPACITY);
-        }
-        auto timing = wormedit::timing_index_t::from(chart, {.allow_bounded_clock = true});
-        if (timing.value) {
-            cache.timing.dead_spans = wormedit::sys::dead_spans_view_t::from(
-                chart, cache.scene.index->measures, *timing.value, WORM_UI_COMPOSE_DEAD_SPAN_CAPACITY);
-            cache.timing.speed_spans = wormedit::sys::speed_spans_view_t::from(
-                chart, *timing.value, WORM_UI_COMPOSE_SPEED_SPAN_CAPACITY);
-            cache.timing.marker_timing_index = std::move(*timing.value);
-        }
-    }
-    if (!cache.scene.index) {
+    cache.ensure_scene_key(history.document, chart);
+    if (!cache.scene.index.value()) {
         report_compose_projection(flattened, projection_feedback_kind_t::field_index,
                                  cache.frame.projection_error_severity, cache.frame.projection_error);
         return nullptr;
     }
-    view.has_bgm_events = !cache.scene.index->bgm_events.empty();
+    view.has_bgm_events = !cache.scene.index.value()->bgm_events.empty();
     if (chart.measures.empty()) {
         report_compose_projection(flattened, projection_feedback_kind_t::empty_measures,
             wormedit::notification_severity_t::hint, "This difficulty has no measures to display.");
         return nullptr;
     }
 
-    const auto* measures = cached_compose_measures(flattened, chart, cache);
+    const auto* measures = cached_compose_measures(flattened, chart, history, cache);
     if (!measures || !populate_compose_bookmark_and_section_storage(flattened, chart, *measures, view))
         return nullptr;
     return measures;
@@ -1412,7 +1413,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     populate_compose_selection_preview(cache, retained_state, interaction_view, view);
     populate_compose_selected_objects_and_drafts(flattened, chart, history,
                                                  application_state, retained_state, view, cache);
-    auto canvas_rows = cache.scene.index->measures.total_rows;
+    auto canvas_rows = cache.scene.index.value()->measures.total_rows;
     if (wormedit::has_chart_virtual_tail(chart)) {
         const auto built_canvas = wormedit::build_virtual_canvas(chart);
         if (const auto* canvas = std::get_if<wormedit::virtual_canvas_t>(&built_canvas))
@@ -1452,7 +1453,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     }
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
     if (view.area_range_available && !view.area_range_virtual)
-        view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index->measures, *retained_state);
+        view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index.value()->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;
     const auto hover_gesture_active =
         retained_state->pending_hold.has_value() ||
@@ -1874,7 +1875,7 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
     if (!reusable_scalar_source(cache, view))
         return false;
     const auto metadata = wormedit::editor_field_scene_window_metadata_view_t::from(
-        input.scope.chart_scope.chart, *cache.scene.index, input.scope.interaction_view,
+        input.scope.chart_scope.chart, *cache.scene.index.value(), input.scope.interaction_view,
         cache.frame.preview_scene_request, cache.scene.scene_window);
     if (!metadata.projection)
         return false;
@@ -1886,11 +1887,11 @@ auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit:
                                   : cache.scene.scene_window.view.viewport_scroll_pixels -
                                         input.scope.interaction_view.viewport_scroll_pixels;
     const auto scene_scope = input.scope.for_view(
-        std::as_const(input.scope.interaction_view), cache.scene.index->measures);
+        std::as_const(input.scope.interaction_view), cache.scene.index.value()->measures);
     const auto scene_context = compose_projection_context_t<>::from(input.frame, scene_scope);
     const compose_scene_projection_context_t projection{
         scene_context,
-        *cache.scene.index,
+        *cache.scene.index.value(),
         *metadata.projection.scene,
         field_left,
         field_width,
@@ -2082,7 +2083,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     }
     const auto prior_window_work=cache.scene.scene_window.rebuild_count+cache.scene.scene_window.reuse_count;
     const auto composed = wormedit::editor_field_scene_view_result_t::from(
-        chart, *cache.scene.index, interaction_view, cache.frame.preview_scene_request,
+        chart, *cache.scene.index.value(), interaction_view, cache.frame.preview_scene_request,
         cache.scene.scene_window);
     frame_timing().restore(frame_scene_previous);
     if (!composed.value || !composed.ok()) {
@@ -2095,11 +2096,11 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     populate_quantize_ghost_geometry(cache, history.document, chart, application_state,
         *retained_state, interaction_view, view, pixels_per_row, downscroll);
     const auto scene_scope = input.scope.for_view(
-        std::as_const(interaction_view), cache.scene.index->measures);
+        std::as_const(interaction_view), cache.scene.index.value()->measures);
     const auto scene_context = compose_projection_context_t<>::from(input.frame, scene_scope);
     const compose_scene_projection_context_t projection{
         scene_context,
-        *cache.scene.index,
+        *cache.scene.index.value(),
         scene,
         field_left_pixels,
         playable_field_width,
@@ -2306,10 +2307,10 @@ auto compose_paint_head_occupied(const compose_projection_context_t<wormedit::ed
     auto& cache = input.frame.cache;
     // Successful scene indices contain every head; cap/geometry failures return
     // diagnostics rather than a truncated index. Never use the visible window.
-    if (cache.scene.index && cache.is_scene_key_current(input.frame.history.document, input.scope.chart_scope.chart,
+    if (cache.scene.index.value() && cache.is_scene_key_current(input.frame.history.document, input.scope.chart_scope.chart,
             compose_scene_key_policy_t::paint_occupancy) &&
-        cache.scene.index->note_indices_by_id.size() == cache.scene.index->notes.size()) {
-        const auto& notes = cache.scene.index->notes;
+        cache.scene.index.value()->note_indices_by_id.size() == cache.scene.index.value()->notes.size()) {
+        const auto& notes = cache.scene.index.value()->notes;
         auto note = std::ranges::lower_bound(notes, row, {},
             &wormedit::editor_field_scene_note_source_t::begin_row);
         for (; note != notes.end() && note->begin_row == row; ++note) {

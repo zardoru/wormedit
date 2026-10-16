@@ -136,24 +136,41 @@ struct compose_timing_payload_cache_t {
 enum class compose_scene_key_policy_t { projection, stem_geometry, measure_geometry,
                                         paint_occupancy, transport };
 
+struct compose_scene_source_key_t {
+    const void* document_identity{};
+    const void* chart_identity{};
+    wormedit::chart_stamp_t stamp;
+    auto operator==(const compose_scene_source_key_t&) const -> bool = default;
+
+    static auto from(const wormedit::song_document_t& document,
+                     const wormedit::chart_document_t& chart) -> compose_scene_source_key_t {
+        return {&document, &chart, {.document = {document.id, document.revision}, .chart = chart.id}};
+    }
+};
+
 struct compose_scene_cache_t {
+    auto stamp() const -> wormedit::chart_stamp_t {
+        return scene.index.key() ? scene.index.key()->stamp : wormedit::chart_stamp_t{};
+    }
     bool is_scene_key_current(const wormedit::song_document_t& document,
         const wormedit::chart_document_t& chart, compose_scene_key_policy_t policy = compose_scene_key_policy_t::projection) const {
-        const bool logical_stamp = scene.chart == chart.id && scene.revision == document.revision;
+        const auto binding = scene.index.key().value_or(compose_scene_source_key_t{});
+        const bool logical_stamp = binding.stamp.chart == chart.id &&
+                                   binding.stamp.document.revision == document.revision;
         if (policy == compose_scene_key_policy_t::transport) return logical_stamp;
-        if (scene.scene_document_identity != &document || scene.scene_chart_identity != &chart)
+        if (binding.document_identity != &document || binding.chart_identity != &chart)
             return false;
         switch (policy) {
         case compose_scene_key_policy_t::projection:
-            return scene.attempted && logical_stamp && scene.scene_song == document.id;
+            return scene.index.has_value() && logical_stamp && binding.stamp.document.project == document.id;
         case compose_scene_key_policy_t::stem_geometry:
             return stems.stem_index.built && stems.stem_index.document == document.id &&
                 stems.stem_index.chart == chart.id && stems.stem_index.revision == document.revision;
         case compose_scene_key_policy_t::measure_geometry:
             return logical_stamp;
         case compose_scene_key_policy_t::paint_occupancy:
-            return scene.index && scene.index->chart == chart.id &&
-                scene.index->document_revision == document.revision;
+            return scene.index.value() && scene.index.value()->chart == chart.id &&
+                scene.index.value()->document_revision == document.revision;
         case compose_scene_key_policy_t::transport:
             return logical_stamp;
         }
@@ -165,6 +182,12 @@ struct compose_scene_cache_t {
     auto hit_test_index_for(const wormedit::chart_document_t& chart,
                             std::uint64_t document_revision)
         -> const wormedit::editor_hit_test_index_t*;
+  private:
+    void build_scene_index(const wormedit::song_document_t& document,
+                           const wormedit::chart_document_t& chart,
+                           std::optional<wormedit::editor_field_scene_index_t>& index);
+
+  public:
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
     mutable compose_timing_payload_cache_t timing_payload_cache;
@@ -255,13 +278,8 @@ struct compose_scene_cache_t {
 
     // Retained chart geometry and reusable projections share the document/chart stamp.
     struct scene_state_t {
-        const void* scene_document_identity{};
-        const void* scene_chart_identity{};
-        wormedit::song_id_t scene_song;
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
-        bool attempted{};
-        std::optional<wormedit::editor_field_scene_index_t> index;
+        wormedit::keyed_cache_t<compose_scene_source_key_t,
+            std::optional<wormedit::editor_field_scene_index_t>> index;
         wormedit::editor_field_scene_window_t scene_window;
         std::uint64_t static_scene_style_generation{};
         std::shared_ptr<frontend_workspace_view_t> static_scene_storage;
@@ -279,7 +297,7 @@ struct compose_scene_cache_t {
         // Two bounded source locations, invalidated with the document/chart scene.
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
-        std::optional<wormedit::measure_index_t> cached_measure_index;
+        std::shared_ptr<const wormedit::measure_index_t> cached_measure_index;
         wormedit::keyed_cache_t<
             std::tuple<const wormedit::chart_document_t*, wormedit::chart_id_t, std::uint64_t>,
             std::variant<wormedit::editor_hit_test_index_t, wormedit::diagnostic_list_t>> hit_test_index;

@@ -729,7 +729,7 @@ struct compose_input_context_t {
                             const wormedit::editor_interaction_view_model_t& view, double x_pixels,
                             double y_pixels)
         -> std::optional<std::pair<std::uint64_t, wormedit::lane_id_t>> {
-        if (!environment.controls.cache.scene.index)
+        if (!environment.controls.cache.scene.index.value())
             return std::nullopt;
         const auto row = virtual_bms_row_at(chart, view, y_pixels);
         if (!row)
@@ -737,7 +737,7 @@ struct compose_input_context_t {
         auto request = environment.controls.cache.frame.preview_scene_request;
         request.include_virtual_bms_tail = true;
         const auto composed = wormedit::editor_field_scene_view_result_t::from(
-            chart, *environment.controls.cache.scene.index, view, request);
+            chart, *environment.controls.cache.scene.index.value(), view, request);
         if (!composed.value || !composed.ok())
             return std::nullopt;
         for (const auto& lane : composed.value->lanes) {

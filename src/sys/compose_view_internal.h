@@ -812,7 +812,9 @@ void populate_compose_selected_note(
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
 auto cached_compose_measures(frontend_workspace_view_t& flattened,
-                             const wormedit::chart_document_t& chart, compose_scene_cache_t& cache)
+                             const wormedit::chart_document_t& chart,
+                             const wormedit::document_history_t& history,
+                             compose_scene_cache_t& cache)
     -> const wormedit::measure_index_t*;
 
 void discard_compose_static_source(compose_scene_cache_t& cache);

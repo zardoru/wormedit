@@ -2124,7 +2124,7 @@ auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::stri
 
 auto compose_bgm_scroll_content_width(const compose_input_context_t& context) -> double {
     const auto& widths = context.environment.controls.cache.scene.bgm_lane_widths_pixels;
-    if (context.environment.controls.cache.scene.chart != context.state.chart || widths.empty())
+    if (context.environment.controls.cache.stamp().chart != context.state.chart || widths.empty())
         return static_cast<double>(context.bgm_lane_count) * compose_bgm_lane_width_pixels;
     double width{};
     for (const auto value : widths) width += value;

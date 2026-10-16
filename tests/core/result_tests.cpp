@@ -92,10 +92,10 @@ TEST_CASE("async start outcomes preserve generation and failure feedback",
     const async_job_start_outcome_t ready{17};
     REQUIRE(ready);
     CHECK(*ready == 17);
-    const async_job_start_outcome_t failed{std::unexpected(wormedit::error_t<async_job_start_status_t>{
-        async_job_start_status_t::capacity_exceeded, "full"})};
+    const async_job_start_outcome_t failed{std::unexpected(wormedit::error_t<failure_code_t>{
+        failure_code_t::capacity_exceeded, "full"})};
     REQUIRE_FALSE(failed);
-    CHECK(failed.error().code == async_job_start_status_t::capacity_exceeded);
+    CHECK(failed.error().code == failure_code_t::capacity_exceeded);
     CHECK(failed.error().message == "full");
 }
 

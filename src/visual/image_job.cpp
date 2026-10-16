@@ -177,8 +177,8 @@ auto image_job_t::request(song_id_t project, std::uint64_t document_revision,
     if (!project || document_revision == 0 || sources.empty() ||
         maximum_sources_per_request_ == 0 || sources.size() > maximum_sources_per_request_ ||
         options.maximum_result_rgba_bytes == 0) {
-        return std::unexpected(error_t<async_job_start_status_t>{
-            image_job_start_status_t::invalid_request, invalid_request_message_});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, invalid_request_message_});
     }
     return async_job_t::request(
         [this, project, document_revision, sources, options] {

@@ -60,14 +60,7 @@ template <class Identity, class Payload> struct async_job_completion_value_t {
     std::shared_ptr<const Payload> payload;
 };
 
-enum class async_job_start_status_t {
-    started,
-    invalid_request,
-    capacity_exceeded,
-    scheduler_rejected,
-};
-
-using async_job_start_outcome_t = result_t<std::uint64_t, error_t<async_job_start_status_t>>;
+using async_job_start_outcome_t = result_t<std::uint64_t, error_t<failure_code_t>>;
 
 // Owners whose workers own all inputs can retain their existing nonblocking
 // handle-release teardown. Workers borrowing owner state use cancel_and_wait.
@@ -126,14 +119,14 @@ template <class Request, class Payload, class Identity> class async_job_t {
     [[nodiscard]] auto request(Capture&& capture, Identity identity, work_function_t work)
         -> async_job_start_outcome_t {
         if (maximum_in_flight_ == 0)
-            return std::unexpected(error_t<async_job_start_status_t>{
-                async_job_start_status_t::invalid_request, std::string(invalid_message_)});
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::invalid_request, std::string(invalid_message_)});
         discard_terminal_workers();
         if (active_workers().size() >= maximum_in_flight_)
-            return std::unexpected(error_t<async_job_start_status_t>{
-                async_job_start_status_t::capacity_exceeded, std::string(capacity_message_)});
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::capacity_exceeded, std::string(capacity_message_)});
         task_graph_t graph{1};
-        const auto task =
+        auto task =
             graph.create_task({}, [request = std::invoke(std::forward<Capture>(capture)),
                                    work](std::span<const task_outcome_t>, std::stop_token stop)
                 -> task_outcome_t {
@@ -144,15 +137,10 @@ template <class Request, class Payload, class Identity> class async_job_t {
                 return task_value_t::from(std::make_shared<const Payload>(std::move(*result)));
             });
         if (!task)
-            return std::unexpected(error_t<async_job_start_status_t>{
-                async_job_start_status_t::scheduler_rejected, task.error().message});
+            return std::unexpected(std::move(task.error()));
         auto submitted = scheduler_->begin(std::move(graph));
         if (!submitted)
-            return std::unexpected(error_t<async_job_start_status_t>{
-                submitted.error().code == failure_code_t::capacity_exceeded
-                    ? async_job_start_status_t::capacity_exceeded
-                    : async_job_start_status_t::scheduler_rejected,
-                submitted.error().message});
+            return std::unexpected(std::move(submitted.error()));
         // Failed submissions must leave the previous current request intact.
         cancel();
         if (++last_generation_ == 0)

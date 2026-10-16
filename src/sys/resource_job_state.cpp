@@ -129,8 +129,8 @@ auto runtime::resource_copy_t::start(resource_copy_request_t request,
     -> wormedit::async_job_start_outcome_t {
     using namespace wormedit;
     if (is_busy())
-        return std::unexpected(error_t<async_job_start_status_t>{
-            async_job_start_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Wait for the current resource copy, import, or export to finish."});
     const auto source = request.target.export_copy ? notification_source_t::export_
                                                    : notification_source_t::import_;

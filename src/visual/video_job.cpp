@@ -187,8 +187,8 @@ auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revisi
     if (!project || document_revision == 0 || !source.resource || !source.asset ||
         source.kind != asset_kind_t::video || source.resource != clock.resource ||
         clock.media_time_denominator == 0) {
-        return std::unexpected(error_t<async_job_start_status_t>{
-            video_job_start_status_t::invalid_request, invalid_request_message_});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, invalid_request_message_});
     }
     return async_job_t::request(
         [this, project, document_revision, source = std::move(source), clock, limits]() mutable {

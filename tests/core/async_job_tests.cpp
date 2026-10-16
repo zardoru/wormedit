@@ -77,7 +77,7 @@ TEST_CASE("async job supersedes only after successful submission", "[unit][async
     const auto completion = job.wait();
     require_async(static_cast<bool>(second));
     require_async(!(rejected));
-    check_async(rejected.error().code == wormedit::async_job_start_status_t::capacity_exceeded);
+    check_async(rejected.error().code == wormedit::failure_code_t::capacity_exceeded);
     require_async(static_cast<bool>(completion));
     require_async(static_cast<bool>(*completion));
     check_async(completion->value().generation == *second);
@@ -152,8 +152,20 @@ TEST_CASE("async job zero bound disables submissions", "[unit][async-job]") {
         1, work);
     check_async(captures == 0);
     require_async(!(rejected));
-    check_async(rejected.error().code == wormedit::async_job_start_status_t::invalid_request);
+    check_async(rejected.error().code == wormedit::failure_code_t::invalid_request);
     check_async(!(job.is_busy()));
+}
+
+TEST_CASE("async startup retains the scheduler shutdown failure", "[unit][async-job]") {
+    wormedit::task_scheduler_t scheduler{1, 1};
+    scheduler.shutdown();
+    job_t job{scheduler, 1, "invalid", "capacity", "missing"};
+    const auto rejected = job.request(capture({.value = 1}), 17, work);
+    REQUIRE_FALSE(rejected);
+    CHECK(rejected.error().code == wormedit::failure_code_t::scheduler_stopped);
+    CHECK(rejected.error().message == "scheduler is shutting down");
+    CHECK_FALSE(job.is_busy());
+    CHECK_FALSE(job.poll());
 }
 
 TEST_CASE("async job can retain cancellation feedback for advisory owners", "[unit][async-job]") {

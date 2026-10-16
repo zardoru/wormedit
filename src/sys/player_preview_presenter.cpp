@@ -598,7 +598,7 @@ void request_player_preview_video(const Context& context) {
         context.history.document.revision, *resolved, clock);
     if (started) {
         state.requested_video_clock = clock;
-    } else if (started.error().code != async_job_start_status_t::capacity_exceeded) {
+    } else if (started.error().code != failure_code_t::capacity_exceeded) {
         state.failed_video_event = clock.event;
         state.video_diagnostic_message = started.error().message.empty()
                                             ? "The video frame task could not start."

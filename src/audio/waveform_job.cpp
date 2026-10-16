@@ -28,8 +28,8 @@ auto waveform_job_t::analyze(const waveform_request_t& request, std::stop_token 
 auto waveform_job_t::request(asset_id_t asset, std::uint32_t frames_per_bin,
                              waveform_analysis_options_t options) -> async_job_start_outcome_t {
     if (!asset || frames_per_bin == 0) {
-        return std::unexpected(error_t<async_job_start_status_t>{
-            async_job_start_status_t::invalid_request, invalid_request_message_});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, invalid_request_message_});
     }
     return async_job_t::request(
         [this, asset, frames_per_bin, options] {

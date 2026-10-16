@@ -124,12 +124,12 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
     video_frame_job_t job{cache, scheduler};
 
     CHECK(job.request(song_id_t{}, 2, item, clock(item.resource, 0)).error().code ==
-          video_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
     CHECK(job.request(song_id_t{1}, 0, item, clock(item.resource, 0)).error().code ==
-          video_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
     video_frame_job_t disabled{cache, scheduler, 0};
     CHECK(disabled.request(song_id_t{1}, 2, item, clock(item.resource, 0)).error().code ==
-          video_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
 
     std::stop_source cancelled;
     cancelled.request_stop();

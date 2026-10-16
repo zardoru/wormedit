@@ -145,15 +145,15 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     CHECK(cache.size() == 0);
 
     CHECK(job.request(song_id_t{}, 20, sources).error().code ==
-          image_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
     CHECK(job.request(song_id_t{3}, 0, sources).error().code ==
-          image_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
     CHECK(job.request(song_id_t{3}, 20, std::span<const resolved_visual_asset_t>{}).error().code ==
-          image_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
 
     image_job_t disabled{cache, scheduler, 5, 0};
     CHECK(disabled.request(song_id_t{3}, 20, sources).error().code ==
-          image_job_start_status_t::invalid_request);
+          failure_code_t::invalid_request);
 }
 
 TEST_CASE("visual job publication requires a payload and preserves success messages",

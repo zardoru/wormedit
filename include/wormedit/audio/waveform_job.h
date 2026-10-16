@@ -8,7 +8,6 @@
 
 namespace wormedit::audio {
 
-using waveform_job_start_status_t = ::wormedit::async_job_start_status_t;
 using waveform_job_completion_outcome_t =
     async_job_completion_outcome_t<asset_id_t, waveform_analysis_result_t>;
 

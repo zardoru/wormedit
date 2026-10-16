@@ -178,7 +178,7 @@ void waveform_analysis_t::request_selected_waveform(std::optional<asset_id_t> as
         accepted = asset;
         return;
     }
-    if (started.error().code == audio::waveform_job_start_status_t::capacity_exceeded) return;
+    if (started.error().code == failure_code_t::capacity_exceeded) return;
     attempted = asset;
     sink_.post(notification_severity_t::error, notification_source_t::audio,
                started.error().message.empty() ? failure_message : started.error().message);
@@ -524,7 +524,7 @@ void waveform_analysis_t::start_stem_waveforms(const std::vector<asset_id_t>& wa
         const auto started = (*free_slot)->job.request(asset, 256);
         if (started) {
             (*free_slot)->asset = asset;
-        } else if (started.error().code != audio::waveform_job_start_status_t::capacity_exceeded) {
+        } else if (started.error().code != failure_code_t::capacity_exceeded) {
             stem_attempted_.insert(asset);
             sink_.post(notification_severity_t::error, notification_source_t::audio,
                        started.error().message.empty() ? "A BMSON stem waveform could not start."

@@ -51,8 +51,6 @@ class video_frame_cache_t {
     std::vector<video_frame_cache_entry_t> entries_;
 };
 
-using video_job_start_status_t = ::wormedit::async_job_start_status_t;
-
 struct video_job_context_t {
     async_job_project_identity_t identity;
     resolved_visual_asset_t source;

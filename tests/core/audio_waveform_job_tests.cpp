@@ -85,8 +85,8 @@ TEST_CASE("waveform job rejects invalid and zero-capacity requests",
     task_scheduler_t scheduler{1, 1};
     waveform_job_t job{sources, blocks, waveforms, scheduler, 0};
 
-    CHECK(job.request(asset_id_t{1}, 32).error().code == waveform_job_start_status_t::invalid_request);
-    CHECK(job.request({}, 32).error().code == waveform_job_start_status_t::invalid_request);
+    CHECK(job.request(asset_id_t{1}, 32).error().code == failure_code_t::invalid_request);
+    CHECK(job.request({}, 32).error().code == failure_code_t::invalid_request);
     CHECK_FALSE(job.poll().has_value());
     CHECK_FALSE(job.is_busy());
 }
@@ -119,7 +119,7 @@ TEST_CASE("waveform job preserves scheduler capacity rejection",
     REQUIRE(blocker_submission.value().wait());
 
     CHECK_FALSE(rejected);
-    CHECK(rejected.error().code == waveform_job_start_status_t::capacity_exceeded);
+    CHECK(rejected.error().code == failure_code_t::capacity_exceeded);
     CHECK(rejected.error().message == "scheduler outstanding-task capacity exceeded");
     CHECK_FALSE(job.is_busy());
 }

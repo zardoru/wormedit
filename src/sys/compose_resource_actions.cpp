@@ -455,7 +455,7 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
                     .export_copy = plan.export_copy},
          .project_directory = context.environment.resources->asset_base});
     if (!started) {
-        if (started.error().code == async_job_start_status_t::invalid_request)
+        if (started.error().code == failure_code_t::invalid_request)
             return compose_action_outcome_t::blocked(started.error().message, source);
         return compose_action_outcome_t::from(started.error().message,
                                               notification_severity_t::error, source, false, false);

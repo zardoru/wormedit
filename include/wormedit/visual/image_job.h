@@ -50,8 +50,6 @@ class image_cache_t {
     std::vector<image_cache_entry_t> entries_;
 };
 
-using image_job_start_status_t = ::wormedit::async_job_start_status_t;
-
 struct image_job_options_t {
     image_decode_limits_t decode_limits;
     std::size_t maximum_result_rgba_bytes{256U * 1024U * 1024U};

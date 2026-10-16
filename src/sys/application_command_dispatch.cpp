@@ -248,8 +248,8 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
             "Loop selection disabled.", notification_severity_t::success,
             notification_source_t::audio, compose_message_lifetime_t::borrowed);
     }
-    const auto indexed = build_measure_index(*chart);
-    const auto* measures = std::get_if<measure_index_t>(&indexed);
+    const auto& indexed = context.environment.document.history.indices(chart->id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     const auto begin =
         measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
     const auto end =
@@ -493,17 +493,15 @@ auto selection_commands(command_context_t& context) -> command_result_t {
 
 // Audio-time markers need the chart's timing index. A failed build is reported
 // once and navigation falls back to beat-anchored markers only.
-auto marker_timing_index(const wormedit::chart_document_t& chart, notification_sink_t& sink)
-    -> std::optional<wormedit::timing_index_t> {
-    if (!wormedit::sys::has_audio_marker_navigation(chart))
-        return std::nullopt;
-    auto built = wormedit::timing_index_t::from(chart);
-    if (built.value)
-        return std::move(built.value);
+auto marker_timing_index(const wormedit::chart_document_t& chart,
+                         const wormedit::chart_indices_t& indices, notification_sink_t& sink)
+    -> const wormedit::timing_index_t* {
+    if (!wormedit::sys::has_audio_marker_navigation(chart)) return nullptr;
+    if (indices.timing.value) return &*indices.timing.value;
     sink.post_feedback(
         notification_severity_t::warning, notification_source_t::input,
         "Audio-time bookmarks are skipped because the chart timing could not be built.");
-    return std::nullopt;
+    return nullptr;
 }
 
 auto navigate_active_markers(command_context_t& context,
@@ -514,12 +512,13 @@ auto navigate_active_markers(command_context_t& context,
     const auto* chart = selected_chart(context.environment.document.history,
                                        context.environment.document.workspace);
     const auto timing =
-        chart ? marker_timing_index(*chart, context.environment.document.notifications)
-              : std::nullopt;
+        chart ? marker_timing_index(*chart, *context.environment.document.history.indices(chart->id),
+                                    context.environment.document.notifications)
+              : nullptr;
     return marker_navigation_match_t::from(context.environment.document.history.document,
                                            context.environment.document.history.document.revision,
                                            state.chart, state.cursor, direction, {}, {},
-                                           timing ? &*timing : nullptr);
+                                           timing);
 }
 
 void post_marker_warnings(notification_sink_t& sink,
@@ -837,15 +836,15 @@ auto timing_lock_command(command_context_t& context) -> command_result_t {
 }
 
 auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
+                                    const wormedit::chart_indices_t& indices,
                                     wormedit::local_position_t position)
     -> std::optional<wormedit::signed_rational_t> {
     using namespace wormedit;
-    const auto measure_result = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&measure_result);
+    const auto* measures = indices.measures ? &*indices.measures : nullptr;
     const auto row = measures ? absolute_row(*measures, position) : std::nullopt;
     if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
-    const auto timing = timing_index_t::from(chart);
+    const auto& timing = indices.timing;
     if (!timing.value)
         return std::nullopt;
     const auto scroll = scroll_speed_index_t::from(chart, *timing.value);
@@ -901,7 +900,8 @@ auto timing_insert_command(command_context_t& context) -> command_result_t {
                 diagnostic_code_t::unsupported_feature);
         initial = timing_bpm_value_t{*bpm};
     } else {
-        const auto multiplier = effective_scroll_multiplier_at(*chart, state->cursor);
+        const auto multiplier = effective_scroll_multiplier_at(
+            *chart, *context.environment.document.history.indices(chart->id), state->cursor);
         if (!multiplier)
             return compose_action_outcome_t::from(
                 "The effective SV value could not be resolved at the cursor.",

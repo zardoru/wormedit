@@ -55,11 +55,10 @@ using namespace compose_navigation_input_detail;
 namespace compose_input_detail {
 
 auto validate_bmson_marker_positions(
-    const wormedit::chart_document_t& chart,
+    const wormedit::chart_indices_t& indices,
     std::span<const wormedit::bmson_sound_marker_insertion_t> markers) -> std::string {
     using namespace wormedit;
-    const auto measures = build_measure_index(chart);
-    const auto* measure_index = std::get_if<measure_index_t>(&measures);
+    const auto* measure_index = indices.measures ? &*indices.measures : nullptr;
     if (!measure_index) {
         return "BMSON marker target has invalid chart geometry.";
     }
@@ -149,14 +148,13 @@ auto application_command_state_t::bga_draw_stroke_t::propose(
         if (resource == resources.end() || std::ranges::find(resource->roles,
             wormedit::resource_role_t::bga) == resource->roles.end()) return {};
     }
-    auto built = compose_input_detail::bga_draw_geometry(context, chart);
-    auto* index = std::get_if<wormedit::measure_index_t>(&built);
-    if (!index) return {.diagnostics = std::move(std::get<wormedit::diagnostic_list_t>(built))};
+    const auto& measures = context.environment.document.history.indices(chart.id)->measures;
+    if (!measures) return {.diagnostics = measures.error()};
     return {.value = bga_draw_stroke_proposal_t{
         .stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document, chart.id),
         .payload = {.resource = input.resource_id ? std::optional{wormedit::resource_id_t{input.resource_id}}
                                                  : std::nullopt,
-                    .erase = input.paint_intent == 2, .geometry = std::move(*index)}}};
+                    .erase = input.paint_intent == 2, .geometry = *measures}}};
 }
 
 auto application_command_state_t::bga_draw_stroke_t::is_lane_valid(const WormUiComposeInputAction& input) -> bool {
@@ -253,7 +251,7 @@ auto application_command_state_t::bmson_marker_draft_t::revise(
         return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::invalid_stage, .message = "The selected chart is not a BMSON chart."}};
     }
-    if (auto validation = validate_bmson_marker_positions(*chart, markers);
+    if (auto validation = validate_bmson_marker_positions(*history.indices(chart->id), markers);
         !validation.empty()) {
         return {.diagnostics = diagnostic_t{.severity = diagnostic_severity_t::warning,
             .code = diagnostic_code_t::invalid_stage, .message = std::move(validation)}};
@@ -1071,9 +1069,8 @@ auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
     if (pending) {
         auto anchor = pending->anchor_canvas_row;
         if (!anchor) {
-            const auto built = build_measure_index(*context.chart());
-            if (const auto* index = std::get_if<measure_index_t>(&built))
-                anchor = absolute_row(*index, pending->position);
+            const auto& measures = context.environment.document.history.indices(context.state.chart)->measures;
+            if (measures) anchor = measures->row_of(pending->position);
         }
         if (!anchor) {
             result = dispatch_editor_action(context.environment.document.history, context.state,
@@ -1104,8 +1101,8 @@ auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
                                          wormedit::editor_interaction_result_t& result,
                                          std::string_view& accepted) -> bool {
     if (!context.state.pending_hold || !context.state.pending_hold->anchor_canvas_row) return false;
-    const auto built = wormedit::build_measure_index(chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto& measures = context.environment.document.history.indices(chart.id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
     if (!row) return false;
     place_virtual_note_from_pointer(input, context, *row, lane, result, accepted);
@@ -1305,8 +1302,8 @@ auto move_compose_bookmark(const WormUiComposeInputAction& input,
                                          &bookmark_t::id);
     if (found == chart->bookmarks.end() || found->anchor != marker_anchor_t::beat || !found->position)
         return "That beat-anchored bookmark is no longer available.";
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
                            : std::nullopt;
     const auto position = row ? position_at_absolute_row(*index, *row) : std::nullopt;
@@ -1700,8 +1697,8 @@ auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
     const auto selected = !state.selected_notes.empty() || !state.selected_objects.empty();
     const auto pending = state.pending_hold || !state.additional_keyboard_holds.empty();
     if (press ? selected : pending) return false;
-    const auto built = wormedit::build_measure_index(*context.input_chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto& measures = context.environment.document.history.indices(context.input_chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? wormedit::absolute_row(*index, state.cursor) : std::nullopt;
     return row && wormedit::is_head_blocked_by_warp(*context.input_chart, *index, *row,
                                                     state.armed_note_kind);
@@ -1832,15 +1829,6 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     (void)revise_compose_paste(application, context.environment.document.history.document,
                                context.state.chart, *position);
     return compose_input_family_result_t::continue_batch({});
-}
-
-auto bga_draw_geometry(const compose_input_context_t& context, const wormedit::chart_document_t& chart)
-    -> std::variant<wormedit::measure_index_t, wormedit::diagnostic_list_t> {
-    const auto& cache = context.environment.controls.cache;
-    if (cache.scene.index && cache.is_scene_key_current(context.environment.document.history.document, chart,
-            compose_scene_key_policy_t::measure_geometry))
-        return cache.scene.index->measures;
-    return wormedit::build_measure_index(chart);
 }
 
 auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_context_t& context,

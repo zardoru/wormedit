@@ -19,7 +19,8 @@ inline auto validate_timing_stage_binding(const WormUiWorkspaceAction& action,
     return std::nullopt;
 }
 
-auto timing_position_from_fraction(const wormedit::chart_document_t& chart, double fraction,
+auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
+                                   const wormedit::chart_indices_t& indices, double fraction,
                                    std::uint64_t active_denominator)
     -> std::optional<wormedit::local_position_t>;
 auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
@@ -31,6 +32,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     -> wormedit::timing_lane_pseudonote_outcome_t;
 auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
                         const wormedit::chart_document_t& chart,
+                        const wormedit::chart_indices_t& indices,
                         const WormUiWorkspaceAction& action, std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t>;
 } // namespace wormedit::sys

@@ -29,7 +29,9 @@ auto labeled_chart() -> chart_document_t {
 } // namespace
 
 TEST_CASE("label search first lands on the earliest match", "[sys][label-search]") {
-    const auto hit = find_label_search_hit(labeled_chart(), "drop", {measure_id_t{2}, 0},
+    const auto chart = labeled_chart();
+    const auto measures = measure_index_t::from(chart).value();
+    const auto hit = find_label_search_hit(chart, measures, "drop", {measure_id_t{2}, 0},
                                            label_search_step_t::first);
     REQUIRE(hit);
     CHECK(hit->matches.size() == 2);
@@ -38,21 +40,24 @@ TEST_CASE("label search first lands on the earliest match", "[sys][label-search]
 
 TEST_CASE("label search steps cycle past the cursor", "[sys][label-search]") {
     const auto chart = labeled_chart();
-    const auto next = find_label_search_hit(chart, "drop", {measure_id_t{1}, 0},
+    const auto measures = measure_index_t::from(chart).value();
+    const auto next = find_label_search_hit(chart, measures, "drop", {measure_id_t{1}, 0},
                                             label_search_step_t::next);
     REQUIRE(next);
     CHECK(next->target == local_position_t{measure_id_t{2}, 240});
-    const auto wrapped = find_label_search_hit(chart, "drop", {measure_id_t{2}, 240},
+    const auto wrapped = find_label_search_hit(chart, measures, "drop", {measure_id_t{2}, 240},
                                                label_search_step_t::next);
     REQUIRE(wrapped);
     CHECK(wrapped->target == local_position_t{measure_id_t{1}, 0});
-    const auto previous = find_label_search_hit(chart, "drop", {measure_id_t{1}, 0},
+    const auto previous = find_label_search_hit(chart, measures, "drop", {measure_id_t{1}, 0},
                                                 label_search_step_t::previous);
     REQUIRE(previous);
     CHECK(previous->target == local_position_t{measure_id_t{2}, 240});
 }
 
 TEST_CASE("label search without a match reports none", "[sys][label-search]") {
-    CHECK_FALSE(find_label_search_hit(labeled_chart(), "zzz", {measure_id_t{1}, 0},
+    const auto chart = labeled_chart();
+    const auto measures = measure_index_t::from(chart).value();
+    CHECK_FALSE(find_label_search_hit(chart, measures, "zzz", {measure_id_t{1}, 0},
                                       label_search_step_t::first));
 }

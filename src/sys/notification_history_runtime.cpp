@@ -1,4 +1,5 @@
 #include <wormedit/core/rational.h>
+#include <wormedit/core/timing.h>
 #include "sys/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
 
@@ -141,9 +142,9 @@ auto notification_history_runtime_t::apply(const WormUiNotificationAction& actio
     }
 }
 namespace {
-auto target_lane(const chart_document_t& chart, local_position_t position) -> lane_id_t {
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
+auto target_lane(const chart_document_t& chart, const chart_indices_t& indices,
+                 local_position_t position) -> lane_id_t {
+    const auto* index = indices.measures ? &*indices.measures : nullptr;
     if (!index) return {};
     const auto row = (*index).row_of(position);
     if (!row) return {};
@@ -169,7 +170,8 @@ auto navigation_interaction(const document_history_t& history,
     if (chart == nullptr) return std::nullopt;
     const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
-    auto setup = editor_interaction_state_t::from(history, target.chart, target_lane(*chart, target.position),
+    const auto lane = target_lane(*chart, *history.indices(chart->id), target.position);
+    auto setup = editor_interaction_state_t::from(history, target.chart, lane,
         target.position, snaps, previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return std::move(setup.state);

@@ -1534,8 +1534,8 @@ auto compare_jump_interaction(const wormedit::document_history_t& history,
                               const std::optional<wormedit::editor_interaction_state_t>& previous)
     -> std::optional<wormedit::editor_interaction_state_t> {
     if (previous && previous->chart == chart.id) return previous;
-    const auto built = wormedit::build_measure_index(chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto& measures = history.indices(chart.id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? (*index).row_of(position) : std::nullopt;
     const wormedit::lane_layout_segment_t* active{};
     std::uint64_t active_row{};
@@ -2340,7 +2340,8 @@ struct application_t::implementation_t {
             chart == nullptr || !stage.report()->existing_event || !action.timing_has_target_y
                 ? std::optional<wormedit::local_position_t>{}
                 : timing_position_from_fraction(
-                      *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                      *chart, *session.history.indices(chart->id),
+                      wormedit::sys::timing_target_fraction(action.timing_target),
                       active_snap_denominator);
         if (!target || !(stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(stage), session.history, *target, timing_locked)).value.has_value()) {
             post_edit_rejection(platform.notification_sink, stage.diagnostics,
@@ -3735,7 +3736,8 @@ struct application_t::implementation_t {
         std::uint64_t active_snap_denominator, wormedit::chart_document_t* chart,
         std::optional<wormedit::timing_lane_pseudonote_outcome_t>& timing_stage) {
         const auto value = chart == nullptr ? std::optional<wormedit::timing_lane_value_t>{}
-                                            : timing_stage_value(*timing_stage->report(), *chart, action,
+                                            : timing_stage_value(*timing_stage->report(), *chart,
+                                                                 *session.history.indices(chart->id), action,
                                                                  active_snap_denominator);
         if (!value) {
             timing_stage->diagnostics = {{

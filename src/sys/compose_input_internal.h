@@ -56,7 +56,7 @@ using namespace compose_navigation_input_detail;
 
 namespace wormedit::sys::compose_input_detail {
 auto validate_bmson_marker_positions(
-    const wormedit::chart_document_t& chart,
+    const wormedit::chart_indices_t& indices,
     std::span<const wormedit::bmson_sound_marker_insertion_t> markers) -> std::string;
 
 auto find_bmson_marker_channel(const wormedit::chart_document_t& chart,
@@ -1529,10 +1529,6 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
 auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
-
-auto bga_draw_geometry(const compose_input_context_t& context,
-                       const wormedit::chart_document_t& chart)
-    -> std::variant<wormedit::measure_index_t, wormedit::diagnostic_list_t>;
 
 auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_context_t& context,
                   const wormedit::chart_document_t& chart, const wormedit::measure_index_t& index)

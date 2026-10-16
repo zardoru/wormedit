@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/projection_notification_feedback.h"
 #include "sys/compose_label_search.h"
 
@@ -48,18 +49,16 @@ auto pick_target(const std::vector<located_match_t>& located, std::uint64_t curs
 
 } // namespace
 
-auto find_label_search_hit(const chart_document_t& chart, std::string_view text,
+auto find_label_search_hit(const chart_document_t& chart, const measure_index_t& measures,
+                           std::string_view text,
                            local_position_t cursor, label_search_step_t step)
     -> std::optional<label_search_hit_t> {
     const auto ids = find_notes_by_label(chart, text);
     if (ids.empty()) return std::nullopt;
-    const auto built = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
-    if (!measures) return std::nullopt;
-    auto located = locate_matches(chart, *measures, ids);
+    auto located = locate_matches(chart, measures, ids);
     if (located.empty()) return std::nullopt;
     std::ranges::stable_sort(located, {}, &located_match_t::row);
-    const auto cursor_row = (*measures).row_of(cursor).value_or(0);
+    const auto cursor_row = measures.row_of(cursor).value_or(0);
     return label_search_hit_t{.matches = ids, .target = pick_target(located, cursor_row, step).position};
 }
 
@@ -70,7 +69,9 @@ auto run_label_search(document_history_t& history, editor_interaction_state_t& s
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr) return "The selected difficulty is no longer available.";
     if (text.empty()) return "Type a label to search for.";
-    const auto hit = find_label_search_hit(*chart, text, state.cursor, step);
+    const auto& measures = history.indices(chart->id)->measures;
+    const auto hit = measures ? find_label_search_hit(*chart, *measures, text, state.cursor, step)
+                              : std::nullopt;
     if (!hit) {
         set_feedback_severity(severity, notification_severity_t::hint);
         return "No notes have a label containing that text.";

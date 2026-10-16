@@ -5651,11 +5651,11 @@ TEST_CASE("BMSON packed waveform uses its native clip and next column event",
     fixture.project_packed();
     check_packed_clip_rows(fixture);
     const auto key = fixture.piece().stem_key;
-    const auto builds = fixture.cache.stems.packed_waveform_index.builds;
+    const auto builds = fixture.cache.stems.packed_waveform_index.build_count();
     fixture.interaction.viewport_scroll_pixels = 1;
     fixture.project_packed();
     expect_gpu_work(fixture.piece().stem_key == key);
-    expect_gpu_work(fixture.cache.stems.packed_waveform_index.builds == builds);
+    expect_gpu_work(fixture.cache.stems.packed_waveform_index.build_count() == builds);
     INFO("Scrolled packed rows: " << fixture.cache.stems.packed_waveforms.front().ring.projected_rows);
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projected_rows == 1);
     const auto projected = fixture.cache.stems.packed_waveforms.front().ring.projected_rows;
@@ -5667,7 +5667,7 @@ TEST_CASE("BMSON packed waveform uses its native clip and next column event",
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().ring.projection_calls == calls);
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().rows.data() == rows);
     expect_gpu_work(fixture.cache.stems.packed_waveforms.front().source == source);
-    expect_gpu_work(fixture.cache.stems.packed_waveform_index.builds == builds);
+    expect_gpu_work(fixture.cache.stems.packed_waveform_index.build_count() == builds);
 }
 TEST_CASE("BMSON packed waveform pending band stays inside its event interval",
           "[sys][frame-timing][stem][bmson][packed-waveform]") {

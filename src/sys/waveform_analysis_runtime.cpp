@@ -543,8 +543,10 @@ void append_packed_waveform_assets(const song_document_t& document,
     const auto chart = document.find_chart(*workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson ||
         cache.stamp().chart != chart->id || cache.stamp().document.revision != document.revision) return;
+    const auto* measures = cache.is_scene_key_current(document, *chart,
+        compose_scene_key_policy_t::measure_geometry) ? cache.scene.cached_measure_index.get() : nullptr;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, document, *chart,
-                                 sources.bindings(), *cache.timing.marker_timing_index);
+                                 sources.bindings(), *cache.timing.marker_timing_index, measures);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         interaction->viewport_scroll_pixels, interaction->viewport_height_pixels,
         interaction->pixels_per_standard_measure);

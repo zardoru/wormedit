@@ -490,8 +490,10 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
         !context.interaction_state || !cache.timing.marker_timing_index) return;
     const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
+    const auto& measures = context.history.indices(chart->id)->measures;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, context.history.document,
-        *chart, context.audition_sources.bindings(context.history.document), *cache.timing.marker_timing_index);
+        *chart, context.audition_sources.bindings(context.history.document), *cache.timing.marker_timing_index,
+        measures ? &*measures : nullptr);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         context.interaction_state->viewport_scroll_pixels, view.viewport_height_pixels,
         view.pixels_per_standard_measure);

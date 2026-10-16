@@ -487,10 +487,10 @@ auto t459_packed_fixture() -> song_document_t {
 
 auto t459_piece(const sys::packed_waveform_index_t& index, std::uint64_t id)
     -> const sys::packed_waveform_piece_t* {
-    const auto found = std::ranges::find_if(index.pieces, [id](const auto& piece) {
+    const auto found = std::ranges::find_if(index.value().pieces, [id](const auto& piece) {
         return piece.event == object_id_t{id};
     });
-    return found == index.pieces.end() ? nullptr : &*found;
+    return found == index.value().pieces.end() ? nullptr : &*found;
 }
 
 auto t459_threshold_clipping_and_native_clip() -> bool {
@@ -500,7 +500,7 @@ auto t459_threshold_clipping_and_native_clip() -> bool {
     if (!timing.index) return false;
     sys::packed_waveform_index_t index;
     sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (!index.valid || t459_piece(index, 200) || t459_piece(index, 201)) return false;
+    if (!index.has_value() || t459_piece(index, 200) || t459_piece(index, 201)) return false;
     const auto* fractional_long = t459_piece(index, 202);
     const auto* clipped = t459_piece(index, 203);
     const auto* native_clip = t459_piece(index, 207);
@@ -525,10 +525,10 @@ auto t459_threshold_clipping_and_native_clip() -> bool {
     sys::packed_waveform_index_t short_index;
     sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
     sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    return short_index.valid && short_index.pieces.empty() && short_index.builds == 1 &&
-        short_index.cache_hits == 1 &&
+    return short_index.has_value() && short_index.value().pieces.empty() && short_index.build_count() == 1 &&
+        short_index.value().cache_hits == 1 &&
         sys::visible_packed_waveform_pieces(short_index, 0, 100).empty() &&
-        short_index.queried_pieces == 0;
+        short_index.value().queried_pieces == 0;
 }
 
 auto t459_unknown_dense_fixture() -> song_document_t {
@@ -560,13 +560,13 @@ auto t459_dense_unknown_query_is_bounded() -> bool {
     sys::packed_waveform_index_t index;
     sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
     sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (!index.valid || index.builds != 1 || index.cache_hits != 1 || index.pieces.size() != 4000)
+    if (!index.has_value() || index.build_count() != 1 || index.value().cache_hits != 1 || index.value().pieces.size() != 4000)
         return false;
     const auto pending = t459_piece(index, 16'000);
     const auto selected = sys::visible_packed_waveform_pieces(index, 30.001, 30.005);
     if (!pending || pending->sample_rate != 0 || pending->source_frames ||
         !std::ranges::any_of(selected, [pending](const auto* piece) { return piece == pending; }) ||
-        index.queried_pieces >= index.pieces.size() / 10) return false;
+        index.value().queried_pieces >= index.value().pieces.size() / 10) return false;
 
     auto short_song = t459_unknown_dense_fixture();
     short_song.audio_assets.front().stream = {100, 2, 50, true};
@@ -577,8 +577,8 @@ auto t459_dense_unknown_query_is_bounded() -> bool {
     sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
     sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
     const auto empty = sys::visible_packed_waveform_pieces(short_index, 30.001, 30.005);
-    return short_index.valid && short_index.builds == 1 && short_index.cache_hits == 1 &&
-        short_index.pieces.empty() && empty.empty() && short_index.queried_pieces == 0;
+    return short_index.has_value() && short_index.build_count() == 1 && short_index.value().cache_hits == 1 &&
+        short_index.value().pieces.empty() && empty.empty() && short_index.value().queried_pieces == 0;
 }
 } // namespace
 
@@ -607,7 +607,7 @@ auto t459_stacked_piece_endpoints(bool reverse) -> bool {
     if (!timing.index) return false;
     sys::packed_waveform_index_t index;
     sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (index.pieces.size() != 4) return false;
+    if (index.value().pieces.size() != 4) return false;
     for (const auto id : {2000U, 2001U}) {
         const auto* piece = t459_piece(index, id);
         if (!piece || piece->next_row != 480 || piece->end_seconds != 1.0) return false;

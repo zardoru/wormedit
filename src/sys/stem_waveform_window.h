@@ -4,6 +4,7 @@
 #include <wormedit/audio/source_registry.h>
 #include "common/static_interval_index.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/sound_slice.h>
 #include <unordered_set>
@@ -18,6 +19,7 @@
 #include <unordered_map>
 #include <variant>
 #include <vector>
+#include <utility>
 
 namespace wormedit::sys {
 
@@ -33,17 +35,42 @@ struct packed_waveform_piece_t {
     std::optional<std::uint64_t> source_frames;
     double begin_seconds{}, end_seconds{}, measure_seconds{};
 };
-struct packed_waveform_index_t {
+struct packed_waveform_query_t {
+    const song_document_t* document;
+    const chart_document_t* chart;
+    std::uint64_t revision, timing_fingerprint;
+    std::span<const audio::decoded_source_binding_t> bindings;
+};
+struct packed_waveform_key_t {
     const song_document_t* document{};
     const chart_document_t* chart{};
     std::uint64_t revision{}, timing_fingerprint{};
-    bool valid{};
-    std::uint64_t builds{}, cache_hits{};
-    mutable std::size_t queried_pieces{};
     std::vector<audio::decoded_source_binding_t> bindings;
+    auto operator==(const packed_waveform_key_t&) const -> bool = default;
+    auto operator==(const packed_waveform_query_t& query) const -> bool {
+        return document == query.document && chart == query.chart && revision == query.revision &&
+            timing_fingerprint == query.timing_fingerprint && std::ranges::equal(bindings, query.bindings);
+    }
+    static auto from(const packed_waveform_query_t& query) -> packed_waveform_key_t {
+        return {query.document, query.chart, query.revision, query.timing_fingerprint,
+                {query.bindings.begin(), query.bindings.end()}};
+    }
+    void assign(const packed_waveform_query_t& query) {
+        document = query.document; chart = query.chart; revision = query.revision;
+        timing_fingerprint = query.timing_fingerprint;
+        bindings = std::vector<audio::decoded_source_binding_t>{query.bindings.begin(), query.bindings.end()};
+    }
+};
+struct packed_waveform_data_t {
+    std::uint64_t cache_hits{};
+    mutable std::size_t queried_pieces{};
     std::vector<packed_waveform_piece_t> pieces;
     common::static_interval_index_t intervals;
+    static auto from(const song_document_t& document, const chart_document_t& chart,
+        std::span<const audio::decoded_source_binding_t> bindings, const timing_index_t& timing,
+        const measure_index_t* measures) -> std::optional<packed_waveform_data_t>;
 };
+using packed_waveform_index_t = keyed_cache_t<packed_waveform_key_t, packed_waveform_data_t>;
 
 inline auto packed_measure_seconds(const timing_index_t& timing,
     const measure_index_entry_t& measure, std::uint64_t row) -> std::optional<double> {
@@ -193,24 +220,21 @@ inline void append_next_packed_rows(
         if (next) next_rows.emplace(rows[i - 1].second, *next);
     }
 }
-inline void prepare_packed_waveform_index(packed_waveform_index_t& index,
-    const song_document_t& document, const chart_document_t& chart,
-    std::span<const audio::decoded_source_binding_t> bindings, const timing_index_t& timing) {
-    if (index.valid && index.document == &document && index.chart == &chart &&
-        index.revision == document.revision && index.timing_fingerprint == timing.source_fingerprint &&
-        index.bindings.size() == bindings.size() && std::equal(index.bindings.begin(), index.bindings.end(), bindings.begin())) {
-        ++index.cache_hits; return;
+inline auto packed_waveform_data_t::from(const song_document_t& document,
+    const chart_document_t& chart, std::span<const audio::decoded_source_binding_t> bindings,
+    const timing_index_t& timing, const measure_index_t* measures)
+    -> std::optional<packed_waveform_data_t> {
+    std::optional<measure_index_t> built_measures;
+    if (!measures) {
+        auto built = measure_index_t::from(chart);
+        if (!built) return std::nullopt;
+        built_measures = std::move(*built);
+        measures = &*built_measures;
     }
-    const auto builds = index.builds + 1;
-    index = {};
-    index.builds = builds;
-    index.document = &document; index.chart = &chart; index.revision = document.revision;
-    index.timing_fingerprint = timing.source_fingerprint;
-    index.bindings.assign(bindings.begin(), bindings.end());
-    const auto measures = build_measure_index(chart);
-    if (chart.source_family != format_family_t::bmson || !std::holds_alternative<measure_index_t>(measures)) return;
+    if (chart.source_family != format_family_t::bmson) return std::nullopt;
+    packed_waveform_data_t index;
     packed_geometry_builder_t builder{document, chart, timing, bindings};
-    prepare_packed_geometry(builder, std::get<measure_index_t>(measures));
+    prepare_packed_geometry(builder, *measures);
     std::unordered_map<std::uint64_t, std::vector<std::pair<std::uint64_t, std::uint64_t>>> column_rows;
     for (const auto& measure : chart.measures) for (const auto& event : measure.bgm_events) {
         if (!builder.lanes.contains(event.source_lane.value)) continue;
@@ -227,17 +251,35 @@ inline void prepare_packed_waveform_index(packed_waveform_index_t& index,
         intervals.push_back({index.pieces[i].begin_seconds,
             std::min(index.pieces[i].end_seconds, std::numeric_limits<double>::max()), i});
     index.intervals.rebuild(intervals);
-    index.valid = true;
+    return index;
+}
+
+inline void prepare_packed_waveform_index(packed_waveform_index_t& index,
+    const song_document_t& document, const chart_document_t& chart,
+    std::span<const audio::decoded_source_binding_t> bindings, const timing_index_t& timing,
+    const measure_index_t* measures = nullptr) {
+    const auto previous_builds = index.build_count();
+    bool succeeded = true;
+    auto& data = index.get_or_build(
+        packed_waveform_query_t{&document, &chart, document.revision, timing.source_fingerprint, bindings},
+        [&document, &chart, bindings, &timing, measures, &succeeded](packed_waveform_data_t& retained) {
+            retained = {};
+            auto built = packed_waveform_data_t::from(document, chart, bindings, timing, measures);
+            succeeded = built.has_value();
+            retained = std::move(built).value_or(packed_waveform_data_t{});
+        });
+    if (!succeeded) index.invalidate_value(); // Preserve retry after a failed packed build.
+    else if (index.build_count() == previous_builds) ++data.cache_hits;
 }
 inline auto visible_packed_waveform_pieces(const packed_waveform_index_t& index,
     double begin_seconds, double end_seconds) -> std::vector<const packed_waveform_piece_t*> {
     std::vector<const packed_waveform_piece_t*> result;
-    index.queried_pieces = 0;
-    if (!index.valid || !std::isfinite(begin_seconds) || !std::isfinite(end_seconds)) return result;
-    const auto queried = index.intervals.query(begin_seconds, end_seconds);
-    index.queried_pieces = queried.scanned;
+    index.value().queried_pieces = 0;
+    if (!index.has_value() || !std::isfinite(begin_seconds) || !std::isfinite(end_seconds)) return result;
+    const auto queried = index.value().intervals.query(begin_seconds, end_seconds);
+    index.value().queried_pieces = queried.scanned;
     for (const auto selected : queried.indices) {
-        const auto& piece = index.pieces[selected];
+        const auto& piece = index.value().pieces[selected];
         if (piece.begin_seconds < end_seconds && piece.end_seconds > begin_seconds) result.push_back(&piece);
     }
     return result;

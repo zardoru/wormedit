@@ -51,3 +51,8 @@ wormedit_label_slow_tests(wormedit_frame_timing_tests_TESTS
     "frame-timing.Frame timing projects real play follow on a 50000 note chart"
     "frame-timing.Indexed retained scalar publication matches full composition while following and reversing"
 )
+
+# frame-arena: preserve regression sizes and matrices; keep these in the full gate.
+wormedit_label_slow_tests(wormedit_frame_projection_arena_tests_TESTS
+    "frame-arena.Metadata arena list storage stays bounded through 1000 dense resets"
+)

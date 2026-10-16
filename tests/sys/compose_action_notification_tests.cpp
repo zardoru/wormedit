@@ -1166,6 +1166,7 @@ TEST_CASE("BMSON output export rejects missing stem before writing music or dest
 
 TEST_CASE("BMSON editor export publishes sliced audio and reports conversion losses",
           "[unit][sys][conversion][publication]") {
+    // Slow: all 24 chart-selection/tab/format/path combinations publish and verify three real WAV slices.
     const bool other_selected_chart = GENERATE(false, true);
     const auto tab = GENERATE(workspace_tab_t::compose, workspace_tab_t::setup, workspace_tab_t::metadata);
     const auto target = GENERATE(format_family_t::osu_mania, format_family_t::bms);

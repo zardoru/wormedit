@@ -921,3 +921,7 @@ if(APPLE AND WORMEDIT_BUILD_APP)
     target_link_libraries(wormedit_macos_menu_tests PRIVATE wormedit::core SDL3::SDL3 Catch2::Catch2WithMain "-framework AppKit")
     catch_discover_tests(wormedit_macos_menu_tests TEST_PREFIX "macos-menu.")
 endif()
+
+# Label after Catch discovery so its existing labels and properties are preserved.
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/slow_tests.cmake")

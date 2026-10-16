@@ -50,7 +50,7 @@ void check_rejected_object_audition(
     const wormedit::audio::object_audition_outcome_t& rejected,
     const wormedit::audio::prepared_object_audition_t& expected) {
     using namespace wormedit::audio;
-    CHECK(rejected.error().value.status == object_audition_status_t::transport_failed);
+    CHECK(rejected.error().value.status == wormedit::failure_code_t::transport_failed);
     REQUIRE(rejected.error().value.prepared.has_value());
     CHECK(*rejected.error().value.prepared == expected);
     REQUIRE(rejected.error().value.transport.has_value());
@@ -76,26 +76,26 @@ TEST_CASE("object audition prepares before replacing transport and rejects stale
 
     auto prepared = controller.prepare_object(song, request, bindings);
     REQUIRE(prepared);
-    CHECK(prepared.value().status == object_audition_status_t::prepared);
+    CHECK(prepared.value().status == object_audition_phase_t::prepared);
     CHECK_FALSE(bridge.session_token().has_value());
     REQUIRE(prepared.value().prepared.has_value());
     const auto started = controller.start_prepared(std::move(*prepared.value().prepared));
     REQUIRE(started);
-    CHECK(started.value().status == object_audition_status_t::started);
+    CHECK(started.value().status == object_audition_phase_t::started);
     REQUIRE(bridge.session_token().has_value());
     const auto active = *bridge.session_token();
 
     const auto stale =
         controller.prepare_object(song, {song.revision + 1, chart.id, request.object}, bindings);
     require_stem_preview(!stale);
-    CHECK(stale.error().value.status == object_audition_status_t::stale_document);
+    CHECK(stale.error().value.status == wormedit::failure_code_t::stale_generation);
     CHECK(bridge.session_token() == active);
     CHECK(transport.is_current(active));
 
     const auto missing =
         controller.start_object(song, {song.revision, chart.id, wormedit::object_id_t{999'999}}, bindings);
     require_stem_preview(!missing);
-    CHECK(missing.error().value.status == object_audition_status_t::resolve_failed);
+    CHECK(missing.error().value.status == wormedit::failure_code_t::resolve_failed);
     CHECK(bridge.session_token() == active);
     CHECK(transport.is_current(active));
 }
@@ -141,11 +141,7 @@ TEST_CASE("object audition expected rejection retains prepared clips and transpo
     REQUIRE_FALSE(rejected.has_value());
     check_rejected_object_audition(rejected, expected);
     CHECK_FALSE(bridge.session_token().has_value());
-    const auto legacy = object_audition_result_t::from(std::move(rejected));
-    CHECK_FALSE(legacy);
-    CHECK(legacy.prepared == expected);
-    require_stem_preview(legacy.transport.has_value());
-    CHECK(*legacy.transport == std::unexpected(wormedit::failure_code_t::invalid_data));
+
 }
 
 TEST_CASE("Stem click audition bounds decoded frames without changing offsets or shorter clips",

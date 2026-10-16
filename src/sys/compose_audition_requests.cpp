@@ -57,31 +57,33 @@ void process_object_request(const editor_object_audition_request_t& request,
 
     inputs.audition.sources.ensure_current(history.document);
     inputs.audition.sources.registry().await_pending();
-    auto prepared = inputs.audition.controller.prepare(
+    auto prepared = inputs.audition.controller.prepare_object(
         history.document, {request.document_revision, request.chart, request.object.id},
         inputs.audition.sources.bindings(history.document));
     if (prepared) {
         if (!audio::is_bound_stem_audition(
                 history.document, object_sound(history.document, request.chart, request.object.id),
-                inputs.audition.sources.bindings(history.document), prepared.prepared->clips)) {
+                inputs.audition.sources.bindings(history.document), prepared->prepared->clips)) {
             inputs.notifications.post(notification_severity_t::warning,
                                       notification_source_t::audio,
                                       "The stem preview has invalid decoded source geometry.");
             return;
         }
         pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
-        const auto started = inputs.audition.output.start(prepared.prepared->clips);
+        const auto started = inputs.audition.output.start(prepared->prepared->clips);
         post_audition_started(inputs.notifications, static_cast<bool>(started), started.message(),
                               "Audio preview started.", "Audio preview could not start.");
-    } else if (!prepared.diagnostics.empty() &&
-               prepared.diagnostics.front().code ==
-                   audio::audition_resolve_code_t::missing_resource) {
+        return;
+    }
+    const auto& failure = prepared.error();
+    if (!failure.diagnostics.empty() &&
+        failure.diagnostics.front().code == audio::audition_resolve_code_t::missing_resource) {
         // A silent note or BGM event has nothing to play; clicking or placing it is not an error.
-    } else if (!prepared.diagnostics.empty()) {
-        inputs.notifications.post(to_notification_severity(prepared.diagnostics.front().severity),
+    } else if (!failure.diagnostics.empty()) {
+        inputs.notifications.post(to_notification_severity(failure.diagnostics.front().severity),
                                   notification_source_t::audio,
-                                  prepared.diagnostics.front().message);
-    } else if (prepared.status == audio::object_audition_status_t::stale_document) {
+                                  failure.diagnostics.front().message);
+    } else if (failure.value.status.has_failure(failure_code_t::stale_generation)) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
                                   stale_action_message("Audio preview request"));
     } else {

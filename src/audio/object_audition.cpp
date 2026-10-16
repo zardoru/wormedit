@@ -42,7 +42,7 @@ auto object_audition_controller_t::prepare_object(
     if (request.document_revision != song.revision) {
         return std::unexpected(
             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>{
-                .value = {.status = object_audition_status_t::stale_document,
+                .value = {.status = failure_code_t::stale_generation,
                           .prepared = std::nullopt,
                           .transport = std::nullopt},
                 .diagnostics = {}});
@@ -51,13 +51,13 @@ auto object_audition_controller_t::prepare_object(
     if (resolved.value.clips.empty() || !resolved.diagnostics.empty()) {
         return std::unexpected(
             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>{
-                .value = {.status = object_audition_status_t::resolve_failed,
+                .value = {.status = failure_code_t::resolve_failed,
                           .prepared = std::nullopt,
                           .transport = std::nullopt},
                 .diagnostics = std::move(resolved.diagnostics)});
     }
     return object_audition_effect_t{
-        .status = object_audition_status_t::prepared,
+        .status = object_audition_phase_t::prepared,
         .prepared = prepared_object_audition_t{request, std::move(resolved.value.clips)},
         .transport = std::nullopt};
 }
@@ -68,12 +68,12 @@ auto object_audition_controller_t::start_prepared(prepared_object_audition_t pre
     if (!transport) {
         return std::unexpected(
             diagnosed_t<object_audition_effect_t, std::vector<audition_resolve_diagnostic_t>>{
-                .value = {.status = object_audition_status_t::transport_failed,
+                .value = {.status = failure_code_t::transport_failed,
                           .prepared = std::move(prepared),
                           .transport = transport},
                 .diagnostics = {}});
     }
-    return object_audition_effect_t{.status = object_audition_status_t::started,
+    return object_audition_effect_t{.status = object_audition_phase_t::started,
                                     .prepared = std::move(prepared),
                                     .transport = transport};
 }
@@ -87,24 +87,6 @@ auto object_audition_controller_t::start_object(const song_document_t& song,
     if (!prepared)
         return prepared;
     return start_prepared(std::move(*prepared->prepared));
-}
-
-auto object_audition_result_t::from(object_audition_outcome_t&& outcome)
-    -> object_audition_result_t {
-    auto& effect = outcome ? *outcome : outcome.error().value;
-    return {.status = effect.status,
-            .prepared = std::move(effect.prepared),
-            .transport = std::move(effect.transport),
-            .diagnostics = outcome ? std::vector<audition_resolve_diagnostic_t>{}
-                                   : std::move(outcome.error().diagnostics)};
-}
-
-auto object_audition_controller_t::prepare(const song_document_t& song,
-                                           object_audition_request_t request,
-                                           std::span<const audition_source_binding_t> bindings,
-                                           audition_resolve_options_t options)
-    -> object_audition_result_t {
-    return object_audition_result_t::from(prepare_object(song, request, bindings, options));
 }
 
 auto object_audition_controller_t::stop() noexcept -> transport_stop_result_t {

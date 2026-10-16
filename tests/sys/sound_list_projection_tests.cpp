@@ -629,21 +629,21 @@ TEST_CASE("Go to sound fuzzy search covers the full catalog and caches idle fram
     const auto& first = sound_picker_view_result_t::from(cache, song, song.charts.front(), "SSR");
     require_sound_projection(first.rows.size() == 1);
     check_sound_projection(first.rows.front().resource == wanted);
-    check_sound_projection(cache.catalog_builds == 1);
-    check_sound_projection(cache.query_builds == 1);
+    check_sound_projection(cache.catalog.build_count() == 1);
+    check_sound_projection(cache.matches.build_count() == 1);
     (void)sound_picker_view_result_t::from(cache, song, song.charts.front(), "ssr");
-    check_sound_projection(cache.catalog_builds == 1);
-    check_sound_projection(cache.query_builds == 1);
+    check_sound_projection(cache.catalog.build_count() == 1);
+    check_sound_projection(cache.matches.build_count() == 1);
     const auto& all = sound_picker_view_result_t::from(cache, song, song.charts.front(), "");
     check_sound_projection(all.total == 540);
     check_sound_projection(all.rows.size() == 20);
-    check_sound_projection(cache.catalog_builds == 1);
+    check_sound_projection(cache.catalog.build_count() == 1);
     song.resources[song.resources.size() - 2].missing = true;
     ++song.revision;
     const auto& missing = sound_picker_view_result_t::from(cache, song, song.charts.front(), "ssr");
     require_sound_projection(missing.rows.size() == 1);
     check_sound_projection(missing.rows.front().missing);
-    check_sound_projection(cache.catalog_builds == 2);
+    check_sound_projection(cache.catalog.build_count() == 2);
 }
 
 TEST_CASE("Go to sound ranks exact prefix substring and fuzzy matches deterministically", "[sound-picker][projection]") {

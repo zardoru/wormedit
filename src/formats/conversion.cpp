@@ -151,12 +151,12 @@ void append_target_diagnostics(conversion_outcome_t& result,
         std::string path;
         if constexpr (requires { path = diagnostic.location; })
             path = diagnostic.location;
+        else if constexpr (requires { diagnostic.location.json_path; })
+            path = diagnostic.location.json_path;
         else if constexpr (requires { diagnostic.path; })
             path = diagnostic.path;
         else if constexpr (requires { diagnostic.field; })
             path = diagnostic.field;
-        else if constexpr (requires { diagnostic.json_path; })
-            path = diagnostic.json_path;
         add_diagnostic(result, severity, conversion_diagnostic_code_t::target_diagnostic,
                        conversion_stage_t::serialize, target, chart, diagnostic.message,
                        std::move(path), loss);

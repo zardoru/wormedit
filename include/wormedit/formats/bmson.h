@@ -34,13 +34,15 @@ enum class bmson_write_diagnostic_code_t {
     duplicate_event,
 };
 
-struct bmson_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bmson_parse_diagnostic_code_t code{bmson_parse_diagnostic_code_t::invalid_json};
-    std::string message;
+struct bmson_source_location_t {
     std::string json_path;
     std::optional<std::size_t> byte_offset;
+
+    auto operator==(const bmson_source_location_t&) const -> bool = default;
 };
+
+using bmson_parse_diagnostic_t =
+    format_diagnostic_t<bmson_parse_diagnostic_code_t, bmson_source_location_t>;
 
 struct bmson_parse_options_t {
     std::size_t max_source_bytes{16U * 1024U * 1024U};
@@ -53,7 +55,7 @@ struct bmson_parse_options_t {
     std::optional<std::filesystem::path> asset_base_directory;
 };
 
-using bmson_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<bmson_parse_diagnostic_t>>;
+using bmson_parse_outcome_t = attempt_t<song_document_t, std::vector<bmson_parse_diagnostic_t>>;
 
 // Imports strict UTF-8 BMSON 1.0 bytes into Wormedit's loss-aware document.
 // Original JSON bytes are retained through format metadata for unchanged saves.
@@ -61,12 +63,9 @@ using bmson_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::v
                                      bmson_parse_options_t options = {})
     -> bmson_parse_outcome_t;
 
-struct bmson_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bmson_write_diagnostic_code_t code{bmson_write_diagnostic_code_t::invalid_document};
-    std::string message;
-    std::string json_path;
-};
+using bmson_write_diagnostic_t =
+    format_diagnostic_t<bmson_write_diagnostic_code_t, std::string,
+                        bmson_write_diagnostic_code_t::invalid_document>;
 
 struct bmson_write_options_t {
     // BMSON stores one chart per file. Omit this only when the song has exactly one chart.
@@ -75,7 +74,7 @@ struct bmson_write_options_t {
     bool preserve_source_fields{true};
 };
 
-using bmson_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bmson_write_diagnostic_t>>;
+using bmson_write_outcome_t = attempt_t<std::string, std::vector<bmson_write_diagnostic_t>>;
 
 // Exports one chart as BMSON 1.0 JSON. Positions and durations are represented exactly;
 // unsupported document features are reported instead of being silently discarded.

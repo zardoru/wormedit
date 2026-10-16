@@ -549,7 +549,7 @@ TEST_CASE("BMSON malformed pulse and resolution fixtures produce typed errors",
         const auto result = fixture(name);
         CHECK_FALSE(result.value.has_value());
         CHECK_FALSE(result.diagnostics.empty());
-        CHECK(result.diagnostics.front().byte_offset.has_value());
+        CHECK(result.diagnostics.front().location.byte_offset.has_value());
     }
     const auto overflow = fixture("negative-overflow-pulse-position.bmson");
     CHECK_FALSE(overflow.value.has_value());
@@ -600,8 +600,8 @@ TEST_CASE("BMSON JSON parser retains exact spans and enforces structural limits"
     CHECK_FALSE(duplicate.value.has_value());
     CHECK(has_error_code(duplicate, wormedit::bmson_parse_diagnostic_code_t::invalid_json));
     REQUIRE_FALSE(duplicate.diagnostics.empty());
-    REQUIRE(duplicate.diagnostics.front().byte_offset.has_value());
-    CHECK(*duplicate.diagnostics.front().byte_offset == duplicate_source.rfind("\"init_bpm\""));
+    REQUIRE(duplicate.diagnostics.front().location.byte_offset.has_value());
+    CHECK(*duplicate.diagnostics.front().location.byte_offset == duplicate_source.rfind("\"init_bpm\""));
 
     wormedit::bmson_parse_options_t depth_options;
     depth_options.max_nesting_depth = 0;
@@ -793,18 +793,18 @@ TEST_CASE("BGM packing rejection retains initial lane count without assignments"
 
 TEST_CASE("BMSON shared parse warnings remain independent of document presence", "[unit][bmson][results]") {
     wormedit::bmson_parse_outcome_t parsed{.diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
-        .code = wormedit::bmson_parse_diagnostic_code_t::unresolved_resource, .message = "warning", .json_path = "$.info"}}};
+        .code = wormedit::bmson_parse_diagnostic_code_t::unresolved_resource, .message = "warning", .location = {.json_path = "$.info"}}}};
     CHECK(parsed.ok());
     const auto legacy = std::move(parsed);
     CHECK(legacy.ok());
     CHECK_FALSE(legacy.value);
-    CHECK(legacy.diagnostics.front().json_path == "$.info");
+    CHECK(legacy.diagnostics.front().location.json_path == "$.info");
 }
 
 TEST_CASE("BMSON shared write warnings retain serialized bytes", "[unit][bmson][results]") {
     wormedit::bmson_write_outcome_t written{.value = std::string{"{}"},
         .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
-            .code = wormedit::bmson_write_diagnostic_code_t::invalid_document, .message = "warning", .json_path = "$"}}};
+            .code = wormedit::bmson_write_diagnostic_code_t::invalid_document, .message = "warning", .location = "$"}}};
     CHECK(written.ok());
     const auto legacy = std::move(written);
     CHECK(legacy.ok());

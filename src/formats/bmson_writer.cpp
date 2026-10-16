@@ -580,7 +580,7 @@ struct channel_builder_t {
         diagnostics.push_back({.severity = diagnostic_severity_t::warning,
             .code = bmson_write_diagnostic_code_t::lossy_transform,
             .message = "stem " + channel.name + " has no points",
-            .json_path = "$.sound_channels"});
+            .location = "$.sound_channels"});
     }
 
     void load_retained_channels() {
@@ -710,7 +710,7 @@ struct channel_builder_t {
             diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                 .code = bmson_write_diagnostic_code_t::lossy_transform,
                 .message = "BMSON source-channel events replaced stale semantic note/BGM projections",
-                .json_path = "$.sound_channels"});
+                .location = "$.sound_channels"});
             projection_warning_emitted = true;
         }
         return true;
@@ -917,7 +917,7 @@ void report_bmson_chart_losses(const chart_document_t& chart,
     diagnostics.push_back({.severity = diagnostic_severity_t::warning,
         .code = bmson_write_diagnostic_code_t::lossy_transform,
         .message = "semantic note layers were flattened while preserving each note's gameplay type",
-        .json_path = "$.sound_channels"});
+        .location = "$.sound_channels"});
 }
 
 void report_bmson_bookmark_loss(const chart_document_t& chart,
@@ -926,7 +926,7 @@ void report_bmson_bookmark_loss(const chart_document_t& chart,
     diagnostics.push_back({.severity = diagnostic_severity_t::warning,
         .code = bmson_write_diagnostic_code_t::lossy_transform,
         .message = "bookmarks were omitted because BMSON 1.0 has no bookmark feature",
-        .json_path = "$"});
+        .location = "$"});
 }
 
 void validate_bmson_timing_features(const chart_document_t& chart) {

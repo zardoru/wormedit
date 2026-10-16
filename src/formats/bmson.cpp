@@ -365,14 +365,14 @@ auto add_format_group(std::string_view source, const json_value_t& root,
 auto add_warning(bmson_parse_outcome_t& result, bmson_parse_diagnostic_code_t code,
                  std::string message, std::string path) -> void {
     result.diagnostics.push_back({diagnostic_severity_t::warning, code, std::move(message),
-                                  std::move(path), std::nullopt});
+                                  {std::move(path), std::nullopt}});
 }
 
 auto add_parse_error(bmson_parse_outcome_t& result, bmson_parse_diagnostic_code_t code,
                      std::string message, std::string path,
                      std::optional<std::size_t> offset = {}) -> void {
     result.diagnostics.push_back({diagnostic_severity_t::error, code, std::move(message),
-                                  std::move(path), offset});
+                                  {std::move(path), offset}});
 }
 
 struct json_policy_state_t {

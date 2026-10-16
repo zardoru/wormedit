@@ -296,7 +296,7 @@ TEST_CASE("BMSON writer persists editable info metadata through export and reloa
     const auto invalid_export = wormedit::write_bmson(invalid.document);
     CHECK_FALSE(invalid_export.value);
     REQUIRE_FALSE(invalid_export.diagnostics.empty());
-    CHECK(invalid_export.diagnostics.front().json_path == "$.info.subtitle");
+    CHECK(invalid_export.diagnostics.front().location == "$.info.subtitle");
 }
 
 TEST_CASE("BMSON writer retains standalone BGM and normalizes source-only collisions",
@@ -336,15 +336,15 @@ TEST_CASE("BMSON writer reports unsupported state and exact-number losses with t
     const auto warp = wormedit::write_bmson(*imported.value);
     CHECK_FALSE(warp.value.has_value());
     CHECK(has_write_error(warp, wormedit::bmson_write_diagnostic_code_t::unsupported_feature));
-    CHECK(warp.diagnostics.front().json_path == "$");
+    CHECK(warp.diagnostics.front().location == "$");
 
     chart.warps.clear();
     chart.bpms.front().beats_per_minute = {100, 3};
     const auto number = wormedit::write_bmson(*imported.value);
     CHECK_FALSE(number.value.has_value());
     CHECK(has_write_error(number, wormedit::bmson_write_diagnostic_code_t::unrepresentable_number));
-    CHECK((number.diagnostics.front().json_path == "$.info.init_bpm" ||
-           number.diagnostics.front().json_path == "$.bpm_events[].bpm"));
+    CHECK((number.diagnostics.front().location == "$.info.init_bpm" ||
+           number.diagnostics.front().location == "$.bpm_events[].bpm"));
 }
 
 TEST_CASE("BMSON writer selects a chart explicitly from multi-chart songs",

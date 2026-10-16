@@ -66,8 +66,6 @@ struct preview_bridge_pump_effect_t {
 };
 static_assert(sizeof(preview_bridge_pump_effect_t) <= 3 * sizeof(std::size_t));
 static_assert(std::is_trivially_copyable_v<preview_bridge_pump_effect_t>);
-using preview_bridge_pump_outcome_t =
-    result_t<preview_bridge_pump_effect_t, preview_bridge_pump_effect_t>;
 
 // Control-thread bridge from immutable core preview queues to the bounded
 // transport. The schedule must outlive the active bridge session. Call
@@ -114,7 +112,7 @@ class preview_transport_bridge_t {
     // allocate while preparing voices, so it belongs on a control thread.
     [[nodiscard]] auto materialize_preview(std::uint64_t exclusive_end_frame,
                                          std::uint64_t current_frame = 0)
-        -> preview_bridge_pump_outcome_t;
+        -> preview_bridge_pump_effect_t;
 
     [[nodiscard]] auto session_token() const noexcept -> std::optional<session_token_t> {
         return token_;

@@ -63,7 +63,7 @@ auto silent_preview_advances() -> bool {
     const auto started = output.start(schedule, {}, {}, 0, output_sample_rate * 60U);
     if (!started || !started->session || !started->session->value().detail.materialize)
         return false;
-    const bool advanced = started->session->value().detail.materialize->value().missing_sources == 1 &&
+    const bool advanced = started->session->value().detail.materialize->missing_sources == 1 &&
                           wait_for_silent_preview_frame(session, output);
     static_cast<void>(output.stop());
     output.close();

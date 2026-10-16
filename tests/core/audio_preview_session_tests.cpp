@@ -243,7 +243,7 @@ auto preview_music_seek_geometry_is_correct() -> bool {
     };
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
-    if (!started || bridge.materialize_preview(3 * maximum_read_frames).value().status !=
+    if (!started || bridge.materialize_preview(3 * maximum_read_frames).status !=
                         std::monostate{})
         return false;
     const auto active = transport.snapshot_voices(started.value().token);
@@ -302,7 +302,7 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
     };
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
-    if (!started || bridge.materialize_preview(2 * maximum_read_frames).value().status !=
+    if (!started || bridge.materialize_preview(2 * maximum_read_frames).status !=
                         std::monostate{} ||
         !dropped_music_segment_is_reported(session, cache, source.source))
         return false;
@@ -345,7 +345,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     const auto started = start_primed(session, schedule, bindings, {}, 0, {.lookahead_frames = 512});
     REQUIRE(started);
     REQUIRE(started.value().detail.materialize.has_value());
-    CHECK(started.value().detail.materialize->value().scheduled_events == 2);
+    CHECK(started.value().detail.materialize->scheduled_events == 2);
     REQUIRE(started.value().detail.prime.has_value());
     CHECK(started.value().detail.prime->overlapping_voices == 2);
     CHECK(session.is_active());
@@ -453,7 +453,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
         start_primed(session, schedule, {}, std::span{&metronome, 1}, 0, {.lookahead_frames = 96});
     REQUIRE(started);
     REQUIRE(started.value().detail.materialize.has_value());
-    CHECK(started.value().detail.materialize->value().scheduled_events == 1);
+    CHECK(started.value().detail.materialize->scheduled_events == 1);
     CHECK(session.set_metronome_volume(50));
     CHECK(session.metronome_volume() == 50);
     CHECK_FALSE(session.set_metronome_volume(101));
@@ -492,7 +492,7 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
 
     const auto final = session.render_frames(output);
     const std::array checks{
-        started.value().detail.materialize->value().missing_sources == 1,
+        started.value().detail.materialize->missing_sources == 1,
         first.status.is_in_phase(session_render_phase_t::mixed),
         first_active, first_frame == 32, silent,
         final.status.is_in_phase(session_render_phase_t::complete), !session.is_active(),

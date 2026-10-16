@@ -15,7 +15,7 @@ namespace wormedit::audio {
 
 struct preview_session_start_detail_t {
     std::optional<preview_bridge_start_outcome_t> bridge{};
-    std::optional<preview_bridge_pump_outcome_t> materialize{};
+    std::optional<preview_bridge_pump_effect_t> materialize{};
     std::optional<preview_pump_effect_t> prime{};
     auto operator==(const preview_session_start_detail_t&) const -> bool = default;
 };
@@ -41,7 +41,7 @@ static_assert(std::is_trivially_copyable_v<operation_state_t<preview_session_pum
 
 struct preview_session_pump_effect_t {
     operation_state_t<preview_session_pump_phase_t> status{failure_code_t::not_started};
-    std::optional<preview_bridge_pump_outcome_t> materialize{};
+    std::optional<preview_bridge_pump_effect_t> materialize{};
     std::optional<preview_pump_effect_t> decode{};
     [[nodiscard]] auto has_ready_decode() const -> bool {
         return decode.has_value() && !decode->status.has_failure();

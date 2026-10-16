@@ -26,9 +26,9 @@ auto validate_offline_interval(std::uint32_t sample_rate, std::uint64_t begin, s
     return std::nullopt;
 }
 
-auto materialization_status(const preview_bridge_pump_outcome_t& result)
+auto materialization_status(const preview_bridge_pump_effect_t& result)
     -> std::optional<failure_code_t> {
-    const auto& effect = result ? *result : result.error();
+    const auto& effect = result;
     if (effect.missing_sources != 0) return failure_code_t::unavailable;
     if (effect.status == failure_code_t::capacity_exceeded ||
         effect.status == failure_code_t::arithmetic_overflow ||

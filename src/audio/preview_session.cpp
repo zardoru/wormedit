@@ -91,7 +91,7 @@ auto preview_session_t::prime_started(preview_bridge_start_outcome_t started,
     }
     const auto materialized = bridge_.materialize_preview(*window_end, timeline_frame);
     detail.materialize = materialized;
-    const auto& materialized_effect = materialized ? *materialized : materialized.error();
+    const auto& materialized_effect = materialized;
     if (!is_materialize_succeeded(materialized_effect.status)) {
         static_cast<void>(bridge_.stop());
         clear_state();
@@ -136,7 +136,7 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
         }
         result.materialize = bridge_.materialize_preview(*window_end, timeline_frame);
         const auto& materialized = *result.materialize;
-        const auto& materialized_effect = materialized ? *materialized : materialized.error();
+        const auto& materialized_effect = materialized;
         if (!is_materialize_succeeded(materialized_effect.status)) {
             result.status = failure_code_t::materialize_failed;
             return std::unexpected(std::move(result));

@@ -540,18 +540,16 @@ void preview_transport_bridge_t::refill_assist_clicks(std::uint64_t end, std::ui
 
 auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end_frame,
                                                      std::uint64_t current_frame)
-    -> preview_bridge_pump_outcome_t {
+    -> preview_bridge_pump_effect_t {
     if (schedule_ == nullptr || !token_.has_value()) {
-        return std::unexpected(
-            preview_bridge_pump_effect_t{.status = failure_code_t::not_started});
+        return preview_bridge_pump_effect_t{.status = failure_code_t::not_started};
     }
     if (!transport_.is_current(*token_)) {
-        return std::unexpected(
-            preview_bridge_pump_effect_t{.status = failure_code_t::stale_generation});
+        return preview_bridge_pump_effect_t{.status = failure_code_t::stale_generation};
     }
     if (exclusive_end_frame < last_materialized_end_) {
-        return std::unexpected(preview_bridge_pump_effect_t{
-            .status = failure_code_t::invalid_state});
+        return preview_bridge_pump_effect_t{
+            .status = failure_code_t::invalid_state};
     }
 
     refill_assist_clicks(exclusive_end_frame, current_frame);
@@ -622,8 +620,6 @@ auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end
         advance_voice_ids(sources.size());
     }
     last_materialized_end_ = exclusive_end_frame;
-    if (result.status.has_failure())
-        return std::unexpected(std::move(result));
     return result;
 }
 

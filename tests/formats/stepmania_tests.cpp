@@ -930,7 +930,7 @@ TEST_CASE("Named StepMania implementations expose only their audited SSC 0.83 su
 
 TEST_CASE("StepMania export policy keeps file syntax and implementation choices separate",
           "[unit][format][stepmania][export-policy]") {
-    using error_t = wormedit::stepmania_export_policy_error_t;
+    using error_t = wormedit::failure_code_t;
     using implementation_t = wormedit::stepmania_implementation_profile_t;
     using profile_t = wormedit::stepmania_profile_t;
     using syntax_t = wormedit::stepmania_timing_syntax_t;
@@ -960,21 +960,21 @@ TEST_CASE("StepMania export policy keeps file syntax and implementation choices 
          .timing_syntax = syntax_t::unspecified,
          .implementation_profile = implementation_t::unspecified});
     CHECK_FALSE(missing_syntax);
-    CHECK(missing_syntax.error().code == error_t::timing_syntax_required);
+    CHECK(missing_syntax.error().code == error_t::invalid_request);
 
     const auto named_sm = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::sm,
          .timing_syntax = syntax_t::native_warps,
          .implementation_profile = implementation_t::etterna_0_75_1});
     CHECK_FALSE(named_sm);
-    CHECK(named_sm.error().code == error_t::named_implementation_requires_ssc);
+    CHECK(named_sm.error().code == error_t::unsupported);
 
     const auto named_legacy = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::ssc,
          .timing_syntax = syntax_t::legacy_negative_stop,
          .implementation_profile = implementation_t::etterna_0_75_1});
     CHECK_FALSE(named_legacy);
-    CHECK(named_legacy.error().code == error_t::named_implementation_requires_native_warps);
+    CHECK(named_legacy.error().code == error_t::conflict);
 
     wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::stepmania,
@@ -1408,6 +1408,6 @@ TEST_CASE("StepMania primary export policy retains required syntax rejection", "
     const auto resolved = stepmania_write_options_t::from(
         stepmania_export_policy_t{.timing_syntax = stepmania_timing_syntax_t::unspecified});
     REQUIRE_FALSE(resolved);
-    CHECK(resolved.error().code == stepmania_export_policy_error_t::timing_syntax_required);
+    CHECK(resolved.error().code == failure_code_t::invalid_request);
     CHECK(resolved.error().message == "Select a StepMania timing syntax explicitly");
 }

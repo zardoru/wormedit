@@ -2153,9 +2153,9 @@ auto note_map_text(const chart_document_t& chart,
 
 auto stepmania_write_options_t::from(stepmania_export_policy_t policy)
     -> stepmania_export_policy_outcome_t {
-    error_t<stepmania_export_policy_error_t> result{};
+    error_t<failure_code_t> result{};
     if (policy.timing_syntax == stepmania_timing_syntax_t::unspecified) {
-        result.code = stepmania_export_policy_error_t::timing_syntax_required;
+        result.code = failure_code_t::invalid_request;
         result.message = "Select a StepMania timing syntax explicitly";
         return std::unexpected(std::move(result));
     }
@@ -2163,7 +2163,7 @@ auto stepmania_write_options_t::from(stepmania_export_policy_t policy)
             stepmania_implementation_profile_t::unspecified &&
         policy.file_profile != stepmania_profile_t::ssc) {
         result.code =
-            stepmania_export_policy_error_t::named_implementation_requires_ssc;
+            failure_code_t::unsupported;
         result.message = "Named StepMania implementation targets currently require SSC output";
         return std::unexpected(std::move(result));
     }
@@ -2171,7 +2171,7 @@ auto stepmania_write_options_t::from(stepmania_export_policy_t policy)
             stepmania_implementation_profile_t::unspecified &&
         policy.timing_syntax != stepmania_timing_syntax_t::native_warps) {
         result.code =
-            stepmania_export_policy_error_t::named_implementation_requires_native_warps;
+            failure_code_t::conflict;
         result.message =
             "The selected implementation target is audited only with native WARPS";
         return std::unexpected(std::move(result));
@@ -2227,7 +2227,7 @@ class stepmania_writer_t {
             report(stepmania_write_diagnostic_code_t::unsupported_feature,
                    resolved.error().message,
                    resolved.error().code ==
-                           stepmania_export_policy_error_t::named_implementation_requires_ssc
+                           failure_code_t::unsupported
                        ? "profile"
                        : "WARPS");
             return false;

@@ -77,18 +77,11 @@ using stepmania_write_diagnostic_t =
     format_diagnostic_t<stepmania_write_diagnostic_code_t, std::string,
                             stepmania_write_diagnostic_code_t::invalid_document>;
 
-enum class stepmania_export_policy_error_t {
-    none,
-    timing_syntax_required,
-    named_implementation_requires_ssc,
-    named_implementation_requires_native_warps,
-};
-
 struct stepmania_write_options_t {
     // Resolves file, syntax and implementation choices. Document-specific loss
     // is still diagnosed transactionally by write_stepmania.
     [[nodiscard]] static auto from(stepmania_export_policy_t policy)
-        -> result_t<stepmania_write_options_t, error_t<stepmania_export_policy_error_t>>;
+        -> result_t<stepmania_write_options_t, error_t<failure_code_t>>;
 
     stepmania_profile_t profile{stepmania_profile_t::sm};
     stepmania_timing_syntax_t target_timing_syntax{
@@ -105,7 +98,7 @@ struct stepmania_write_options_t {
 
 using stepmania_write_outcome_t = attempt_t<std::string, std::vector<stepmania_write_diagnostic_t>>;
 
-using stepmania_export_policy_outcome_t = result_t<stepmania_write_options_t, error_t<stepmania_export_policy_error_t>>;
+using stepmania_export_policy_outcome_t = result_t<stepmania_write_options_t, error_t<failure_code_t>>;
 
 // Emits deterministic UTF-8 StepMania text. Unsupported editor-only
 // annotations are surfaced as loss diagnostics rather than silently dropped.

@@ -1133,14 +1133,14 @@ TEST_CASE("Project session boundary resets identity and advances generation", "[
         .project_id = wormedit::song_id_t{1}, .revision = 2};
     project_chart_runtime_t charts;
     charts.session_generation = 7;
-    charts.cache.populated = true;
+    (void)project_chart_table_view_t::from(charts.cache, {}, charts.session_generation);
     begin_project_session(current, charts,
         {.session_loaded = true, .native_project_loaded = true,
          .active_project_path = "new.wormedit", .asset_base = "new-assets",
          .scanned_primary_version = wormedit::native_project_document_version_t{
              .project_id = wormedit::song_id_t{2}, .revision = 3}});
     check_project_boundary(charts.session_generation == 8);
-    check_project_boundary(!charts.cache.populated);
+    check_project_boundary(!charts.cache.has_value());
     check_project_boundary(current.session_loaded && current.native_project_loaded);
     check_project_boundary(!current.fresh_blank_project);
     check_project_boundary(current.pending_import.audio_project_path.empty());

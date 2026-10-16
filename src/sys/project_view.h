@@ -5,6 +5,8 @@
 #include <optional>
 #include <wormedit/core/async_job.h>
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/notifications.h>
 
@@ -33,7 +35,14 @@ struct project_chart_row_view_t {
         -> project_chart_row_view_t;
 };
 
-struct project_chart_table_cache_t;
+struct project_chart_table_cache_key_t {
+    document_stamp_t document;
+    std::uint64_t session_generation{};
+    auto operator==(const project_chart_table_cache_key_t&) const -> bool = default;
+};
+struct project_chart_table_view_t;
+using project_chart_table_cache_t = wormedit::keyed_cache_t<
+    project_chart_table_cache_key_t, project_chart_table_view_t>;
 
 struct project_chart_table_view_t {
     std::vector<project_chart_row_view_t> rows;
@@ -47,14 +56,6 @@ struct project_chart_table_view_t {
                                    const song_document_t& document,
                                    std::uint64_t session_generation)
         -> const project_chart_table_view_t&;
-};
-
-struct project_chart_table_cache_t {
-    project_chart_table_view_t table;
-    song_id_t song;
-    std::uint64_t session_generation{};
-    std::uint64_t revision{};
-    bool populated{};
 };
 
 enum class project_chart_command_kind_t { create, duplicate, erase, move_up, move_down, open, batch_metadata, reorder };

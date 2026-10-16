@@ -29,6 +29,7 @@ class keyed_cache_t {
     }
 
     [[nodiscard]] auto has_value() const noexcept -> bool { return key_.has_value(); }
+    [[nodiscard]] auto key() const noexcept -> const std::optional<Key>& { return key_; }
     [[nodiscard]] auto value() const noexcept -> const Value& { return value_; }
     [[nodiscard]] auto build_count() const noexcept -> std::size_t { return build_count_; }
 

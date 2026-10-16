@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <iomanip>
+#include <functional>
 #include <locale>
 #include <sstream>
 
@@ -153,15 +154,11 @@ auto project_chart_table_view_t::from(project_chart_table_cache_t& cache,
                                     const song_document_t& document,
                                     std::uint64_t session_generation)
     -> const project_chart_table_view_t& {
-    if (!cache.populated || cache.song != document.id || cache.session_generation != session_generation ||
-        cache.revision != document.revision) {
-        cache.table = project_chart_table_view_t::from(document);
-        cache.song = document.id;
-        cache.session_generation = session_generation;
-        cache.revision = document.revision;
-        cache.populated = true;
-    }
-    return cache.table;
+    const project_chart_table_cache_key_t key{.document = document_stamp_t::from(document),
+                                             .session_generation = session_generation};
+    using builder_t = auto (*)(const song_document_t&) -> project_chart_table_view_t;
+    return cache.get_or_build(key, std::bind_front(
+        static_cast<builder_t>(&project_chart_table_view_t::from), std::cref(document)));
 }
 namespace {
 auto ui_command_kind(WormUiProjectChartActionKind kind) -> std::optional<project_chart_command_kind_t> {
@@ -336,7 +333,7 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
                               WormUiSetupView& view) {
     build_output_group_view(runtime, document, view);
     if (!view.visible) return;
-    if (!runtime.cache.populated || runtime.cache.revision != document.revision)
+    if (!runtime.cache.has_value() || runtime.cache.key()->document.revision != document.revision)
         std::erase_if(runtime.row_errors, [&](const auto& error) {
             return std::ranges::none_of(document.charts, [&](const auto& chart) {
                 return chart.id.value == error.first;

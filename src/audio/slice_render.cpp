@@ -165,12 +165,12 @@ auto rendered_audio_slices_t::from(decoder_t& decoder, std::span<const audio_sli
                                     const slice_render_options_t& options) -> slice_render_outcome_t {
     std::string message;
     if (!validate(decoder, ranges, options, message))
-        return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
                                                              std::move(message)});
     std::error_code error;
     std::filesystem::create_directories(options.directory, error);
     if (error) {
-        return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
             "cannot create the output directory: " + error.message()});
     }
     std::vector<std::filesystem::path> published;
@@ -178,27 +178,27 @@ auto rendered_audio_slices_t::from(decoder_t& decoder, std::span<const audio_sli
     for (std::size_t index = 0; index < ranges.size(); ++index) {
         if (options.stop.stop_requested()) {
             remove_all(published);
-            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::cancelled, "cancelled"});
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "cancelled"});
         }
         if ((options.encoding == slice_wav_encoding_t::float32 &&
              !prime_float_range(decoder, ranges[index].begin_frame)) ||
             !read_range(decoder, ranges[index], samples)) {
             remove_all(published);
-            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::decode_error,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                 "decoding failed inside slice " + std::to_string(index + 1)});
         }
         const auto bytes = options.encoding == slice_wav_encoding_t::float32
             ? encode_wav_float32(samples, output_sample_rate) : encode_wav_pcm16(samples, output_sample_rate);
         if (bytes.empty()) {
             remove_all(published);
-            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
                 "samples cannot be encoded in the requested WAV format"});
         }
         const auto path = options.directory / slice_file_name(options.base_name, index, ranges.size());
         auto saved = create_file_atomic(path, bytes, bytes.size());
         if (!saved) {
             remove_all(published);
-            return std::unexpected(error_t<slice_render_status_t>{slice_render_status_t::write_error,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
                                                                  std::move(saved.error())});
         }
         published.push_back(path);

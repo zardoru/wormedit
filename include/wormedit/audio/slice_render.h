@@ -39,14 +39,6 @@ struct slice_render_options_t {
     slice_wav_encoding_t encoding{slice_wav_encoding_t::pcm16};
 };
 
-enum class slice_render_status_t {
-    completed,
-    cancelled,
-    invalid_request,
-    decode_error,
-    write_error,
-};
-
 // Cuts the decoder's 44.1 kHz stereo output at `ranges` (output frames, as
 // returned by audio_slice_plan_t::from with sample_rate output_sample_rate) and
 // publishes one WAV per range. The source is never modified. Ranges must be
@@ -55,10 +47,10 @@ enum class slice_render_status_t {
 struct rendered_audio_slices_t {
     [[nodiscard]] static auto from(decoder_t& decoder, std::span<const audio_slice_range_t> ranges,
                                    const slice_render_options_t& options)
-        -> result_t<rendered_audio_slices_t, error_t<slice_render_status_t>>;
+        -> result_t<rendered_audio_slices_t, error_t<failure_code_t>>;
     std::vector<std::filesystem::path> files;
     auto operator==(const rendered_audio_slices_t&) const -> bool = default;
 };
-using slice_render_outcome_t = result_t<rendered_audio_slices_t, error_t<slice_render_status_t>>;
+using slice_render_outcome_t = result_t<rendered_audio_slices_t, error_t<failure_code_t>>;
 
 } // namespace wormedit::audio

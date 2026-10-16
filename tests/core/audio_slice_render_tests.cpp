@@ -117,8 +117,8 @@ TEST_CASE("cancelling or invalid requests leave no files behind", "[unit][audio]
              published = done;
              if (done == 2) stop.request_stop();
          }});
-    CHECK(cancelled_outcome == std::unexpected(wormedit::error_t<slice_render_status_t>{
-        slice_render_status_t::cancelled, "cancelled"}));
+    CHECK(cancelled_outcome == std::unexpected(wormedit::error_t<failure_code_t>{
+        failure_code_t::cancelled, "cancelled"}));
     CHECK(published == 2);
     CHECK_FALSE(cancelled_outcome.has_value());
     CHECK(file_count(scratch.path) == 0);
@@ -126,7 +126,7 @@ TEST_CASE("cancelling or invalid requests leave no files behind", "[unit][audio]
     const auto rejects = [&](std::vector<audio_slice_range_t> bad) {
         const auto result = rendered_audio_slices_t::from(source, bad,
                                                 {.directory = scratch.path, .base_name = "bad"});
-        CHECK(result.error().code == slice_render_status_t::invalid_request);
+        CHECK(result.error().code == failure_code_t::invalid_request);
         CHECK_FALSE(result.error().message.empty());
         CHECK(file_count(scratch.path) == 0);
     };
@@ -135,7 +135,7 @@ TEST_CASE("cancelling or invalid requests leave no files behind", "[unit][audio]
     rejects({{0, total + 1}});
     rejects({{0, 100}, {50, 200}});
     const auto no_name = rendered_audio_slices_t::from(source, std::vector<audio_slice_range_t>{{0, 100}}, {});
-    CHECK(no_name.error().code == slice_render_status_t::invalid_request);
+    CHECK(no_name.error().code == failure_code_t::invalid_request);
 }
 
 namespace {
@@ -305,7 +305,7 @@ TEST_CASE("slice float encoding rejects invalid payloads and PCM16 remains the d
     const auto invalid = rendered_audio_slices_t::from(source, range,
         {.directory = scratch.path, .base_name = "invalid",
          .encoding = static_cast<slice_wav_encoding_t>(255)});
-    check_slice_float(invalid.error().code == slice_render_status_t::invalid_request);
+    check_slice_float(invalid.error().code == failure_code_t::invalid_request);
     check_slice_float(!invalid.error().message.empty());
     check_slice_float(file_count(scratch.path) == 0);
 

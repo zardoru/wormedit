@@ -592,7 +592,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timi
                    .pixel_width = std::min(height * 2U, maximum_aligned_waveform_rows),
                    .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection) {
-        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == failure_code_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
@@ -800,7 +800,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == failure_code_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));
@@ -843,7 +843,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, double be
                                                            .pixel_width = maximum_rows,
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
-        result.status = projection.error() == waveform_projection_status_t::capacity_exceeded
+        result.status = projection.error() == failure_code_t::capacity_exceeded
                             ? aligned_waveform_status_t::capacity_exceeded
                             : aligned_waveform_status_t::invalid_waveform;
         return from(std::move(result));

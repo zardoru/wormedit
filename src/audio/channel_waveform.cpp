@@ -178,7 +178,7 @@ auto build_channel_slice_view(const channel_slice_context_t& context, const deri
                            .pixel_width = std::min(context.height * 2U, maximum_aligned_waveform_rows),
                            .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection)
-        return projection.error() == waveform_projection_status_t::capacity_exceeded
+        return projection.error() == failure_code_t::capacity_exceeded
                    ? aligned_waveform_status_t::capacity_exceeded
                    : aligned_waveform_status_t::invalid_waveform;
     const channel_row_context_t row_context{context.waveform, context.timing, context.request, *origin.seconds,

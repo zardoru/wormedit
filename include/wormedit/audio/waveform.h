@@ -78,13 +78,6 @@ struct waveform_projection_request_t {
     std::size_t maximum_columns{4'096};
 };
 
-enum class waveform_projection_status_t {
-    projected,
-    invalid_waveform,
-    invalid_window,
-    capacity_exceeded,
-};
-
 // Projects one visible source-frame interval into bounded implicit pixel
 // columns. Each column retains its exact frame interval while peak/RMS values
 // come from the closest cached pyramid level.
@@ -92,7 +85,7 @@ struct waveform_viewport_t;
 
 struct waveform_view_t {
     [[nodiscard]] static auto from(const waveform_t& waveform, waveform_projection_request_t request)
-        -> result_t<waveform_view_t, waveform_projection_status_t>;
+        -> result_t<waveform_view_t, failure_code_t>;
 
     std::uint64_t level_frames_per_bin{};
     std::vector<waveform_column_t> columns;
@@ -102,9 +95,9 @@ struct waveform_view_t {
     // viewport or waveform yields a non-projected result.
     [[nodiscard]] static auto from(const waveform_t& waveform,
                                    const waveform_viewport_t& viewport)
-        -> result_t<waveform_view_t, waveform_projection_status_t>;
+        -> result_t<waveform_view_t, failure_code_t>;
 };
-using waveform_view_outcome_t = result_t<waveform_view_t, waveform_projection_status_t>;
+using waveform_view_outcome_t = result_t<waveform_view_t, failure_code_t>;
 
 struct waveform_cache_limits_t {
     std::size_t maximum_entries{32};

@@ -615,17 +615,17 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
 auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_request_t request)
     -> waveform_view_outcome_t {
     if (!is_valid_waveform_geometry(waveform)) {
-        return std::unexpected(waveform_projection_status_t::invalid_waveform);
+        return std::unexpected(failure_code_t::invalid_data);
     }
     if (request.begin_frame >= request.end_frame ||
         request.begin_frame < waveform.key.begin_frame || request.end_frame > waveform_end(waveform) ||
         request.pixel_width == 0) {
-        return std::unexpected(waveform_projection_status_t::invalid_window);
+        return std::unexpected(failure_code_t::invalid_request);
     }
     if (request.maximum_columns == 0 ||
         request.maximum_columns > maximum_waveform_projection_columns ||
         request.pixel_width > request.maximum_columns) {
-        return std::unexpected(waveform_projection_status_t::capacity_exceeded);
+        return std::unexpected(failure_code_t::capacity_exceeded);
     }
 
     const auto visible_frames = request.end_frame - request.begin_frame;
@@ -634,7 +634,7 @@ auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_reque
     const auto level = waveform_level_for_zoom(waveform, static_cast<double>(visible_frames) /
                                                              static_cast<double>(column_count));
     if (!level.has_value()) {
-        return std::unexpected(waveform_projection_status_t::invalid_waveform);
+        return std::unexpected(failure_code_t::invalid_data);
     }
 
     waveform_view_t result{
@@ -661,7 +661,7 @@ auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_reque
         for (auto bin_index = first_bin; bin_index <= last_bin; ++bin_index) {
             const auto& bin = level->bins[static_cast<std::size_t>(bin_index)];
             if (!is_valid_bin(bin, level->frames_per_bin)) {
-                return std::unexpected(waveform_projection_status_t::invalid_waveform);
+                return std::unexpected(failure_code_t::invalid_data);
             }
             weighted_frames += static_cast<double>(bin.frame_count);
             for (std::size_t channel = 0; channel < output_channel_count; ++channel) {

@@ -52,7 +52,7 @@ TEST_CASE("canonical waveform projection reports invalid geometry",
     using namespace wormedit::audio;
     const auto outcome = waveform_view_t::from({}, waveform_projection_request_t{});
     REQUIRE_FALSE(outcome.has_value());
-    CHECK(outcome.error() == waveform_projection_status_t::invalid_waveform);
+    CHECK(outcome.error() == wormedit::failure_code_t::invalid_data);
 }
 
 TEST_CASE("MP3 project audio produces a complete coarse waveform", "[audio][waveform][fixture]") {
@@ -294,10 +294,10 @@ TEST_CASE("waveform projection emits capped exact-frame pixel columns",
 
     CHECK(waveform_view_t::from(
               *wormedit::audio::waveform_analysis_t::find_waveform(analyzed),
-              {.begin_frame = 0, .end_frame = 16, .pixel_width = 5, .maximum_columns = 4}).error() == waveform_projection_status_t::capacity_exceeded);
+              {.begin_frame = 0, .end_frame = 16, .pixel_width = 5, .maximum_columns = 4}).error() == wormedit::failure_code_t::capacity_exceeded);
     CHECK(waveform_view_t::from(
               *wormedit::audio::waveform_analysis_t::find_waveform(analyzed),
-              {.begin_frame = 16, .end_frame = 16, .pixel_width = 1, .maximum_columns = 1}).error() == waveform_projection_status_t::invalid_window);
+              {.begin_frame = 16, .end_frame = 16, .pixel_width = 1, .maximum_columns = 1}).error() == wormedit::failure_code_t::invalid_request);
 }
 
 TEST_CASE("waveform analysis cancellation publishes no partial cache entry",
@@ -350,7 +350,7 @@ void check_fine_bounds(const waveform_t& waveform, const waveform_view_outcome_t
     CHECK(projected->columns.front().begin_frame == 512);
     CHECK(waveform_view_t::from(waveform,
         {.begin_frame = 0, .end_frame = 256, .pixel_width = 64}).error() ==
-        waveform_projection_status_t::invalid_window);
+        wormedit::failure_code_t::invalid_request);
 }
 
 void check_other_range(decoder_t& decoder, decoded_block_cache_t& blocks, waveform_cache_t& cache,

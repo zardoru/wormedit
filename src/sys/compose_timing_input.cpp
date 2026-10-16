@@ -315,16 +315,17 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    auto revised = drag.value->revise(context.environment.document.history, *release,
-        context.environment.commands.project.timing_recipe.timing_locked);
+    auto revised = drag.value->revise(context.environment.document.history,
+        {.is_timing_locked = context.environment.commands.project.timing_recipe.timing_locked}, *release);
     if (!revised.value) {
         result.diagnostics = std::move(revised.diagnostics);
         return result.diagnostics.empty() ? "SV recipe edit was rejected."
                                           : result.diagnostics.front().message;
     }
-    const auto committed = apply_sv_recipe_range_drag(
+    const auto committed = apply_proposal(
         context.environment.document.history, *revised.value,
-        context.environment.commands.project.timing_recipe.timing_locked);
+        proposal_application_input_t{
+            .is_timing_locked = context.environment.commands.project.timing_recipe.timing_locked});
     result.accepted = committed.applied;
     result.document_changed = committed.applied;
     result.diagnostics = committed.diagnostics;

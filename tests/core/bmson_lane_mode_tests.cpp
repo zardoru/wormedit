@@ -168,6 +168,7 @@ TEST_CASE("BMSON lane_mode rejects resources shared by multiple channels", "[cor
 }
 
 TEST_CASE("BMSON lane_mode packs a whole channel beyond the interactive selection bound", "[core][bmson][lane_mode]") {
+    // Slow: 4,097 is the smallest channel beyond the fixed 4,096-object interactive selection bound.
     using namespace wormedit;
     std::string json = R"({"version":"1.0.0","info":{"title":"Large channel","init_bpm":120,"resolution":240,"mode_hint":"beat-7k"},"lines":[{"y":5000}],"sound_channels":[{"name":"kick.wav","notes":[)";
     for (int row = 0; row < 4097; ++row) {

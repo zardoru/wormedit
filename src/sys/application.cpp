@@ -1,4 +1,3 @@
-#include <wormedit/core/interaction_gestures.h>
 #include "core/text_util.h"
 #include "sys/catalog_view.h"
 #include "sys/application.h"
@@ -219,7 +218,6 @@ using wormedit::sys::compose_physical_scancode;
 using wormedit::sys::compose_project_y;
 using wormedit::sys::compose_source_y;
 using wormedit::sys::compose_surface_height;
-using wormedit::sys::editor_interaction_has_pending_gesture;
 using wormedit::sys::maximum_layout_lane_count;
 using wormedit::sys::populate_compose_view;
 using wormedit::sys::requested_snap_denominator;
@@ -801,7 +799,7 @@ auto project_export_available(const wormedit::chart_document_t* chart,
     const std::optional<wormedit::editor_interaction_state_t>& compose,
     const application_command_state_t& application) -> bool {
     return chart && !application.project.clipboard.paste_session &&
-        (!compose || !editor_interaction_has_pending_gesture(*compose));
+        (!compose || !compose->is_pending());
 }
 
 void refresh_application_command_states(
@@ -813,7 +811,7 @@ void refresh_application_command_states(
     const auto* chart = selected_chart(history, workspace);
     const bool compose_ready = workspace.active_tab == workspace_tab_t::compose && chart &&
                                compose_state && compose_state->chart == chart->id;
-    const bool pending = compose_ready && editor_interaction_has_pending_gesture(*compose_state);
+    const bool pending = compose_ready && compose_state->is_pending();
     bool target_valid{};
     if (chart && application_state.project.semantic_layer.semantic_layer_target) {
         const auto target_layer =
@@ -1031,7 +1029,7 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
         else
             post_edit_rejection(notifications, result.diagnostics, "Timing event deletion was rejected.");
     }
-    wormedit::cancel_timing_lane_pseudonote(stage);
+    wormedit::cancel_proposal(stage);
 }
 
 
@@ -1050,7 +1048,7 @@ void quick_insert_timing_event(const WormUiWorkspaceAction& action,
         post_edit_rejection(notifications, candidate.diagnostics, "Timing event could not be inserted at that row.");
         return;
     }
-    const auto result = wormedit::apply_timing_lane_pseudonote(history, candidate, timing_locked);
+    const auto result = wormedit::apply_proposal(history, candidate, timing_locked);
     if (result)
         notifications.post(wormedit::notification_severity_t::success,
                            wormedit::notification_source_t::edit, "Timing event inserted.");
@@ -1164,22 +1162,10 @@ void cancel_stale_compose_interaction(
         const auto& state = *compose_interaction_state;
         const bool selected_chart_changed =
             !workspace.selected_chart || *workspace.selected_chart != state.chart;
-        const bool pending_is_stale =
-            (state.pending_hold &&
-             !state.pending_hold->stamp.is_revision_current(history.document.revision)) ||
-            (state.active_gesture &&
-             wormedit::is_editor_gesture_stale(state.active_gesture, history.document.revision)) ||
-            (state.pending_note_paint_gesture &&
-             !state.pending_note_paint_gesture->stamp.is_revision_current(history.document.revision)) ||
-            (state.pending_semantic_layer_paint_gesture &&
-             !state.pending_semantic_layer_paint_gesture->stamp.is_revision_current(history.document.revision)) ||
-            (state.pending_editor_area_selection &&
-             !state.pending_editor_area_selection->stamp.is_revision_current(history.document.revision)) ||
-            (state.pending_space_range_selection &&
-             !state.pending_space_range_selection->stamp.is_revision_current(history.document.revision));
+        const bool pending_is_stale = state.is_stale(history.document.revision);
         const bool compose_inactive =
             workspace.active_tab != wormedit::workspace_tab_t::compose;
-        if (editor_interaction_has_pending_gesture(state) &&
+        if (state.is_pending() &&
             (selected_chart_changed || pending_is_stale || compose_inactive)) {
             (void)wormedit::dispatch_editor_action(history, *compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
@@ -1476,7 +1462,7 @@ auto dispatch_reviewed_sound_slot_batch(const WormUiWorkspaceAction& action,
         feedback = stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths, notifications);
         return true;
     }
-    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+    if (interaction && interaction->is_pending()) {
         feedback = "Finish or cancel the Compose gesture before importing sounds.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         worm_ui_frontend_sound_slot_batch_result(false, feedback.c_str());
@@ -1516,7 +1502,7 @@ auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
         feedback = stage_sound_import(history.document, chart, paths, notifications, action.sound_import_kind);
         return true;
     }
-    if (interaction && editor_interaction_has_pending_gesture(*interaction)) {
+    if (interaction && interaction->is_pending()) {
         feedback = "Finish or cancel the Compose gesture before importing sounds.";
         notifications.post(wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_, feedback);
         worm_ui_frontend_sound_import_result(false, feedback.c_str());
@@ -1677,7 +1663,7 @@ auto build_application_notifications_view(const wormedit::notification_center_t&
     auto view = wormedit::sys::build_notification_view(center, now);
     view.history_available = true;
     view.history = runtime.project(center, document, now, document_generation);
-    view.edit_gesture_active = interaction && editor_interaction_has_pending_gesture(*interaction);
+    view.edit_gesture_active = interaction && interaction->is_pending();
     return view;
 }
 
@@ -2637,7 +2623,7 @@ struct application_t::implementation_t {
                 context, "Audio offset drag has no matching captured transaction.");
         }
         const auto updated = drag->revise(
-            history.document, action.audio_offset_drag_delta_frames, timing_locked);
+            history.document, {.is_timing_locked = timing_locked}, action.audio_offset_drag_delta_frames);
         if (!updated.ok() || !updated.value) {
             drag.reset();
             drag_tab.reset();
@@ -2655,7 +2641,7 @@ struct application_t::implementation_t {
             return post_audio_offset_feedback(context, notification_severity_t::warning,
                                               "Invalid audio offset drag action.");
         }
-        const auto committed = apply_audio_offset_drag(history, *drag, timing_locked);
+        const auto committed = apply_proposal(history, *drag, timing_locked);
         drag.reset();
         drag_tab.reset();
         if (!committed.applied) {
@@ -3315,7 +3301,7 @@ struct application_t::implementation_t {
         if (!session.project_identity.session_loaded)
             return shortcut_handled;
         if (shortcut_handled && !preserves_editor_gesture && views.compose_interaction_state &&
-            editor_interaction_has_pending_gesture(*views.compose_interaction_state)) {
+            views.compose_interaction_state->is_pending()) {
             (void)wormedit::dispatch_editor_action(session.history,
                                                    *views.compose_interaction_state,
                                                    wormedit::cancel_editor_gesture_action_t{});
@@ -3415,15 +3401,14 @@ struct application_t::implementation_t {
                                                 notification_severity_t::warning);
         }
         const auto updated = begun.value->revise(session.history.document,
-                                                      context.action.audio_offset_drag_delta_frames,
-                                                      context.timing_locked);
+            {.is_timing_locked = context.timing_locked}, context.action.audio_offset_drag_delta_frames);
         if (!updated.ok() || !updated.value) {
             return post_audio_offset_diagnostic(context, updated.diagnostics,
                                                 "Audio offset nudge was rejected.",
                                                 notification_severity_t::warning);
         }
         const auto committed =
-            apply_audio_offset_drag(session.history, *updated.value, context.timing_locked);
+            apply_proposal(session.history, *updated.value, context.timing_locked);
         if (!committed.applied) {
             return post_audio_offset_diagnostic(context, committed.diagnostics,
                                                 "Audio offset was unchanged.",
@@ -3563,7 +3548,7 @@ struct application_t::implementation_t {
             return false;
         if (group_action &&
             (application.project.clipboard.paste_session ||
-             (interaction && editor_interaction_has_pending_gesture(*interaction)))) {
+             (interaction && interaction->is_pending()))) {
             notifications.post(
                 wormedit::notification_severity_t::warning,
                 wormedit::notification_source_t::document,
@@ -3760,7 +3745,7 @@ struct application_t::implementation_t {
 
         const bool valid = (*timing_stage = wormedit::timing_lane_pseudonote_preview_t::revise(std::move(*timing_stage), session.history, *value, timing_locked)).value.has_value();
         if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CONFIRM && valid) {
-            const auto result = wormedit::apply_timing_lane_pseudonote(
+            const auto result = wormedit::apply_proposal(
                 session.history, *timing_stage, timing_locked);
             const auto edited_existing = timing_stage->report()->existing_event.has_value();
             if (result)
@@ -3812,7 +3797,7 @@ struct application_t::implementation_t {
             }
         } else if (action.timing_stage_action == WORM_UI_TIMING_STAGE_CANCEL) {
             if (timing_stage) {
-                wormedit::cancel_timing_lane_pseudonote(*timing_stage);
+                wormedit::cancel_proposal(*timing_stage);
                 timing_stage.reset();
                 platform.notification_sink.post_transient_hint(
                     wormedit::notification_source_t::edit, "Timing event staging cancelled.");
@@ -3919,7 +3904,7 @@ struct application_t::implementation_t {
             return;
         if (auto failure = wormedit::sys::validate_timing_stage_binding(
                 action, session.history, session.workspace, *stage)) {
-            wormedit::cancel_timing_lane_pseudonote(*stage);
+            wormedit::cancel_proposal(*stage);
             stage.reset();
             post_edit_rejection(
                 platform.notification_sink, {},
@@ -4169,8 +4154,7 @@ struct application_t::implementation_t {
             session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
             views.compose_interaction_state && session.workspace.selected_chart &&
             views.compose_interaction_state->chart == *session.workspace.selected_chart) {
-            if (wormedit::sys::editor_interaction_has_pending_gesture(
-                    *views.compose_interaction_state))
+            if (views.compose_interaction_state->is_pending())
                 return compose_action_outcome_t::blocked(
                     "Finish or cancel the active Compose gesture before seeking.",
                     wormedit::notification_source_t::input);

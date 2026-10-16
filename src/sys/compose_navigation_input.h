@@ -12,7 +12,6 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
-#include <wormedit/core/interaction_gestures.h>
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>

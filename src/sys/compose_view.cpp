@@ -10,7 +10,6 @@
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>
@@ -281,7 +280,7 @@ auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool {
     const auto& document = history.document;
-    if (!application_state.project.clipboard.chart_clipboard || editor_interaction_has_pending_gesture(state)) {
+    if (!application_state.project.clipboard.chart_clipboard || state.is_pending()) {
         status = "Paste requires a copied selection and no pending gesture.";
         return false;
     }
@@ -914,11 +913,6 @@ auto compose_snap_preferences(const application_command_state_t& state, wormedit
     return result;
 }
 
-auto editor_interaction_has_pending_gesture(const wormedit::editor_interaction_state_t& state)
-    -> bool {
-    return wormedit::has_pending_editor_gesture(state);
-}
-
 namespace compose_projection_detail {
 
 auto layer_assist_enabled(const application_command_state_t& app, wormedit::chart_id_t chart,
@@ -1308,7 +1302,7 @@ bool update_compose_snap_preferences(const compose_interaction_population_contex
     auto& application_state = input.frame.application_state;
     auto& flattened = input.frame.flattened;
     // Keep a gesture's captured grid stable until the next idle frame.
-    if (!editor_interaction_has_pending_gesture(*retained_state)) {
+    if (!retained_state->is_pending()) {
         const auto snap = wormedit::filter_snap_denominators(
             chart.divisions_per_standard_measure, compose_snap_preferences(application_state, chart.id),
             requested_snap_denominator(application_state, chart.id));
@@ -1332,7 +1326,7 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
     auto& retained_state = input.frame.retained_state;
     auto& flattened = input.frame.flattened;
     auto& view = input.frame.view();
-    if (!editor_interaction_has_pending_gesture(*retained_state))
+    if (!retained_state->is_pending())
         retained_state->scratch_on_right = input.frame.application_state.scratch_on_right;
     const auto geometry_changed = retained_state->viewport_height_pixels != view.viewport_height_pixels ||
         retained_state->scroll_direction != (input.downscroll ? wormedit::editor_field_scroll_direction_t::down
@@ -1340,7 +1334,7 @@ std::optional<wormedit::editor_interaction_view_model_t> inspect_compose_interac
     wormedit::configure_cursor_viewport(*retained_state, view.viewport_height_pixels,
         input.downscroll ? wormedit::editor_field_scroll_direction_t::down
                          : wormedit::editor_field_scroll_direction_t::up);
-    if (geometry_changed && !editor_interaction_has_pending_gesture(*retained_state))
+    if (geometry_changed && !retained_state->is_pending())
         (void)wormedit::synchronize_editor_cursor_to_viewport(
             input.scope.chart, input.scope.measures, *retained_state);
     // The one place selection is reconciled with the document: once per revision change.
@@ -1454,13 +1448,13 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index.value()->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;
     const auto hover_gesture_active =
-        retained_state->pending_hold.has_value() ||
+        (retained_state->hold() != nullptr) ||
         retained_state->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr ||
         retained_state->gesture<wormedit::pending_note_move_gesture_t>() != nullptr ||
-        retained_state->pending_note_paint_gesture.has_value() ||
-        retained_state->pending_semantic_layer_paint_gesture.has_value() ||
-        retained_state->pending_editor_area_selection.has_value() ||
-        retained_state->pending_space_range_selection.has_value();
+        retained_state->gesture<wormedit::pending_note_paint_gesture_t>() != nullptr ||
+        retained_state->gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr ||
+        static_cast<bool>(retained_state->gesture<wormedit::pending_editor_area_selection_t>()) ||
+        static_cast<bool>(retained_state->gesture<wormedit::pending_space_range_selection_t>());
     if (!hover_gesture_active && cache.frame.hover &&
         cache.frame.hover->document_revision == history.document.revision &&
         cache.frame.hover->object.kind == wormedit::editor_selection_object_kind_t::note) {
@@ -1482,11 +1476,11 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
     auto& interaction_view = input.scope.interaction_view;
     const auto& measures = input.scope.chart_scope.measures;
     const auto downscroll = input.scope.downscroll;
-    if (interaction_view.pending_editor_area_selection) {
-        const auto& preview = *interaction_view.pending_editor_area_selection;
+    if (interaction_view.gesture<wormedit::editor_area_selection_preview_t>()) {
+        const auto& preview = *interaction_view.gesture<wormedit::editor_area_selection_preview_t>();
         view.area_selection_preview_visible = true;
         view.area_selection_preview_mode =
-            compose_scalar_selection_mode(retained_state->pending_editor_area_selection->mode);
+            compose_scalar_selection_mode(retained_state->gesture<wormedit::pending_editor_area_selection_t>()->mode);
         view.area_selection_preview_bounds = {
             std::clamp(preview.left_pixels, 0.0, view.viewport_width_pixels),
             std::clamp(downscroll ? view.viewport_height_pixels - preview.bottom_pixels
@@ -1498,14 +1492,14 @@ void populate_compose_pending_previews(const compose_projection_context_t<wormed
                        0.0, view.viewport_height_pixels),
         };
     }
-    if (retained_state->pending_space_range_selection && interaction_view.pending_space_range_selection) {
-        const auto& pending = *retained_state->pending_space_range_selection;
+    if (retained_state->gesture<wormedit::pending_space_range_selection_t>() && interaction_view.gesture<wormedit::space_range_selection_preview_t>()) {
+        const auto& pending = *retained_state->gesture<wormedit::pending_space_range_selection_t>();
         const auto cursor_row = retained_state->virtual_bms_cursor_row
                                     ? retained_state->virtual_bms_cursor_row
                                     : (measures).row_of(retained_state->cursor);
         if (cursor_row) {
             const auto pixels_per_row = input.scope.pixels_per_row;
-            const auto& preview = *interaction_view.pending_space_range_selection;
+            const auto& preview = *interaction_view.gesture<wormedit::space_range_selection_preview_t>();
             const auto first_row = preview.first_row;
             const auto last_row = preview.last_row;
             const auto first_y = compose_project_y(first_row, pixels_per_row,
@@ -2320,7 +2314,7 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
     auto& cache = input.frame.cache;
     view.paint_ghost_visible = false;
     if (!view.note_paint_mode_active || !cache.frame.paint_pointer || !input.frame.retained_state ||
-        editor_interaction_has_pending_gesture(*input.frame.retained_state))
+        input.frame.retained_state->is_pending())
         return;
     const auto* index = cache.hit_test_index_for(input.scope.chart_scope.chart,
                                                 input.frame.history.document.revision);
@@ -2384,13 +2378,13 @@ void populate_compose_bgm_mix(const compose_projection_context_t<wormedit::edito
 void populate_compose_final_projection(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input) {
     input.frame.view().clipboard_copy_available =
         input.frame.retained_state &&
-        !editor_interaction_has_pending_gesture(*input.frame.retained_state) &&
+        !input.frame.retained_state->is_pending() &&
         (!input.frame.retained_state->selected_objects.empty() ||
          !input.frame.retained_state->selected_notes.empty() ||
          input.frame.application_state.project.timing_recipe.kiai_selected_head != 0);
     input.frame.view().clipboard_paste_available =
         input.frame.application_state.project.clipboard.chart_clipboard.has_value() && input.frame.retained_state &&
-        !editor_interaction_has_pending_gesture(*input.frame.retained_state);
+        !input.frame.retained_state->is_pending();
     const auto rows = prepare_compose_projection_state(input);
     populate_compose_pending_previews(input);
     (void)compose_project_scene(input, rows);
@@ -2542,7 +2536,7 @@ auto default_song_bar_hidden(const wormedit::song_document_t& document,
 auto projected_pointer_hold_active(const std::optional<wormedit::editor_interaction_state_t>& state)
     -> bool {
     return state && (state->gesture<wormedit::pending_note_duration_gesture_t>() ||
-        (state->pending_hold && state->pending_hold->gesture_source ==
+        (state->hold() && state->hold()->gesture_source ==
             wormedit::hold_gesture_source_t::alt_pointer));
 }
 
@@ -2570,9 +2564,9 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
         return;
     }
     auto& view = flattened.view.compose;
-    view.editor_gesture_active = retained_state && has_pending_editor_gesture(*retained_state);
+    view.editor_gesture_active = retained_state && (*retained_state).is_pending();
     view.editor_gesture_current = view.editor_gesture_active &&
-        !is_editor_gestures_stale(*retained_state, history.document.revision);
+        !(*retained_state).is_stale(history.document.revision);
     view.editor_pointer_hold_active = projected_pointer_hold_active(retained_state);
     if (!workspace.selected_chart) {
         report_compose_projection(flattened, projection_feedback_kind_t::choose_chart,
@@ -2602,7 +2596,7 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
                                                          application_state);
     if (!measure_data) return;
     view.audio_offset_editable = !application_state.audio_offset_edits_locked() &&
-        (!retained_state || !editor_interaction_has_pending_gesture(*retained_state));
+        (!retained_state || !retained_state->is_pending());
     const auto& measures = *measure_data;
     if (chart.lane_layouts.empty() && !chart.bgm_source_lanes.empty()) {
         populate_bgm_only_compose_projection(flattened, history, chart, measures, cache,

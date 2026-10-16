@@ -840,10 +840,9 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
     timing_scene_cache_t cache;
     timing_grid_state_t grid;
     grid.active_denominator = 4;
-    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
-        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
-                              .position = {measure_id_t{1}, 0}}}}};
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t::from(
+        chart_stamp_t::from(history.document, chart_id_t{1}),
+        timing_lane_pseudonote_preview_t{.report = {.position = {measure_id_t{1}, 0}}})};
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
     const auto& view = flattened.view.timing;
@@ -1811,7 +1810,7 @@ TEST_CASE("Retained playhead geometry rejects stale provenance and active gestur
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{2}, 1, &index}));
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 2, &index}));
     compare_follow_state(state, before);
-    state.pending_editor_area_selection.emplace();
+    state.active_gesture = wormedit::proposal_t<wormedit::pending_editor_area_selection_t, wormedit::document_stamp_t>{};
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{1}, 1, &index}));
     CHECK_FALSE(follow_editor_playhead(history, state, {chart_id_t{1}, 1, &index},
         {measure_id_t{3}, 0}, 100));
@@ -2838,7 +2837,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     fixture.project();
     auto begun = audio_offset_drag_t::propose(fixture.history.document, chart_id_t{1}, 48000);
     REQUIRE(begun.value);
-    auto updated = begun.value->revise(fixture.history.document, 4800);
+    auto updated = begun.value->revise(fixture.history.document, {}, 4800);
     REQUIRE(updated.value);
     std::optional<proposal_t<audio_offset_drag_t>> drag{updated.value};
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
@@ -4460,11 +4459,11 @@ void check_ten_key_note_commit() {
             .lane_id = binding.lane.value};
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-        expect_compose_test(fixture.interaction->pending_hold.has_value());
+        expect_compose_test((fixture.interaction->hold() != nullptr));
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE;
         (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
             *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0);
-        expect_compose_test(!fixture.interaction->pending_hold.has_value());
+        expect_compose_test(!(fixture.interaction->hold() != nullptr));
     }
     const auto& notes = fixture.history.document.charts.front().measures.front().notes;
     expect_compose_test(notes.size() == 10);
@@ -4487,7 +4486,7 @@ void check_latched_range_projection(bool downscroll) {
     editor_navigation_input_controller_t navigation;
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
         state, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(state.pending_space_range_selection.has_value());
+    expect_compose_test(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     expect_compose_test(view.space_range_preview_visible);
@@ -4495,7 +4494,7 @@ void check_latched_range_projection(bool downscroll) {
     expect_compose_test(std::abs(height - state.pixels_per_standard_measure / 4) < 1e-9);
     (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
         state, viewport, navigation, fixture.application, fixture.cache, 0);
-    expect_compose_test(!state.pending_space_range_selection.has_value());
+    expect_compose_test(!static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     expect_compose_test(state.retained_canvas_selection_range.has_value());
     const auto range = *state.retained_canvas_selection_range;
     expect_compose_test(range.end_row - range.begin_row ==
@@ -4965,8 +4964,8 @@ void check_lane_key_callback(bool virtual_measure, bool hold) {
         expect_compose_test(f.compose.interaction->virtual_bms_cursor_row == 1920);
     }
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(f.compose.interaction->pending_hold.has_value());
-    expect_compose_test(f.compose.interaction->pending_hold->sound == resource_id_t{7});
+    expect_compose_test((f.compose.interaction->hold() != nullptr));
+    expect_compose_test(f.compose.interaction->hold()->sound == resource_id_t{7});
     expect_compose_test(f.compose.history.undo.empty());
     expect_compose_test(placed_resource_notifications.empty());
     if (hold) (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
@@ -5061,7 +5060,7 @@ TEST_CASE("Lane-key dispatcher cancels held sound sources without placement call
           "[sys][compose][lane-key-sound]") {
     lane_key_callback_fixture_t f;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(f.compose.interaction->pending_hold.has_value());
+    expect_compose_test((f.compose.interaction->hold() != nullptr));
     SECTION("explicit cancellation") {
         (void)f.dispatch(WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
     }
@@ -5970,7 +5969,7 @@ TEST_CASE("Deleted Draw source remains picked and warns until an explicit repick
     const auto rejected = dispatch_chip_input(fixture, attempted.compose_inputs[0]);
     t475_check(rejected.find("paint sound is not an existing sample resource") != std::string::npos);
     t475_check(fixture.history.document.revision == revision && fixture.history.undo.size() == undos);
-    t475_check(!fixture.interaction->pending_note_paint_gesture);
+    t475_check(!fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
     const auto repicked = dispatch_chip_input(fixture, {.kind = WORM_UI_COMPOSE_INPUT_DRAW_SOURCE});
     t475_check(repicked == "Draw source selected.");
     t475_project(fixture);
@@ -6403,8 +6402,8 @@ TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor row
     }
     const auto revision = f.compose.history.document.revision;
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_PRESS);
-    expect_compose_test(!f.compose.interaction->pending_hold);
-    expect_compose_test(f.compose.interaction->additional_keyboard_holds.empty());
+    expect_compose_test(!f.compose.interaction->hold());
+    expect_compose_test(f.compose.interaction->additional_keyboard_holds().empty());
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_MOVE_CURSOR_FORWARD);
     (void)f.dispatch(WORM_UI_COMPOSE_INPUT_LANE_KEY_RELEASE);
     expect_compose_test(f.notes().empty());
@@ -6564,7 +6563,7 @@ auto range_pause_routing(unsigned guard) -> bool {
     case 2: ++action.compose_input_chart_id; break;
     case 3: ++action.compose_input_document_revision; break;
     case 4: fixture.application.project.timing_recipe.timing_locked = true; break;
-    case 5: fixture.interaction->pending_editor_area_selection.emplace(); break;
+    case 5: fixture.interaction->active_gesture = wormedit::proposal_t<wormedit::pending_editor_area_selection_t, wormedit::document_stamp_t>{}; break;
     case 6: fixture.interaction->retained_selection_range.reset(); break;
     case 7: fixture.application.project.clipboard.paste_session = application_command_state_t::paste_session_t{}; break;
     case 8: fixture.application.project.compose_gesture.bga_draw_stroke = application_command_state_t::bga_draw_stroke_proposal_t{}; break;
@@ -7006,7 +7005,7 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     expect_compose_test(chart.measures.front().notes.front().sound_channel_event.has_value());
     expect_compose_test(chart.sound_channels.front().events.back().continuation == !short_source);
     expect_compose_test(chart.sound_channels.front().events.back().playable);
-    expect_compose_test(!fixture.interaction->pending_hold && !fixture.interaction->pending_note_paint_gesture);
+    expect_compose_test(!fixture.interaction->hold() && !fixture.interaction->gesture<wormedit::pending_note_paint_gesture_t>());
     expect_compose_test(fixture.history.undo.size() == 1);
     expect_compose_test(fixture.history.document.audio_assets.front().stream.sample_rate == 0);
 }
@@ -7154,11 +7153,11 @@ TEST_CASE("Timing stage converts transition fractions through the shared careful
     binding.value->selected_chart = chart_id_t{1};
     frontend_workspace_view_t flattened;
     timing_scene_cache_t cache;
-    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t{
-        .stamp = chart_stamp_t::from(history.document, chart_id_t{1}),
-        .payload = {.report = {.status = timing_lane_pseudonote_status_t::editing,
+    timing_lane_pseudonote_outcome_t stage{timing_lane_pseudonote_proposal_t::from(
+        chart_stamp_t::from(history.document, chart_id_t{1}),
+        timing_lane_pseudonote_preview_t{.report = {
             .kind = timing_lane_kind_t::speed, .position = {measure_id_t{1}, 0},
-            .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}}}}};
+            .value = timing_speed_value_t{.transition_beats = {9'007'199'254'740'993ULL, 3}}}})};
     populate_timing_view_for_compose(flattened, history, *binding.value, cache, 1280, 980, {}, &stage);
     CHECK(flattened.view.timing.stage_secondary_value == 3'002'399'751'580'331.0);
 }

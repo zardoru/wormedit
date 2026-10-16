@@ -10,7 +10,6 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
-#include <wormedit/core/interaction_gestures.h>
 
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/snap.h>
@@ -575,11 +574,11 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
 
 auto lane_key_sound(const wormedit::editor_interaction_state_t& state, std::uint64_t lane)
     -> std::optional<wormedit::resource_id_t> {
-    if (state.pending_hold && (lane == 0 || state.pending_hold->lane.value == lane))
-        return state.pending_hold->sound;
-    const auto found = std::ranges::find(state.additional_keyboard_holds, wormedit::lane_id_t{lane},
+    if (state.hold() && (lane == 0 || state.hold()->lane.value == lane))
+        return state.hold()->sound;
+    const auto found = std::ranges::find(state.additional_keyboard_holds(), wormedit::lane_id_t{lane},
                                         &wormedit::pending_hold_t::lane);
-    return found == state.additional_keyboard_holds.end() ? std::nullopt : found->sound;
+    return found == state.additional_keyboard_holds().end() ? std::nullopt : found->sound;
 }
 
 auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
@@ -590,9 +589,9 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
                                        std::string_view& accepted)
     -> compose_input_family_result_t {
     using namespace wormedit;
-    if ((state.pending_hold.has_value() &&
-                state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) ||
-               !state.additional_keyboard_holds.empty()) {
+    if (((state.hold() != nullptr) &&
+                state.hold()->gesture_source == hold_gesture_source_t::keyboard_lane) ||
+               !state.additional_keyboard_holds().empty()) {
         const auto sound = lane_key_sound(state, input.lane_id);
         result = dispatch_editor_action(
             history, state, release_lane_key_hold_gesture_action_t{lane_id_t{input.lane_id}});
@@ -945,7 +944,7 @@ auto handle_inactive_semantic_layer_paint(compose_gesture_context_t& context)
     auto& state = context.state;
     auto& result = context.result;
     auto& accepted = context.accepted;
-    if (state.pending_semantic_layer_paint_gesture) {
+    if (state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>()) {
         result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
         accepted = "Semantic-layer paint stroke canceled because paint mode is inactive.";
     } else {
@@ -1050,7 +1049,7 @@ auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted) -> void {
     using namespace wormedit;
-    const auto pending = context.state.pending_hold;
+    const auto pending = context.state.hold();
     const auto sound = pending ? pending->sound : note_paint_sound(input);
     const auto geometry = compose_stem_geometry(context.environment.document.history, context.state,
                                                 context.environment.controls.cache, sound);
@@ -1073,7 +1072,7 @@ auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
     } else {
         result = dispatch_editor_action(context.environment.document.history, context.state,
                                         place_virtual_bms_tap_action_t{row, lane, sound, geometry});
-        accepted = context.state.pending_hold ? "Hold gesture started; click its end row."
+        accepted = context.state.hold() ? "Hold gesture started; click its end row."
                                               : "Note placed in virtual BMS measure.";
     }
     advance_sound_after_paint_commit(result, sound, result.created_note.has_value());
@@ -1088,7 +1087,7 @@ auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
                                          wormedit::local_position_t position, wormedit::lane_id_t lane,
                                          wormedit::editor_interaction_result_t& result,
                                          std::string_view& accepted) -> bool {
-    if (!context.state.pending_hold || !context.state.pending_hold->anchor_canvas_row) return false;
+    if (!context.state.hold() || !context.state.hold()->anchor_canvas_row) return false;
     const auto& measures = context.environment.document.history.indices(chart.id)->measures;
     const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? (*index).row_of( position) : std::nullopt;
@@ -1104,7 +1103,7 @@ auto pointer_click_places_notes(const compose_input_context_t& context) -> bool 
             compose_mode_of(context.environment.commands)))
         return false;
     return context.environment.commands.project.compose_gesture.note_paint_mode_active ||
-           context.state.pending_hold;
+           context.state.hold();
 }
 
 auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
@@ -1183,8 +1182,8 @@ auto select_compose_pointer_target(const WormUiComposeInputAction& input,
     context.state.active_lane = target->lane;
     // A click never moves the cursor: it keeps its fixed station and only keys and the
     // transport move it.
-    const bool clicked_hold_end = context.state.pending_hold &&
-                                  !context.state.pending_hold->gesture_source;
+    const bool clicked_hold_end = context.state.hold() &&
+                                  !context.state.hold()->gesture_source;
     if (*mode == editor_area_selection_mode_t::replace && places_notes &&
         (!target->note || clicked_hold_end)) {
         place_note_from_pointer(input, context, *target, result, accepted);
@@ -1683,7 +1682,7 @@ auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
         state.virtual_bms_cursor_row)
         return false;
     const auto selected = !state.selected_notes.empty() || !state.selected_objects.empty();
-    const auto pending = state.pending_hold || !state.additional_keyboard_holds.empty();
+    const auto pending = state.hold() || !state.additional_keyboard_holds().empty();
     if (press ? selected : pending) return false;
     const auto& measures = context.environment.document.history.indices(context.input_chart->id)->measures;
     const auto* index = measures ? &*measures : nullptr;
@@ -1888,7 +1887,7 @@ auto begin_bga_draw_transaction(compose_input_context_t& context,
     const application_command_state_t::bga_draw_stroke_proposal_t& stroke, bool beginning, bool bgm)
     -> wormedit::document_command_transaction_t {
     if (beginning)
-        return wormedit::document_command_transaction_t::from(context.environment.document.history);
+        return wormedit::document_command_transaction_t(context.environment.document.history);
     return stroke.transaction(context.environment.document.history, bgm ? "BGM Draw stroke" : "BGA Draw stroke",
         wormedit::document_identity_policy_t::revision_only);
 }
@@ -1925,7 +1924,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     auto transaction = begin_bga_draw_transaction(context, *pending, beginning, bgm);
     if (!transaction.is_ready()) {
         pending.reset();
-        return bga_draw_stop(transaction.outcome.diagnostics.front().message);
+        return bga_draw_stop(transaction.outcome().diagnostics.front().message);
     }
     const auto row = bga_draw_row(input, context, *chart, pending->payload.geometry);
     auto revised = pending->revise(input, *chart, context.state, row, beginning);
@@ -2319,7 +2318,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     auto& scene_cache = environment.controls.cache;
 
     using namespace wormedit;
-    if (!editor_interaction_has_pending_gesture(state))
+    if (!state.is_pending())
         state.scratch_on_right = application_state.scratch_on_right;
     scene_cache.frame.audition_request.reset();
     scene_cache.frame.draft_audition_request.reset();
@@ -2333,7 +2332,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
         ui_action.compose_input_viewport_width_pixels <= 0.0) {
         scene_cache.navigation_travel.cancel();
         if (workspace.active_tab != workspace_tab_t::compose ||
-            is_editor_gestures_stale(state, history.document.revision))
+            (state).is_stale(history.document.revision))
             retire_interrupted_compose_input(history, state, viewport_input, navigation_input,
                                              application_state, scene_cache);
         const auto message = stale_action_message("Compose input");
@@ -2377,7 +2376,7 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     const auto field_left_pixels = horizontal_layout.field_left_pixels;
     const auto field_width_pixels = horizontal_layout.playable_field_width_pixels;
     const auto* chart = history.document.find_chart(state.chart);
-    const auto gesture_active = has_pending_editor_gesture(state);
+    const auto gesture_active = (state).is_pending();
     auto input_context =
         compose_input_context_t{.environment = environment,
                                 .ui_action = ui_action,

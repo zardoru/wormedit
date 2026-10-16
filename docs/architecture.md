@@ -23,7 +23,7 @@ There are two paths in and one way to change the document.
   stale checks, and the result. A gesture holds only its planning and the edit it proposes
   *(T-634)*.
 - **Proposals:** a gesture, drag or staged preview produces a `proposal_t<Payload, Stamp>`, the
-  payload plus the document stamp it was planned against. `revise` updates it. Applying it is
+  payload plus the document stamp it was planned against. `revise` updates it. `apply_proposal` applies it through the transaction and is
   the commit *(T-630, T-634)*.
 - **Transaction (the executor):** `document_command_transaction_t` is the only way to change the
   document. It checks the stamp, copies the document lazily once, runs the edit, rejects
@@ -68,9 +68,10 @@ every edit gets it.
 | To find | Search |
 |---|---|
 | A direct command's route | `application_command_route_t::from` in `src/sys/application_command_dispatch.cpp`; `compose_action_route_t::find` and the constexpr module route tables in `src/sys/compose_action_routes.h` and `src/sys/compose_actions.cpp` (with the area, resource, marker, bookmark, BGA and sound module tables). The typed route runners in `compose_action_routes.h` bind actions and use `run_compose_action` in `include/wormedit/core/proposal.h`; `finish_application_command` / `finish_compose_action` in `src/sys/compose_action_outcome.cpp` complete the outcome. |
-| A gesture | `src/core/interaction_gesture_runner.h` (`editor_gesture`, `begin_gesture`/`update_gesture`/`commit_gesture`/`cancel_gesture`) and the gesture's own file |
-| A proposal | `proposal_t<` and the payload's type |
-| The executor | `document_command_transaction_t` in `include/wormedit/core/command.h` |
+| An editor action's capability and execution | `editor_action_handler_t<Action>` in `src/core/interaction.cpp`; `editor_action_dispatch_t` checks its declared virtual-cursor policy, prepares the view/cursor context once, and calls `perform`. Every variant alternative must satisfy the handler contract; there is no default. Gesture cancellation, stale capture, admission and terminal cleanup remain in `interaction_gesture_lifecycle.cpp`. |
+| A gesture | `src/core/interaction_gesture_runner.h` (`editor_gesture`, `begin_gesture`/`revise_gesture`/`apply_gesture`/`cancel_gesture`, implementing begin/update/commit/cancel) and the gesture's own file |
+| A proposal | `proposal_t<`, `apply_proposal` in `include/wormedit/core/proposal.h`, and the payload's type |
+| The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 

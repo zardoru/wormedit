@@ -21,7 +21,7 @@ auto publish_branch_edit(document_history_t& history, bms_branch_statement_edit_
         return result;
     }
 
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(*edit.song));
     result.command = transaction.commit(std::move(label));
     return result;
@@ -450,7 +450,7 @@ auto publish_reparsed(document_history_t& history, const chart_document_t& old_c
                         "BMS branch edit could not preserve the current lane, resource, and asset graph");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(*parsed));
     result = transaction.commit(std::move(label));
     return result;
@@ -1061,7 +1061,7 @@ auto apply_bms_branch_selection_command(document_history_t& history,
     if (!can_publish) {
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(*rematerialized.value.song));
     result.command = transaction.commit("Change active BMS branch");
     return result;

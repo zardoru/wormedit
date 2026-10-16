@@ -10,11 +10,6 @@ struct cursor_navigation_context_t {
     editor_edit_context_t& edit;
     const std::uint64_t& absolute;
 };
-[[nodiscard]] auto update_keyboard_holds(editor_edit_context_t& context, local_position_t position)
-    -> editor_interaction_result_t;
-[[nodiscard]] auto update_canvas_keyboard_holds(editor_edit_context_t& context, std::uint64_t row)
-    -> editor_interaction_result_t;
-
 [[nodiscard]] auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& index,
                                        editor_interaction_state_t& candidate) -> bool;
 [[nodiscard]] auto move_edit_cursor(cursor_navigation_context_t& context,

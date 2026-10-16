@@ -16,11 +16,6 @@
 
 namespace wormedit::sys {
 
-[[nodiscard]] inline auto playhead_cursor_edit_blocked(const editor_interaction_state_t& state)
-    -> bool {
-    return has_pending_editor_gesture(state);
-}
-
 // While playing, the playhead stays anchored at the edge margin measured from the
 // chart-start side (#000); when paused it only scrolls once it leaves the comfort band.
 [[nodiscard]] inline auto compose_playhead_scroll_target(
@@ -64,7 +59,7 @@ namespace wormedit::sys {
                                                    editor_measure_geometry_t geometry = {},
                                                    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> bool {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
-        playhead_cursor_edit_blocked(state))
+        state.is_pending())
         return false;
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr || state.active_snap_denominator == 0 ||

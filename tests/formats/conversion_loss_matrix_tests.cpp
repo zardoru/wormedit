@@ -199,6 +199,7 @@ void check_pair(const std::filesystem::path& fixture, const wormedit::song_docum
 
 TEST_CASE("loss matrix classifies every diagnostic for every fixture and writer",
           "[unit][format][conversion][loss]") {
+    // Slow: every fixture/writer/loss-policy combination has distinct format-loss coverage.
     const auto fixtures = matrix_fixtures();
     REQUIRE_FALSE(fixtures.empty());
     const auto targets = matrix_targets();

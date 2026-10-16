@@ -830,7 +830,7 @@ auto bpm_stage_ready(const TimingInsertFixture& fixture,
 
 auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> bool {
     if (!fixture.preview) return false;
-    const auto committed = wormedit::apply_timing_lane_pseudonote(
+    const auto committed = wormedit::apply_proposal(
         fixture.fixture.history, *fixture.preview, false);
     return committed.applied && fixture.fixture.history.document.revision == revision + 1 &&
            fixture.fixture.history.undo.size() == 1;
@@ -1980,7 +1980,7 @@ TEST_CASE("Compose No layer paint clears mixed memberships once and undo restore
         update_semantic_layer_paint_gesture_action_t{object_id_t{2}, true})));
     require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
     check_membership(static_cast<bool>(fixture.history.undo.size() == 1));
-    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(!(fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>())));
     check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
     for (const auto& note : fixture.history.document.charts.front().measures.front().notes)
         check_membership(static_cast<bool>(note.semantic_layers.empty()));
@@ -2001,7 +2001,7 @@ TEST_CASE("Compose No layer paint rejects locked membership and exposes status d
     check_membership(static_cast<bool>(!(result)));
     require_membership(static_cast<bool>(!(result.diagnostics.empty())));
     check_membership(static_cast<bool>(result.diagnostics.front().message.find("locked") != std::string::npos));
-    check_membership(static_cast<bool>(!(fixture.state.pending_semantic_layer_paint_gesture)));
+    check_membership(static_cast<bool>(!(fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>())));
     check_membership(static_cast<bool>(write_native_project(fixture.history.document).value == write_native_project(original).value));
     check_membership(static_cast<bool>(fixture.history.undo.empty()));
     check_membership(static_cast<bool>(fixture.state.selected_notes.size() == 2));
@@ -2032,7 +2032,7 @@ TEST_CASE("Compose No layer no-op still binds target and releases an unassigned 
     check_membership(none && !target);
     require_membership(static_cast<bool>(begin_compose_layer_paint(fixture.history, fixture.state, true, {}, object_id_t{1}, true)));
     require_membership(static_cast<bool>(finish_compose_layer_paint(fixture.history, fixture.state, {})));
-    check_membership(!fixture.state.pending_semantic_layer_paint_gesture);
+    check_membership(!fixture.state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>());
     check_membership(fixture.history.undo.empty());
 }
 
@@ -3167,7 +3167,7 @@ TEMPLATE_TEST_CASE("Captured native chart action bindings reject stale transacti
     REQUIRE(before.has_value());
     REQUIRE_FALSE(before->empty());
     const auto revision = history.document.revision;
-    auto transaction = document_command_transaction_t::from(history, stamp, "Native edit");
+    auto transaction = document_command_transaction_t(history, stamp, "Native edit");
     const TestType edit{};
     const auto outcome =
         run_native_chart_edit<TestType>(transaction, edit, native_edit_binding_description);

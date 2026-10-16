@@ -233,7 +233,7 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
     const auto* chart = context.environment.document.history.document.find_chart(
         state ? state->chart : chart_id_t{});
     if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
-        editor_interaction_has_pending_gesture(*state) ||
+        state->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
         return compose_action_outcome_t::from(
@@ -600,7 +600,7 @@ auto open_bookmark_chooser_command(command_context_t& context) -> command_result
         return compose_action_outcome_t::from(
             "Bookmark chooser requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction))
+    if (interaction->is_pending())
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
@@ -621,7 +621,7 @@ auto open_sound_picker_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Sound picker requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
@@ -668,7 +668,7 @@ auto project_export_command(command_context_t& context) -> command_result_t {
             "Export requires a selected project difficulty.", notification_severity_t::warning,
             notification_source_t::export_, diagnostic_code_t::unsupported_feature);
     if ((context.environment.editor.retained &&
-         editor_interaction_has_pending_gesture(*context.environment.editor.retained)) ||
+         context.environment.editor.retained->is_pending()) ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active editor gesture before exporting.",
@@ -707,7 +707,7 @@ auto compose_auxiliary_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Dock command requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
@@ -752,7 +752,7 @@ auto bookmark_commands(command_context_t& context) -> command_result_t {
             "Bookmark commands require the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::markers_add_bookmark &&
-        (editor_interaction_has_pending_gesture(*state) ||
+        (state->is_pending() ||
          context.environment.editor.commands.project.clipboard.paste_session))
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before editing bookmarks.",
@@ -827,7 +827,7 @@ auto timing_lock_command(command_context_t& context) -> command_result_t {
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     app.project.timing_recipe.timing_locked = !app.project.timing_recipe.timing_locked;
     if (app.project.timing_recipe.timing_locked && context.environment.editor.timing_stage) {
-        cancel_timing_lane_pseudonote(*context.environment.editor.timing_stage);
+        cancel_proposal(*context.environment.editor.timing_stage);
         context.environment.editor.timing_stage.reset();
     }
     return compose_action_outcome_t::from(
@@ -885,7 +885,7 @@ auto timing_insert_command(command_context_t& context) -> command_result_t {
             "Timing insertion is unavailable at a virtual BMS cursor row.",
             notification_severity_t::warning, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*state))
+    if (state->is_pending())
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before inserting timing.",
             notification_severity_t::warning, notification_source_t::edit,
@@ -959,7 +959,7 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Pick an unlocked visible layer in the Layers dock.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*state)) {
+    if (state->is_pending()) {
         const auto canceled =
             wormedit::dispatch_editor_action(context.environment.document.history, *state,
                                              wormedit::cancel_editor_gesture_action_t{});

@@ -10,7 +10,25 @@ using namespace wormedit;
 namespace {
 
 struct metadata_payload_t {
+    static constexpr proposal_capture_policy_t apply_policy{
+        .stale_label = "Title proposal"};
     std::string title;
+
+    auto apply(proposal_edit_scope_t<document_stamp_t>& scope, bool is_rejected_after_edit = false,
+               bool is_rejected_by_transaction = false) const
+        -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
+        if (title.empty())
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Title is empty.")}};
+        if (transaction.current_document().metadata.title == title) return {};
+        transaction.document().metadata.title = title;
+        if (is_rejected_after_edit)
+            return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Prepared title rejected.")}};
+        if (is_rejected_by_transaction)
+            transaction.outcome().diagnostics.push_back(
+                error(diagnostic_code_t::invalid_id, "Transaction rejected title."));
+        return {.value = "Set title"};
+    }
 
     auto operator==(const metadata_payload_t&) const -> bool = default;
 
@@ -28,6 +46,31 @@ struct metadata_payload_t {
         return propose(document, std::move(title));
     }
 };
+
+struct warned_title_t : metadata_payload_t {
+    static auto validate_apply(const document_stamp_t&) -> diagnostic_list_t {
+        return {{.severity = diagnostic_severity_t::warning,
+                 .code = diagnostic_code_t::unsupported_feature, .message = "Review title."}};
+    }
+};
+
+struct consuming_title_t {
+    static constexpr proposal_capture_policy_t apply_policy{
+        .stale_label = "Consuming title", .identity = document_identity_policy_t::revision_only};
+    std::unique_ptr<std::string> title;
+    auto apply(proposal_edit_scope_t<document_stamp_t>& scope) &&
+        -> diagnosed_t<std::optional<std::string>> {
+        auto& transaction = scope.transaction();
+        if (scope.captured_stamp().project != transaction.current_document().id)
+            return {.diagnostics = {error(diagnostic_code_t::collision, "Title belongs to another project.")}};
+        auto consumed = std::move(title);
+        transaction.document().metadata.title = std::move(*consumed);
+        return {.value = "Consume title"};
+    }
+};
+static_assert(!std::copy_constructible<consuming_title_t>);
+static_assert(proposal_edit<consuming_title_t, proposal_edit_scope_t<document_stamp_t>>);
+static_assert(!proposal_edit<consuming_title_t&, proposal_edit_scope_t<document_stamp_t>>);
 
 // State-machine revisions may reject the original state while returning no proposal.
 struct mutable_payload_t {
@@ -108,27 +151,10 @@ void check_failed_title(const proposal_outcome_t<metadata_payload_t, document_st
     CHECK(outcome.diagnostics.front().code == diagnostic_code_t::invalid_id);
 }
 
-void check_unpublished_title(const document_history_t& history,
-                             const document_command_transaction_t& transaction) {
-    CHECK_FALSE(transaction.has_copy());
-    CHECK(history.document.metadata.title.empty());
-    CHECK(history.undo.empty());
-}
-
 void check_published_title(const document_history_t& history) {
     CHECK(history.document.metadata.title == "Proposed");
     REQUIRE(history.undo.size() == 1);
     CHECK(history.undo.front().label == "Set title");
-}
-
-void apply_title_proposal(document_history_t& history,
-                          const proposal_t<metadata_payload_t, document_stamp_t>& proposal) {
-    auto transaction = proposal.transaction(history, "Set title");
-    REQUIRE(transaction.is_ready());
-    check_unpublished_title(history, transaction);
-    transaction.copy_document().metadata.title = proposal.payload.title;
-    CHECK(history.document.metadata.title.empty());
-    REQUIRE(transaction.commit("Set title"));
 }
 
 } // namespace
@@ -143,7 +169,7 @@ TEST_CASE("Shared proposals reject stale stamps before copying", "[core][proposa
     auto transaction = proposal.transaction(history, "Proposal");
     CHECK_FALSE(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
-    test::check_stale_action_message(transaction.outcome.diagnostics, "Proposal");
+    test::check_stale_action_message(transaction.outcome().diagnostics, "Proposal");
     CHECK(history.document.metadata.title.empty());
     CHECK(history.undo.empty());
 }
@@ -181,7 +207,7 @@ TEST_CASE("Shared proposals publish through the lazy command transaction", "[cor
     const auto built = metadata_payload_t::propose(history.document, "Proposed");
     REQUIRE(built.value.has_value());
     CHECK(built.value->is_current(history));
-    apply_title_proposal(history, *built.value);
+    REQUIRE(apply_proposal(history, *built.value));
     check_published_title(history);
     CHECK_FALSE(built.value->is_current(history));
     REQUIRE(undo_document_command(history));
@@ -240,12 +266,12 @@ struct action_test_t {
     auto validate(action_test_context_t& context) const
         -> std::optional<document_command_result_t> {
         ++context.validated;
-        if (!context.transaction.is_ready()) return context.transaction.outcome;
+        if (!context.transaction.is_ready()) return context.transaction.outcome();
         return std::nullopt;
     }
     auto perform(action_test_context_t& context) const -> document_command_result_t {
         ++context.performed;
-        context.transaction.copy_document();
+        context.transaction.document();
         return context.transaction.finish_without_commit();
     }
 };
@@ -261,25 +287,145 @@ TEST_CASE("Compose action validation prevents perform and a stale document copy"
     auto history = make_history();
     const auto stamp = document_stamp_t::from(history.document);
     ++history.document.revision;
-    auto transaction = document_command_transaction_t::from(history, stamp, "Test action");
+    auto transaction = document_command_transaction_t(history, stamp, "Test action");
     action_test_context_t context{transaction};
     action_test_t action;
     const auto outcome = run_compose_action(action, context);
     CHECK(context.validated == 1);
     CHECK(context.performed == 0);
     CHECK_FALSE(transaction.has_copy());
-    CHECK(outcome.diagnostics == transaction.outcome.diagnostics);
+    CHECK(outcome.diagnostics == transaction.outcome().diagnostics);
     test::check_stale_action_message(outcome.diagnostics, "Test action");
     CHECK(history.undo.empty());
 }
 
 TEST_CASE("Compose action performance follows one successful validation", "[core][proposal][compose-action]") {
     auto history = make_history();
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     action_test_context_t context{transaction};
     const auto outcome = run_compose_action(action_test_t{}, context);
     CHECK(context.validated == 1);
     CHECK(context.performed == 1);
     CHECK(outcome.diagnostics.empty());
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner rejects expiry before an edit", "[core][proposal]") {
+    auto history = make_history();
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    ++history.document.revision;
+    const auto result = apply_proposal(history, *built.value);
+    CHECK_FALSE(result.applied);
+    test::check_stale_action_message(result.diagnostics, "Title proposal");
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner discards rejected prepared changes", "[core][proposal]") {
+    auto history = make_history();
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value, true);
+    CHECK_FALSE(result.applied);
+    const diagnostic_list_t expected{error(diagnostic_code_t::invalid_id, "Prepared title rejected.")};
+    CHECK(result.diagnostics == expected);
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner leaves no-op captures reusable without history", "[core][proposal]") {
+    auto history = make_history();
+    history.document.metadata.title = "Proposed";
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value);
+    CHECK_FALSE(result.applied);
+    CHECK(result.diagnostics.empty());
+    CHECK(built.value->is_current(history));
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Proposal runner preserves transaction rejection", "[core][proposal]") {
+    auto history = make_history();
+    const auto revision = history.document.revision;
+    const auto built = metadata_payload_t::propose(history.document, "Proposed");
+    REQUIRE(built.value);
+    const auto result = apply_proposal(history, *built.value, false, true);
+    CHECK_FALSE(result.applied);
+    const diagnostic_list_t expected{error(diagnostic_code_t::invalid_id, "Transaction rejected title.")};
+    CHECK(result.diagnostics == expected);
+    CHECK(history.document.metadata.title.empty());
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposals preserve consuming payloads without a copy", "[core][proposal]") {
+    auto history = make_history();
+    proposal_t<consuming_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document),
+        .payload = {.title = std::make_unique<std::string>("Consumed")}};
+    REQUIRE(apply_proposal(history, std::move(pending)));
+    CHECK_FALSE(pending.payload.title);
+    CHECK(history.document.metadata.title == "Consumed");
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.metadata.title.empty());
+}
+
+TEST_CASE("Shared proposal scopes retain captured provenance before consuming", "[core][proposal]") {
+    auto history = make_history();
+    proposal_t<consuming_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document),
+        .payload = {.title = std::make_unique<std::string>("Consumed")}};
+    history.document.id = song_id_t{2};
+    const auto rejected = apply_proposal(history, std::move(pending));
+    CHECK_FALSE(rejected.applied);
+    REQUIRE(rejected.diagnostics.size() == 1);
+    CHECK(rejected.diagnostics.front().message == "Title belongs to another project.");
+    REQUIRE(pending.payload.title);
+    CHECK(*pending.payload.title == "Consumed");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposal warnings remain before expiry diagnostics", "[core][proposal]") {
+    auto history = make_history();
+    const proposal_t<warned_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document), .payload = {{.title = "Proposed"}}};
+    ++history.document.revision;
+    const auto result = apply_proposal(history, pending);
+    CHECK_FALSE(result.applied);
+    REQUIRE(result.diagnostics.size() == 2);
+    CHECK(result.diagnostics.front().message == "Review title.");
+    test::check_stale_action_message(result.diagnostics.back().message, "Title proposal");
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Shared proposals retain commit diagnostic replacement", "[core][proposal]") {
+    auto history = make_history();
+    const proposal_t<warned_title_t, document_stamp_t> pending{
+        .stamp = document_stamp_t::from(history.document), .payload = {{.title = "Proposed"}}};
+    const auto result = apply_proposal(history, pending);
+    CHECK(result.applied);
+    // commit_validated_document supplies validation diagnostics, replacing preflight warnings.
+    CHECK(result.diagnostics.empty());
+    CHECK(history.document.metadata.title == "Proposed");
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Shared proposal construction transfers a move-only prepared payload", "[unit][proposal]") {
+    const document_stamp_t captured{.project = song_id_t{77}, .revision = 3};
+    auto title = std::make_unique<std::string>("Prepared title");
+    const auto* original = title.get();
+    result_t<consuming_title_t, diagnostic_t> prepared{consuming_title_t{.title = std::move(title)}};
+    auto pending = proposal_t<consuming_title_t, document_stamp_t>::from(captured, std::move(prepared));
+    REQUIRE(pending.value);
+    CHECK(pending.value->payload.title.get() == original);
+    CHECK_FALSE(prepared->title);
+    CHECK(pending.value->stamp == captured);
+    CHECK(pending.diagnostics.empty());
 }

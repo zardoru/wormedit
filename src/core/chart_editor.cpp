@@ -183,8 +183,8 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
     visit_chart_ids(chart, remap);
     if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
     const auto id = chart.id;
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     proposed.charts.push_back(std::move(chart));
     auto result = transaction.commit("New chart");
     const auto applied = result.applied;
@@ -227,8 +227,8 @@ auto apply_duplicate_chart_command(document_history_t& history,
     if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};
     duplicate.metadata.name += " (copy)";
     const auto new_id = duplicate.id;
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     proposed.charts.push_back(std::move(duplicate));
     auto result = transaction.commit("Duplicate chart");
     const auto applied = result.applied;
@@ -239,8 +239,8 @@ auto apply_delete_chart_command(document_history_t& history,
                                 chart_id_t id) -> document_command_result_t {
     if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (history.document.charts.size() == 1) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "cannot delete the last chart");
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     remove_memberships(proposed, id);
     std::erase_if(proposed.charts, [id](const auto& chart) { return chart.id == id; });
     return transaction.commit("Delete chart");
@@ -250,8 +250,8 @@ auto apply_reorder_chart_command(document_history_t& history,
                                  chart_id_t id, std::size_t destination) -> document_command_result_t {
     if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (destination >= history.document.charts.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart destination is out of range");
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     const auto source = proposed.find_chart(id);
     auto moved = std::move(*source);
     proposed.charts.erase(proposed.charts.begin() + (source - proposed.charts.data()));
@@ -263,8 +263,8 @@ auto apply_move_chart_group_command(document_history_t& history,
                                     chart_id_t id, std::optional<std::size_t> group) -> document_command_result_t {
     if (auto invalid = check_chart(history, id)) return std::move(*invalid);
     if (group && *group >= history.document.output_groups.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "output group is out of range");
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     remove_memberships(proposed, id);
     if (group) proposed.output_groups[*group].charts.push_back(id);
     return transaction.commit("Move chart between output groups");
@@ -308,8 +308,8 @@ auto apply_set_output_group_command(document_history_t& history,
     std::optional<std::size_t> index, output_group_t group) -> document_command_result_t {
     if (const auto error = output_group_error(history.document, index, group); !error.empty())
         return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, error);
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     if (index) proposed.output_groups[*index] = std::move(group);
     else proposed.output_groups.push_back(std::move(group));
     return transaction.commit(index ? "Edit output group" : "Create output group");
@@ -317,8 +317,8 @@ auto apply_set_output_group_command(document_history_t& history,
 auto apply_delete_output_group_command(document_history_t& history,
     std::size_t index) -> document_command_result_t {
     if (index >= history.document.output_groups.size()) return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "Output group is no longer available.");
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     proposed.output_groups.erase(proposed.output_groups.begin() + static_cast<std::ptrdiff_t>(index));
     return transaction.commit("Delete output group");
 }

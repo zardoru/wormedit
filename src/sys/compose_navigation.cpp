@@ -126,7 +126,7 @@ auto navigate_compose_position(document_history_t& history, editor_interaction_s
         return compose_action_outcome_t::from(stale_action_message("Compose navigation"),
                                               notification_severity_t::warning,
                                               notification_source_t::input, false, false);
-    if (has_pending_editor_gesture(state))
+    if ((state).is_pending())
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before navigating.",
             notification_severity_t::warning, notification_source_t::input, false, false);

@@ -89,8 +89,13 @@ it in new code even before the card lands.
   runner so every edit gets it. Keep `docs/architecture.md` true
   when a runner changes. No scripting layer or reified command objects: undo is snapshots.
 - **Document commands run through `document_command_transaction_t`:** build it with
-  `::from(history)`, reject through it, copy the document lazily and only once, commit through it.
+  a constructor, reject through it, copy the document lazily and only once, commit through it.
   Never hand-write the stamp/copy/commit sequence. Staged edits are orchestration around it.
+  Three reads, three guarantees: `document()` is the working copy (the first call copies the
+  committed document, once); `current_document()` reads what the transaction sees now (the working
+  copy if one exists, otherwise the committed document) without copying, for validation, ID
+  allocation and stale checks; `source_document()`/`source_chart(id)` are always the committed
+  version. Read with `current_document()` unless you are about to change something.
 - **Check a revision once, at the boundary.** Each entry point (and each item of an input batch)
   checks the action's stamp once; handlers below it don't. Synchronous core calls take no stamp.
   State captured earlier (gestures, previews, proposals, async results) carries a
@@ -144,6 +149,17 @@ it in new code even before the card lands.
   the `documentation.ceremony_ratchet` test fails when a count grows. Lower the maximum in the same
   commit that lowers a count; raising one needs the owner's approval. When an audit finds a new
   ceremony pattern, add a row.
+
+## Tests (owner, 2026-10-15)
+
+- **Test a safeguard where it lives.** A shared runner's checks (exclusivity, stale, not-ready,
+  no-op, single commit, routing, completion) are tested once, at the runner. An owner tests its
+  domain behavior plus one wiring test that it goes through the runner; it does not re-test the
+  runner's safeguards. *(T-644)*
+- **Assert the contract.** Assert a diagnostic's code; assert its text only where the text is the
+  contract. Rules about source shape belong in the ceremony ratchet, not in a test that scans files.
+- **Size limits small.** Prove a bound at the smallest size that exercises it; anything over a
+  second needs a reason in the test or the `slow` label.
 
 ## Files and folders
 

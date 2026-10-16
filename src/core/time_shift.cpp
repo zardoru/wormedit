@@ -194,7 +194,7 @@ auto finish_shift(document_history_t& history, prepared_shift_t& prepared,
     rehome(*prepared.chart, &measure_chunk_t::bgm_events);
     if (!is_lanes_free_of_overlap(*prepared.chart, shifter, result))
         return std::move(result);
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(prepared.proposed));
     result.command = transaction.commit(label);
     return std::move(result);

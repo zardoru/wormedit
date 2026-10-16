@@ -1,3 +1,4 @@
+#include "interaction_gesture_runner.h"
 #include "interaction_internal.h"
 #include "interaction_geometry.h"
 #include "interaction_cursor.h"
@@ -56,13 +57,13 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
                                            std::string_view description)
     -> editor_interaction_result_t {
     auto& state = context.edit.state;
-    if (state.pending_hold &&
-        state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
-        if (!target || state.pending_hold->anchor_canvas_row ||
-            std::ranges::any_of(state.additional_keyboard_holds,
+    if (state.hold() &&
+        state.hold()->gesture_source == hold_gesture_source_t::keyboard_lane) {
+        if (!target || state.hold()->anchor_canvas_row ||
+            std::ranges::any_of(state.additional_keyboard_holds(),
                                 [](const auto& hold) { return hold.anchor_canvas_row.has_value(); }))
-            return update_canvas_keyboard_holds(context.edit, canvas_row);
-        return update_keyboard_holds(context.edit, *target);
+            return revise_gesture<hold_gesture_t>(context.edit, canvas_row);
+        return revise_gesture<hold_gesture_t>(context.edit, *target);
     }
     auto proposed = state;
     place_cursor_on_canvas_row(proposed, target, canvas_row);

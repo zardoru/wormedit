@@ -178,9 +178,10 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
         bin.frame_count = 441;
     const auto timing = wormedit::build_timing_index(chart);
     REQUIRE(timing);
+    // Quarter-scale pixels cover the same musical viewport and source cuts.
     const aligned_waveform_request_t viewport{.viewport_scroll_pixels = 0.0,
-                                              .viewport_height_pixels = 1440.0,
-                                              .pixels_per_standard_measure = 960.0};
+                                              .viewport_height_pixels = 360.0,
+                                              .pixels_per_standard_measure = 240.0};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
     const auto base = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
                                                *timing.index, viewport, source);
@@ -188,8 +189,8 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     REQUIRE_FALSE(base->rows.empty());
     // The audio restarts at row 720, so the pulse (one second into the sample) sounds again two
     // beats after it: at row 1200, not where one linear run from the first point would put it.
-    CHECK(loudest_row(base) >= 1195.0);
-    CHECK(loudest_row(base) <= 1205.0);
+    CHECK(loudest_row(base) >= 298.75);
+    CHECK(loudest_row(base) <= 301.25);
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, chart.sound_channels.front(), source.sample_rate, source.total_frames);
     REQUIRE(slices);
@@ -200,12 +201,12 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     CHECK(loudest_row(cached) == loudest_row(base));
 
     auto scrolled_viewport = viewport;
-    scrolled_viewport.viewport_scroll_pixels = 240.0;
+    scrolled_viewport.viewport_scroll_pixels = 60.0;
     const auto scrolled = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
                                                    *timing.index, scrolled_viewport, source);
     REQUIRE(scrolled);
-    CHECK(loudest_row(scrolled) >= 955.0);
-    CHECK(loudest_row(scrolled) <= 965.0);
+    CHECK(loudest_row(scrolled) >= 238.75);
+    CHECK(loudest_row(scrolled) <= 241.25);
 
     auto slower_chart = chart_fixture();
     slower_chart.bpms.push_back({.id = wormedit::object_id_t{999'999},
@@ -223,8 +224,8 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
         viewport,
         {.sample_rate = output_sample_rate, .total_frames = longer_waveform.total_frames});
     REQUIRE(slowed);
-    CHECK(loudest_row(slowed) >= 595.0);
-    CHECK(loudest_row(slowed) <= 605.0);
+    CHECK(loudest_row(slowed) >= 148.75);
+    CHECK(loudest_row(slowed) <= 151.25);
 
     chart.beat_zero_audio_offset_seconds = {1, 2};
     const auto shifted_timing = wormedit::build_timing_index(chart);
@@ -239,16 +240,16 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     const auto clipped = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
                                                   *timing.index, viewport, source);
     REQUIRE(clipped);
-    CHECK(loudest_row(clipped) >= 475.0);
-    CHECK(loudest_row(clipped) <= 485.0);
+    CHECK(loudest_row(clipped) >= 118.75);
+    CHECK(loudest_row(clipped) <= 121.25);
 
     chart.sound_channels.front().source_clip.begin_frame = 24'000;
     const auto native_48k =
         aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.index,
                                  viewport, {.sample_rate = 48'000, .total_frames = 4U * 48'000U});
     REQUIRE(native_48k);
-    CHECK(loudest_row(native_48k) >= 475.0);
-    CHECK(loudest_row(native_48k) <= 485.0);
+    CHECK(loudest_row(native_48k) >= 118.75);
+    CHECK(loudest_row(native_48k) <= 121.25);
 
     auto shortened = chart_fixture();
     shortened.sound_channels.front().events.resize(2);

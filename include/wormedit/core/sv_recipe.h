@@ -64,33 +64,33 @@ struct sv_recipe_compilation_t {
 
 using sv_recipe_export_bake_outcome_t = diagnosed_t<std::optional<chart_document_t>>;
 
-enum class sv_recipe_draft_status_t {
-    inactive,
-    editing,
-    applied,
-    cancelled,
-    rejected,
-};
-
 // Transient parameter editing is revision-bound. New drafts keep a zero ID
 // until Apply; replacement drafts retain the selected recipe's stable ID.
 struct sv_recipe_draft_t {
+    static constexpr std::string_view begin_locked_message = "SV recipe editing is unavailable while timing is locked";
+    static constexpr proposal_capture_policy_t apply_policy{
+        .stale_label = "SV recipe draft", .identity = document_identity_policy_t::revision_only,
+        .stale_code = diagnostic_code_t::invalid_binding,
+        .locked_message = "SV recipe draft was cancelled by timing lock"};
+    static constexpr proposal_lifecycle_policy_t lifecycle_policy{
+        .inactive_inspect_message = "SV recipe draft is not active",
+        .can_echo_inactive_diagnostics = true};
+    [[nodiscard]] auto validate_target(const song_document_t&, chart_id_t, proposal_operation_t) const
+        -> result_t<const chart_document_t*, diagnostic_t>;
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
+        const proposal_application_input_t& = {}) -> diagnosed_t<std::optional<std::string>>;
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         sv_recipe_t candidate, bool timing_locked = false) -> proposal_outcome_t<sv_recipe_draft_t>;
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         recipe_id_t recipe, bool timing_locked = false) -> proposal_outcome_t<sv_recipe_draft_t>;
-    // Successful revisions transfer this payload into the returned proposal. Failed
+    // Successful envelope revisions transfer this payload into the returned proposal. Failed
     // range updates keep its last valid candidate. Reuse the prior diagnostic buffer.
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const document_history_t& history,
-        sv_recipe_t candidate, bool timing_locked = false, diagnostic_list_t diagnostics = {})
-        -> proposal_outcome_t<sv_recipe_draft_t>;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const document_history_t& history,
-        position_span_t pointer_hits, std::uint64_t active_snap_denominator,
-        bool timing_locked = false, diagnostic_list_t diagnostics = {})
-        -> proposal_outcome_t<sv_recipe_draft_t>;
+    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t candidate) -> bool;
+    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&,
+        position_span_t pointer_hits, std::uint64_t active_snap_denominator) -> bool;
     [[nodiscard]] auto preview_candidate() const -> sv_recipe_t;
 
-    sv_recipe_draft_status_t status{sv_recipe_draft_status_t::inactive};
+    proposal_lifecycle_t lifecycle;
     std::optional<recipe_id_t> existing_recipe;
     sv_recipe_t candidate;
     auto operator==(const sv_recipe_draft_t&) const -> bool = default;
@@ -98,14 +98,13 @@ struct sv_recipe_draft_t {
 
 static_assert(staged_proposal<sv_recipe_draft_t,
     std::tuple<const document_history_t&, chart_id_t, sv_recipe_t, bool>,
-    std::tuple<const chart_stamp_t&, const document_history_t&, sv_recipe_t, bool, diagnostic_list_t>>);
+    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t>>);
 static_assert(staged_proposal<sv_recipe_draft_t,
     std::tuple<const document_history_t&, chart_id_t, recipe_id_t, bool>,
-    std::tuple<const chart_stamp_t&, const document_history_t&, sv_recipe_t, bool, diagnostic_list_t>>);
+    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, sv_recipe_t>>);
 static_assert(staged_proposal<sv_recipe_draft_t,
     std::tuple<const document_history_t&, chart_id_t, sv_recipe_t, bool>,
-    std::tuple<const chart_stamp_t&, const document_history_t&, position_span_t, std::uint64_t,
-               bool, diagnostic_list_t>>);
+    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, position_span_t, std::uint64_t>>);
 
 // Raw candidate samples and the effective composition preview are both
 // transient. Composition includes the candidate at its stored recipe order,
@@ -141,10 +140,7 @@ struct sv_recipe_draft_preview_t {
 [[nodiscard]] auto preview_sv_recipe_draft(const document_history_t& history,
     const proposal_t<sv_recipe_draft_t>& draft,
     std::span<const diagnostic_t> recent_diagnostics = {}) -> sv_recipe_draft_preview_t;
-[[nodiscard]] auto apply_sv_recipe_draft(document_history_t& history,
-    proposal_t<sv_recipe_draft_t>& draft, bool timing_locked = false,
-    std::span<const diagnostic_t> recent_diagnostics = {}) -> document_command_result_t;
-void cancel_sv_recipe_draft(proposal_t<sv_recipe_draft_t>& draft) noexcept;
+
 
 // Builds an export-only chart copy. Generic SV and SCROLLS recipes become
 // ordinary instantaneous scroll events; SPEEDS recipes become ordinary speed
@@ -181,18 +177,28 @@ enum class sv_recipe_range_handle_t {
     whole_span,
 };
 
-enum class sv_recipe_range_drag_status_t {
-    inactive,
-    previewing,
-    committed,
-    cancelled,
-    rejected,
-};
-
 // Renderer-neutral state for clicking and dragging a recipe's start, end, or
 // whole interval. Only preview_range changes during the gesture; the document
-// is published once by apply_sv_recipe_range_drag.
+// is published once by apply_proposal.
 struct sv_recipe_range_drag_t {
+    static constexpr proposal_capture_policy_t apply_policy{
+        .stale_label = "SV recipe range drag", .identity = document_identity_policy_t::revision_only,
+        .stale_code = diagnostic_code_t::invalid_binding,
+        .locked_message = "SV recipe range drag was cancelled by timing lock"};
+    static constexpr std::string_view invalid_target_message = "SV recipe range drag target no longer exists";
+    static constexpr proposal_lifecycle_policy_t lifecycle_policy{
+        .inactive_apply_message = "SV recipe range drag is not active",
+        .locked_status = proposal_status_t::rejected,
+        .expired_status = proposal_status_t::rejected,
+        .binding_status = proposal_status_t::rejected,
+        .preparation_failure_status = proposal_status_t::rejected,
+        .unchanged_status = proposal_status_t::cancelled,
+        .completion = proposal_completion_policy_t::applied};
+    [[nodiscard]] auto validate_target(const song_document_t&, chart_id_t, proposal_operation_t) const
+        -> result_t<const chart_document_t*, diagnostic_t>;
+    [[nodiscard]] auto is_unchanged() const noexcept -> bool;
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&,
+        const proposal_application_input_t& = {}) -> diagnosed_t<std::optional<std::string>>;
     // The pointer is an unsnapped chart hit; snap must divide the chart resolution.
     [[nodiscard]] static auto propose(const document_history_t& history, chart_id_t chart,
         recipe_id_t recipe, sv_recipe_range_handle_t handle, local_position_t pointer_position,
@@ -200,11 +206,9 @@ struct sv_recipe_range_drag_t {
         -> proposal_outcome_t<sv_recipe_range_drag_t>;
     // Failed pointer updates leave the previous valid range available. Fatal errors
     // mark this state rejected; neither failure returns an applicable proposal.
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const document_history_t& history,
-        local_position_t pointer_position, bool timing_locked)
-        -> proposal_outcome_t<sv_recipe_range_drag_t>;
+    [[nodiscard]] auto revise(proposal_revision_scope_t<chart_stamp_t>&, local_position_t pointer_position) -> bool;
 
-    sv_recipe_range_drag_status_t status{sv_recipe_range_drag_status_t::inactive};
+    proposal_lifecycle_t lifecycle;
     recipe_id_t recipe;
     sv_recipe_range_handle_t handle{sv_recipe_range_handle_t::begin};
     position_span_t original_range;
@@ -217,12 +221,7 @@ struct sv_recipe_range_drag_t {
 static_assert(staged_proposal<sv_recipe_range_drag_t,
     std::tuple<const document_history_t&, chart_id_t, recipe_id_t, sv_recipe_range_handle_t,
                local_position_t, std::uint64_t, bool>,
-    std::tuple<const chart_stamp_t&, const document_history_t&, local_position_t, bool>>);
-
-// Publishes the previewed interval as one revision-checked history command.
-[[nodiscard]] auto apply_sv_recipe_range_drag(document_history_t& history,
-    proposal_t<sv_recipe_range_drag_t>& drag, bool timing_locked) -> document_command_result_t;
-void cancel_sv_recipe_range_drag(proposal_t<sv_recipe_range_drag_t>& drag) noexcept;
+    std::tuple<proposal_revision_scope_t<chart_stamp_t>&, local_position_t>>);
 
 // Turns one recipe into ordinary scroll or speed events and removes the recipe. The events are the
 // recipe's values multiplied into the authored baseline, exactly what export baking would emit for
@@ -241,6 +240,7 @@ using sv_recipe_edit_action_t = std::variant<
 // Every recipe edit is revision checked and published through shared document
 // history. Range changes are exact chart-grid positions, so dragging previews
 // can submit a snapped span as one atomic command.
+// Temporary: removed by T-637; native_chart_edit_action.h dispatches into existing transactions.
 [[nodiscard]] auto apply_sv_recipe_edit(document_command_transaction_t& transaction,
                                         const sv_recipe_edit_action_t& action)
     -> document_command_result_t;

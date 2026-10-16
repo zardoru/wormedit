@@ -325,7 +325,7 @@ void pause_warp_edit_context_t::operator()(
 
 auto apply_pause_warp_edit(document_history_t& history, const pause_warp_edit_action_t& action,
                            pause_warp_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t::from(history).execute<pause_warp_edit_context_t>(action,
+    return document_command_transaction_t(history).execute<pause_warp_edit_context_t>(action,
                                                                                             limits);
 }
 

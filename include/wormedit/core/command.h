@@ -308,31 +308,27 @@ struct chart_event_cap_t {
 };
 
 // A synchronous command owns its working document only after the first edit.
-// Captured proposals use the stamped factory; synchronous commands use from(history).
-struct document_command_transaction_t {
-    document_history_t& history;
-    document_command_result_t outcome;
-    std::optional<song_document_t> proposed;
-    bool finished{};
-
-    [[nodiscard]] static auto from(document_history_t& history)
-        -> document_command_transaction_t;
-    [[nodiscard]] static auto from(document_history_t& history, const document_stamp_t& stamp,
+// Stamped construction creates a rejected transaction when the capture is stale.
+class document_command_transaction_t {
+  public:
+    explicit document_command_transaction_t(document_history_t& history);
+    document_command_transaction_t(document_history_t& history, const document_stamp_t& stamp,
         std::string_view label,
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
-        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id)
-        -> document_command_transaction_t;
-    [[nodiscard]] static auto from(document_history_t& history, const chart_stamp_t& stamp,
+        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id);
+    document_command_transaction_t(document_history_t& history, const chart_stamp_t& stamp,
         std::string_view label,
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
-        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id)
-        -> document_command_transaction_t;
+        diagnostic_code_t stale_code = diagnostic_code_t::invalid_id);
     [[nodiscard]] auto is_ready() const noexcept -> bool;
     [[nodiscard]] auto has_copy() const noexcept -> bool;
     // The current transaction document, including an already prepared snapshot.
-    [[nodiscard]] auto document() const noexcept -> const song_document_t&;
+    [[nodiscard]] auto current_document() const noexcept -> const song_document_t&;
+    [[nodiscard]] auto source_document() const noexcept -> const song_document_t&;
+    [[nodiscard]] auto outcome() noexcept -> document_command_result_t&;
+    [[nodiscard]] auto outcome() const noexcept -> const document_command_result_t&;
     [[nodiscard]] auto source_chart(chart_id_t id) const -> const chart_document_t*;
-    auto copy_document() -> song_document_t&;
+    auto document() -> song_document_t&;
     // Staged editors hand over their existing snapshot without copying the live document.
     void adopt_document(song_document_t&& document);
     auto chart(chart_id_t id) -> chart_document_t*;
@@ -353,7 +349,7 @@ struct document_command_transaction_t {
         const Limits& limits;
 
         template <class Edit> auto operator()(const Edit& edit) const -> document_command_result_t {
-            auto& proposed = transaction.copy_document();
+            auto& proposed = transaction.document();
             auto* chart = proposed.find_chart(edit.chart);
             bool invalid_chart = !edit.chart || chart == nullptr;
             if constexpr (requires { Operation::requires_unique_chart; }) {
@@ -361,14 +357,14 @@ struct document_command_transaction_t {
                                                                     &chart_document_t::id) != 1;
             }
             if (invalid_chart) {
-                wormedit::reject(transaction.outcome, diagnostic_code_t::invalid_id,
+                wormedit::reject(transaction.outcome_, diagnostic_code_t::invalid_id,
                                  std::string(Operation::unknown_chart_message));
                 return transaction.finish_without_commit();
             }
-            Operation operation{{transaction.outcome, limits}};
+            Operation operation{{transaction.outcome_, limits}};
             for (const auto& cap : operation.event_caps(*chart, edit)) {
                 if (cap.count > cap.maximum) {
-                    wormedit::reject(transaction.outcome, diagnostic_code_t::invalid_resolution,
+                    wormedit::reject(transaction.outcome_, diagnostic_code_t::invalid_resolution,
                                      std::string(cap.message));
                     return transaction.finish_without_commit();
                 }
@@ -393,7 +389,7 @@ struct document_command_transaction_t {
         if (!is_ready())
             return commit({});
         if (!Operation::has_valid_limits(limits)) {
-            wormedit::reject(outcome, diagnostic_code_t::invalid_resolution,
+            wormedit::reject(outcome_, diagnostic_code_t::invalid_resolution,
                              std::string(Operation::invalid_limits_message));
             return finish_without_commit();
         }
@@ -408,10 +404,10 @@ struct document_command_transaction_t {
                 return finish_without_commit();
             return finish_execution(operation, std::move(*effect), chart);
         } else {
-            if (!outcome.diagnostics.empty() || !effect.changed)
+            if (!outcome_.diagnostics.empty() || !effect.changed)
                 return finish_without_commit();
-            if constexpr (requires { operation.postvalidate(chart, copy_document()); }) {
-                if (!operation.postvalidate(chart, copy_document()))
+            if constexpr (requires { operation.postvalidate(chart, document()); }) {
+                if (!operation.postvalidate(chart, document()))
                     return finish_without_commit();
             }
             return commit(std::move(effect.command_label));
@@ -422,6 +418,12 @@ struct document_command_transaction_t {
         -> document_command_outcome_t;
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})
         -> document_command_result_t;
+
+  private:
+    document_history_t& history_;
+    std::optional<song_document_t> document_;
+    document_command_result_t outcome_;
+    bool finished_{};
 };
 
 

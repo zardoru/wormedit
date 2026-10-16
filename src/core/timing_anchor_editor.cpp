@@ -108,7 +108,7 @@ struct anchor_operation_visitor_t : chart_edit_context_t<timing_anchor_edit_limi
 
 auto apply_timing_anchor_edit(document_history_t& history,
     const timing_anchor_edit_action_t& action, timing_anchor_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t::from(history).execute<anchor_operation_visitor_t>(action, limits);
+    return document_command_transaction_t(history).execute<anchor_operation_visitor_t>(action, limits);
 }
 
 auto apply_timing_anchor_edit(document_command_transaction_t& transaction,

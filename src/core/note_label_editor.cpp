@@ -157,9 +157,9 @@ auto apply_note_label_edit(document_history_t& history,
         return result;
     }
 
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
 
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "note-label edit refers to an unknown chart");

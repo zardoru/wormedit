@@ -16,7 +16,6 @@
 namespace wormedit {
 
 struct lane_migration_proposal_payload_t;
-class lane_migration_proposal_access_t;
 
 enum class lane_migration_issue_t {
     none,
@@ -78,10 +77,20 @@ using lane_migration_proposal_outcome_t =
     proposal_outcome_t<lane_migration_proposal_t, chart_stamp_t, lane_migration_diagnostics_t>;
 
 struct lane_migration_proposal_t {
+    static constexpr proposal_capture_policy_t apply_policy{.stale_label = "Lane migration"};
+    static constexpr auto revision_policy = apply_policy;
+    static constexpr auto apply_stale_issue = lane_migration_issue_t::stale_revision;
+    static constexpr auto apply_commit_failure_issue = lane_migration_issue_t::invalid_mapping;
+    static constexpr std::string_view apply_commit_failure_message = "The migrated chart failed document validation.";
+    [[nodiscard]] auto validate_capture(const chart_stamp_t&) const
+        -> proposal_apply_payload_t<lane_migration_issue_t>;
+    // Applies all layout segments, notes, bindings and retained playable events atomically.
+    [[nodiscard]] auto apply(proposal_edit_scope_t<chart_stamp_t>&, bool confirm_drop) const
+        -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<lane_migration_issue_t>>;
     [[nodiscard]] static auto propose(const song_document_t& song, std::uint64_t expected_revision,
         chart_id_t chart, lane_input_profile_t target,
         std::span<const lane_migration_mapping_t> mapping = {}) -> lane_migration_proposal_outcome_t;
-    [[nodiscard]] auto revise(const chart_stamp_t& stamp, const song_document_t& song,
+    [[nodiscard]] auto revise(const proposal_read_scope_t<chart_stamp_t>&,
         lane_input_profile_t target, std::span<const lane_migration_mapping_t> mapping = {}) const
         -> lane_migration_proposal_outcome_t;
 
@@ -92,25 +101,16 @@ struct lane_migration_proposal_t {
 
   private:
     std::shared_ptr<const lane_migration_proposal_payload_t> canonical_;
-    friend class lane_migration_proposal_access_t;
 };
 
 static_assert(staged_proposal<lane_migration_proposal_t,
     std::tuple<const song_document_t&, std::uint64_t, chart_id_t, lane_input_profile_t,
                std::span<const lane_migration_mapping_t>>,
-    std::tuple<const chart_stamp_t&, const song_document_t&, lane_input_profile_t,
+    std::tuple<const proposal_read_scope_t<chart_stamp_t>&, lane_input_profile_t,
                std::span<const lane_migration_mapping_t>>,
     chart_stamp_t, lane_migration_diagnostics_t>);
 
 using lane_migration_preview_view_t =
     proposal_preview_view_t<lane_migration_proposal_t, chart_stamp_t, lane_migration_diagnostics_t>;
-
-using lane_migration_apply_result_t = proposal_apply_result_t<lane_migration_issue_t>;
-
-// The proposal is revision-bound and applies all chart layout segments,
-// notes, bindings, and retained playable sound-channel events atomically.
-[[nodiscard]] auto apply_lane_migration(document_history_t& history,
-                                        const proposal_t<lane_migration_proposal_t>& proposal,
-                                        bool confirm_drop) -> lane_migration_apply_result_t;
 
 } // namespace wormedit

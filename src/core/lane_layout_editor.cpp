@@ -147,10 +147,10 @@ void sort_segments(chart_document_t& chart) {
 auto apply_lane_layout_edit(document_history_t& history,
                             const lane_layout_action_t& action, lane_layout_change_policy_t policy)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& result = transaction.outcome;
+    auto transaction = document_command_transaction_t(history);
+    auto& result = transaction.outcome();
     const auto chart_id = std::visit([](const auto& edit) { return edit.chart; }, action);
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(chart_id);
     if (!chart_id || chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "lane layout edit refers to an unknown chart");

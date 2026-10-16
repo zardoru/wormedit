@@ -231,7 +231,7 @@ void scroll_speed_edit_context_t::operator()(
 
 auto apply_scroll_speed_edit(document_history_t& history, const scroll_speed_edit_action_t& action,
                              scroll_speed_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t::from(history).execute<scroll_speed_edit_context_t>(
+    return document_command_transaction_t(history).execute<scroll_speed_edit_context_t>(
         action, limits);
 }
 

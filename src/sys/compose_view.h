@@ -828,9 +828,6 @@ auto requested_snap_denominator(const application_command_state_t& application_s
                                 wormedit::chart_id_t chart) -> std::uint64_t;
 auto compose_snap_preferences(const application_command_state_t& state, wormedit::chart_id_t chart)
     -> std::array<std::uint64_t, chart_snap_preferences.size() + 1>;
-auto editor_interaction_has_pending_gesture(
-    const wormedit::editor_interaction_state_t& state) -> bool;
-
 auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;

@@ -20,7 +20,6 @@
 
 namespace wormedit {
 namespace {
-using wormedit::reject;
 
 using checked_math::magnitude;
 
@@ -93,44 +92,6 @@ auto exact_offset(std::int64_t frame, std::uint32_t sample_rate) -> signed_ratio
     return *timing_arithmetic::frames_to_seconds(frame, sample_rate);
 }
 
-
-
-auto prepare_tap_timing_proposal(const song_document_t& document, chart_id_t chart_id,
-                    const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
-                    std::uint16_t beats_per_measure, tap_bpm_choice_t choice)
-    -> result_t<tap_timing_apply_proposal_t, diagnostic_t> {
-    if (!estimate.stable) {
-        return std::unexpected(error(diagnostic_code_t::unsupported_feature, "tap timing estimate is not stable"));
-    }
-    if (sample_rate == 0 || beats_per_measure == 0 || beats_per_measure > maximum_tap_beats_per_measure) {
-        return std::unexpected(error(diagnostic_code_t::invalid_resolution, "tap timing apply requires a valid sample rate and meter"));
-    }
-    if (!std::isfinite(estimate.bpm) || estimate.bpm <= 0.0 ||
-        !std::isfinite(estimate.phase_frame)) {
-        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing estimate contains an invalid BPM or phase"));
-    }
-    const auto chart = document.find_chart(chart_id);
-    if (!chart_id || chart == nullptr) {
-        return std::unexpected(error(diagnostic_code_t::invalid_id, "tap timing apply refers to an unknown chart"));
-    }
-    const auto bpm = selected_bpm(estimate, choice);
-    if (!bpm || bpm->numerator <= 0 || bpm->denominator == 0) {
-        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing BPM cannot be represented as a positive rational"));
-    }
-    const auto frame = nearest_measure_downbeat(*chart, sample_rate, beats_per_measure, estimate, *bpm);
-    if (!frame) {
-        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing phase exceeds the exact audio offset range"));
-    }
-    return tap_timing_apply_proposal_t{
-        .sample_rate = sample_rate,
-        .beats_per_measure = beats_per_measure,
-        .estimate = estimate,
-        .choice = choice,
-        .beats_per_minute = *bpm,
-        .beat_zero_audio_offset_seconds = exact_offset(*frame, sample_rate),
-    };
-}
-
 auto effective_row_zero_index(const chart_document_t& chart) -> std::optional<std::size_t> {
     if (chart.measures.empty()) return std::nullopt;
     std::optional<std::size_t> winner;
@@ -165,91 +126,107 @@ auto apply_proposal_to_chart(chart_document_t& chart,
     return true;
 }
 
-auto proposed_document(const song_document_t& document,
-                      const proposal_t<tap_timing_apply_proposal_t>& proposal) -> std::optional<song_document_t> {
-    const auto& payload = proposal.payload;
-    const auto verified = prepare_tap_timing_proposal(document, proposal.stamp.chart, payload.estimate,
-        payload.sample_rate, payload.beats_per_measure, payload.choice);
-    if (!verified || verified->beats_per_minute != payload.beats_per_minute ||
-        verified->beat_zero_audio_offset_seconds != payload.beat_zero_audio_offset_seconds)
+} // namespace
+
+auto tap_timing_apply_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& scope,
+                    const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
+                    std::uint16_t beats_per_measure, tap_bpm_choice_t choice)
+    -> result_t<tap_timing_apply_proposal_t, diagnostic_t> {
+    const auto& document = scope.source_document();
+    const auto chart_id = scope.captured_stamp().chart;
+    if (!estimate.stable) {
+        return std::unexpected(error(diagnostic_code_t::unsupported_feature, "tap timing estimate is not stable"));
+    }
+    if (sample_rate == 0 || beats_per_measure == 0 || beats_per_measure > maximum_tap_beats_per_measure) {
+        return std::unexpected(error(diagnostic_code_t::invalid_resolution, "tap timing apply requires a valid sample rate and meter"));
+    }
+    if (!std::isfinite(estimate.bpm) || estimate.bpm <= 0.0 ||
+        !std::isfinite(estimate.phase_frame)) {
+        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing estimate contains an invalid BPM or phase"));
+    }
+    const auto chart = document.find_chart(chart_id);
+    if (!chart_id || chart == nullptr) {
+        return std::unexpected(error(diagnostic_code_t::invalid_id, "tap timing apply refers to an unknown chart"));
+    }
+    const auto bpm = selected_bpm(estimate, choice);
+    if (!bpm || bpm->numerator <= 0 || bpm->denominator == 0) {
+        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing BPM cannot be represented as a positive rational"));
+    }
+    const auto frame = nearest_measure_downbeat(*chart, sample_rate, beats_per_measure, estimate, *bpm);
+    if (!frame) {
+        return std::unexpected(error(diagnostic_code_t::invalid_rational, "tap timing phase exceeds the exact audio offset range"));
+    }
+    return tap_timing_apply_proposal_t{
+        .sample_rate = sample_rate,
+        .beats_per_measure = beats_per_measure,
+        .estimate = estimate,
+        .choice = choice,
+        .beats_per_minute = *bpm,
+        .beat_zero_audio_offset_seconds = exact_offset(*frame, sample_rate),
+    };
+}
+
+auto tap_timing_apply_proposal_t::prepare_document(const proposal_read_scope_t<chart_stamp_t>& scope) const
+    -> std::optional<song_document_t> {
+    const auto& document = scope.source_document();
+    const auto selected_chart = scope.captured_stamp().chart;
+    const auto verified = from(scope, estimate, sample_rate, beats_per_measure, choice);
+    if (!verified || verified->beats_per_minute != beats_per_minute ||
+        verified->beat_zero_audio_offset_seconds != beat_zero_audio_offset_seconds)
         return std::nullopt;
     auto proposed = document;
-    const auto chart = proposed.find_chart(proposal.stamp.chart);
+    const auto chart = proposed.find_chart(selected_chart);
     if (chart == nullptr || !apply_proposal_to_chart(*chart, *verified) ||
         !extend_native_charts_to_audio_end(proposed)) return std::nullopt;
     const auto diagnostics = validate_document(proposed);
-    if (std::ranges::any_of(diagnostics, [](const auto& item) {
-            return item.severity == diagnostic_severity_t::error;
-        })) return std::nullopt;
+    if (diagnostic_queries::has_errors(diagnostics)) return std::nullopt;
     if (!timing_index_t::from(*chart).value) return std::nullopt;
     return proposed;
 }
-
-} // namespace
 
 auto tap_timing_apply_proposal_t::propose(const song_document_t& document, chart_id_t chart,
                                       const tap_tempo_estimate_t& estimate, std::uint32_t sample_rate,
                                       std::uint16_t beats_per_measure, tap_bpm_choice_t choice,
                                       bool timing_locked) -> tap_timing_apply_proposal_outcome_t {
-    tap_timing_apply_proposal_outcome_t result;
-    if (timing_locked) {
-        result.diagnostics.push_back(error(diagnostic_code_t::unsupported_feature,
-            "tap timing apply is disabled while timing is locked"));
-        return result;
+    if (auto locked = apply_policy.validate_lock(timing_locked, proposal_lock_order_t::before_stamp)) {
+        tap_timing_apply_proposal_outcome_t rejected;
+        rejected.diagnostics.push_back(std::move(*locked));
+        return rejected;
     }
-    auto proposal = prepare_tap_timing_proposal(document, chart, estimate, sample_rate, beats_per_measure, choice);
-    if (proposal)
-        result.value = proposal_t<tap_timing_apply_proposal_t>{
-            .stamp = chart_stamp_t::from(document, chart), .payload = std::move(*proposal)};
-    else
-        result.diagnostics.push_back(std::move(proposal.error()));
-    return result;
+    const auto captured = chart_stamp_t::from(document, chart);
+    const proposal_read_scope_t<chart_stamp_t> scope{document, captured};
+    return proposal_t<tap_timing_apply_proposal_t>::from(captured,
+        from(scope, estimate, sample_rate, beats_per_measure, choice));
 }
 
-auto tap_timing_apply_proposal_t::revise(const chart_stamp_t& stamp,
-    const song_document_t& document, tap_bpm_choice_t choice, bool timing_locked) const
-    -> tap_timing_apply_proposal_outcome_t {
-    if (!timing_locked &&
-        !stamp.document.is_current(document, document_identity_policy_t::revision_only))
-        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                      stale_action_message("Tap timing proposal"))}};
-    auto revised = propose(document, stamp.chart, estimate, sample_rate, beats_per_measure,
-                           choice, timing_locked);
-    if (revised.value) revised.value->stamp = stamp;
-    return revised;
+auto tap_timing_apply_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+    tap_bpm_choice_t next_choice) const -> tap_timing_apply_proposal_outcome_t {
+    return proposal_t<tap_timing_apply_proposal_t>::from(scope.captured_stamp(),
+        from(scope, estimate, sample_rate, beats_per_measure, next_choice));
 }
 
 auto make_tap_timing_preview(const song_document_t& document,
                              const proposal_t<tap_timing_apply_proposal_t>& proposal)
     -> std::optional<chart_document_t> {
-    if (!proposal.stamp.document.is_current(document,
-            document_identity_policy_t::revision_only)) return std::nullopt;
-    const auto proposed = proposed_document(document, proposal);
+    if (!tap_timing_apply_proposal_t::apply_policy.is_current(proposal.document_stamp(), document))
+        return std::nullopt;
+    const proposal_read_scope_t<chart_stamp_t> scope{document, proposal.stamp};
+    const auto proposed = proposal.payload.prepare_document(scope);
     if (!proposed) return std::nullopt;
     const auto chart = proposed->find_chart(proposal.stamp.chart);
     return chart == nullptr ? std::nullopt
                                            : std::optional<chart_document_t>{*chart};
 }
 
-auto apply_tap_timing_proposal(document_history_t& history,
-                               const proposal_t<tap_timing_apply_proposal_t>& proposal, bool timing_locked)
-    -> document_command_result_t {
-    document_command_result_t result{.revision = history.document.revision};
-    if (timing_locked) {
-        reject(result, diagnostic_code_t::unsupported_feature,
-               "tap timing apply is disabled while timing is locked");
-        return result;
-    }
-    auto transaction = proposal.transaction(history, "Tap timing proposal",
-                                           document_identity_policy_t::revision_only);
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    auto proposed = proposed_document(history.document, proposal);
-    if (!proposed) {
-        return transaction.reject(diagnostic_code_t::invalid_id,
-            "tap timing proposal no longer matches a valid chart");
-    }
+auto tap_timing_apply_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope, bool) const
+    -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    auto proposed = prepare_document(scope);
+    if (!proposed)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+            "tap timing proposal no longer matches a valid chart")}};
     transaction.adopt_document(std::move(*proposed));
-    return transaction.commit("Apply tap timing");
+    return {.value = "Apply tap timing"};
 }
 
 } // namespace wormedit

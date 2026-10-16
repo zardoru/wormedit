@@ -24,20 +24,6 @@ struct channel_map_proposal_payload_t {
     channel_map_report_t report;
 };
 
-class channel_map_proposal_access_t {
-  public:
-    static void seal(const chart_stamp_t& stamp, channel_map_proposal_t& proposal) {
-        proposal.canonical_ = std::make_shared<const channel_map_proposal_payload_t>(
-            channel_map_proposal_payload_t{
-                stamp, proposal.layout_segment, proposal.replacements, proposal.report});
-    }
-
-    [[nodiscard]] static auto canonical(const channel_map_proposal_t& proposal)
-        -> std::shared_ptr<const channel_map_proposal_payload_t> {
-        return proposal.canonical_;
-    }
-};
-
 namespace {
 
 constexpr std::size_t maximum_conflict_examples = 64;
@@ -45,8 +31,6 @@ constexpr std::size_t maximum_conflict_examples = 64;
 auto is_base36_digit(char byte) -> bool {
     return bms36_value(static_cast<unsigned char>(byte)) >= 0;
 }
-
-
 
 auto is_channel_in_family(std::string_view channel, std::size_t slot) -> bool {
     if (channel.size() != 2) return false;
@@ -80,8 +64,6 @@ auto map_slots(const bms_channel_map_t& channels)
     -> std::array<const std::optional<std::string>*, 4> {
     return {&channels.visible, &channels.invisible, &channels.long_note, &channels.mine};
 }
-
-
 
 auto export_channel_equal(const std::optional<std::string>& left,
                          const std::optional<std::string>& right) -> bool {
@@ -189,8 +171,6 @@ auto append_conflicts(const lane_layout_t& layout, channel_map_proposal_t& propo
     return true;
 }
 
-
-
 void collect_branch_orders(const bms_control_node_t& node, bool nested,
                            std::unordered_set<std::size_t>& orders) {
     const bool in_branch = nested || is_branch_scope(node.kind);
@@ -249,26 +229,35 @@ auto overlay_replacements(lane_layout_t& layout,
     return true;
 }
 
-
-
 } // namespace
 
 auto channel_map_proposal_t::propose(const song_document_t& song,
-                                  std::uint64_t expected_revision, chart_id_t chart_id,
-                                  object_id_t segment_id,
-                                  std::span<const channel_map_replacement_t> requested)
-    -> channel_map_proposal_outcome_t {
+    std::uint64_t expected_revision, chart_id_t chart_id, object_id_t segment_id,
+    std::span<const channel_map_replacement_t> requested) -> channel_map_proposal_outcome_t {
     channel_map_proposal_outcome_t result;
-    channel_map_proposal_t proposal;
     auto stamp = chart_stamp_t::from(song, chart_id);
-    proposal.layout_segment = segment_id;
     stamp.document.revision = expected_revision;
-    if (!stamp.document.is_current(song)) {
+    auto captured = revision_policy.validate(stamp.document, song, false);
+    if (!captured) {
         result.diagnostics.push_back(channel_map_diagnostic_t::from(channel_map_issue_t::stale_revision,
-            stale_action_message("Channel-map edit"), stamp, std::move(proposal.report)));
+            std::move(captured.error().diagnostic.message), stamp, {}));
         return result;
     }
-    const auto chart = song.find_chart(chart_id);
+    channel_map_proposal_t seed;
+    seed.layout_segment = segment_id;
+    const proposal_read_scope_t<chart_stamp_t> scope{song, stamp};
+    return seed.revise(scope, requested);
+}
+
+auto channel_map_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+    std::span<const channel_map_replacement_t> requested) const -> channel_map_proposal_outcome_t {
+    const auto& song = scope.source_document();
+    const auto& stamp = scope.captured_stamp();
+    const auto segment_id = layout_segment;
+    channel_map_proposal_outcome_t result;
+    channel_map_proposal_t proposal;
+    proposal.layout_segment = segment_id;
+    const auto chart = song.find_chart(stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(channel_map_diagnostic_t::from(channel_map_issue_t::chart_not_found,
             "The selected chart no longer exists.", stamp, std::move(proposal.report)));
@@ -341,68 +330,39 @@ auto channel_map_proposal_t::propose(const song_document_t& song,
             "Channel values must be unique across every lane and channel category.", stamp, std::move(proposal.report)));
         return result;
     }
-    channel_map_proposal_access_t::seal(stamp, proposal);
+    proposal.canonical_ = std::make_shared<const channel_map_proposal_payload_t>(
+        channel_map_proposal_payload_t{stamp, proposal.layout_segment, proposal.replacements, proposal.report});
     result.value = proposal_t<channel_map_proposal_t>{.stamp = stamp, .payload = std::move(proposal)};
     return result;
 }
 
-auto channel_map_proposal_t::revise(const chart_stamp_t& stamp, const song_document_t& song,
-    std::span<const channel_map_replacement_t> requested) const -> channel_map_proposal_outcome_t {
-    channel_map_proposal_outcome_t result;
-    if (!canonical_ || !is_proposal_current(stamp, *this, *canonical_)) {
-        result.diagnostics.push_back(channel_map_diagnostic_t::from(
-            channel_map_issue_t::invalid_replacement, "Channel-map preview data changed after proposal.",
-            stamp, {}));
-        return result;
-    }
-    if (!stamp.document.is_current(song)) {
-        result.diagnostics.push_back(channel_map_diagnostic_t::from(
-            channel_map_issue_t::stale_revision, stale_action_message("Channel-map edit"), stamp, {}));
-        return result;
-    }
-    return propose(song, stamp.document.revision, stamp.chart, layout_segment, requested);
+auto channel_map_proposal_t::validate_capture(const chart_stamp_t& stamp) const
+    -> proposal_apply_payload_t<channel_map_issue_t> {
+    if (!canonical_ || !is_proposal_current(stamp, *this, *canonical_))
+        return {.issue = channel_map_issue_t::invalid_replacement,
+                .message = "Channel-map preview data changed after proposal."};
+    return {};
 }
 
-auto apply_bms_channel_map_edit(document_history_t& history,
-                                const proposal_t<channel_map_proposal_t>& proposal)
-    -> channel_map_apply_result_t {
-    const auto& payload = proposal.payload;
-    const auto canonical = channel_map_proposal_access_t::canonical(payload);
-    if (!canonical || !is_proposal_current(proposal.stamp, payload, *canonical))
-        return channel_map_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = channel_map_issue_t::invalid_replacement,
-             .message = "Channel-map preview data changed after proposal."});
-    auto transaction = proposal.transaction(history, "Channel-map edit");
-    if (!transaction.is_ready()) {
-        auto rejected = transaction.finish_without_commit();
-        return channel_map_apply_result_t::from(
-            document_command_transaction_t::from(history).outcome,
-            {.issue = channel_map_issue_t::stale_revision,
-             .message = std::move(rejected.diagnostics.front().message)});
-    }
-    const auto verified = channel_map_proposal_t::propose(
-        history.document, canonical->stamp.document.revision, canonical->stamp.chart, canonical->segment,
-        canonical->replacements);
-    if (!verified.value || !is_proposal_current(verified.value->stamp, verified.value->payload, *canonical)) {
+auto channel_map_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) const
+    -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<channel_map_issue_t>> {
+    auto& transaction = scope.transaction();
+    const auto& canonical = *canonical_;
+    const auto verified = revise(scope, canonical.replacements);
+    if (!verified.value || !is_proposal_current(verified.value->stamp, verified.value->payload, canonical)) {
         const auto view = channel_map_preview_view_t::from(verified);
-        return channel_map_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = view.diagnostic ? view.diagnostic->issue : channel_map_issue_t::stale_revision,
-             .message = view.diagnostic && !view.diagnostic->message.empty()
-                ? view.diagnostic->message : stale_action_message("Channel-map edit")});
+        return {.diagnostics = {
+            .issue = view.diagnostic ? view.diagnostic->issue : channel_map_issue_t::stale_revision,
+            .message = view.diagnostic && !view.diagnostic->message.empty()
+                ? view.diagnostic->message : stale_action_message("Channel-map edit")}};
     }
-    auto& proposed = transaction.copy_document();
-    auto chart = proposed.find_chart(canonical->stamp.chart);
-    auto segment = std::ranges::find(chart->lane_layouts, canonical->segment,
-                                     &lane_layout_segment_t::id);
-    if (!overlay_replacements(segment->layout, canonical->replacements))
-        return channel_map_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = channel_map_issue_t::layout_segment_not_found,
-             .message = "The selected lane disappeared during apply."});
-    auto command = transaction.commit("Edit BMS channel map");
-    const auto applied = static_cast<bool>(command);
-    return channel_map_apply_result_t::from(std::move(command),
-        {.issue = applied ? channel_map_issue_t::none : channel_map_issue_t::invalid_replacement,
-         .message = applied ? std::string{} : "The channel-map edit failed validation."});
+    auto& proposed = transaction.document();
+    auto chart = proposed.find_chart(canonical.stamp.chart);
+    auto segment = std::ranges::find(chart->lane_layouts, canonical.segment, &lane_layout_segment_t::id);
+    if (!overlay_replacements(segment->layout, canonical.replacements))
+        return {.diagnostics = {.issue = channel_map_issue_t::layout_segment_not_found,
+                               .message = "The selected lane disappeared during apply."}};
+    return {.value = "Edit BMS channel map"};
 }
 
 } // namespace wormedit

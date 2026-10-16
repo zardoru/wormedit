@@ -106,14 +106,14 @@ auto preview_session_survives_underrun_and_completes() -> bool {
 
     std::vector<float> output(32U * output_channel_count);
     const auto rendered = session.render_frames(output);
-    if (rendered.has_value()) return false;
-    const auto& underrun = rendered.error();
+    if (!rendered.status.has_failure()) return false;
+    const auto& underrun = rendered;
     const bool underrun_kept_session =
         underrun.status.has_failure(wormedit::failure_code_t::underrun) &&
         underrun.mix.dropped_voices == 1 && session.is_active() && session.timeline_frame() == 32;
     const auto completed = session.render_frames(output);
-    return underrun_kept_session && completed.value().status.is_in_phase(session_render_phase_t::complete) &&
-           completed.value().first_timeline_frame == 32 && !session.is_active();
+    return underrun_kept_session && completed.status.is_in_phase(session_render_phase_t::complete) &&
+           completed.first_timeline_frame == 32 && !session.is_active();
 }
 
 auto contiguous_music_segments(const wormedit::audio::active_voice_snapshot_outcome_t& active) -> bool {
@@ -186,8 +186,8 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
 
     std::vector<float> first_block(chunk_frames * output_channel_count);
     const auto first_render = session.render_frames(first_block);
-    if (!first_render.value().status.is_in_phase(session_render_phase_t::mixed) ||
-        first_render.value().first_timeline_frame != region.begin_frame ||
+    if (!first_render.status.is_in_phase(session_render_phase_t::mixed) ||
+        first_render.first_timeline_frame != region.begin_frame ||
         session.timeline_frame() != region.begin_frame + chunk_frames || first_block.front() != 0.0F)
         return false;
     while (session.timeline_frame() < region.end_frame) {
@@ -197,7 +197,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, chunk_frames));
         std::vector<float> block(frames * output_channel_count);
         const auto rendered = session.render_frames(block);
-        if (!rendered.value().status.is_in_phase(session_render_phase_t::mixed) || rendered.value().mix.frames != frames)
+        if (!rendered.status.is_in_phase(session_render_phase_t::mixed) || rendered.mix.frames != frames)
             return false;
     }
     const auto boundary = session.pump_session({.lookahead_frames = chunk_frames});
@@ -208,14 +208,14 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
 
     std::vector<float> repeated_block(first_block.size());
     const auto repeated_render = session.render_frames(repeated_block);
-    if (!repeated_render.value().status.is_in_phase(session_render_phase_t::mixed) ||
-        repeated_render.value().first_timeline_frame != region.begin_frame ||
+    if (!repeated_render.status.is_in_phase(session_render_phase_t::mixed) ||
+        repeated_render.first_timeline_frame != region.begin_frame ||
         !std::ranges::equal(first_block, repeated_block)) return false;
 
     static_cast<void>(session.stop());
     std::vector<float> stopped(chunk_frames * output_channel_count, 1.0F);
     const auto stopped_render = session.render_frames(stopped);
-    return stopped_render.value().status.is_in_phase(session_render_phase_t::stopped) &&
+    return stopped_render.status.is_in_phase(session_render_phase_t::stopped) &&
            std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
 }
 
@@ -260,8 +260,8 @@ auto dropped_music_segment_is_reported(wormedit::audio::preview_session_t& sessi
     cache.clear_source(source);
     std::vector<float> output(32U * output_channel_count);
     const auto dropped = session.render_frames(output);
-    return !dropped && dropped.error().status.has_failure(wormedit::failure_code_t::underrun) &&
-           dropped.error().mix.dropped_voices == 1;
+    return dropped.status.has_failure(wormedit::failure_code_t::underrun) &&
+           dropped.mix.dropped_voices == 1;
 }
 
 auto next_music_segment_is_still_playing(wormedit::audio::preview_session_t& session,
@@ -273,8 +273,8 @@ auto next_music_segment_is_still_playing(wormedit::audio::preview_session_t& ses
     while (session.timeline_frame() < maximum_read_frames)
         static_cast<void>(session.render_frames(block));
     const auto next = session.render_frames(block);
-    return (next.value().status.is_in_phase(session_render_phase_t::mixed) ||
-            next.value().status.is_in_phase(session_render_phase_t::complete)) &&
+    return (next.status.is_in_phase(session_render_phase_t::mixed) ||
+            next.status.is_in_phase(session_render_phase_t::complete)) &&
            any_nonzero(block) && transport.is_current(token) && sources.size() != 0;
 }
 
@@ -352,8 +352,8 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
 
     std::vector<float> first(512 * output_channel_count);
     const auto first_render = session.render_frames(first);
-    CHECK(first_render.value().status.is_in_phase(session_render_phase_t::mixed));
-    CHECK(first_render.value().first_timeline_frame == 0);
+    CHECK(first_render.status.is_in_phase(session_render_phase_t::mixed));
+    CHECK(first_render.first_timeline_frame == 0);
     CHECK(any_nonzero(first));
     CHECK(session.timeline_frame() == 512);
 
@@ -361,8 +361,8 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     REQUIRE(refilled);
     std::vector<float> tail(256 * output_channel_count);
     const auto completed = session.render_frames(tail);
-    CHECK(completed.value().status.is_in_phase(session_render_phase_t::complete));
-    CHECK(completed.value().first_timeline_frame == 512);
+    CHECK(completed.status.is_in_phase(session_render_phase_t::complete));
+    CHECK(completed.first_timeline_frame == 512);
     CHECK(any_nonzero(tail));
     CHECK_FALSE(session.is_active());
     CHECK(session.timeline_frame() == 0);
@@ -414,7 +414,7 @@ TEST_CASE("preview session seek replaces generations and hard Stop silences late
     check_session_condition(stopped.scheduled_voices == 1);
     std::vector<float> output(128 * output_channel_count, 1.0F);
     const auto rendered = session.render_frames(output);
-    check_session_condition(rendered.value().status.is_in_phase(session_render_phase_t::stopped));
+    check_session_condition(rendered.status.is_in_phase(session_render_phase_t::stopped));
     check_session_condition(std::ranges::all_of(output, [](float sample) { return sample == 0.0F; }));
 }
 
@@ -461,7 +461,7 @@ TEST_CASE("preview session mixes generated metronome sources on the chart timeli
 
     std::vector<float> output(96 * output_channel_count);
     const auto rendered = session.render_frames(output);
-    CHECK(rendered.value().status.is_in_phase(session_render_phase_t::complete));
+    CHECK(rendered.status.is_in_phase(session_render_phase_t::complete));
     CHECK(std::ranges::all_of(output.begin(), output.begin() + 32 * output_channel_count,
                               [](float sample) { return sample == 0.0F; }));
     CHECK(std::ranges::all_of(output.begin() + 32 * output_channel_count, output.end(),
@@ -493,9 +493,9 @@ TEST_CASE("preview session keeps the visual timeline moving through unavailable 
     const auto final = session.render_frames(output);
     const std::array checks{
         started.value().detail.materialize->value().missing_sources == 1,
-        first.value().status.is_in_phase(session_render_phase_t::mixed),
+        first.status.is_in_phase(session_render_phase_t::mixed),
         first_active, first_frame == 32, silent,
-        final.value().status.is_in_phase(session_render_phase_t::complete), !session.is_active(),
+        final.status.is_in_phase(session_render_phase_t::complete), !session.is_active(),
     };
     CHECK(std::ranges::all_of(checks, [](bool value) { return value; }));
 }
@@ -531,7 +531,7 @@ void verify_pending_silence(wormedit::audio::preview_session_t& session, std::ui
     std::array<float, 64> output;
     output.fill(1.0F);
     const auto rendered = session.render_frames(output);
-    expect_pending(rendered.value().status.is_in_phase(wormedit::audio::session_render_phase_t::priming));
+    expect_pending(rendered.status.is_in_phase(wormedit::audio::session_render_phase_t::priming));
     expect_pending(session.timeline_frame() == frame);
     expect_pending(std::ranges::all_of(output, [](float value) { return value == 0.0F; }));
 }
@@ -553,8 +553,8 @@ TEST_CASE("preview start and rapid seeks defer decoding and prime only the lates
     expect_pending(fixture.session.pump_session());
     std::array<float, 64> output;
     const auto rendered = fixture.session.render_frames(output);
-    expect_pending(rendered.value().first_timeline_frame == 100);
-    expect_pending(rendered.value().status.is_in_phase(wormedit::audio::session_render_phase_t::mixed));
+    expect_pending(rendered.first_timeline_frame == 100);
+    expect_pending(rendered.status.is_in_phase(wormedit::audio::session_render_phase_t::mixed));
     expect_pending(std::ranges::any_of(output, [](float value) { return value != 0.0F; }));
 }
 
@@ -657,7 +657,7 @@ TEST_CASE("in-flight old preview pump cannot activate rapid-seek audio or undo S
     expect_pending(latest.session.pump_session());
     std::array<float, 64> output;
     const auto mixed = latest.session.render_frames(output);
-    expect_pending(mixed.value().first_timeline_frame == 209);
+    expect_pending(mixed.first_timeline_frame == 209);
     expect_pending(std::ranges::all_of(output, [](float value) { return value == -0.5F; }));
     in_flight_preview_fixture_t stopped;
     expect_pending(stopped.supersede_blocked_pump(true));
@@ -705,21 +705,21 @@ TEST_CASE("Layer assist clicks are audible with metronome off and cancel queued 
                                       0, {.lookahead_frames = 128}, 512);
     require_session_condition(static_cast<bool>(started));
     std::vector<float> output(64*output_channel_count);
-    check_session_condition(session.render_frames(output).value().status.is_in_phase(session_render_phase_t::mixed));
+    check_session_condition(session.render_frames(output).status.is_in_phase(session_render_phase_t::mixed));
     check_session_condition(std::abs(output[30*output_channel_count] - 0.1F) < 0.00001F);
     check_session_condition(std::abs(output[32*output_channel_count] - 0.2F) < 0.00001F);
     check_session_condition(std::abs(output[40*output_channel_count] - 0.1F) < 0.00001F);
     require_session_condition(session.set_layer_tick_frames({}));
     check_session_condition(transport.is_current(started.value().token));
-    check_session_condition(session.render_frames(output).value().status.is_in_phase(session_render_phase_t::mixed));
+    check_session_condition(session.render_frames(output).status.is_in_phase(session_render_phase_t::mixed));
     check_session_condition(std::ranges::all_of(output, [](float x) { return std::abs(x - 0.1F) < 0.00001F; }));
     check_session_condition(session.timeline_frame() == 128);
     require_session_condition(session.set_layer_tick_frames(std::array<std::uint64_t,2>{32,96}));
     require_session_condition(static_cast<bool>(seek_primed(session, 32, {.lookahead_frames = 128})));
-    check_session_condition(session.render_frames(output).value().status.is_in_phase(session_render_phase_t::mixed));
+    check_session_condition(session.render_frames(output).status.is_in_phase(session_render_phase_t::mixed));
     check_session_condition(std::abs(output.front()-0.2F) < 0.00001F);
     require_session_condition(session.set_metronome_volume(50));
     require_session_condition(static_cast<bool>(seek_primed(session, 32, {.lookahead_frames = 128})));
-    check_session_condition(session.render_frames(output).value().status.is_in_phase(session_render_phase_t::mixed));
+    check_session_condition(session.render_frames(output).status.is_in_phase(session_render_phase_t::mixed));
     check_session_condition(std::abs(output.front()-0.15F) < 0.00001F);
 }

@@ -177,7 +177,7 @@ auto preview_session_t::mix_render_frames(std::uint64_t first_frame,
 
 auto preview_session_t::render_frames(std::span<float> interleaved_stereo,
                                       std::optional<std::uint64_t> expected_generation)
-    -> render_outcome_t {
+    -> session_render_effect_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);
     if (interleaved_stereo.empty() || interleaved_stereo.size() % samples_per_frame != 0 ||

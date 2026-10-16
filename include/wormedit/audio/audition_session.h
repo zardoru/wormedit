@@ -42,7 +42,7 @@ class audition_session_t {
         -> audition_session_start_outcome_t;
     [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_outcome_t;
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo)
-        -> render_outcome_t;
+        -> session_render_effect_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
 
     // Lock-free reads of a snapshot published by session operations.

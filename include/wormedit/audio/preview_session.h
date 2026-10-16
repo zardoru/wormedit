@@ -83,7 +83,7 @@ class preview_session_t {
     // Output producers can require their owned generation; stale work emits
     // silence and leaves a replacement session untouched.
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,
-        std::optional<std::uint64_t> expected_generation = {}) -> render_outcome_t;
+        std::optional<std::uint64_t> expected_generation = {}) -> session_render_effect_t;
     [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept
         -> transport_stop_result_t;
 

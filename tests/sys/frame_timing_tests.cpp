@@ -2844,7 +2844,8 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     std::optional<workspace_tab_t> tab = workspace_tab_t::compose;
     fixture.cache.timing.offset_fit_drag = compose_scene_cache_t::offset_fit_drag_t{};
     fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
-    fixture.cache.timing.proposed_offset_seconds = signed_rational_t{1, 10};
+    static_cast<void>(fixture.cache.timing.proposed_offset_timing_index.get_or_build(signed_rational_t{1, 10},
+        [] { return std::optional<timing_index_t>{}; }));
     WormUiWorkspaceAction action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
     action.compose_input_chart_id = 1;
@@ -2854,7 +2855,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
         fixture.application, fixture.cache, drag, tab);
     expect_compose_test(fixture.application.project.timing_recipe.audio_offset_locked);
     expect_compose_test(!drag && !tab && !fixture.cache.timing.offset_fit_drag);
-    expect_compose_test(!fixture.cache.timing.proposed_offset_seconds);
+    expect_compose_test(!fixture.cache.timing.proposed_offset_timing_index.key());
     expect_compose_test(fixture.cache.timing.beat_fit_drag.has_value());
     expect_compose_test(fixture.history.undo.empty());
     (void)toggle_compose_audio_offset_lock(action, fixture.history, *fixture.binding.value,

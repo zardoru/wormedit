@@ -66,13 +66,10 @@ void compose_scene_cache_t::invalidate_scene_cache() {
     timing.sv_steps.reset();
     timing.recipe_areas.reset();
     timing.speed_spans.reset();
-    timing.proposed_offset_timing_index.reset();
-    timing.proposed_offset_seconds.reset();
+    timing.proposed_offset_timing_index = {};
     timing.beat_fit_drag.reset();
     timing.beat_fit_asset.reset();
-    timing.proposed_beat_timing_index.reset();
-    timing.proposed_beat_bpm.reset();
-    timing.proposed_beat_event = {};
+    timing.proposed_beat_timing_index = {};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     waveform.channel_waveform_slices.value().reset();
     waveform.channel_projection.invalidate(true);
@@ -2645,8 +2642,7 @@ auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
         drag.reset();
         drag_tab.reset();
         cache.timing.offset_fit_drag.reset();
-        cache.timing.proposed_offset_timing_index.reset();
-        cache.timing.proposed_offset_seconds.reset();
+        cache.timing.proposed_offset_timing_index = {};
     }
     return application.project.timing_recipe.audio_offset_locked ? "Audio offset locked." : "Audio offset unlocked.";
 }

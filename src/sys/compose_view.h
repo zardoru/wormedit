@@ -369,16 +369,17 @@ struct compose_scene_cache_t {
 
     struct timing_state_t {
         std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_apply_proposal;
-        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
-        std::optional<timing_index_t> tap_preview_timing;
+        wormedit::keyed_cache_t<
+            std::tuple<wormedit::chart_id_t, std::uint64_t, wormedit::signed_rational_t,
+                       wormedit::signed_rational_t>, std::optional<timing_index_t>> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
         std::optional<dead_spans_view_t> dead_spans;
         std::optional<kiai_spans_view_t> kiai_spans;
         std::optional<sv_steps_view_t> sv_steps;
         std::optional<recipe_areas_view_t> recipe_areas;
         std::optional<speed_spans_view_t> speed_spans;
-        std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
-        std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
+        wormedit::keyed_cache_t<wormedit::signed_rational_t,
+            std::optional<wormedit::timing_index_t>> proposed_offset_timing_index;
         std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;
         std::optional<wormedit::asset_id_t> beat_fit_asset;
         bool beat_fit_onset_snapped{};
@@ -389,9 +390,8 @@ struct compose_scene_cache_t {
         std::optional<audio::waveform_key_t> beat_fit_onset_source;
 #endif
         std::optional<offset_fit_drag_t> offset_fit_drag;
-        std::optional<wormedit::timing_index_t> proposed_beat_timing_index;
-        std::optional<wormedit::signed_rational_t> proposed_beat_bpm;
-        wormedit::object_id_t proposed_beat_event;
+        wormedit::keyed_cache_t<std::pair<wormedit::signed_rational_t, wormedit::object_id_t>,
+            std::optional<wormedit::timing_index_t>> proposed_beat_timing_index;
     } timing;
 
     struct stem_display_state_t {

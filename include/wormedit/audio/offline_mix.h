@@ -23,22 +23,12 @@ struct offline_mix_options_t {
     preview_pump_options_t pump{};
 };
 
-enum class offline_mix_status_t {
-    mixed,
-    invalid_interval,
-    capacity_exceeded,
-    cancelled,
-    missing_sources,
-    incomplete_mix,
-    decode_failed,
-};
-
 struct offline_mix_t {
     std::vector<float> interleaved_stereo;
     auto operator==(const offline_mix_t&) const -> bool = default;
 };
 
-using offline_mix_result_t = result_t<offline_mix_t, error_t<offline_mix_status_t>>;
+using offline_mix_result_t = result_t<offline_mix_t, error_t<failure_code_t>>;
 
 // Mixes [begin_frame, end_frame) through the same preview bridge and transport
 // used by playback, without metronome clicks. Renders from timeline zero and

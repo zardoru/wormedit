@@ -137,7 +137,7 @@ TEST_CASE("Offline interval rejects missing sources without returning partial PC
     schedule.bgm = {{.sample_frame = 0, .object = object_id_t{8}, .resource = resource_id_t{808}}};
     const auto missing = render_offline_interval(sources, schedule, {}, 0, 64);
     REQUIRE_FALSE(missing.has_value());
-    REQUIRE(missing.error().code == offline_mix_status_t::missing_sources);
+    REQUIRE(missing.error().code == failure_code_t::unavailable);
 }
 
 TEST_CASE("Offline interval reports missing decoder data instead of silent output", "[unit][audio][offline]") {
@@ -151,7 +151,7 @@ TEST_CASE("Offline interval reports missing decoder data instead of silent outpu
     const std::array objects{unknown};
     const auto missing = render_offline_interval(sources, schedule, objects, 0, 64);
     REQUIRE_FALSE(missing.has_value());
-    REQUIRE(missing.error().code == offline_mix_status_t::decode_failed);
+    REQUIRE(missing.error().code == failure_code_t::decode_failed);
 }
 
 TEST_CASE("Offline interval rejects a bounded pump that cannot decode every scheduled voice", "[unit][audio][offline]") {
@@ -163,7 +163,7 @@ TEST_CASE("Offline interval rejects a bounded pump that cannot decode every sche
     const std::array objects{bgm_binding(key, 6)};
     const auto capped = render_offline_interval(sources, schedule, objects, 0, 64);
     REQUIRE_FALSE(capped.has_value());
-    REQUIRE(capped.error().code == offline_mix_status_t::capacity_exceeded);
+    REQUIRE(capped.error().code == failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("Offline interval discards earlier chunks when a later source is missing", "[unit][audio][offline]") {
@@ -178,7 +178,7 @@ TEST_CASE("Offline interval discards earlier chunks when a later source is missi
     const auto missing = render_offline_interval(
         sources, schedule, objects, 0, 96, {.maximum_read_frames = 32});
     REQUIRE_FALSE(missing.has_value());
-    REQUIRE(missing.error().code == offline_mix_status_t::decode_failed);
+    REQUIRE(missing.error().code == failure_code_t::decode_failed);
 }
 
 TEST_CASE("Offline interval rejects an empty range", "[unit][audio][offline]") {
@@ -186,7 +186,7 @@ TEST_CASE("Offline interval rejects an empty range", "[unit][audio][offline]") {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     const auto invalid = render_offline_interval(sources, schedule, {}, 20, 20);
     REQUIRE_FALSE(invalid.has_value());
-    REQUIRE(invalid.error().code == offline_mix_status_t::invalid_interval);
+    REQUIRE(invalid.error().code == failure_code_t::invalid_request);
     CHECK(invalid.error().message == "Invalid offline mix interval or options.");
 }
 
@@ -197,12 +197,12 @@ TEST_CASE("Offline interval bounds output frames and bytes", "[unit][audio][offl
         sources, schedule, {}, 0, 65,
         {.maximum_output_frames = 64, .maximum_output_bytes = 1024});
     REQUIRE_FALSE(capped.has_value());
-    REQUIRE(capped.error().code == offline_mix_status_t::capacity_exceeded);
+    REQUIRE(capped.error().code == failure_code_t::capacity_exceeded);
     const auto byte_capped = render_offline_interval(
         sources, schedule, {}, 0, 64,
         {.maximum_output_frames = 64, .maximum_output_bytes = 64});
     REQUIRE_FALSE(byte_capped.has_value());
-    REQUIRE(byte_capped.error().code == offline_mix_status_t::capacity_exceeded);
+    REQUIRE(byte_capped.error().code == failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("Offline interval reports cancellation without a PCM value", "[unit][audio][offline]") {
@@ -212,6 +212,6 @@ TEST_CASE("Offline interval reports cancellation without a PCM value", "[unit][a
     cancel.request_stop();
     const auto cancelled = render_offline_interval(sources, schedule, {}, 0, 64, {}, cancel.get_token());
     REQUIRE_FALSE(cancelled.has_value());
-    REQUIRE(cancelled.error().code == offline_mix_status_t::cancelled);
+    REQUIRE(cancelled.error().code == failure_code_t::cancelled);
     CHECK(cancelled.error().message == "Offline mix cancelled.");
 }

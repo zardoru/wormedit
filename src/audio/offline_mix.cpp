@@ -9,34 +9,34 @@ namespace {
 
 auto validate_offline_interval(std::uint32_t sample_rate, std::uint64_t begin, std::uint64_t end,
                    const offline_mix_options_t& options, std::size_t& output_samples)
-    -> offline_mix_status_t {
+    -> std::optional<failure_code_t> {
     if (sample_rate != output_sample_rate || begin >= end || end > options.maximum_timeline_frames ||
         options.maximum_read_frames == 0 || options.maximum_read_frames > audio::maximum_read_frames ||
         options.pump.maximum_voices == 0 || options.pump.maximum_blocks == 0)
-        return offline_mix_status_t::invalid_interval;
+        return failure_code_t::invalid_request;
     const auto frames = end - begin;
     if (frames > options.maximum_output_frames ||
         frames > std::numeric_limits<std::size_t>::max() / output_channel_count)
-        return offline_mix_status_t::capacity_exceeded;
+        return failure_code_t::capacity_exceeded;
     output_samples = static_cast<std::size_t>(frames) * output_channel_count;
     if (output_samples > options.maximum_output_bytes / sizeof(float))
-        return offline_mix_status_t::capacity_exceeded;
+        return failure_code_t::capacity_exceeded;
     if (output_samples > std::vector<float>{}.max_size())
-        return offline_mix_status_t::capacity_exceeded;
-    return offline_mix_status_t::mixed;
+        return failure_code_t::capacity_exceeded;
+    return std::nullopt;
 }
 
 auto materialization_status(const preview_bridge_pump_outcome_t& result)
-    -> offline_mix_status_t {
+    -> std::optional<failure_code_t> {
     const auto& effect = result ? *result : result.error();
-    if (effect.missing_sources != 0) return offline_mix_status_t::missing_sources;
+    if (effect.missing_sources != 0) return failure_code_t::unavailable;
     if (effect.status == preview_bridge_pump_status_t::capacity_limited ||
         effect.status == preview_bridge_pump_status_t::voice_id_exhausted ||
         effect.status == preview_bridge_pump_status_t::transport_rejected_voice)
-        return offline_mix_status_t::capacity_exceeded;
+        return failure_code_t::capacity_exceeded;
     return effect.status == preview_bridge_pump_status_t::ready
-               ? offline_mix_status_t::mixed
-               : offline_mix_status_t::incomplete_mix;
+               ? std::nullopt
+               : std::optional{failure_code_t::render_failed};
 }
 
 auto prime_offline_session(preview_session_t& session, preview_session_start_outcome_t started,
@@ -54,36 +54,35 @@ auto prime_offline_session(preview_session_t& session, preview_session_start_out
     return started;
 }
 
-auto prime_status(const preview_session_start_outcome_t& started) -> offline_mix_status_t {
-    const auto& detail = started ? started->detail : started.error().detail;
+auto prime_status(const preview_session_start_error_t& error) -> failure_code_t {
+    const auto& detail = error.detail;
     if (detail.materialize) {
         const auto status = materialization_status(*detail.materialize);
-        if (status != offline_mix_status_t::mixed) return status;
+        if (status) return *status;
     }
-    if (detail.prime && *detail.prime) return offline_mix_status_t::mixed;
     if (detail.prime && detail.prime->error().status == preview_pump_status_t::capacity_exceeded)
-        return offline_mix_status_t::capacity_exceeded;
-    return offline_mix_status_t::decode_failed;
+        return failure_code_t::capacity_exceeded;
+    return failure_code_t::decode_failed;
 }
 
 auto pump_session(preview_session_t& session, preview_pump_options_t options,
                   std::uint64_t current, std::uint64_t end, std::size_t chunk_frames)
-    -> offline_mix_status_t {
+    -> std::optional<failure_code_t> {
     options.lookahead_frames = static_cast<std::size_t>(
         std::min<std::uint64_t>(chunk_frames, end - current));
     const auto pumped = session.pump_session(options);
     const auto& effect = pumped ? *pumped : pumped.error();
     if (effect.materialize) {
         const auto status = materialization_status(*effect.materialize);
-        if (status != offline_mix_status_t::mixed) return status;
+        if (status) return status;
     }
-    if (pumped) return offline_mix_status_t::mixed;
+    if (pumped) return std::nullopt;
     if (effect.decode) {
         const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
         if (decoded.status == preview_pump_status_t::capacity_exceeded)
-            return offline_mix_status_t::capacity_exceeded;
+            return failure_code_t::capacity_exceeded;
     }
-    return offline_mix_status_t::decode_failed;
+    return failure_code_t::decode_failed;
 }
 
 auto render_chunk(preview_session_t& session, std::span<float> samples,
@@ -114,23 +113,23 @@ auto copy_selected_frames(std::span<const float> rendered, std::uint64_t first_f
 auto render_chunks(preview_session_t& session, std::span<float> chunk,
                    std::vector<float>& output, std::uint64_t begin, std::uint64_t end,
                    std::size_t maximum_chunk, preview_pump_options_t pump_options,
-                   std::stop_token stop) -> offline_mix_status_t {
+                   std::stop_token stop) -> std::optional<failure_code_t> {
     std::uint64_t current{};
     while (current < end) {
-        if (stop.stop_requested()) return offline_mix_status_t::cancelled;
+        if (stop.stop_requested()) return failure_code_t::cancelled;
         if (current != 0) {
             const auto pumped = pump_session(session, pump_options, current, end, maximum_chunk);
-            if (pumped != offline_mix_status_t::mixed) return pumped;
+            if (pumped) return pumped;
         }
         const auto frames = static_cast<std::size_t>(
             std::min<std::uint64_t>(maximum_chunk, end - current));
         auto samples = chunk.first(frames * output_channel_count);
-        if (!render_chunk(session, samples, frames)) return offline_mix_status_t::incomplete_mix;
+        if (!render_chunk(session, samples, frames)) return failure_code_t::render_failed;
         copy_selected_frames(samples, current, begin, end, output);
         current += frames;
-        if (!session.is_active() && current < end) return offline_mix_status_t::incomplete_mix;
+        if (!session.is_active() && current < end) return failure_code_t::render_failed;
     }
-    return offline_mix_status_t::mixed;
+    return std::nullopt;
 }
 
 auto apply_fade(std::vector<float>& samples, std::uint64_t frames, std::uint32_t fade_ms) -> void {
@@ -159,12 +158,12 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     -> offline_mix_result_t {
     std::size_t output_samples{};
     const auto valid = validate_offline_interval(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
-    if (valid != offline_mix_status_t::mixed)
-        return std::unexpected(error_t{valid, valid == offline_mix_status_t::capacity_exceeded
+    if (valid)
+        return std::unexpected(error_t{*valid, valid == failure_code_t::capacity_exceeded
                                  ? "Selected interval exceeds offline mix limits."
                                  : std::string{"Invalid offline mix interval or options."}});
     if (stop.stop_requested())
-        return std::unexpected(error_t{offline_mix_status_t::cancelled, std::string{"Offline mix cancelled."}});
+        return std::unexpected(error_t{failure_code_t::cancelled, std::string{"Offline mix cancelled."}});
 
     offline_mix_t result;
     std::vector<float> chunk;
@@ -172,7 +171,7 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
         result.interleaved_stereo.resize(output_samples);
         chunk.resize(options.maximum_read_frames * output_channel_count);
     } catch (const std::bad_alloc&) {
-        return std::unexpected(error_t{offline_mix_status_t::capacity_exceeded,
+        return std::unexpected(error_t{failure_code_t::capacity_exceeded,
             std::string{"Could not allocate offline mix buffer."}});
     }
 
@@ -187,24 +186,24 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
     const auto started = prime_offline_session(
         session, session.start_session(schedule, objects, {}, 0, pump_options, end_frame), pump_options);
     if (!started) {
-        const auto failure = prime_status(started);
+        const auto failure = prime_status(started.error());
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
         return std::unexpected(error_t{failure, std::string{"Could not start or prime offline preview session."}});
     }
-    if (started.value().detail.materialize && materialization_status(*started.value().detail.materialize) != offline_mix_status_t::mixed) {
+    if (started.value().detail.materialize && materialization_status(*started.value().detail.materialize).has_value()) {
         const auto failure = materialization_status(*started.value().detail.materialize);
         static_cast<void>(session.stop());
         result.interleaved_stereo.clear();
-        return std::unexpected(error_t{failure, std::string{"Preview schedule could not be fully materialized."}});
+        return std::unexpected(error_t{*failure, std::string{"Preview schedule could not be fully materialized."}});
     }
 
     const auto rendered = render_chunks(session, chunk, result.interleaved_stereo,
                                         begin_frame, end_frame, options.maximum_read_frames,
                                         pump_options, stop);
     static_cast<void>(session.stop());
-    if (rendered != offline_mix_status_t::mixed)
-        return std::unexpected(error_t{rendered, rendered == offline_mix_status_t::cancelled
+    if (rendered)
+        return std::unexpected(error_t{*rendered, rendered == failure_code_t::cancelled
                                     ? "Offline mix cancelled."
                                     : std::string{"Preview mix did not produce the complete selected interval."}});
     apply_fade(result.interleaved_stereo, end_frame - begin_frame, options.fade_out_ms);

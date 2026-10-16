@@ -843,15 +843,9 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
     if (!ui_action.compose_has_pointer_hover || gesture_active || !chart || !interaction_view) {
         scene_cache.frame.hover.reset();
     } else {
-        if (!scene_cache.scene.hit_test_index) {
-            auto built = build_editor_hit_test_index(*chart, revision);
-            if (std::holds_alternative<editor_hit_test_index_t>(built)) {
-                scene_cache.scene.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
-            }
-        }
-        if (scene_cache.scene.hit_test_index) {
+        if (const auto* index = scene_cache.hit_test_index_for(*chart, revision)) {
             scene_cache.frame.hover = hover_editor_object(
-                *chart, *scene_cache.scene.hit_test_index, *interaction_view,
+                *chart, *index, *interaction_view,
                 {.x_pixels = ui_action.compose_pointer_hover_x_pixels,
                  .y_pixels = compose_source_y(ui_action.compose_pointer_hover_y_pixels,
                                               interaction_view->viewport_height_pixels,
@@ -977,18 +971,12 @@ auto focus_compose_note_label(const WormUiComposeInputAction& input,
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!chart || !view)
         return "The selected chart field is no longer available.";
-    if (!context.environment.controls.cache.scene.hit_test_index) {
-        auto built =
-            build_editor_hit_test_index(*chart, context.environment.document.history.document.revision);
-        if (std::holds_alternative<editor_hit_test_index_t>(built))
-            context.environment.controls.cache.scene.hit_test_index =
-                std::get<editor_hit_test_index_t>(std::move(built));
-    }
-    if (!context.environment.controls.cache.scene.hit_test_index ||
-        !context.environment.controls.cache.frame.interaction_view)
+    const auto* index = context.environment.controls.cache.hit_test_index_for(
+        *chart, context.environment.document.history.document.revision);
+    if (!index || !context.environment.controls.cache.frame.interaction_view)
         return "The chart field hover index is unavailable.";
     const auto hover = hover_editor_object(
-        *chart, *context.environment.controls.cache.scene.hit_test_index,
+        *chart, *index,
         *context.environment.controls.cache.frame.interaction_view,
         {.x_pixels = input.x_pixels,
          .y_pixels = context.input_source_y(input.y_pixels),

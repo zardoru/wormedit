@@ -44,6 +44,7 @@
 #endif
 
 #include <array>
+#include <tuple>
 #include <cstddef>
 #include <chrono>
 #include <cstdint>
@@ -161,6 +162,9 @@ struct compose_scene_cache_t {
     bool ensure_scene_key(const wormedit::song_document_t& document,
                           const wormedit::chart_document_t& chart);
     void invalidate_scene_cache();
+    auto hit_test_index_for(const wormedit::chart_document_t& chart,
+                            std::uint64_t document_revision)
+        -> const wormedit::editor_hit_test_index_t*;
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
     mutable compose_timing_payload_cache_t timing_payload_cache;
@@ -276,7 +280,9 @@ struct compose_scene_cache_t {
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
         std::optional<wormedit::measure_index_t> cached_measure_index;
-        std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
+        wormedit::keyed_cache_t<
+            std::tuple<const wormedit::chart_document_t*, wormedit::chart_id_t, std::uint64_t>,
+            std::variant<wormedit::editor_hit_test_index_t, wormedit::diagnostic_list_t>> hit_test_index;
         std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     } scene;
 

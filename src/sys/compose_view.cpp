@@ -59,7 +59,7 @@ void compose_scene_cache_t::invalidate_scene_cache() {
     scene.selected_note_source = {};
     scene.selected_bgm_source = {};
     scene.bgm_rows_by_id.clear();
-    scene.hit_test_index.reset();
+    scene.hit_test_index = {};
     timing.marker_timing_index.reset();
     timing.dead_spans.reset();
     timing.kiai_spans.reset();
@@ -99,6 +99,21 @@ bool compose_scene_cache_t::ensure_scene_key(const wormedit::song_document_t& do
     scene.revision = document.revision;
     scene.attempted = true;
     return true;
+}
+
+auto compose_scene_cache_t::hit_test_index_for(const wormedit::chart_document_t& chart,
+                                               std::uint64_t document_revision)
+    -> const wormedit::editor_hit_test_index_t* {
+    const auto& built = scene.hit_test_index.get_or_build(
+        std::tuple{&chart, chart.id, document_revision},
+        [&chart, document_revision] {
+            return wormedit::build_editor_hit_test_index(chart, document_revision);
+        });
+    if (const auto* index = std::get_if<wormedit::editor_hit_test_index_t>(&built))
+        return index;
+    // Failed hit-test builds were retried by each caller; retain that policy.
+    scene.hit_test_index = {};
+    return nullptr;
 }
 
 namespace compose_projection_detail {
@@ -2322,15 +2337,12 @@ void populate_compose_paint_ghost(const compose_projection_context_t<wormedit::e
     if (!view.note_paint_mode_active || !cache.frame.paint_pointer || !input.frame.retained_state ||
         editor_interaction_has_pending_gesture(*input.frame.retained_state))
         return;
-    if (!cache.scene.hit_test_index) {
-        auto built = build_editor_hit_test_index(input.scope.chart_scope.chart,
-                                                 input.frame.history.document.revision);
-        if (!std::holds_alternative<editor_hit_test_index_t>(built)) return;
-        cache.scene.hit_test_index = std::get<editor_hit_test_index_t>(std::move(built));
-    }
+    const auto* index = cache.hit_test_index_for(input.scope.chart_scope.chart,
+                                                input.frame.history.document.revision);
+    if (!index) return;
     const auto [x, y] = *cache.frame.paint_pointer;
     const auto target = resolve_compose_paint_cell(
-        input.scope.chart_scope.chart, *cache.scene.hit_test_index, input.scope.interaction_view, x, y,
+        input.scope.chart_scope.chart, *index, input.scope.interaction_view, x, y,
         view.playable_field_left_pixels,
         view.playable_field_right_pixels - view.playable_field_left_pixels, input.scope.downscroll,
         edit_snap_denominator(input.scope.chart_scope.chart, *input.frame.retained_state));

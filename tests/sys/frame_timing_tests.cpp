@@ -7447,3 +7447,32 @@ TEST_CASE("Draw proposal rejects a missing cell without an applicable value or a
     CHECK(counted == 0);
     CHECK(fixture.history.undo.empty());
 }
+
+TEST_CASE("Compose hit-test cache reuses a chart revision and rebuilds after invalidation",
+          "[sys][hit-test-cache]") {
+    auto song = compose_test_song();
+    const auto& chart = song.charts.front();
+    compose_scene_cache_t cache;
+    const auto* index = cache.hit_test_index_for(chart, song.revision);
+    REQUIRE(index);
+    CHECK(cache.hit_test_index_for(chart, song.revision) == index);
+    CHECK(cache.scene.hit_test_index.build_count() == 1);
+    CHECK(cache.hit_test_index_for(chart, song.revision + 1)->document_revision == song.revision + 1);
+    CHECK(cache.scene.hit_test_index.build_count() == 2);
+    cache.invalidate_scene_cache();
+    CHECK_FALSE(cache.scene.hit_test_index.has_value());
+}
+
+TEST_CASE("Compose hit-test cache retries failed geometry without retaining a failure",
+          "[sys][hit-test-cache]") {
+    auto song = compose_test_song();
+    auto& chart = song.charts.front();
+    const auto divisions = chart.divisions_per_standard_measure;
+    chart.divisions_per_standard_measure = 0;
+    compose_scene_cache_t cache;
+    CHECK_FALSE(cache.hit_test_index_for(chart, song.revision));
+    CHECK_FALSE(cache.scene.hit_test_index.has_value());
+    chart.divisions_per_standard_measure = divisions;
+    CHECK(cache.hit_test_index_for(chart, song.revision));
+    CHECK(cache.scene.hit_test_index.build_count() == 1);
+}

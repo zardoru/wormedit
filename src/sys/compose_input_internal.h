@@ -658,23 +658,18 @@ struct compose_input_context_t {
                                  const wormedit::editor_interaction_view_model_t& view,
                                  double x_pixels, double y_pixels)
         -> std::optional<wormedit::editor_hit_target_t> {
-        if (!environment.controls.cache.scene.hit_test_index) {
-            auto built = wormedit::build_editor_hit_test_index(
-                chart, environment.document.history.document.revision);
-            if (!std::holds_alternative<wormedit::editor_hit_test_index_t>(built))
-                return std::nullopt;
-            environment.controls.cache.scene.hit_test_index =
-                std::get<wormedit::editor_hit_test_index_t>(std::move(built));
-        }
+        const auto* index = environment.controls.cache.hit_test_index_for(
+            chart, environment.document.history.document.revision);
+        if (!index) return std::nullopt;
         if (environment.commands.project.compose_gesture.note_paint_mode_active)
             return resolve_compose_paint_cell(
-                chart, *environment.controls.cache.scene.hit_test_index, view, x_pixels,
+                chart, *index, view, x_pixels,
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
                     chart, environment.commands.preferences.editor_preferences),
                 wormedit::edit_snap_denominator(chart, state));
         return wormedit::hit_test_editor(
-            chart, *environment.controls.cache.scene.hit_test_index, view,
+            chart, *index, view,
             {.x_pixels = x_pixels,
              .y_pixels = compose_source_y(
                  y_pixels, view.viewport_height_pixels,

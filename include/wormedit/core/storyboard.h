@@ -19,7 +19,6 @@ namespace wormedit {
 // Frame storage for transient storyboard draw data. Allocations are stable
 // until reset(); reset keeps committed chunks for reuse on the next frame. The
 // implementation is the generic frame arena in <wormedit/core/arena.h>.
-using storyboard_arena_error_t = arena_error_t;
 using storyboard_arena_options_t = arena_options_t;
 using storyboard_frame_arena_t = frame_arena_t;
 

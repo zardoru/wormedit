@@ -22,7 +22,6 @@ using namespace wormedit;
 
 static_assert(std::is_same_v<storyboard_frame_arena_t, frame_arena_t>);
 static_assert(std::is_same_v<storyboard_arena_options_t, arena_options_t>);
-static_assert(std::is_same_v<storyboard_arena_error_t, arena_error_t>);
 static_assert(std::is_nothrow_constructible_v<frame_arena_t>);
 static_assert(std::is_nothrow_constructible_v<frame_arena_t, arena_options_t,
                                              std::pmr::memory_resource*>);
@@ -188,8 +187,8 @@ auto failed_compaction_releases_chunks_and_keeps_capacity() -> bool {
     const auto before = stats_tuple(arena.statistics());
     resource.allocation_limit = resource.allocations + 2;
     const auto rejected = arena.build_compaction(spans);
-    return !rejected && rejected.error().code == arena_compaction_error_t::allocation_failed &&
-           rejected.error().allocation_error == arena_error_t::out_of_memory && rejected.error().remap.empty() &&
+    return !rejected && rejected.error().code == failure_code_t::allocation_failed &&
+           rejected.error().allocation_error == failure_code_t::out_of_memory && rejected.error().remap.empty() &&
            rejected.error().remap.capacity() >= spans.size() &&
            resource.allocations == *resource.allocation_limit &&
            resource.outstanding_bytes == outstanding && stats_tuple(arena.statistics()) == before;
@@ -204,8 +203,8 @@ TEST_CASE("frame arena aligns every power-of-two request and rejects other align
     const auto objects = arena.object_count();
     CHECK(std::tuple{arena.allocate(1, 0).error(), arena.allocate(1, 3).error(),
                      arena.allocate(1, alignof(std::max_align_t) * 2).error()} ==
-          std::tuple{arena_error_t::invalid_alignment, arena_error_t::invalid_alignment,
-                     arena_error_t::invalid_alignment});
+          std::tuple{failure_code_t::invalid_request, failure_code_t::invalid_request,
+                     failure_code_t::invalid_request});
     CHECK(arena.object_count() == objects);
 }
 
@@ -215,7 +214,7 @@ TEST_CASE("frame arena enforces byte and object limits without partial allocatio
     REQUIRE(bytes.allocate(16, 1));
     REQUIRE(bytes.allocate(16, 1));
     const auto before = bytes.statistics();
-    CHECK(bytes.allocate(1, 1).error() == arena_error_t::byte_limit);
+    CHECK(bytes.allocate(1, 1).error() == failure_code_t::capacity_exceeded);
     CHECK(stats_tuple(bytes.statistics()) == stats_tuple(before));
     CHECK(before.chunk_count == 2);
 }
@@ -225,7 +224,7 @@ TEST_CASE("frame arena enforces its object limit", "[unit][arena][frame][capacit
     const bool filled = objects.allocate(1, 1) && objects.allocate(1, 1) &&
                         objects.allocate(1, 1);
     REQUIRE(filled);
-    CHECK(objects.allocate(1, 1).error() == arena_error_t::object_limit);
+    CHECK(objects.allocate(1, 1).error() == failure_code_t::capacity_exceeded);
     CHECK(objects.object_count() == 3);
 }
 
@@ -236,7 +235,7 @@ TEST_CASE("frame arena reports out of memory instead of throwing", "[unit][arena
                         &resource};
     const auto allocation = arena.allocate(8, 8);
     REQUIRE_FALSE(allocation);
-    CHECK(allocation.error() == arena_error_t::out_of_memory);
+    CHECK(allocation.error() == failure_code_t::out_of_memory);
     CHECK(stats_tuple(arena.statistics()) == stats_tuple({}));
 }
 
@@ -276,15 +275,15 @@ TEST_CASE("append arena never back-fills older chunks", "[unit][arena][append]")
 TEST_CASE("append arena returns typed limit errors", "[unit][arena][append][capacity]") {
     append_arena_t arena{{.chunk_bytes = 16, .maximum_bytes = 32, .maximum_objects = 2}};
     REQUIRE(arena.append_span(16, 1));
-    CHECK(arena.append_span(32, 1).error() == arena_error_t::byte_limit);
+    CHECK(arena.append_span(32, 1).error() == failure_code_t::capacity_exceeded);
     REQUIRE(arena.append_span(8, 1));
     CHECK(std::tuple{arena.append_span(1, 1).error(), arena.append_span(1, 3).error()} ==
-          std::tuple{arena_error_t::object_limit, arena_error_t::invalid_alignment});
+          std::tuple{failure_code_t::capacity_exceeded, failure_code_t::invalid_request});
 
     counting_resource_t resource;
     resource.fail = true;
     append_arena_t failing{{}, &resource};
-    CHECK(failing.append_span(8, 8).error() == arena_error_t::out_of_memory);
+    CHECK(failing.append_span(8, 8).error() == failure_code_t::out_of_memory);
 }
 
 TEST_CASE("append arena accounts stale bytes and clamps them to used bytes",
@@ -373,7 +372,7 @@ TEST_CASE("append arena compaction rejects foreign spans and bad orders",
 
     const std::array foreign{*mine, *theirs};
     const auto rejected = arena.build_compaction(foreign);
-    CHECK(rejected.error().code == arena_compaction_error_t::foreign_span);
+    CHECK(rejected.error().code == failure_code_t::invalid_request);
     CHECK(rejected.error().remap.empty());
 
     const std::array live{*mine, *mine};
@@ -382,9 +381,9 @@ TEST_CASE("append arena compaction rejects foreign spans and bad orders",
     const std::array<std::size_t, 2> out_of_range{0, 2};
     CHECK(std::tuple{arena.build_compaction(live, duplicate).error().code, arena.build_compaction(live, short_order).error().code,
                      arena.build_compaction(live, out_of_range).error().code} ==
-          std::tuple{arena_compaction_error_t::invalid_order,
-                     arena_compaction_error_t::invalid_order,
-                     arena_compaction_error_t::invalid_order});
+          std::tuple{failure_code_t::invalid_data,
+                     failure_code_t::invalid_data,
+                     failure_code_t::invalid_data});
 }
 
 TEST_CASE("append arena chunks outlive the arena while a snapshot holds them",
@@ -415,7 +414,7 @@ TEST_CASE("append arena ceiling grows without relocating retained payload",
     const auto first = arena.append_span(16, 1);
     REQUIRE(first);
     fill(*first, 7);
-    CHECK(arena.append_span(16, 1).error() == arena_error_t::byte_limit);
+    CHECK(arena.append_span(16, 1).error() == failure_code_t::capacity_exceeded);
     const auto retained = first->chunk;
     arena.grow_maximum_bytes(48);
     REQUIRE(arena.append_span(16, 1));

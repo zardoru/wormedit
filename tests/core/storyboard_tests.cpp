@@ -45,8 +45,8 @@ TEST_CASE("storyboard frame arena grows in bounded chunks and reuses storage",
     CHECK(arena.committed_bytes() >= 32);
 
     const auto before_failure = arena.used_bytes();
-    CHECK(arena.allocate(1, 3).error() == storyboard_arena_error_t::invalid_alignment);
-    CHECK(arena.allocate(1, 8).error() == storyboard_arena_error_t::object_limit);
+    CHECK(arena.allocate(1, 3).error() == failure_code_t::invalid_request);
+    CHECK(arena.allocate(1, 8).error() == failure_code_t::capacity_exceeded);
     CHECK(arena.object_count() == 2);
     CHECK(arena.used_bytes() == before_failure);
 
@@ -68,7 +68,7 @@ TEST_CASE("storyboard arena rejects byte exhaustion without partial allocation",
 
     const auto rejected = arena.allocate(20, 8);
     CHECK_FALSE(rejected);
-    CHECK(rejected.error() == storyboard_arena_error_t::byte_limit);
+    CHECK(rejected.error() == failure_code_t::capacity_exceeded);
     CHECK(arena.object_count() == object_count);
     CHECK(arena.used_bytes() == used_bytes);
     CHECK(arena.committed_bytes() == committed_bytes);

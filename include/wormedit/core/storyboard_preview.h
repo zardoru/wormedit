@@ -87,7 +87,7 @@ struct storyboard_frame_effect_t {
     }
     std::span<const storyboard_draw_instance_t> instances;
     std::optional<storyboard_diagnostic_t> diagnostic;
-    storyboard_arena_error_t arena_error{storyboard_arena_error_t::none};
+    std::optional<failure_code_t> arena_error;
 };
 using storyboard_frame_outcome_t = result_t<storyboard_frame_effect_t, storyboard_frame_effect_t>;
 

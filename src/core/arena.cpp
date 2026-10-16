@@ -122,36 +122,36 @@ auto chunk_arena_core_t::find_existing(std::size_t size, std::size_t alignment,
 }
 
 auto chunk_arena_core_t::add_chunk(std::size_t size, std::size_t alignment) noexcept
-    -> arena_error_t {
+    -> std::optional<failure_code_t> {
     const auto available = options_.maximum_bytes - committed_bytes_;
     if (available == 0 || size > available || alignment - 1 > available - size)
-        return arena_error_t::byte_limit;
+        return failure_code_t::capacity_exceeded;
     const auto required = size + alignment - 1;
     const auto capacity = std::min(available, std::max(options_.chunk_bytes, required));
     try {
         chunks_.push_back(chunk_t{.storage = make_chunk_storage(resource_, capacity),
                                   .capacity = capacity});
     } catch (...) {
-        return arena_error_t::out_of_memory;
+        return failure_code_t::out_of_memory;
     }
     committed_bytes_ += capacity;
     chunk_index_ = chunks_.size() - 1;
-    return arena_error_t::none;
+    return std::nullopt;
 }
 
 auto chunk_arena_core_t::allocate(std::size_t size, std::size_t alignment,
                                   arena_fit_policy_t policy) noexcept -> allocation_outcome_t {
     if (!is_power_of_two(alignment) || alignment > max_default_alignment)
-        return std::unexpected(arena_error_t::invalid_alignment);
+        return std::unexpected(failure_code_t::invalid_request);
     if (object_count_ >= options_.maximum_objects)
-        return std::unexpected(arena_error_t::object_limit);
+        return std::unexpected(failure_code_t::capacity_exceeded);
     if (const auto placement = find_existing(size, alignment, policy); placement.has_value())
         return commit(placement->chunk_index, placement->begin, size);
-    if (const auto error = add_chunk(size, alignment); error != arena_error_t::none)
-        return std::unexpected(error);
+    if (const auto error = add_chunk(size, alignment); error.has_value())
+        return std::unexpected(*error);
     const auto begin = find_space(chunks_.back(), size, alignment);
     if (!begin.has_value())
-        return std::unexpected(arena_error_t::byte_limit);
+        return std::unexpected(failure_code_t::capacity_exceeded);
     return commit(chunks_.size() - 1, *begin, size);
 }
 
@@ -197,7 +197,7 @@ auto frame_arena_t::operator=(frame_arena_t&&) noexcept -> frame_arena_t& = defa
 auto frame_arena_t::allocate(std::size_t size, std::size_t alignment) noexcept
     -> arena_allocation_outcome_t {
     if (!core_)
-        return std::unexpected(arena_error_t::out_of_memory);
+        return std::unexpected(failure_code_t::out_of_memory);
     const auto allocation = core_->allocate(size, alignment, arena_fit_policy_t::any_chunk);
     if (!allocation)
         return std::unexpected(allocation.error());
@@ -329,16 +329,16 @@ auto append_arena_t::build_compaction(std::span<const append_arena_span_t> live_
     for (const auto& span : live_spans) {
         if (!has_allocation(span))
             return std::unexpected(arena_compaction_failure_t{
-                arena_compaction_error_t::foreign_span, arena_error_t::none, {}});
+                failure_code_t::invalid_request, std::nullopt, {}});
     }
     try {
         if (!is_valid_order(order, live_spans.size()))
             return std::unexpected(arena_compaction_failure_t{
-                arena_compaction_error_t::invalid_order, arena_error_t::none, {}});
+                failure_code_t::invalid_data, std::nullopt, {}});
         result.remap.resize(live_spans.size());
     } catch (...) {
         return std::unexpected(arena_compaction_failure_t{
-            arena_compaction_error_t::allocation_failed, arena_error_t::out_of_memory, {}});
+            failure_code_t::allocation_failed, failure_code_t::out_of_memory, {}});
     }
     for (std::size_t position = 0; position < live_spans.size(); ++position) {
         const auto index = order.empty() ? position : order[position];
@@ -347,7 +347,7 @@ auto append_arena_t::build_compaction(std::span<const append_arena_span_t> live_
         if (!copy) {
             result.remap.clear();
             return std::unexpected(
-                arena_compaction_failure_t{arena_compaction_error_t::allocation_failed,
+                arena_compaction_failure_t{failure_code_t::allocation_failed,
                                            copy.error(), std::move(result.remap)});
         }
         if (!source.bytes.empty())

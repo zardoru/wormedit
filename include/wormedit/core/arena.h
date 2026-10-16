@@ -8,26 +8,13 @@
 #include <memory_resource>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace wormedit {
 
-// Chunked, aligned bump allocation shared by every arena policy. Chunks are
-// separately allocated and never move, so returned addresses stay valid until
-// the policy rewinds or drops the chunk. Failures return typed errors; nothing
-// here throws.
-enum class arena_error_t : std::uint8_t {
-    none,
-    invalid_alignment,
-    byte_limit,
-    object_limit,
-    out_of_memory,
-};
-
-using arena_allocation_outcome_t = result_t<void*, arena_error_t>;
-
-
+using arena_allocation_outcome_t = result_t<void*, failure_code_t>;
 
 struct arena_options_t {
     std::size_t chunk_bytes{64 * 1024};
@@ -51,6 +38,10 @@ enum class arena_fit_policy_t : std::uint8_t {
     newest_chunk,
 };
 
+// Chunked, aligned bump allocation shared by every arena policy. Chunks are
+// separately allocated and never move, so returned addresses stay valid until
+// the policy rewinds or drops the chunk. Failures return typed errors; nothing
+// here throws.
 class chunk_arena_core_t {
   public:
     struct chunk_t {
@@ -66,9 +57,7 @@ class chunk_arena_core_t {
 
         auto operator==(const allocation_location_t&) const -> bool = default;
     };
-    using allocation_outcome_t = result_t<allocation_location_t, arena_error_t>;
-
-
+    using allocation_outcome_t = result_t<allocation_location_t, failure_code_t>;
 
     // A null resource means std::pmr::new_delete_resource(). The resource must
     // outlive every chunk, including chunks kept alive by append-arena handles.
@@ -106,7 +95,7 @@ class chunk_arena_core_t {
                                      arena_fit_policy_t policy) const noexcept
         -> std::optional<placement_t>;
     [[nodiscard]] auto add_chunk(std::size_t size, std::size_t alignment) noexcept
-        -> arena_error_t;
+        -> std::optional<failure_code_t>;
 
     arena_options_t options_;
     std::pmr::memory_resource* resource_{};
@@ -157,23 +146,19 @@ struct append_arena_span_t {
     std::size_t alignment{1};
 };
 
-using append_arena_outcome_t = result_t<append_arena_span_t, arena_error_t>;
+using append_arena_outcome_t = result_t<append_arena_span_t, failure_code_t>;
 
-
-
-enum class arena_compaction_error_t : std::uint8_t {
-    none,
-    foreign_span,
-    invalid_order,
-    allocation_failed,
-};
+static_assert(sizeof(std::optional<failure_code_t>) <= 2 * sizeof(std::uint8_t));
+static_assert(std::is_trivially_copyable_v<std::optional<failure_code_t>>);
 
 struct arena_compaction_failure_t {
-    arena_compaction_error_t code{arena_compaction_error_t::allocation_failed};
-    arena_error_t allocation_error{arena_error_t::none};
+    failure_code_t code{failure_code_t::allocation_failed};
+    std::optional<failure_code_t> allocation_error;
     // Cleared on failure, retaining the legacy result's remap capacity.
     std::vector<append_arena_span_t> remap;
 };
+static_assert(sizeof(arena_compaction_failure_t) <=
+              sizeof(std::vector<append_arena_span_t>) + alignof(std::vector<append_arena_span_t>));
 struct append_arena_snapshot_t;
 using append_arena_compaction_outcome_t =
     result_t<append_arena_snapshot_t, arena_compaction_failure_t>;
@@ -218,10 +203,8 @@ class append_arena_t {
                                         std::span<const std::size_t> order = {}) const noexcept
         -> append_arena_compaction_outcome_t;
 
-
   private:
     [[nodiscard]] auto has_allocation(const append_arena_span_t& span) const noexcept -> bool;
-
 
     chunk_arena_core_t core_;
     std::size_t payload_bytes_{};
@@ -232,7 +215,5 @@ struct append_arena_snapshot_t {
     append_arena_t arena;
     std::vector<append_arena_span_t> remap;
 };
-
-
 
 } // namespace wormedit

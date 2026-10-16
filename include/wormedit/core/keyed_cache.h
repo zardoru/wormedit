@@ -11,6 +11,8 @@ namespace wormedit {
 // copying; their owned Key supplies from/assign to retain only miss-time state.
 // A nullary builder returns a replacement value. A void(Value&) builder borrows
 // the retained storage only on a miss, allowing capacity reuse or early release.
+// A bool(Value&) refill publishes its key only on success, preserving the last
+// binding on failure. The builder owns any partial changes to the retained value.
 // A bound lookup permits owner updates; value() remains read-only inspection.
 // Nullary builds capture borrowed keys before replacing the retained value.
 // An optional predicate controls reuse of a key-equal entry. Failures and
@@ -30,9 +32,14 @@ class keyed_cache_t {
             assign_key(key);
             value_ = std::move(value);
         } else {
-            static_assert(std::is_void_v<std::invoke_result_t<Builder, Value&>>,
-                          "A cache refill builder must return void.");
-            std::forward<Builder>(builder)(value_);
+            using refill_result_t = std::invoke_result_t<Builder, Value&>;
+            if constexpr (std::is_same_v<refill_result_t, bool>) {
+                if (!std::forward<Builder>(builder)(value_)) return value_;
+            } else {
+                static_assert(std::is_void_v<refill_result_t>,
+                              "A cache refill builder must return void or bool.");
+                std::forward<Builder>(builder)(value_);
+            }
             assign_key(key);
         }
         valid_ = true;
@@ -55,7 +62,9 @@ class keyed_cache_t {
   private:
     template <class Lookup>
     void assign_key(const Lookup& key) {
-        if constexpr (std::is_same_v<Key, std::remove_cvref_t<Lookup>>) {
+        if constexpr (std::is_same_v<Key, std::remove_cvref_t<Lookup>> ||
+                      (std::is_constructible_v<Key, const Lookup&> &&
+                       std::is_assignable_v<Key&, const Lookup&>)) {
             key_ = key;
         } else if (key_) {
             key_->assign(key);

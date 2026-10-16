@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <functional>
 
 namespace wormedit::sys {
 namespace {
@@ -287,36 +288,40 @@ void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
 }
 // Rows are cached per (source, window): projecting the whole song is the costly case.
-auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
-                          const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
-    if (bar.key && *bar.key == waveform.key && bar.identity == &waveform && bar.rows_range == range)
-        return true;
+auto build_bgm_bar_rows(const audio::waveform_t& waveform, bgm_bar_range_t range,
+                        bool& succeeded,
+                        std::vector<WormUiComposeWaveformOverviewRowView>& rows) -> bool {
     const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
                                                          WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
-    if (!projected) return false;
-    bar.rows.clear();
+    succeeded = projected.has_value();
+    if (!succeeded) return false;
+    rows.clear();
     for (const auto& row : projected->rows)
-        bar.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
-    bar.key = waveform.key;
-    bar.identity = &waveform;
-    bar.rows_range = range;
+        rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
     return true;
 }
-void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
-                           bgm_bar_range_t range) {
-    auto& bar = cache.waveform.bgm_bar;
-    if (bar.marks_valid && bar.marks_revision == cache.stamp().document.revision &&
-        bar.marks_total_frames == waveform.total_frames && bar.marks_range == range) return;
-    bar.marks.clear();
-    bar.marks_valid = true;
-    bar.marks_revision = cache.stamp().document.revision;
-    bar.marks_total_frames = waveform.total_frames;
-    bar.marks_range = range;
+auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
+                          const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
+    bool succeeded = true;
+    static_cast<void>(bar.rows.get_or_build(
+        std::tuple<const audio::waveform_key_t&, const void*, bgm_bar_range_t>{waveform.key, &waveform, range},
+        std::bind_front(build_bgm_bar_rows, std::cref(waveform), range, std::ref(succeeded))));
+    return succeeded;
+}
+void build_bgm_bar_marks(const compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+                         bgm_bar_range_t range, std::vector<WormUiComposeBgmBarMarkView>& marks) {
+    marks.clear();
     if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
     for (const auto& mark : bgm_bar_measure_marks(*cache.scene.cached_measure_index,
              *cache.timing.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
              WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY))
-        bar.marks.push_back({mark.audio_fraction, mark.measure});
+        marks.push_back({mark.audio_fraction, mark.measure});
+}
+void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+                           bgm_bar_range_t range) {
+    static_cast<void>(cache.waveform.bgm_bar.marks.get_or_build(
+        std::tuple{cache.stamp().document.revision, waveform.total_frames, range},
+        std::bind_front(build_bgm_bar_marks, std::cref(cache), std::cref(waveform), range)));
 }
 // Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
 // their fraction of the song. Bookmarks outside the window are left out.
@@ -377,13 +382,13 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
     if (!refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range)) return;
     refresh_bgm_bar_marks(cache, waveform, range);
     auto& waveform_views = flattened.compose.waveform;
-    for (const auto& row : cache.waveform.bgm_bar.rows) {
+    for (const auto& row : cache.waveform.bgm_bar.rows.value()) {
         if (!waveform_views.bar_row.push_back(row)) {
             waveform_views.bar_row.clear();
             return;
         }
     }
-    for (const auto& mark : cache.waveform.bgm_bar.marks) {
+    for (const auto& mark : cache.waveform.bgm_bar.marks.value()) {
         if (!waveform_views.bar_mark.push_back(mark)) {
             waveform_views.bar_mark.clear();
             waveform_views.bar_row.clear();

@@ -7,6 +7,7 @@
 #include <functional>
 #include <span>
 #include <string>
+#include <tuple>
 #include <vector>
 
 using namespace wormedit;
@@ -29,6 +30,17 @@ struct counting_builder_t {
     void invalidate_then_refill(keyed_cache_t<int, Value>& cache, Value& retained) {
         cache.invalidate_value();
         refill(retained);
+    }
+};
+
+struct conditional_refill_t {
+    std::size_t& calls;
+    int replacement{};
+    bool succeeds{};
+    auto operator()(int& retained) -> bool {
+        ++calls;
+        if (succeeds) retained = replacement;
+        return succeeds;
     }
 };
 
@@ -269,4 +281,43 @@ TEST_CASE("Owner updates can invalidate value reuse without changing its key", "
     CHECK(cache.get_or_build(1, counting_builder_t<value_t>{calls, 42}, can_reuse).value() == 42);
     CHECK(cache.build_count() == 2);
     CHECK(cache.has_value());
+}
+
+TEST_CASE("A failed conditional refill preserves the last successful binding", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, conditional_refill_t{calls, 17, true}));
+    CHECK(cache.get_or_build(2, conditional_refill_t{calls, 23, false}) == 17);
+    CHECK(cache.build_count() == 1);
+    CHECK(cache.get_or_build(1, conditional_refill_t{calls, 42, true}) == 17);
+    CHECK(calls == 2);
+    CHECK(cache.get_or_build(2, conditional_refill_t{calls, 23, true}) == 23);
+    CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("An initially failed conditional refill stays unbound and retries", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    std::size_t calls{};
+    CHECK(cache.get_or_build(0, conditional_refill_t{calls, 23, false}) == 0);
+    CHECK_FALSE(cache.has_value());
+    CHECK_FALSE(cache.key());
+    CHECK(cache.build_count() == 0);
+    CHECK(cache.get_or_build(0, conditional_refill_t{calls, 23, true}) == 23);
+    CHECK(calls == 2);
+}
+
+TEST_CASE("Standard tuple keys borrow expensive components on lookup", "[core][keyed-cache]") {
+    keyed_cache_t<std::tuple<std::string, int>, int> cache;
+    std::size_t calls{};
+    std::string text(200, 'a');
+    const std::tuple<const std::string&, int> query{text, 7};
+    static_cast<void>(cache.get_or_build(query, counting_builder_t<int>{calls, 17}));
+    const auto* storage = std::get<0>(*cache.key()).data();
+    CHECK(cache.get_or_build(query, counting_builder_t<int>{calls, 23}) == 17);
+    CHECK(std::get<0>(*cache.key()).data() == storage);
+    CHECK(calls == 1);
+    text.back() = 'b';
+    CHECK(std::get<0>(*cache.key()).back() == 'a');
+    CHECK(cache.get_or_build(query, counting_builder_t<int>{calls, 23}) == 23);
+    CHECK(std::get<0>(*cache.key()).back() == 'b');
 }

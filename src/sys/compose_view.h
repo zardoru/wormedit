@@ -257,15 +257,12 @@ struct compose_scene_cache_t {
         bool is_selected{};
     };
     struct bgm_bar_cache_t {
-        std::optional<audio::waveform_key_t> key;
-        const void* identity{};
-        bgm_bar_range_t rows_range;
-        std::vector<WormUiComposeWaveformOverviewRowView> rows;
-        std::uint64_t marks_revision{};
-        std::uint64_t marks_total_frames{};
-        bgm_bar_range_t marks_range;
-        bool marks_valid{};
-        std::vector<WormUiComposeBgmBarMarkView> marks;
+        wormedit::keyed_cache_t<
+            std::tuple<audio::waveform_key_t, const void*, bgm_bar_range_t>,
+            std::vector<WormUiComposeWaveformOverviewRowView>> rows;
+        wormedit::keyed_cache_t<
+            std::tuple<std::uint64_t, std::uint64_t, bgm_bar_range_t>,
+            std::vector<WormUiComposeBgmBarMarkView>> marks;
     };
 #endif
     struct hover_timing_snapshot_t {

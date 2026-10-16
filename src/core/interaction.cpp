@@ -18,6 +18,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <limits>
 #include <map>
 #include <memory>
@@ -1590,33 +1591,6 @@ auto select_editor_objects(editor_edit_context_t& context,
 }
 
 
-auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
-                                   const editor_interaction_action_t& action) -> bool {
-    return std::holds_alternative<move_edit_cursor_action_t>(action) ||
-        std::holds_alternative<page_edit_cursor_action_t>(action) ||
-        std::holds_alternative<jump_edit_cursor_action_t>(action) ||
-        std::holds_alternative<select_bms_canvas_measure_action_t>(action) ||
-        std::holds_alternative<cycle_edit_snap_action_t>(action) ||
-        std::holds_alternative<set_edit_snap_action_t>(action) ||
-        std::holds_alternative<place_virtual_bms_tap_action_t>(action) ||
-        std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
-        std::holds_alternative<begin_lane_key_hold_gesture_action_t>(action) ||
-        std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
-        std::holds_alternative<begin_editor_area_selection_action_t>(action) ||
-        std::holds_alternative<update_editor_area_selection_action_t>(action) ||
-        std::holds_alternative<space_range_selection_action_t>(action) ||
-        std::holds_alternative<select_editor_notes_action_t>(action) ||
-        std::holds_alternative<select_editor_objects_action_t>(action) ||
-        (std::holds_alternative<delete_editor_selection_action_t>(action) &&
-         (!state.selected_objects.empty() || !state.selected_notes.empty())) ||
-        std::holds_alternative<select_editor_lane_action_t>(action) ||
-        std::holds_alternative<adjust_editor_zoom_action_t>(action) ||
-        std::holds_alternative<scroll_editor_view_action_t>(action);
-}
-
-
-
-
 auto select_editor_notes(editor_edit_context_t& context,
                          const select_editor_notes_action_t& action)
     -> editor_interaction_result_t {
@@ -1636,17 +1610,6 @@ auto select_editor_lane(document_history_t& history, editor_interaction_state_t&
                    "selected editor lane is unavailable at the cursor")});
     state.active_lane = lane;
     return editor_interaction_result_t::from(history, state, false);
-}
-
-auto validate_virtual_cursor_action(const document_history_t& history,
-                                    const editor_interaction_state_t& state,
-                                    const editor_interaction_action_t& action)
-    -> std::optional<editor_interaction_result_t> {
-    if (!state.virtual_bms_cursor_row || is_virtual_cursor_action_allowed(state, action))
-        return std::nullopt;
-    return diagnostic_result(history, state,
-                             {error(diagnostic_code_t::row_out_of_range,
-                                    "this edit requires a materialized cursor measure")});
 }
 
 auto is_note_kind_allowed(const chart_document_t& chart, note_kind_t kind) -> bool {
@@ -1680,318 +1643,496 @@ auto arm_note_kind(const document_history_t& history, editor_interaction_state_t
 }
 
 namespace {
-auto handle(editor_edit_context_t& context, const move_edit_cursor_action_t& typed_action,
-            const std::uint64_t& absolute) -> editor_interaction_result_t {
-    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
-    return interaction_detail::move_edit_cursor(cursor_navigation, typed_action);
-}
+enum class virtual_cursor_policy_t { materialized, allowed, selection };
 
-auto handle(editor_edit_context_t& context, const page_edit_cursor_action_t& typed_action,
-            const std::uint64_t& absolute) -> editor_interaction_result_t {
-    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
-    return interaction_detail::page_edit_cursor(cursor_navigation, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const jump_edit_cursor_action_t& typed_action,
-            const std::uint64_t& absolute) -> editor_interaction_result_t {
-    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
-    return interaction_detail::jump_edit_cursor(cursor_navigation, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const select_bms_canvas_measure_action_t& typed_action,
-            const std::uint64_t& absolute) -> editor_interaction_result_t {
-    interaction_detail::cursor_navigation_context_t cursor_navigation{context, absolute};
-    return interaction_detail::select_bms_canvas_measure(cursor_navigation, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const cycle_edit_snap_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return cycle_editor_snap(context.history, context.state, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const set_edit_snap_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return set_editor_snap(context.history, context.state, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const place_virtual_bms_hold_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return place_virtual_bms_hold(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const place_virtual_bms_tap_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return place_virtual_bms_tap(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const place_tap_action_t& typed_action)
-    -> editor_interaction_result_t {
-    if (context.state.armed_note_kind == note_kind_t::hold ||
-        context.state.armed_note_kind == note_kind_t::roll)
-        return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
-    return place_tap(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const begin_hold_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
-}
-
-auto handle(editor_edit_context_t& context, const update_hold_preview_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return revise_gesture<hold_gesture_t>(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const commit_hold_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
-}
-
-auto handle(editor_edit_context_t& context,
-            const begin_lane_key_hold_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-    if (const auto* holds = context.state.gesture<hold_gesture_t>(); holds && holds->is_keyboard())
-        return revise_gesture<hold_gesture_t>(context, typed_action);
-    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
-}
-
-auto handle(editor_edit_context_t& context,
-            const release_lane_key_hold_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-    if (!context.state.hold()) return editor_interaction_result_t::from(context.history, context.state);
-    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
-}
-
-auto handle(editor_edit_context_t& context,
-            const begin_alt_pointer_hold_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-
-    if (!typed_action.alt_or_option_down) {
-        return diagnostic_result(
-            context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "Alt/Option must be held to begin a pointer hold gesture")});
-    }
-    return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
-}
-
-auto handle(editor_edit_context_t& context,
-            const update_alt_pointer_hold_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-
-    if (!typed_action.pointer_captured) {
-        return cancel_pointer_gesture(context);
-    }
-    if (!typed_action.alt_or_option_down) {
-        return dispatch_editor_action(
-            context.history, context.state,
-            cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
-    }
-    return revise_gesture<hold_gesture_t>(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context,
-            const release_alt_pointer_hold_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-
-    if (!typed_action.pointer_captured) {
-        return cancel_pointer_gesture(context);
-    }
-    if (!typed_action.alt_or_option_down) {
-        return dispatch_editor_action(
-            context.history, context.state,
-            cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
-    }
-    return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
-}
-
-auto handle(editor_edit_context_t& context,
-            const begin_semantic_layer_paint_gesture_action_t& typed_action)
-    -> editor_interaction_result_t {
-
-    return begin_gesture<pending_semantic_layer_paint_gesture_t>(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context,
-            const update_semantic_layer_paint_gesture_action_t& request)
-    -> editor_interaction_result_t {
-    if (!request.pointer_captured) return cancel_pointer_gesture(context);
-    std::optional<editor_selection_object_t> target;
-    if (request.bgm_event)
-        target = editor_selection_object_t{editor_selection_object_kind_t::bgm_event, *request.bgm_event};
-    else if (request.note || request.operation != proposal_operation_t::apply)
-        target = editor_selection_object_t{editor_selection_object_kind_t::note, request.note};
-    if (request.operation == proposal_operation_t::apply)
-        return apply_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
-    return revise_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
-}
-
-
-auto handle(editor_edit_context_t& context, const begin_editor_area_selection_action_t& request)
-    -> editor_interaction_result_t {
-    return begin_gesture<pending_editor_area_selection_t>(context, request);
-}
-
-auto handle(editor_edit_context_t& context, const update_editor_area_selection_action_t& request)
-    -> editor_interaction_result_t {
-    if (!request.pointer_captured) return cancel_pointer_gesture(context);
-    if (request.operation == proposal_operation_t::apply)
-        return apply_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
-    return revise_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
-}
-
-auto handle(editor_edit_context_t&, const cancel_editor_area_selection_action_t&)
-    -> editor_interaction_result_t {
-
-    return {};
-}
-
-auto handle(editor_edit_context_t& context, const space_range_selection_action_t& action)
-    -> editor_interaction_result_t {
-    if (context.state.gesture<pending_space_range_selection_t>())
-        return apply_gesture<pending_space_range_selection_t>(context, editor_gesture_apply_view_policy_t::captured);
-    return begin_gesture<pending_space_range_selection_t>(context, action);
-}
-
-auto handle(editor_edit_context_t&, const cancel_editor_gesture_action_t&)
-    -> editor_interaction_result_t {
-
-    return {};
-}
-
-auto handle(editor_edit_context_t& context, const select_editor_notes_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return select_editor_notes(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const select_editor_objects_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return select_editor_objects(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const delete_editor_selection_action_t&)
-    -> editor_interaction_result_t {
-    return delete_editor_selection(context);
-}
-
-auto handle(editor_edit_context_t& context, const select_editor_lane_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return select_editor_lane(context.history, context.state, context.scope.chart,
-                              context.scope.measures, typed_action.lane);
-}
-
-auto handle(editor_edit_context_t& context,
-            const assign_selected_objects_to_lane_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return assign_selected_objects_to_lane(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const adjust_editor_zoom_action_t& typed_action,
-            const std::uint64_t& absolute) -> editor_interaction_result_t {
-    return adjust_editor_zoom(context.history, context.state, context.scope.chart,
-                              context.scope.measures, absolute, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const scroll_editor_view_action_t& typed_action)
-    -> editor_interaction_result_t {
-    return scroll_editor_view(context, typed_action);
-}
-
-auto handle(editor_edit_context_t& context, const begin_note_duration_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    return begin_gesture<pending_note_duration_gesture_t>(context, action.reference_note);
-}
-
-auto handle(editor_edit_context_t& context, const update_note_duration_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    if (action.operation == proposal_operation_t::apply) {
-        return apply_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
-    }
-    return revise_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
-}
-
-auto handle(editor_edit_context_t& context, const begin_note_move_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    return begin_gesture<pending_note_move_gesture_t>(context, action.reference_note, action.displace_to_bgm);
-}
-
-auto handle(editor_edit_context_t& context, const update_note_move_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    if (action.operation == proposal_operation_t::apply) {
-        return apply_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
-                                         action.to_bgm, action.preferred_bgm_lane,
-                                         action.virtual_bgm_row);
-    }
-    return revise_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
-                                    action.to_bgm, action.preferred_bgm_lane,
-                                    action.virtual_bgm_row);
-}
-
-auto handle(editor_edit_context_t& context, const begin_note_paint_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    return begin_gesture<pending_note_paint_gesture_t>(context, action);
-}
-
-auto handle(editor_edit_context_t& context, const update_note_paint_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    if (!action.pointer_captured) return cancel_pointer_gesture(context);
-    return revise_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
-}
-
-auto handle(editor_edit_context_t& context, const end_note_paint_gesture_action_t& action)
-    -> editor_interaction_result_t {
-    if (!action.pointer_captured) return cancel_pointer_gesture(context);
-    return apply_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
-                                                       action.source_geometry);
-}
-
-struct editor_action_visitor_t {
-    editor_edit_context_t& context;
-    const std::uint64_t& absolute;
-    template <class Action>
-    auto operator()(const Action& action) const -> editor_interaction_result_t {
-        return handle(context, action);
-    }
-    auto operator()(const move_edit_cursor_action_t& action) const -> editor_interaction_result_t {
-        return handle(context, action, absolute);
-    }
-    auto operator()(const page_edit_cursor_action_t& action) const -> editor_interaction_result_t {
-        return handle(context, action, absolute);
-    }
-    auto operator()(const jump_edit_cursor_action_t& action) const -> editor_interaction_result_t {
-        return handle(context, action, absolute);
-    }
-    auto operator()(const select_bms_canvas_measure_action_t& action) const
-        -> editor_interaction_result_t {
-        return handle(context, action, absolute);
-    }
-    auto operator()(const adjust_editor_zoom_action_t& action) const
-        -> editor_interaction_result_t {
-        return handle(context, action, absolute);
-    }
-
+struct editor_action_context_t {
+    editor_edit_context_t edit;
+    std::uint64_t absolute;
 };
 
+// Intentionally incomplete: every action declares its capability beside execution.
+template <class Action> struct editor_action_handler_t;
+
+template <> struct editor_action_handler_t<move_edit_cursor_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& context, const move_edit_cursor_action_t& typed_action)
+        -> editor_interaction_result_t {
+        interaction_detail::cursor_navigation_context_t cursor_navigation{context.edit, context.absolute};
+        return interaction_detail::move_edit_cursor(cursor_navigation, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<page_edit_cursor_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& context, const page_edit_cursor_action_t& typed_action)
+        -> editor_interaction_result_t {
+        interaction_detail::cursor_navigation_context_t cursor_navigation{context.edit, context.absolute};
+        return interaction_detail::page_edit_cursor(cursor_navigation, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<jump_edit_cursor_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& context, const jump_edit_cursor_action_t& typed_action)
+        -> editor_interaction_result_t {
+        interaction_detail::cursor_navigation_context_t cursor_navigation{context.edit, context.absolute};
+        return interaction_detail::jump_edit_cursor(cursor_navigation, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<select_bms_canvas_measure_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& context, const select_bms_canvas_measure_action_t& typed_action)
+        -> editor_interaction_result_t {
+        interaction_detail::cursor_navigation_context_t cursor_navigation{context.edit, context.absolute};
+        return interaction_detail::select_bms_canvas_measure(cursor_navigation, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<cycle_edit_snap_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const cycle_edit_snap_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return cycle_editor_snap(context.history, context.state, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<set_edit_snap_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const set_edit_snap_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return set_editor_snap(context.history, context.state, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<place_virtual_bms_hold_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const place_virtual_bms_hold_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return place_virtual_bms_hold(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<place_virtual_bms_tap_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const place_virtual_bms_tap_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return place_virtual_bms_tap(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<place_tap_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const place_tap_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (context.state.armed_note_kind == note_kind_t::hold ||
+            context.state.armed_note_kind == note_kind_t::roll)
+            return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
+        return place_tap(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_hold_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_hold_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
+    }
+};
+
+template <> struct editor_action_handler_t<update_hold_preview_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_hold_preview_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return revise_gesture<hold_gesture_t>(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<commit_hold_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const commit_hold_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_lane_key_hold_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_lane_key_hold_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (const auto* holds = context.state.gesture<hold_gesture_t>(); holds && holds->is_keyboard())
+            return revise_gesture<hold_gesture_t>(context, typed_action);
+        return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
+    }
+};
+
+template <> struct editor_action_handler_t<release_lane_key_hold_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const release_lane_key_hold_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!context.state.hold()) return editor_interaction_result_t::from(context.history, context.state);
+        return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_alt_pointer_hold_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_alt_pointer_hold_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!typed_action.alt_or_option_down) {
+            return diagnostic_result(
+                context.history, context.state,
+                {error(diagnostic_code_t::invalid_hold,
+                       "Alt/Option must be held to begin a pointer hold gesture")});
+        }
+        return begin_gesture<hold_gesture_t>(context, hold_start_t::from(context.state, typed_action));
+    }
+};
+
+template <> struct editor_action_handler_t<update_alt_pointer_hold_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_alt_pointer_hold_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!typed_action.pointer_captured) {
+            return cancel_pointer_gesture(context);
+        }
+        if (!typed_action.alt_or_option_down) {
+            return dispatch_editor_action(
+                context.history, context.state,
+                cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
+        }
+        return revise_gesture<hold_gesture_t>(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<release_alt_pointer_hold_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const release_alt_pointer_hold_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!typed_action.pointer_captured) {
+            return cancel_pointer_gesture(context);
+        }
+        if (!typed_action.alt_or_option_down) {
+            return dispatch_editor_action(
+                context.history, context.state,
+                cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::modifier_released});
+        }
+        return apply_gesture<hold_gesture_t>(context, editor_gesture_apply_view_policy_t::captured, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_semantic_layer_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_semantic_layer_paint_gesture_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<pending_semantic_layer_paint_gesture_t>(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<update_semantic_layer_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_semantic_layer_paint_gesture_action_t& request)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!request.pointer_captured) return cancel_pointer_gesture(context);
+        std::optional<editor_selection_object_t> target;
+        if (request.bgm_event)
+            target = editor_selection_object_t{editor_selection_object_kind_t::bgm_event, *request.bgm_event};
+        else if (request.note || request.operation != proposal_operation_t::apply)
+            target = editor_selection_object_t{editor_selection_object_kind_t::note, request.note};
+        if (request.operation == proposal_operation_t::apply)
+            return apply_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
+        return revise_gesture<pending_semantic_layer_paint_gesture_t>(context, target);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_editor_area_selection_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_editor_area_selection_action_t& request)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<pending_editor_area_selection_t>(context, request);
+    }
+};
+
+template <> struct editor_action_handler_t<update_editor_area_selection_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const update_editor_area_selection_action_t& request)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!request.pointer_captured) return cancel_pointer_gesture(context);
+        if (request.operation == proposal_operation_t::apply)
+            return apply_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
+        return revise_gesture<pending_editor_area_selection_t>(context, request.x_pixels, request.y_pixels);
+    }
+};
+
+template <> struct editor_action_handler_t<cancel_editor_area_selection_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t&, const cancel_editor_area_selection_action_t&)
+        -> editor_interaction_result_t {
+        return {};
+    }
+};
+
+template <> struct editor_action_handler_t<space_range_selection_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const space_range_selection_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (context.state.gesture<pending_space_range_selection_t>())
+            return apply_gesture<pending_space_range_selection_t>(context, editor_gesture_apply_view_policy_t::captured);
+        return begin_gesture<pending_space_range_selection_t>(context, action);
+    }
+};
+
+template <> struct editor_action_handler_t<cancel_editor_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t&, const cancel_editor_gesture_action_t&)
+        -> editor_interaction_result_t {
+        return {};
+    }
+};
+
+template <> struct editor_action_handler_t<select_editor_notes_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const select_editor_notes_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return select_editor_notes(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<select_editor_objects_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const select_editor_objects_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return select_editor_objects(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<delete_editor_selection_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::selection;
+
+    static auto perform(editor_action_context_t& dispatch, const delete_editor_selection_action_t&)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return delete_editor_selection(context);
+    }
+};
+
+template <> struct editor_action_handler_t<select_editor_lane_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const select_editor_lane_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return select_editor_lane(context.history, context.state, context.scope.chart,
+                                  context.scope.measures, typed_action.lane);
+    }
+};
+
+template <> struct editor_action_handler_t<assign_selected_objects_to_lane_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const assign_selected_objects_to_lane_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return assign_selected_objects_to_lane(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<adjust_editor_zoom_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& context, const adjust_editor_zoom_action_t& typed_action)
+        -> editor_interaction_result_t {
+        return adjust_editor_zoom(context.edit.history, context.edit.state, context.edit.scope.chart,
+                                  context.edit.scope.measures, context.absolute, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<scroll_editor_view_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::allowed;
+
+    static auto perform(editor_action_context_t& dispatch, const scroll_editor_view_action_t& typed_action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return scroll_editor_view(context, typed_action);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_note_duration_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_note_duration_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<pending_note_duration_gesture_t>(context, action.reference_note);
+    }
+};
+
+template <> struct editor_action_handler_t<update_note_duration_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_note_duration_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (action.operation == proposal_operation_t::apply) {
+            return apply_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
+        }
+        return revise_gesture<pending_note_duration_gesture_t>(context, action.reference_end);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_note_move_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_note_move_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<pending_note_move_gesture_t>(context, action.reference_note, action.displace_to_bgm);
+    }
+};
+
+template <> struct editor_action_handler_t<update_note_move_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_note_move_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (action.operation == proposal_operation_t::apply) {
+            return apply_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
+                                             action.to_bgm, action.preferred_bgm_lane,
+                                             action.virtual_bgm_row);
+        }
+        return revise_gesture<pending_note_move_gesture_t>(context, action.reference_position, action.reference_lane,
+                                        action.to_bgm, action.preferred_bgm_lane,
+                                        action.virtual_bgm_row);
+    }
+};
+
+template <> struct editor_action_handler_t<begin_note_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const begin_note_paint_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        return begin_gesture<pending_note_paint_gesture_t>(context, action);
+    }
+};
+
+template <> struct editor_action_handler_t<update_note_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const update_note_paint_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!action.pointer_captured) return cancel_pointer_gesture(context);
+        return revise_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position, std::nullopt);
+    }
+};
+
+template <> struct editor_action_handler_t<end_note_paint_gesture_action_t> {
+    static constexpr auto virtual_cursor = virtual_cursor_policy_t::materialized;
+
+    static auto perform(editor_action_context_t& dispatch, const end_note_paint_gesture_action_t& action)
+        -> editor_interaction_result_t {
+        auto& context = dispatch.edit;
+        if (!action.pointer_captured) return cancel_pointer_gesture(context);
+        return apply_gesture<pending_note_paint_gesture_t>(context, action.lane, action.position,
+                                                           action.source_geometry);
+    }
+};
+
+template <class Action>
+concept editor_action_handler = requires(editor_action_context_t& context, const Action& action) {
+    { editor_action_handler_t<Action>::virtual_cursor } -> std::convertible_to<virtual_cursor_policy_t>;
+    { editor_action_handler_t<Action>::perform(context, action) } -> std::same_as<editor_interaction_result_t>;
+};
+
+template <class... Actions>
+consteval auto has_editor_action_handlers(std::type_identity<std::variant<Actions...>>) -> bool {
+    return (editor_action_handler<Actions> && ...);
+}
+static_assert(has_editor_action_handlers(std::type_identity<editor_interaction_action_t>{}));
+static_assert(!editor_action_handler<std::monostate>);
+
+struct editor_action_dispatch_t {
+    document_history_t& history;
+    editor_interaction_state_t& state;
+
+    template <editor_action_handler Action>
+    auto operator()(const Action& action) const -> editor_interaction_result_t {
+        constexpr auto policy = editor_action_handler_t<Action>::virtual_cursor;
+        const auto can_use_virtual_cursor = policy == virtual_cursor_policy_t::allowed ||
+            (policy == virtual_cursor_policy_t::selection &&
+             (!state.selected_objects.empty() || !state.selected_notes.empty()));
+        if (state.virtual_bms_cursor_row && !can_use_virtual_cursor)
+            return diagnostic_result(history, state,
+                {error(diagnostic_code_t::row_out_of_range,
+                       "this edit requires a materialized cursor measure")});
+        const auto* chart = history.document.find_chart(state.chart);
+        if (chart && !is_note_kind_allowed(*chart, state.armed_note_kind))
+            state.armed_note_kind = note_kind_t::tap;
+        const auto initial_view = make_view(history, state);
+        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&initial_view))
+            return diagnostic_result(history, state, *diagnostics);
+        const auto built_index = build_measure_index(*chart);
+        const auto& index = std::get<measure_index_t>(built_index);
+        editor_action_context_t context{
+            {history, state, {*chart, index},
+             &std::get<editor_interaction_view_model_t>(initial_view), history.document.revision},
+            *state.cursor_canvas_row(index)};
+        return editor_action_handler_t<Action>::perform(context, action);
+    }
+};
 } // namespace
 
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> editor_interaction_result_t {
-    if (auto rejected = validate_virtual_cursor_action(history, state, action))
-        return *rejected;
-    const auto* chart = history.document.find_chart(state.chart);
-    if (chart && !is_note_kind_allowed(*chart, state.armed_note_kind))
-        state.armed_note_kind = note_kind_t::tap;
-    const auto initial_view = make_view(history, state);
-    if (std::holds_alternative<diagnostic_list_t>(initial_view)) {
-        return diagnostic_result(history, state, std::get<diagnostic_list_t>(initial_view));
-    }
-    const auto built_index = build_measure_index(*chart);
-    const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = *state.cursor_canvas_row(index);
-    editor_edit_context_t context{history, state, {*chart, index},
-                                  &std::get<editor_interaction_view_model_t>(initial_view),
-                                  history.document.revision};
-    return std::visit(editor_action_visitor_t{context, absolute}, action);
+    return std::visit(editor_action_dispatch_t{history, state}, action);
 }
 
 namespace {

@@ -7361,3 +7361,73 @@ TEST_CASE("interaction results retain view failures and command effects", "[core
            cancelled.diagnostics.size() == failed.diagnostics.size() &&
            cancelled.diagnostics.front().message == failed.diagnostics.front().message));
 }
+
+TEST_CASE("virtual cursor action capabilities preserve navigation selection and zoom",
+          "[core][interaction][action-capabilities]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    const std::array<editor_interaction_action_t, 8> actions{
+        move_edit_cursor_action_t{}, page_edit_cursor_action_t{},
+        select_bms_canvas_measure_action_t{3}, cycle_edit_snap_action_t{},
+        set_edit_snap_action_t{4}, select_editor_notes_action_t{},
+        select_editor_lane_action_t{lane_id_t{2}}, adjust_editor_zoom_action_t{1.25}};
+    for (const auto& action : actions) {
+        const auto result = dispatch_editor_action(history, state, action);
+        feedback_require(result);
+        feedback_check(result.view.has_value());
+        feedback_check(!(result.document_changed));
+        feedback_check(state.virtual_bms_cursor_row.has_value());
+    }
+    feedback_check(state.active_lane == lane_id_t{2});
+    feedback_check(history.undo.empty());
+    feedback_check(history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("virtual cursor rejects ordinary edits before normalizing kind or building a view",
+          "[core][interaction][action-capabilities]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    state.armed_note_kind = note_kind_t::roll; // Not supported by BMS: view preparation would reset it.
+    state.active_snap_denominator = 0; // A view error must not replace the capability diagnostic.
+    const auto before = write_native_project(history.document);
+    const std::array<editor_interaction_action_t, 3> actions{
+        delete_editor_selection_action_t{}, place_tap_action_t{{measure_id_t{1}, 0}},
+        assign_selected_objects_to_lane_action_t{lane_id_t{2}}};
+    for (const auto& action : actions) {
+        const auto result = dispatch_editor_action(history, state, action);
+        feedback_check(!(result));
+        feedback_require(!(result.diagnostics.empty()));
+        feedback_check(result.diagnostics.front().message == "this edit requires a materialized cursor measure");
+        feedback_check(state.armed_note_kind == note_kind_t::roll);
+    }
+    feedback_check(write_native_project(history.document).value == before.value);
+    feedback_check(history.undo.empty());
+}
+
+TEST_CASE("virtual cursor delete permits either selection representation",
+          "[core][interaction][action-capabilities]") {
+    const auto typed_selection = GENERATE(false, true);
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    song.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}});
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    if (typed_selection)
+        state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    else
+        state.selected_notes = {object_id_t{101}};
+    const auto result = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    feedback_require(result);
+    feedback_check(result.document_changed);
+    feedback_check(note_count(history) == 0);
+    feedback_check(history.undo.size() == 1);
+    feedback_check(state.virtual_bms_cursor_row == 1920);
+}

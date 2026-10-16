@@ -1022,17 +1022,15 @@ template <class Action> auto is_applying_action(const editor_interaction_action_
 
 auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action) -> bool {
-    return std::holds_alternative<commit_hold_action_t>(action) ||
-           std::holds_alternative<place_virtual_bms_hold_action_t>(action) ||
-           std::holds_alternative<release_alt_pointer_hold_gesture_action_t>(action) ||
-           std::holds_alternative<release_lane_key_hold_gesture_action_t>(action) ||
+    return is_gesture_action<commit_hold_action_t, place_virtual_bms_hold_action_t,
+                             release_alt_pointer_hold_gesture_action_t,
+                             release_lane_key_hold_gesture_action_t, end_note_paint_gesture_action_t,
+                             update_semantic_layer_paint_gesture_action_t,
+                             update_editor_area_selection_action_t>(action) ||
            is_applying_action<update_note_duration_gesture_action_t>(action) ||
            is_applying_action<update_note_move_gesture_action_t>(action) ||
-           std::holds_alternative<end_note_paint_gesture_action_t>(action) ||
-           std::holds_alternative<update_semantic_layer_paint_gesture_action_t>(action) ||
-           std::holds_alternative<update_editor_area_selection_action_t>(action) ||
            (state.gesture<wormedit::pending_space_range_selection_t>() &&
-            std::holds_alternative<space_range_selection_action_t>(action));
+            is_gesture_action<space_range_selection_action_t>(action));
 }
 
 auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,

@@ -8,7 +8,7 @@ transaction_ready_guard | 7 | src | if \(!transaction\.is_ready\(\)\)
 gesture_already_active_guard | 1 | src | already active"
 gesture_requires_active_guard | 0 | src | requires an active gesture
 hand_rolled_job_generation | 0 | src,include | next_generation_
-variant_allow_list_probe | 24 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
+variant_allow_list_probe | 0 | src | holds_alternative<[a-z0-9_]+_action_t>\(action\) \|\|
 compatibility_forwarder | 2 | src,include | // Compatibility
 envelope_stamp_unpacked | 0 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
 detail_namespace_reopen | 40 | src | ^using namespace [a-z_]+_detail;

@@ -1185,8 +1185,6 @@ auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
-                                   const editor_interaction_action_t& action) -> bool;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t;
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;
@@ -1203,10 +1201,6 @@ auto select_editor_notes(editor_edit_context_t& context, const select_editor_not
 auto select_editor_lane(document_history_t& history, editor_interaction_state_t& state,
                         const chart_document_t& chart, const measure_index_t& index, lane_id_t lane)
     -> editor_interaction_result_t;
-auto validate_virtual_cursor_action(const document_history_t& history,
-                                    const editor_interaction_state_t& state,
-                                    const editor_interaction_action_t& action)
-    -> std::optional<editor_interaction_result_t>;
 
 // Field/view preparation and the action visitor run after the gesture boundary.
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,

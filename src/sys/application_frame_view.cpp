@@ -126,13 +126,15 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
         WormUiBookmarkChooserRequest bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
+        const auto bookmark_indices = bookmark_chooser_indices_t::from(
+            context.history, context.model, bookmark_request.open, context.compose_scene_cache);
         flattened = frontend_workspace_view_t::from(
             context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
             keysound_request, sound_usage_request, bookmark_request,
-            &context.compose_scene_cache.keysound_list_cache);
+            &context.compose_scene_cache.keysound_list_cache, bookmark_indices);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.metronome_settings().enabled;

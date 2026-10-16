@@ -317,6 +317,7 @@ struct workspace_projection_context_t {
     WormUiSoundUsageRequest sound_usage_request;
     WormUiBookmarkChooserRequest bookmark_chooser_request;
     keysound_list_cache_t* keysound_cache{};
+    bookmark_chooser_indices_t bookmark_indices;
 };
 
 void publish_workspace_summary(frontend_workspace_view_t& result, const char* text) {
@@ -1174,7 +1175,8 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     const auto& request = projection.bookmark_chooser_request;
     if (!request.open) return;
     const auto page_outcome = bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
-                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query);
+                                               std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query,
+                                               projection.bookmark_indices);
     const auto& page = page_outcome ? *page_outcome : page_outcome.error();
     view.total_count = page.total_count;
     view.first_row = page.first_row;
@@ -1495,7 +1497,8 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
                        WormUiKeysoundDockRequest keysound_request,
                        WormUiSoundUsageRequest sound_usage_request,
                        WormUiBookmarkChooserRequest bookmark_chooser_request,
-                       keysound_list_cache_t* keysound_cache) -> frontend_workspace_view_t {
+                       keysound_list_cache_t* keysound_cache,
+                       const bookmark_chooser_indices_t& bookmark_indices) -> frontend_workspace_view_t {
     frontend_workspace_view_t result(arena);
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
@@ -1539,7 +1542,7 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
     const workspace_projection_context_t projection{
         result,        source,           document,           stepmania_policy,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
-        keysound_cache};
+        keysound_cache, bookmark_indices};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
     // Export is project UI and must not depend on building a Compose scene.
     const auto* compose_tab = std::get_if<workspace_compose_view_t>(&source.tab_view);

@@ -56,3 +56,12 @@ wormedit_label_slow_tests(wormedit_frame_timing_tests_TESTS
 wormedit_label_slow_tests(wormedit_frame_projection_arena_tests_TESTS
     "frame-arena.Metadata arena list storage stays bounded through 1000 dense resets"
 )
+
+# frontend-state: preserve regression sizes and matrices; keep these in the full gate.
+wormedit_label_slow_tests(wormedit_frontend_event_harness_tests_TESTS
+    "frontend-state.Bundled CJK fallback covers Japanese Chinese and Hangul before submission"
+    "frontend-state.CJK discovery bounds unsupported invalid and excessive text"
+    "frontend-state.CJK font coverage rejects absent truncated and corrupt directories"
+    "frontend-state.Missing CJK bundle retains usable Latin fallback"
+    "frontend-state.Numeric display font keeps its 28px stable handle through atlas rebakes"
+)

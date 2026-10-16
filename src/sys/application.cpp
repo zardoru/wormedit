@@ -110,6 +110,7 @@
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/task_graph.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -1846,6 +1847,29 @@ void publish_tap_assist_grid(const wormedit::sys::tap_timing_runtime_t& runtime,
     if (session.set_assist_grid(publication.active, publication.grid)) published = publication;
 }
 
+struct tap_meter_cache_key_t {
+    wormedit::document_stamp_t document;
+    wormedit::chart_id_t chart;
+    std::uint64_t fingerprint{};
+    auto operator==(const tap_meter_cache_key_t&) const -> bool = default;
+};
+
+auto build_tap_meter_entries(const wormedit::chart_document_t& chart)
+    -> std::vector<std::pair<std::uint64_t, std::uint32_t>> {
+    std::vector<std::pair<std::uint64_t, std::uint32_t>> entries;
+    std::uint64_t begin{};
+    std::uint32_t beats = 4;
+    for (const auto& measure : chart.measures) {
+        if (measure.definition.meter) beats = measure.definition.meter->numerator;
+        entries.emplace_back(begin, beats);
+        const auto validation = wormedit::measure_capacity_t::from(
+            chart.divisions_per_standard_measure, measure.definition);
+        if (!validation || validation->row_capacity > UINT64_MAX - begin) break;
+        begin += validation->row_capacity;
+    }
+    return entries;
+}
+
 auto tap_meter_at(const wormedit::song_document_t& document,
                   const wormedit::sys::runtime::chart_preview_t& preview,
                   std::uint64_t frame) -> std::uint16_t {
@@ -1856,35 +1880,17 @@ auto tap_meter_at(const wormedit::song_document_t& document,
     const auto position = preview.timing->query_position({static_cast<std::int64_t>(frame), 44'100});
     if (!position) return 4;
     const auto row = position->value.numerator / static_cast<std::int64_t>(position->value.denominator);
-    struct meter_cache_t {
-        std::uint64_t revision{};
-        wormedit::song_id_t project;
-        std::uint64_t fingerprint{};
-        std::optional<wormedit::chart_id_t> chart;
-        std::vector<std::pair<std::uint64_t, std::uint32_t>> entries;
-    };
-    static meter_cache_t cache;
-    if (cache.project != document.id || cache.chart != preview.chart ||
-        cache.revision != document.revision || cache.fingerprint != preview.timing->source_fingerprint) {
-        cache.fingerprint = preview.timing->source_fingerprint;
-        cache.project = document.id;
-        cache.chart = preview.chart;
-        cache.revision = document.revision;
-        cache.entries.clear();
-        std::uint64_t begin{};
-        std::uint32_t beats = 4;
-        for (const auto& measure : chart->measures) {
-            if (measure.definition.meter) beats = measure.definition.meter->numerator;
-            cache.entries.emplace_back(begin, beats);
-            const auto validation = wormedit::measure_capacity_t::from(chart->divisions_per_standard_measure, measure.definition);
-            if (!validation || validation->row_capacity > UINT64_MAX - begin) break;
-            begin += validation->row_capacity;
-        }
-    }
-    const auto found = std::upper_bound(cache.entries.begin(), cache.entries.end(),
+    static wormedit::keyed_cache_t<tap_meter_cache_key_t,
+        std::vector<std::pair<std::uint64_t, std::uint32_t>>> cache;
+    const tap_meter_cache_key_t key{.document = wormedit::document_stamp_t::from(document),
+                                   .chart = *preview.chart,
+                                   .fingerprint = preview.timing->source_fingerprint};
+    const auto& entries = cache.get_or_build(key,
+        std::bind_front(build_tap_meter_entries, std::cref(*chart)));
+    const auto found = std::upper_bound(entries.begin(), entries.end(),
         row < 0 ? 0 : static_cast<std::uint64_t>(row),
         [](std::uint64_t target, const std::pair<std::uint64_t, std::uint32_t>& entry) { return target < entry.first; });
-    const auto beats = found == cache.entries.begin() ? 4 : std::prev(found)->second;
+    const auto beats = found == entries.begin() ? 4 : std::prev(found)->second;
     return beats >= 1 && beats <= 32 ? static_cast<std::uint16_t>(beats) : 4;
 }
 #endif

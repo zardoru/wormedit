@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <string>
+#include <tuple>
 #include <span>
 #include <vector>
 
@@ -20,29 +21,28 @@ struct compare_scene_cache_t {
     }
     wormedit::workspace_binding_validation_cache_t binding_validation;
     wormedit::workspace_bms_branch_outline_cache_t branch_outline;
-    compose_scene_cache_t first_scene;
-    compose_scene_cache_t second_scene;
-    std::optional<wormedit::editor_interaction_state_t> first_state;
-    std::optional<wormedit::editor_interaction_state_t> second_state;
-    wormedit::chart_id_t first_chart;
-    wormedit::chart_id_t second_chart;
-    wormedit::song_id_t song;
-    std::uint64_t revision{};
+    struct panes_t {
+        compose_scene_cache_t first_scene, second_scene;
+        std::optional<wormedit::editor_interaction_state_t> first_state, second_state;
+        void reset();
+    };
+    wormedit::keyed_cache_t<
+        std::tuple<wormedit::document_stamp_t, wormedit::chart_id_t, wormedit::chart_id_t>,
+        panes_t> panes;
     double shared_scroll_measures{};
     double pixels_per_measure{wormedit::default_pixels_per_standard_measure};
     std::vector<std::uint64_t> chart_ids;
     std::vector<std::string> chart_names;
     std::vector<const char*> chart_name_pointers;
-    std::uint64_t diagnostics_revision{};
-    std::uint64_t diagnostics_projection_revision{};
-    wormedit::song_id_t diagnostics_song;
-    wormedit::chart_id_t diagnostics_chart;
-    wormedit::diagnostic_list_t cached_diagnostics;
-    std::vector<std::string> diagnostic_labels;
-    std::vector<const char*> diagnostic_label_pointers;
-    std::vector<std::uint64_t> diagnostic_rows;
-    std::vector<std::uint64_t> diagnostic_measures;
-    std::vector<std::uint8_t> diagnostic_has_rows;
+    struct diagnostic_rows_t {
+        std::vector<std::string> diagnostic_labels;
+        std::vector<const char*> diagnostic_label_pointers;
+        std::vector<std::uint64_t> diagnostic_rows, diagnostic_measures;
+        std::vector<std::uint8_t> diagnostic_has_rows;
+    };
+    wormedit::keyed_cache_t<wormedit::document_stamp_t, wormedit::diagnostic_list_t> diagnostics;
+    wormedit::keyed_cache_t<std::pair<wormedit::chart_id_t, std::uint64_t>,
+                           diagnostic_rows_t> diagnostics_projection;
 };
 
 void cache_compare_diagnostics(compare_scene_cache_t& cache,

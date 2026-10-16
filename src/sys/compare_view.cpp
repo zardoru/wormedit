@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <array>
+#include <functional>
 #include <string>
 #include <tuple>
 #include <vector>
@@ -53,13 +54,20 @@ auto diagnostic_belongs_to_other_chart(const wormedit::song_document_t& document
 
 } // namespace
 
+void compare_scene_cache_t::panes_t::reset() {
+    first_state.reset();
+    second_state.reset();
+    first_scene = {};
+    second_scene = {};
+}
+
 void cache_compare_diagnostics(compare_scene_cache_t& cache,
                                const wormedit::song_document_t& document) {
-    if (cache.diagnostics_song == document.id &&
-        cache.diagnostics_revision == document.revision) return;
-    cache.diagnostics_song = document.id;
-    cache.diagnostics_revision = document.revision;
-    cache.cached_diagnostics = wormedit::validate_document(document);
+    const auto stamp = wormedit::document_stamp_t::from(document);
+    // Preserve the former initially-current all-zero binding.
+    if (!cache.diagnostics.has_value() && stamp == wormedit::document_stamp_t{}) return;
+    static_cast<void>(cache.diagnostics.get_or_build(stamp,
+        std::bind_front(wormedit::validate_document, std::cref(document))));
 }
 
 auto build_workspace_frame_model(compare_scene_cache_t& cache,
@@ -70,28 +78,24 @@ auto build_workspace_frame_model(compare_scene_cache_t& cache,
     cache.bind_project_session(session_generation);
     const bool compare_active = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
     if (compare_active) cache_compare_diagnostics(cache, document);
-    const auto* cached = compare_active ? &cache.cached_diagnostics : nullptr;
+    const auto* cached = compare_active ? &cache.diagnostics.value() : nullptr;
     return wormedit::workspace_view_t::from(workspace, document, workspace.active_tab, cached,
                                          &cache.branch_outline, &cache.binding_validation);
 }
 
 namespace {
 
-void build_diagnostics_view(compare_scene_cache_t& cache,
-                         const wormedit::song_document_t& document,
-                         const wormedit::chart_document_t& chart) {
-    cache_compare_diagnostics(cache, document);
-    if (cache.diagnostics_chart == chart.id &&
-        cache.diagnostics_projection_revision == document.revision) return;
-    cache.diagnostics_chart = chart.id;
-    cache.diagnostics_projection_revision = document.revision;
-    cache.diagnostic_labels.clear();
-    cache.diagnostic_label_pointers.clear();
-    cache.diagnostic_rows.clear();
-    cache.diagnostic_measures.clear();
-    cache.diagnostic_has_rows.clear();
-    for (const auto& diagnostic : cache.cached_diagnostics) {
-        if (cache.diagnostic_labels.size() == 256) break;
+void build_diagnostics_view(compare_scene_cache_t::diagnostic_rows_t& rows,
+                            const wormedit::song_document_t& document,
+                            const wormedit::chart_document_t& chart,
+                            const wormedit::diagnostic_list_t& diagnostics) {
+    rows.diagnostic_labels.clear();
+    rows.diagnostic_label_pointers.clear();
+    rows.diagnostic_rows.clear();
+    rows.diagnostic_measures.clear();
+    rows.diagnostic_has_rows.clear();
+    for (const auto& diagnostic : diagnostics) {
+        if (rows.diagnostic_labels.size() == 256) break;
         auto position = std::optional<wormedit::local_position_t>{};
         if (diagnostic.object) {
             const auto target = diagnostic_position(document, *diagnostic.object);
@@ -101,15 +105,15 @@ void build_diagnostics_view(compare_scene_cache_t& cache,
                 position = target.position;
             }
         }
-        cache.diagnostic_labels.push_back("[" + std::to_string(static_cast<int>(diagnostic.code)) +
+        rows.diagnostic_labels.push_back("[" + std::to_string(static_cast<int>(diagnostic.code)) +
                                           "] " + diagnostic.message);
-        cache.diagnostic_rows.push_back(position ? position->row : 0);
-        cache.diagnostic_measures.push_back(position ? position->measure.value : 0);
-        cache.diagnostic_has_rows.push_back(position.has_value() ? 1 : 0);
+        rows.diagnostic_rows.push_back(position ? position->row : 0);
+        rows.diagnostic_measures.push_back(position ? position->measure.value : 0);
+        rows.diagnostic_has_rows.push_back(position.has_value() ? 1 : 0);
     }
-    cache.diagnostic_label_pointers.reserve(cache.diagnostic_labels.size());
-    for (const auto& label : cache.diagnostic_labels)
-        cache.diagnostic_label_pointers.push_back(label.c_str());
+    rows.diagnostic_label_pointers.reserve(rows.diagnostic_labels.size());
+    for (const auto& label : rows.diagnostic_labels)
+        rows.diagnostic_label_pointers.push_back(label.c_str());
 }
 
 } // namespace
@@ -187,13 +191,22 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
     view.chart_ids = cache.chart_ids.data();
     view.chart_names = cache.chart_name_pointers.data();
     if (first) {
-        build_diagnostics_view(cache, history.document, *first);
-        view.diagnostic_count = cache.diagnostic_labels.size();
-        view.diagnostic_labels = cache.diagnostic_label_pointers.data();
-        view.diagnostic_rows = cache.diagnostic_rows.data();
-        view.diagnostic_measures = cache.diagnostic_measures.data();
-        view.diagnostic_chart_id = cache.diagnostics_chart.value;
-        view.diagnostic_has_rows = cache.diagnostic_has_rows.data();
+        cache_compare_diagnostics(cache, history.document);
+        const auto key = std::pair{first->id, history.document.revision};
+        // Preserve the former initially-current chart/revision zero binding.
+        if (cache.diagnostics_projection.has_value() || key != decltype(key){}) {
+            static_cast<void>(cache.diagnostics_projection.get_or_build(key,
+                [&cache, &history, first](compare_scene_cache_t::diagnostic_rows_t& rows) {
+                    build_diagnostics_view(rows, history.document, *first, cache.diagnostics.value());
+                }));
+        }
+        const auto& rows = cache.diagnostics_projection.value();
+        view.diagnostic_count = rows.diagnostic_labels.size();
+        view.diagnostic_labels = rows.diagnostic_label_pointers.data();
+        view.diagnostic_rows = rows.diagnostic_rows.data();
+        view.diagnostic_measures = rows.diagnostic_measures.data();
+        view.diagnostic_chart_id = first->id.value;
+        view.diagnostic_has_rows = rows.diagnostic_has_rows.data();
     } else {
         view.diagnostic_count = 0;
         view.diagnostic_labels = nullptr;
@@ -209,37 +222,29 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
     const auto compared = wormedit::chart_comparison_t::from(history.document, request);
     const auto first_rows = compare_local_difference_positions(compared.value, first_id);
     const auto second_rows = compare_local_difference_positions(compared.value, second_id);
-    if (cache.first_chart != first_id || cache.second_chart != second_id ||
-        cache.revision != history.document.revision || cache.song != history.document.id) {
-        cache.first_state.reset();
-        cache.second_state.reset();
-        cache.first_scene = {};
-        cache.second_scene = {};
-        cache.first_chart = first_id;
-        cache.second_chart = second_id;
-        cache.revision = history.document.revision;
-        cache.song = history.document.id;
-    }
+    auto& panes = cache.panes.get_or_build(
+        std::tuple{wormedit::document_stamp_t::from(history.document), first_id, second_id},
+        std::mem_fn(&compare_scene_cache_t::panes_t::reset));
     auto first_app = application_state;
     auto second_app = application_state;
-    if (cache.first_state) {
-        wormedit::set_cursor_scale(*cache.first_state, cache.pixels_per_measure);
-        wormedit::set_viewport_scroll_pixels(*cache.first_state,
+    if (panes.first_state) {
+        wormedit::set_cursor_scale(*panes.first_state, cache.pixels_per_measure);
+        wormedit::set_viewport_scroll_pixels(*panes.first_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    build_pane_view(first_pane, history, workspace, first_id, cache.first_scene, cache.first_state,
+    build_pane_view(first_pane, history, workspace, first_id, panes.first_scene, panes.first_state,
                  first_app, window_width, window_height, first_rows);
-    if (cache.first_state) {
-        cache.pixels_per_measure = cache.first_state->pixels_per_standard_measure;
-        cache.shared_scroll_measures = cache.first_state->viewport_scroll_pixels /
+    if (panes.first_state) {
+        cache.pixels_per_measure = panes.first_state->pixels_per_standard_measure;
+        cache.shared_scroll_measures = panes.first_state->viewport_scroll_pixels /
                                        cache.pixels_per_measure;
     }
-    if (cache.second_state) {
-        wormedit::set_cursor_scale(*cache.second_state, cache.pixels_per_measure);
-        wormedit::set_viewport_scroll_pixels(*cache.second_state,
+    if (panes.second_state) {
+        wormedit::set_cursor_scale(*panes.second_state, cache.pixels_per_measure);
+        wormedit::set_viewport_scroll_pixels(*panes.second_state,
             cache.shared_scroll_measures * cache.pixels_per_measure);
     }
-    build_pane_view(second_pane, history, workspace, second_id, cache.second_scene, cache.second_state,
+    build_pane_view(second_pane, history, workspace, second_id, panes.second_scene, panes.second_state,
                  second_app, window_width, window_height, second_rows);
     view.first_pane = &first_pane.view.compose;
     view.second_pane = &second_pane.view.compose;

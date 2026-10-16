@@ -4398,6 +4398,7 @@ TEST_CASE("lane assignment rejects selected and existing collisions atomically",
 
 TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
           "[unit][core][interaction][selection][lane][stress]") {
+    // Slow: exercises acceptance at the fixed 50,000-note interactive lane-assignment limit.
     auto song = make_song();
     auto& chart = song.charts.front();
     chart.divisions_per_standard_measure = 100'000;

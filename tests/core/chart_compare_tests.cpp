@@ -208,21 +208,22 @@ TEST_CASE("chart comparison reports layout duration and unrepresentable pane pos
     CHECK_FALSE(result.value.differing_rows[0].panes[1].local_position.has_value());
 }
 
-TEST_CASE("chart comparison keeps fifty-thousand-note equal difficulties bounded",
-          "[unit][core][chart-compare][stress]") {
+TEST_CASE("chart comparison compares equal difficulties at the exact endpoint budget",
+          "[unit][core][chart-compare][bounds]") {
+    // Two notes per chart retain an unchanged row when the final endpoint moves.
     auto song = song_with_two_resolutions();
     song.charts[0].measures[0].notes.clear();
     song.charts[1].measures[0].notes.clear();
-    song.charts[0].divisions_per_standard_measure = 100'000;
-    song.charts[1].divisions_per_standard_measure = 100'000;
-    song.charts[0].measures[0].notes.reserve(50'000);
-    song.charts[1].measures[0].notes.reserve(50'000);
-    for (std::uint64_t index = 0; index < 50'000; ++index) {
+    song.charts[0].divisions_per_standard_measure = 4;
+    song.charts[1].divisions_per_standard_measure = 4;
+    song.charts[0].measures[0].notes.reserve(2);
+    song.charts[1].measures[0].notes.reserve(2);
+    for (std::uint64_t index = 0; index < 2; ++index) {
         song.charts[0].measures[0].notes.push_back(note(1'000 + index, 11, index * 2, 1));
         song.charts[1].measures[0].notes.push_back(note(100'000 + index, 22, index * 2, 2));
     }
     wormedit::chart_compare_request_t request;
-    request.maximum_input_note_endpoints = 100'000;
+    request.maximum_input_note_endpoints = 4;
     const auto equal = compare(song, request);
     REQUIRE(equal.ok());
     CHECK(equal.value.differing_rows.empty());

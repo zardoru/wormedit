@@ -1854,9 +1854,9 @@ struct tap_meter_cache_key_t {
     auto operator==(const tap_meter_cache_key_t&) const -> bool = default;
 };
 
-auto build_tap_meter_entries(const wormedit::chart_document_t& chart)
-    -> std::vector<std::pair<std::uint64_t, std::uint32_t>> {
-    std::vector<std::pair<std::uint64_t, std::uint32_t>> entries;
+auto build_tap_meter_entries(const wormedit::chart_document_t& chart,
+                             std::vector<std::pair<std::uint64_t, std::uint32_t>>& entries) -> void {
+    entries.clear();
     std::uint64_t begin{};
     std::uint32_t beats = 4;
     for (const auto& measure : chart.measures) {
@@ -1867,7 +1867,6 @@ auto build_tap_meter_entries(const wormedit::chart_document_t& chart)
         if (!validation || validation->row_capacity > UINT64_MAX - begin) break;
         begin += validation->row_capacity;
     }
-    return entries;
 }
 
 auto tap_meter_at(const wormedit::song_document_t& document,

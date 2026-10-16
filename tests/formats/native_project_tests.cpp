@@ -1522,7 +1522,7 @@ auto has_warning_native_codec_outcomes() -> bool {
     const auto raw_parse = std::move(parsed);
     return raw_write.value.has_value() && raw_write.ok() && !raw_parse.value &&
         raw_parse.ok() && raw_write.diagnostics.size() == 1 && raw_parse.diagnostics.size() == 1 &&
-        raw_write.diagnostics.front().message == "warning" && raw_parse.diagnostics.front().path == "$.document";
+        raw_write.diagnostics.front().message == "warning" && raw_parse.diagnostics.front().location == "$.document";
 }
 } // namespace
 TEST_CASE("native-codec outcomes retain warning severity independently of payload presence", "[core][native-project][results]") {

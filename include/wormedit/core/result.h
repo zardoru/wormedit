@@ -3,6 +3,7 @@
 #include <wormedit/core/diagnostic.h>
 
 #include <expected>
+#include <optional>
 #include <string>
 
 namespace wormedit {
@@ -26,5 +27,10 @@ template <class T, class Diagnostics = diagnostic_list_t> struct diagnosed_t {
         return !diagnostic_queries::has_errors(diagnostics);
     }
 };
+
+// Payload presence and diagnostic severity are independent: warnings can accompany
+// an absent value, and errors can retain a partial value for inspection.
+template <class T, class Diagnostics = diagnostic_list_t>
+using attempt_t = diagnosed_t<std::optional<T>, Diagnostics>;
 
 } // namespace wormedit

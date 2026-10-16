@@ -19,8 +19,7 @@ enum class native_project_diagnostic_code_t {
 };
 
 using native_project_diagnostic_t =
-    path_diagnostic_t<native_project_diagnostic_code_t,
-                      native_project_diagnostic_code_t::malformed_json>;
+    format_diagnostic_t<native_project_diagnostic_code_t, std::string>;
 
 struct native_project_limits_t {
     std::size_t maximum_source_bytes{64U * 1024U * 1024U};
@@ -28,9 +27,9 @@ struct native_project_limits_t {
     std::size_t maximum_nesting_depth{128};
 };
 
-using native_project_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<native_project_diagnostic_t>>;
+using native_project_write_outcome_t = attempt_t<std::string, std::vector<native_project_diagnostic_t>>;
 
-using native_project_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<native_project_diagnostic_t>>;
+using native_project_parse_outcome_t = attempt_t<song_document_t, std::vector<native_project_diagnostic_t>>;
 
 // The codec is independent of project packaging and filesystem publication. It
 // emits one deterministic, versioned UTF-8 JSON payload containing the complete

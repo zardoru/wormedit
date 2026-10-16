@@ -17,6 +17,16 @@ enum class diagnostic_severity_t {
     error,
 };
 
+// The optional default preserves each codec's existing default diagnostic code.
+template <class Code, class Location, Code DefaultCode = Code{}> struct format_diagnostic_t {
+    diagnostic_severity_t severity{diagnostic_severity_t::error};
+    Code code{DefaultCode};
+    std::string message;
+    Location location{};
+
+    auto operator==(const format_diagnostic_t&) const -> bool = default;
+};
+
 enum class diagnostic_code_t {
     duplicate_id,
     invalid_id,

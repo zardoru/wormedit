@@ -149,7 +149,9 @@ void append_target_diagnostics(conversion_outcome_t& result,
         if (loss && loss_policy == loss_policy_t::allow)
             severity = diagnostic_severity_t::info;
         std::string path;
-        if constexpr (requires { diagnostic.path; })
+        if constexpr (requires { path = diagnostic.location; })
+            path = diagnostic.location;
+        else if constexpr (requires { diagnostic.path; })
             path = diagnostic.path;
         else if constexpr (requires { diagnostic.field; })
             path = diagnostic.field;

@@ -14,6 +14,40 @@ static_assert(std::is_same_v<result_t<int, int>, std::expected<int, int>>);
 static_assert(std::is_aggregate_v<wormedit::error_t<diagnostic_code_t>>);
 static_assert(std::is_aggregate_v<diagnosed_t<int>>);
 static_assert(std::is_same_v<decltype(diagnosed_t<int>{}.diagnostics), diagnostic_list_t>);
+static_assert(std::is_same_v<attempt_t<int>, diagnosed_t<std::optional<int>>>);
+
+TEST_CASE("attempts keep payload presence independent of severity", "[unit][core][result]") {
+    attempt_t<std::unique_ptr<int>> attempt{};
+    CHECK_FALSE(attempt.value);
+    CHECK(attempt.ok());
+    attempt.diagnostics.push_back({.severity = diagnostic_severity_t::warning});
+    CHECK(attempt.ok());
+    attempt.value = std::make_unique<int>(42);
+    attempt.diagnostics.push_back({.severity = diagnostic_severity_t::error});
+    CHECK_FALSE(attempt.ok());
+    REQUIRE(attempt.value);
+    CHECK(**attempt.value == 42);
+}
+
+TEST_CASE("format diagnostics retain typed locations and codes", "[unit][core][result]") {
+    enum class code_t { malformed, unsupported };
+    struct location_t {
+        std::size_t line{};
+        std::size_t column{};
+        auto operator==(const location_t&) const -> bool = default;
+    };
+    using diagnostic = format_diagnostic_t<code_t, location_t>;
+    static_assert(std::is_aggregate_v<diagnostic>);
+    CHECK(diagnostic{}.severity == diagnostic_severity_t::error);
+    CHECK(diagnostic{}.code == code_t::malformed);
+    using unsupported_diagnostic = format_diagnostic_t<code_t, location_t, code_t::unsupported>;
+    CHECK(unsupported_diagnostic{}.code == code_t::unsupported);
+    const diagnostic warning{diagnostic_severity_t::warning, code_t::unsupported,
+                             "retained warning", {7, 11}};
+    attempt_t<int, std::vector<diagnostic>> attempt{.diagnostics = {warning}};
+    CHECK(attempt.ok());
+    CHECK(attempt.diagnostics.front() == warning);
+}
 
 TEST_CASE("shared expected results preserve values and error messages", "[unit][core][result]") {
     result_t<std::unique_ptr<int>, wormedit::error_t<diagnostic_code_t>> value = std::make_unique<int>(42);

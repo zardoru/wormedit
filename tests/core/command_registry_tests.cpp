@@ -21,7 +21,7 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
         diagnostics, [code](const diagnostic_t& diagnostic) { return diagnostic.code == code; });
 }
 
-void require_command_change(const command_registry_outcome_t& changed) {
+void require_command_change(const dispatch_outcome_t& changed) {
     REQUIRE(changed.value);
     REQUIRE(changed.diagnostics.empty());
 }
@@ -36,7 +36,7 @@ void require_profile_parse(const shortcut_profile_parse_outcome_t& parsed,
 auto make_invoker(std::shared_ptr<std::vector<command_id_t>> calls) -> command_invoker_t {
     return [calls = std::move(calls)](const command_invocation_context_t& context) {
         calls->push_back(context.command);
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     };
 }
 
@@ -74,7 +74,7 @@ auto has_command(const command_registry_t& registry, std::string_view id) -> boo
     return find_command(registry, command_id_t{std::string(id)}) != nullptr;
 }
 
-auto warning_invoker(const command_invocation_context_t&) -> command_invocation_outcome_t {
+auto warning_invoker(const command_invocation_context_t&) -> dispatch_outcome_t {
     return {.value = true, .diagnostics = {{.severity = diagnostic_severity_t::warning,
         .code = diagnostic_code_t::unsupported_feature, .message = "callback warning"}}};
 }
@@ -571,7 +571,7 @@ TEST_CASE("transport shortcuts leave primary Space available for canvas gestures
 
 TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands]") {
     const auto registry = command_registry_t::from(
-        [](const command_invocation_context_t&) { return command_invocation_outcome_t{}; });
+        [](const command_invocation_context_t&) { return dispatch_outcome_t{}; });
     CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::control).empty());
     CHECK(diagnose_shortcut_conflicts(registry, shortcut_primary_modifier_t::meta).empty());
     const auto* slower = find_command(registry, command_id_t{"transport.rate_slower"});
@@ -588,7 +588,7 @@ TEST_CASE("Playback rate shortcuts have no registry conflicts", "[unit][commands
 
 TEST_CASE("Tap timing registry metadata is nonmutating and initially disabled", "[unit][commands]") {
     auto registry = command_registry_t::from([](const command_invocation_context_t&) {
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     });
     const auto* tap = find_command(registry, {"timing.tap"});
     const auto* assistant = find_command(registry, {"timing.tap_assistant"});
@@ -725,7 +725,7 @@ TEST_CASE("Compose palette Alt digits select exactly one tool", "[core][command-
     std::string invoked;
     const auto registry = command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     });
     const std::array ids{"edit.tool_select", "edit.tool_draw", "edit.tool_layer",
         "edit.note_kind_mine", "edit.note_kind_invisible", "edit.note_kind_lift",
@@ -941,7 +941,7 @@ TEST_CASE("Command menu defaults to primary Shift P and respects text focus",
     std::vector<std::string> invoked;
     auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked.push_back(context.command.value);
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     });
     const auto* command = find_command(registry, {"workspace.command_menu"});
     REQUIRE(command);
@@ -1004,7 +1004,7 @@ namespace {
 auto has_warning_profile_effects() -> bool {
     const diagnostic_t warning{.severity = diagnostic_severity_t::warning,
         .code = diagnostic_code_t::duplicate_binding, .message = "conflict"};
-    shortcut_profile_outcome_t applied{.value = true, .diagnostics = {warning}};
+    dispatch_outcome_t applied{.value = true, .diagnostics = {warning}};
     if (!applied.ok()) return false;
     shortcut_profile_parse_outcome_t parsed{.value = shortcut_profile_t{.id = "warning"},
         .diagnostics = {warning}};

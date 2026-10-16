@@ -195,7 +195,7 @@ TEST_CASE("same sound select command has a remappable primary Shift A binding", 
     std::string invoked;
     auto registry = command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     });
     const auto* command = find_command(registry, {"selection.select_same_sound_chart"});
     REQUIRE(command);

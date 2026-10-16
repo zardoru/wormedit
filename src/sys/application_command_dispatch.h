@@ -23,14 +23,14 @@ void reset_application_project_edit_state(application_command_state_t& state);
 
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
-    -> std::optional<wormedit::command_invocation_outcome_t>;
+    -> std::optional<wormedit::dispatch_outcome_t>;
 
 
 auto reject_application_command(
     notification_sink_t& sink, std::string message, notification_severity_t severity,
     notification_source_t source,
     wormedit::diagnostic_code_t code = wormedit::diagnostic_code_t::unsupported_feature)
-    -> wormedit::command_invocation_outcome_t;
+    -> wormedit::dispatch_outcome_t;
 
 
 
@@ -50,6 +50,6 @@ inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,
 // legacy callers; this dispatcher does not classify or repost that prose.
 auto invoke_application_command(application_command_t command,
                                 const command_dispatch_inputs_t& environment)
-    -> wormedit::command_invocation_outcome_t;
+    -> wormedit::dispatch_outcome_t;
 
 } // namespace wormedit::sys

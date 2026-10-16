@@ -15,6 +15,20 @@ static_assert(std::is_aggregate_v<wormedit::error_t<diagnostic_code_t>>);
 static_assert(std::is_aggregate_v<diagnosed_t<int>>);
 static_assert(std::is_same_v<decltype(diagnosed_t<int>{}.diagnostics), diagnostic_list_t>);
 static_assert(std::is_same_v<attempt_t<int>, diagnosed_t<std::optional<int>>>);
+static_assert(std::is_same_v<dispatch_outcome_t, diagnosed_t<bool>>);
+
+TEST_CASE("dispatch acceptance keeps the flag and warning policy explicit", "[unit][core][result]") {
+    dispatch_outcome_t outcome{.value = true};
+    CHECK(outcome.is_accepted(diagnostic_acceptance_policy_t::require_empty));
+    outcome.diagnostics.push_back({.severity = diagnostic_severity_t::warning});
+    CHECK(outcome.is_accepted(diagnostic_acceptance_policy_t::allow_warnings));
+    CHECK_FALSE(outcome.is_accepted(diagnostic_acceptance_policy_t::require_empty));
+    outcome.value = false;
+    CHECK_FALSE(outcome.is_accepted(diagnostic_acceptance_policy_t::allow_warnings));
+    outcome.value = true;
+    outcome.diagnostics.back().severity = diagnostic_severity_t::error;
+    CHECK_FALSE(outcome.is_accepted(diagnostic_acceptance_policy_t::allow_warnings));
+}
 
 TEST_CASE("attempts keep payload presence independent of severity", "[unit][core][result]") {
     attempt_t<std::unique_ptr<int>> attempt{};

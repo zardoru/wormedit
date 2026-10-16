@@ -3633,7 +3633,7 @@ TEST_CASE("Compose Alt tool shortcuts route through the ready command registry",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_outcome_t{.value = true};
+            return wormedit::dispatch_outcome_t{.value = true};
         });
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
@@ -3655,7 +3655,7 @@ TEST_CASE("Unavailable Draw tool readiness rejects the routed shortcut",
           "[frontend-state][event-harness][command-registry][tools]") {
     auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_outcome_t{.value = true};
+            return wormedit::dispatch_outcome_t{.value = true};
         });
     REQUIRE(wormedit::update_command_state(registry, {"edit.tool_draw"}, false,
                                             std::nullopt).value);
@@ -4612,7 +4612,7 @@ TEST_CASE("Backquote shortcuts invoke the registered BGM verbs without legacy in
     std::string invoked;
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         invoked = context.command.value;
-        return wormedit::command_invocation_outcome_t{.value = true};
+        return wormedit::dispatch_outcome_t{.value = true};
     });
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_GRAVE, SDL_SCANCODE_GRAVE);
@@ -4909,7 +4909,7 @@ TEST_CASE("Real Shift Space events route to the selection loop command", "[front
     const auto registry = wormedit::command_registry_t::from([&](const auto& context) {
         ++calls;
         check_layer_menu(context.command == wormedit::command_id_t{"transport.loop_selection"});
-        return wormedit::command_invocation_outcome_t{.value = true};
+        return wormedit::dispatch_outcome_t{.value = true};
     });
     (void)harness.frame();
     const std::array keys{key_event(SDL_EVENT_KEY_DOWN, SDLK_SPACE, SDL_SCANCODE_SPACE)};
@@ -7868,7 +7868,7 @@ TEST_CASE("Production Ctrl Alt A resolves the separate Select All Objects comman
     std::string invoked;
     const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         invoked = context.command.value;
-        return command_invocation_outcome_t{.value = true};
+        return dispatch_outcome_t{.value = true};
     });
     const auto result = route_harness_shortcut(frame.get(), registry);
     expect_t422(result.value.command == command_id_t{"selection.select_all_objects"});

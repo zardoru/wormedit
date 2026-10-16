@@ -65,7 +65,7 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
 
 auto reject_application_command(notification_sink_t& sink, std::string message,
                                 notification_severity_t severity, notification_source_t source,
-                                diagnostic_code_t code) -> command_invocation_outcome_t {
+                                diagnostic_code_t code) -> dispatch_outcome_t {
     return finish_application_command(
         sink, compose_action_outcome_t::from(std::move(message), severity, source, code));
 }
@@ -798,7 +798,7 @@ auto workspace_tab_command(command_context_t& context) -> command_result_t {
     default:
         std::unreachable();
     }
-    auto applied = workspace_action_result_t::from(context.environment.document.workspace,
+    auto applied = apply_workspace_action(context.environment.document.workspace,
                                                    context.environment.document.history.document,
                                                    workspace_switch_tab_action_t{*tab});
     auto outcome = compose_action_outcome_t::from(
@@ -1225,7 +1225,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
 
 auto invoke_application_command(application_command_t command,
                                 const command_dispatch_inputs_t& environment)
-    -> command_invocation_outcome_t {
+    -> dispatch_outcome_t {
     command_context_t context{environment, command};
     const auto route = application_command_route_t::from(command.kind);
     const auto previous_revision = environment.document.history.document.revision;

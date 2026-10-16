@@ -21,7 +21,7 @@ auto registry_for_docks() -> command_registry_t {
         const auto dock = id == "view.open_layers" ? WORM_UI_COMPOSE_DOCK_OPEN_LAYERS
             : id == "semantic_layer.create" ? WORM_UI_COMPOSE_DOCK_CREATE_LAYER
             : WORM_UI_COMPOSE_DOCK_TOGGLE_SOUNDS;
-        return command_invocation_outcome_t{
+        return dispatch_outcome_t{
             .value = worm_ui_frontend_compose_dock_command(dock, 1, 1, 1)};
     });
 }

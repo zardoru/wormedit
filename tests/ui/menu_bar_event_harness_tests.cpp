@@ -63,7 +63,7 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
     const auto registry = wormedit::command_registry_t::from([&](const auto& invocation) {
         check_menu(invocation.command.value == command);
         ++invocations;
-        return wormedit::command_invocation_outcome_t{true, {}};
+        return wormedit::dispatch_outcome_t{true, {}};
     });
     wormedit::sys::build_menu_commands_view(registry, harness.view());
     (void)harness.frame();

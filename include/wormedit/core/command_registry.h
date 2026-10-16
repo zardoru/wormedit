@@ -167,10 +167,8 @@ struct command_invocation_context_t {
     bool auto_repeat{};
 };
 
-using command_invocation_outcome_t = diagnosed_t<bool>;
-
 using command_invoker_t =
-    std::function<command_invocation_outcome_t(const command_invocation_context_t&)>;
+    std::function<dispatch_outcome_t(const command_invocation_context_t&)>;
 
 struct command_definition_t {
     command_id_t id;
@@ -214,19 +212,17 @@ inline constexpr std::size_t maximum_shortcuts_per_command = 8;
 inline constexpr std::size_t maximum_shortcut_profile_bindings = maximum_registered_commands;
 inline constexpr std::size_t maximum_shortcut_profile_bytes = 1024U * 1024U;
 
-using command_registry_outcome_t = diagnosed_t<bool>;
-
 [[nodiscard]] auto register_command(command_registry_t& registry,
                                     command_registration_t registration)
-    -> command_registry_outcome_t;
+    -> dispatch_outcome_t;
 [[nodiscard]] auto find_command(const command_registry_t& registry, const command_id_t& id) noexcept
     -> const command_t*;
 [[nodiscard]] auto update_command_state(command_registry_t& registry, const command_id_t& id,
                                         bool enabled, std::optional<bool> checked)
-    -> command_registry_outcome_t;
+    -> dispatch_outcome_t;
 [[nodiscard]] auto remap_command(command_registry_t& registry, const command_id_t& id,
                                  std::vector<shortcut_chord_t> shortcuts)
-    -> command_registry_outcome_t;
+    -> dispatch_outcome_t;
 
 struct shortcut_profile_binding_t {
     command_id_t command;
@@ -249,11 +245,9 @@ struct shortcut_profile_t {
     auto operator==(const shortcut_profile_t&) const -> bool = default;
 };
 
-using shortcut_profile_outcome_t = diagnosed_t<bool>;
-
 [[nodiscard]] auto apply_shortcut_profile(command_registry_t& registry,
                                           const shortcut_profile_t& profile)
-    -> shortcut_profile_outcome_t;
+    -> dispatch_outcome_t;
 [[nodiscard]] auto diagnose_shortcut_conflicts(
     const command_registry_t& registry,
     shortcut_primary_modifier_t primary_modifier = shortcut_primary_modifier_t::control)

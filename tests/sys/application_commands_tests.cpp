@@ -157,7 +157,7 @@ TEST_CASE("application command parser rejects unknown IDs and malformed slots",
 TEST_CASE("every built-in command ID has a typed representation", "[unit][sys][commands]") {
     const auto registry = wormedit::command_registry_t::from(
         [](const wormedit::command_invocation_context_t&) {
-            return wormedit::command_invocation_outcome_t{};
+            return wormedit::dispatch_outcome_t{};
         });
     for (const auto& command : registry.commands) {
         INFO(command.definition.id.value);
@@ -822,7 +822,7 @@ auto history_unchanged(const wormedit::document_history_t& history, std::uint64_
 }
 
 auto bpm_stage_ready(const TimingInsertFixture& fixture,
-                     const wormedit::command_invocation_outcome_t& result,
+                     const wormedit::dispatch_outcome_t& result,
                      std::uint64_t revision) -> bool {
     return result.value && fixture.preview && bpm_preview_matches(*fixture.preview, fixture.cursor) &&
            history_unchanged(fixture.fixture.history, revision);
@@ -837,7 +837,7 @@ auto confirm_bpm_once(TimingInsertFixture& fixture, std::uint64_t revision) -> b
 }
 
 auto sv_stage_ready(const TimingInsertFixture& fixture,
-                    const wormedit::command_invocation_outcome_t& result,
+                    const wormedit::dispatch_outcome_t& result,
                     std::uint64_t revision) -> bool {
     return result.value && fixture.preview && sv_preview_matches(*fixture.preview, fixture.cursor) &&
            history_unchanged(fixture.fixture.history, revision);
@@ -1519,7 +1519,7 @@ void check_note_kind_command_shortcut(const wormedit::command_registry_t& regist
 TEST_CASE("Note kind commands preserve lane and layer shortcut chords", "[unit][sys][commands]") {
     using namespace wormedit;
     const auto registry = command_registry_t::from(
-        [](const command_invocation_context_t&) { return command_invocation_outcome_t{}; });
+        [](const command_invocation_context_t&) { return dispatch_outcome_t{}; });
     const std::array names{"tap", "hold", "mine", "invisible", "lift", "fake", "roll"};
     const std::array kinds{0U, 1U, 4U, 3U, 5U, 6U, 2U};
     for (std::size_t index = 0; index < names.size(); ++index) {
@@ -2672,7 +2672,7 @@ auto invoke_selection_command(TimingInsertFixture& f, std::string id, bool modal
     using namespace wormedit;
     const auto registry = command_registry_t::from([&](const command_invocation_context_t& context) {
         const auto parsed = parse_application_command(context.command.value);
-        if (!parsed) return command_invocation_outcome_t{};
+        if (!parsed) return dispatch_outcome_t{};
         return f.invoke(parsed->kind);
     });
     return invoke_command(registry, {std::move(id)}, {.modal_active = modal, .workspace_active = true,

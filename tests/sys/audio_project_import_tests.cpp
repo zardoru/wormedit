@@ -83,7 +83,8 @@ auto tagged_audio_creates_selectable_project() -> bool {
         workspace, history.document,
         workspace_select_asset_action_t{.asset = asset_id_t{6},
                                         .slot = wormedit::workspace_asset_slot_t::audio});
-    return selected && workspace.transport.audio_asset == asset_id_t{6};
+    return selected.is_accepted(diagnostic_acceptance_policy_t::require_empty) &&
+           workspace.transport.audio_asset == asset_id_t{6};
 }
 
 TEST_CASE("Tagged audio creates a valid selectable 4K project",

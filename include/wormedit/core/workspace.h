@@ -119,7 +119,6 @@ struct workspace_controller_t {
 };
 
 using workspace_bind_outcome_t = diagnosed_t<std::optional<workspace_controller_t>>;
-using workspace_action_outcome_t = diagnosed_t<bool>;
 
 struct workspace_switch_tab_action_t {
     workspace_tab_t tab{workspace_tab_t::setup};
@@ -164,33 +163,17 @@ using workspace_action_t =
                  workspace_select_clip_action_t, workspace_seek_action_t,
                  workspace_set_playing_action_t, workspace_set_loop_action_t>;
 
-struct workspace_action_result_t {
-    [[nodiscard]] static auto from(workspace_controller_t& workspace, const song_document_t& document,
-        const workspace_action_t& action) -> workspace_action_outcome_t;
-    [[nodiscard]] static auto from(workspace_action_outcome_t&& outcome) -> workspace_action_result_t;
-    [[nodiscard]] static auto rebind(workspace_controller_t& workspace, const song_document_t& document)
-        -> workspace_action_outcome_t;
-    [[nodiscard]] static auto rebind(workspace_controller_t& workspace, const document_history_t& history)
-        -> workspace_action_outcome_t;
-    bool applied{};
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return applied && diagnostics.empty();
-    }
-};
-
 // Actions are rejected atomically unless the bound document identity and
 // revision still match. Rebind after publishing/undoing an
 // edit; matching stable selections and transport context are retained.
 [[nodiscard]] auto
 apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
                        const workspace_action_t& action)
-    -> workspace_action_result_t;
+    -> dispatch_outcome_t;
 [[nodiscard]] auto rebind_workspace(workspace_controller_t& workspace,
-                                    const song_document_t& document) -> workspace_action_result_t;
+                                    const song_document_t& document) -> dispatch_outcome_t;
 [[nodiscard]] auto rebind_workspace(workspace_controller_t& workspace,
-                                    const document_history_t& history) -> workspace_action_result_t;
+                                    const document_history_t& history) -> dispatch_outcome_t;
 
 struct workspace_chart_option_t {
     [[nodiscard]] static auto from(const chart_document_t& chart) -> workspace_chart_option_t;

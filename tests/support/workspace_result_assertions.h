@@ -6,13 +6,13 @@
 
 namespace wormedit::test {
 
-template <class Workspace>
-void check_workspace_rejection(const diagnosed_t<std::optional<Workspace>>& result) {
+template <class Value>
+void check_workspace_rejection(const diagnosed_t<Value>& result) {
     CHECK_FALSE((result.value && result.diagnostics.empty()));
 }
 
-template <class Workspace>
-void require_workspace_result(const diagnosed_t<std::optional<Workspace>>& result) {
+template <class Value>
+void require_workspace_result(const diagnosed_t<Value>& result) {
     REQUIRE(result.diagnostics.empty());
     REQUIRE(result.value);
 }

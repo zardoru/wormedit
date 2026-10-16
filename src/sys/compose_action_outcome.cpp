@@ -185,7 +185,7 @@ void post_compose_mutation_before_failure(const notification_sink_t& feedback,
 }
 
 void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
-                                   workspace_action_result_t&& rebound) {
+                                   dispatch_outcome_t&& rebound) {
     outcome.accepted = false;
     outcome.has_rebind_failed = true;
     outcome.borrowed_message = {};
@@ -219,7 +219,7 @@ auto finish_compose_outcome(const document_edit_inputs_t& document,
         post_compose_outcome(feedback, outcome);
     if (outcome.mutated || outcome.is_workspace_refresh_required) {
         auto rebound = rebind_workspace(document.workspace, document.history);
-        if (!rebound) {
+        if (!rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty)) {
             if (!posted_before_rebind)
                 post_compose_mutation_before_failure(feedback, outcome);
             auto retained_message = outcome.is_message_retained_on_rebind_failure
@@ -259,7 +259,7 @@ auto finish_compose_action(const notification_sink_t& feedback, compose_action_o
 auto finish_application_command(const notification_sink_t& feedback,
                                 compose_action_outcome_t outcome,
                                 const document_edit_inputs_t* document)
-    -> command_invocation_outcome_t {
+    -> dispatch_outcome_t {
     auto finished = document ? finish_compose_action(*document, feedback, std::move(outcome))
                              : finish_compose_action(feedback, std::move(outcome));
     if (finished.has_rebind_failed) {

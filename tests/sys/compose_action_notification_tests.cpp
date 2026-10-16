@@ -1,4 +1,5 @@
 #include "sys/compose_sound_actions.h"
+#include "../support/workspace_result_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
@@ -123,7 +124,7 @@ struct action_notification_fixture_t {
         const auto registry = command_registry_t::from([&](const auto& request) {
             const auto command = parse_application_command(request.command.value);
             return command ? invoke_application_command(*command, history, workspace, interaction,
-                timing, application, sink) : command_invocation_outcome_t{};
+                timing, application, sink) : dispatch_outcome_t{};
         });
         const auto result = invoke_command(registry, {id}, {.workspace_active = true,
             .active_tab = workspace_tab_t::compose, .visible_tabs = {workspace_tab_t::compose}});
@@ -1940,7 +1941,7 @@ TEST_CASE("Lane-less chart fallback relink preserves revision guards and undo",
     fixture.history.document.charts.front().input_profile.bindings.clear();
     fixture.history = document_history_t::from(fixture.history.document);
     std::optional<editor_interaction_state_t> interaction;
-    require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
+    wormedit::test::require_workspace_result(rebind_workspace(fixture.workspace, fixture.history));
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK);
     action.compose_resource_id = 6;
     action.compose_fallback_candidate = 9;
@@ -2595,7 +2596,7 @@ TEST_CASE("Late lane-layout rejection rebinds an already materialized virtual me
     action_notification_fixture_t fixture;
     fixture.history.document.charts.front().source_family = format_family_t::bms;
     fixture.history = document_history_t::from(fixture.history.document);
-    require_action(static_cast<bool>(rebind_workspace(fixture.workspace, fixture.history)));
+    wormedit::test::require_workspace_result(rebind_workspace(fixture.workspace, fixture.history));
     auto action = fixture.action(WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE);
     action.compose_measure_number = 2;
     check_action(fixture.dispatch(action) == "Choose a lane layout profile first.");

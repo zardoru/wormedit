@@ -908,9 +908,9 @@ auto rebind_selection(workspace_controller_t& workspace, const song_document_t& 
     }
 }
 
-auto workspace_action_result_t::rebind(workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_action_outcome_t {
-    workspace_action_outcome_t result{};
+auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& document)
+    -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     if (document.id != workspace.song) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
                   "workspace cannot be rebound to a different song identity");
@@ -929,30 +929,16 @@ auto workspace_action_result_t::rebind(workspace_controller_t& workspace, const 
     return result;
 }
 
-auto workspace_action_result_t::rebind(workspace_controller_t& workspace, const document_history_t& history)
-    -> workspace_action_outcome_t {
-    auto result = workspace_action_result_t::rebind(workspace, history.document);
-    if (result.value && result.diagnostics.empty()) {
+auto rebind_workspace(workspace_controller_t& workspace, const document_history_t& history)
+    -> dispatch_outcome_t {
+    auto result = rebind_workspace(workspace, history.document);
+    if (result.is_accepted(diagnostic_acceptance_policy_t::require_empty)) {
         workspace.history = {.available = true,
                              .undo_depth = history.undo.size(),
                              .redo_depth = history.redo.size(),
                              .dirty = is_document_dirty(history)};
     }
     return result;
-}
-
-auto workspace_action_result_t::from(workspace_action_outcome_t&& outcome) -> workspace_action_result_t {
-    return {.applied = outcome.value, .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto rebind_workspace(workspace_controller_t& workspace, const song_document_t& document)
-    -> workspace_action_result_t {
-    return workspace_action_result_t::from(workspace_action_result_t::rebind(workspace, document));
-}
-
-auto rebind_workspace(workspace_controller_t& workspace, const document_history_t& history)
-    -> workspace_action_result_t {
-    return workspace_action_result_t::from(workspace_action_result_t::rebind(workspace, history));
 }
 
 struct workspace_action_context_t {
@@ -1152,9 +1138,9 @@ struct workspace_action_visitor_t {
     workspace_action_context_t& context;
 };
 
-auto workspace_action_result_t::from(workspace_controller_t& workspace, const song_document_t& document,
-                                     const workspace_action_t& action) -> workspace_action_outcome_t {
-    workspace_action_outcome_t result{};
+auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
+                                     const workspace_action_t& action) -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     const document_stamp_t binding{workspace.song, workspace.document_revision};
     if (!binding.is_current(document)) {
         add_error(result.diagnostics, diagnostic_code_t::invalid_id,
@@ -1172,12 +1158,6 @@ auto workspace_action_result_t::from(workspace_controller_t& workspace, const so
     workspace = std::move(proposal);
     result.value = true;
     return result;
-}
-
-auto apply_workspace_action(workspace_controller_t& workspace, const song_document_t& document,
-                            const workspace_action_t& action)
-    -> workspace_action_result_t {
-    return workspace_action_result_t::from(workspace_action_result_t::from(workspace, document, action));
 }
 
 struct workspace_view_build_context_t {

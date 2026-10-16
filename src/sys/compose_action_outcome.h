@@ -194,7 +194,7 @@ auto finish_compose_action(const document_edit_inputs_t& document,
 auto finish_application_command(const notification_sink_t& feedback,
                                 compose_action_outcome_t outcome,
                                 const document_edit_inputs_t* document = nullptr)
-    -> command_invocation_outcome_t;
+    -> dispatch_outcome_t;
 
 // Transport and navigation outcomes do not mutate documents.
 auto finish_compose_action(const notification_sink_t& feedback, compose_action_outcome_t outcome)

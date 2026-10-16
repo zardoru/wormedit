@@ -70,8 +70,8 @@ auto complete_project_resource_copy(const resource_copy_identity_t& request,
     if (!relinked.diagnostics.empty())
         return {relinked.diagnostics.front().message,
                 to_notification_severity(relinked.diagnostics.front().severity)};
-    if (const auto rebound = workspace_action_result_t::rebind(workspace, history);
-        !rebound.value || !rebound.diagnostics.empty())
+    if (const auto rebound = rebind_workspace(workspace, history);
+        !rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty))
         return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
                 true, notification_source_t::document};
     return {copied.status == project_asset_copy_status_t::reused

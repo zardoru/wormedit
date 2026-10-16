@@ -35,7 +35,7 @@ auto command(std::string id, std::vector<shortcut_chord_t> shortcuts) -> command
                            .default_shortcuts = std::move(shortcuts),
                            .enabled = true,
                            .invoke = [](const command_invocation_context_t&) {
-                               return command_invocation_outcome_t{.value = true};
+                               return dispatch_outcome_t{.value = true};
                            }}};
 }
 

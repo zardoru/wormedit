@@ -498,7 +498,7 @@ TEST_CASE("applying an SV recipe requires rebinding the workspace before its nex
     REQUIRE(apply_sv_recipe_draft(history, *draft.value));
 
     wormedit::test::check_workspace_rejection(workspace_view_t::from(workspace, history.document));
-    REQUIRE(rebind_workspace(workspace, history));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, history));
     const auto next_frame = workspace_view_t::from(workspace, history.document);
     wormedit::test::require_workspace_result(next_frame);
     CHECK(next_frame.value->active_tab == workspace_tab_t::compose);

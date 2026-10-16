@@ -386,8 +386,8 @@ auto add_builtin(command_registry_t& registry, command_invoker_t invoker, std::s
 } // namespace
 
 auto register_command(command_registry_t& registry, command_registration_t registration)
-    -> command_registry_outcome_t {
-    command_registry_outcome_t result{};
+    -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     result.diagnostics = valid_registration(registration);
     if (has_errors(result.diagnostics)) {
         return result;
@@ -418,8 +418,8 @@ auto find_command(const command_registry_t& registry, const command_id_t& id) no
 }
 
 auto update_command_state(command_registry_t& registry, const command_id_t& id, bool enabled,
-                          std::optional<bool> checked) -> command_registry_outcome_t {
-    command_registry_outcome_t result{};
+                          std::optional<bool> checked) -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     const auto found = std::ranges::find(registry.commands, id, command_id_of);
     if (found == registry.commands.end()) {
         result.diagnostics.push_back(
@@ -445,8 +445,8 @@ auto find_shortcut_conflicts(const command_registry_t& registry,
 }
 
 auto remap_command(command_registry_t& registry, const command_id_t& id,
-                   std::vector<shortcut_chord_t> shortcuts) -> command_registry_outcome_t {
-    command_registry_outcome_t result{};
+                   std::vector<shortcut_chord_t> shortcuts) -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     if (!is_valid_chord_list(shortcuts)) {
         result.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
                                            "replacement shortcuts are invalid or exceed the cap"));
@@ -477,8 +477,8 @@ auto shortcut_profile_t::from(const command_registry_t& registry, std::string pr
 }
 
 auto apply_shortcut_profile(command_registry_t& registry, const shortcut_profile_t& profile)
-    -> shortcut_profile_outcome_t {
-    shortcut_profile_outcome_t result{};
+    -> dispatch_outcome_t {
+    dispatch_outcome_t result{};
     result.diagnostics = valid_profile(profile);
     if (has_errors(result.diagnostics)) {
         return result;

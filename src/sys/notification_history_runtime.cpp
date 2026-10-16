@@ -11,10 +11,10 @@
 namespace wormedit::sys {
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
-    -> std::optional<wormedit::command_invocation_outcome_t> {
+    -> std::optional<wormedit::dispatch_outcome_t> {
     if (command.kind != application_command_kind_t::view_notifications) return std::nullopt;
     if (!auto_repeat) (void)runtime.apply({WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0}, center);
-    return wormedit::command_invocation_outcome_t{.value = true};
+    return wormedit::dispatch_outcome_t{.value = true};
 }
 
 namespace {
@@ -190,12 +190,12 @@ auto go_to_notification(const notification_center_t& center, notification_id_t i
     if (!candidate) return "Target cannot be opened";
     auto next_workspace = workspace;
     const auto revision = history.document.revision;
-    auto opened = workspace_action_result_t::from(next_workspace, history.document,
+    auto opened = apply_workspace_action(next_workspace, history.document,
                                 workspace_select_chart_action_t{target.chart});
-    if (opened.value && opened.diagnostics.empty())
-        opened = workspace_action_result_t::from(next_workspace, history.document,
+    if (opened.is_accepted(diagnostic_acceptance_policy_t::require_empty))
+        opened = apply_workspace_action(next_workspace, history.document,
                                 workspace_switch_tab_action_t{workspace_tab_t::compose});
-    if (!opened.value || !opened.diagnostics.empty())
+    if (!opened.is_accepted(diagnostic_acceptance_policy_t::require_empty))
         return "Target cannot be opened";
     if (!dispatch_editor_action(history, *candidate,
                                 jump_edit_cursor_action_t{target.position, revision}))

@@ -47,7 +47,7 @@ auto publish_metadata_edit(document_command_result_t result,
         return {notification_severity_t::info, "No metadata changes."};
     }
     const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound) {
+    if (!rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty)) {
         if (!rebound.diagnostics.empty()) return diagnostic_feedback(rebound.diagnostics.front());
         return {notification_severity_t::error, "Metadata changed, but workspace rebinding failed."};
     }

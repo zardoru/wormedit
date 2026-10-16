@@ -173,15 +173,16 @@ auto has_code(const diagnostic_list_t& diagnostics, diagnostic_code_t code) -> b
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
 }
 
-void check_workspace_stale_feedback(const workspace_action_result_t& result) {
+void check_workspace_stale_feedback(const dispatch_outcome_t& result) {
     REQUIRE(result.diagnostics.size() == 1);
     CHECK(result.diagnostics.front().message == stale_action_message("Workspace action"));
 }
 
 auto apply(workspace_controller_t& workspace, const song_document_t& song,
            const workspace_action_t& action)
-    -> workspace_action_result_t {
-    return apply_workspace_action(workspace, song, action);
+    -> bool {
+    return apply_workspace_action(workspace, song, action)
+        .is_accepted(diagnostic_acceptance_policy_t::require_empty);
 }
 
 } // namespace
@@ -294,13 +295,13 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     changed.revision = 8;
     const auto stale_action = apply_workspace_action(
         workspace, changed, workspace_switch_tab_action_t{workspace_tab_t::compose});
-    CHECK_FALSE(stale_action);
+    wormedit::test::check_workspace_rejection(stale_action);
     check_workspace_stale_feedback(stale_action);
     CHECK(has_code(stale_action.diagnostics, diagnostic_code_t::invalid_id));
     CHECK(workspace.active_tab == workspace_tab_t::setup);
     wormedit::test::check_workspace_rejection(workspace_view_t::from(workspace, changed));
 
-    REQUIRE(rebind_workspace(workspace, changed));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, changed));
     CHECK(workspace.document_revision == 8);
     CHECK(workspace.selected_chart == chart_id_t{2});
     CHECK(workspace.transport.audio_asset == asset_id_t{20});
@@ -314,7 +315,7 @@ TEST_CASE("workspace rejects stale revisions and rebinds stable context atomical
     removed.charts.erase(removed.charts.begin() + 1);
     removed.audio_assets.clear();
     removed.visual_assets.clear();
-    REQUIRE(rebind_workspace(workspace, removed));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, removed));
     CHECK(workspace.selected_chart == chart_id_t{1});
     CHECK_FALSE(workspace.transport.audio_asset.has_value());
     CHECK_FALSE(workspace.selected_visual_asset.has_value());
@@ -335,12 +336,12 @@ TEST_CASE("workspace exposes one shared document-history context across tabs",
     auto proposed = history.document;
     proposed.metadata.title = "Edited title";
     REQUIRE(commit_document_command(history, std::move(proposed), "Edit title"));
-    REQUIRE(rebind_workspace(workspace, history));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, history));
     CHECK(workspace.history.dirty);
     CHECK(workspace.history.undo_depth == 1);
     CHECK(workspace.history.redo_depth == 0);
 
-    REQUIRE(apply_workspace_action(workspace, history.document,
+    wormedit::test::require_workspace_result(apply_workspace_action(workspace, history.document,
                                    workspace_switch_tab_action_t{workspace_tab_t::metadata}));
     const auto metadata = workspace_view_t::from(workspace, history.document);
     wormedit::test::require_workspace_result(metadata);
@@ -434,15 +435,15 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
     auto bound = workspace_controller_t::from(song, {.maximum_focus_region_bytes = 8});
     wormedit::test::require_workspace_result(bound);
     auto& workspace = *bound.value;
-    const auto bad_focus = apply(
+    const auto bad_focus = apply_workspace_action(
         workspace, song,
         workspace_set_focus_action_t{workspace_tab_t::setup, "focus-name-too-long", chart_id_t{1}});
-    CHECK_FALSE(bad_focus);
+    wormedit::test::check_workspace_rejection(bad_focus);
     CHECK(has_code(bad_focus.diagnostics, diagnostic_code_t::invalid_resolution));
     const auto unknown_focus =
-        apply(workspace, song,
+        apply_workspace_action(workspace, song,
               workspace_set_focus_action_t{workspace_tab_t::setup, "chart", chart_id_t{99}});
-    CHECK_FALSE(unknown_focus);
+    wormedit::test::check_workspace_rejection(unknown_focus);
     CHECK(has_code(unknown_focus.diagnostics, diagnostic_code_t::invalid_id));
     const auto zero_chart = apply(workspace, song, workspace_select_chart_action_t{chart_id_t{}});
     CHECK_FALSE(zero_chart);
@@ -465,7 +466,7 @@ TEST_CASE("workspace validates stable identities, focus targets, and resource ca
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{2}, chart_id_t{1}}));
     workspace.comparison_charts = {chart_id_t{1}, chart_id_t{1}};
     wormedit::test::check_workspace_rejection(workspace_view_t::from(workspace, song));
-    REQUIRE(rebind_workspace(workspace, song));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, song));
     CHECK((workspace.comparison_charts == std::vector{chart_id_t{1}, chart_id_t{2}}));
 }
 
@@ -488,8 +489,8 @@ TEST_CASE("storyboard is visible as a disabled placeholder and cannot be activat
     CHECK_FALSE(placeholder_body.placeholder.empty());
 
     const auto rejected =
-        apply(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::storyboard});
-    CHECK_FALSE(rejected);
+        apply_workspace_action(workspace, song, workspace_switch_tab_action_t{workspace_tab_t::storyboard});
+    wormedit::test::check_workspace_rejection(rejected);
     CHECK(has_code(rejected.diagnostics, diagnostic_code_t::unsupported_feature));
     CHECK(workspace.active_tab == workspace_tab_t::setup);
 
@@ -697,7 +698,7 @@ TEST_CASE("BMS branch outline rejects a stale workspace revision and diagnoses s
 
     auto stale_choice_song = song;
     stale_choice_song.charts.front().active_branch_selection.push_back({branch_id_t{9999}, 1});
-    REQUIRE(rebind_workspace(workspace, stale_choice_song));
+    wormedit::test::require_workspace_result(rebind_workspace(workspace, stale_choice_song));
     const auto updated = workspace_view_t::from(workspace, stale_choice_song);
     wormedit::test::require_workspace_result(updated);
     const auto& outline =
@@ -931,9 +932,9 @@ TEST_CASE("workspace adapters preserve strict warning rejection for successful e
     auto binding = workspace_bind_outcome_t{.value = workspace_controller_t{}, .diagnostics = {annotation}};
     REQUIRE(binding.ok());
     wormedit::test::check_workspace_rejection(binding);
-    auto action = workspace_action_outcome_t{.value = true, .diagnostics = {annotation}};
+    auto action = dispatch_outcome_t{.value = true, .diagnostics = {annotation}};
     REQUIRE(action.ok());
-    CHECK_FALSE(workspace_action_result_t::from(std::move(action)));
+    wormedit::test::check_workspace_rejection(action);
     auto view = workspace_view_outcome_t{.value = workspace_view_t{}, .diagnostics = {annotation}};
     REQUIRE(view.ok());
     wormedit::test::check_workspace_rejection(view);

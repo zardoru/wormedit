@@ -1,5 +1,7 @@
 #pragma once
 
+#include "sys/compose_interaction_view.h"
+
 #include <wormedit/core/interaction.h>
 
 #include <variant>
@@ -31,8 +33,7 @@ struct inline_preview_cursor_t {
         if (!state || state->virtual_bms_cursor_row || state->viewport_height_pixels <= 0.0) return;
         const auto chart = history.document.find_chart(state->chart);
         if (chart == nullptr || chart->divisions_per_standard_measure == 0) return;
-        const auto view = inspect_editor_interaction(history, *state);
-        const auto* model = std::get_if<editor_interaction_view_model_t>(&view);
+        const auto model = compose_view_for_state(history, *state);
         if (!model) return;
         const auto y = editor_position_y_pixels(*chart, *model, state->cursor);
         if (!y) return;

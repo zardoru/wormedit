@@ -1,3 +1,4 @@
+#include "sys/compose_interaction_view.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_actions.h"
@@ -947,8 +948,7 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
             "Select requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind != command_kind_t::edit_tool_select &&
-        !std::holds_alternative<wormedit::editor_interaction_view_model_t>(
-            wormedit::inspect_editor_interaction(context.environment.document.history, *state)))
+        !compose_view_for_state(context.environment.document.history, *state))
         return compose_action_outcome_t::from(
             "Draw and Layer require editable chart geometry.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);

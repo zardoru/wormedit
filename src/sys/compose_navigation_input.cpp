@@ -10,16 +10,6 @@ auto compose_result_status(const wormedit::editor_interaction_result_t& result,
                                       : result.diagnostics.front().message;
 }
 
-auto compose_view_for_state(const wormedit::document_history_t& history,
-                            const wormedit::editor_interaction_state_t& state)
-    -> std::optional<wormedit::editor_interaction_view_model_t> {
-    const auto inspected = wormedit::inspect_editor_interaction(history, state);
-    if (const auto* view = std::get_if<wormedit::editor_interaction_view_model_t>(&inspected)) {
-        return *view;
-    }
-    return std::nullopt;
-}
-
 auto compose_navigation_action(WormUiComposeNavigationAction action)
     -> std::optional<wormedit::editor_navigation_action_t> {
     using namespace wormedit;

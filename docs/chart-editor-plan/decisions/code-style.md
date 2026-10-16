@@ -71,6 +71,7 @@ it in new code even before the card lands.
 | `is_` / `has_` / `can_` | yes/no checks (comparators keep `*_less`, `*_equal`) |
 | `scope.x()` | inside a scoped owner (a transaction, a staged editor), the unqualified accessor is that scope's own object: `transaction.document()` is the document of the transaction. Only the exception is qualified (`source_chart(id)` for the committed version) |
 | `owner.<x>_for(key)` | find-or-add accessor |
+| `ui_codec<WormUiX>::from` / `::into` | the C ABI boundary (owner, 2026-10-16): `from(core value…)` builds the ABI struct; `into(abi, …)` turns it into a core value (a result when parsing can fail). One specialization per ABI type, in sys next to its users, like `std::hash`/`std::formatter`: neither the flat C struct nor the core type changes. No `<x>_from_ui`/`<x>_to_ui`/`<x>_from_form` free names. Core-to-core construction stays `T::from` *(T-653)* |
 
 - Names must not lie: `folded_name` must fold; `fold` is reserved for real Unicode case folding
   (ASCII-only lowercasing is `ascii_lowercase`).

@@ -243,3 +243,30 @@ TEST_CASE("A borrowed key is captured before its retained source value is replac
     CHECK(assignments == 1);
     CHECK(calls == 2);
 }
+
+TEST_CASE("A reuse predicate retains partial failure and retries the same key", "[core][keyed-cache]") {
+    using value_t = result_t<int, std::string>;
+    keyed_cache_t<int, value_t> cache;
+    std::size_t calls{};
+    const auto can_reuse = [](const value_t& value) { return value.has_value(); };
+    static_cast<void>(cache.get_or_build(1,
+        counting_builder_t<value_t>{calls, std::unexpected(std::string{"failed"})}, can_reuse));
+    CHECK(cache.has_value());
+    CHECK(cache.value().error() == "failed");
+    CHECK(cache.key() == std::optional<int>{1});
+    CHECK(cache.get_or_build(1, counting_builder_t<value_t>{calls, 23}, can_reuse).value() == 23);
+    CHECK(cache.has_value());
+    CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("Owner updates can invalidate value reuse without changing its key", "[core][keyed-cache]") {
+    using value_t = result_t<int, std::string>;
+    keyed_cache_t<int, value_t> cache;
+    std::size_t calls{};
+    const auto can_reuse = [](const value_t& value) { return value.has_value(); };
+    auto& retained = cache.get_or_build(1, counting_builder_t<value_t>{calls, 23}, can_reuse);
+    retained = std::unexpected(std::string{"expired"});
+    CHECK(cache.get_or_build(1, counting_builder_t<value_t>{calls, 42}, can_reuse).value() == 42);
+    CHECK(cache.build_count() == 2);
+    CHECK(cache.has_value());
+}

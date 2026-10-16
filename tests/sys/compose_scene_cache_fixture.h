@@ -14,4 +14,11 @@ struct retained_scene_fixture_t {
     }
 };
 
+inline void seed_stem_geometry_fixture(stem_index_t& cache, chart_stamp_t stamp,
+                                       std::vector<audio::decoded_source_binding_t> bindings) {
+    auto fingerprint = cache.key() ? cache.key()->timing_fingerprint : 0;
+    static_cast<void>(cache.get_or_build(stem_index_query_t{stamp, bindings, nullptr, fingerprint},
+        [](stem_index_data_t& retained) { retained.is_built = true; }));
+}
+
 } // namespace wormedit::sys

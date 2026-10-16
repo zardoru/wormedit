@@ -156,9 +156,9 @@ auto indexed_stem_lane(const stem_index_t& index, const chart_document_t& chart,
                        const sound_channel_t& channel) -> std::uint64_t {
     const auto* lane = stem_lane_for_channel(chart, channel.id);
     if (!lane) return 0;
-    const auto entry = std::ranges::find(index.channels, channel.id.value,
+    const auto entry = std::ranges::find(index.value().channels, channel.id.value,
                                        &stem_index_channel_t::id);
-    return entry != index.channels.end() && entry->source_lane == lane->id.value
+    return entry != index.value().channels.end() && entry->source_lane == lane->id.value
                ? entry->source_lane : lane->id.value;
 }
 
@@ -301,11 +301,14 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
     std::span<const sound_channel_t* const> visible;
     if (context.visible_stems) visible = *context.visible_stems;
     else {
+        const auto* indices = context.history.document.find_chart(chart.id) == &chart
+            ? context.history.indices(chart.id) : nullptr;
         fallback_visible = indexed_visible_stem_channels(context.cache.stems.stem_index,
             context.history.document, chart, context.interaction_state->cursor.measure,
             stem_window_measures(context.flattened.view.compose.viewport_height_pixels,
                                  context.flattened.view.compose.pixels_per_standard_measure),
-            context.audition_sources.bindings(context.history.document), timing);
+            context.audition_sources.bindings(context.history.document), wormedit::sys::stem_geometry_indices_t{
+                .timing = timing, .measures = indices && indices->measures ? &*indices->measures : nullptr});
         visible = fallback_visible;
     }
     for (const auto* channel : visible) {

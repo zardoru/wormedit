@@ -1451,12 +1451,12 @@ auto prepare_stem_frame(channel_projection_fixture_t& fixture) -> prepared_stem_
     const auto& chart = fixture.history.document.charts.front();
     const auto prepared = indexed_visible_stem_channels(fixture.cache.stems.stem_index,
         fixture.history.document, chart, fixture.interaction.cursor.measure, 0,
-        bindings, &*fixture.cache.timing.marker_timing_index);
+        bindings, wormedit::sys::stem_geometry_indices_t{.timing = &*fixture.cache.timing.marker_timing_index});
     REQUIRE(prepared.size() == 2);
-    CHECK(fixture.cache.stems.stem_index.cursor == measure_id_t{4});
-    CHECK(fixture.cache.stems.stem_index.window == 0);
+    CHECK(fixture.cache.stems.stem_index.value().selection.key()->first == measure_id_t{4});
+    CHECK(fixture.cache.stems.stem_index.value().selection.key()->second == 0);
     return {prepared, {prepared[0]->id, prepared[1]->id},
-            fixture.cache.stems.stem_index.bindings, fixture.cache.stems.stem_index.selection_build_count};
+            fixture.cache.stems.stem_index.key()->bindings, fixture.cache.stems.stem_index.value().selection.build_count()};
 }
 
 auto shorten_prepared_stem_source(channel_projection_fixture_t& fixture,
@@ -1493,11 +1493,11 @@ void check_prepared_stem_channels(const channel_projection_fixture_t& fixture,
 
 void check_prepared_stem_cache(const channel_projection_fixture_t& fixture,
                                const prepared_stem_frame_t& prepared) {
-    CHECK(fixture.cache.stems.stem_index.bindings == prepared.bindings);
-    CHECK(fixture.cache.stems.stem_index.selected.size() == prepared.ids.size());
-    CHECK(fixture.cache.stems.stem_index.cursor == measure_id_t{4});
-    CHECK(fixture.cache.stems.stem_index.window == 0);
-    CHECK(fixture.cache.stems.stem_index.selection_build_count == prepared.selection_build_count);
+    CHECK(fixture.cache.stems.stem_index.key()->bindings == prepared.bindings);
+    CHECK(fixture.cache.stems.stem_index.value().selection.value().size() == prepared.ids.size());
+    CHECK(fixture.cache.stems.stem_index.value().selection.key()->first == measure_id_t{4});
+    CHECK(fixture.cache.stems.stem_index.value().selection.key()->second == 0);
+    CHECK(fixture.cache.stems.stem_index.value().selection.build_count() == prepared.selection_build_count);
 }
 } // namespace
 
@@ -1515,7 +1515,7 @@ TEST_CASE("prepared BMSON stem list stays authoritative across consumers and bin
     const auto& chart = fixture.history.document.charts.front();
     const auto next_frame = indexed_visible_stem_channels(next_frame_index,
         fixture.history.document, chart, fixture.interaction.cursor.measure, 0,
-        changed_bindings, &*fixture.cache.timing.marker_timing_index);
+        changed_bindings, wormedit::sys::stem_geometry_indices_t{.timing = &*fixture.cache.timing.marker_timing_index});
     CHECK(next_frame.empty());
 }
 
@@ -6716,12 +6716,9 @@ TEST_CASE("Lane-key dispatcher uses revision-bound decoded geometry for linked B
     f.application.project.compose_gesture.note_paint_mode_active = true;
     f.project();
     f.interaction->cursor = {measure_id_t{1}, 480};
-    f.cache.stems.stem_index.built = true;
-    f.cache.stems.stem_index.document = f.history.document.id;
-    f.cache.stems.stem_index.chart = f.history.document.charts.front().id;
-    f.cache.stems.stem_index.revision = f.history.document.revision;
-    f.cache.stems.stem_index.bindings = {{.asset = asset, .source_sample_rate = 48000,
-                                    .source_frame_count = 480000}};
+    seed_stem_geometry_fixture(f.cache.stems.stem_index, chart_stamp_t::from(f.history.document, f.history.document.charts.front().id),
+        {{.asset = asset, .source_sample_rate = 48000,
+                                    .source_frame_count = 480000}});
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     auto action = cursor_placement_action(f);
@@ -6991,12 +6988,9 @@ TEST_CASE("Mouse stem entry receives the same decoded source geometry as lane ke
     compose_test_fixture_t fixture{std::move(song)};
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
     fixture.project();
-    fixture.cache.stems.stem_index.built = true;
-    fixture.cache.stems.stem_index.document = fixture.history.document.id;
-    fixture.cache.stems.stem_index.chart = fixture.history.document.charts.front().id;
-    fixture.cache.stems.stem_index.revision = fixture.history.document.revision;
-    fixture.cache.stems.stem_index.bindings = {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
-        .source_frame_count = short_source ? 1000U : 480000U}};
+    seed_stem_geometry_fixture(fixture.cache.stems.stem_index, chart_stamp_t::from(fixture.history.document, fixture.history.document.charts.front().id),
+        {{.asset = asset_id_t{200}, .source_sample_rate = 48000,
+        .source_frame_count = short_source ? 1000U : 480000U}});
     auto action = paint_stroke_inputs(fixture, 100);
     action.compose_inputs[0].paint_intent = 1;
     if (alt) {
@@ -7098,12 +7092,12 @@ TEST_CASE("Compose scene keys invalidate only on document or chart changes", "[u
     expect_compose_test(!cache.is_scene_key_current(document, chart));
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::transport));
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::measure_geometry));
-    cache.stems.stem_index.built = true;
-    cache.stems.stem_index.document = document.id;
-    cache.stems.stem_index.chart = chart.id;
-    cache.stems.stem_index.revision = document.revision;
+    seed_stem_geometry_fixture(cache.stems.stem_index, chart_stamp_t::from(document, chart.id), {});
     expect_compose_test(cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
-    ++cache.stems.stem_index.revision;
+    auto stale_stem_stamp = cache.stems.stem_index.key()->stamp;
+    ++stale_stem_stamp.document.revision;
+    seed_stem_geometry_fixture(cache.stems.stem_index, stale_stem_stamp,
+                               cache.stems.stem_index.key()->bindings);
     expect_compose_test(!cache.is_scene_key_current(document, chart, compose_scene_key_policy_t::stem_geometry));
 }
 

@@ -4,6 +4,7 @@
 #include <wormedit/audio/source_registry.h>
 #include "common/static_interval_index.h"
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/sound_slice.h>
@@ -415,31 +416,45 @@ struct stem_index_channel_t {
     std::vector<std::size_t> event_measures;
     bool conservative{};
 };
-struct stem_index_t {
-    song_id_t document;
-    chart_id_t chart;
-    std::uint64_t revision{};
+struct stem_geometry_indices_t {
+    const timing_index_t* timing{};
+    const measure_index_t* measures{};
+};
+struct stem_index_query_t {
+    chart_stamp_t stamp;
+    std::span<const audio::decoded_source_binding_t> bindings;
+    const timing_index_t* timing;
+    std::uint64_t& built_timing_fingerprint;
+};
+struct stem_index_key_t {
+    chart_stamp_t stamp;
     std::uint64_t timing_fingerprint{};
-    bool built{};
     std::vector<audio::decoded_source_binding_t> bindings;
+    auto operator==(const stem_index_key_t&) const -> bool = default;
+    auto operator==(const stem_index_query_t& query) const -> bool {
+        return stamp == query.stamp && std::ranges::equal(bindings, query.bindings) &&
+               (!query.timing || timing_fingerprint == query.timing->source_fingerprint);
+    }
+    static auto from(const stem_index_query_t& query) -> stem_index_key_t {
+        return {query.stamp, query.built_timing_fingerprint,
+                {query.bindings.begin(), query.bindings.end()}};
+    }
+    void assign(const stem_index_query_t& query) {
+        stamp = query.stamp;
+        timing_fingerprint = query.built_timing_fingerprint;
+        bindings = std::vector<audio::decoded_source_binding_t>{query.bindings.begin(), query.bindings.end()};
+    }
+};
+struct stem_index_data_t {
+    // Failed builds keep their partial products for the existing fallback contract.
+    bool is_built{};
     measure_index_t measures;
     timing_index_t timing;
     std::unordered_map<std::uint64_t, std::size_t> measure_by_id;
     std::vector<stem_index_channel_t> channels;
-    std::optional<measure_id_t> cursor;
-    std::size_t window{};
-    std::vector<std::size_t> selected;
-    std::uint64_t selection_build_count{};
-    bool selection_valid{};
+    keyed_cache_t<std::pair<measure_id_t, std::size_t>, std::vector<std::size_t>> selection;
 };
-
-[[nodiscard]] inline auto stem_index_current(const stem_index_t& index,
-    const song_document_t& document, const chart_document_t& chart,
-    std::span<const audio::decoded_source_binding_t> bindings) -> bool {
-    return index.built && index.document == document.id && index.chart == chart.id && index.revision == document.revision &&
-           index.bindings.size() == bindings.size() &&
-           std::equal(index.bindings.begin(), index.bindings.end(), bindings.begin());
-}
+using stem_index_t = keyed_cache_t<stem_index_key_t, stem_index_data_t>;
 
 inline void stem_add_interval(stem_index_channel_t& channel, double begin, double end) {
     if (end > begin) channel.intervals.push_back({begin, end});
@@ -453,7 +468,7 @@ inline void stem_add_interval(stem_index_channel_t& channel, double begin, doubl
 }
 
 [[nodiscard]] inline auto stem_index_add_event(stem_index_channel_t& result,
-    const sound_channel_event_t& event, const stem_index_t& index, stem_slice_scan_t& scan,
+    const sound_channel_event_t& event, const stem_index_data_t& index, stem_slice_scan_t& scan,
     std::optional<double> duration, double chart_end) -> bool {
     const auto at = index.measure_by_id.find(event.position.measure.value);
     if (at == index.measure_by_id.end()) return false;
@@ -494,8 +509,9 @@ inline void stem_finish_channel_intervals(stem_index_channel_t& result,
 
 inline void stem_build_channel_intervals(stem_index_channel_t& result,
     const song_document_t& document, const sound_channel_t& channel,
-    const stem_index_t& index, double chart_end) {
-    const auto duration = stem_duration_seconds(document, channel, index.bindings);
+    const stem_index_data_t& index, double chart_end,
+    std::span<const audio::decoded_source_binding_t> bindings) {
+    const auto duration = stem_duration_seconds(document, channel, bindings);
     stem_slice_scan_t scan;
     for (const auto& event : channel.events) {
         if (!stem_index_add_event(result, event, index, scan, duration, chart_end)) {
@@ -506,27 +522,27 @@ inline void stem_build_channel_intervals(stem_index_channel_t& result,
     stem_finish_channel_intervals(result, scan, duration, chart_end);
 }
 
-inline void build_stem_index(stem_index_t& index, const song_document_t& document,
+inline void build_stem_index(stem_index_data_t& index, const song_document_t& document,
     const chart_document_t& chart, std::span<const audio::decoded_source_binding_t> bindings,
-    const timing_index_t* cached_timing) {
+    stem_geometry_indices_t indices) {
     index = {};
-    index.document = document.id; index.chart = chart.id; index.revision = document.revision;
-    index.bindings.assign(bindings.begin(), bindings.end());
-    const auto measure_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measure_result)) return;
-    index.measures = std::get<measure_index_t>(measure_result);
+    if (indices.measures) index.measures = *indices.measures;
+    else {
+        const auto built = measure_index_t::from(chart);
+        if (!built) return;
+        index.measures = *built;
+    }
     index.measure_by_id.reserve(chart.measures.size());
     for (std::size_t i = 0; i < chart.measures.size(); ++i) index.measure_by_id.emplace(chart.measures[i].id.value, i);
-    if (cached_timing) index.timing = *cached_timing;
+    if (indices.timing) index.timing = *indices.timing;
     else {
-        auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-        if (!built) return;
-        index.timing = std::move(*built.index);
+        auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+        if (!built.value) return;
+        index.timing = std::move(*built.value);
     }
-    index.timing_fingerprint = index.timing.source_fingerprint;
     const auto chart_end = index.timing.seconds_at_approx(index.measures.total_rows, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     if (!chart_end) return;
-    index.built = true;
+    index.is_built = true;
     index.channels.reserve(std::min(chart.bgm_source_lanes.size(), chart.sound_channels.size()));
     for (std::size_t i = 0; i < chart.sound_channels.size(); ++i) {
         const auto& channel = chart.sound_channels[i];
@@ -534,7 +550,7 @@ inline void build_stem_index(stem_index_t& index, const song_document_t& documen
         if (!lane) continue;
         stem_index_channel_t entry{.id = channel.id.value, .source_lane = lane->id.value,
                                    .chart_position = i};
-        stem_build_channel_intervals(entry, document, channel, index, *chart_end);
+        stem_build_channel_intervals(entry, document, channel, index, *chart_end, bindings);
         index.channels.push_back(std::move(entry));
     }
 }
@@ -548,10 +564,10 @@ inline void build_stem_index(stem_index_t& index, const song_document_t& documen
            (begin && end && stem_intervals_overlap(channel.intervals, *begin, *end));
 }
 
-inline void update_stem_selection(stem_index_t& index, const chart_document_t& chart,
-                                  measure_id_t cursor, std::size_t window) {
-    ++index.selection_build_count;
-    index.selected.clear();
+inline void update_stem_selection(stem_index_data_t& index, const chart_document_t& chart,
+                                  measure_id_t cursor, std::size_t window,
+                                  std::vector<std::size_t>& selected) {
+    selected.clear();
     const auto found = index.measure_by_id.find(cursor.value);
     const auto center = found == index.measure_by_id.end() ? std::size_t{0} : found->second;
     const auto first = center > window ? center - window : 0;
@@ -562,27 +578,31 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto end = index.timing.seconds_at_approx(end_row, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     for (std::size_t i = 0; i < index.channels.size(); ++i)
         if (stem_channel_index_selected(index.channels[i], first, last, begin, end))
-            index.selected.push_back(i);
-    index.cursor = cursor;
-    index.window = window;
-    index.selection_valid = true;
+            selected.push_back(i);
 }
 
 [[nodiscard]] inline auto indexed_visible_stem_channels(stem_index_t& index,
     const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
     std::size_t window, std::span<const audio::decoded_source_binding_t> bindings,
-    const timing_index_t* timing = nullptr) -> std::vector<const sound_channel_t*> {
-    if (!stem_index_current(index, document, chart, bindings) ||
-        (timing && index.timing_fingerprint != timing->source_fingerprint))
-        build_stem_index(index, document, chart, bindings, timing);
-    if (!index.built) return all_stem_channels(chart);
-    if (!index.selection_valid || index.cursor != cursor || index.window != window)
-        update_stem_selection(index, chart, cursor, window);
+    stem_geometry_indices_t indices = {}) -> std::vector<const sound_channel_t*> {
+    std::uint64_t built_timing_fingerprint{};
+    auto& data = index.get_or_build(
+        stem_index_query_t{chart_stamp_t::from(document, chart.id), bindings, indices.timing,
+                           built_timing_fingerprint},
+        [&document, &chart, bindings, indices, &built_timing_fingerprint](stem_index_data_t& retained) {
+            build_stem_index(retained, document, chart, bindings, indices);
+            built_timing_fingerprint = retained.timing.source_fingerprint;
+        }, [](const stem_index_data_t& retained) { return retained.is_built; });
+    if (!data.is_built) return all_stem_channels(chart);
+    const auto& selected = data.selection.get_or_build(std::pair{cursor, window},
+        [&data, &chart, cursor, window](std::vector<std::size_t>& selected) {
+            update_stem_selection(data, chart, cursor, window, selected);
+        });
     std::vector<const sound_channel_t*> result;
-    result.reserve(index.selected.size());
-    for (const auto i : index.selected) {
-        if (i >= index.channels.size()) return all_stem_channels(chart);
-        const auto& entry = index.channels[i];
+    result.reserve(selected.size());
+    for (const auto i : selected) {
+        if (i >= data.channels.size()) return all_stem_channels(chart);
+        const auto& entry = data.channels[i];
         if (entry.chart_position >= chart.sound_channels.size() ||
             chart.sound_channels[entry.chart_position].id.value != entry.id)
             return all_stem_channels(chart);
@@ -597,7 +617,7 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
 [[nodiscard]] inline auto visible_stem_channels(
     const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
     std::size_t window_measures, std::span<const audio::decoded_source_binding_t> bindings = {},
-    const timing_index_t* cached_timing = nullptr) -> std::vector<const sound_channel_t*> {
+    stem_geometry_indices_t indices = {}) -> std::vector<const sound_channel_t*> {
     std::unordered_map<std::uint64_t, std::size_t> index_of;
     index_of.reserve(chart.measures.size());
     for (std::size_t index = 0; index < chart.measures.size(); ++index)
@@ -606,16 +626,22 @@ inline void update_stem_selection(stem_index_t& index, const chart_document_t& c
     const auto center = found == index_of.end() ? std::size_t{0} : found->second;
     const auto first = center > window_measures ? center - window_measures : 0;
     const auto last = std::min(chart.measures.size(), center + window_measures + 1);
-    const auto measure_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measure_result))
-        return all_stem_channels(chart);
-    const auto& measures = std::get<measure_index_t>(measure_result);
+    std::optional<measure_index_t> built_measures;
+    const auto* measure_index = indices.measures;
+    if (!measure_index) {
+        auto built = measure_index_t::from(chart);
+        if (!built) return all_stem_channels(chart);
+        built_measures = std::move(*built);
+        measure_index = &*built_measures;
+    }
+    const auto& measures = *measure_index;
+    const auto* cached_timing = indices.timing;
     std::optional<timing_index_t> built_timing;
     if (!cached_timing) {
-        auto result = build_timing_index(chart, {.allow_bounded_clock = true});
-        if (!result)
+        auto result = timing_index_t::from(chart, {.allow_bounded_clock = true});
+        if (!result.value)
             return all_stem_channels(chart);
-        built_timing = std::move(*result.index);
+        built_timing = std::move(*result.value);
         cached_timing = &*built_timing;
     }
     const auto& clock = *cached_timing;

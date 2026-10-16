@@ -164,8 +164,8 @@ struct compose_scene_cache_t {
         case compose_scene_key_policy_t::projection:
             return scene.index.has_value() && logical_stamp && binding.stamp.document.project == document.id;
         case compose_scene_key_policy_t::stem_geometry:
-            return stems.stem_index.built && stems.stem_index.document == document.id &&
-                stems.stem_index.chart == chart.id && stems.stem_index.revision == document.revision;
+            return stems.stem_index.value().is_built &&
+                stems.stem_index.key()->stamp == wormedit::chart_stamp_t::from(document, chart.id);
         case compose_scene_key_policy_t::measure_geometry:
             return logical_stamp;
         case compose_scene_key_policy_t::paint_occupancy:

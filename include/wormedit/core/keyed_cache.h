@@ -13,12 +13,18 @@ namespace wormedit {
 // the retained storage only on a miss, allowing capacity reuse or early release.
 // A bound lookup permits owner updates; value() remains read-only inspection.
 // Nullary builds capture borrowed keys before replacing the retained value.
+// An optional predicate controls reuse of a key-equal entry. Failures and
+// partial products remain stored, and later lookups may choose to rebuild them.
 template <class Key, class Value>
 class keyed_cache_t {
   public:
-    template <class Lookup, class Builder>
-    [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder) -> Value& {
-        if (valid_ && *key_ == key) return value_;
+    template <class Lookup, class Builder, class CanReuse = std::nullptr_t>
+    [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder,
+                                    CanReuse&& can_reuse = nullptr) -> Value& {
+        if (valid_ && *key_ == key) {
+            if constexpr (std::is_same_v<std::remove_cvref_t<CanReuse>, std::nullptr_t>) return value_;
+            else if (can_reuse(value_)) return value_;
+        }
         if constexpr (std::is_invocable_v<Builder>) {
             auto value = std::forward<Builder>(builder)();
             assign_key(key);

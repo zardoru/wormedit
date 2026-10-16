@@ -1040,12 +1040,9 @@ void prepare_t463_stem(bga_input_fixture_t& fixture) {
     static_cast<void>(fixture.cache.scene.index.get_or_build(compose_scene_source_key_t{
         .document_identity = &fixture.history.document, .chart_identity = &chart},
         retained_scene_fixture_t{}));
-    fixture.cache.stems.stem_index.built = true;
-    fixture.cache.stems.stem_index.document = fixture.history.document.id;
-    fixture.cache.stems.stem_index.chart = chart.id;
-    fixture.cache.stems.stem_index.revision = fixture.history.document.revision;
-    fixture.cache.stems.stem_index.bindings = {{.asset = asset_id_t{81}, .source_sample_rate = 44'100,
-        .source_frame_count = 44'100, .output_sample_rate = 44'100, .output_frame_count = 44'100}};
+    seed_stem_geometry_fixture(fixture.cache.stems.stem_index, chart_stamp_t::from(fixture.history.document, chart.id),
+        {{.asset = asset_id_t{81}, .source_sample_rate = 44'100,
+        .source_frame_count = 44'100, .output_sample_rate = 44'100, .output_frame_count = 44'100}});
 }
 void check_t463_point(uint64_t row, bool shift, bool expected_restart, bool empty = false) {
     bga_input_fixture_t fixture;
@@ -1080,7 +1077,10 @@ TEST_CASE("BMSON Draw rejects stale geometry and stem sources on packed columns 
     prepare_t463_stem(fixture);
     auto input = draw_bga_input(fixture, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE, 240);
     input.compose_inputs[0].lane_id = 84;
-    fixture.cache.stems.stem_index.revision = 0;
+    auto stale_stem_stamp = fixture.cache.stems.stem_index.key()->stamp;
+    stale_stem_stamp.document.revision = 0;
+    seed_stem_geometry_fixture(fixture.cache.stems.stem_index, stale_stem_stamp,
+                               fixture.cache.stems.stem_index.key()->bindings);
     const auto revision = fixture.history.document.revision;
     (void)fixture.dispatch_input(input);
     check_action(fixture.history.document.revision == revision);

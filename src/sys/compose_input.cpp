@@ -523,9 +523,9 @@ auto retained_bmson_source_geometry(const wormedit::document_history_t& history,
     wormedit::asset_id_t asset) -> std::optional<wormedit::bmson_source_geometry_t> {
     const auto& index = cache.stems.stem_index;
     if (!cache.is_scene_key_current(history.document, chart, compose_scene_key_policy_t::stem_geometry)) return std::nullopt;
-    const auto binding = std::ranges::find(index.bindings, asset,
+    const auto binding = std::ranges::find(index.key()->bindings, asset,
         &wormedit::audio::decoded_source_binding_t::asset);
-    if (binding == index.bindings.end() || !binding->source_sample_rate || !binding->source_frame_count)
+    if (binding == index.key()->bindings.end() || !binding->source_sample_rate || !binding->source_frame_count)
         return std::nullopt;
     return wormedit::bmson_source_geometry_t{asset, binding->source_sample_rate, *binding->source_frame_count};
 }

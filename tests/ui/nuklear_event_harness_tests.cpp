@@ -1,3 +1,4 @@
+#include "../sys/compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "../sys/compose_area_dispatch_fixture.h"
 #include "nuklear_event_harness.h"
@@ -7058,19 +7059,16 @@ TEST_CASE("Production click-click stem holds retain decoded geometry through rel
     auto& ui = worm_ui_nuklear_compose_state();
     ui.resource_picker.armed_resource_id = 1;
     ui.keysound_catalog.armed_from_sounds_dock = true;
-    f.cache.stems.stem_index.built = true;
-    f.cache.stems.stem_index.document = f.history.document.id;
-    f.cache.stems.stem_index.chart = chart_id_t{1};
-    f.cache.stems.stem_index.revision = f.history.document.revision;
-    f.cache.stems.stem_index.bindings = {{.asset = asset_id_t{1}, .source_sample_rate = 48000,
-        .source_frame_count = short_source ? 1000U : 480000U}};
+    seed_stem_geometry_fixture(f.cache.stems.stem_index, chart_stamp_t::from(f.history.document, chart_id_t{1}),
+        {{.asset = asset_id_t{1}, .source_sample_rate = 48000,
+        .source_frame_count = short_source ? 1000U : 480000U}});
     const auto start = placement_point(f, 240, 2);
     for (const auto& frame : click_at(f.harness, start.first, start.second))
         (void)f.dispatch(frame);
     expect_t422(f.interaction->pending_hold.has_value());
     expect_t422(f.interaction->pending_hold->source_geometry != nullptr);
     f.project();
-    f.cache.stems.stem_index.bindings.clear();
+    seed_stem_geometry_fixture(f.cache.stems.stem_index, f.cache.stems.stem_index.key()->stamp, {});
     const auto end = placement_point(f, 480, 2);
     for (const auto& frame : click_at(f.harness, end.first, end.second))
         (void)f.dispatch(frame);

@@ -128,7 +128,7 @@ TEST_CASE("a continuation consumes the remaining audio from its restart",
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
     const auto near_end =
-        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, &*timing.index);
+        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, wormedit::sys::stem_geometry_indices_t{.timing = &*timing.index});
     CHECK(near_end.size() == 2);
     // The first stem ends near measure 81; the second restart remains active at measure 85.
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{85}, 0).size() == 1);
@@ -188,17 +188,17 @@ void check_generated_windows(sys::stem_index_t& index, const song_document_t& so
 void check_selection_reuse(sys::stem_index_t& index, const song_document_t& song,
     const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
-    const auto built_at_warp = index.selection_build_count;
+    const auto built_at_warp = index.value().selection.build_count();
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
-    CHECK(index.selection_build_count == built_at_warp);
+    CHECK(index.value().selection.build_count() == built_at_warp);
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{11}, 0, bindings));
-    CHECK(index.selection_build_count == built_at_warp + 1);
+    CHECK(index.value().selection.build_count() == built_at_warp + 1);
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings));
-    const auto cached_selection = index.selected;
-    const auto build_count = index.selection_build_count;
+    const auto cached_selection = index.value().selection.value();
+    const auto build_count = index.value().selection.build_count();
     const auto same_window = sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings);
-    CHECK(index.selected == cached_selection);
-    CHECK(index.selection_build_count == build_count);
+    CHECK(index.value().selection.value() == cached_selection);
+    CHECK(index.value().selection.build_count() == build_count);
     CHECK(same_window.size() == cached_selection.size());
 
 }
@@ -207,18 +207,18 @@ void check_binding_refresh(sys::stem_index_t& index, const song_document_t& song
     const chart_document_t& chart, std::vector<audio::decoded_source_binding_t>& bindings) {
     bindings.front().source_frame_count = 44'100;
     expect_index_matches_reference(index, song, chart, measure_id_t{32}, 3, bindings);
-    CHECK(index.bindings == bindings);
-    CHECK(index.channels[0].source_lane == 9101);
-    CHECK(index.channels[1].source_lane == 9100);
+    CHECK(index.key()->bindings == bindings);
+    CHECK(index.value().channels[0].source_lane == 9101);
+    CHECK(index.value().channels[1].source_lane == 9100);
 }
 
 void check_revision_and_document_invalidation(sys::stem_index_t& index, song_document_t& song,
     const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
-    const auto short_selection_size = index.selected.size();
+    const auto short_selection_size = index.value().selection.value().size();
     ++song.revision;
     const auto revision_result = sys::indexed_visible_stem_channels(index, song, chart,
         measure_id_t{32}, 3, bindings);
-    CHECK(index.revision == song.revision);
+    CHECK(index.key()->stamp.document.revision == song.revision);
     CHECK(revision_result.size() == short_selection_size);
 
     song_document_t replacement;
@@ -237,7 +237,7 @@ void check_revision_and_document_invalidation(sys::stem_index_t& index, song_doc
         replacement_chart, measure_id_t{1}, 0, {});
     REQUIRE(result.size() == 1);
     CHECK(result.front()->id == object_id_t{3000});
-    CHECK(index.document == replacement.id);
+    CHECK(index.key()->stamp.document.project == replacement.id);
 }
 
 void expand_stem_benchmark_chart(chart_document_t& chart) {
@@ -315,7 +315,7 @@ TEST_CASE("indexed stem lane uses its explicit link despite marker encounter ord
     sys::stem_index_t index;
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart,
         measure_id_t{1}, 0, bindings));
-    CHECK(index.channels[0].source_lane == 9102);
+    CHECK(index.value().channels[0].source_lane == 9102);
 }
 
 TEST_CASE("expired continuation events do not make a stem visible again",
@@ -405,10 +405,10 @@ void check_mixed_stem_ids(const std::vector<const sound_channel_t*>& channels) {
 }
 
 void check_filtered_index_positions(const sys::stem_index_t& index) {
-    REQUIRE(index.channels.size() == 3);
-    CHECK(index.channels[0].chart_position == 1);
-    CHECK(index.channels[1].chart_position == 500);
-    CHECK(index.channels[2].chart_position == 1001);
+    REQUIRE(index.value().channels.size() == 3);
+    CHECK(index.value().channels[0].chart_position == 1);
+    CHECK(index.value().channels[1].chart_position == 500);
+    CHECK(index.value().channels[2].chart_position == 1001);
 }
 } // namespace
 

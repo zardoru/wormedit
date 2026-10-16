@@ -71,7 +71,7 @@ void process_object_request(const editor_object_audition_request_t& request,
         }
         pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
         const auto started = inputs.audition.output.start(prepared.prepared->clips);
-        post_audition_started(inputs.notifications, static_cast<bool>(started), started.message,
+        post_audition_started(inputs.notifications, static_cast<bool>(started), started.message(),
                               "Audio preview started.", "Audio preview could not start.");
     } else if (!prepared.diagnostics.empty() &&
                prepared.diagnostics.front().code ==
@@ -105,7 +105,7 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
     if (resolved) {
         pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
         const auto started = inputs.audition.output.start(resolved.clips);
-        post_audition_started(inputs.notifications, static_cast<bool>(started), started.message,
+        post_audition_started(inputs.notifications, static_cast<bool>(started), started.message(),
                               "Staged BMSON region audition started.",
                               "Staged BMSON region audition could not start.");
     } else if (!resolved.diagnostics.empty()) {
@@ -152,7 +152,7 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
     }
     pause_preview(inputs.preview.session, inputs.preview.output, inputs.preview.state);
     const auto started = inputs.audition.output.start(clips);
-    post_audition_started(inputs.notifications, static_cast<bool>(started), started.message,
+    post_audition_started(inputs.notifications, static_cast<bool>(started), started.message(),
                           "Audio preview started.", "Audio preview could not start.");
 }
 

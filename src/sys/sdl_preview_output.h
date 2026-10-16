@@ -128,7 +128,7 @@ class sdl_preview_output_t {
     bool refill_enabled_{};
     std::optional<audio::preview_session_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
-    std::atomic<sdl_callback_failure_t> callback_failure_{sdl_callback_failure_t::none};
+    std::atomic<sdl_callback_failure_t> callback_failure_{std::nullopt};
     std::atomic<std::uint64_t> silenced_voices_{};
     std::atomic<std::uint64_t> silenced_music_voices_{};
     std::atomic<bool> rate_unavailable_{};

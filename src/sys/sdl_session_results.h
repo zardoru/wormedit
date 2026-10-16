@@ -1,51 +1,50 @@
 #pragma once
 #include <wormedit/core/result.h>
 
+#include <atomic>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <type_traits>
 #include <variant>
 
 namespace wormedit::sys {
 
-enum class sdl_callback_failure_t {
-    none,
-    render,
-    device,
-};
-
-enum class sdl_session_start_status_t {
-    started,
-    unavailable,
-    session_failed,
-    device_failed,
-};
+using sdl_callback_failure_t = std::optional<failure_code_t>;
+static_assert(std::is_trivially_copyable_v<sdl_callback_failure_t>);
+static_assert(std::atomic<sdl_callback_failure_t>::is_always_lock_free);
 
 template <class Session> struct sdl_session_start_result_t {
-    sdl_session_start_status_t status{sdl_session_start_status_t::unavailable};
+    std::optional<error_t<failure_code_t>> error{error_t{failure_code_t::unavailable, {}}};
     std::optional<Session> session;
-    std::string message;
+
     [[nodiscard]] explicit operator bool() const noexcept {
-        return status == sdl_session_start_status_t::started;
+        return !error;
+    }
+    [[nodiscard]] auto has_failure(failure_code_t code) const noexcept -> bool {
+        return error && error->code == code;
+    }
+    [[nodiscard]] auto message() const noexcept -> std::string_view {
+        return error ? std::string_view{error->message} : std::string_view{};
     }
 };
 
-enum class sdl_session_service_status_t {
-    ready,
-    pump_failed,
-    render_failed,
-    device_failed,
-};
-
 template <class Pump, class Telemetry = std::monostate> struct sdl_session_service_result_t {
-    sdl_session_service_status_t status{sdl_session_service_status_t::ready};
+    std::optional<failure_code_t> failure;
     std::optional<Pump> pump;
     [[no_unique_address]] Telemetry telemetry{};
+
+    [[nodiscard]] auto is_ready() const noexcept -> bool {
+        return !failure;
+    }
+    [[nodiscard]] auto has_failure(failure_code_t code) const noexcept -> bool {
+        return failure == code;
+    }
 };
 
 // Temporary: removed by T-633.
 template <class Pump, class Telemetry = std::monostate>
-using sdl_session_service_outcome_t =
-    result_t<sdl_session_service_result_t<Pump, Telemetry>,
-             sdl_session_service_result_t<Pump, Telemetry>>;
+using sdl_session_service_outcome_t = result_t<sdl_session_service_result_t<Pump, Telemetry>,
+                                               sdl_session_service_result_t<Pump, Telemetry>>;
 
 } // namespace wormedit::sys

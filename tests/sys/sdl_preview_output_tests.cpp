@@ -780,8 +780,8 @@ void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std:
     using namespace wormedit::audio;
     const auto sought = output.seek((seek % 4) * 4096);
     const auto& sought_data = sought ? *sought : sought.error();
-    INFO("seek iteration " << seek << " status " << static_cast<int>(sought_data.status)
-         << " message " << sought_data.message);
+    INFO("seek iteration " << seek << " status " << (sought_data.error ? static_cast<int>(sought_data.error->code) : -1)
+         << " message " << sought_data.message());
     const auto* detail = sought_data.session
         ? (*sought_data.session ? &sought_data.session->value().detail : &sought_data.session->error().detail)
         : nullptr;
@@ -864,7 +864,7 @@ void exercise_pending_refill_failure() {
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && !*failed && failed->error().status == sys::sdl_session_service_status_t::pump_failed);
+    expect_pitch(failed && !*failed && failed->error().has_failure(failure_code_t::pump_failed));
     expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }

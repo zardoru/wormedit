@@ -66,7 +66,7 @@ class sdl_audition_output_t {
     bool refill_enabled_{};
     std::optional<audio::audition_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
-    std::atomic<sdl_callback_failure_t> callback_failure_{sdl_callback_failure_t::none};
+    std::atomic<sdl_callback_failure_t> callback_failure_{std::nullopt};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };
 

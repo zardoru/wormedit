@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/keyed_cache.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -63,7 +64,8 @@ struct quantize_preview_t {
 
 [[nodiscard]] auto preview_quantize_selection(const chart_document_t& chart,
                                               const std::vector<object_id_t>& selected,
-                                              quantize_request_t request) -> quantize_preview_t;
+                                              quantize_request_t request,
+                                              const measure_index_t* measures = nullptr) -> quantize_preview_t;
 
 // Recomputes when chart source identity, revision, selection or request settings change.
 // The caller retains the chart and advances revision for mutations.
@@ -74,15 +76,30 @@ public:
                            std::uint64_t snap_denominator) -> const quantize_preview_t&;
     [[nodiscard]] auto get(const chart_document_t& chart, std::uint64_t revision,
                            const std::vector<object_id_t>& selected,
-                           const quantize_request_t& request) -> const quantize_preview_t&;
+                           const quantize_request_t& request,
+                           const measure_index_t* measures = nullptr) -> const quantize_preview_t&;
 
 private:
-    const chart_document_t* source_{};
-    chart_id_t chart_{};
-    std::uint64_t revision_{};
-    quantize_request_t request_;
-    std::vector<object_id_t> selected_;
-    std::optional<quantize_preview_t> value_;
+    struct query_t {
+        const chart_document_t* source;
+        chart_id_t chart;
+        std::uint64_t revision;
+        const std::vector<object_id_t>& selected;
+        const quantize_request_t& request;
+    };
+    struct key_t {
+        const chart_document_t* source{};
+        chart_id_t chart;
+        std::uint64_t revision{};
+        std::vector<object_id_t> selected;
+        quantize_request_t request;
+
+        static auto from(const query_t& query) -> key_t;
+        void assign(const query_t& query);
+        auto operator==(const query_t& query) const -> bool;
+        auto operator==(const key_t& key) const -> bool;
+    };
+    keyed_cache_t<key_t, quantize_preview_t> value_;
 };
 
 } // namespace wormedit::sys

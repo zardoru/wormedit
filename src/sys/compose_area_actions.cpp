@@ -41,7 +41,7 @@ auto apply_compose_quantize_selection(document_history_t& history,
     if (!request)
         return compose_action_outcome_t::blocked("Selection quantization has invalid settings.");
     request->selection = editor_quantize_selection(state);
-    auto report = preview_quantize_selection(*chart, request->selection->notes, *request);
+    auto report = preview_quantize_selection(*chart, request->selection->notes, *request, &*geometry);
     auto result = apply_quantize_command(history, state.chart, *request);
     if (!result.command.applied)
         return result.command.diagnostics.empty()

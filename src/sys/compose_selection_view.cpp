@@ -261,7 +261,8 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
         return;
     }
     const auto& preview =
-        cache.quantize.quantize_preview.get(chart, revision, request.selection->notes, request);
+        cache.quantize.quantize_preview.get(chart, revision, request.selection->notes, request,
+                                           cache.scene.cached_measure_index.get());
     view.quantize_source_resolution = preview.source_resolution;
     view.quantize_display_resolution = preview.display_resolution;
     view.quantize_resolution_scale = preview.resolution_scale;

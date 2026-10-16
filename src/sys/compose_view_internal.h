@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/keyed_cache.h>
 #include "sys/compose_area_actions.h"
 #include "sys/compose_draw_source_view.h"
 #include "sys/compose_note_to_bgm.h"
@@ -102,11 +103,8 @@ auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
                                         wormedit::editor_mode_family_t mode)
     -> const std::vector<wormedit::lane_input_profile_t>&;
 
-struct measure_removal_cache_t {
-    bool valid{};
-    std::uint64_t song{}, revision{}, chart{}, measure{};
-    wormedit::measure_removal_proposal_t proposal;
-};
+using measure_removal_cache_t = wormedit::keyed_cache_t<
+    std::pair<wormedit::chart_stamp_t, wormedit::measure_id_t>, wormedit::measure_removal_proposal_t>;
 
 auto cached_measure_removal(const wormedit::song_document_t& song,
                             const wormedit::chart_document_t& chart, wormedit::measure_id_t measure)

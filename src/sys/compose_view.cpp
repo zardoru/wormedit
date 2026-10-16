@@ -32,6 +32,7 @@
 #include <charconv>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <cstdint>
 #include <iterator>
 #include <limits>
@@ -465,17 +466,9 @@ auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
 auto cached_measure_removal(const wormedit::song_document_t& song, const wormedit::chart_document_t& chart,
                             wormedit::measure_id_t measure) -> const wormedit::measure_removal_proposal_t& {
     static measure_removal_cache_t cache;
-    const auto matches = cache.valid && cache.song == song.id.value && cache.revision == song.revision &&
-                         cache.chart == chart.id.value && cache.measure == measure.value;
-    if (!matches) {
-        cache.proposal = wormedit::propose_measure_removal(chart, measure);
-        cache.song = song.id.value;
-        cache.revision = song.revision;
-        cache.chart = chart.id.value;
-        cache.measure = measure.value;
-        cache.valid = true;
-    }
-    return cache.proposal;
+    const auto key = std::pair{wormedit::chart_stamp_t::from(song, chart.id), measure};
+    return cache.get_or_build(key, std::bind_front(wormedit::propose_measure_removal,
+        std::cref(chart), measure));
 }
 
 void populate_measure_removal(WormUiComposeView& view, const wormedit::song_document_t& song,

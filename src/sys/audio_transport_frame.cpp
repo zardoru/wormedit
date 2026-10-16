@@ -42,16 +42,16 @@ void service_chart_preview(sdl_preview_output_t& output,
     if (*serviced) return;
     const auto failed_frame = output.timeline_frame();
     static_cast<void>(output.stop());
-    if (serviced->error().has_failure(failure_code_t::pump_failed))
+    if (serviced->error().status.has_failure(failure_code_t::pump_failed))
         state.pause_at(failed_frame);
     else
         state.reset_transport();
 }
 
 auto audition_failure_message(const sdl_audition_service_result_t& result) -> const char* {
-    if (result.has_failure(failure_code_t::device_failed))
+    if (result.status.has_failure(failure_code_t::device_failed))
         return "Audio preview stopped after an output-device failure.";
-    else if (result.has_failure(failure_code_t::render_failed))
+    else if (result.status.has_failure(failure_code_t::render_failed))
         return "Audio preview stopped after a realtime cache underrun.";
     else if (result.pump) {
         const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
@@ -62,9 +62,9 @@ auto audition_failure_message(const sdl_audition_service_result_t& result) -> co
 }
 
 auto preview_failure_message(const sdl_preview_service_result_t& result) -> const char* {
-    if (result.has_failure(failure_code_t::device_failed))
+    if (result.status.has_failure(failure_code_t::device_failed))
         return "Chart preview stopped after an output-device failure.";
-    else if (result.has_failure(failure_code_t::render_failed))
+    else if (result.status.has_failure(failure_code_t::render_failed))
         return "Chart preview stopped after a realtime mix failure.";
     else if (result.pump) {
         const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();

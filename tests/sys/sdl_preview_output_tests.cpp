@@ -863,7 +863,7 @@ void exercise_pending_refill_failure() {
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && !*failed && failed->error().has_failure(failure_code_t::pump_failed));
+    expect_pitch(failed && !*failed && failed->error().status.has_failure(failure_code_t::pump_failed));
     expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }

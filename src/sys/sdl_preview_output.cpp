@@ -405,7 +405,7 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_outcom
         callback_failure_.exchange(std::nullopt, std::memory_order_acq_rel);
     if (callback_failure) {
         return std::unexpected(sdl_preview_service_result_t{
-            .failure = callback_failure,
+            .status = *callback_failure,
             .pump = std::nullopt,
             .telemetry = {.rate_unavailable = rate_unavailable,
                           .silenced_voices = silenced_voices,
@@ -449,15 +449,15 @@ auto sdl_preview_output_t::service_refill_result(
             return std::nullopt;
     }
     sdl_preview_service_result_t result{
-        .failure = *pumped ? std::nullopt
-                          : std::optional{failure_code_t::pump_failed},
         .pump = std::move(pumped),
         .telemetry = {.rate_unavailable = rate_unavailable,
                       .silenced_voices = silenced_voices,
                       .silenced_music_voices = silenced_music_voices},
     };
-    if (!result.is_ready())
+    if (!*result.pump) {
+        result.status = failure_code_t::pump_failed;
         return std::unexpected(std::move(result));
+    }
     return result;
 }
 

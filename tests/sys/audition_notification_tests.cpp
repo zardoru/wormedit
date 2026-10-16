@@ -157,7 +157,7 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     const auto failed = wait_audition_failure(fixture.output);
     expect_audition(failed.has_value());
     expect_audition(!*failed);
-    expect_audition(failed->error().has_failure(failure_code_t::pump_failed));
+    expect_audition(failed->error().status.has_failure(failure_code_t::pump_failed));
     expect_audition(failed->error().pump.has_value());
     expect_audition(!*failed->error().pump);
     expect_audition(failed->error().pump->error().status == audio::audition_pump_status_t::source_unavailable);

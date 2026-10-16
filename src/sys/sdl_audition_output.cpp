@@ -175,7 +175,7 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outc
         callback_failure_.exchange(std::nullopt, std::memory_order_acq_rel);
     if (callback_failure) {
         return std::unexpected(sdl_audition_service_result_t{
-            .failure = callback_failure,
+            .status = *callback_failure,
             .pump = std::nullopt,
         });
     }
@@ -183,11 +183,12 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outc
     if (!pumped)
         return std::nullopt;
     sdl_audition_service_result_t result{
-        .failure = *pumped ? std::nullopt : std::optional{failure_code_t::pump_failed},
         .pump = std::move(pumped),
     };
-    if (!result.is_ready())
+    if (!*result.pump) {
+        result.status = failure_code_t::pump_failed;
         return std::unexpected(std::move(result));
+    }
     return result;
 }
 

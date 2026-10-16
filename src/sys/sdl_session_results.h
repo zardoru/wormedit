@@ -1,5 +1,5 @@
 #pragma once
-#include <wormedit/core/result.h>
+#include <wormedit/core/operation_state.h>
 
 #include <atomic>
 #include <optional>
@@ -29,17 +29,13 @@ template <class Session> struct sdl_session_start_result_t {
     }
 };
 
+static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
+static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(sdl_callback_failure_t));
+
 template <class Pump, class Telemetry = std::monostate> struct sdl_session_service_result_t {
-    std::optional<failure_code_t> failure;
+    operation_state_t<std::monostate> status;
     std::optional<Pump> pump;
     [[no_unique_address]] Telemetry telemetry{};
-
-    [[nodiscard]] auto is_ready() const noexcept -> bool {
-        return !failure;
-    }
-    [[nodiscard]] auto has_failure(failure_code_t code) const noexcept -> bool {
-        return failure == code;
-    }
 };
 
 // Temporary: removed by T-633.

@@ -167,7 +167,7 @@ void complete_sliced_output_group_conversion(const wormedit::song_document_t& sn
 #endif
 }
 
-task_result_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
+task_outcome_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
                                            const wormedit::output_group_t& group,
                                            wormedit::conversion_request_t& request,
                                            const std::filesystem::path& asset_base,
@@ -196,8 +196,8 @@ task_result_t run_output_group_export_task(const wormedit::song_document_t& snap
                                              *completed);
         }
     }
-    return task_result_t::success(wormedit::task_value_t::from(
-        std::shared_ptr<const output_group_export_task_result_t>{std::move(completed)}));
+    return wormedit::task_value_t::from(
+        std::shared_ptr<const output_group_export_task_result_t>{std::move(completed)});
 }
 
 auto import_resource_role(const WormUiWorkspaceAction& action)
@@ -533,25 +533,25 @@ compose_action_outcome_t start_output_export(compose_action_context_t& context,
     using namespace wormedit;
     auto snapshot = context.environment.document.history.document;
     task_graph_t graph{1};
-    const auto added = graph.add_task(
+    const auto added = graph.create_task(
         {}, [snapshot = std::move(snapshot), group = std::move(plan.group),
              request = std::move(plan.request), base = context.environment.resources->asset_base](
-                std::span<const task_result_t>, std::stop_token stop) mutable {
+                std::span<const task_outcome_t>, std::stop_token stop) mutable {
             return run_output_group_export_task(snapshot, group, request, base, stop);
         });
     if (!added)
         return compose_action_outcome_t::from(
-            added.error ? added.error->message : "Export could not start.",
+            added.error().message,
             notification_severity_t::error, notification_source_t::export_, false, false);
     auto submitted =
-        context.environment.resources->jobs.exporter.scheduler.submit(std::move(graph));
+        context.environment.resources->jobs.exporter.scheduler.begin(std::move(graph));
     if (!submitted)
         return compose_action_outcome_t::from(
-            submitted.error ? submitted.error->message : "Export could not start.",
+            submitted.error().message,
             notification_severity_t::error, notification_source_t::export_, false, false);
     auto pending = pending_output_group_export_t{
-        .graph = std::move(submitted.graph),
-        .task = *added.id,
+        .graph = std::move(*submitted),
+        .task = *added,
         .song = context.environment.document.history.document.id,
         .revision = context.environment.document.history.document.revision};
     if (!context.environment.resources->jobs.exporter.start(std::move(pending))) {

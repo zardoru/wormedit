@@ -305,10 +305,10 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
     task_scheduler_t scheduler{1, 2};
     task_graph_t blocker{1};
     const auto task = blocker.create_task(
-        {}, [&started, &release](std::span<const task_result_t>, std::stop_token) {
+        {}, [&started, &release](std::span<const task_outcome_t>, std::stop_token) {
             started.count_down();
             release.wait();
-            return task_result_t::success();
+            return task_outcome_t{};
         });
     require_project(static_cast<bool>(task));
     auto submitted = scheduler.begin(std::move(blocker));

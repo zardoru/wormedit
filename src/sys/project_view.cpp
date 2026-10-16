@@ -281,7 +281,7 @@ auto run_output_preview(const output_preview_request_t& request, std::stop_token
     -> output_preview_job_t::work_outcome_t {
     if (stop.stop_requested())
         return std::unexpected(
-            error_t<task_error_code_t>{task_error_code_t::cancelled, "Preview cancelled."});
+            error_t<failure_code_t>{failure_code_t::cancelled, "Preview cancelled."});
     return output_preview(request.document, request.group);
 }
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,

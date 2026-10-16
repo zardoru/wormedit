@@ -87,13 +87,13 @@ auto waveform_analysis_t::request_detail_worker(asset_id_t asset, audio::wavefor
     task_graph_t graph{1};
     const auto generation = detail_generation_;
     const auto task = graph.create_task({}, [this, asset, key, samples](
-        std::span<const task_result_t>, std::stop_token stop) {
+        std::span<const task_outcome_t>, std::stop_token stop) {
         borrow_preview_blocks(key, stop);
         auto analysis = sources_.analyze_waveform(asset, decoded_blocks_, waveform_cache_, 32,
             {.begin_frame = key.begin_frame, .end_frame = key.end_frame, .require_cached_pcm = samples}, stop);
-        return task_result_t::success(task_value_t::from(
+        return task_value_t::from(
             std::make_shared<const audio::waveform_analysis_result_t>(
-                audio::waveform_analysis_result_t::from(std::move(analysis)))));
+                audio::waveform_analysis_result_t::from(std::move(analysis))));
     });
     if (!task) return false;
     auto submitted = scheduler_.begin(std::move(graph));
@@ -188,7 +188,7 @@ auto waveform_completion_notification(const audio::waveform_job_completion_outco
                                       const char* failure_message) -> std::optional<notification_post_t> {
     if (!completed) {
         const auto& failure = completed.error().cause;
-        if (failure.code == task_error_code_t::cancelled) return std::nullopt;
+        if (failure.code == failure_code_t::cancelled) return std::nullopt;
         return notification_post_t{notification_severity_t::error, notification_source_t::audio,
                                    failure.message};
     }

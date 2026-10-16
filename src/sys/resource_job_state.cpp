@@ -32,7 +32,7 @@ auto copy_task_failure(const resource_copy_job_t::completion_t& completed)
     if (!completed) {
         return resource_copy_feedback_t{.message = completed.error().cause.message,
                                         .severity = completed.error().cause.code ==
-                                                            task_error_code_t::cancelled
+                                                            failure_code_t::cancelled
                                                         ? notification_severity_t::info
                                                         : notification_severity_t::error};
     }
@@ -213,7 +213,7 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
                       : exported->message;
     auto severity = !completed->has_value() || !exported
                         ? !completed->has_value() && completed->error().cause.code ==
-                                                  wormedit::task_error_code_t::cancelled
+                                                  wormedit::failure_code_t::cancelled
                               ? wormedit::notification_severity_t::info
                               : wormedit::notification_severity_t::error
                         : exported->severity;

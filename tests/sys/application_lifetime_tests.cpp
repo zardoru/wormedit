@@ -32,13 +32,13 @@ struct shutdown_observer_t {
 auto is_work_released() -> bool { return false; }
 
 auto observe_worker_shutdown(shutdown_observer_t& observer, std::stop_token stop)
-    -> wormedit::task_result_t {
+    -> wormedit::task_outcome_t {
     observer.started.count_down();
     std::unique_lock lock{observer.mutex};
     observer.cancelled.wait(lock, stop, is_work_released);
     if (SDL_WasInit(SDL_INIT_EVENTS) != 0)
         observer.observed_live_platform.fetch_add(1, std::memory_order_relaxed);
-    return wormedit::task_result_t::success();
+    return wormedit::task_outcome_t{};
 }
 
 void start_observed_worker(wormedit::task_scheduler_t& scheduler,

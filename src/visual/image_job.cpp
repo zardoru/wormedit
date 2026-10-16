@@ -51,8 +51,8 @@ auto decode_images(const image_request_t& request, std::stop_token stop)
     std::size_t result_bytes{};
     for (const auto& source : sources) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<task_error_code_t>{
-                task_error_code_t::cancelled, "image decode request was superseded"});
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::cancelled, "image decode request was superseded"});
         }
         if (auto cached = cache.find(project, document_revision, source)) {
             append_within_result_limit(result, source, std::move(cached), result_bytes,
@@ -66,8 +66,8 @@ auto decode_images(const image_request_t& request, std::stop_token stop)
             continue;
         }
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<task_error_code_t>{
-                task_error_code_t::cancelled, "image decode request was superseded"});
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::cancelled, "image decode request was superseded"});
         }
         auto image = std::make_shared<const rgba_image_t>(std::move(*decoded));
         append_within_result_limit(result, source, image, result_bytes,

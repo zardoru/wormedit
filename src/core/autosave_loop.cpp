@@ -138,14 +138,14 @@ auto native_project_autosave_loop_t::tick(const song_document_t& song, bool dirt
         [coordinator = std::move(coordinator), snapshot = std::move(snapshot), now, backup_path, asset_base,
          original_source_path = std::move(original_source_path),
          intended_project_path = std::move(intended_project_path), options = std::move(options)](
-            std::span<const task_result_t>, std::stop_token) mutable -> task_result_t {
+            std::span<const task_outcome_t>, std::stop_token) mutable -> task_outcome_t {
             anchor_recovery_asset_paths(snapshot, asset_base);
             auto result = coordinator.create_autosave(
                 snapshot, now, backup_path, std::move(original_source_path),
                 std::move(intended_project_path), std::move(options));
             auto completion = std::make_shared<const completion_t>(
                 completion_t{.coordinator = std::move(coordinator), .result = std::move(result)});
-            return task_result_t::success(task_value_t::from(std::move(completion)));
+            return task_value_t::from(std::move(completion));
         });
     if (!added) {
         native_project_autosave_outcome_t failed{

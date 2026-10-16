@@ -28,7 +28,7 @@ struct async_job_project_identity_t {
 template <class Identity> struct async_job_completion_error_t {
     std::uint64_t generation{};
     Identity identity;
-    error_t<task_error_code_t> cause;
+    error_t<failure_code_t> cause;
 };
 
 template <class Identity, class Payload> struct async_job_completion_value_t;
@@ -52,7 +52,7 @@ template <class Identity, class Payload> struct async_job_completion_value_t {
         }
         return std::unexpected(async_job_completion_error_t<Identity>{
             .generation = generation, .identity = std::move(identity),
-            .cause = {task_error_code_t::task_failed, std::string(missing_payload_message)}});
+            .cause = {failure_code_t::task_failed, std::string(missing_payload_message)}});
     }
 
     std::uint64_t generation{};
@@ -79,7 +79,7 @@ enum class async_job_cancel_policy_t { discard_completion, retain_completion };
 // with the caller. Request owns its worker inputs (or references stable owners).
 template <class Request, class Payload, class Identity> class async_job_t {
   public:
-    using work_outcome_t = result_t<Payload, error_t<task_error_code_t>>;
+    using work_outcome_t = result_t<Payload, error_t<failure_code_t>>;
     using work_function_t = work_outcome_t (*)(const Request&, std::stop_token);
     using completion_t = async_job_completion_outcome_t<Identity, Payload>;
 
@@ -135,13 +135,13 @@ template <class Request, class Payload, class Identity> class async_job_t {
         task_graph_t graph{1};
         const auto task =
             graph.create_task({}, [request = std::invoke(std::forward<Capture>(capture)),
-                                   work](std::span<const task_result_t>, std::stop_token stop) {
+                                   work](std::span<const task_outcome_t>, std::stop_token stop)
+                -> task_outcome_t {
                 auto result = work(request, stop);
                 if (!result)
-                    return task_result_t::failure(result.error().code,
-                                                  std::move(result.error().message));
-                return task_result_t::success(
-                    task_value_t::from(std::make_shared<const Payload>(std::move(*result))));
+                    return std::unexpected(task_failure_t::from(
+                        result.error().code, std::move(result.error().message)));
+                return task_value_t::from(std::make_shared<const Payload>(std::move(*result)));
             });
         if (!task)
             return std::unexpected(error_t<async_job_start_status_t>{
@@ -149,7 +149,7 @@ template <class Request, class Payload, class Identity> class async_job_t {
         auto submitted = scheduler_->begin(std::move(graph));
         if (!submitted)
             return std::unexpected(error_t<async_job_start_status_t>{
-                submitted.error().code == task_error_code_t::capacity_exceeded
+                submitted.error().code == failure_code_t::capacity_exceeded
                     ? async_job_start_status_t::capacity_exceeded
                     : async_job_start_status_t::scheduler_rejected,
                 submitted.error().message});

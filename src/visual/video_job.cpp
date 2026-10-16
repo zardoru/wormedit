@@ -151,7 +151,7 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
     std::optional<error_t<failure_code_t>> failure;
     std::shared_ptr<const rgba_video_frame_t> result_frame;
     if (stop.stop_requested()) {
-        return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
                                                           "video frame request was superseded"});
     }
     if (auto cached = request.owner.cache_.find(request.project, request.document_revision,
@@ -169,7 +169,7 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
         }
     }
     if (stop.stop_requested()) {
-        return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
                                                           "video frame request was superseded"});
     }
     if (failure) {

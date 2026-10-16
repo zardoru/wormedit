@@ -23,21 +23,9 @@ struct task_id_t {
     auto operator==(const task_id_t&) const -> bool = default;
 };
 
-enum class task_error_code_t {
-    capacity_exceeded,
-    dependency_failed,
-    task_failed,
-    task_threw,
-    cancelled,
-    scheduler_stopped,
-    invalid_task,
-};
-
-struct task_error_t {
-    task_error_code_t code{task_error_code_t::task_failed};
-    std::string message;
-};
-
+// Values are immutable, runtime-type-checked shared payloads so fan-in can pass
+// large render/export buffers without copying. Keep the payload alive for as
+// long as its graph handle.
 struct task_value_t {
     template <typename value_t>
     [[nodiscard]] static auto from(std::shared_ptr<const value_t> value) -> task_value_t {
@@ -59,45 +47,19 @@ struct task_value_t {
 };
 
 struct task_failure_t {
-    [[nodiscard]] static auto from(task_error_code_t code, std::string message,
+    [[nodiscard]] static auto from(failure_code_t code, std::string message,
                                    task_value_t payload = {}) -> task_failure_t {
         return {.cause = {code, std::move(message)}, .payload = std::move(payload)};
     }
 
-    // Error payloads are preserved even for manually authored legacy callback results.
-    error_t<task_error_code_t> cause{task_error_code_t::task_failed, {}};
+    // Failed tasks retain their payload independently of their cause.
+    error_t<failure_code_t> cause{failure_code_t::task_failed, {}};
     task_value_t payload;
     auto operator==(const task_failure_t&) const -> bool = default;
 };
 
 using task_outcome_t = result_t<task_value_t, task_failure_t>;
-using task_add_outcome_t = result_t<task_id_t, error_t<task_error_code_t>>;
-
-// Values are immutable, runtime-type-checked shared payloads so fan-in can pass
-// large render/export buffers without copying. Keep the payload alive for as
-// long as its graph handle.
-// Compatibility boundary for existing callback inputs and returns.
-struct task_result_t {
-    [[nodiscard]] static auto from(const task_outcome_t& outcome) -> task_result_t;
-    [[nodiscard]] auto into_outcome() && -> task_outcome_t;
-
-    task_value_t payload;
-    std::optional<task_error_t> error;
-
-    [[nodiscard]] auto is_successful() const noexcept -> bool {
-        return !error.has_value();
-    }
-
-    [[nodiscard]] static auto success(task_value_t value = {}) -> task_result_t;
-    [[nodiscard]] static auto failure(task_error_code_t code, std::string message) -> task_result_t;
-};
-
-template <typename value_t>
-[[nodiscard]] auto task_value_cast(const task_result_t& result) -> std::shared_ptr<const value_t> {
-    if (!result.is_successful())
-        return {};
-    return result.payload.as<value_t>();
-}
+using task_add_outcome_t = result_t<task_id_t, error_t<failure_code_t>>;
 
 template <typename value_t>
 [[nodiscard]] auto task_value_cast(const task_outcome_t& result) -> std::shared_ptr<const value_t> {
@@ -107,18 +69,7 @@ template <typename value_t>
 }
 
 using task_function_t =
-    std::function<task_result_t(std::span<const task_result_t>, std::stop_token)>;
-
-struct task_add_result_t {
-    [[nodiscard]] static auto from(task_add_outcome_t&& outcome) -> task_add_result_t;
-
-    std::optional<task_id_t> id;
-    std::optional<task_error_t> error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return id.has_value();
-    }
-};
+    std::function<task_outcome_t(std::span<const task_outcome_t>, std::stop_token)>;
 
 class task_graph_handle_t;
 class task_scheduler_t;
@@ -137,8 +88,6 @@ class task_graph_t {
 
     [[nodiscard]] auto create_task(std::span<const task_id_t> dependencies,
                                    task_function_t function) -> task_add_outcome_t;
-    [[nodiscard]] auto add_task(std::span<const task_id_t> dependencies, task_function_t function)
-        -> task_add_result_t;
     [[nodiscard]] auto size() const noexcept -> std::size_t;
 
   private:
@@ -165,18 +114,7 @@ class task_graph_handle_t {
     friend class task_scheduler_t;
 };
 
-using task_submit_outcome_t = result_t<task_graph_handle_t, error_t<task_error_code_t>>;
-
-struct task_submit_result_t {
-    [[nodiscard]] static auto from(task_submit_outcome_t&& outcome) -> task_submit_result_t;
-
-    task_graph_handle_t graph;
-    std::optional<task_error_t> error;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return static_cast<bool>(graph);
-    }
-};
+using task_submit_outcome_t = result_t<task_graph_handle_t, error_t<failure_code_t>>;
 
 // Fixed jthread pool with a preallocated ring queue. The capacity covers queued,
 // running, and dependency-blocked nodes across submitted graphs. It does not bound
@@ -202,7 +140,6 @@ class task_scheduler_t {
     ~task_scheduler_t();
 
     [[nodiscard]] auto begin(task_graph_t graph) -> task_submit_outcome_t;
-    [[nodiscard]] auto submit(task_graph_t graph) -> task_submit_result_t;
     void shutdown();
     [[nodiscard]] auto outstanding_tasks() const noexcept -> std::size_t;
     [[nodiscard]] auto maximum_outstanding_tasks() const noexcept -> std::size_t;

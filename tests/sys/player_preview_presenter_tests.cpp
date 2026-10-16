@@ -213,9 +213,9 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
 
     task_graph_t blocker_graph{1};
     const auto blocker_task = blocker_graph.create_task(
-        {}, [&](std::span<const task_result_t>, std::stop_token) -> task_result_t {
+        {}, [&](std::span<const task_outcome_t>, std::stop_token) -> task_outcome_t {
             release_blocker.wait();
-            return task_result_t::success();
+            return task_outcome_t{};
         });
     REQUIRE(blocker_task);
     auto blocker = video_scheduler.begin(std::move(blocker_graph));

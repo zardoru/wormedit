@@ -136,7 +136,7 @@ TEST_CASE("async job exception is a typed completion failure", "[unit][async-job
     require_async(static_cast<bool>(result));
     require_async(!(*result));
     check_async(result->error().identity == 19);
-    check_async(result->error().cause.code == wormedit::task_error_code_t::task_threw);
+    check_async(result->error().cause.code == wormedit::failure_code_t::task_threw);
     check_async(!(job.is_busy()));
 }
 

@@ -167,7 +167,7 @@ auto failed_import_feedback(const wormedit::task_outcome_t& completed,
     using namespace wormedit;
     if (!completed.has_value() || !imported) {
         const auto cancelled = !completed.has_value() &&
-                               completed.error().cause.code == task_error_code_t::cancelled;
+                               completed.error().cause.code == failure_code_t::cancelled;
         return metadata_import_feedback_t{
             .message = !completed.has_value() ? completed.error().cause.message
                                        : "Project import-copy returned no result.",
@@ -227,7 +227,7 @@ auto copy_preview_feedback(const metadata_copy_inspection_job_t::completion_t& c
     using namespace wormedit;
     if (!completed) {
         return {completed.error().cause.message,
-                completed.error().cause.code == task_error_code_t::cancelled
+                completed.error().cause.code == failure_code_t::cancelled
                     ? notification_severity_t::info
                     : notification_severity_t::error};
     }
@@ -345,7 +345,7 @@ auto resolve_copy_preview_source(const WormUiWorkspaceAction& action,
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t& copy_request,
                                     const std::filesystem::path& output_path, bool export_copy,
-                                    std::stop_token stop) -> wormedit::task_result_t {
+                                    std::stop_token stop) -> wormedit::task_outcome_t {
     using namespace wormedit;
     auto completed = std::make_shared<metadata_asset_import_task_result_t>();
     const auto validate = [&](const std::filesystem::path& temporary) {
@@ -396,8 +396,8 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
         else
             (void)discard_unlinked_project_asset_copy(copy_request, *completed->copy);
     }
-    return task_result_t::success(task_value_t::from(
-        std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)}));
+    return task_value_t::from(
+        std::shared_ptr<const metadata_asset_import_task_result_t>{std::move(completed)});
 }
 #endif
 
@@ -547,7 +547,7 @@ auto metadata_asset_t::start_import_copy(
     const project_asset_copy_request_t copy_request{
         .project_directory = asset_base, .source_path = normalized_source, .asset = *reserved};
     const auto added = graph.create_task({}, [copy_request, output_path,
-                                           export_copy](std::span<const task_result_t>,
+                                           export_copy](std::span<const task_outcome_t>,
                                                         std::stop_token stop) {
         return copy_and_decode_metadata_audio(copy_request, output_path, export_copy, stop);
     });

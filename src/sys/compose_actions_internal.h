@@ -124,7 +124,7 @@ void complete_sliced_output_group_conversion(const wormedit::song_document_t& sn
                                              std::stop_token stop,
                                              output_group_export_task_result_t& completed);
 
-task_result_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
+task_outcome_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
                                            const wormedit::output_group_t& group,
                                            wormedit::conversion_request_t& request,
                                            const std::filesystem::path& asset_base,

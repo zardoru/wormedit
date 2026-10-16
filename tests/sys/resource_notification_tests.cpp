@@ -113,7 +113,7 @@ auto wait_for_export_result(runtime::output_group_export_t& exports,
 
 auto failed_copy_worker(const resource_copy_request_t&, std::stop_token)
     -> resource_copy_job_t::work_outcome_t {
-    return std::unexpected(wormedit::error_t<task_error_code_t>{task_error_code_t::task_failed,
+    return std::unexpected(wormedit::error_t<failure_code_t>{failure_code_t::task_failed,
                                                                 "Injected copy worker failure."});
 }
 auto cancelled_copy_worker(const resource_copy_request_t&, std::stop_token)
@@ -127,8 +127,8 @@ auto make_export_task(runtime::output_group_export_t& runtime,
                       output_group_export_task_result_t result) -> pending_output_group_export_t {
     task_graph_t graph{1};
     const auto value = std::make_shared<const output_group_export_task_result_t>(std::move(result));
-    const auto added = graph.create_task({}, [value](std::span<const task_result_t>, std::stop_token) {
-        return task_result_t::success(task_value_t::from(value));
+    const auto added = graph.create_task({}, [value](std::span<const task_outcome_t>, std::stop_token) {
+        return task_value_t::from(value);
     });
     REQUIRE(added);
     auto submitted = runtime.scheduler.begin(std::move(graph));

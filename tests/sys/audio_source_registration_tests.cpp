@@ -586,9 +586,9 @@ auto occupy_budget_scheduler(wormedit::task_scheduler_t& scheduler, std::atomic<
     -> wormedit::task_graph_handle_t {
     wormedit::task_graph_t graph{4};
     for (int index = 0; index < 4; ++index) {
-        const auto added = graph.create_task({}, [&release](std::span<const wormedit::task_result_t>, std::stop_token) {
+        const auto added = graph.create_task({}, [&release](std::span<const wormedit::task_outcome_t>, std::stop_token) {
             while (!release.load()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
-            return wormedit::task_result_t::success(wormedit::task_value_t::from(std::make_shared<const int>(0)));
+            return wormedit::task_value_t::from(std::make_shared<const int>(0));
         });
         expect_registration(static_cast<bool>(added));
     }

@@ -365,7 +365,7 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
                     ui_stepmania_timing_syntax(stepmania_policy.timing_syntax);
                 setup.stepmania_implementation =
                     ui_stepmania_implementation(stepmania_policy.implementation_profile);
-                const auto resolved = wormedit::stepmania_export_policy_result_t::from(stepmania_policy);
+                const auto resolved = wormedit::stepmania_write_options_t::from(stepmania_policy);
                 setup.stepmania_policy_valid = static_cast<bool>(resolved);
                 const auto status = resolved
                     ? std::string_view{

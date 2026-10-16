@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/formats/conversion.h>
+#include <wormedit/formats/text_source_location.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -31,7 +32,7 @@ enum class stepmania_parse_diagnostic_code_t {
 };
 
 using stepmania_parse_diagnostic_t =
-    text_parse_diagnostic_t<stepmania_parse_diagnostic_code_t,
+    format_diagnostic_t<stepmania_parse_diagnostic_code_t, text_source_location_t,
                             stepmania_parse_diagnostic_code_t::malformed_tag>;
 
 struct stepmania_parse_options_t {
@@ -49,7 +50,7 @@ struct stepmania_parse_options_t {
     std::optional<std::filesystem::path> asset_base_directory;
 };
 
-using stepmania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<stepmania_parse_diagnostic_t>>;
+using stepmania_parse_outcome_t = attempt_t<song_document_t, std::vector<stepmania_parse_diagnostic_t>>;
 
 // Parses a complete .sm or .ssc source transactionally. SSC is bounded to
 // audited v0.83 semantics (with missing VERSION defaulting to 0.83); named
@@ -73,10 +74,22 @@ enum class stepmania_write_diagnostic_code_t {
 };
 
 using stepmania_write_diagnostic_t =
-    text_write_diagnostic_t<stepmania_write_diagnostic_code_t,
+    format_diagnostic_t<stepmania_write_diagnostic_code_t, std::string,
                             stepmania_write_diagnostic_code_t::invalid_document>;
 
+enum class stepmania_export_policy_error_t {
+    none,
+    timing_syntax_required,
+    named_implementation_requires_ssc,
+    named_implementation_requires_native_warps,
+};
+
 struct stepmania_write_options_t {
+    // Resolves file, syntax and implementation choices. Document-specific loss
+    // is still diagnosed transactionally by write_stepmania.
+    [[nodiscard]] static auto from(stepmania_export_policy_t policy)
+        -> result_t<stepmania_write_options_t, error_t<stepmania_export_policy_error_t>>;
+
     stepmania_profile_t profile{stepmania_profile_t::sm};
     stepmania_timing_syntax_t target_timing_syntax{
         stepmania_timing_syntax_t::unspecified};
@@ -90,31 +103,9 @@ struct stepmania_write_options_t {
     std::size_t max_rows_per_measure{65'536};
 };
 
-using stepmania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<stepmania_write_diagnostic_t>>;
-
-enum class stepmania_export_policy_error_t {
-    none,
-    timing_syntax_required,
-    named_implementation_requires_ssc,
-    named_implementation_requires_native_warps,
-};
+using stepmania_write_outcome_t = attempt_t<std::string, std::vector<stepmania_write_diagnostic_t>>;
 
 using stepmania_export_policy_outcome_t = result_t<stepmania_write_options_t, error_t<stepmania_export_policy_error_t>>;
-struct stepmania_export_policy_result_t {
-    [[nodiscard]] static auto from(stepmania_export_policy_t policy) -> stepmania_export_policy_outcome_t;
-    [[nodiscard]] static auto from(stepmania_export_policy_outcome_t&& outcome) -> stepmania_export_policy_result_t;
-    std::optional<stepmania_write_options_t> options;
-    stepmania_export_policy_error_t error{stepmania_export_policy_error_t::none};
-    std::string message;
-
-    [[nodiscard]] explicit operator bool() const noexcept { return options.has_value(); }
-};
-
-// Resolves the three independent frontend/converter selections into writer
-// options. It validates only profile compatibility; document-specific loss is
-// still diagnosed transactionally by write_stepmania.
-[[nodiscard]] auto resolve_stepmania_export_policy(stepmania_export_policy_t policy)
-    -> stepmania_export_policy_result_t;
 
 // Emits deterministic UTF-8 StepMania text. Unsupported editor-only
 // annotations are surfaced as loss diagnostics rather than silently dropped.

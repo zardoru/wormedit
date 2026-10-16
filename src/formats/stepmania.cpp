@@ -465,7 +465,7 @@ void append_keysound_warning(std::vector<stepmania_parse_diagnostic_t>& diagnost
                              const field_t& field, std::string message) {
     diagnostics.push_back({diagnostic_severity_t::warning,
                            stepmania_parse_diagnostic_code_t::malformed_tag,
-                           std::move(message), field.order, field.offset});
+                           std::move(message), {field.order, field.offset}});
 }
 
 auto read_keysound_list(const std::vector<field_t>& song_fields, stepmania_profile_t profile,
@@ -717,7 +717,7 @@ struct timing_parser_t {
                 diagnostics.push_back({.severity=diagnostic_severity_t::warning,
                     .code=stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
                     .message="Legacy negative BPM timing was canonicalized to beat-domain warps; additional events of this encoding are summarized here",
-                    .source_order=field->order, .byte_offset=field->offset});
+                    .location={field->order, field->offset}});
                 reported_negative_bpm = true;
             }
             index = boundary - 1;
@@ -785,7 +785,7 @@ struct timing_parser_t {
                 diagnostics.push_back({.severity=diagnostic_severity_t::warning,
                     .code=stepmania_parse_diagnostic_code_t::legacy_warp_encoding,
                     .message="Legacy negative STOP timing was canonicalized to beat-domain warps; additional events of this encoding are summarized here",
-                    .source_order=field.order, .byte_offset=field.offset});
+                    .location={field.order, field.offset}});
                 reported_negative_stop = true;
             }
         });
@@ -1290,7 +1290,7 @@ void append_duplicate_song_field_warnings(const std::vector<field_t>& song_field
                 stepmania_parse_diagnostic_code_t::duplicate_field,
                 std::string("Duplicate ") + key +
                     " retained in source metadata; last value wins",
-                found[index]->order, found[index]->offset});
+                {found[index]->order, found[index]->offset}});
     }
 }
 
@@ -1328,7 +1328,7 @@ auto validate_input_bytes(std::span<const std::byte> bytes,
         diagnostics.push_back({.severity=diagnostic_severity_t::error,
             .code=stepmania_parse_diagnostic_code_t::source_limit,
             .message="StepMania source exceeds the configured byte limit",
-            .source_order=0, .byte_offset=0});
+            .location={0, 0}});
         return std::nullopt;
     }
     const auto* data = reinterpret_cast<const char*>(bytes.data());
@@ -1336,8 +1336,7 @@ auto validate_input_bytes(std::span<const std::byte> bytes,
     if (const auto invalid = valid_utf8(source)) {
         diagnostics.push_back({.severity=diagnostic_severity_t::error,
             .code=stepmania_parse_diagnostic_code_t::invalid_encoding,
-            .message="StepMania source is not valid UTF-8", .source_order=0,
-            .byte_offset=*invalid});
+            .message="StepMania source is not valid UTF-8", .location={0, *invalid}});
         return std::nullopt;
     }
     if (source.starts_with("\xef\xbb\xbf")) source.remove_prefix(3);
@@ -1356,13 +1355,13 @@ auto parse_stepmania_bytes(std::span<const std::byte> bytes, stepmania_parse_opt
         if (result.ok()) result.value = std::move(song);
     } catch (const failure_t& failure) {
         result.diagnostics.push_back({.severity=diagnostic_severity_t::error,
-            .code=failure.code, .message=failure.message, .source_order=failure.order,
-            .byte_offset=failure.offset});
+            .code=failure.code, .message=failure.message,
+            .location={failure.order, failure.offset}});
     } catch (const std::bad_alloc&) {
         result.diagnostics.push_back({.severity=diagnostic_severity_t::error,
             .code=stepmania_parse_diagnostic_code_t::source_limit,
             .message="Insufficient memory within configured parser limits",
-            .source_order=0, .byte_offset=std::nullopt});
+            .location={0, std::nullopt}});
     }
     return result;
 }
@@ -2152,12 +2151,7 @@ auto note_map_text(const chart_document_t& chart,
 
 } // namespace
 
-auto stepmania_export_policy_result_t::from(stepmania_export_policy_outcome_t&& outcome) -> stepmania_export_policy_result_t {
-    if (!outcome) return {.options = {}, .error = outcome.error().code,
-        .message = std::move(outcome.error().message)};
-    return {.options = std::move(*outcome), .error = stepmania_export_policy_error_t::none, .message = {}};
-}
-auto stepmania_export_policy_result_t::from(stepmania_export_policy_t policy)
+auto stepmania_write_options_t::from(stepmania_export_policy_t policy)
     -> stepmania_export_policy_outcome_t {
     error_t<stepmania_export_policy_error_t> result{};
     if (policy.timing_syntax == stepmania_timing_syntax_t::unspecified) {
@@ -2203,10 +2197,6 @@ auto stepmania_export_policy_result_t::from(stepmania_export_policy_t policy)
     return options;
 }
 
-auto resolve_stepmania_export_policy(stepmania_export_policy_t policy) -> stepmania_export_policy_result_t {
-    return stepmania_export_policy_result_t::from(stepmania_export_policy_result_t::from(policy));
-}
-
 class stepmania_writer_t {
     const song_document_t& song_;
     stepmania_write_options_t options_;
@@ -2226,7 +2216,7 @@ class stepmania_writer_t {
     auto resolve_options() -> bool {
         if (options_.target_implementation_profile !=
         stepmania_implementation_profile_t::unspecified) {
-        const auto resolved = stepmania_export_policy_result_t::from(
+        const auto resolved = stepmania_write_options_t::from(
             {.file_profile = options_.profile,
              .timing_syntax = options_.target_timing_syntax ==
                                       stepmania_timing_syntax_t::unspecified

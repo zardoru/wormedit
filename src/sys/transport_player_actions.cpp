@@ -125,10 +125,10 @@ auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
         }
         stepmania_export_policy = *candidate;
         const auto resolved =
-            wormedit::resolve_stepmania_export_policy(stepmania_export_policy);
+            wormedit::stepmania_write_options_t::from(stepmania_export_policy);
         return publish_transport_feedback(notifications, resolved ? notification_severity_t::success
                                                                 : notification_severity_t::warning,
-            resolved ? "StepMania export policy updated." : "StepMania policy needs attention: " + resolved.message,
+            resolved ? "StepMania export policy updated." : "StepMania policy needs attention: " + resolved.error().message,
             notification_source_t::export_);
     }
     default:

@@ -847,7 +847,7 @@ auto resolve_stepmania_options(conversion_context_t& context)
                        "choices");
         return std::nullopt;
     }
-    auto resolved = stepmania_export_policy_result_t::from(*context.request.stepmania);
+    auto resolved = stepmania_write_options_t::from(*context.request.stepmania);
     if (!resolved) {
         add_diagnostic(context.result, diagnostic_severity_t::error,
                        conversion_diagnostic_code_t::unknown_target_profile,

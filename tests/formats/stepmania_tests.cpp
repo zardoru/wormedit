@@ -587,7 +587,7 @@ TEST_CASE("SM global CREDIT maps to chart authors and conflicting edits reject",
     CHECK(std::ranges::any_of(written.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code ==
                    wormedit::stepmania_write_diagnostic_code_t::conflicting_song_metadata &&
-               diagnostic.field == "CREDIT";
+               diagnostic.location == "CREDIT";
     }));
 }
 
@@ -709,11 +709,11 @@ TEST_CASE("SM writer rejects timing it cannot faithfully represent", "[unit][for
         wormedit::write_stepmania(*parsed.value, {.profile = wormedit::stepmania_profile_t::sm});
     CHECK_FALSE(native.value.has_value());
     CHECK(std::ranges::any_of(native.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.field == "WARPS" &&
+        return diagnostic.location == "WARPS" &&
                diagnostic.code == wormedit::stepmania_write_diagnostic_code_t::unsupported_feature;
     }));
     CHECK(std::ranges::any_of(native.diagnostics, [](const auto& diagnostic) {
-        return diagnostic.field == "SCROLLS" || diagnostic.field == "SPEEDS";
+        return diagnostic.location == "SCROLLS" || diagnostic.location == "SPEEDS";
     }));
 
     auto legacy_song = *parsed.value;
@@ -935,47 +935,46 @@ TEST_CASE("StepMania export policy keeps file syntax and implementation choices 
     using profile_t = wormedit::stepmania_profile_t;
     using syntax_t = wormedit::stepmania_timing_syntax_t;
 
-    const auto syntax_only = wormedit::resolve_stepmania_export_policy(
+    const auto syntax_only = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::sm,
          .timing_syntax = syntax_t::legacy_negative_bpm,
          .implementation_profile = implementation_t::unspecified});
     REQUIRE(syntax_only);
-    CHECK(syntax_only.error == error_t::none);
-    CHECK(syntax_only.options->profile == profile_t::sm);
-    CHECK(syntax_only.options->target_timing_syntax == syntax_t::legacy_negative_bpm);
-    CHECK(syntax_only.options->target_implementation_profile ==
+    CHECK(syntax_only->profile == profile_t::sm);
+    CHECK(syntax_only->target_timing_syntax == syntax_t::legacy_negative_bpm);
+    CHECK(syntax_only->target_implementation_profile ==
           implementation_t::unspecified);
-    CHECK(syntax_only.options->warp_encoding == wormedit::warp_encoding_t::negative_bpm);
+    CHECK(syntax_only->warp_encoding == wormedit::warp_encoding_t::negative_bpm);
 
-    const auto named = wormedit::resolve_stepmania_export_policy(
+    const auto named = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::ssc,
          .timing_syntax = syntax_t::native_warps,
          .implementation_profile = implementation_t::stepmania_5_1});
     REQUIRE(named);
-    CHECK(named.options->profile == profile_t::ssc);
-    CHECK(named.options->target_implementation_profile == implementation_t::stepmania_5_1);
-    CHECK(named.options->warp_encoding == wormedit::warp_encoding_t::native);
+    CHECK(named->profile == profile_t::ssc);
+    CHECK(named->target_implementation_profile == implementation_t::stepmania_5_1);
+    CHECK(named->warp_encoding == wormedit::warp_encoding_t::native);
 
-    const auto missing_syntax = wormedit::resolve_stepmania_export_policy(
+    const auto missing_syntax = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::ssc,
          .timing_syntax = syntax_t::unspecified,
          .implementation_profile = implementation_t::unspecified});
     CHECK_FALSE(missing_syntax);
-    CHECK(missing_syntax.error == error_t::timing_syntax_required);
+    CHECK(missing_syntax.error().code == error_t::timing_syntax_required);
 
-    const auto named_sm = wormedit::resolve_stepmania_export_policy(
+    const auto named_sm = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::sm,
          .timing_syntax = syntax_t::native_warps,
          .implementation_profile = implementation_t::etterna_0_75_1});
     CHECK_FALSE(named_sm);
-    CHECK(named_sm.error == error_t::named_implementation_requires_ssc);
+    CHECK(named_sm.error().code == error_t::named_implementation_requires_ssc);
 
-    const auto named_legacy = wormedit::resolve_stepmania_export_policy(
+    const auto named_legacy = wormedit::stepmania_write_options_t::from(
         {.file_profile = profile_t::ssc,
          .timing_syntax = syntax_t::legacy_negative_stop,
          .implementation_profile = implementation_t::etterna_0_75_1});
     CHECK_FALSE(named_legacy);
-    CHECK(named_legacy.error == error_t::named_implementation_requires_native_warps);
+    CHECK(named_legacy.error().code == error_t::named_implementation_requires_native_warps);
 
     wormedit::conversion_request_t request{
         .target = wormedit::format_family_t::stepmania,
@@ -1406,11 +1405,9 @@ TEST_CASE("StepMania shared write warnings retain text", "[unit][stepmania][resu
 
 TEST_CASE("StepMania primary export policy retains required syntax rejection", "[unit][stepmania][results]") {
     using namespace wormedit;
-    auto resolved = stepmania_export_policy_result_t::from(
+    const auto resolved = stepmania_write_options_t::from(
         stepmania_export_policy_t{.timing_syntax = stepmania_timing_syntax_t::unspecified});
     REQUIRE_FALSE(resolved);
     CHECK(resolved.error().code == stepmania_export_policy_error_t::timing_syntax_required);
-    const auto legacy = stepmania_export_policy_result_t::from(std::move(resolved));
-    CHECK_FALSE(legacy);
-    CHECK(legacy.error == stepmania_export_policy_error_t::timing_syntax_required);
+    CHECK(resolved.error().message == "Select a StepMania timing syntax explicitly");
 }

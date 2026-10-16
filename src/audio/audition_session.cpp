@@ -12,7 +12,7 @@ auto audition_session_t::start_session(std::span<const audition_clip_t> clips)
     const auto transport = bridge_.start_clips(clips);
     if (!transport) {
         return std::unexpected(audition_session_start_error_t{
-            .code = audition_session_start_status_t::transport_failed, .transport = transport});
+            .code = failure_code_t::transport_failed, .transport = transport});
     }
     const auto prime = prime_resident_audition_blocks(transport_, transport.value().token, clips);
     prime_pending_ = !prime.has_value();

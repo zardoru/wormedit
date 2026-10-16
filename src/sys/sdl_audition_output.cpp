@@ -154,7 +154,7 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
         else
             error = error_t{failure_code_t::device_failed,
                             sdl_error("could not reset and resume the audio output stream")};
-    } else if (started.error().code == audio::audition_session_start_status_t::prime_failed)
+    } else if (started.error().code == failure_code_t::prime_failed)
         error->message = "audio preview lookahead could not be decoded";
     else
         error->message = "audio preview transport rejected the prepared clips";

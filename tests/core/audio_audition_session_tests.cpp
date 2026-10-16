@@ -371,7 +371,7 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     const auto rejected = session.start_session(std::span{&invalid, 1});
     expect_audition_session(!rejected);
     require_audition_session(!rejected);
-    expect_audition_session(rejected.error().code == audition_session_start_status_t::transport_failed);
+    expect_audition_session(rejected.error().code == wormedit::failure_code_t::transport_failed);
     expect_audition_session(session.is_active());
     expect_audition_session(transport.is_current(first.value().token));
 

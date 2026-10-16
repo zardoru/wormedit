@@ -12,12 +12,6 @@
 
 namespace wormedit::audio {
 
-enum class audition_session_start_status_t {
-    started,
-    transport_failed,
-    prime_failed,
-};
-
 struct started_audition_session_t {
     session_token_t token;
     audition_start_outcome_t transport{
@@ -26,7 +20,7 @@ struct started_audition_session_t {
     auto operator==(const started_audition_session_t&) const -> bool = default;
 };
 struct audition_session_start_error_t {
-    audition_session_start_status_t code{audition_session_start_status_t::transport_failed};
+    failure_code_t code{failure_code_t::transport_failed};
     audition_start_outcome_t transport{
         std::unexpected(audition_start_status_t::transport_start_failed)};
     auto operator==(const audition_session_start_error_t&) const -> bool = default;

@@ -25,6 +25,19 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                                    0.0L, static_cast<long double>(waveform.total_frames));
     return static_cast<double>(bounded / waveform.total_frames);
 }
+auto build_waveform_overview(const audio::waveform_t& waveform, const timing_index_t& timing,
+                             const audio::aligned_waveform_request_t& request, bool& succeeded,
+                             compose_scene_cache_t::waveform_state_t::overview_data_t& data) -> bool {
+    const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
+    succeeded = overview.has_value();
+    if (!succeeded) return false;
+    data.rows.clear();
+    for (const auto& row : overview->rows)
+        data.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
+    static std::atomic<std::uint64_t> next_generation{1};
+    data.generation = next_generation.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
 auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                               const audio::waveform_t& waveform,
                               const audio::aligned_waveform_request_t& request) -> bool {
@@ -35,20 +48,12 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         return false;
     auto& view = flattened.view.compose;
     const auto& timing = *cache.timing.marker_timing_index;
-    if (!cache.waveform.waveform_overview_key || *cache.waveform.waveform_overview_key != waveform.key ||
-        cache.waveform.waveform_overview_identity != &waveform) {
-        const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
-        if (!overview) return false;
-        cache.waveform.waveform_overview_rows.clear();
-        for (const auto& row : overview->rows)
-            cache.waveform.waveform_overview_rows.push_back({row.audio_fraction,
-                                                   std::clamp(row.absolute_peak, 0.0f, 1.0f)});
-        cache.waveform.waveform_overview_key = waveform.key;
-        cache.waveform.waveform_overview_identity = &waveform;
-        static std::atomic<std::uint64_t> next_generation{1};
-        cache.waveform.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
-    }
-    cache.waveform.waveform_overview_revision = cache.stamp().document.revision;
+    bool succeeded = true;
+    const auto& overview = cache.waveform.overview.get_or_build(
+        std::tuple<const audio::waveform_key_t&, const void*>{waveform.key, &waveform},
+        std::bind_front(build_waveform_overview, std::cref(waveform), std::cref(timing),
+                        std::cref(request), std::ref(succeeded)));
+    if (!succeeded) return false;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                request.pixels_per_standard_measure;
     const auto begin = overview_fraction(waveform, timing,
@@ -58,7 +63,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel),
         timing_boundary_side_t::after_stops, true);
     if (!begin || !end) return false;
-    for (const auto& row : cache.waveform.waveform_overview_rows) {
+    for (const auto& row : overview.rows) {
         if (!flattened.compose.waveform.overview_row.push_back(row)) {
             flattened.compose.waveform.overview_row.clear();
             return false;
@@ -66,7 +71,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
     }
     view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
     view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
-    view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
+    view.waveform_overview_generation = overview.generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
     const auto zero = timing.query_seconds(0, timing_boundary_side_t::before_delays);

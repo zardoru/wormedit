@@ -390,11 +390,11 @@ struct compose_scene_cache_t {
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
         envelope_projection_ring_t channel_envelope_ring;
-        std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
-        const void* waveform_overview_identity{};
-        std::uint64_t waveform_overview_revision{};
-        std::uint64_t waveform_overview_generation{};
-        std::vector<WormUiComposeWaveformOverviewRowView> waveform_overview_rows;
+        struct overview_data_t {
+            std::uint64_t generation{};
+            std::vector<WormUiComposeWaveformOverviewRowView> rows;
+        };
+        wormedit::keyed_cache_t<std::tuple<audio::waveform_key_t, const void*>, overview_data_t> overview;
         // BGM bar rows re-project only when the song window or the source changes; measure
         // marks also follow the document revision (tempo and offset edits move them).
         bgm_bar_cache_t bgm_bar;

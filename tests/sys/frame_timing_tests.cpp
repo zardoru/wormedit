@@ -924,7 +924,6 @@ void check_overview_replacement(frontend_workspace_view_t& flattened, compose_sc
     static_cast<void>(cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &replacement, false,
                                                  true, &interaction));
-    CHECK(cache.waveform.waveform_overview_revision == cache.stamp().document.revision);
 }
 }
 TEST_CASE("Compose overview keeps cached rows while moving its visible range", "[sys][waveform-projection]") {
@@ -942,10 +941,10 @@ TEST_CASE("Compose overview keeps cached rows while moving its visible range", "
     auto analysis = overview_analysis(0.25f);
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &analysis, false, true, &interaction));
     const auto fraction = flattened.view.compose.waveform_overview_visible_begin_fraction;
-    const auto* rows = cache.waveform.waveform_overview_rows.data();
+    const auto* rows = cache.waveform.overview.value().rows.data();
     interaction.viewport_scroll_pixels = 200;
     REQUIRE(populate_compose_waveform_projection(flattened, cache, &analysis, false, true, &interaction));
-    CHECK(cache.waveform.waveform_overview_rows.data() == rows);
+    CHECK(cache.waveform.overview.value().rows.data() == rows);
     CHECK(flattened.view.compose.waveform_overview_visible_begin_fraction > fraction);
     check_overview_replacement(flattened, cache, interaction);
     flattened.view.compose.pixels_per_standard_measure = 0;
@@ -2983,7 +2982,6 @@ TEST_CASE("Compose overview generation ignores playback scroll timing offsets an
     fixture.song.charts.front().beat_zero_audio_offset_seconds = {1, 10};
     fixture.update_timing();
     expect_compose_test(fixture.project() == generation);
-    expect_compose_test(fixture.cache.waveform.waveform_overview_revision == fixture.cache.stamp().document.revision);
     frontend_workspace_view_t second;
     second.view.compose = fixture.flattened.view.compose;
     expect_compose_test(fixture.project(second) == generation);
@@ -2994,11 +2992,11 @@ TEST_CASE("Compose overview source revision changes generation even when wavefor
           "[sys][waveform-projection][overview-generation]") {
     overview_generation_fixture_t fixture;
     const auto before = fixture.project();
-    const auto* identity = fixture.cache.waveform.waveform_overview_identity;
+    const auto* identity = std::get<1>(*fixture.cache.waveform.overview.key());
     fixture.analysis.waveform->key.source.source_identity = "content:v2";
     for (auto& bin : fixture.analysis.waveform->bins) bin.absolute_peak = {.75f, .75f};
     const auto replacement = fixture.project();
-    expect_compose_test(fixture.cache.waveform.waveform_overview_identity == identity);
+    expect_compose_test(std::get<1>(*fixture.cache.waveform.overview.key()) == identity);
     expect_compose_test(replacement > before);
     expect_compose_test(fixture.flattened.compose.waveform.overview_row.front().absolute_peak == .75f);
     expect_compose_test(fixture.project() == replacement);
@@ -3892,7 +3890,7 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     borrow_waveform_frame(fixture, arena);
     expect_waveform_arena(project_waveform_frame(fixture));
     compare_cached_envelope_source(fixture);
-    const auto* persistent_overview = fixture.cache.waveform.waveform_overview_rows.data();
+    const auto* persistent_overview = fixture.cache.waveform.overview.value().rows.data();
     const auto* persistent_envelope = fixture.cache.waveform.waveform_envelope_ring.rows.data();
     const auto generation = fixture.flattened.view.compose.waveform_overview_generation;
     const auto projected = fixture.cache.waveform.waveform_envelope_ring.projected_rows;
@@ -3917,7 +3915,7 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     expect_waveform_arena(stable);
     expect_waveform_arena(maximum_allocations <= 10);
     expect_waveform_arena(projected > 0);
-    expect_waveform_arena(fixture.cache.waveform.waveform_overview_rows.data() == persistent_overview);
+    expect_waveform_arena(fixture.cache.waveform.overview.value().rows.data() == persistent_overview);
     expect_waveform_arena(fixture.flattened.view.compose.waveform_overview_rows != persistent_overview);
     expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.rows.data() == persistent_envelope);
     expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.projected_rows == 0);
@@ -3930,7 +3928,7 @@ TEST_CASE("Compose waveform arena exhaustion clears both output arrays without c
     envelope_projection_fixture_t fixture;
     fixture.project();
     const auto projected = fixture.cache.waveform.waveform_envelope_ring.projected_rows;
-    const auto generation = fixture.cache.waveform.waveform_overview_generation;
+    const auto generation = fixture.cache.waveform.overview.value().generation;
     for (const auto limit : {std::size_t{64}, sizeof(WormUiComposeWaveformRowView) * WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY}) {
         frame_arena_t arena({.chunk_bytes=limit,.maximum_bytes=limit});
         borrow_waveform_frame(fixture, arena);
@@ -3938,7 +3936,7 @@ TEST_CASE("Compose waveform arena exhaustion clears both output arrays without c
         check_empty_frame_waveform(fixture.flattened.view.compose);
         expect_waveform_arena(fixture.flattened.view.compose.truncated);
         expect_waveform_arena(fixture.cache.waveform.waveform_envelope_ring.projected_rows == projected);
-        expect_waveform_arena(fixture.cache.waveform.waveform_overview_generation == generation);
+        expect_waveform_arena(fixture.cache.waveform.overview.value().generation == generation);
     }
 }
 TEST_CASE("Compose waveform unavailable projection removes stale arena pointers after reset",

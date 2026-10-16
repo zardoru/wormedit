@@ -14,7 +14,7 @@ Behavior is preserved except explicit owner decisions. Every approved behavior c
 
 Keep the audit's necessary complexity: ordered explicit cancellation/join/cleanup/output close, notifications last and probe scheduler after resident loader; generation bump first; stack frame projections and local tap timestamp/viewport delta; project-owned chart-keyed maps; decoder feature blocks; captured-state, cache/workspace and per-batch-item stamps; staged scratch histories/Undo merging and distinct plan/parse/query/storage/dispatch semantics. Do not pursue rejected claims or merge boundary calls with different triggers.
 
-Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake) → T-631 (views as `T::from`; drake, or any free lane once T-630 lands) → T-632 (indices owned by the committed snapshot; one cache type); T-620 core, then its sys/UI inventory (hydra); then T-633 (cut down the outcome and status types, after the sys/UI wave and T-630); then T-634 (one active gesture and one runner for gestures and proposals, after T-630); T-635 (one async shell; independent, after T-620's sys/UI wave); then the ceremony audit's cards ([audit](../../audits/ceremony-2026-10-15.md), 2026-10-15): T-636 (one route per command and compose enum, plus command completion), T-637 (core edit operations and one target query), T-638 (reuse the chart-object ID traversal), T-640 (action capabilities beside execution), and proposed T-639 (timing kind→storage), T-641 (UI capture continuation, input to the Nuklear audit) and T-642 (namespace and private forwarders, last) and T-643 (every ID domain through one reducer, from the owner's 2026-10-15 question); T-644 (reduce low-value and redundant tests, owner 2026-10-15, after T-633); then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards, after T-631 and T-632 so it reads the final view names and cache type; then a shrink-wrap audit (owner, 2026-10-14) of the whole tree for abstractions low on purpose that lower cohesion: one-line forwarders and adapters, wrapper types around a single field or call, pass-through layers, single-use helpers split away from their only caller (including helpers extracted only to pass the complexity check, which should be cohesive steps, not fragments), and parallel types for one concept. Known target: the 70 `*_result_t::from(*_outcome_t&&)` adapters T-620 keeps for sys/UI callers (2026-10-14), which its sys/UI follow-up should delete. Keep an abstraction when it names a recurring pattern, owns an invariant or is the one owner of a fact; the audit produces its own cards; T-621 (folders) stays last.
+Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake) → T-631 (views as `T::from`; drake, or any free lane once T-630 lands) → T-632 (indices owned by the committed snapshot; one cache type); T-620 core, then its sys/UI inventory (hydra); then T-633 (cut down the outcome and status types, after the sys/UI wave and T-630); then T-634 (one active gesture and one runner for gestures and proposals, after T-630); T-635 (one async shell; independent, after T-620's sys/UI wave); then the ceremony audit's cards ([audit](../../audits/ceremony-2026-10-15.md), 2026-10-15): T-636 (one route per command and compose enum, plus command completion), T-637 (core edit operations and one target query), T-638 (reuse the chart-object ID traversal), T-640 (action capabilities beside execution), and proposed T-639 (timing kind→storage), T-641 (UI capture continuation, input to the Nuklear audit) and T-642 (namespace and private forwarders, last) and T-643 (every ID domain through one reducer, from the owner's 2026-10-15 question); T-644 (reduce low-value and redundant tests, owner 2026-10-15, after T-633); the Nuklear pattern audit ([audit](../../audits/nuklear-2026-10-16.md), 2026-10-16) proposed T-645–T-650 and extensions to T-641/T-642, awaiting owner review; then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards, after T-631 and T-632 so it reads the final view names and cache type; then a shrink-wrap audit (owner, 2026-10-14) of the whole tree for abstractions low on purpose that lower cohesion: one-line forwarders and adapters, wrapper types around a single field or call, pass-through layers, single-use helpers split away from their only caller (including helpers extracted only to pass the complexity check, which should be cohesive steps, not fragments), and parallel types for one concept. Known target: the 70 `*_result_t::from(*_outcome_t&&)` adapters T-620 keeps for sys/UI callers (2026-10-14), which its sys/UI follow-up should delete. Keep an abstraction when it names a recurring pattern, owns an invariant or is the one owner of a fact; the audit produces its own cards; T-621 (folders) stays last.
 
 Each implementation card runs the full Verify gate. After T-622 lands, add `cmake --preset linux-clang`, `cmake --build --preset linux-clang` and `ctest --preset linux-clang --output-on-failure` to each gate. libc++ is gated only after the owner installs it; record configured/not run until then. No Xvfb in implementer sandboxes. A failing gate is fixed within authorized scope or stops the card and is reported.
 
@@ -1010,6 +1010,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Findings closed:** CE9's seven verified continuation owners; extend inventory after the scheduled audit rather than claiming all UI drags are identical.
 - **Stale-plan audit:** Follow existing compose_drag_capture_t and continue_span_capture before adding helpers. For each drag, record begin/active/runtime state, focus/occlusion/overflow, identity/source/geometry checks, lost-button cancellation, threshold rules, release/click/replay behavior and emitted action. Test bookmark project reset invariant before calling project omission a bug. Include Audio Slices outer stale-cancel/render path, not only its match helper.
 - **Outcome:** Existing capture owner provides a typed stack continuation decision with explicit source/release policies. Emitters contain domain action payload construction and intentional click/replay hooks, not repeated common guards. Core proposal/gesture validity and UI input capture stay separate boundaries.
+- **Addition (Nuklear audit CEn1, 2026-10-16):** see `docs/audits/nuklear-2026-10-16.md` for the seven-owner policy matrix. Keep the bookmark project-reset result; trace the timing-stage overflow path through its outer cancellation before any change; keep every click/release difference. The existing span continuation and capture identity are the owners; no new UI lifetime or core runner.
 - **Read first:** `docs/audits/ceremony-2026-10-15.md` CE9; scheduled Nuklear audit; D6; `src/ui/nuklear/compose_drag_capture.h`; `src/ui/nuklear/compose_timing_input.cpp:121`; `docs/frontend-event-harness.md`; T-631/T-632/T-634 completions.
 - **Files owned:** `src/ui/nuklear/compose_drag_capture.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_timing_input.cpp`, `src/ui/nuklear/audio_panel.cpp`; exact state/header support recorded after inventory. Existing harness support/tests: `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/markers_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp` as needed; any focused new harness path registered/recorded.
 - **Runs after/before:** After T-631/T-632/T-634 and the Nuklear pattern audit; before T-642/T-621. Coordinate other input-routing cards first.
@@ -1032,6 +1033,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Findings closed:** CE10: 81 namespace blocks in three additional core files; six bounded private forwarding sites. T-634 already owns the other 38 gesture-lifecycle blocks.
 - **Stale-plan audit:** Count reopened namespaces and repeated includes after T-634/T-640; inspect lookup/anonymous scope boundaries. For each short function, read callers and identify invariant/policy/ABI/test purpose before deleting. Confirm six private sites still only forward. Do not classify parser trim policies, synchronized accessors or convenience transaction boundaries as transparent.
 - **Outcome:** Cohesive contiguous blocks per actual namespace/owner and direct calls to existing helpers where private aliases add no policy. Domain helpers extracted for meaningful steps survive; no complexity-driven giant function results.
+- **Addition (Nuklear audit CEn8, 2026-10-16, for owner review):** the four UI wrapper sites remain; optional scope extension `src/ui/nuklear/command_menu.cpp:147,157` reusing `modal_input.h::forward_modal_key` (full text-event forwarding stays; keep captured scancode, IME and close ownership; rerun the command-menu harness).
 - **Read first:** `docs/audits/ceremony-2026-10-15.md` CE10; code-style checklist; T-634/T-640 completion notes; actual wrapper definitions/callers; AST-aware rename guidance if any symbol rename is needed.
 - **Files owned:** `src/core/note_move.cpp`, `src/core/note_placement.cpp`, `src/core/interaction_selection.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/formats/native_project_storage.cpp`, `src/formats/osu_mania.cpp`. No header/API changes by default; exact supporting caller declarations only if justified and recorded.
 - **Runs after/before:** After T-634/T-640/T-641 and the Nuklear audit, plus T-620/T-631/T-632/T-633; immediately before T-621 folder moves. Split core scaffolding and private wrappers into separate checkpoints if still worthwhile.
@@ -1095,3 +1097,182 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Reject/failure behavior:** If no other test covers a behavior, keep the test (or merge it into the runner test first). A failed gate stops completion.
 - **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
 - **Out of scope:** Production refactors, new coverage for untested behavior (list gaps instead), changing test frameworks.
+
+## T-645 Name Compose input ownership queries by their consumer
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn2; separate from CEn1/T-641 continuation phases.
+- **Stale-plan audit:** Re-read the seven sites at `compose_panel.cpp:1258,1351,1380` and `frontend.cpp:1033,1391,1399,3045`; compare every member, local consumed flag and evaluation phase with the current cancellation registry. Drop already-shared expressions.
+- **Outcome:** Canvas hover, paint admission and frontend editor-modal gates read named queries on the existing Compose owner instead of reconstructing overlapping field inventories.
+- **Read first:** `docs/architecture.md`; `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/compose_panel.cpp`; `src/ui/nuklear/frontend.cpp`; `src/ui/nuklear/compose_input_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_input_queries.h` (new borrowed query interface if needed), `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `tests/ui/tap_timing_panel_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`.
+- **Runs after/before:** After T-641/T-634 and active frontend routing work; before T-649 and T-642/T-621. Coordinate frontend.cpp ownership with T-648.
+- **Steps:**
+  1. Save a consumer × state-term × phase membership matrix, including menu inclusion, paint/hover differences and locally accumulated fit/mix/resize consumption.
+  2. Add only purpose-specific state queries, without moving state; share common membership predicates where the matrix proves equivalence.
+  3. Replace the seven bounded inventory sites while keeping external conditions and between-phase recomputation explicit.
+  4. Confirm existing event behavior at the query boundary plus domain wiring; add only missing meaningful coverage, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same routing order, candidate/release ownership, popup service before occlusion, transient consumption and cancel-action handling. D6: no lifetime regrouping; no cached whole-frame answer.
+- **Reject/failure behavior:** Focus loss/overflow/stale input cancels exactly as before; a suspicious membership difference is preserved and reported. Failed event baseline or gate stops completion.
+- **Verify:** GATE; focused hover, popup/inline-editor, command-menu and tap routing cases in the owned harness files. Compare action kinds/count/order and release consumption with step 1 baseline.
+- **Target shape:**
+  ```cpp
+  const compose_input_queries_t claims{state};
+  const bool hover_blocked = claims.is_canvas_hover_blocked() || fit_consumed;
+  input.compose_pointer_captured = hover_blocked || mix_consumed || resize_consumed;
+  const bool paint_blocked = claims.is_paint_blocked() || fit_consumed ||
+      mix_consumed || resize_consumed || compose_action_has_cancel(action);
+  process_compose_canvas_tools(input, paint_blocked);
+  ```
+  Grep the original field sets/call shapes; policy membership must live at the query owner, not reappear in caller helpers.
+- **Out of scope:** Capture continuation T-641; popup begin/end T-649; state lifetime split forbidden by D6; redundant-test deletion T-644; folder moves T-621. Do not union every active state into one generic blocked flag.
+
+## T-646 Give native icon widgets one availability and feedback shell
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn3; two native icon cell bodies and bounded toolbar disable/render/enable callers.
+- **Stale-plan audit:** Re-read `chrome.h:281–331`, `components.cpp:25–38,159–168` and toolbar disable scopes by body. Record native click timing vs custom Button and parent-disabled behavior; do not count multi-control scopes as single-widget copies.
+- **Outcome:** Native icon widgets own cell style, disabled non-activation and feedback once; toolbar code states availability and the action it emits.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/chrome.h`; `src/ui/nuklear/components.cpp`; `src/ui/nuklear/compose_toolbar.cpp`; `tests/ui/components_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/components.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/ui/components_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`. Start with the three standalone toolbar sites at lines 65/89/101; record any extension within toolbar before edits.
+- **Runs after/before:** Independent of T-645; before T-642/T-621. No parallel edits with catalog/chrome implementation or theme work.
+- **Steps:**
+  1. Save click/tint/disabled-tooltip behavior for both glyph sources and their parent-disabled scopes.
+  2. Share the native button cell/feedback protocol, retaining Lucide and existing raw draw-function glyphs; add trailing defaulted enabled fields without constructors.
+  3. Migrate the three bounded toolbar sites; leave domain action-slot/capacity checks at emitters.
+  4. Verify native disabled/selected/hover behavior once at the shell and toolbar wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same native activation phase, bounds/layout consumption, selected tint, style restoration, clipping and occluded/disabled tooltip policy. No new per-event callbacks or allocations.
+- **Reject/failure behavior:** Disabled or parent-disabled widget never activates; invalid widget retains existing behavior. No silent tooltip or click-policy unification; gate failure stops.
+- **Verify:** GATE; run owned component tests for native activation/disabled parent and one production toolbar harness path. Existing custom Button tests are not proof of native equivalence.
+- **Target shape:**
+  ```cpp
+  const bool clicked = chrome::IconButton{
+      .glyph = Glyph::audio_lines,
+      .tooltip = tooltip,
+      .selected = view.bgm_bar_reserved,
+      .enabled = view.bgm_bar_available,
+  }.render(context);
+  if (clicked) append_bgm_bar_toggle(action, view.bgm_bar_reserved);
+  ```
+  Grep for duplicate `nk_button_label_styled(context, &style, "")` shells and the three removed caller guard sequences; native shell owns them once.
+- **Out of scope:** Custom Button click-policy migration has no evidence of equivalence; mass conversion of all 110 scopes rejected in CEn3. Capture/ownership T-641/T-645, catalog chrome T-647, test pruning T-644.
+
+## T-647 Share catalog headers, use filters and ID-capacity feedback
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn4's two headers, two four-choice use-filter controls, two ID footers and two UI grouped-count bodies.
+- **Stale-plan audit:** Search header tuple `{ID, Name, Uses, State}`, right-edge offsets, comma insertion and >90% amber formula; compare BGA thumbnail/action reservation with sounds chips/armed status. Existing selection and catalog confirmation already own their protocols.
+- **Outcome:** Sounds and BGA render header facts, four-choice use filters and ID-capacity feedback through one catalog chrome owner while keeping their domain rows and geometry.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/compose_sounds_panel.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`; `src/ui/nuklear/catalog_confirmation.h`; `src/ui/nuklear/keysound_list_state.h`.
+- **Files owned:** `src/ui/nuklear/catalog_chrome.h` (new header-only shared chrome), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `tests/ui/components_tests.cpp`, `cmake/ceremony_ratchet.txt`. Neutral formatting helper/sys consumer are not authorized by this list; request coordinator scope first if pursued.
+- **Runs after/before:** After current sound/BGA input changes and any T-646 overlap; before T-642/T-621. Coordinate BGA edits with T-641/T-649.
+- **Steps:**
+  1. Record existing columns, spacing, threshold/colors, zero and large count formatting; note third grouping body at `src/sys/audio_source_registration.cpp:388`.
+  2. Add shared catalog header/filter/capacity rendering with explicit existing geometry presets; return chosen filter values to each caller for its existing reset/scroll behavior; keep helper implementation cohesive rather than per-panel wrappers.
+  3. Migrate both headers/filter controls/footers and remove their UI grouping copies; report remaining sys copy or obtain coordinator scope for a neutral home.
+  4. Verify shared chrome behavior once and existing domain wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Exact labels, order, colors, row reservations, formatting and >90% comparison; no new frame allocation. Selection and staged action pointer ownership stay unchanged.
+- **Reject/failure behavior:** Unavailable ID capacity renders no footer as today; small-width layout preserves current clamps. No change to missing/unused deletion or arming eligibility; gate failure stops.
+- **Verify:** GATE; component-level numeric/header plan checks and existing sound/BGA workflow tests. Coordinator may visually review both docks outside sandbox; no source-scanning tests.
+- **Target shape:**
+  ```cpp
+  const auto columns = catalog_columns_t::from(bounds, catalog_layout_t::bga);
+  render_catalog_header(context, columns);
+  render_bga_rows(context, view, state, action);
+  if (view.bga_ids_available) {
+      render_catalog_capacity(context, view.bga_ids_used, view.bga_ids_total,
+                              view.bga_largest_free_run);
+  }
+  ```
+  Grep header tuple and footer strings: each shared fact has one owner; any retained third grouping consumer is named in evidence.
+- **Out of scope:** Generic catalog/list controller rejected by CEn4; filter reset/scroll differences and audition distinctions remain domain policy (D4). Capture T-641, retained popup T-649, transparent local raise wrappers T-642, tests T-644.
+
+## T-648 Put remaining-content-height arithmetic in one layout helper
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn5's eight calculations in seven files and Audio's local helper.
+- **Stale-plan audit:** Search bottom-minus-widget-Y arithmetic, not helper names. Save minimum/reserve/spacing/upper-cap matrix for Audio, Sounds (two), BGA, Layers, Measures, Compare and recent list.
+- **Outcome:** Each panel states its reserved height and clamp policy while a shared layout helper computes available logical content height.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/content_margin.h`; `src/ui/nuklear/audio_panel.cpp`; `src/ui/nuklear/compose_sounds_panel.cpp`; `src/ui/nuklear/compare_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/content_layout.h` (new header-only helper), `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/components_tests.cpp`, `cmake/ceremony_ratchet.txt`.
+- **Runs after/before:** After active edits in these panels, coordinated with T-645/T-647/T-649; before T-642/T-621. Bounded one-formula migration, not panel redesign.
+- **Steps:**
+  1. Record all eight calculations and Audio helper's three callers, including clamp order and logical coordinate origins.
+  2. Add the pure layout policy/calculation owner with current explicit minimum/reserve/spacing settings.
+  3. Replace the eight calculations; preserve recent-list upper cap and all per-panel minima.
+  4. Verify representative numeric layout cases once at the helper and existing panel wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same layout row height for same context; minima 48/60/80/160, footer reserves, spacing and tiny-window behavior unchanged. No persistent geometry state or allocation.
+- **Reject/failure behavior:** Invalid/small geometry follows existing clamp order; do not introduce new sanitization silently. Any layout regression or gate failure stops.
+- **Verify:** GATE; component tests for content origin, next-row position, reserve/spacing, minimum and optional caller cap. Do not repeat numeric helper tests in every panel.
+- **Target shape:**
+  ```cpp
+  const content_height_policy_t policy{
+      .minimum = 60.0f,
+      .reserved = footer_height,
+      .include_spacing = true,
+  };
+  const auto height = remaining_content_height(context, policy);
+  render_sound_list(panel, height);
+  ```
+  Grep `region.y + region.h - nk_widget_position` and its `content`/`area` aliases; only shared owner retains bottom-minus-next-row arithmetic for this population.
+- **Out of scope:** Popup centering/coordinate concern CEn6/T-649; generic layout DSL has no evidence of need; capture T-641; lifetime split D6; test pruning T-644; folder moves T-621.
+
+## T-649 Share retained-picker close and release mechanics
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn6, bounded to two consumers already deriving from retained_popup_t.
+- **Stale-plan audit:** Compare ContextMenu's current begin/update/retire/end owner with sound picker/bookmark chooser. Record idle, begin-failure, cancel, close-pending, release and revision-change paths; do not infer semantics from shared flags.
+- **Outcome:** The two pickers reuse popup-lifecycle operations for begin/close/end/release while their content, revision and dismissal policies remain explicit.
+- **Read first:** `src/ui/nuklear/popup_lifecycle.h`; `src/ui/nuklear/context_menu.cpp`; `src/ui/nuklear/compose_sound_picker.cpp`; `src/ui/nuklear/compose_bookmark_chooser.cpp`; `docs/frontend-event-harness.md`.
+- **Files owned:** `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_bookmark_chooser.cpp`, `tests/ui/popup_lifecycle_tests.cpp`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/bookmark_chooser_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`. No state-header relocation or ContextMenu rewrite by default.
+- **Runs after/before:** After T-641/T-645; before T-642/T-621. Coordinate with any popup/IME fixes.
+- **Steps:**
+  1. Save two-picker lifecycle policy matrix, including revision refresh vs cancel, outside dismissal, quiet-key set, edit unfocus and current bounds math.
+  2. Extend existing popup lifecycle operations over existing flags with a stack decision; retain policy-specific validity and dismissal at the consumer.
+  3. Migrate sound picker then bookmark chooser; keep ContextMenu and other popups as separate consumers, not migration targets.
+  4. Verify mechanical safeguards once and each picker's revision/content/wiring behavior, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Release leakage prevention, opening press, focus, selection, query refresh, all-key quietness and end-call balance unchanged. D6 forbids lifetime regrouping; no stored callbacks/ref mirrors or heap shell.
+- **Reject/failure behavior:** Preserve each current begin-failure path, including its return ownership. Sound revision cancels; bookmark revision refreshes. If a shared operation cannot preserve both policies without vague bool bundles, stop/report.
+- **Verify:** GATE; owned lifecycle tests plus production picker harness checks for cancel/focus/release, revision behavior and IME Enter wiring. Add failing-before regression only for separately owner-approved corrections.
+- **Target shape:**
+  ```cpp
+  if (state.open && !sound_context_is_current(state, view, focused))
+      cancel_compose_sound_picker(state);
+  auto popup = begin_retained_popup(context, state, title, bounds, policy);
+  if (popup.has_contents()) {
+      render_search(context, state);
+      render_results(context, view, action, compose);
+  }
+  end_retained_popup(context, state, popup);
+  ```
+  Grep two renderers for manual close_pending/begin-failure/end choreography; keep deliberate policy checks visible instead of forwarding through per-picker shell aliases.
+- **Out of scope:** Moved-host geometry Q in CEn6 needs reproduction/owner decision; preserve current bounds now. Inline label editor already shared; inline timing/confirmations/Dialog have distinct contracts. Capture T-641; input queries T-645; tests T-644.
+
+## T-650 Serialize metadata rational action text once
+
+- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Findings closed:** CEn7's three identical numerator/denominator buffer writers.
+- **Stale-plan audit:** Search writes to action_numerator_text followed by denominator/pointer assignment; recheck shared parse/display helpers and absent/blank/unset-rating behavior. Wire fraction text is not decimal display text.
+- **Outcome:** Existing metadata state serializes one rational into its existing frontend-owned action arrays; offset, chart and batch emitters only assign their domain fields.
+- **Read first:** `src/ui/nuklear/metadata_state.h`; `src/ui/nuklear/metadata_state.cpp`; `src/ui/nuklear/metadata_audio_section.cpp`; `src/ui/nuklear/metadata_difficulty_section.cpp`; `tests/ui/nuklear_metadata_state_tests.cpp`.
+- **Files owned:** The four production files above, `tests/ui/nuklear_metadata_state_tests.cpp`, `cmake/ceremony_ratchet.txt`. Use the existing test target; no new test/CMake registration needed.
+- **Runs after/before:** Independent once metadata edits settle; before T-642/T-621.
+- **Steps:**
+  1. Confirm the three buffer pairs' capacities, signedness, formatting and lifetime through immediate action dispatch.
+  2. Add a metadata-state member that writes those existing arrays and returns borrowed pointer fields; do not create a result/outcome adapter.
+  3. Replace the offset/chart/batch formatting pairs, retaining action gates and optional rating logic.
+  4. Verify serialization once plus existing domain wiring, lower/add ratchet row, review checklist, run GATE.
+- **Invariants:** Same wire bytes for signed numerator/unsigned denominator and same storage lifetime; arrays stay on existing persistent state. No parser/display-policy changes or new allocation.
+- **Reject/failure behavior:** Invalid input and unavailable/already-used action slots retain current no-action behavior. Do not serialize absent rating or silently normalize denominators; failed gate stops.
+- **Verify:** GATE; owned metadata tests cover zero/negative numerator, unsigned denominator and pointer lifetime into state, plus existing offset/chart/batch semantics. No duplicate per-emitter buffer tests.
+- **Target shape:**
+  ```cpp
+  const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
+  action.metadata_edit = WORM_UI_METADATA_EDIT_CHART;
+  action.metadata_document_revision = metadata.document_revision;
+  action.metadata_chart_id = metadata.chart_id;
+  action.metadata_chart_rating_numerator_text = wire.numerator;
+  action.metadata_chart_rating_denominator_text = wire.denominator;
+  ```
+  Grep writes to action_numerator_text: serialization lives once at the metadata-state owner; action-specific pointer field assignments stay local.
+- **Out of scope:** Format-schema fallback A/Q needs its own policy inventory; field validation/parser redesign unapproved. UI lifetime split D6; runner/result work T-633; redundant tests T-644.

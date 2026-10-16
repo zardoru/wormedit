@@ -14,15 +14,15 @@ beat_section_edit_t make_beat_section_insertion(compose_action_context_t& contex
     bool from_selection{};
     if (context.state.retained_selection_range) {
         const auto& selection = *context.state.retained_selection_range;
-        const auto begin = absolute_row(*measures, selection.begin);
-        const auto end = absolute_row(*measures, selection.end);
+        const auto begin = (*measures).row_of( selection.begin);
+        const auto end = (*measures).row_of( selection.end);
         if (!begin || !end || *begin >= *end)
             return {.error =
                         "The retained area/Space interval is no longer valid; select it again."};
         span = selection;
         from_selection = true;
     } else {
-        const auto begin = absolute_row(*measures, context.state.cursor);
+        const auto begin = (*measures).row_of( context.state.cursor);
         const auto denominator = context.state.active_snap_denominator;
         if (!begin || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0)
             return {.error = "The active Compose grid cannot define a section span."};

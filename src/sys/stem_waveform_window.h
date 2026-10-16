@@ -418,7 +418,7 @@ struct stem_index_channel_t {
 };
 struct stem_geometry_indices_t {
     const timing_index_t* timing{};
-    const measure_index_t* measures{};
+    const result_t<measure_index_t, diagnostic_list_t>* measures{};
 };
 struct stem_index_query_t {
     chart_stamp_t stamp;
@@ -526,8 +526,10 @@ inline void build_stem_index(stem_index_data_t& index, const song_document_t& do
     const chart_document_t& chart, std::span<const audio::decoded_source_binding_t> bindings,
     stem_geometry_indices_t indices) {
     index = {};
-    if (indices.measures) index.measures = *indices.measures;
-    else {
+    if (indices.measures) {
+        if (!*indices.measures) return;
+        index.measures = **indices.measures;
+    } else {
         const auto built = measure_index_t::from(chart);
         if (!built) return;
         index.measures = *built;
@@ -585,6 +587,7 @@ inline void update_stem_selection(stem_index_data_t& index, const chart_document
     const song_document_t& document, const chart_document_t& chart, measure_id_t cursor,
     std::size_t window, std::span<const audio::decoded_source_binding_t> bindings,
     stem_geometry_indices_t indices = {}) -> std::vector<const sound_channel_t*> {
+    if (indices.measures && !*indices.measures) return all_stem_channels(chart);
     std::uint64_t built_timing_fingerprint{};
     auto& data = index.get_or_build(
         stem_index_query_t{chart_stamp_t::from(document, chart.id), bindings, indices.timing,
@@ -627,7 +630,8 @@ inline void update_stem_selection(stem_index_data_t& index, const chart_document
     const auto first = center > window_measures ? center - window_measures : 0;
     const auto last = std::min(chart.measures.size(), center + window_measures + 1);
     std::optional<measure_index_t> built_measures;
-    const auto* measure_index = indices.measures;
+    if (indices.measures && !*indices.measures) return all_stem_channels(chart);
+    const auto* measure_index = indices.measures ? &**indices.measures : nullptr;
     if (!measure_index) {
         auto built = measure_index_t::from(chart);
         if (!built) return all_stem_channels(chart);

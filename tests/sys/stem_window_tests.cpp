@@ -624,3 +624,18 @@ TEST_CASE("packed waveform stacks share the next strictly later column trigger",
     CHECK(t459_stacked_piece_endpoints(false));
     CHECK(t459_stacked_piece_endpoints(true));
 }
+
+TEST_CASE("Stem visibility retains a supplied committed geometry failure", "[sys][stem]") {
+    song_document_t song{.id = {1}, .charts = {{.id = {2}, .divisions_per_standard_measure = 960,
+        .measures = {{.id = {3}}},
+        .bpms = {{.id = {4}, .position = {{3}, 0}, .beats_per_minute = {120, 1}}}}}};
+    const auto& chart = song.charts.front();
+    const result_t<measure_index_t, diagnostic_list_t> failure = std::unexpected(diagnostic_list_t{});
+    sys::stem_index_t cache;
+    const auto channels = sys::indexed_visible_stem_channels(cache, song, chart, measure_id_t{3}, 1, {},
+        {.measures = &failure});
+    CHECK_FALSE(cache.has_value());
+    CHECK(channels.empty());
+    static_cast<void>(sys::indexed_visible_stem_channels(cache, song, chart, measure_id_t{3}, 1, {}));
+    CHECK(cache.value().is_built);
+}

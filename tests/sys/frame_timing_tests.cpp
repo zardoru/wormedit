@@ -2219,7 +2219,7 @@ TEST_CASE("Paste preview owns geometry across frames and publishes one undoable 
     copy_preview_note(fixture);
     fixture.interaction->cursor.row = 240;
     std::string status;
-    expect_compose_test(static_cast<bool>(begin_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(static_cast<bool>(begin_compose_paste(fixture.application, fixture.history,
                                *fixture.interaction, status)));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
     expect_compose_test(static_cast<bool>(fixture.history.document.charts.front().measures.front().notes.size() == 1));
@@ -2249,7 +2249,7 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     copy_preview_note(fixture);
     fixture.interaction->cursor.row = 0;
     std::string status;
-    expect_compose_test(static_cast<bool>(begin_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(static_cast<bool>(begin_compose_paste(fixture.application, fixture.history,
                                *fixture.interaction, status)));
     fixture.project();
     expect_compose_test(!static_cast<bool>(fixture.flattened.view.compose.paste_valid));
@@ -2259,7 +2259,7 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
     expect_compose_test(!static_cast<bool>(status.empty()));
     expect_compose_test(static_cast<bool>(fixture.history.undo.empty()));
     fixture.interaction->cursor.row = 240;
-    expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(static_cast<bool>(revise_compose_paste(fixture.application, fixture.history,
                                 fixture.interaction->chart, fixture.interaction->cursor)));
     expect_compose_test(static_cast<bool>(fixture.application.project.clipboard.paste_session->proposal.value.has_value()));
     ++fixture.history.document.revision;
@@ -2693,7 +2693,7 @@ TEST_CASE("Pointer paste retains cursor and viewport and FIFO release commits th
     copy_preview_note(fixture);
     fixture.interaction->cursor.row = 0;
     std::string status;
-    expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(begin_compose_paste(fixture.application, fixture.history,
                                    *fixture.interaction, status));
     const auto cursor = fixture.interaction->cursor;
     const auto scroll = fixture.interaction->viewport_scroll_pixels;
@@ -2721,7 +2721,7 @@ TEST_CASE("Paste cached anchor keeps collision diagnostics across an outside poi
     copy_preview_note(fixture);
     fixture.interaction->cursor.row = 0;
     std::string status;
-    expect_compose_test(begin_compose_paste(fixture.application, fixture.history.document,
+    expect_compose_test(begin_compose_paste(fixture.application, fixture.history,
                                    *fixture.interaction, status));
     const std::string collision{fixture.application.project.clipboard.paste_session->proposal.diagnostics.front().message};
     expect_compose_test(!collision.empty());

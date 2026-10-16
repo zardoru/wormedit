@@ -300,7 +300,7 @@ auto drawn_stems(const bmson_waveform_projection_context_t& context, const chart
             stem_window_measures(context.flattened.view.compose.viewport_height_pixels,
                                  context.flattened.view.compose.pixels_per_standard_measure),
             context.audition_sources.bindings(context.history.document), wormedit::sys::stem_geometry_indices_t{
-                .timing = timing, .measures = indices && indices->measures ? &*indices->measures : nullptr});
+                .timing = timing, .measures = indices ? &indices->measures : nullptr});
         visible = fallback_visible;
     }
     for (const auto* channel : visible) {
@@ -507,9 +507,10 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
     const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
     const auto& measures = context.history.indices(chart->id)->measures;
+    if (!measures) return;
     prepare_packed_waveform_index(cache.stems.packed_waveform_index, context.history.document,
         *chart, context.audition_sources.bindings(context.history.document), *cache.timing.marker_timing_index,
-        measures ? &*measures : nullptr);
+        &*measures);
     const auto window = packed_window_seconds(*cache.timing.marker_timing_index,
         context.interaction_state->viewport_scroll_pixels, view.viewport_height_pixels,
         view.pixels_per_standard_measure);

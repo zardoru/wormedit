@@ -63,7 +63,7 @@ auto validate_bmson_marker_positions(
         return "BMSON marker target has invalid chart geometry.";
     }
     for (std::size_t index = 0; index < markers.size(); ++index) {
-        if (!absolute_row(*measure_index, markers[index].position)) {
+        if (!(*measure_index).row_of( markers[index].position)) {
             return "BMSON marker target is outside exact chart geometry.";
         }
         const auto repeated = std::ranges::any_of(markers.first(index), [&](const auto& prior) {
@@ -177,7 +177,7 @@ auto application_command_state_t::bga_draw_stroke_t::revise(
     for (;;) {
         if (visited.emplace(current, kind).second) {
             if (targets.size() >= 50'000) return {};
-            const auto position = wormedit::position_at_absolute_row(geometry, current);
+            const auto position = (geometry).position_at( current);
             if (!position) return {};
             targets.push_back({*position, static_cast<wormedit::visual_event_kind_t>(kind)});
         }
@@ -1091,7 +1091,7 @@ auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
     if (!context.state.pending_hold || !context.state.pending_hold->anchor_canvas_row) return false;
     const auto& measures = context.environment.document.history.indices(chart.id)->measures;
     const auto* index = measures ? &*measures : nullptr;
-    const auto row = index ? wormedit::absolute_row(*index, position) : std::nullopt;
+    const auto row = index ? (*index).row_of( position) : std::nullopt;
     if (!row) return false;
     place_virtual_note_from_pointer(input, context, *row, lane, result, accepted);
     return true;
@@ -1294,7 +1294,7 @@ auto move_compose_bookmark(const WormUiComposeInputAction& input,
     const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels)
                            : std::nullopt;
-    const auto position = row ? position_at_absolute_row(*index, *row) : std::nullopt;
+    const auto position = row ? (*index).position_at( *row) : std::nullopt;
     if (!position) return "Bookmark move has no valid destination row.";
     if (*position == *found->position) {
         result.accepted = true;
@@ -1687,7 +1687,7 @@ auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
     if (press ? selected : pending) return false;
     const auto& measures = context.environment.document.history.indices(context.input_chart->id)->measures;
     const auto* index = measures ? &*measures : nullptr;
-    const auto row = index ? wormedit::absolute_row(*index, state.cursor) : std::nullopt;
+    const auto row = index ? (*index).row_of( state.cursor) : std::nullopt;
     return row && wormedit::is_head_blocked_by_warp(*context.input_chart, *index, *row,
                                                     state.armed_note_kind);
 }
@@ -1814,7 +1814,7 @@ auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
     }
     application.project.clipboard.paste_session->anchor_available = true;
     application.project.clipboard.paste_session->pointer_cursor = context.state.cursor;
-    (void)revise_compose_paste(application, context.environment.document.history.document,
+    (void)revise_compose_paste(application, context.environment.document.history,
                                context.state.chart, *position);
     return compose_input_family_result_t::continue_batch({});
 }
@@ -1831,7 +1831,7 @@ auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_con
         context.input_source_y(input.y_pixels));
     const auto position = raw ? wormedit::snap_position(chart, index, *raw,
         wormedit::edit_snap_denominator(chart, context.state)) : std::nullopt;
-    return position ? wormedit::absolute_row(index, *position) : std::nullopt;
+    return position ? (index).row_of( *position) : std::nullopt;
 }
 
 auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,

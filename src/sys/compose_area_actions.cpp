@@ -161,8 +161,8 @@ auto add_speed_span_over_area_action_t::validate(compose_action_context_t& conte
     if (!context.state.retained_selection_range)
         return compose_action_outcome_t::blocked("Select an area first.");
     span = *context.state.retained_selection_range;
-    const auto begin = absolute_row(measures, span.begin);
-    const auto end = absolute_row(measures, span.end);
+    const auto begin = (measures).row_of( span.begin);
+    const auto end = (measures).row_of( span.end);
     if (!begin || !end || *begin >= *end || chart.divisions_per_standard_measure == 0)
         return compose_action_outcome_t::blocked("The area must cover at least one row.");
     beats = timing_arithmetic::rows_to_beat_fraction<rational_t>(
@@ -202,8 +202,8 @@ auto select_compose_area_contents(wormedit::document_history_t& history,
     if (!state.retained_selection_range)
         return std::nullopt;
     const auto span = *state.retained_selection_range;
-    const auto begin = absolute_row(*measures, span.begin);
-    const auto end = absolute_row(*measures, span.end);
+    const auto begin = (*measures).row_of( span.begin);
+    const auto end = (*measures).row_of( span.end);
     if (!begin || !end || *begin >= *end)
         return std::nullopt;
     auto temporary = state;
@@ -407,12 +407,12 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
     using namespace wormedit;
     if (!state.retained_selection_range)
         return false;
-    const auto begin = absolute_row(index, state.retained_selection_range->begin);
-    const auto end = absolute_row(index, state.retained_selection_range->end);
+    const auto begin = (index).row_of( state.retained_selection_range->begin);
+    const auto end = (index).row_of( state.retained_selection_range->end);
     if (!begin || !end || *begin >= *end)
         return false;
     const auto point_inside = [&](local_position_t position) {
-        const auto row = absolute_row(index, position);
+        const auto row = (index).row_of( position);
         return row && *row >= *begin && *row < *end;
     };
     const auto positioned = [&](const auto& values) {
@@ -420,8 +420,8 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
                                    [&](const auto& value) { return point_inside(value.position); });
     };
     const auto span_inside = [&](position_span_t span) {
-        const auto first = absolute_row(index, span.begin);
-        const auto last = absolute_row(index, span.end);
+        const auto first = (index).row_of( span.begin);
+        const auto last = (index).row_of( span.end);
         return first && last && *first < *end && *last >= *begin;
     };
     const auto warp = std::ranges::any_of(

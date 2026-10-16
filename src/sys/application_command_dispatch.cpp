@@ -252,9 +252,9 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
     const auto& indexed = context.environment.document.history.indices(chart->id)->measures;
     const auto* measures = indexed ? &*indexed : nullptr;
     const auto begin =
-        measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
+        measures ? (*measures).row_of( state->retained_selection_range->begin) : std::nullopt;
     const auto end =
-        measures ? absolute_row(*measures, state->retained_selection_range->end) : std::nullopt;
+        measures ? (*measures).row_of( state->retained_selection_range->end) : std::nullopt;
     if (!begin || !end || *begin >= *end ||
         !context.environment.editor.commands.services.transport_set_loop_selection(
             state->chart, context.environment.document.history.document.revision, *begin, *end,
@@ -374,7 +374,7 @@ auto clipboard_commands(command_context_t& context) -> command_result_t {
         std::string message;
         const bool accepted =
             begin_compose_paste(context.environment.editor.commands,
-                                context.environment.document.history.document, *state, message);
+                                context.environment.document.history, *state, message);
         return compose_action_outcome_t::from(std::move(message),
                                               accepted ? notification_severity_t::hint
                                                        : notification_severity_t::warning,
@@ -842,7 +842,7 @@ auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
     -> std::optional<wormedit::signed_rational_t> {
     using namespace wormedit;
     const auto* measures = indices.measures ? &*indices.measures : nullptr;
-    const auto row = measures ? absolute_row(*measures, position) : std::nullopt;
+    const auto row = measures ? (*measures).row_of( position) : std::nullopt;
     if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
     const auto& timing = indices.timing;

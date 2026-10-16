@@ -832,10 +832,10 @@ auto editor_interaction_has_pending_gesture(
     const wormedit::editor_interaction_state_t& state) -> bool;
 
 auto begin_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;
 auto revise_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
     wormedit::local_position_t anchor, std::string* failure = nullptr) -> bool;
 auto apply_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,

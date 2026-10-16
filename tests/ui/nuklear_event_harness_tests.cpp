@@ -7141,7 +7141,7 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
         expect_t422(static_cast<bool>(copied));
         f.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
-        expect_t422(begin_compose_paste(f.application, f.history.document, *f.interaction, status));
+        expect_t422(begin_compose_paste(f.application, f.history, *f.interaction, status));
         f.project();
         const auto target = placement_point(f, 240, 1);
         for (const auto& frame : click_at(f.harness, target.first, target.second))

@@ -15,7 +15,7 @@ namespace wormedit::sys {
 [[nodiscard]] inline auto preview_cursor_row(const measure_index_t& measures,
                                              local_position_t cursor, double subrow)
     -> std::optional<exact_chart_row_t> {
-    const auto absolute = absolute_row(measures, cursor);
+    const auto absolute = (measures).row_of( cursor);
     if (!absolute || !std::isfinite(subrow)) return std::nullopt;
     const auto row = static_cast<long double>(*absolute) + subrow;
     if (row < 0.0L || row > measures.total_rows) return std::nullopt;

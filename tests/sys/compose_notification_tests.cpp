@@ -546,7 +546,7 @@ TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
     REQUIRE(copied);
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
-    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     const auto y = fixture.stop_band_y();
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
                        {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
@@ -602,7 +602,7 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
         REQUIRE(copied);
         fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
-        REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+        REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
         (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
                            {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
         CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
@@ -642,7 +642,7 @@ TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes noth
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     fixture.state.cursor = {measure_id_t{1}, 780};
     std::string status;
-    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
     fixture.check_document_unchanged();
 }
@@ -690,7 +690,7 @@ TEST_CASE("Compose paste keeps its original status after posting a rebind error"
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
     REQUIRE(
-        begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+        begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     fixture.workspace.limits.maximum_charts = 0;
     const auto returned = fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
                                         .x_pixels = fixture.lane_x(),

@@ -256,7 +256,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     }
     speed_span_edit_t edit;
     if (moved->begin != original.begin) {
-        edit.position = position_at_absolute_row(*index, moved->begin);
+        edit.position = (*index).position_at( moved->begin);
         if (!edit.position)
             return "Speed edit has no valid destination row.";
     }

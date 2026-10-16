@@ -186,15 +186,12 @@ auto paste_anchor(application_command_state_t::paste_session_t& session,
 
 // Pasted playable heads obey the same Warp rule as placed ones; fakes, mines and tails may land.
 void block_paste_heads_in_warps(const wormedit::chart_document_t& chart,
+                                const wormedit::measure_index_t& index,
                                 wormedit::chart_paste_outcome_t& proposal) {
-    if (!proposal.value || chart.warps.empty()) return;
-    const auto indexed = wormedit::build_measure_index(chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&indexed);
-    if (!index) return;
     for (const auto& object : proposal.value->payload.report.objects) {
         const auto* note = std::get_if<wormedit::note_t>(&object);
-        const auto row = note ? index->row_of(note->position) : std::nullopt;
-        if (!row || !wormedit::is_head_blocked_by_warp(chart, *index, *row, note->kind)) continue;
+        const auto row = note ? index.row_of(note->position) : std::nullopt;
+        if (!row || !wormedit::is_head_blocked_by_warp(chart, index, *row, note->kind)) continue;
         proposal.diagnostics.push_back(wormedit::chart_paste_diagnostic_t::from(
             "Playable note heads cannot sit inside a warp.", proposal.value->stamp,
             std::move(proposal.value->payload.report)));
@@ -233,25 +230,30 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     return chart;
 }
 void build_compose_paste_preview(application_command_state_t::paste_session_t& session,
-    const wormedit::song_document_t& document, const wormedit::chart_document_t& source,
+    const wormedit::document_history_t& history, const wormedit::chart_document_t& source,
     wormedit::local_position_t anchor) {
+    const auto& document = history.document;
     session.anchor = anchor;
     session.anchor_available = true;
     session.proposal = wormedit::chart_paste_proposal_t::propose(document, source.id,
         session.clipboard, anchor, document.revision);
-    block_paste_heads_in_warps(source, session.proposal);
+    if (session.proposal.value && !source.warps.empty()) {
+        const auto* indices = history.indices(source.id);
+        if (indices && indices->measures)
+            block_paste_heads_in_warps(source, *indices->measures, session.proposal);
+    }
     const auto preview = wormedit::chart_paste_preview_view_t::from(session.proposal);
     const wormedit::chart_paste_report_t empty;
     session.geometry = paste_geometry(source, preview.report ? *preview.report : empty);
-    const auto indexed = wormedit::build_editor_field_scene_index(session.geometry, document.revision);
-    const auto* index = std::get_if<wormedit::editor_field_scene_index_t>(&indexed);
-    session.index = index ? std::optional{*index} : std::nullopt;
+    const auto indexed = wormedit::editor_field_scene_index_t::from(session.geometry, document.revision);
+    session.index = indexed ? std::optional{*indexed} : std::nullopt;
 }
 } // namespace compose_projection_detail
 
 auto revise_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
     wormedit::local_position_t anchor, std::string* failure) -> bool {
+    const auto& document = history.document;
     auto& session = application_state.project.clipboard.paste_session;
     if (!session) {
         if (failure) *failure = "The paste preview is stale.";
@@ -271,13 +273,14 @@ auto revise_compose_paste(application_command_state_t& application_state,
         session.reset();
         return false;
     }
-    build_compose_paste_preview(*session, document, *source, anchor);
+    build_compose_paste_preview(*session, history, *source, anchor);
     return true;
 }
 
 auto begin_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool {
+    const auto& document = history.document;
     if (!application_state.project.clipboard.chart_clipboard || editor_interaction_has_pending_gesture(state)) {
         status = "Paste requires a copied selection and no pending gesture.";
         return false;
@@ -292,7 +295,7 @@ auto begin_compose_paste(application_command_state_t& application_state,
         status = "The paste chart is unavailable.";
         return false;
     }
-    build_compose_paste_preview(session, document, *source, state.cursor);
+    build_compose_paste_preview(session, history, *source, state.cursor);
     application_state.project.clipboard.paste_session = std::move(session);
     status = "Paste preview: click or Enter to commit; Escape to cancel.";
     return true;
@@ -304,7 +307,7 @@ auto apply_compose_paste(application_command_state_t& application_state,
     if (severity) *severity = wormedit::notification_severity_t::warning;
     const auto anchor = application_state.project.clipboard.paste_session
         ? paste_anchor(*application_state.project.clipboard.paste_session, state.cursor) : state.cursor;
-    if (!revise_compose_paste(application_state, history.document, state.chart, anchor, &status))
+    if (!revise_compose_paste(application_state, history, state.chart, anchor, &status))
         return false;
     auto& session = *application_state.project.clipboard.paste_session;
     if (!session.anchor_available) { status = session.anchor_error; return false; }
@@ -2253,7 +2256,7 @@ void populate_compose_paste_projection(const compose_projection_context_t<wormed
         return;
     const auto anchor =
         paste_anchor(*application.project.clipboard.paste_session, input.frame.retained_state->cursor);
-    if (!revise_compose_paste(application, input.frame.history.document,
+    if (!revise_compose_paste(application, input.frame.history,
                               input.scope.chart_scope.chart.id, anchor))
         return;
     auto& session = *application.project.clipboard.paste_session;

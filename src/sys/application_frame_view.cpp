@@ -104,7 +104,7 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
         context.history.document, *chart, context.compose_interaction_state->cursor.measure,
         stem_window_measures(flattened.view.compose.viewport_height_pixels,
                              flattened.view.compose.pixels_per_standard_measure), bindings, wormedit::sys::stem_geometry_indices_t{.timing = timing,
-            .measures = measures ? &*measures : nullptr});
+            .measures = &measures});
 }
 #endif
 

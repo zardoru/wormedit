@@ -55,7 +55,7 @@ void check_rejected_object_audition(
     CHECK(*rejected.error().value.prepared == expected);
     REQUIRE(rejected.error().value.transport.has_value());
     CHECK(*rejected.error().value.transport ==
-          std::unexpected(audition_start_status_t::invalid_clip));
+          std::unexpected(wormedit::failure_code_t::invalid_data));
     CHECK(rejected.error().diagnostics.empty());
 }
 
@@ -145,7 +145,7 @@ TEST_CASE("object audition expected rejection retains prepared clips and transpo
     CHECK_FALSE(legacy);
     CHECK(legacy.prepared == expected);
     require_stem_preview(legacy.transport.has_value());
-    CHECK(*legacy.transport == std::unexpected(audition_start_status_t::invalid_clip));
+    CHECK(*legacy.transport == std::unexpected(wormedit::failure_code_t::invalid_data));
 }
 
 TEST_CASE("Stem click audition bounds decoded frames without changing offsets or shorter clips",

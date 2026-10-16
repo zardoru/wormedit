@@ -21,19 +21,19 @@ auto is_valid_clip(const audition_clip_t& clip) -> bool {
 auto audition_transport_bridge_t::start_clips(std::span<const audition_clip_t> clips)
     -> audition_start_outcome_t {
     if (clips.empty()) {
-        return std::unexpected(audition_start_status_t::empty);
+        return std::unexpected(failure_code_t::invalid_request);
     }
     if (clips.size() > maximum_layers_) {
-        return std::unexpected(audition_start_status_t::too_many_layers);
+        return std::unexpected(failure_code_t::capacity_exceeded);
     }
     if (!std::ranges::all_of(clips, is_valid_clip)) {
-        return std::unexpected(audition_start_status_t::invalid_clip);
+        return std::unexpected(failure_code_t::invalid_data);
     }
 
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return std::unexpected(audition_start_status_t::transport_start_failed);
+        return std::unexpected(failure_code_t::transport_failed);
     }
     token_ = token;
     std::vector<transport_voice_t> voices;
@@ -52,8 +52,8 @@ auto audition_transport_bridge_t::start_clips(std::span<const audition_clip_t> c
         static_cast<void>(transport_.stop());
         token_.reset();
         return std::unexpected(status.has_failure(failure_code_t::capacity_exceeded)
-                                   ? audition_start_status_t::transport_capacity_exceeded
-                                   : audition_start_status_t::transport_rejected_clip);
+                                   ? failure_code_t::capacity_exceeded
+                                   : failure_code_t::invalid_state);
     }
     return started_audition_t{.token = *token, .scheduled_layers = clips.size()};
 }

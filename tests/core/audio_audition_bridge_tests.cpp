@@ -59,7 +59,7 @@ TEST_CASE("audition bridge replaces generations and rejects invalid input before
     REQUIRE(first);
 
     const std::array invalid{clip("bad", std::numeric_limits<std::uint64_t>::max(), 2)};
-    CHECK(bridge.start_clips(invalid) == std::unexpected(audition_start_status_t::invalid_clip));
+    CHECK(bridge.start_clips(invalid) == std::unexpected(wormedit::failure_code_t::invalid_data));
     CHECK(bridge.session_token() == first.value().token);
     CHECK(transport.is_current(first.value().token));
 
@@ -77,12 +77,12 @@ TEST_CASE("audition bridge bounds layers and atomically rejects or stops session
     transport_t transport{cache, 1};
     audition_transport_bridge_t bridge{transport, 2};
     const std::array too_many{clip("one"), clip("two"), clip("three")};
-    CHECK(bridge.start_clips(too_many) == std::unexpected(audition_start_status_t::too_many_layers));
+    CHECK(bridge.start_clips(too_many) == std::unexpected(wormedit::failure_code_t::capacity_exceeded));
     CHECK_FALSE(bridge.session_token().has_value());
 
     const std::array over_transport_capacity{clip("one"), clip("two")};
     const auto rejected = bridge.start_clips(over_transport_capacity);
-    CHECK(rejected == std::unexpected(audition_start_status_t::transport_capacity_exceeded));
+    CHECK(rejected == std::unexpected(wormedit::failure_code_t::capacity_exceeded));
     CHECK_FALSE(rejected.has_value());
     CHECK_FALSE(bridge.session_token().has_value());
     CHECK(transport.scheduled_voice_count() == 0);

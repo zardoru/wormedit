@@ -247,7 +247,7 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
         CHECK((chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{-1, 8}));
         const auto timing = wormedit::build_timing_index(chart);
         REQUIRE(timing.index.has_value());
-        const auto beat_zero = wormedit::timing_at(*timing.index, 0);
+        const auto beat_zero = timing.index->seconds_at(0);
         REQUIRE(beat_zero.seconds.has_value());
         CHECK((*beat_zero.seconds == wormedit::signed_rational_t{-1, 8}));
         REQUIRE(chart.bpms.size() == 2);

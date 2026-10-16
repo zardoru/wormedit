@@ -1522,12 +1522,12 @@ auto reference_frame(const timing_index_t& timing, long double row, bool end,
                      const audio::waveform_t& waveform) -> std::uint64_t {
     const auto integer = static_cast<std::uint64_t>(std::floor(row));
     const auto fraction = row - integer;
-    const auto first = timing_at(timing, integer,
+    const auto first = timing.seconds_at(integer,
         fraction == 0 && !end ? timing_boundary_side_t::before_delays
                              : timing_boundary_side_t::after_stops);
     auto seconds = static_cast<long double>(first.seconds->numerator) / first.seconds->denominator;
     if (fraction != 0) {
-        const auto next = timing_at(timing, integer + 1, timing_boundary_side_t::before_delays);
+        const auto next = timing.seconds_at(integer + 1, timing_boundary_side_t::before_delays);
         seconds += (static_cast<long double>(next.seconds->numerator) / next.seconds->denominator - seconds) * fraction;
     }
     return static_cast<std::uint64_t>(std::clamp(end ? std::ceil(seconds * waveform.sample_rate)

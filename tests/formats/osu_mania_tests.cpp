@@ -76,7 +76,7 @@ void check_core_note_time(const wormedit::chart_document_t& chart, std::string_v
     REQUIRE(measures);
     const auto* note = source_note(chart, source_prefix);
     REQUIRE(note);
-    const auto time = wormedit::timing_at(*built.index, *measures, note->position);
+    const auto time = built.index->seconds_at(*measures, note->position);
     REQUIRE(time);
     const auto actual_ms = static_cast<long double>(time.seconds->numerator) * 1000.0L /
                            time.seconds->denominator;
@@ -96,7 +96,7 @@ void check_hold_endpoint(const wormedit::note_t& note, const wormedit::measure_i
                           const wormedit::timing_index_t& timing) {
     REQUIRE(note.end);
     CHECK(wormedit::absolute_row(measures, *note.end) > wormedit::absolute_row(measures, note.position));
-    CHECK(wormedit::timing_at(timing, measures, *note.end));
+    CHECK(timing.seconds_at(measures, *note.end));
 }
 
 void check_positive_holds(const wormedit::chart_document_t& chart, std::size_t expected) {

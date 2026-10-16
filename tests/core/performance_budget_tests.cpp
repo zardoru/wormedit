@@ -73,7 +73,7 @@ void verify_hit_index(const std::variant<editor_hit_test_index_t, diagnostic_lis
 void verify_timing_index(const timing_build_result_t& result) {
     REQUIRE(result);
     CHECK(result.index->total_rows == 400'000);
-    const auto end = timing_at(*result.index, 400'000);
+    const auto end = result.index->seconds_at(400'000);
     REQUIRE(end);
     CHECK(*end.seconds == (signed_rational_t{600, 1}));
 }

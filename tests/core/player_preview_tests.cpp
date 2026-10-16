@@ -59,7 +59,7 @@ auto preview_chart() -> chart_document_t {
 
 auto frame_at(const player_preview_index_t& index, std::uint64_t row,
               std::uint32_t sample_rate = 48'000) -> std::uint64_t {
-    const auto time = timing_at(index.timing, row);
+    const auto time = index.timing.seconds_at(row);
     REQUIRE(time);
     const auto frame = sample_frame_at(*time.seconds, sample_rate);
     REQUIRE(frame);
@@ -298,9 +298,9 @@ TEST_CASE("player preview uses scroll displacement and remains still through a s
     REQUIRE(tap_before != before.value->note_endpoints.end());
     CHECK((tap_before->bounds.top + tap_before->bounds.bottom) / 2.0 == Catch::Approx(32.0));
 
-    const auto event_time = timing_at(built.index->timing, 240);
+    const auto event_time = built.index->timing.seconds_at(240);
     const auto departure_time =
-        timing_at(built.index->timing, 240, timing_boundary_side_t::after_stops);
+        built.index->timing.seconds_at(240, timing_boundary_side_t::after_stops);
     REQUIRE(event_time);
     REQUIRE(departure_time);
     const auto event_frame = sample_frame_at(*event_time.seconds, 48'000);

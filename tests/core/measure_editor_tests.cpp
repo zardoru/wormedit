@@ -678,8 +678,8 @@ auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
     UNSCOPED_INFO("pause " << chart.pauses.front().duration.numerator << "/" << chart.pauses.front().duration.denominator);
     if (!after || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
     for (const auto row : {480U, 720U, 1920U, 1968U, 2016U, 2160U}) {
-        const auto old = timing_at(*old_timing.index, row);
-        const auto changed = timing_at(*after.index, row >= 1008 ? row - 48 : row);
+        const auto old = old_timing.index->seconds_at(row);
+        const auto changed = after.index->seconds_at(row >= 1008 ? row - 48 : row);
         if (!old || !changed || old.seconds != changed.seconds) return false;
     }
     const auto capacity = validate_measure(960, chart.measures[1].definition).row_capacity;
@@ -741,7 +741,7 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
         for (const auto& note : chunk.notes) {
             const auto row = absolute_row(*measures, note.position);
             if (!row) return false;
-            const auto at = timing_at(*timing.index, *row);
+            const auto at = timing.index->seconds_at(*row);
             if (!at) return false;
             times.push_back(*at.seconds);
         }
@@ -838,8 +838,8 @@ auto pause_conversion_whole_measure() -> bool {
     const auto after = build_timing_index(chart);
     if (!after || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
     for (const auto row : {1920U, 1968U, 2016U, 2160U}) {
-        const auto before_time = timing_at(*old.index, row);
-        const auto after_time = timing_at(*after.index, row - 960);
+        const auto before_time = old.index->seconds_at(row);
+        const auto after_time = after.index->seconds_at(row - 960);
         if (!before_time || !after_time || before_time.seconds != after_time.seconds) return false;
     }
     return chart.pauses.front().position == local_position_t{measure_id_t{12}, 0} &&

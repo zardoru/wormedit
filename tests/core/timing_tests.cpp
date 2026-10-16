@@ -69,23 +69,23 @@ auto aria_timing_chart() -> chart_document_t {
 
 auto seconds_at(const timing_index_t& timing, std::uint64_t row,
                 timing_boundary_side_t side = timing_boundary_side_t::event) -> signed_rational_t {
-    const auto result = timing_at(timing, row, side);
+    const auto result = timing.seconds_at(row, side);
     REQUIRE(result);
     return *result.seconds;
 }
 
 auto row_at(const timing_index_t& timing, signed_rational_t seconds,
             timing_inverse_options_t options = {}) -> signed_rational_t {
-    const auto result = musical_position_at(timing, seconds, options);
+    const auto result = timing.row_at(seconds, options);
     REQUIRE(result);
     return *result.absolute_row;
 }
 
 auto bounded_segment_round_trip(const timing_index_t& timing, const timing_segment_t& segment)
     -> bool {
-    const auto forward = timing_at(timing, exact_chart_row_t{segment.begin_row, {1, 4}});
+    const auto forward = timing.seconds_at(exact_chart_row_t{segment.begin_row, {1, 4}});
     if (!forward) return false;
-    const auto inverse = musical_position_at(timing, *forward.seconds);
+    const auto inverse = timing.row_at(*forward.seconds);
     if (!inverse) return false;
     const auto row = static_cast<long double>(inverse.absolute_row->numerator) /
                      inverse.absolute_row->denominator;
@@ -132,20 +132,20 @@ TEST_CASE("fractional grid rows retain exact timing across tempo and warp bounda
     const auto built = build_timing_index(chart);
     REQUIRE(built);
     const auto& timing = *built.index;
-    const auto before_change = timing_at(timing, exact_chart_row_t{959, {1, 2}});
-    const auto after_change = timing_at(timing, exact_chart_row_t{960, {1, 2}});
+    const auto before_change = timing.seconds_at(exact_chart_row_t{959, {1, 2}});
+    const auto after_change = timing.seconds_at(exact_chart_row_t{960, {1, 2}});
     REQUIRE(before_change);
     REQUIRE(after_change);
     CHECK(*before_change.seconds == signed_rational_t{2'879, 960});
     CHECK(*after_change.seconds == signed_rational_t{1'441, 480});
-    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {1, 0}}));
-    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {2, 2}}));
+    CHECK_FALSE(timing.seconds_at(exact_chart_row_t{960, {1, 0}}));
+    CHECK_FALSE(timing.seconds_at(exact_chart_row_t{960, {2, 2}}));
 
     chart.warps.push_back(
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
     const auto warped = build_timing_index(chart);
     REQUIRE(warped);
-    const auto inside = timing_at(*warped.index, exact_chart_row_t{720, {1, 2}});
+    const auto inside = warped.index->seconds_at(exact_chart_row_t{720, {1, 2}});
     REQUIRE(inside);
     CHECK(inside.inside_warp);
     CHECK(*inside.seconds == signed_rational_t{2, 1});
@@ -283,9 +283,9 @@ TEST_CASE("warps consume no elapsed time and suppress interior pauses and events
     REQUIRE(built.diagnostics.size() == 1);
     CHECK(built.diagnostics[0].severity == diagnostic_severity_t::warning);
     const auto& timing = *built.index;
-    const auto begin = timing_at(timing, 480);
-    const auto inside = timing_at(timing, 720);
-    const auto end = timing_at(timing, 960);
+    const auto begin = timing.seconds_at(480);
+    const auto inside = timing.seconds_at(720);
+    const auto end = timing.seconds_at(960);
     REQUIRE(begin);
     REQUIRE(inside);
     REQUIRE(end);
@@ -343,19 +343,19 @@ TEST_CASE("inverse timing exposes the selected side of a half-open warp plateau"
     REQUIRE(built);
     const auto& timing = *built.index;
 
-    const auto entry = musical_position_at(timing, {2, 1});
+    const auto entry = timing.row_at({2, 1});
     REQUIRE(entry);
     CHECK(entry.absolute_row == signed_rational_t{480, 1});
     CHECK(entry.inside_warp);
     const auto exit =
-        musical_position_at(timing, {2, 1}, {.warp_side = timing_warp_inverse_side_t::exit});
+        timing.row_at({2, 1}, {.warp_side = timing_warp_inverse_side_t::exit});
     REQUIRE(exit);
     CHECK(exit.absolute_row == signed_rational_t{960, 1});
     CHECK_FALSE(exit.inside_warp);
     CHECK(row_at(timing, {9, 4}) == signed_rational_t{1'020, 1});
 
-    const auto begin_round_trip = timing_at(timing, 480);
-    const auto end_round_trip = timing_at(timing, 960);
+    const auto begin_round_trip = timing.seconds_at(480);
+    const auto end_round_trip = timing.seconds_at(960);
     REQUIRE(begin_round_trip);
     REQUIRE(end_round_trip);
     CHECK(*begin_round_trip.seconds == *end_round_trip.seconds);
@@ -375,17 +375,16 @@ TEST_CASE("inverse timing honors signed beat-zero offsets and reports bounded fa
 
     CHECK(row_at(timing, {-1, 1}) == signed_rational_t{0, 1});
     CHECK(row_at(timing, {-3, 4}) == signed_rational_t{120, 1});
-    const auto too_early = musical_position_at(timing, {-3, 2});
+    const auto too_early = timing.row_at({-3, 2});
     REQUIRE_FALSE(too_early);
     CHECK(too_early.error->code == timing_error_code_t::position_out_of_range);
-    const auto pre_zero = musical_position_at(
-        timing, {-3, 2}, {.extrapolate_before_chart = true});
+    const auto pre_zero = timing.row_at({-3, 2}, {.extrapolate_before_chart = true});
     REQUIRE(pre_zero);
     CHECK(pre_zero.absolute_row == signed_rational_t{-240, 1});
-    const auto too_late = musical_position_at(timing, {10, 1});
+    const auto too_late = timing.row_at({10, 1});
     REQUIRE_FALSE(too_late);
     CHECK(too_late.error->code == timing_error_code_t::position_out_of_range);
-    const auto invalid_rational = musical_position_at(timing, {0, 0});
+    const auto invalid_rational = timing.row_at({0, 0});
     REQUIRE_FALSE(invalid_rational);
     CHECK(invalid_rational.error->code == timing_error_code_t::invalid_document);
 
@@ -393,7 +392,7 @@ TEST_CASE("inverse timing honors signed beat-zero offsets and reports bounded fa
     const auto zero_offset = build_timing_index(chart);
     REQUIRE(zero_offset);
     const auto unrepresentable =
-        musical_position_at(*zero_offset.index, {std::numeric_limits<std::int64_t>::max(),
+        zero_offset.index->row_at({std::numeric_limits<std::int64_t>::max(),
                                                  std::numeric_limits<std::uint64_t>::max() - 2});
     REQUIRE_FALSE(unrepresentable);
     CHECK(unrepresentable.error->code == timing_error_code_t::arithmetic_overflow);
@@ -616,7 +615,7 @@ auto music_source_tracks_frames_for_signed_offsets() -> bool {
         chart.beat_zero_audio_offset_seconds = offset;
         const auto timing = build_timing_index(chart);
         if (!timing) return false;
-        const auto beat_zero = timing_at(*timing.index, 0);
+        const auto beat_zero = timing.index->seconds_at(0);
         if (!beat_zero || *beat_zero.seconds != offset) return false;
         const auto music = preview_schedule_t::music_event_t::from(resource_id_t{7}, 200'000);
         if (!music) return false;
@@ -635,7 +634,7 @@ auto beat_zero_note_frame_matches_music_source_time() -> bool {
                                 .sound = resource_id_t{5}}};
     const auto timing = build_timing_index(chart);
     if (!timing) return false;
-    const auto beat_zero_time = timing_at(*timing.index, 0);
+    const auto beat_zero_time = timing.index->seconds_at(0);
     if (!beat_zero_time || *beat_zero_time.seconds != signed_rational_t{2, 1}) return false;
     const auto note_schedule = build_preview_schedule(
         chart, *timing.index, {.sample_rate = 44'100, .include_metronome = false});
@@ -739,10 +738,9 @@ TEST_CASE("visual count-in extrapolates from row-zero arrival without weakening 
     const auto scroll = build_scroll_speed_index(chart, *timing.index);
     REQUIRE(scroll);
 
-    const auto strict = musical_position_at(*timing.index, {3, 2});
+    const auto strict = timing.index->row_at({3, 2});
     REQUIRE_FALSE(strict);
-    const auto preview = musical_position_at(
-        *timing.index, {3, 2}, {.extrapolate_before_chart = true});
+    const auto preview = timing.index->row_at({3, 2}, {.extrapolate_before_chart = true});
     REQUIRE(preview);
     CHECK(preview.absolute_row == signed_rational_t{-240, 1});
 
@@ -1606,7 +1604,7 @@ TEST_CASE("dense Aria bounded clock retains precise chart completion samples",
           "[unit][core][timing][bounded]") {
     const auto built = build_timing_index(aria_timing_chart(), {.allow_bounded_clock = true});
     REQUIRE(built);
-    const auto end = timing_at(*built.index, built.index->total_rows);
+    const auto end = built.index->seconds_at(built.index->total_rows);
     REQUIRE(end);
     const auto frame = sample_frame_at(*end.seconds, 44100);
     REQUIRE(frame);
@@ -1701,11 +1699,11 @@ TEST_CASE("bounded preview clock extrapolates negative rows before a positive au
     chart.beat_zero_audio_offset_seconds = {2, 1};
     const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
     REQUIRE(built);
-    const auto prechart = musical_position_at(*built.index, {0, 1},
+    const auto prechart = built.index->row_at({0, 1},
                                                {.extrapolate_before_chart = true});
     REQUIRE(prechart);
     CHECK(prechart.absolute_row == signed_rational_t{-4'160, 1});
-    CHECK_FALSE(musical_position_at(*built.index, {0, 1}));
+    CHECK_FALSE(built.index->row_at({0, 1}));
 }
 
 
@@ -1715,13 +1713,13 @@ TEST_CASE("bounded clock prechart inverse preserves large in-range fractional qu
     chart.beat_zero_audio_offset_seconds = {3'000'000, 1};
     const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
     REQUIRE(built);
-    const auto query = musical_position_at(*built.index, {1, 44100},
+    const auto query = built.index->row_at({1, 44100},
                                             {.extrapolate_before_chart = true});
     REQUIRE(query);
     const auto row = static_cast<long double>(query.absolute_row->numerator) /
                      query.absolute_row->denominator;
     CHECK(std::abs(row - (-6'240'000'000.0L + 2080.0L / 44100)) < 1e-6L);
-    CHECK_FALSE(musical_position_at(*built.index, {-6'000'000, 1},
+    CHECK_FALSE(built.index->row_at({-6'000'000, 1},
                                      {.extrapolate_before_chart = true}));
 }
 
@@ -1816,16 +1814,14 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
                             timing_boundary_side_t::event, timing_boundary_side_t::after_stops}) {
         auto shared = index.query_seconds(240, side);
         const auto member = timing_query_result_t::from(std::move(shared));
-        const auto original = timing_at(index, 240, side);
+        const auto original = index.seconds_at(240, side);
         require_timing_query(static_cast<bool>(member.seconds));
         check_timing_query(static_cast<bool>(member.seconds == original.seconds));
         check_timing_query(static_cast<bool>(member.inside_warp == original.inside_warp));
     }
-    const auto fractional = exact_chart_row_t{120, {1, 2}};
-    check_timing_query(static_cast<bool>(index.seconds_at(fractional).seconds == timing_at(index, fractional).seconds));
     auto shared_inverse = index.query_position({0, 1}, {.extrapolate_before_chart = true});
     const auto inverse = timing_position_query_result_t::from(std::move(shared_inverse));
-    check_timing_query(static_cast<bool>(inverse.absolute_row == musical_position_at(index, {0, 1},
+    check_timing_query(static_cast<bool>(inverse.absolute_row == index.row_at({0, 1},
         {.extrapolate_before_chart = true}).absolute_row));
     check_timing_query(static_cast<bool>(index.row_at({0, 1}).error->code == timing_error_code_t::position_out_of_range));
 }

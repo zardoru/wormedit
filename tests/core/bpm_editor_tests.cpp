@@ -253,7 +253,7 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
 
     const auto timing = build_timing_index(history.document.charts.front());
     REQUIRE(timing);
-    const auto after_one_beat = timing_at(*timing.index, 240);
+    const auto after_one_beat = timing.index->seconds_at(240);
     REQUIRE(after_one_beat);
     CHECK(after_one_beat.seconds == signed_rational_t{2, 3});
 
@@ -302,7 +302,7 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
 
     const auto timing = build_timing_index(chart);
     REQUIRE(timing);
-    const auto one_beat = timing_at(*timing.index, 240);
+    const auto one_beat = timing.index->seconds_at(240);
     REQUIRE(one_beat);
     CHECK(one_beat.seconds == signed_rational_t{2, 3});
 
@@ -316,7 +316,7 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     CHECK(history.document.charts.front().bpms.back().provenance.source_order == 13);
     const auto updated_timing = build_timing_index(history.document.charts.front());
     REQUIRE(updated_timing);
-    const auto updated_one_beat = timing_at(*updated_timing.index, 240);
+    const auto updated_one_beat = updated_timing.index->seconds_at(240);
     REQUIRE(updated_one_beat);
     CHECK(updated_one_beat.seconds == signed_rational_t{4, 5});
 }

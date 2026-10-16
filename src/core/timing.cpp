@@ -1119,16 +1119,6 @@ auto timing_query_result_t::from(timing_coordinate_outcome_t&& outcome) -> timin
             .error = std::move(outcome.error().diagnostic)};
 }
 
-auto timing_at(const timing_index_t& index, std::uint64_t row, timing_boundary_side_t side)
-    -> timing_query_result_t {
-    return index.seconds_at(row, side);
-}
-
-auto timing_at(const timing_index_t& index, exact_chart_row_t row, timing_boundary_side_t side)
-    -> timing_query_result_t {
-    return index.seconds_at(row, side);
-}
-
 auto sample_frame_at_chart_y(const timing_index_t& index, double viewport_scroll_pixels,
                              double pixels_per_standard_measure, double y_pixels,
                              double viewport_height_pixels, std::uint32_t sample_rate)
@@ -1201,11 +1191,6 @@ auto timing_index_t::query_seconds(const measure_index_t& measures, local_positi
                                "timing query position is outside chart geometry")});
     }
     return query_seconds(*row, side);
-}
-
-auto timing_at(const timing_index_t& index, const measure_index_t& measures,
-               local_position_t position, timing_boundary_side_t side) -> timing_query_result_t {
-    return index.seconds_at(measures, position, side);
 }
 
 namespace {
@@ -1643,11 +1628,6 @@ auto timing_position_query_result_t::from(timing_coordinate_outcome_t&& outcome)
                           .error = std::move(outcome->metadata.diagnostic)};
     return {.absolute_row = std::nullopt, .inside_warp = outcome.error().inside_warp,
             .error = std::move(outcome.error().diagnostic)};
-}
-
-auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
-                         timing_inverse_options_t options) -> timing_position_query_result_t {
-    return index.row_at(seconds, options);
 }
 
 auto sample_frame_t::from(signed_rational_t seconds, std::uint32_t sample_rate,

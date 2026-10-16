@@ -145,6 +145,8 @@ struct timing_index_t {
         timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
     [[nodiscard]] auto query_seconds(const measure_index_t& measures, local_position_t position,
         timing_boundary_side_t side = timing_boundary_side_t::event) const -> timing_coordinate_outcome_t;
+    // On a bounded clock, input time rounds to the nearest picosecond tick and
+    // interior rows to the nearest nanorow, in addition to accumulated clock error.
     [[nodiscard]] auto query_position(signed_rational_t seconds,
         timing_inverse_options_t options = {}) const -> timing_coordinate_outcome_t;
 
@@ -233,16 +235,6 @@ struct sample_frame_result_t {
 [[nodiscard]] auto build_timing_index(const chart_document_t& chart,
                                       timing_build_options_t options = {}) -> timing_build_result_t;
 
-// Temporary: removed by T-632 after the remaining callers migrate to members.
-[[nodiscard]] auto timing_at(const timing_index_t& index, std::uint64_t absolute_row,
-                             timing_boundary_side_t side = timing_boundary_side_t::event)
-    -> timing_query_result_t;
-
-// Temporary: removed by T-632 after the remaining callers migrate to members.
-[[nodiscard]] auto timing_at(const timing_index_t& index, exact_chart_row_t absolute_row,
-                             timing_boundary_side_t side = timing_boundary_side_t::event)
-    -> timing_query_result_t;
-
 // Resolve a pointer position on the fixed chart waveform to its nearest
 // source frame. Fractional rows are retained to one millionth of a row before
 // exact timing and sample-frame rounding are applied.
@@ -258,12 +250,6 @@ struct sample_frame_result_t {
 proposed_timing_y_on_fixed_waveform(const timing_index_t& original, const timing_index_t& proposed,
                                     exact_chart_row_t chart_row, double viewport_scroll_pixels,
                                     double pixels_per_standard_measure) -> std::optional<double>;
-
-// Temporary: removed by T-632 after the remaining callers migrate to members.
-[[nodiscard]] auto timing_at(const timing_index_t& index, const measure_index_t& measures,
-                             local_position_t position,
-                             timing_boundary_side_t side = timing_boundary_side_t::event)
-    -> timing_query_result_t;
 
 using beat_interval_fit_outcome_t = result_t<signed_rational_t, timing_diagnostic_t>;
 struct beat_interval_fit_result_t {
@@ -286,14 +272,6 @@ struct beat_interval_fit_result_t {
 [[nodiscard]] auto fit_beat_interval(const chart_document_t& chart, object_id_t bpm_event,
                                      local_position_t beat, std::uint64_t target_sample_frame,
                                      std::uint32_t sample_rate) -> beat_interval_fit_result_t;
-
-// On a bounded clock, input time rounds to the nearest picosecond tick and
-// interior rows round to the nearest nanorow (<= 0.5e-9 row), in addition to
-// the clock's accumulated error and <= 0.5 ps input rounding.
-// Temporary: removed by T-632 after the remaining callers migrate to members.
-[[nodiscard]] auto musical_position_at(const timing_index_t& index, signed_rational_t seconds,
-                                       timing_inverse_options_t options = {})
-    -> timing_position_query_result_t;
 
 // Scroll events set an instantaneous signed multiplier. Zero stops chart
 // motion and negative values reverse it. Speed events set a nonnegative

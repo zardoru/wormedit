@@ -293,7 +293,7 @@ TEST_CASE("NULCTRL: stops end when a real player says they do",
     REQUIRE(timing);
     // The 1/8 measure #000 ends at an eighth of a standard measure.
     const auto measure_one = timing.index->divisions_per_standard_measure / 8;
-    const auto at = wormedit::timing_at(*timing.index, measure_one);
+    const auto at = timing.index->seconds_at(measure_one);
     REQUIRE(at.seconds.has_value());
     const auto seconds = static_cast<double>(at.seconds->numerator) /
                          static_cast<double>(at.seconds->denominator);

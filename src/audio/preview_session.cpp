@@ -122,7 +122,7 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
         if (!token_.has_value())
             return std::unexpected(std::move(result));
         if (loop_region_ && timeline_frame_ >= loop_region_->end_frame) {
-            result.status = preview_session_pump_status_t::loop_boundary;
+            result.status = preview_session_pump_phase_t::loop_boundary;
             return std::unexpected(std::move(result));
         }
         token = token_;
@@ -131,14 +131,14 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
             options = prime_options_;
         const auto window_end = checked_window_end(timeline_frame, options.lookahead_frames);
         if (!window_end.has_value()) {
-            result.status = preview_session_pump_status_t::invalid_timeline;
+            result.status = failure_code_t::invalid_request;
             return std::unexpected(std::move(result));
         }
         result.materialize = bridge_.materialize_preview(*window_end, timeline_frame);
         const auto& materialized = *result.materialize;
         const auto& materialized_effect = materialized ? *materialized : materialized.error();
         if (!is_materialize_succeeded(materialized_effect.status)) {
-            result.status = preview_session_pump_status_t::materialize_failed;
+            result.status = failure_code_t::materialize_failed;
             return std::unexpected(std::move(result));
         }
     }
@@ -151,10 +151,10 @@ auto preview_session_t::pump_session(preview_pump_options_t options)
             prime_pending_ = false;
     }
     if (!result.has_ready_decode()) {
-        result.status = preview_session_pump_status_t::decode_failed;
+        result.status = failure_code_t::decode_failed;
         return std::unexpected(std::move(result));
     }
-    result.status = preview_session_pump_status_t::ready;
+    result.status = preview_session_pump_phase_t::ready;
     return result;
 }
 

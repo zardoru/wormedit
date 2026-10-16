@@ -123,14 +123,14 @@ void sdl_preview_output_t::refill_loop(std::stop_token stop) {
                 result = refill_loop_output(generation, std::move(result));
         } catch (...) {
             auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = audio::preview_session_pump_status_t::decode_failed;
+            failed.status = failure_code_t::decode_failed;
             result = std::unexpected(std::move(failed));
         }
         lock.lock();
         if (generation == refill_generation_ && refill_enabled_ &&
             (!refill_result_ || static_cast<bool>(*refill_result_))) {
             const auto& effect = result ? *result : result.error();
-            if (effect.status == audio::preview_session_pump_status_t::not_started)
+            if (effect.status == failure_code_t::not_started)
                 refill_enabled_ = false;
             refill_result_ = std::move(result);
         }
@@ -184,20 +184,20 @@ auto sdl_preview_output_t::fill_loop_queue(std::uint64_t generation) -> bool {
 
 auto sdl_preview_output_t::refill_loop_output(std::uint64_t generation,
     audio::preview_session_pump_outcome_t result) -> audio::preview_session_pump_outcome_t {
-    if (!result && result.error().status != audio::preview_session_pump_status_t::loop_boundary) return result;
+    if (!result && result.error().status != audio::preview_session_pump_phase_t::loop_boundary) return result;
     const auto expected = output_playhead_.read().generation;
     while (fill_loop_queue(generation)) {
         const auto restarted = session_.restart_session_loop(expected);
         if (!restarted) {
             auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = audio::preview_session_pump_status_t::materialize_failed;
+            failed.status = failure_code_t::materialize_failed;
             return std::unexpected(std::move(failed));
         }
         result = session_.pump_session();
         if (!result) return result;
     }
-    if (!result && result.error().status == audio::preview_session_pump_status_t::loop_boundary) {
-        result.error().status = audio::preview_session_pump_status_t::ready;
+    if (!result && result.error().status == audio::preview_session_pump_phase_t::loop_boundary) {
+        result.error().status = audio::preview_session_pump_phase_t::ready;
         return std::move(result.error());
     }
     return result;
@@ -431,7 +431,7 @@ auto sdl_preview_output_t::service_refill_result(
     -> std::optional<sdl_preview_service_outcome_t> {
     if (pumped) {
         const auto& effect = *pumped ? pumped->value() : pumped->error();
-        if (effect.status == audio::preview_session_pump_status_t::not_started)
+        if (effect.status == failure_code_t::not_started)
             pumped.reset();
     }
     if (!pumped) {

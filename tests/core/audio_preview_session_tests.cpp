@@ -192,7 +192,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
         return false;
     while (session.timeline_frame() < region.end_frame) {
         const auto pump = session.pump_session({.lookahead_frames = chunk_frames});
-        if (pump.value().status != preview_session_pump_status_t::ready) return false;
+        if (pump.value().status != preview_session_pump_phase_t::ready) return false;
         const auto remaining = region.end_frame - session.timeline_frame();
         const auto frames = static_cast<std::size_t>(std::min<std::uint64_t>(remaining, chunk_frames));
         std::vector<float> block(frames * output_channel_count);
@@ -202,7 +202,7 @@ auto preview_loop_restarts_at_begin_and_stop_is_hard() -> bool {
     }
     const auto boundary = session.pump_session({.lookahead_frames = chunk_frames});
     const auto& boundary_effect = boundary ? *boundary : boundary.error();
-    if (boundary_effect.status != preview_session_pump_status_t::loop_boundary) return false;
+    if (boundary_effect.status != preview_session_pump_phase_t::loop_boundary) return false;
     const auto restarted = seek_primed(session, region.begin_frame, {.lookahead_frames = chunk_frames});
     if (!restarted || session.timeline_frame() != region.begin_frame) return false;
 
@@ -643,7 +643,7 @@ struct in_flight_preview_fixture_t {
         if (controller.joinable()) controller.join();
         return gated && materialized && completed_while_locked && control_result &&
                !old_result &&
-               old_result.error().status == wormedit::audio::preview_session_pump_status_t::not_started;
+               old_result.error().status == wormedit::failure_code_t::not_started;
     }
 
 };

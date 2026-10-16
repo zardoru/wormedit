@@ -41,26 +41,27 @@ auto measure_number(const measure_index_t& measures, signed_rational_t row) -> s
                : static_cast<std::size_t>(std::distance(measures.entries.begin(), found));
 }
 
-auto pump_status(preview_session_pump_status_t status) -> const char* {
-    switch (status) {
-    case preview_session_pump_status_t::ready: return "ready";
-    case preview_session_pump_status_t::not_started: return "not_started";
-    case preview_session_pump_status_t::invalid_timeline: return "invalid_timeline";
-    case preview_session_pump_status_t::materialize_failed: return "materialize_failed";
-    case preview_session_pump_status_t::decode_failed: return "decode_failed";
-    case preview_session_pump_status_t::loop_boundary: return "unknown";
+auto pump_status(operation_state_t<preview_session_pump_phase_t> status) -> const char* {
+    if (status.is_in_phase(preview_session_pump_phase_t::ready)) return "ready";
+    if (!status.has_failure()) return "unknown";
+    switch (std::get<failure_code_t>(status.value())) {
+    case failure_code_t::not_started: return "not_started";
+    case failure_code_t::invalid_request: return "invalid_timeline";
+    case failure_code_t::materialize_failed: return "materialize_failed";
+    case failure_code_t::decode_failed: return "decode_failed";
+    default: break;
     }
     return "unknown";
 }
 
 auto decode_status(operation_state_t<std::monostate> status) -> const char* {
     if (!status.has_failure()) return "ready";
-    switch (std::get<failure_code_t>(status.value())) {
-    case failure_code_t::stale_generation: return "stale_generation";
-    case failure_code_t::invalid_request: return "invalid_request";
-    case failure_code_t::capacity_exceeded: return "capacity_exceeded";
-    case failure_code_t::unavailable: return "source_unavailable";
-    case failure_code_t::decode_failed: return "decode_failed";
+    switch (std::get<wormedit::failure_code_t>(status.value())) {
+    case wormedit::failure_code_t::stale_generation: return "stale_generation";
+    case wormedit::failure_code_t::invalid_request: return "invalid_request";
+    case wormedit::failure_code_t::capacity_exceeded: return "capacity_exceeded";
+    case wormedit::failure_code_t::unavailable: return "source_unavailable";
+    case wormedit::failure_code_t::decode_failed: return "decode_failed";
     default: break;
     }
     return "unknown";

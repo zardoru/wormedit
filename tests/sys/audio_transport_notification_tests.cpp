@@ -90,7 +90,7 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
     check_audio_error(rows[0], "Audio preview stopped because its decoded source is unavailable.");
     sdl_preview_service_result_t preview{.status = wormedit::failure_code_t::pump_failed,
         .pump = std::unexpected(audio::preview_session_pump_effect_t{
-            .status = audio::preview_session_pump_status_t::decode_failed,
+            .status = wormedit::failure_code_t::decode_failed,
             .decode = std::unexpected(audio::preview_pump_effect_t{
                 .status = wormedit::failure_code_t::unavailable})})};
     post_preview_service_notifications(std::unexpected(preview), sink);

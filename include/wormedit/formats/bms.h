@@ -24,14 +24,17 @@ enum class bms_parse_diagnostic_code_t {
     unpaired_long_note,
 };
 
-struct bms_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    bms_parse_diagnostic_code_t code{bms_parse_diagnostic_code_t::malformed_line};
-    std::string message;
+struct bms_source_location_t {
     std::size_t line{};   // One-based physical line number.
     std::size_t column{}; // One-based UTF-8 byte column in decoded text.
     std::optional<bms_source_span_t> source_span;
+
+    auto operator==(const bms_source_location_t&) const -> bool = default;
 };
+
+using bms_parse_diagnostic_t =
+    format_diagnostic_t<bms_parse_diagnostic_code_t, bms_source_location_t,
+                        bms_parse_diagnostic_code_t::malformed_line>;
 
 struct bms_parse_options_t {
     // Non-ASCII input without a UTF-8 BOM is intentionally ambiguous. Select its codec here.

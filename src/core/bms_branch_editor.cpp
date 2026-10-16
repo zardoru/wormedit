@@ -86,10 +86,8 @@ auto root_statement_range(const chart_document_t& chart, branch_id_t first, bran
         last_node->kind != bms_control_kind_t::raw_statement ||
         first_node->source_order != request.first_source_order ||
         last_node->source_order != request.last_source_order ||
-        first_node->source_span.byte_begin != request.first_source_span.byte_begin ||
-        first_node->source_span.byte_end != request.first_source_span.byte_end ||
-        last_node->source_span.byte_begin != request.last_source_span.byte_begin ||
-        last_node->source_span.byte_end != request.last_source_span.byte_end ||
+        first_node->source_span != request.first_source_span ||
+        last_node->source_span != request.last_source_span ||
         first_node->original_text != request.first_original_text ||
         last_node->original_text != request.last_original_text) {
         return std::nullopt;
@@ -829,8 +827,7 @@ auto remove_block(document_history_t& history, const chart_document_t& chart,
     const auto* old_node = chart.bms_control_tree ? tree_node(*chart.bms_control_tree,
                                                               request.random_block) : nullptr;
     if (old_node == nullptr || old_node->source_order != request.expected_source_order ||
-        old_node->source_span.byte_begin != request.expected_source_span.byte_begin ||
-        old_node->source_span.byte_end != request.expected_source_span.byte_end ||
+        old_node->source_span != request.expected_source_span ||
         old_node->original_text != request.expected_original_text ||
         !is_block_leaves_empty(*old_node)) {
         add_block_error(result, "BMS branch block is stale, nonempty, or not removable");

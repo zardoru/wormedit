@@ -27,7 +27,8 @@ enum class bms_write_diagnostic_code_t {
 };
 
 using bms_write_diagnostic_t =
-    path_diagnostic_t<bms_write_diagnostic_code_t, bms_write_diagnostic_code_t::invalid_document>;
+    format_diagnostic_t<bms_write_diagnostic_code_t, std::string,
+                        bms_write_diagnostic_code_t::invalid_document>;
 
 enum class bms_branch_policy_t {
     preserve_tree,
@@ -52,7 +53,7 @@ struct bms_write_options_t {
     std::size_t max_slots_per_line{500'000};
 };
 
-using bms_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<bms_write_diagnostic_t>>;
+using bms_write_outcome_t = attempt_t<std::string, std::vector<bms_write_diagnostic_t>>;
 
 // Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
 // BMS in the requested encoding for metadata, resources, measure lengths, initial

@@ -259,9 +259,7 @@ auto decode_diagnostic(bms_parse_outcome_t& result, bms_parse_diagnostic_code_t 
         .severity = diagnostic_severity_t::error,
         .code = code,
         .message = std::move(message),
-        .line = 1,
-        .column = byte_offset + 1,
-        .source_span = bms_source_span_t{byte_offset, byte_end},
+        .location = {1, byte_offset + 1, bms_source_span_t{byte_offset, byte_end}},
     });
 }
 
@@ -272,9 +270,7 @@ auto add_line_diagnostic(bms_parse_outcome_t& result, diagnostic_severity_t seve
         .severity = severity,
         .code = code,
         .message = std::move(message),
-        .line = line.order + 1,
-        .column = column,
-        .source_span = line.span,
+        .location = {line.order + 1, column, line.span},
     });
 }
 
@@ -290,9 +286,7 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
                 .severity = diagnostic_severity_t::error,
                 .code = bms_parse_diagnostic_code_t::malformed_line,
                 .message = "BMS source exceeds the configured physical line limit",
-                .line = lines.size() + 1,
-                .column = 1,
-                .source_span = bms_source_span_t{cursor, bytes.size()},
+                .location = {lines.size() + 1, 1, bms_source_span_t{cursor, bytes.size()}},
             });
             return std::nullopt;
         }
@@ -306,9 +300,8 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
                 .severity = diagnostic_severity_t::error,
                 .code = bms_parse_diagnostic_code_t::malformed_line,
                 .message = "BMS source line exceeds the configured byte limit",
-                .line = lines.size() + 1,
-                .column = options.max_line_bytes + 1,
-                .source_span = bms_source_span_t{begin, cursor},
+                .location = {lines.size() + 1, options.max_line_bytes + 1,
+                             bms_source_span_t{begin, cursor}},
             });
             return std::nullopt;
         }
@@ -342,8 +335,8 @@ auto split_lines(std::span<const std::byte> bytes, std::size_t start, text_encod
                               "input contains a malformed " + std::string(text_encoding_label(encoding)) +
                                   " byte sequence",
                               error, std::min(error + 1, cursor));
-            result.diagnostics.back().line = lines.size() + 1;
-            result.diagnostics.back().column = decoded.error().error_offset + 1;
+            result.diagnostics.back().location.line = lines.size() + 1;
+            result.diagnostics.back().location.column = decoded.error().error_offset + 1;
             return std::nullopt;
         }
         lines.push_back({
@@ -1408,7 +1401,7 @@ auto collect_branch_choices(const bms_parse_options_t& options,
         result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
             .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
             .message = "branch choice count exceeds the configured physical line limit; excess choices are ignored",
-            .line = 1, .column = 1});
+            .location = {1, 1}});
     for (std::size_t index = 0; index < count; ++index) {
         const auto& choice = options.branch_choices[index];
         if (!choices.emplace(choice.control_source_order, choice.selected_value).second) {
@@ -1420,7 +1413,7 @@ auto collect_branch_choices(const bms_parse_options_t& options,
                 result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                     .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
                     .message = "duplicate choice for an unknown control source order; the first choice is used",
-                    .line = choice.control_source_order + 1, .column = 1});
+                    .location = {choice.control_source_order + 1, 1}});
         }
     }
     return choices;
@@ -1435,7 +1428,7 @@ void validate_branch_choices(branch_choice_map_t& choices,
             result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                 .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
                 .message = "branch choice does not identify a RANDOM or SWITCH opening line",
-                .line = choice->first + 1, .column = 1});
+                .location = {choice->first + 1, 1}});
             choice = choices.erase(choice);
             continue;
         }
@@ -1563,9 +1556,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
             .severity = diagnostic_severity_t::error,
             .code = bms_parse_diagnostic_code_t::malformed_line,
             .message = "BMS source exceeds the configured byte limit",
-            .line = 1,
-            .column = 1,
-            .source_span = bms_source_span_t{0, bytes.size()},
+            .location = {1, 1, bms_source_span_t{0, bytes.size()}},
         });
         return std::nullopt;
     }
@@ -1574,8 +1565,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
             .severity = diagnostic_severity_t::error,
             .code = bms_parse_diagnostic_code_t::invalid_measure,
             .message = "configured chart-resolution limit must be at least the default 960 rows",
-            .line = 1,
-            .column = 1,
+            .location = {1, 1},
         });
         return std::nullopt;
     }
@@ -1615,9 +1605,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
                 .code = bms_parse_diagnostic_code_t::invalid_encoding,
                 .message = "non-ASCII BMS input without a UTF-8 BOM is ambiguous; provide an "
                            "explicit encoding override",
-                .line = 1,
-                .column = 1,
-                .source_span = bms_source_span_t{0, bytes.size()},
+                .location = {1, 1, bms_source_span_t{0, bytes.size()}},
             });
             return std::nullopt;
         }
@@ -1921,9 +1909,7 @@ void report_unclosed_control_frames(bms_control_node_t& root,
                                       .code = bms_parse_diagnostic_code_t::malformed_control,
                                       .message = "control block reaches end of file without its "
                                                  "closing directive",
-                                      .line = node.source_order + 1,
-                                      .column = 1,
-                                      .source_span = node.source_span});
+                                      .location = {node.source_order + 1, 1, node.source_span}});
     }
 }
 
@@ -2351,8 +2337,7 @@ void fallback_measure_length(chart_document_t& chart, std::size_t measure_index,
     result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                                   .code = bms_parse_diagnostic_code_t::invalid_measure,
                                   .message = std::move(message),
-                                  .line = 1,
-                                  .column = 1});
+                                  .location = {1, 1}});
 }
 
 void validate_measure_geometry(chart_document_t& chart, const bms_parse_options_t& options,
@@ -2406,8 +2391,7 @@ void report_unavailable_lane_profile(const bms_parse_options_t& options,
     result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                                   .code = bms_parse_diagnostic_code_t::unsupported_channel,
                                   .message = std::move(message),
-                                  .line = 1,
-                                  .column = 1});
+                                  .location = {1, 1}});
     (void)options;
 }
 
@@ -2767,8 +2751,7 @@ auto validate_edit_target(const bms_control_node_t& root, const bms_branch_state
         return nullptr;
     }
     if (target.source_order != edit.expected_source_order ||
-        target.source_span.byte_begin != edit.expected_source_span.byte_begin ||
-        target.source_span.byte_end != edit.expected_source_span.byte_end ||
+        target.source_span != edit.expected_source_span ||
         target.original_text != edit.expected_original_text) {
         reject_branch_edit(
             result, bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
@@ -2902,12 +2885,10 @@ auto validate_insertion_targets(insertion_target_scan_t scan,
         return std::nullopt;
     }
     if (scan.leaf->source_order != insertion.expected_leaf_source_order ||
-        scan.leaf->source_span.byte_begin != insertion.expected_leaf_source_span.byte_begin ||
-        scan.leaf->source_span.byte_end != insertion.expected_leaf_source_span.byte_end ||
+        scan.leaf->source_span != insertion.expected_leaf_source_span ||
         scan.leaf->original_text != insertion.expected_leaf_original_text ||
         scan.anchor->source_order != insertion.expected_statement_source_order ||
-        scan.anchor->source_span.byte_begin != insertion.expected_statement_source_span.byte_begin ||
-        scan.anchor->source_span.byte_end != insertion.expected_statement_source_span.byte_end ||
+        scan.anchor->source_span != insertion.expected_statement_source_span ||
         scan.anchor->original_text != insertion.expected_statement_original_text) {
         reject_branch_edit(
             result, bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
@@ -3370,12 +3351,10 @@ auto validate_deletion_targets(deletion_target_scan_t scan,
         return std::nullopt;
     }
     if (scan.leaf->source_order != deletion.expected_leaf_source_order ||
-        scan.leaf->source_span.byte_begin != deletion.expected_leaf_source_span.byte_begin ||
-        scan.leaf->source_span.byte_end != deletion.expected_leaf_source_span.byte_end ||
+        scan.leaf->source_span != deletion.expected_leaf_source_span ||
         scan.leaf->original_text != deletion.expected_leaf_original_text ||
         scan.target->source_order != deletion.expected_source_order ||
-        scan.target->source_span.byte_begin != deletion.expected_source_span.byte_begin ||
-        scan.target->source_span.byte_end != deletion.expected_source_span.byte_end ||
+        scan.target->source_span != deletion.expected_source_span ||
         scan.target->original_text != deletion.expected_original_text) {
         reject_branch_edit(
             result, bms_branch_statement_edit_diagnostic_code_t::provenance_mismatch,
@@ -3499,7 +3478,7 @@ auto is_deletion_spans_are_safe(const bms_control_node_t& root, branch_id_t targ
             return false;
         }
         if (is_root) {
-            return span.byte_begin == 0 && span.byte_end == source_size;
+            return span == bms_source_span_t{0, source_size};
         }
         return span.byte_end <= deleted.byte_begin || span.byte_begin >= deleted.byte_end;
     };

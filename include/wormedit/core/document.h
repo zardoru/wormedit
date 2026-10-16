@@ -742,6 +742,8 @@ struct bms_source_span_t {
     // Half-open offsets into the original encoded byte stream, including the line ending.
     std::size_t byte_begin{};
     std::size_t byte_end{};
+
+    auto operator==(const bms_source_span_t&) const -> bool = default;
 };
 
 struct bms_control_node_t {

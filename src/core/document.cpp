@@ -489,7 +489,7 @@ auto validate_bms_node_source(bms_control_visit_context_t& context, const bms_co
         return bounds;
     }
     if (is_synthetic_control_node(node)) {
-        if (node.source_span.byte_begin != 0 || node.source_span.byte_end != 0 ||
+        if (node.source_span != bms_source_span_t{} ||
             !node.original_text.empty() || node.source_order != 0 ||
             node.line_ending != bms_line_ending_t::none) {
             add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,

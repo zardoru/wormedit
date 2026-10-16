@@ -452,7 +452,7 @@ TEST_CASE("BMS writer maps integral chart ratings without replacing retained PLA
     const auto has_rating_warning = [](const wormedit::bms_write_outcome_t& result) {
         return std::ranges::any_of(result.diagnostics, [](const auto& diagnostic) {
             return diagnostic.severity == wormedit::diagnostic_severity_t::warning &&
-                   diagnostic.path == "$.charts[].metadata.rating";
+                   diagnostic.location == "$.charts[].metadata.rating";
         });
     };
     wormedit::bms_write_options_t options;
@@ -1581,7 +1581,7 @@ TEST_CASE("BMS writer preserves branches and exact ratios while editing the acti
     const auto flattened = wormedit::write_bms(*metadata_import.value.song, flatten_options);
     std::string flatten_diagnostics;
     for (const auto& diagnostic : flattened.diagnostics) {
-        flatten_diagnostics += diagnostic.message + " at " + diagnostic.path + "\n";
+        flatten_diagnostics += diagnostic.message + " at " + diagnostic.location + "\n";
     }
     INFO(flatten_diagnostics);
     REQUIRE(flattened.value.has_value());

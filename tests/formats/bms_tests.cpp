@@ -1135,7 +1135,7 @@ TEST_CASE("BMS reader preserves malformed and orphan source with located diagnos
     REQUIRE(malformed.value.song.has_value());
     CHECK(std::ranges::any_of(malformed.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::malformed_control &&
-               diagnostic.line > 0 && diagnostic.source_span.has_value();
+               diagnostic.location.line > 0 && diagnostic.location.source_span.has_value();
     }));
     const auto& malformed_root = *malformed.value.song->charts[0].bms_control_tree;
     const auto malformed_source = source_lines(malformed_root);
@@ -1146,10 +1146,10 @@ TEST_CASE("BMS reader preserves malformed and orphan source with located diagnos
     REQUIRE(recovered.value.song.has_value());
     CHECK_FALSE(recovered.ok());
     CHECK_FALSE(std::ranges::any_of(recovered.diagnostics,
-                                    [](const auto& diagnostic) { return diagnostic.line == 2; }));
+                                    [](const auto& diagnostic) { return diagnostic.location.line == 2; }));
     CHECK(std::ranges::any_of(recovered.diagnostics, [](const auto& diagnostic) {
         return diagnostic.code == wormedit::bms_parse_diagnostic_code_t::invalid_measure &&
-               diagnostic.line == 3;
+               diagnostic.location.line == 3;
     }));
     const auto& root = *recovered.value.song->charts[0].bms_control_tree;
     const auto raw = find_kind(root, wormedit::bms_control_kind_t::raw_statement);
@@ -1485,8 +1485,8 @@ TEST_CASE("BMS primary byte-limit rejection retains the requested encoding", "[u
 TEST_CASE("BMS shared write warnings retain bytes and diagnostic paths", "[unit][bms][results]") {
     using namespace wormedit;
     bms_write_outcome_t written{.value = std::string{"bytes"},
-        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning", .path = "$"}}};
+        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning", .location = "$"}}};
     CHECK(written.ok());
     CHECK(written.value == "bytes");
-    CHECK(written.diagnostics.front().path == "$");
+    CHECK(written.diagnostics.front().location == "$");
 }

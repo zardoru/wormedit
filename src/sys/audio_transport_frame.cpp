@@ -55,7 +55,7 @@ auto audition_failure_message(const sdl_audition_service_result_t& result) -> co
         return "Audio preview stopped after a realtime cache underrun.";
     else if (result.pump) {
         const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
-        if (pumped.status == audio::audition_pump_status_t::source_unavailable)
+        if (pumped.status == failure_code_t::unavailable)
             return "Audio preview stopped because its decoded source is unavailable.";
     }
     return "Audio preview stopped after a bounded lookahead failure.";

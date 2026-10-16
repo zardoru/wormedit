@@ -233,16 +233,16 @@ auto old_pump_cannot_clear_replacement() -> bool {
         return false;
     }
     gate.release_and_join();
-    if (!gate.pump_result || gate.pump_result->status != audition_pump_status_t::ready ||
+    if (!gate.pump_result || gate.pump_result->status != audition_pump_phase_t::ready ||
         gate.completion_result ||
-        gate.completion_result.error().status != audition_pump_status_t::stale_generation) return false;
+        gate.completion_result.error().status != wormedit::failure_code_t::stale_generation) return false;
     const auto stale_failure = audition_session_test_access_t::complete(session, gate.old_token,
-        std::unexpected(audition_pump_effect_t{.status = audition_pump_status_t::source_unavailable}));
-    if (stale_failure || stale_failure.error().status != audition_pump_status_t::stale_generation) return false;
+        std::unexpected(audition_pump_effect_t{.status = wormedit::failure_code_t::unavailable}));
+    if (stale_failure || stale_failure.error().status != wormedit::failure_code_t::stale_generation) return false;
     std::vector<float> waiting(32 * output_channel_count, 1.0F);
     if (!session.render_frames(waiting).value().status.is_in_phase(session_render_phase_t::priming) ||
         !all_zero(waiting) || session.timeline_frame() != 0) return false;
-    if (session.pump().value().status != audition_pump_status_t::ready) return false;
+    if (session.pump().value().status != audition_pump_phase_t::ready) return false;
     std::vector<float> rendered(128 * output_channel_count);
     const auto mixed = session.render_frames(rendered);
     const auto decoded = cache.find({new_source.source, 0});
@@ -269,9 +269,9 @@ auto old_pump_cannot_publish_after_stop() -> bool {
     static_cast<void>(session.stop());
     gate.release_and_join();
     std::vector<float> output(64 * output_channel_count, 1.0F);
-    return gate.pump_result && gate.pump_result->status == audition_pump_status_t::ready &&
+    return gate.pump_result && gate.pump_result->status == audition_pump_phase_t::ready &&
         !gate.completion_result &&
-        gate.completion_result.error().status == audition_pump_status_t::stale_generation &&
+        gate.completion_result.error().status == wormedit::failure_code_t::stale_generation &&
         !session.playhead().active && transport.scheduled_voice_count() == 0 &&
         session.render_frames(output).value().status.is_in_phase(session_render_phase_t::stopped) && all_zero(output);
 }
@@ -305,7 +305,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     audition_pump_outcome_t pumped = std::unexpected(audition_pump_effect_t{});
     std::thread worker([&] { pumped = session.pump(); });
     worker.join();
-    expect_audition_session(pumped.value().status == audition_pump_status_t::ready);
+    expect_audition_session(pumped.value().status == audition_pump_phase_t::ready);
     expect_audition_session(pumped.value().requested_blocks == 2);
     const auto first_render = session.render_frames(first);
     expect_audition_session(first_render.value().status.is_in_phase(session_render_phase_t::mixed));
@@ -313,7 +313,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     expect_audition_session(first_render.value().mix.missing_blocks == 0);
     expect_audition_session(!all_zero(first));
     expect_audition_session(session.timeline_frame() == 512);
-    expect_audition_session(session.pump().value().status == audition_pump_status_t::ready);
+    expect_audition_session(session.pump().value().status == audition_pump_phase_t::ready);
 
     std::vector<float> tail(128 * output_channel_count);
     const auto final_render = session.render_frames(tail);
@@ -385,7 +385,7 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     expect_audition_session(session.timeline_frame() == 0);
     const auto failed_pump = session.pump();
     require_audition_session(!failed_pump);
-    expect_audition_session(failed_pump.error().status == audition_pump_status_t::source_unavailable);
+    expect_audition_session(failed_pump.error().status == wormedit::failure_code_t::unavailable);
     expect_audition_session(session.playhead().active);
     expect_audition_session(session.timeline_frame() == 0);
     static_cast<void>(session.stop());

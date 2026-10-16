@@ -20,13 +20,13 @@ auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std:
     return begin + count;
 }
 
-auto decode_failure_status(block_decode_status_t status) -> audition_pump_status_t {
+auto decode_failure_status(block_decode_status_t status) -> failure_code_t {
     switch (status) {
     case block_decode_status_t::stale_generation:
-        return audition_pump_status_t::stale_generation;
+        return failure_code_t::stale_generation;
     case block_decode_status_t::invalid_key:
     case block_decode_status_t::decoder_unavailable:
-        return audition_pump_status_t::source_unavailable;
+        return failure_code_t::unavailable;
     case block_decode_status_t::cache_hit:
     case block_decode_status_t::decoded:
         break;
@@ -35,9 +35,9 @@ auto decode_failure_status(block_decode_status_t status) -> audition_pump_status
     case block_decode_status_t::decode_failed:
     case block_decode_status_t::cache_capacity_exceeded:
     case block_decode_status_t::session_queue_full:
-        return audition_pump_status_t::decode_failed;
+        return failure_code_t::decode_failed;
     }
-    return audition_pump_status_t::decode_failed;
+    return failure_code_t::decode_failed;
 }
 
 auto is_valid_options(std::span<const audition_clip_t> clips, audition_pump_options_t options)
@@ -86,15 +86,15 @@ auto append_clip_keys(const audition_clip_t& clip, std::uint64_t timeline_frame,
 
 auto plan_audition_keys(std::span<const audition_clip_t> clips, std::uint64_t timeline_frame,
                         std::uint64_t window_end, std::size_t maximum_blocks)
-    -> result_t<audition_key_plan_t, audition_pump_status_t> {
+    -> result_t<audition_key_plan_t, failure_code_t> {
     audition_key_plan_t plan;
     plan.keys.reserve(maximum_blocks);
     for (const auto& clip : clips) {
         if (!is_valid_clip(clip)) {
-            return std::unexpected(audition_pump_status_t::invalid_request);
+            return std::unexpected(failure_code_t::invalid_request);
         }
         if (!append_clip_keys(clip, timeline_frame, window_end, maximum_blocks, plan)) {
-            return std::unexpected(audition_pump_status_t::capacity_exceeded);
+            return std::unexpected(failure_code_t::capacity_exceeded);
         }
     }
     return plan;
@@ -103,7 +103,7 @@ auto plan_audition_keys(std::span<const audition_clip_t> clips, std::uint64_t ti
 auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& transport,
                           session_token_t token, const audition_key_plan_t& plan)
     -> audition_pump_outcome_t {
-    audition_pump_effect_t result{.status = audition_pump_status_t::ready,
+    audition_pump_effect_t result{.status = audition_pump_phase_t::ready,
                                   .requested_blocks = plan.keys.size(),
                                   .decoded_blocks = 0,
                                   .cached_blocks = 0,
@@ -138,7 +138,7 @@ auto prime_resident_audition_blocks(transport_t& transport, session_token_t toke
         plan_audition_keys(clips, 0, options.lookahead_frames, options.maximum_blocks);
     if (!plan)
         return std::nullopt;
-    audition_pump_effect_t result{.status = audition_pump_status_t::ready,
+    audition_pump_effect_t result{.status = audition_pump_phase_t::ready,
                                   .requested_blocks = plan->keys.size()};
     for (const auto& key : plan->keys) {
         const auto hit = transport.resident_block_hit(token, key);
@@ -155,28 +155,28 @@ auto pump_audition_blocks(decoded_source_registry_t& sources, transport_t& trans
     -> audition_pump_outcome_t {
     if (!transport.is_current(token)) {
         return std::unexpected(
-            audition_pump_effect_t{.status = audition_pump_status_t::stale_generation});
+            audition_pump_effect_t{.status = failure_code_t::stale_generation});
     }
     if (!is_valid_options(clips, options)) {
         return std::unexpected(
-            audition_pump_effect_t{.status = audition_pump_status_t::invalid_request});
+            audition_pump_effect_t{.status = failure_code_t::invalid_request});
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value()) {
         return std::unexpected(
-            audition_pump_effect_t{.status = audition_pump_status_t::invalid_request});
+            audition_pump_effect_t{.status = failure_code_t::invalid_request});
     }
     const auto plan =
         plan_audition_keys(clips, timeline_frame, *window_end, options.maximum_blocks);
     if (!plan) {
         audition_pump_effect_t result{.status = plan.error()};
-        if (plan.error() == audition_pump_status_t::capacity_exceeded) {
+        if (plan.error() == failure_code_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
         return std::unexpected(std::move(result));
     }
     if (!plan->active) {
-        return audition_pump_effect_t{.status = audition_pump_status_t::complete};
+        return audition_pump_effect_t{.status = audition_pump_phase_t::complete};
     }
     return decode_audition_plan(sources, transport, token, *plan);
 }

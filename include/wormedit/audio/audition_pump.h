@@ -2,10 +2,12 @@
 
 #include <wormedit/audio/audition_bridge.h>
 #include <wormedit/audio/source_registry.h>
+#include <wormedit/core/operation_state.h>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <type_traits>
 
 namespace wormedit::audio {
 
@@ -17,18 +19,13 @@ struct audition_pump_options_t {
     std::size_t maximum_blocks{maximum_audition_pump_blocks};
 };
 
-enum class audition_pump_status_t {
-    ready,
-    complete,
-    stale_generation,
-    invalid_request,
-    capacity_exceeded,
-    source_unavailable,
-    decode_failed,
-};
+enum class audition_pump_phase_t : std::uint8_t { ready, complete };
+
+static_assert(sizeof(operation_state_t<audition_pump_phase_t>) <= sizeof(std::uint32_t));
+static_assert(std::is_trivially_copyable_v<operation_state_t<audition_pump_phase_t>>);
 
 struct audition_pump_effect_t {
-    audition_pump_status_t status{audition_pump_status_t::invalid_request};
+    operation_state_t<audition_pump_phase_t> status{failure_code_t::invalid_request};
     std::size_t requested_blocks{};
     std::size_t decoded_blocks{};
     std::size_t cached_blocks{};

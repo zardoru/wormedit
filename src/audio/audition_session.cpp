@@ -36,7 +36,7 @@ auto audition_session_t::complete_pump(session_token_t token, audition_pump_outc
     const std::scoped_lock lock(mutex_);
     if (token_ != token)
         return std::unexpected(
-            audition_pump_effect_t{.status = audition_pump_status_t::stale_generation});
+            audition_pump_effect_t{.status = failure_code_t::stale_generation});
     if (result) prime_pending_ = false;
     return result;
 }
@@ -45,7 +45,7 @@ auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_
     const auto state = snapshot_pump_state();
     if (!state.token)
         return std::unexpected(
-            audition_pump_effect_t{.status = audition_pump_status_t::stale_generation});
+            audition_pump_effect_t{.status = failure_code_t::stale_generation});
     auto result = pump_audition_blocks(sources_, transport_, *state.token, state.clips,
                                           state.timeline_frame, options);
     return complete_pump(*state.token, std::move(result));

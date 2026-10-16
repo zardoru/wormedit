@@ -96,16 +96,16 @@ void sdl_audition_output_t::refill_loop(std::stop_token stop) {
         try { result = session_.pump(); }
         catch (...) {
             auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = audio::audition_pump_status_t::decode_failed;
+            failed.status = failure_code_t::decode_failed;
             result = std::unexpected(std::move(failed));
         }
         lock.lock();
         const auto& effect = result ? *result : result.error();
         if (generation == refill_generation_ && refill_enabled_ &&
             (!refill_result_ || static_cast<bool>(*refill_result_))) {
-            if (!result || effect.status == audio::audition_pump_status_t::complete)
+            if (!result || effect.status == audio::audition_pump_phase_t::complete)
                 refill_enabled_ = false;
-            if (effect.status != audio::audition_pump_status_t::stale_generation)
+            if (effect.status != failure_code_t::stale_generation)
                 refill_result_ = std::move(result);
         }
         refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {

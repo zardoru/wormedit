@@ -821,11 +821,10 @@ void check_inline_timing_fields(const WormUiTimingView& view, std::uint64_t revi
     CHECK(view.stage_active);
     CHECK(view.stage_valid);
 }
-void check_slim_timing_geometry(const WormUiTimingView& view, const timing_scene_cache_t& cache) {
+void check_slim_timing_geometry(const WormUiTimingView& view) {
     CHECK(view.grid_line_count == 0);
     CHECK(view.marker_count == 0);
     CHECK(view.speed_count == 0);
-    CHECK_FALSE(cache.attempted);
 }
 } // namespace
 
@@ -848,15 +847,17 @@ TEST_CASE("Compose timing projection skips whole-chart geometry and preserves in
                                     grid, &stage);
     const auto& view = flattened.view.timing;
     check_inline_timing_fields(view, history.document.revision);
-    check_slim_timing_geometry(view, cache);
-    REQUIRE(cache.measures);
-    const auto* entries = cache.measures->entries.data();
+    check_slim_timing_geometry(view);
+    const auto& indexed = history.indices(chart_id_t{1})->measures;
+    REQUIRE(indexed);
+    const auto* entries = indexed->entries.data();
     populate_timing_view_for_compose(flattened, history, workspace, cache, 1280, 980,
                                     grid, &stage);
-    CHECK(cache.measures->entries.data() == entries);
+    CHECK(history.indices(chart_id_t{1})->measures->entries.data() == entries);
+    CHECK(cache.build_count() == 1);
 }
 
-TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys][timing-projection]") {
+TEST_CASE("Idle Compose timing projection caches lightweight measure capacities", "[sys][timing-projection]") {
     auto history = document_history_t::from(dense_song());
     auto binding = workspace_controller_t::from(history);
     REQUIRE(binding.value);
@@ -865,11 +866,12 @@ TEST_CASE("Idle Compose timing projection does not build a measure index", "[sys
     timing_scene_cache_t cache;
     populate_timing_view_for_compose(flattened, history, *binding.value, cache,
                                     1280, 980, {}, nullptr);
-    CHECK_FALSE(cache.measure_attempted);
-    CHECK_FALSE(cache.measures);
     CHECK(flattened.view.timing.scene_available);
     CHECK(flattened.view.timing.total_rows == 960000);
-    CHECK(cache.compose_total_rows == flattened.view.timing.total_rows);
+    CHECK(cache.value() == flattened.view.timing.total_rows);
+    populate_timing_view_for_compose(flattened, history, *binding.value, cache,
+                                    1280, 980, {}, nullptr);
+    CHECK(cache.build_count() == 1);
 }
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)

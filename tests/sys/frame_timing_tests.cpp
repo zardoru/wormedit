@@ -2025,13 +2025,13 @@ TEST_CASE("Retained static scalar source reuses storage while fractional scrolli
     auto& view=fixture.flattened.view.compose;
     expect_static_style(view.static_scene!=nullptr);
     const auto generation=view.static_scene_source_generation;
-    const auto storage=fixture.cache.scene.static_scene_storage;
+    const auto storage=fixture.cache.scene.static_source.value().storage;
     const auto style=view.static_scene_style_generation;
     fixture.interaction->viewport_scroll_pixels=65.3;
     fixture.project();
     expect_static_style(view.static_scene!=nullptr);
     expect_static_style(view.static_scene_source_generation==generation);
-    expect_static_style(fixture.cache.scene.static_scene_storage==storage);
+    expect_static_style(fixture.cache.scene.static_source.value().storage==storage);
     expect_static_style(view.static_scene_style_generation==style);
     expect_static_style(view.static_scene_accounted_bytes<=16*1024*1024);
     expect_static_style(view.static_scene->note_endpoint_count>view.note_endpoint_count);
@@ -2134,7 +2134,7 @@ void compare_scalar_reuse_frame(static_style_fixture_t& retained, static_style_f
     compare_scalar_grid(retained.flattened.view.compose, fresh.flattened.view.compose);
     expect_static_style(retained.cache.scene.static_projection_reused_frames != 0);
     expect_static_style(retained.cache.scene.static_projection_scanned <
-                        retained.cache.scene.static_scene_storage->view.compose.note_endpoint_count);
+                        retained.cache.scene.static_source.value().storage->view.compose.note_endpoint_count);
 }
 } // namespace
 TEST_CASE(
@@ -3091,8 +3091,8 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     compose_test_fixture_t fixture(std::move(song));
     wormedit::frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     project_static_source_arena_frame(fixture, arena);
-    const auto stored = fixture.cache.scene.static_scene_storage;
-    const auto generation = fixture.cache.scene.static_scene_source_generation;
+    const auto stored = fixture.cache.scene.static_source.value().storage;
+    const auto generation = fixture.cache.scene.static_source.build_count();
     check_static_source_owned_geometry(*stored);
     expect_compose_test(!stored->compose.note.empty());
     const auto before = stored->compose.note[0];
@@ -3115,14 +3115,14 @@ TEST_CASE("Persistent Compose static source owns geometry across frame arena res
     expect_compose_test(std::strcmp(stored->compose.timing_marker.front().detail, timing_detail.c_str()) == 0);
     fixture.interaction->viewport_scroll_pixels = 0.5;
     project_static_source_arena_frame(fixture, arena);
-    expect_compose_test(fixture.cache.scene.static_scene_storage == stored);
-    expect_compose_test(fixture.cache.scene.static_scene_source_generation == generation);
-    check_static_source_owned_geometry(*fixture.cache.scene.static_scene_storage);
+    expect_compose_test(fixture.cache.scene.static_source.value().storage == stored);
+    expect_compose_test(fixture.cache.scene.static_source.build_count() == generation);
+    check_static_source_owned_geometry(*fixture.cache.scene.static_source.value().storage);
     ++fixture.history.document.revision;
     project_static_source_arena_frame(fixture, arena);
-    expect_compose_test(fixture.cache.scene.static_scene_storage != stored);
-    expect_compose_test(fixture.cache.scene.static_scene_source_generation > generation);
-    check_static_source_owned_geometry(*fixture.cache.scene.static_scene_storage);
+    expect_compose_test(fixture.cache.scene.static_source.value().storage != stored);
+    expect_compose_test(fixture.cache.scene.static_source.build_count() > generation);
+    check_static_source_owned_geometry(*fixture.cache.scene.static_source.value().storage);
 }
 
 namespace {
@@ -3208,7 +3208,7 @@ void check_fresh_reused_geometry(std::uint32_t direction, format_family_t family
     wormedit::frame_arena_t fresh_arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     project_geometry_arena(reused, reused_arena);
     project_geometry_arena(fresh, fresh_arena);
-    const auto source = reused.cache.scene.static_scene_storage;
+    const auto source = reused.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     for (const bool legend : {false, true}) {
         reused.application.preferences.editor_preferences.lane_key_legend_visible = legend;
@@ -3250,12 +3250,12 @@ TEST_CASE("Compose geometry spans live in the supplied arena and account indepen
     check_geometry_between(fixture.flattened.compose.note, first, last);
     expect_compose_test(!fixture.flattened.compose.hold.empty() && !fixture.flattened.compose.note.empty());
     expect_compose_test(fixture.flattened.owned_arena_committed_bytes() == 0);
-    const auto source = fixture.cache.scene.static_scene_storage;
+    const auto source = fixture.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     expect_compose_test(source->owned_arena_committed_bytes() > 0);
     expect_compose_test(source->compose.note.data() != fixture.flattened.compose.note.data());
-    expect_compose_test(fixture.cache.scene.static_scene_accounted_bytes >= sizeof(*source) + source->owned_arena_committed_bytes());
-    expect_compose_test(fixture.cache.scene.static_scene_accounted_bytes <= 16 * 1024 * 1024);
+    expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes >= sizeof(*source) + source->owned_arena_committed_bytes());
+    expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes <= 16 * 1024 * 1024);
 }
 
 TEST_CASE("Compose geometry arena fresh and reused primitives agree in both directions and label modes",
@@ -3296,7 +3296,7 @@ TEST_CASE("Warmed Compose geometry arena stays bounded through 1000 actual cache
     project_geometry_arena(fixture, arena);
     const auto used = arena.used_bytes();
     const auto committed = arena.committed_bytes();
-    const auto source = fixture.cache.scene.static_scene_storage;
+    const auto source = fixture.cache.scene.static_source.value().storage;
     const auto static_committed = source->owned_arena_committed_bytes();
     arena.reset();
     allocations = 0;
@@ -3314,7 +3314,7 @@ TEST_CASE("Warmed Compose geometry arena stays bounded through 1000 actual cache
         count_allocations = false;
         consistent = consistent && allocations == remaining_allocations;
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            fixture.cache.scene.static_scene_storage == source && source->owned_arena_committed_bytes() == static_committed &&
+            fixture.cache.scene.static_source.value().storage == source && source->owned_arena_committed_bytes() == static_committed &&
             !fixture.flattened.view.compose.truncated;
     }
     INFO("Remaining actual Compose projection allocations: " << remaining_allocations);
@@ -3393,7 +3393,7 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
     wormedit::frame_arena_t arena, reference;
     project_geometry_arena(cached, arena);
     project_geometry_arena(fresh, reference);
-    const auto source = cached.cache.scene.static_scene_storage;
+    const auto source = cached.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     expect_compose_test(cached.flattened.view.compose.bms_measure_labels == (family == format_family_t::bms));
     if (family == format_family_t::bms)
@@ -3407,7 +3407,7 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
         project_geometry_arena(cached, arena);
         project_geometry_arena(fresh, reference);
         compare_grid_frames(cached.flattened, fresh.flattened);
-        expect_compose_test(cached.cache.scene.static_scene_storage == source);
+        expect_compose_test(cached.cache.scene.static_source.value().storage == source);
     }
     expect_compose_test(cached.cache.scene.static_projection_reused_frames > 0);
     ++cached.history.document.revision;
@@ -3415,7 +3415,7 @@ void check_grid_cache_parity(std::uint32_t direction, format_family_t family) {
     arena.reset(); reference.reset(); fresh.cache = {};
     project_geometry_arena(cached, arena);
     project_geometry_arena(fresh, reference);
-    expect_compose_test(cached.cache.scene.static_scene_storage != source);
+    expect_compose_test(cached.cache.scene.static_source.value().storage != source);
     compare_grid_frames(cached.flattened, fresh.flattened);
 }
 }
@@ -3433,7 +3433,7 @@ TEST_CASE("Compose paired grid spans belong to frame and independent static aren
         reinterpret_cast<std::uintptr_t>(*begin), reinterpret_cast<std::uintptr_t>(*end));
     check_geometry_between(fixture.flattened.compose.grid.row,
         reinterpret_cast<std::uintptr_t>(*begin), reinterpret_cast<std::uintptr_t>(*end));
-    const auto source = fixture.cache.scene.static_scene_storage;
+    const auto source = fixture.cache.scene.static_source.value().storage;
     expect_compose_test(source != nullptr);
     expect_compose_test(source->compose.grid.line.data() != fixture.flattened.compose.grid.line.data());
     const auto line = source->compose.grid.line[0];
@@ -3447,7 +3447,7 @@ TEST_CASE("Compose paired grid spans belong to frame and independent static aren
     std::memset(*overwrite, 0xA5, 4096);
     expect_compose_test(source->compose.grid.line[0].y_pixels == line.y_pixels);
     expect_compose_test(source->compose.grid.row[0] == row);
-    expect_compose_test(fixture.cache.scene.static_scene_accounted_bytes >=
+    expect_compose_test(fixture.cache.scene.static_source.value().accounted_bytes >=
         sizeof(*source) + source->owned_arena_committed_bytes());
 }
 
@@ -3481,7 +3481,7 @@ TEST_CASE("Warmed paired grid rows remain stable through 1000 actual arena reset
     project_geometry_arena(fixture, arena);
     arena.reset(); project_geometry_arena(fixture, arena);
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
-    const auto source = fixture.cache.scene.static_scene_storage;
+    const auto source = fixture.cache.scene.static_source.value().storage;
     const auto count = fixture.flattened.compose.grid.line.size();
     arena.reset(); allocations = 0; count_allocations = true;
     project_geometry_arena(fixture, arena);
@@ -3493,7 +3493,7 @@ TEST_CASE("Warmed paired grid rows remain stable through 1000 actual arena reset
         project_geometry_arena(fixture, arena);
         count_allocations = false;
         stable = stable && allocations == remaining && arena.used_bytes() == used &&
-            arena.committed_bytes() == committed && fixture.cache.scene.static_scene_storage == source &&
+            arena.committed_bytes() == committed && fixture.cache.scene.static_source.value().storage == source &&
             fixture.flattened.compose.grid.line.size() == count &&
             fixture.flattened.compose.grid.row.size() == count && !fixture.flattened.view.compose.truncated;
     }
@@ -3562,7 +3562,7 @@ void check_bgm_arena_family(format_family_t family) {
         expect_compose_test(initial.bmson_slice == (family == format_family_t::bmson));
         if (family == format_family_t::bmson) expect_compose_test(initial.bmson_restart);
         expect_compose_test(initial.bounds.bottom > initial.bounds.top);
-        const auto storage = reused.cache.scene.static_scene_storage;
+        const auto storage = reused.cache.scene.static_source.value().storage;
         REQUIRE(storage);
         for (const double scroll : {0.5,24.0,0.0}) {
             a.reset(); b.reset(); fresh.cache={};
@@ -4175,7 +4175,7 @@ TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cac
     project_geometry_arena(fixture, arena);
     arena.reset(); project_geometry_arena(fixture, arena);
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
-    const auto source = fixture.cache.scene.static_scene_storage;
+    const auto source = fixture.cache.scene.static_source.value().storage;
     arena.reset(); allocations = 0; count_allocations = true;
     project_geometry_arena(fixture, arena);
     count_allocations = false;
@@ -4186,7 +4186,7 @@ TEST_CASE("Warmed Compose markers keep stable bytes and allocations for 1000 cac
         project_geometry_arena(fixture, arena);
         count_allocations = false;
         stable = stable && allocations == remaining && arena.used_bytes() == used &&
-            arena.committed_bytes() == committed && fixture.cache.scene.static_scene_storage == source &&
+            arena.committed_bytes() == committed && fixture.cache.scene.static_source.value().storage == source &&
             fixture.flattened.view.compose.beat_bookmark_count == 2 && fixture.flattened.view.compose.audio_section_count == 2;
     }
     INFO("Remaining actual projection allocations=" << remaining << ", used=" << used << ", committed=" << committed);
@@ -4301,14 +4301,14 @@ void check_marker_reused_frame(std::uint32_t direction) {
     fresh.application.preferences.editor_preferences.scroll_directions.fill(direction);
     wormedit::frame_arena_t arena, reference;
     project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
-    const auto source = reused.cache.scene.static_scene_storage;
+    const auto source = reused.cache.scene.static_source.value().storage;
     REQUIRE(source);
     arena.reset(); reference.reset();
     reused.interaction->viewport_scroll_pixels = 0.5;
     fresh.interaction->viewport_scroll_pixels = 0.5;
     fresh.cache = {};
     project_geometry_arena(reused, arena); project_geometry_arena(fresh, reference);
-    expect_compose_test(reused.cache.scene.static_scene_storage == source && reused.cache.scene.static_projection_reused_frames > 0);
+    expect_compose_test(reused.cache.scene.static_source.value().storage == source && reused.cache.scene.static_projection_reused_frames > 0);
     const auto& a = reused.flattened.compose; const auto& b = fresh.flattened.compose;
     compare_marker_bookmarks(a.bookmark, b.bookmark);
     compare_marker_bookmarks(a.audio_marker.bookmark, b.audio_marker.bookmark);
@@ -4820,11 +4820,11 @@ TEST_CASE("Idle paint ghost follows hover without rebuilding the retained scene"
     fixture.cache.frame.paint_pointer = std::pair{x, y};
     fixture.project();
     REQUIRE(fixture.flattened.view.compose.paint_ghost_visible);
-    const auto builds = fixture.cache.scene.static_scene_rebuild_count;
+    const auto builds = fixture.cache.scene.static_source.key()->rebuild_count;
     fixture.cache.frame.paint_pointer = std::pair{x, y + 30};
     fixture.project();
     CHECK(fixture.flattened.view.compose.paint_ghost_visible);
-    CHECK(fixture.cache.scene.static_scene_rebuild_count == builds);
+    CHECK(fixture.cache.scene.static_source.key()->rebuild_count == builds);
     CHECK(fixture.history.undo.empty());
     const auto endpoint = fixture.flattened.view.compose.note_endpoints[0];
     fixture.cache.frame.paint_pointer = std::pair{(endpoint.bounds.left + endpoint.bounds.right) * .5,
@@ -5427,8 +5427,8 @@ void t475_compare_fresh(compose_test_fixture_t& retained) {
     for (const auto& note : retained.cache.scene.index.value()->notes)
         sources += " id=" + std::to_string(note.note.value) + " sound=" +
             std::to_string(note.sound.value_or(resource_id_t{}).value);
-    if (retained.cache.scene.static_scene_storage) {
-        for (const auto& [id, label] : retained.cache.scene.static_scene_storage->compose.sound_labels)
+    if (retained.cache.scene.static_source.value().storage) {
+        for (const auto& [id, label] : retained.cache.scene.static_source.value().storage->compose.sound_labels)
             sources += " static label " + std::to_string(id) + "=" + label.first;
     }
     INFO(sources);

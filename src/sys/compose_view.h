@@ -144,6 +144,32 @@ struct compose_scene_source_key_t {
 using compose_timing_payload_cache_t = wormedit::keyed_cache_t<compose_scene_source_key_t,
     std::vector<compose_timing_marker_payload_t>>;
 
+struct compose_static_layout_key_t {
+    std::uint64_t project{}, chart{}, revision{};
+    double viewport_width{}, zoom{}, field_left{}, field_right{}, bgm_scroll{};
+    bool bga_visible{};
+    std::uint8_t bga_mask{}, timing_mask{};
+    bool timing_focus{}, downscroll{}, lane_legend{};
+    auto operator==(const compose_static_layout_key_t&) const -> bool = default;
+    static auto from(const WormUiComposeView& view) -> compose_static_layout_key_t {
+        return {view.project_id, view.chart_id, view.document_revision, view.viewport_width_pixels,
+                view.pixels_per_standard_measure, view.playable_field_left_pixels,
+                view.playable_field_right_pixels, view.bgm_horizontal_scroll_pixels,
+                view.bga_lane_visible, view.bga_revealed_lane_mask, view.timing_lane_visibility_mask,
+                view.timing_focus, view.downscroll, view.lane_key_legend_visible};
+    }
+};
+struct compose_static_source_key_t {
+    std::size_t rebuild_count{};
+    std::uint64_t style{};
+    compose_static_layout_key_t layout;
+    auto operator==(const compose_static_source_key_t&) const -> bool = default;
+    static auto from(const WormUiComposeView& view, std::size_t rebuild_count,
+                     std::uint64_t style) -> compose_static_source_key_t {
+        return {rebuild_count, style, compose_static_layout_key_t::from(view)};
+    }
+};
+
 struct compose_scene_cache_t {
     auto stamp() const -> wormedit::chart_stamp_t {
         return scene.index.key() ? scene.index.key()->stamp : wormedit::chart_stamp_t{};
@@ -279,18 +305,24 @@ struct compose_scene_cache_t {
             std::optional<wormedit::editor_field_scene_index_t>> index;
         wormedit::editor_field_scene_window_t scene_window;
         std::uint64_t static_scene_style_generation{};
-        std::shared_ptr<frontend_workspace_view_t> static_scene_storage;
-        std::size_t static_scene_rebuild_count{};
-        std::uint64_t static_scene_source_generation{}, static_scene_source_style{};
-        std::size_t static_scene_accounted_bytes{};
+        struct static_projection_data_t {
+            std::array<wormedit::common::static_interval_index_t, 5> indices;
+            // Main-loop interval queries reuse this bounded output buffer.
+            mutable std::vector<std::size_t> scratch;
+            std::size_t accounted_bytes{};
+        };
+        struct static_source_data_t {
+            std::shared_ptr<frontend_workspace_view_t> storage;
+            std::size_t accounted_bytes{};
+            // Main-loop projection builders may populate this through const storage reads.
+            mutable wormedit::keyed_cache_t<std::uint64_t, static_projection_data_t> projection;
+        };
+        wormedit::keyed_cache_t<compose_static_source_key_t, static_source_data_t> static_source;
         std::optional<bool> static_scene_lane_legend;
         std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
         std::vector<double> bgm_lane_widths_pixels;
-        std::array<wormedit::common::static_interval_index_t, 5> static_projection_indices;
-        std::vector<std::size_t> static_projection_scratch;
-        std::uint64_t static_projection_source_generation{};
-        std::size_t static_projection_index_bytes{}, static_projection_scanned{},
-            static_projection_extracted{}, static_projection_reused_frames{};
+        std::size_t static_projection_scanned{}, static_projection_extracted{},
+            static_projection_reused_frames{};
         // Two bounded source locations, invalidated with the document/chart scene.
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};

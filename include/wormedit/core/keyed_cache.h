@@ -47,6 +47,13 @@ class keyed_cache_t {
         return value_;
     }
 
+    // Invalidate the binding while allowing an owner to retain selected storage/metrics.
+    template <class Reset>
+    void invalidate(Reset&& reset) {
+        std::forward<Reset>(reset)(value_);
+        valid_ = false;
+    }
+
     // Preserve the last source binding for owners with narrower stamp policies.
     // The next lookup rebuilds even when that key is unchanged.
     void invalidate_value() {

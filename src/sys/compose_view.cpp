@@ -1558,13 +1558,13 @@ auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> s
     return bytes;
 }
 void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeView& view) {
-    if (!cache.scene.static_scene_storage) return;
-    const auto& source = cache.scene.static_scene_storage->view.compose;
+    if (!cache.scene.static_source.value().storage) return;
+    const auto& source = cache.scene.static_source.value().storage->view.compose;
     const auto origin = view.downscroll
         ? -cache.scene.scene_window.view.viewport_scroll_pixels - source.viewport_height_pixels
         : cache.scene.scene_window.view.viewport_scroll_pixels;
     view.static_scene = &source;
-    view.static_scene_source_generation = cache.scene.static_scene_source_generation;
+    view.static_scene_source_generation = cache.scene.static_source.build_count();
     view.static_scene_world_origin_pixels = origin;
     // Source-window clipped objects cannot define complete tiles at its edges.
     double guard=96;
@@ -1574,23 +1574,8 @@ void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeVi
     view.static_scene_covered_begin_pixels = origin + (chart_begin && !view.downscroll ? 0 : guard);
     view.static_scene_covered_end_pixels = origin + source.viewport_height_pixels -
         (chart_begin && view.downscroll ? 0 : guard);
-    view.static_scene_accounted_bytes = cache.scene.static_scene_accounted_bytes +
-        cache.scene.static_projection_index_bytes;
-}
-auto compose_static_source_layout_matches(const WormUiComposeView& source,
-                                         const WormUiComposeView& view) -> bool {
-    return source.project_id==view.project_id && source.chart_id==view.chart_id &&
-        source.document_revision==view.document_revision &&
-        source.viewport_width_pixels==view.viewport_width_pixels &&
-        source.pixels_per_standard_measure==view.pixels_per_standard_measure &&
-        source.playable_field_left_pixels==view.playable_field_left_pixels &&
-        source.playable_field_right_pixels==view.playable_field_right_pixels &&
-        source.bgm_horizontal_scroll_pixels==view.bgm_horizontal_scroll_pixels &&
-        source.bga_lane_visible==view.bga_lane_visible &&
-        source.bga_revealed_lane_mask==view.bga_revealed_lane_mask &&
-        source.timing_lane_visibility_mask==view.timing_lane_visibility_mask &&
-        source.timing_focus==view.timing_focus &&
-        source.downscroll==view.downscroll && source.lane_key_legend_visible==view.lane_key_legend_visible;
+    view.static_scene_accounted_bytes = cache.scene.static_source.value().accounted_bytes +
+        cache.scene.static_source.value().projection.value().accounted_bytes;
 }
 void clear_static_source_selection(frontend_workspace_view_t& storage) {
     for (auto& note:storage.compose.note) note.selected=false;
@@ -1608,12 +1593,12 @@ auto compose_static_labels_fit(const wormedit::document_history_t& history) -> b
     }
     return true;
 }
+void discard_static_source_data(compose_scene_cache_t::scene_state_t::static_source_data_t& data) {
+    data.storage.reset();
+    data.projection = {};
+}
 void discard_compose_static_source(compose_scene_cache_t& cache) {
-    cache.scene.static_scene_storage.reset();
-    cache.scene.static_projection_indices = {};
-    cache.scene.static_projection_scratch = {};
-    cache.scene.static_projection_source_generation = 0;
-    cache.scene.static_projection_index_bytes = 0;
+    cache.scene.static_source.invalidate(discard_static_source_data);
 }
 auto make_compose_static_view(const WormUiComposeView& view,
                               const wormedit::editor_interaction_view_model_t& expanded)
@@ -1645,26 +1630,12 @@ auto make_compose_static_view(const WormUiComposeView& view,
     return retained;
 }
 
-void refresh_compose_static_source(const compose_scene_projection_context_t& projection,
-                                  compose_scene_cache_t& cache, std::uint64_t canvas_rows) {
+auto build_compose_static_source(const compose_scene_projection_context_t& projection,
+                                 compose_scene_cache_t& cache, std::uint64_t canvas_rows,
+                                 compose_scene_cache_t::scene_state_t::static_source_data_t& data) -> bool {
     auto& view = projection.inputs.frame.view();
-    view.static_scene = nullptr;
-    if (!cache.scene.scene_window.scene || view.truncated) {
-        discard_compose_static_source(cache);
-        return;
-    }
-    if (cache.scene.static_scene_storage &&
-        cache.scene.static_scene_rebuild_count == cache.scene.scene_window.rebuild_count &&
-        cache.scene.static_scene_source_style == cache.scene.static_scene_style_generation &&
-        compose_static_source_layout_matches(cache.scene.static_scene_storage->view.compose,view)) {
-        publish_compose_static_source(cache, view);
-        return;
-    }
-    if (!compose_static_labels_fit(projection.history())) {
-        discard_compose_static_source(cache);
-        return;
-    }
-    discard_compose_static_source(cache);
+    discard_static_source_data(data);
+    if (!compose_static_labels_fit(projection.history())) return false;
     auto storage = std::make_shared<frontend_workspace_view_t>();
     auto& retained = storage->view.compose;
     retained = make_compose_static_view(view, cache.scene.scene_window.view);
@@ -1694,14 +1665,26 @@ void refresh_compose_static_source(const compose_scene_projection_context_t& pro
     const auto bytes = compose_static_storage_bytes(*storage);
     if (retained.truncated || count > WORM_UI_COMPOSE_SCENE_PRIMITIVE_CAPACITY ||
         bytes > 16 * 1024 * 1024) {
+        return false;
+    }
+    data.storage = std::move(storage);
+    data.accounted_bytes = bytes;
+    return true;
+}
+
+void refresh_compose_static_source(const compose_scene_projection_context_t& projection,
+                                  compose_scene_cache_t& cache, std::uint64_t canvas_rows) {
+    auto& view = projection.inputs.frame.view();
+    view.static_scene = nullptr;
+    if (!cache.scene.scene_window.scene || view.truncated) {
         discard_compose_static_source(cache);
         return;
     }
-    cache.scene.static_scene_storage = std::move(storage);
-    cache.scene.static_scene_accounted_bytes = bytes;
-    cache.scene.static_scene_rebuild_count = cache.scene.scene_window.rebuild_count;
-    cache.scene.static_scene_source_style = cache.scene.static_scene_style_generation;
-    ++cache.scene.static_scene_source_generation;
+    static_cast<void>(cache.scene.static_source.get_or_build(
+        compose_static_source_key_t::from(view, cache.scene.scene_window.rebuild_count,
+                                          cache.scene.static_scene_style_generation),
+        std::bind_front(build_compose_static_source, std::cref(projection), std::ref(cache), canvas_rows),
+        [](const auto& data) { return data.storage != nullptr; }));
     publish_compose_static_source(cache, view);
 }
 
@@ -1724,38 +1707,41 @@ void refresh_compose_static_scene_style(compose_scene_cache_t& cache,WormUiCompo
     view.static_scene_style_generation=cache.scene.static_scene_style_generation;
 }
 
-void refresh_scalar_projection_indices(compose_scene_cache_t& cache) {
-    if (cache.scene.static_projection_source_generation == cache.scene.static_scene_source_generation)
-        return;
-    const auto& source = cache.scene.static_scene_storage->compose;
+void build_scalar_projection_indices(const frontend_workspace_view_t& storage,
+                                     compose_scene_cache_t::scene_state_t::static_projection_data_t& data) {
+    const auto& source = storage.compose;
     const auto bounds = [](const auto& record) {
         return std::pair{record.bounds.top, record.bounds.bottom};
     };
-    rebuild_scalar_intervals(cache.scene.static_projection_indices[0], source.note, bounds);
-    rebuild_scalar_intervals(cache.scene.static_projection_indices[1], source.hold, bounds);
-    rebuild_scalar_intervals(cache.scene.static_projection_indices[2], source.bgm.event, bounds);
-    rebuild_scalar_intervals(cache.scene.static_projection_indices[4], source.bga_event, bounds);
+    rebuild_scalar_intervals(data.indices[0], source.note, bounds);
+    rebuild_scalar_intervals(data.indices[1], source.hold, bounds);
+    rebuild_scalar_intervals(data.indices[2], source.bgm.event, bounds);
+    rebuild_scalar_intervals(data.indices[4], source.bga_event, bounds);
     rebuild_scalar_intervals(
-        cache.scene.static_projection_indices[3], source.grid.row,
+        data.indices[3], source.grid.row,
         [](const auto& row) { return std::pair{double(row.whole_rows), double(row.whole_rows)}; });
-    cache.scene.static_projection_scratch.resize(std::max(
+    data.scratch.resize(std::max(
         {source.note.size(), source.hold.size(), source.bgm.event.size(),
          source.bga_event.size(), source.grid.row.size()}));
-    cache.scene.static_projection_index_bytes =
-        cache.scene.static_projection_scratch.capacity() * sizeof(std::size_t);
-    for (const auto& index : cache.scene.static_projection_indices)
-        cache.scene.static_projection_index_bytes += index.accounted_bytes();
-    cache.scene.static_projection_source_generation = cache.scene.static_scene_source_generation;
+    data.accounted_bytes =
+        data.scratch.capacity() * sizeof(std::size_t);
+    for (const auto& index : data.indices)
+        data.accounted_bytes += index.accounted_bytes();
+}
+void refresh_scalar_projection_indices(compose_scene_cache_t& cache) {
+    const auto& source = cache.scene.static_source.value();
+    static_cast<void>(source.projection.get_or_build(cache.scene.static_source.build_count(),
+        std::bind_front(build_scalar_projection_indices, std::cref(*source.storage))));
 }
 auto scalar_projection_query(compose_scene_cache_t& cache, unsigned pass, double begin, double end)
     -> std::optional<std::span<const std::size_t>> {
-    const auto query = cache.scene.static_projection_indices[pass].query_into(
-        begin, end, cache.scene.static_projection_scratch);
+    const auto query = cache.scene.static_source.value().projection.value().indices[pass].query_into(
+        begin, end, cache.scene.static_source.value().projection.value().scratch);
     cache.scene.static_projection_scanned += query.scanned;
     if (query.overflow)
         return std::nullopt;
     cache.scene.static_projection_extracted += query.count;
-    return std::span<const std::size_t>(cache.scene.static_projection_scratch).first(query.count);
+    return std::span<const std::size_t>(cache.scene.static_source.value().projection.value().scratch).first(query.count);
 }
 
 auto extract_scalar_grid(compose_scene_cache_t& cache,
@@ -1765,7 +1751,7 @@ auto extract_scalar_grid(compose_scene_cache_t& cache,
                                                  double(scene.visible_end_row));
     if (!indices)
         return false;
-    const auto& source = cache.scene.static_scene_storage->compose.grid;
+    const auto& source = cache.scene.static_source.value().storage->compose.grid;
     const auto visible = [&](std::size_t index) {
         return source.row[index].whole_rows >= scene.visible_begin_row &&
                source.row[index].whole_rows < scene.visible_end_row;
@@ -1787,7 +1773,7 @@ auto extract_scalar_objects(compose_scene_cache_t& cache,
                             frontend_workspace_view_t& flattened,
                             const wormedit::editor_interaction_view_model_t& interaction,
                             double shift, double height) -> bool {
-    const auto& source = cache.scene.static_scene_storage->compose;
+    const auto& source = cache.scene.static_source.value().storage->compose;
     const auto& scene = *metadata.projection.scene;
     const auto& retained = *cache.scene.scene_window.scene;
     const auto note = [&](auto& record, std::size_t index) {
@@ -1853,11 +1839,11 @@ void discard_scalar_projection(frontend_workspace_view_t& flattened) {
 }
 auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComposeView& view)
     -> bool {
-    if (!cache.scene.static_scene_storage || !cache.scene.scene_window.scene ||
-        cache.scene.static_scene_source_style != cache.scene.static_scene_style_generation ||
-        !compose_static_source_layout_matches(cache.scene.static_scene_storage->view.compose, view))
+    if (!cache.scene.static_source.value().storage || !cache.scene.scene_window.scene ||
+        cache.scene.static_source.key()->style != cache.scene.static_scene_style_generation ||
+        cache.scene.static_source.key()->layout != compose_static_layout_key_t::from(view))
         return false;
-    const auto& source = cache.scene.static_scene_storage->compose;
+    const auto& source = cache.scene.static_source.value().storage->compose;
     const auto& retained = *cache.scene.scene_window.scene;
     return source.note.size() == retained.note_endpoints.size() &&
            source.hold.size() == retained.hold_bodies.size() &&

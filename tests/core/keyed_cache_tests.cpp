@@ -321,3 +321,18 @@ TEST_CASE("Standard tuple keys borrow expensive components on lookup", "[core][k
     CHECK(cache.get_or_build(query, counting_builder_t<int>{calls, 23}) == 23);
     CHECK(std::get<0>(*cache.key()).back() == 'b');
 }
+
+TEST_CASE("Owner invalidation preserves selected storage and metrics", "[core][keyed-cache]") {
+    keyed_cache_t<int, std::vector<int>> cache;
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1, 2, 3}}));
+    const auto capacity = cache.value().capacity();
+    cache.invalidate([](auto& value) { value.clear(); });
+    CHECK_FALSE(cache.has_value());
+    CHECK(cache.key() == std::optional<int>{1});
+    CHECK(cache.value().empty());
+    CHECK(cache.value().capacity() == capacity);
+    CHECK(cache.build_count() == 1);
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}));
+    CHECK(cache.build_count() == 2);
+}

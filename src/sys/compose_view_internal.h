@@ -866,8 +866,7 @@ auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> s
 
 void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeView& view);
 
-auto compose_static_source_layout_matches(const WormUiComposeView& source,
-                                          const WormUiComposeView& view) -> bool;
+
 
 void clear_static_source_selection(frontend_workspace_view_t& storage);
 

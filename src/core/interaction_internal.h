@@ -3,7 +3,6 @@
 #include "interaction_geometry.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/snap.h>
@@ -31,6 +30,31 @@
 #include <utility>
 
 namespace wormedit {
+struct hold_start_t {
+    lane_id_t lane;
+    local_position_t position;
+    std::optional<hold_gesture_source_t> source;
+    std::optional<resource_id_t> sound;
+    bool is_displacing{};
+    std::optional<bmson_source_geometry_t> geometry;
+    template<class Action>
+    [[nodiscard]] static auto from(const editor_interaction_state_t& state, const Action& action) -> hold_start_t {
+        hold_start_t start{.lane = state.active_lane, .position = state.cursor};
+        if constexpr (requires { action.position; }) start.position = action.position;
+        if constexpr (requires { action.lane; }) start.lane = action.lane;
+        if constexpr (requires { action.sound; }) start.sound = action.sound;
+        if constexpr (requires { action.source_geometry; }) start.geometry = action.source_geometry;
+        if constexpr (requires { action.displace_to_bgm; }) start.is_displacing = action.displace_to_bgm;
+        if constexpr (std::same_as<Action, begin_lane_key_hold_gesture_action_t>)
+            start.source = hold_gesture_source_t::keyboard_lane;
+        else if constexpr (std::same_as<Action, begin_alt_pointer_hold_gesture_action_t>)
+            start.source = hold_gesture_source_t::alt_pointer;
+        return start;
+    }
+    [[nodiscard]] auto validate_sound(const song_document_t&) const -> diagnostic_list_t;
+    auto operator==(const hold_start_t&) const -> bool = default;
+};
+
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
                                    editor_area_selection_mode_t mode,
@@ -72,8 +96,8 @@ struct hold_row_expansion_t {
             for (const auto& note : measure.notes) {
                 if (note.lane != lane)
                     continue;
-                const auto note_begin = absolute_row(index, note.position);
-                const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
+                const auto note_begin = index.row_of(note.position);
+                const auto note_end = note.end ? index.row_of(*note.end) : note_begin;
                 if (!note_begin || !note_end || *note_end < *note_begin ||
                     !is_intersecting(*note_begin, *note_end))
                     continue;
@@ -133,8 +157,8 @@ inline auto find_active_lane(const chart_document_t& chart, const measure_index_
 
 inline auto normalized_position_span(const measure_index_t& index, local_position_t first,
                               local_position_t second) -> std::optional<position_span_t> {
-    const auto first_row = absolute_row(index, first);
-    const auto second_row = absolute_row(index, second);
+    const auto first_row = index.row_of(first);
+    const auto second_row = index.row_of(second);
     if (!first_row || !second_row || *first_row == *second_row) {
         return std::nullopt;
     }
@@ -272,8 +296,8 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
                          note_kind_t armed_kind = note_kind_t::hold, bool committing = false,
                          hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
     -> std::variant<hold_placement_t<Removals>, diagnostic_list_t> {
-    const auto anchor_row = absolute_row(index, anchor);
-    const auto moving_row = absolute_row(index, moving);
+    const auto anchor_row = index.row_of(anchor);
+    const auto moving_row = index.row_of(moving);
     if (!anchor_row.has_value() || !moving_row.has_value()) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "hold endpoints lie outside chart geometry")};
@@ -659,7 +683,7 @@ struct note_move_context_t {
             !find_active_lane(chart, index, *last, lane))
             return false;
         for (const auto& layout : chart.lane_layouts) {
-            const auto row = absolute_row(index, layout.position);
+            const auto row = index.row_of(layout.position);
             if (row && *row > begin && *row <= end &&
                 !find_active_lane(chart, index, layout.position, lane))
                 return false;
@@ -856,8 +880,7 @@ auto plan_single_bgm_move(const document_history_t& history,
                           std::optional<std::uint64_t> canvas_row, bool exact)
     -> std::variant<note_move_plan_t, diagnostic_list_t>;
 
-auto plan_move_gesture(const document_history_t& history, const editor_interaction_state_t& state,
-                       const chart_document_t& chart, const measure_index_t& index,
+auto plan_move_gesture(const editor_edit_context_t& context,
                        std::vector<object_id_t> targets, object_id_t reference,
                        local_position_t position, lane_id_t lane, bool exact_position,
                        std::optional<object_id_t> bgm_lane,
@@ -873,8 +896,6 @@ auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t;
 
 auto diagnostic_result(const document_history_t& history, const editor_interaction_state_t& state,
                        diagnostic_list_t diagnostics) -> editor_interaction_result_t;
-
-auto is_playhead_gesture_active(const editor_interaction_state_t& state) -> bool;
 
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
                               const measure_index_t& index, const editor_interaction_state_t& state,
@@ -908,23 +929,11 @@ using interaction_detail::resize_parameters_t;
 using interaction_detail::resized_note_t;
 using interaction_detail::shifted_move_row_t;
 using interaction_detail::view_geometry_t;
-auto apply_duration_resize_plan(document_history_t&, editor_interaction_state_t&,
-                                const duration_resize_plan_t&) -> editor_interaction_result_t;
-auto apply_note_move_plan(document_history_t&, editor_interaction_state_t&, const note_move_plan_t&)
-    -> editor_interaction_result_t;
-auto dispatch_nested_action(editor_edit_context_t& context, const editor_interaction_action_t& action)
-    -> editor_interaction_result_t;
 auto cancel_pointer_gesture(editor_edit_context_t& context) -> editor_interaction_result_t;
 auto make_duration_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
                         object_id_t reference, local_position_t end, bool exact_end = false)
     -> std::variant<duration_resize_plan_t, diagnostic_list_t>;
-auto make_move_plan(editor_edit_context_t& context, std::vector<object_id_t> targets,
-                    object_id_t reference, local_position_t position, lane_id_t lane,
-                    bool exact_position, std::optional<object_id_t> bgm_lane,
-                    std::optional<std::uint64_t> virtual_row)
-    -> std::variant<note_move_plan_t, diagnostic_list_t>;
-auto apply_duration_plan(editor_edit_context_t& context, const duration_resize_plan_t& plan)
-    -> editor_interaction_result_t;
+
 
 struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> notes;
@@ -1030,21 +1039,12 @@ auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, s
                          const pending_note_paint_gesture_t& pending,
                          std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t>;
-void cancel_stale_explicit_paint(editor_interaction_state_t& state);
 auto add_measure_grid_paint_path(editor_edit_context_t& context, lane_id_t lane,
                                  std::uint64_t first, std::uint64_t last,
                                  pending_note_paint_gesture_t& pending,
                                  std::vector<note_paint_target_t>& additions)
     -> std::optional<diagnostic_t>;
-auto append_note_paint_target(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto is_paint_sample_resource(const song_document_t& document, resource_id_t id) -> bool;
-auto begin_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                              local_position_t position, bool pointer_captured,
-                              std::optional<resource_id_t> sound, note_paint_intent_t intent,
-                              std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
 auto entry_stem_channel(const song_document_t& document, const chart_document_t& chart,
                         std::optional<resource_id_t> sound)
     -> std::variant<std::optional<object_id_t>, diagnostic_list_t>;
@@ -1063,10 +1063,6 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
                                  const std::optional<std::vector<layer_id_t>>& armed_layers,
                                  std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_note_paint_t, diagnostic_list_t>;
-auto end_note_paint_gesture(editor_edit_context_t& context, lane_id_t lane,
-                            local_position_t position, bool pointer_captured,
-                            std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
 auto update_fixed_scroll_cursor(editor_edit_context_t& context,
                                 const scroll_editor_view_action_t& action,
                                 editor_interaction_state_t& proposed)
@@ -1097,30 +1093,6 @@ auto stage_keyboard_entry(const editor_edit_context_t& context, lane_id_t lane,
                           std::optional<object_id_t> stem,
                           std::optional<bmson_source_geometry_t> geometry)
     -> std::variant<prepared_keyboard_entry_t, diagnostic_list_t>;
-auto apply_keyboard_entry(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                          std::optional<resource_id_t> sound, bool displace,
-                          std::optional<bmson_source_geometry_t> geometry)
-    -> std::optional<editor_interaction_result_t>;
-auto begin_hold_gesture(editor_edit_context_t& context, lane_id_t lane, local_position_t position,
-                        hold_gesture_source_t source,
-                        std::optional<resource_id_t> sound = std::nullopt, bool displace = false,
-                        std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto update_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                         local_position_t position) -> editor_interaction_result_t;
-auto release_hold_gesture(editor_edit_context_t& context, hold_gesture_source_t source,
-                          local_position_t position,
-                          std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto begin_hold_action(editor_edit_context_t& context, local_position_t position,
-                       std::optional<resource_id_t> sound = std::nullopt,
-                       std::optional<bmson_source_geometry_t> geometry = {})
-    -> editor_interaction_result_t;
-auto validate_pending_hold_start(const editor_edit_context_t& context,
-                                 const pending_hold_t& pending)
-    -> std::optional<editor_interaction_result_t>;
-auto update_hold_preview(editor_edit_context_t& context, local_position_t position)
-    -> editor_interaction_result_t;
 auto prepare_stem_hold_document(const editor_edit_context_t& context, const pending_hold_t& pending,
                                 const hold_placement_plan_t& placement, object_id_t channel,
                                 std::optional<bmson_source_geometry_t> geometry)
@@ -1129,33 +1101,11 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
                       const hold_placement_plan_t& placement, local_position_t target,
                       std::optional<bmson_source_geometry_t> geometry)
     -> std::optional<editor_interaction_result_t>;
-auto commit_hold(editor_edit_context_t& context, local_position_t position,
-                 std::optional<bmson_source_geometry_t> geometry) -> editor_interaction_result_t;
-auto refresh_keyboard_hold_revisions(editor_edit_context_t& context) -> void;
-auto begin_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t lane,
-                                 std::optional<resource_id_t> sound, bool displace,
-                                 std::optional<bmson_source_geometry_t> geometry)
-    -> editor_interaction_result_t;
-auto release_lane_key_hold_gesture(editor_edit_context_t& context, lane_id_t action_lane)
-    -> editor_interaction_result_t;
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
                                    editor_area_selection_mode_t mode,
                                    const editor_hit_test_index_t& hit_index)
     -> std::variant<std::vector<editor_selection_object_t>, diagnostic_list_t>;
-struct space_range_selection_context_t {
-    editor_edit_context_t& edit;
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-    const std::uint64_t& absolute;
-};
-auto begin_space_range_selection(space_range_selection_context_t& context,
-                                 const space_range_selection_action_t& action)
-    -> editor_interaction_result_t;
-auto commit_space_range_selection(space_range_selection_context_t& context)
-    -> editor_interaction_result_t;
-auto update_space_range_selection(space_range_selection_context_t& context,
-                                  const space_range_selection_action_t& action)
-    -> editor_interaction_result_t;
 auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t>;
@@ -1176,7 +1126,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
                            editor_interaction_result_t result) -> editor_interaction_result_t;
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
-                         const virtual_hold_rows_t& rows) -> editor_interaction_result_t;
+                         const virtual_hold_rows_t& rows, const pending_hold_t* captured = nullptr) -> editor_interaction_result_t;
 auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t;
@@ -1204,45 +1154,21 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     -> editor_interaction_result_t;
 auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     -> editor_interaction_result_t;
-auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note_id,
-                                bool pointer_captured) -> editor_interaction_result_t;
-auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t event_id,
-                                     bool pointer_captured) -> editor_interaction_result_t;
-auto begin_semantic_paint(editor_edit_context_t& context, layer_id_t layer_id, object_id_t note_id,
-                          std::optional<object_id_t> bgm_event, bool pointer_captured,
-                          bool replace_memberships, bool clear_memberships,
-                          semantic_layer_paint_mode_t mode) -> editor_interaction_result_t;
 auto semantic_paint_edit(chart_id_t chart, const pending_semantic_layer_paint_gesture_t& pending)
     -> semantic_layer_edit_action_t;
-auto end_semantic_paint(editor_edit_context_t& context, object_id_t note_id,
-                        std::optional<object_id_t> bgm_event, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto audition_selected_object(bool requested, const std::vector<editor_selection_object_t>& hits,
                               const editor_interaction_state_t& state, std::uint64_t revision)
     -> std::optional<editor_object_audition_request_t>;
 auto select_editor_objects(editor_edit_context_t& context,
                            const select_editor_objects_action_t& action)
     -> editor_interaction_result_t;
-struct area_selection_context_t {
-    editor_edit_context_t& edit;
-    const std::variant<editor_interaction_view_model_t, diagnostic_list_t>& initial_view;
-};
 auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
                                   double viewport_height) -> bool;
-auto begin_area_selection_gesture(area_selection_context_t& context,
-                                  const begin_editor_area_selection_action_t& request)
-    -> editor_interaction_result_t;
-auto update_area_selection_gesture(area_selection_context_t& context, double x_pixels,
-                                   double y_pixels, bool pointer_captured)
-    -> editor_interaction_result_t;
-auto snapped_area_selection_row(const area_selection_context_t& context,
+auto snapped_area_selection_row(const editor_edit_context_t& context,
                                 const editor_interaction_view_model_t& view, double y)
     -> std::optional<std::uint64_t>;
-auto retain_area_selection_range(area_selection_context_t& context,
+auto retain_area_selection_range(editor_edit_context_t& context,
                                  const pending_editor_area_selection_t& pending) -> void;
-auto commit_area_selection_gesture(area_selection_context_t& context, double x_pixels,
-                                   double y_pixels, bool pointer_captured)
-    -> editor_interaction_result_t;
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,
                                 const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
@@ -1259,8 +1185,6 @@ auto validate_active_gesture_action(const document_history_t& history,
                                     const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
-auto is_virtual_cursor_action_allowed(const editor_interaction_state_t& state,
-                                   const editor_interaction_action_t& action) -> bool;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t;
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool;
@@ -1277,8 +1201,8 @@ auto select_editor_notes(editor_edit_context_t& context, const select_editor_not
 auto select_editor_lane(document_history_t& history, editor_interaction_state_t& state,
                         const chart_document_t& chart, const measure_index_t& index, lane_id_t lane)
     -> editor_interaction_result_t;
-auto validate_virtual_cursor_action(const document_history_t& history,
-                                    const editor_interaction_state_t& state,
-                                    const editor_interaction_action_t& action)
-    -> std::optional<editor_interaction_result_t>;
+
+// Field/view preparation and the action visitor run after the gesture boundary.
+auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
+    const editor_interaction_action_t& action) -> editor_interaction_result_t;
 } // namespace wormedit

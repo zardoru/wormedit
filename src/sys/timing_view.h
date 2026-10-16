@@ -4,9 +4,11 @@
 
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/measure.h>
+#include <wormedit/core/keyed_cache.h>
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace wormedit::sys {
@@ -18,17 +20,10 @@ struct timing_grid_state_t {
     bool active_was_fallback{};
 };
 
-struct timing_scene_cache_t {
-    wormedit::chart_id_t chart;
-    std::uint64_t revision{};
-    bool attempted{};
-    bool truncated{};
-    std::uint64_t total_rows{};
-    bool compose_rows_attempted{};
-    std::uint64_t compose_total_rows{};
-    bool measure_attempted{};
-    std::optional<wormedit::measure_index_t> measures;
-};
+// Lightweight capacity totals retain the existing chart/revision key. Full
+// measure geometry belongs to the committed document, read only for an active stage.
+using timing_scene_cache_t = wormedit::keyed_cache_t<
+    std::pair<wormedit::chart_id_t, std::uint64_t>, std::uint64_t>;
 
 void populate_timing_view_for_compose(
     frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,

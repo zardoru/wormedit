@@ -92,14 +92,15 @@ TEST_CASE("audio.time_stretch reset clears pending audio and rejects invalid spa
 }
 
 namespace {
-auto transient_stereo(std::size_t frames) -> std::vector<float> {
+auto transient_stereo(std::size_t frames, std::size_t second_transient_frame = 22'003)
+    -> std::vector<float> {
     std::vector<float> samples(frames * 2U);
     for (std::size_t frame = 0; frame < frames; ++frame) {
         const auto time = static_cast<double>(frame) / 44100.0;
         samples[frame * 2U] = static_cast<float>(0.55 * std::sin(2.0 * std::numbers::pi * 330.0 * time));
         samples[frame * 2U + 1U] = static_cast<float>(0.4 * std::cos(2.0 * std::numbers::pi * 523.25 * time));
     }
-    for (const auto frame : {std::size_t{1237}, std::size_t{22003}, frames - 1U}) {
+    for (const auto frame : {std::size_t{1237}, second_transient_frame, frames - 1U}) {
         if (frame >= frames) continue;
         samples[frame * 2U] = 0.9F;
         samples[frame * 2U + 1U] = -0.85F;
@@ -129,8 +130,9 @@ auto one_rate_is_chunk_deterministic(std::span<const float> source, rational_t r
 }
 
 auto all_supported_rates_are_chunk_deterministic() -> bool {
-    constexpr std::size_t non_hop_aligned_frames = 44'137;
-    const auto source = transient_stereo(non_hop_aligned_frames);
+    // Ten 441-frame hops plus a partial EOF; separate post-lookahead and middle transients.
+    constexpr std::size_t non_hop_aligned_frames = 4'417;
+    const auto source = transient_stereo(non_hop_aligned_frames, 2'203);
     return std::ranges::all_of(playback_rates, [&](rational_t rate) {
         return one_rate_is_chunk_deterministic(source, rate);
     });

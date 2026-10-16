@@ -51,9 +51,9 @@ auto has_code(const document_command_result_t& result, diagnostic_code_t code) -
 
 auto absolute_note_row(const song_document_t& song) -> std::uint64_t {
     const auto& chart = song.charts.front();
-    const auto index = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto row = absolute_row(std::get<measure_index_t>(index),
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index.has_value());
+    const auto row = index.value().row_of(
                                   chart.measures.back().notes.front().position);
     REQUIRE(row.has_value());
     return *row;
@@ -76,9 +76,9 @@ TEST_CASE("audio extent appends measures using final BPM and offset without movi
     check_audio_extent(chart.measures[2].notes.front().id == object_id_t{30});
     check_audio_extent(chart.measures[2].notes.front().position == (local_position_t{measure_id_t{12}, 0}));
     check_audio_extent(chart.measures.back().id == measure_id_t{13});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    check_audio_extent(timing.index->rows.back().after_stops_seconds == (signed_rational_t{13, 1}));
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    check_audio_extent(timing.value->rows.back().after_stops_seconds == (signed_rational_t{13, 1}));
     check_audio_extent(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
     check_audio_extent(chart.measures.size() == 4);
     check_audio_extent(validate_document(song).empty());
@@ -118,9 +118,9 @@ TEST_CASE("measure insertion length editing and deletion preserve stable local i
                                         .measure = inserted_id,
                                         .definition = {.length = {3, 4}, .meter = meter_t{6, 8}}});
     REQUIRE(changed);
-    const auto index = build_measure_index(history.document.charts.front());
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    CHECK(std::get<measure_index_t>(index).entries[1].row_capacity == 720);
+    const auto index = measure_index_t::from(history.document.charts.front());
+    REQUIRE(index.has_value());
+    CHECK(index.value().entries[1].row_capacity == 720);
     CHECK(absolute_note_row(history.document) == 2640);
 
     const auto removed = apply_measure_edit(
@@ -516,10 +516,10 @@ TEST_CASE("removing the first measure keeps layout, BPM and a validating documen
     const auto& edited = history.document.charts.front();
     CHECK(edited.lane_layouts.front().position == local_position_t{measure_id_t{11}, 0});
     CHECK(edited.bpms.front().position == local_position_t{measure_id_t{11}, 0});
-    const auto index = build_measure_index(edited);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto timing = build_timing_index(edited, {.allow_bounded_clock = true});
-    CHECK(timing.index.has_value());
+    const auto index = measure_index_t::from(edited);
+    REQUIRE(index.has_value());
+    const auto timing = timing_index_t::from(edited, {.allow_bounded_clock = true});
+    CHECK(timing.value.has_value());
 }
 
 TEST_CASE("an empty leading measure that anchors BPM and layout cannot be deleted as empty",
@@ -554,29 +554,29 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
         .end = local_position_t{measure_id_t{11},100}}};
     chart.bpms.push_back({.id=object_id_t{42}, .position={measure_id_t{10},600}, .beats_per_minute={150,1}});
     auto history = document_history_t::from(document);
-    const auto before = build_measure_index(chart);
-    const auto before_timing = build_timing_index(chart);
+    const auto before = measure_index_t::from(chart);
+    const auto before_timing = timing_index_t::from(chart);
     const auto result =
         apply_measure_edit(history, split_measure_action_t{chart.id, {measure_id_t{10}, 480}});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
     REQUIRE(result.applied);
     const auto& split = history.document.charts.front();
-    const auto after = build_measure_index(split);
-    const auto& index = std::get<measure_index_t>(after);
+    const auto after = measure_index_t::from(split);
+    const auto& index = after.value();
     check_audio_extent(split.measures.size() == 4);
-    check_audio_extent(index.total_rows == std::get<measure_index_t>(before).total_rows);
+    check_audio_extent(index.total_rows == before.value().total_rows);
     for (const auto& measure : document.charts.front().measures)
-        check_audio_extent(absolute_row(index, {measure.id,0}) == absolute_row(std::get<measure_index_t>(before),{measure.id,0}));
+        check_audio_extent(index.row_of({measure.id,0}) == before.value().row_of({measure.id,0}));
     check_audio_extent(split.measures[1].id == measure_id_t{13});
-    check_audio_extent(absolute_row(index,split.measures[0].notes.front().position) == 120);
-    check_audio_extent(absolute_row(index,*split.measures[0].notes.front().end) == 800);
-    check_audio_extent(absolute_row(index,split.measures[1].bgm_events.front().position) == 600);
-    check_audio_extent(absolute_row(index,*split.measures[1].bgm_events.front().end) == 1060);
-    check_audio_extent(absolute_row(index,split.bpms.back().position) == 600);
-    const auto timing = build_timing_index(split);
-    REQUIRE(timing);
-    REQUIRE(before_timing);
-    check_audio_extent(timing.index->rows.back().after_stops_seconds == before_timing.index->rows.back().after_stops_seconds);
+    check_audio_extent(index.row_of(split.measures[0].notes.front().position) == 120);
+    check_audio_extent(index.row_of(*split.measures[0].notes.front().end) == 800);
+    check_audio_extent(index.row_of(split.measures[1].bgm_events.front().position) == 600);
+    check_audio_extent(index.row_of(*split.measures[1].bgm_events.front().end) == 1060);
+    check_audio_extent(index.row_of(split.bpms.back().position) == 600);
+    const auto timing = timing_index_t::from(split);
+    REQUIRE(timing.value);
+    REQUIRE(before_timing.value);
+    check_audio_extent(timing.value->rows.back().after_stops_seconds == before_timing.value->rows.back().after_stops_seconds);
     check_audio_extent(validate_document(history.document).empty());
     check_audio_extent(history.undo.size() == 1);
     check_audio_extent(undo_document_command(history));
@@ -618,9 +618,9 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     const auto reloaded = parse_bms_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}), {.lane_profile_id="bme-7k-outside-scratch"});
     REQUIRE(reloaded.value.song);
     const auto& after = reloaded.value.song->charts.front();
-    const auto index = build_measure_index(after);
-    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
-    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
+    const auto index = measure_index_t::from(after);
+    check_audio_extent(index.value().row_of(after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
+    check_audio_extent(index.value().row_of(after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
 }
 
 TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[core][measure-editor][measure-split]") {
@@ -635,13 +635,13 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
                 split_measure_action_t{id, {measure, chart.divisions_per_standard_measure / 2}})
                 .applied);
     const auto& split = history.document.charts.front();
-    const auto index = build_measure_index(split);
-    const auto& rows = std::get<measure_index_t>(index);
+    const auto index = measure_index_t::from(split);
+    const auto& rows = index.value();
     const auto& events = split.sound_channels.front().events;
-    check_audio_extent(absolute_row(rows,events[0].position) == 240);
-    check_audio_extent(absolute_row(rows,*events[0].end) == 720);
-    check_audio_extent(absolute_row(rows,events[1].position) == 600);
-    check_audio_extent(absolute_row(rows,*events[1].end) == 1200);
+    check_audio_extent(rows.row_of(events[0].position) == 240);
+    check_audio_extent(rows.row_of(*events[0].end) == 720);
+    check_audio_extent(rows.row_of(events[1].position) == 600);
+    check_audio_extent(rows.row_of(*events[1].end) == 1200);
     const auto written = write_bmson(history.document);
     REQUIRE(written.value);
     const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}));
@@ -667,19 +667,19 @@ auto pause_conversion_song() -> song_document_t {
 auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
     auto history = document_history_t::from(pause_conversion_song());
     const auto original = history.document;
-    const auto old_timing = build_timing_index(original.charts.front());
+    const auto old_timing = timing_index_t::from(original.charts.front());
     const auto result = apply_measure_edit(
         history, convert_range_to_pause_action_t{
                      chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, kind, resize});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    if (!result.applied || history.undo.size() != 1 || !old_timing) return false;
+    if (!result.applied || history.undo.size() != 1 || !old_timing.value) return false;
     const auto& chart = history.document.charts.front();
-    const auto after = build_timing_index(chart);
+    const auto after = timing_index_t::from(chart);
     UNSCOPED_INFO("pause " << chart.pauses.front().duration.numerator << "/" << chart.pauses.front().duration.denominator);
-    if (!after || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
+    if (!after.value || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
     for (const auto row : {480U, 720U, 1920U, 1968U, 2016U, 2160U}) {
-        const auto old = timing_at(*old_timing.index, row);
-        const auto changed = timing_at(*after.index, row >= 1008 ? row - 48 : row);
+        const auto old = old_timing.value->seconds_at(row);
+        const auto changed = after.value->seconds_at(row >= 1008 ? row - 48 : row);
         if (!old || !changed || old.seconds != changed.seconds) return false;
     }
     const auto capacity = validate_measure(960, chart.measures[1].definition).row_capacity;
@@ -731,17 +731,17 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     if (!written.value) return false;
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!parsed.value.song) return false;
-    const auto timing = build_timing_index(parsed.value.song->charts.front());
-    if (!timing) return false;
-    const auto built = build_measure_index(parsed.value.song->charts.front());
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto timing = timing_index_t::from(parsed.value.song->charts.front());
+    if (!timing.value) return false;
+    const auto built = measure_index_t::from(parsed.value.song->charts.front());
+    const auto& measures = built;
     if (!measures) return false;
     std::vector<signed_rational_t> times;
     for (const auto& chunk : parsed.value.song->charts.front().measures)
         for (const auto& note : chunk.notes) {
-            const auto row = absolute_row(*measures, note.position);
+            const auto row = measures->row_of(note.position);
             if (!row) return false;
-            const auto at = timing_at(*timing.index, *row);
+            const auto at = timing.value->seconds_at(*row);
             if (!at) return false;
             times.push_back(*at.seconds);
         }
@@ -804,14 +804,14 @@ auto pause_conversion_bmson_aliases() -> bool {
                                         true});
     if (!result.applied || !validate_document(history.document).empty()) return false;
     const auto& chart = history.document.charts.front();
-    const auto built = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto built = measure_index_t::from(chart);
+    const auto& measures = built;
     if (!measures || chart.sound_channels.front().events.size() != 2) return false;
     const auto& retained = chart.sound_channels.front().events.front();
     const auto& note = chart.measures.front().notes.front();
     return note.sound_channel_event == retained.id && note.position == retained.position && note.end == retained.end &&
-        absolute_row(*measures, note.position) == resolution / 5 &&
-        absolute_row(*measures, *note.end) == resolution * 7 / 10;
+        measures->row_of(note.position) == resolution / 5 &&
+        measures->row_of(*note.end) == resolution * 7 / 10;
 }
 } // namespace
 
@@ -826,20 +826,20 @@ TEST_CASE("Range pause conversion keeps BMSON semantic and retained heads and ta
 namespace {
 auto pause_conversion_whole_measure() -> bool {
     auto history = document_history_t::from(pause_conversion_song());
-    const auto old = build_timing_index(history.document.charts.front());
+    const auto old = timing_index_t::from(history.document.charts.front());
     const auto result = apply_measure_edit(
         history, convert_range_to_pause_action_t{chart_id_t{2},
                                                  {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}},
                                                  pause_kind_t::delay,
                                                  true});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    if (!result.applied || !old) return false;
+    if (!result.applied || !old.value) return false;
     const auto& chart = history.document.charts.front();
-    const auto after = build_timing_index(chart);
-    if (!after || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
+    const auto after = timing_index_t::from(chart);
+    if (!after.value || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
     for (const auto row : {1920U, 1968U, 2016U, 2160U}) {
-        const auto before_time = timing_at(*old.index, row);
-        const auto after_time = timing_at(*after.index, row - 960);
+        const auto before_time = old.value->seconds_at(row);
+        const auto after_time = after.value->seconds_at(row - 960);
         if (!before_time || !after_time || before_time.seconds != after_time.seconds) return false;
     }
     return chart.pauses.front().position == local_position_t{measure_id_t{12}, 0} &&

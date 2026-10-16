@@ -10,12 +10,14 @@
 #include <limits>
 #include <memory>
 #include <ranges>
+#include <utility>
 
 using namespace wormedit;
 
 static_assert(std::is_aggregate_v<document_history_t>);
 static_assert(std::is_aggregate_v<document_stamp_t>);
 static_assert(std::is_aggregate_v<chart_stamp_t>);
+static_assert(!std::is_aggregate_v<document_command_transaction_t>);
 
 namespace {
 
@@ -64,10 +66,10 @@ TEST_CASE("Stamped command transactions reject stale captures before copying",
     auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
     if (different_project) ++stamp.document.project.value;
     else ++stamp.document.revision;
-    auto transaction = document_command_transaction_t::from(history, stamp, "Staged command");
+    auto transaction = document_command_transaction_t(history, stamp, "Staged command");
     CHECK_FALSE(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
-    test::check_stale_action_message(transaction.outcome.diagnostics, "Staged command");
+    test::check_stale_action_message(transaction.outcome().diagnostics, "Staged command");
     CHECK(history.undo.empty());
 }
 
@@ -78,15 +80,15 @@ TEST_CASE("Revision-only stamp policy preserves older capture identity coverage"
     ++history.document.id.value;
     CHECK_FALSE(stamp.is_current(history.document));
     CHECK(stamp.is_current(history.document, document_identity_policy_t::revision_only));
-    auto transaction = document_command_transaction_t::from(history, stamp, "Legacy capture",
+    auto transaction = document_command_transaction_t(history, stamp, "Legacy capture",
         document_identity_policy_t::revision_only);
     CHECK(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
     ++history.document.revision;
     CHECK_FALSE(stamp.is_revision_current(history.document.revision));
-    auto stale = document_command_transaction_t::from(history, stamp, "Legacy capture",
+    auto stale = document_command_transaction_t(history, stamp, "Legacy capture",
         document_identity_policy_t::revision_only);
-    test::check_stale_action_message(stale.outcome.diagnostics, "Legacy capture");
+    test::check_stale_action_message(stale.outcome().diagnostics, "Legacy capture");
 }
 
 TEST_CASE("document stamps reject replaced projects and changed revisions", "[unit][core][command]") {
@@ -286,8 +288,9 @@ TEST_CASE("redivision rejects unknown charts and ignores no-ops",
 
 TEST_CASE("document transaction source queries do not copy", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     CHECK_FALSE(transaction.has_copy());
+    CHECK(&transaction.current_document() == &transaction.source_document());
     REQUIRE(transaction.source_chart(chart_id_t{1}));
     CHECK_FALSE(transaction.has_copy());
     CHECK(transaction.chart(chart_id_t{999}) == nullptr);
@@ -296,18 +299,21 @@ TEST_CASE("document transaction source queries do not copy", "[unit][core][comma
 
 TEST_CASE("document transactions reuse their working snapshot", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
-    auto& copy = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& copy = transaction.document();
     copy.charts.front().metadata.name = "Edited";
-    CHECK(&transaction.copy_document() == &copy);
+    CHECK(&transaction.document() == &copy);
+    CHECK(&transaction.current_document() == &copy);
+    CHECK(&transaction.source_document() == &history.document);
+    CHECK(transaction.source_chart(chart_id_t{1})->metadata.name.empty());
     CHECK(transaction.chart(chart_id_t{1})->metadata.name == "Edited");
     CHECK(history.document.charts.front().metadata.name.empty());
 }
 
 TEST_CASE("document transactions publish one reversible edit", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().metadata.name = "Edited";
+    auto transaction = document_command_transaction_t(history);
+    transaction.document().charts.front().metadata.name = "Edited";
     REQUIRE(transaction.commit("Edit name"));
     CHECK(history.document.charts.front().metadata.name == "Edited");
     REQUIRE(history.undo.size() == 1);
@@ -317,7 +323,8 @@ TEST_CASE("document transactions publish one reversible edit", "[unit][core][com
 
 TEST_CASE("rejecting a document transaction does not copy", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
+    CHECK(std::as_const(transaction).outcome().revision == history.document.revision);
     const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
     CHECK_FALSE(rejected);
     CHECK(rejected.revision == history.document.revision);
@@ -327,7 +334,7 @@ TEST_CASE("rejecting a document transaction does not copy", "[unit][core][comman
 
 TEST_CASE("rejected document transactions cannot publish", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     const auto rejected = transaction.reject(diagnostic_code_t::invalid_id, "Rejected");
     CHECK_FALSE(transaction.commit("Rejected edit"));
     CHECK_FALSE(transaction.has_copy());
@@ -339,7 +346,7 @@ TEST_CASE("document transactions adopt staged snapshots and publish once", "[uni
     auto history = document_history_t::from(make_song());
     auto staged = history.document;
     staged.charts.front().metadata.name = "Staged";
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged));
     CHECK(transaction.has_copy());
     REQUIRE(transaction.commit("Staged edit"));
@@ -355,7 +362,6 @@ enum class command_payload_issue_t { none, rejected };
 TEST_CASE("shared command payload results preserve proposal acceptance", "[unit][core][command]") {
     using result_t = proposal_apply_result_t<command_payload_issue_t>;
     static_assert(std::is_aggregate_v<result_t>);
-    static_assert(std::is_aggregate_v<document_command_transaction_t>);
     static_assert(std::is_aggregate_v<command_result_with_t<std::size_t>>);
     result_t result{.command = {.applied = true},
                     .payload = {.issue = command_payload_issue_t::rejected}};
@@ -383,22 +389,22 @@ TEST_CASE("Stamped transactions preserve a proposal's stale diagnostic code",
     const auto stamp = chart_stamp_t::from(history.document, chart_id_t{1});
     ++history.document.revision;
     auto transaction = chart_capture
-        ? document_command_transaction_t::from(history, stamp, "Binding proposal",
+        ? document_command_transaction_t(history, stamp, "Binding proposal",
               document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding)
-        : document_command_transaction_t::from(history, stamp.document, "Binding proposal",
+        : document_command_transaction_t(history, stamp.document, "Binding proposal",
               document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding);
     CHECK_FALSE(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
-    REQUIRE(transaction.outcome.diagnostics.size() == 1);
-    CHECK(transaction.outcome.diagnostics.front().code == diagnostic_code_t::invalid_binding);
-    test::check_stale_action_message(transaction.outcome.diagnostics, "Binding proposal");
+    REQUIRE(transaction.outcome().diagnostics.size() == 1);
+    CHECK(transaction.outcome().diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    test::check_stale_action_message(transaction.outcome().diagnostics, "Binding proposal");
 }
 
 TEST_CASE("Finishing an unpublished transaction closes and discards its snapshot",
           "[core][command][stamped-transaction]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().metadata.title = "Unpublished";
+    auto transaction = document_command_transaction_t(history);
+    transaction.document().metadata.title = "Unpublished";
     const auto result = transaction.finish_without_commit();
     CHECK_FALSE(result.applied);
     CHECK_FALSE(transaction.is_ready());
@@ -421,7 +427,7 @@ TEST_CASE("chart identity stamp query ignores revision for persistent configurat
 
 TEST_CASE("command diagnosed no-change preserves revision and legacy application policy", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto outcome = transaction.commit_outcome("No change");
     REQUIRE(outcome.ok());
     CHECK(outcome.value == document_command_effect_t{false, history.document.revision});
@@ -443,8 +449,8 @@ TEST_CASE("command diagnosed adapters retain warnings independently of applicati
 
 TEST_CASE("command primary commit publishes one undoable document", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
-    transaction.copy_document().charts.front().measures.front().notes.front().position.row = 240;
+    auto transaction = document_command_transaction_t(history);
+    transaction.document().charts.front().measures.front().notes.front().position.row = 240;
     const auto outcome = transaction.commit_outcome("Move note");
     REQUIRE(outcome.ok());
     CHECK((outcome.value.applied && outcome.value.revision == history.document.revision));
@@ -466,16 +472,16 @@ TEST_CASE("command payload outcomes preserve domain metadata and command diagnos
     CHECK(restored.diagnostics.front().message == "warning");
 }
 
-TEST_CASE("failed command publication consumes its public working snapshot", "[unit][core][command][results]") {
+TEST_CASE("failed command publication consumes its working snapshot", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t::from(history);
-    auto& working = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& working = transaction.document();
     const auto revision = working.revision;
     working.charts.front().measures.front().notes.front().lane = lane_id_t{999};
     const auto result = transaction.commit("Invalid note");
     CHECK_FALSE(result.applied);
-    REQUIRE(transaction.proposed.has_value());
-    CHECK(transaction.proposed->charts.empty());
-    CHECK(transaction.proposed->revision == revision);
+    REQUIRE(transaction.has_copy());
+    CHECK(transaction.current_document().charts.empty());
+    CHECK(transaction.current_document().revision == revision);
     CHECK(history.undo.empty());
 }

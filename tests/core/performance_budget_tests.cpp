@@ -70,10 +70,10 @@ void verify_hit_index(const std::variant<editor_hit_test_index_t, diagnostic_lis
     CHECK(std::get<editor_hit_test_index_t>(result).note_spans.size() == 50'000);
 }
 
-void verify_timing_index(const timing_build_result_t& result) {
-    REQUIRE(result);
-    CHECK(result.index->total_rows == 400'000);
-    const auto end = timing_at(*result.index, 400'000);
+void verify_timing_index(const timing_build_outcome_t& result) {
+    REQUIRE(result.value);
+    CHECK(result.value->total_rows == 400'000);
+    const auto end = result.value->seconds_at(400'000);
     REQUIRE(end);
     CHECK(*end.seconds == (signed_rational_t{600, 1}));
 }
@@ -88,7 +88,7 @@ void check_chart_budgets(const chart_document_t& chart) {
     check_budget("hit-test index", 4.0 * 6.54204,
         [&] { return build_editor_hit_test_index(chart, 1); }, verify_hit_index);
     check_budget("timing index", 4.0 * 0.145229,
-        [&] { return build_timing_index(chart); }, verify_timing_index);
+        [&] { return timing_index_t::from(chart); }, verify_timing_index);
 
     const auto built = build_editor_field_scene_index(chart, 1);
     REQUIRE(std::holds_alternative<editor_field_scene_index_t>(built));

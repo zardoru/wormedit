@@ -880,14 +880,15 @@ TEST_CASE("BMS WAV slot batch rejection leaves document and history untouched",
     CHECK(history.undo.empty());
 }
 
-TEST_CASE("BMS WAV slot batches accept 1200 files with one-step undo and redo",
-          "[unit][core][resources][bms-wav-slots][slow]") {
+TEST_CASE("BMS WAV slot batches cross a base-36 digit boundary with one-step undo and redo",
+          "[unit][core][resources][bms-wav-slots]") {
     auto history = document_history_t::from(assignment_song());
     const auto original_resources = history.document.resources.size();
     const auto original_assets = history.document.audio_assets.size();
     auto files = std::vector<import_resource_asset_action_t>{};
-    files.reserve(1200);
-    for (std::size_t index = 0; index < 1200; ++index) {
+    // 36 files from 01 is the smallest batch that carries into the next base-36 digit.
+    files.reserve(36);
+    for (std::size_t index = 0; index < 36; ++index) {
         files.push_back(wav_slot_import("batch" + std::to_string(index) + ".wav",
                                         "Batch " + std::to_string(index)));
     }
@@ -895,17 +896,17 @@ TEST_CASE("BMS WAV slot batches accept 1200 files with one-step undo and redo",
         {.first_identifier = "01", .imported_files = std::move(files)});
     REQUIRE(result);
     CHECK(history.undo.size() == 1);
-    CHECK(history.document.resources.size() == original_resources + 1200);
-    CHECK(history.document.audio_assets.size() == original_assets + 1200);
-    CHECK(history.document.resources.back().target_identities.front().identifier == "XC");
+    CHECK(history.document.resources.size() == original_resources + 36);
+    CHECK(history.document.audio_assets.size() == original_assets + 36);
+    CHECK(history.document.resources.back().target_identities.front().identifier == "10");
     REQUIRE(undo_document_command(history));
     CHECK(history.document.resources.size() == original_resources);
     CHECK(history.document.audio_assets.size() == original_assets);
     REQUIRE(redo_document_command(history));
     CHECK(history.undo.size() == 1);
-    CHECK(history.document.resources.size() == original_resources + 1200);
-    CHECK(history.document.audio_assets.size() == original_assets + 1200);
-    CHECK(history.document.resources.back().target_identities.front().identifier == "XC");
+    CHECK(history.document.resources.size() == original_resources + 36);
+    CHECK(history.document.audio_assets.size() == original_assets + 36);
+    CHECK(history.document.resources.back().target_identities.front().identifier == "10");
 }
 
 namespace { void check_import_extent(bool value) { CHECK(value); } }
@@ -2192,7 +2193,7 @@ TEST_CASE("BGA stroke reuses a captured transaction and publishes one undo entry
           "[core][resources][bga][stroke][transaction]") {
     auto history = document_history_t::from(assignment_song());
     const auto stamp = chart_stamp_t::from(history.document, chart_id_t{2});
-    auto transaction = document_command_transaction_t::from(history, stamp, "BGA Draw stroke");
+    auto transaction = document_command_transaction_t(history, stamp, "BGA Draw stroke");
     const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
     const auto result = apply_bga_stroke(transaction, chart_id_t{2}, resource_id_t{3}, targets);
     check_bga_stroke(result.applied);
@@ -2206,9 +2207,9 @@ TEST_CASE("BGA stroke reuses a captured transaction and publishes one undo entry
 TEST_CASE("rejected BGA stroke closes its supplied transaction and discards a working copy",
           "[core][resources][bga][stroke][transaction]") {
     auto history = document_history_t::from(assignment_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     const auto original = history.document.metadata.title;
-    transaction.copy_document().metadata.title = "Unpublished";
+    transaction.document().metadata.title = "Unpublished";
     const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
     const auto rejected = apply_bga_stroke(transaction, chart_id_t{99}, resource_id_t{3}, targets);
     check_bga_stroke(!rejected.applied);

@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/bookmark_commands.h"
@@ -578,7 +579,7 @@ struct toggle_compose_note_paint_action_t {
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         std::string status;
         auto& application_state = context.environment.editor.commands;
-        if (editor_interaction_has_pending_gesture(context.state)) {
+        if (context.state.is_pending()) {
             auto result = dispatch_editor_action(context.environment.document.history, context.state,
                                                  cancel_editor_gesture_action_t{});
             if (!result.accepted)
@@ -996,7 +997,7 @@ auto apply_bmson_marker_batch_action_t::perform(compose_action_context_t& contex
         document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) {
         draft.reset();
-        return compose_action_outcome_t::blocked(transaction.outcome.diagnostics.front().message,
+        return compose_action_outcome_t::blocked(transaction.outcome().diagnostics.front().message,
                                                  notification_source_t::edit);
     }
     auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
@@ -2009,7 +2010,7 @@ auto toggle_semantic_layer_paint_mode_action_t::perform(compose_action_context_t
     using namespace wormedit;
     auto& state = context.state;
     auto& app = context.environment.editor.commands;
-    if (editor_interaction_has_pending_gesture(state)) {
+    if (state.is_pending()) {
         auto result = dispatch_editor_action(context.environment.document.history, state,
                                                    cancel_editor_gesture_action_t{});
         if (!result.accepted)
@@ -2734,8 +2735,8 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset saved, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(context.environment.document.history);
+    auto& proposed = transaction.document();
     proposed.quantization_presets.push_back({
         .name = context.action.compose_quantize_preset_name,
         .divisions = request->divisions, .space = request->space,
@@ -2785,8 +2786,8 @@ auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset deleted, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(context.environment.document.history);
+    auto& proposed = transaction.document();
     proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
                                         static_cast<std::ptrdiff_t>(index));
     auto committed = transaction.commit("Delete quantization preset");
@@ -2852,8 +2853,8 @@ auto rename_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset renamed, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(context.environment.document.history);
+    auto& proposed = transaction.document();
     proposed.quantization_presets[index].name = name;
     auto committed = transaction.commit("Rename quantization preset");
     if (!committed)
@@ -2966,11 +2967,11 @@ auto find_compose_selection_snap_action_t::validate(compose_action_context_t& co
         return compose_action_outcome_t::blocked("Select a chart first.",
                                                  notification_source_t::edit);
     const auto positions = selected_snap_positions(*chart, context.state);
-    const auto geometry = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(geometry))
+    const auto& geometry = context.environment.document.history.indices(chart->id)->measures;
+    if (!geometry)
         return compose_action_outcome_t::blocked("This chart has invalid measure geometry.",
                                                  notification_source_t::edit);
-    const auto fitting = fitting_snap_denominator(*chart, std::get<measure_index_t>(geometry), positions);
+    const auto fitting = fitting_snap_denominator(*chart, *geometry, positions);
     if (!fitting)
         return compose_action_outcome_t::blocked(
             "Select notes or BGM events to find a fitting snap.", notification_source_t::edit);
@@ -3562,7 +3563,7 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
                            wormedit::stale_action_message("Export"));
         return true;
     }
-    if (application.project.clipboard.paste_session || (retained && editor_interaction_has_pending_gesture(*retained))) {
+    if (application.project.clipboard.paste_session || (retained && retained->is_pending())) {
         notifications.post(notification_severity_t::warning, notification_source_t::export_,
                            "Finish or cancel the active editor gesture before exporting.");
         return true;

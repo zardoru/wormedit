@@ -137,8 +137,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
         const auto samples = static_cast<std::size_t>(frames) * output_channel_count;
         const auto rendered = session.render_frames(scratch.first(samples));
         if (rendered.status.has_failure(wormedit::failure_code_t::underrun)) {
-            const auto position = musical_position_at(
-                timing, {static_cast<std::int64_t>(before), output_sample_rate});
+            const auto position = timing.row_at({static_cast<std::int64_t>(before), output_sample_rate});
             const auto row = position.absolute_row.value_or(signed_rational_t{0, 1});
             std::cout << "UNDERRUN frame=" << before << " seconds=" << frame_time(before)
                       << " measure=" << measure_number(measures, row)
@@ -291,12 +290,12 @@ auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {
     result.asset_base = opened.value().asset_base;
     result.document = *opened.value().document;
     const auto& chart = result.document.charts.front();
-    const auto measure_build = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(measure_build));
-    result.measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = build_timing_index(chart);
-    REQUIRE(timing_build);
-    result.timing = *timing_build.index;
+    const auto measure_build = measure_index_t::from(chart);
+    REQUIRE(measure_build.has_value());
+    result.measures = measure_build.value();
+    const auto timing_build = timing_index_t::from(chart);
+    REQUIRE(timing_build.value);
+    result.timing = *timing_build.value;
     const auto schedule_build = build_preview_schedule(
         chart, result.timing,
         {.sample_rate = output_sample_rate, .include_metronome = true});

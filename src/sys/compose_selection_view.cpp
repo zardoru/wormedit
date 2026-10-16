@@ -16,46 +16,23 @@ void populate_compose_selection_preview(
     const compose_scene_cache_t& cache,
     std::optional<wormedit::editor_interaction_state_t>& retained_state,
     wormedit::editor_interaction_view_model_t& interaction_view, WormUiComposeView& view) {
-    interaction_view.pending_hold = retained_state->pending_hold;
-    interaction_view.active_gesture = retained_state->active_gesture;
-    interaction_view.pending_note_paint_gesture =
-        retained_state->pending_note_paint_gesture
-            ? std::optional{wormedit::note_paint_gesture_preview_t{
-                  .stamp =
-                      retained_state->pending_note_paint_gesture->stamp,
-                  .targets = retained_state->pending_note_paint_gesture->targets,
-              }}
-            : std::nullopt;
+    std::optional<wormedit::space_range_selection_preview_t> range_preview;
+    if (auto* preview = interaction_view.gesture<wormedit::space_range_selection_preview_t>())
+        range_preview = std::move(*preview);
+    // Inspection already derived the hold projection, including the keyboard vector.
+    if (!retained_state->gesture<wormedit::hold_gesture_t>())
+        interaction_view.active_gesture = wormedit::build_editor_gesture_preview(
+            retained_state->active_gesture, retained_state->viewport_scroll_pixels,
+            wormedit::editor_area_preview_anchor_policy_t::captured_coordinates, std::move(range_preview));
     interaction_view.retained_selection_range = retained_state->retained_selection_range;
-    interaction_view.pending_editor_area_selection =
-        retained_state->pending_editor_area_selection
-            ? std::optional{wormedit::editor_area_selection_preview_t{
-                  .stamp =
-                      retained_state->pending_editor_area_selection->stamp,
-                  .left_pixels =
-                      std::min(retained_state->pending_editor_area_selection->anchor_x_pixels,
-                               retained_state->pending_editor_area_selection->current_x_pixels),
-                  .top_pixels =
-                      std::min(retained_state->pending_editor_area_selection->anchor_y_pixels,
-                               retained_state->pending_editor_area_selection->current_y_pixels),
-                  .right_pixels =
-                      std::max(retained_state->pending_editor_area_selection->anchor_x_pixels,
-                               retained_state->pending_editor_area_selection->current_x_pixels),
-                  .bottom_pixels =
-                      std::max(retained_state->pending_editor_area_selection->anchor_y_pixels,
-                               retained_state->pending_editor_area_selection->current_y_pixels),
-                  .notes = retained_state->pending_editor_area_selection->notes,
-                  .objects = retained_state->pending_editor_area_selection->objects,
-              }}
-            : std::nullopt;
     interaction_view.selected_notes = retained_state->selected_notes;
     interaction_view.selected_objects = retained_state->selected_objects;
     if (retained_state->retained_selection_range) {
         const auto& retained = *retained_state->retained_selection_range;
-        const auto begin_row = (cache.scene.index->measures).row_of(retained.begin);
-        const auto end_row = (cache.scene.index->measures).row_of(retained.end);
-        const auto* begin_measure = cache.scene.index->measures.entry_for(retained.begin.measure);
-        const auto* end_measure = cache.scene.index->measures.entry_for(retained.end.measure);
+        const auto begin_row = (cache.scene.index.value()->measures).row_of(retained.begin);
+        const auto end_row = (cache.scene.index.value()->measures).row_of(retained.end);
+        const auto* begin_measure = cache.scene.index.value()->measures.entry_for(retained.begin.measure);
+        const auto* end_measure = cache.scene.index.value()->measures.entry_for(retained.end.measure);
         if (begin_row && end_row && *begin_row < *end_row &&
             begin_measure && end_measure) {
             view.area_range_available = true;
@@ -63,10 +40,10 @@ void populate_compose_selection_preview(
             view.area_range_end_row = *end_row;
             view.beat_section_selection_span_available = true;
             view.beat_section_selection_begin_measure_number = static_cast<std::uint64_t>(
-                begin_measure - cache.scene.index->measures.entries.data() + 1);
+                begin_measure - cache.scene.index.value()->measures.entries.data() + 1);
             view.beat_section_selection_begin_row = retained.begin.row;
             view.beat_section_selection_end_measure_number = static_cast<std::uint64_t>(
-                end_measure - cache.scene.index->measures.entries.data() + 1);
+                end_measure - cache.scene.index.value()->measures.entries.data() + 1);
             view.beat_section_selection_end_row = retained.end.row;
         } else {
             retained_state->retained_selection_range.reset();
@@ -261,7 +238,8 @@ void populate_quantize_preview(compose_scene_cache_t& cache,
         return;
     }
     const auto& preview =
-        cache.quantize.quantize_preview.get(chart, revision, request.selection->notes, request);
+        cache.quantize.quantize_preview.get(chart, revision, request.selection->notes, request,
+                                           cache.scene.cached_measure_index.get());
     view.quantize_source_resolution = preview.source_resolution;
     view.quantize_display_resolution = preview.display_resolution;
     view.quantize_resolution_scale = preview.resolution_scale;
@@ -500,9 +478,9 @@ void append_bgm_quantize_ghost(compose_scene_cache_t& cache,
                                std::uint64_t scale, double pixels_per_row, double scroll,
                                double height, bool downscroll) {
     const auto event =
-        std::ranges::find(cache.scene.index->bgm_events, wormedit::object_id_t{report.object_id},
+        std::ranges::find(cache.scene.index.value()->bgm_events, wormedit::object_id_t{report.object_id},
                           &wormedit::editor_field_scene_bgm_source_t::event);
-    if (event == cache.scene.index->bgm_events.end() || !quantize_row_visible(*event, request))
+    if (event == cache.scene.index.value()->bgm_events.end() || !quantize_row_visible(*event, request))
         return;
     const auto ghost = bgm_quantize_ghost(report, chart, request, scale, pixels_per_row, scroll,
                                           height, downscroll);
@@ -522,7 +500,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
     view.quantize_ghosts = nullptr;
     view.quantize_ghost_count = 0;
     view.quantize_ghosts_drawable = false;
-    if (!view.quantize_preview_enabled || !cache.scene.index || !view.scene_available ||
+    if (!view.quantize_preview_enabled || !cache.scene.index.value() || !view.scene_available ||
         cache.quantize.quantize_preview_row_views.empty())
         return;
     auto quantize_request =
@@ -534,7 +512,7 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
         return;
     const auto& request = cache.frame.preview_scene_request;
     quantize_lane_order_map_t lane_orders;
-    const quantize_projection_scope_t scope{*cache.scene.index,
+    const quantize_projection_scope_t scope{*cache.scene.index.value(),
                                             request,
                                             lane_orders,
                                             preview.resolution_scale,
@@ -553,10 +531,10 @@ void populate_quantize_ghost_geometry(compose_scene_cache_t& cache,
                                       view.viewport_height_pixels, downscroll);
             continue;
         }
-        const auto found = cache.scene.index->note_indices_by_id.find(report.object_id);
-        if (found == cache.scene.index->note_indices_by_id.end())
+        const auto found = cache.scene.index.value()->note_indices_by_id.find(report.object_id);
+        if (found == cache.scene.index.value()->note_indices_by_id.end())
             continue;
-        const auto& note = cache.scene.index->notes[found->second];
+        const auto& note = cache.scene.index.value()->notes[found->second];
         if (note.lane.value != report.lane_id || !quantize_row_visible(note, request))
             continue;
         auto ghost = make_quantize_ghost_geometry(scope, report, note);

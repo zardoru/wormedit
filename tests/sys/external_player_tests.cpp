@@ -155,7 +155,6 @@ void check_stop_stub(external_player_t& player, const external_player_definition
     require_player_launch(player.launch(definition, external_player_action_t::stop, {}, {}, {}, 0, {}));
     REQUIRE(wait_for_log(log));
     CHECK(read(log) == "-t");
-    std::this_thread::sleep_for(std::chrono::milliseconds{500});
 }
 }
 
@@ -170,7 +169,7 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
         "staged = log.with_suffix('.staged')\n"
         "staged.write_text('\\n'.join(sys.argv[2:]))\n"
         "staged.replace(log)\n"
-        "time.sleep(0.4)\n"; }
+        "if sys.argv[2] != '-t' and sys.argv[3] == '37': time.sleep(0.4)\n"; }
     const std::string template_text = "\"" + stub.string() + "\" \"" + log.string() +
         "\" -s <measure> \"<filename>\" \"<apppath>/player exe\"";
     const external_player_definition_t definition{"Stub", "/usr/bin/python3", template_text, template_text,
@@ -189,10 +188,12 @@ TEST_CASE("external_player actual stub receives quoted filenames source measure 
     CHECK_FALSE(player.launch(definition, external_player_action_t::play_start, song,
         song.charts[0].id, source, 0, {}));
     std::this_thread::sleep_for(std::chrono::milliseconds{500});
+    std::filesystem::remove(log);
     const auto second = player.launch(definition, external_player_action_t::play_start, song,
         song.charts[0].id, source, 0, {});
     require_player_launch(second);
-    std::this_thread::sleep_for(std::chrono::milliseconds{500});
+    REQUIRE(wait_for_log(log));
+    // The second stub has no hold-open delay; its published arguments are enough to continue.
     // Replacing the owned path must prevent cleanup from deleting a foreign file.
     const auto moved = directory.path / "old owned.bme";
     std::filesystem::rename(second->preview_path, moved);

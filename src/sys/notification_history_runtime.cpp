@@ -1,4 +1,5 @@
 #include <wormedit/core/rational.h>
+#include <wormedit/core/timing.h>
 #include "sys/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
 
@@ -102,27 +103,21 @@ auto notification_history_runtime_t::project(const notification_center_t& center
     std::uint64_t document_generation) -> WormUiNotificationHistoryView {
     WormUiNotificationHistoryView view{visible, 0, rows.data()};
     if (!visible) return view;
-    if (cached_document != &document || cached_song != document.id ||
-        cached_revision != document.revision || cached_generation != document_generation) {
-        target_cache.fill({});
-        cached_document = &document;
-        cached_song = document.id;
-        cached_revision = document.revision;
-        cached_generation = document_generation;
-    }
+    auto& targets = target_cache.get_or_build(
+        std::tuple{&document, document_stamp_t::from(document), document_generation},
+        [](target_entries_t& entries) { entries.fill({}); });
     const auto entries = center.borrowed_snapshot(notification_capacity);
     for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry) {
-        auto& cached = target_cache[view.row_count];
-        if (cached.id != entry->id) {
-            cached.id = entry->id;
-            cached.availability = resolve_notification_target(document, entry->target).availability;
-        }
+        const auto availability = targets[view.row_count].get_or_build(entry->id,
+            [&document, &entry] {
+                return resolve_notification_target(document, entry->target).availability;
+            });
         const auto age = now > entry->timestamp ? now - entry->timestamp : notification_time_t{};
         rows[view.row_count++] = {
             entry->id, static_cast<WormUiNotificationSeverity>(entry->severity),
             static_cast<std::uint32_t>(entry->source), entry->message.c_str(), entry->detail.c_str(),
             entry->count, static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(age).count()),
-            entry->read, cached.availability};
+            entry->read, availability};
     }
     return view;
 }
@@ -141,9 +136,9 @@ auto notification_history_runtime_t::apply(const WormUiNotificationAction& actio
     }
 }
 namespace {
-auto target_lane(const chart_document_t& chart, local_position_t position) -> lane_id_t {
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
+auto target_lane(const chart_document_t& chart, const chart_indices_t& indices,
+                 local_position_t position) -> lane_id_t {
+    const auto* index = indices.measures ? &*indices.measures : nullptr;
     if (!index) return {};
     const auto row = (*index).row_of(position);
     if (!row) return {};
@@ -169,7 +164,8 @@ auto navigation_interaction(const document_history_t& history,
     if (chart == nullptr) return std::nullopt;
     const auto snaps = previous ? std::span<const std::uint64_t>{previous->supported_snap_denominators}
                                 : std::span<const std::uint64_t>{wormedit::default_snap_denominators};
-    auto setup = editor_interaction_state_t::from(history, target.chart, target_lane(*chart, target.position),
+    const auto lane = target_lane(*chart, *history.indices(chart->id), target.position);
+    auto setup = editor_interaction_state_t::from(history, target.chart, lane,
         target.position, snaps, previous ? previous->active_snap_denominator : 16,
         previous ? previous->viewport_height_pixels : 1.0);
     return std::move(setup.state);

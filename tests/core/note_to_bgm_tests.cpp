@@ -720,7 +720,7 @@ TEST_CASE("dragging a stem tap moves its slice point and leaves the audio where 
         history, state,
         update_note_move_gesture_action_t{.reference_position = {next_measure, 0},
                                           .reference_lane = lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(released);
     REQUIRE(released.document_changed);
 

@@ -43,7 +43,7 @@ inline auto compose_sound_selection_available(const wormedit::song_document_t& s
                                               const wormedit::editor_interaction_state_t& state,
                                               const application_command_state_t& application)
     -> bool {
-    return !editor_interaction_has_pending_gesture(state) && !application.project.clipboard.paste_session &&
+    return !state.is_pending() && !application.project.clipboard.paste_session &&
            !compose_sound_selection_keys(song, chart, state, application).empty();
 }
 inline auto compose_same_sound_objects(const wormedit::song_document_t& song,
@@ -78,7 +78,7 @@ inline auto compose_same_sound_request(const song_document_t& song, const chart_
     bool visible, editor_area_selection_mode_t mode, std::optional<object_id_t> object = std::nullopt,
     std::optional<resource_id_t> resource = std::nullopt)
     -> std::variant<select_editor_objects_action_t, std::string> {
-    if (editor_interaction_has_pending_gesture(state) || application.project.clipboard.paste_session)
+    if (state.is_pending() || application.project.clipboard.paste_session)
         return "Finish or cancel the active Compose gesture before selecting sounds.";
     std::vector<sound_selection_key_t> keys;
     if (object || resource) {

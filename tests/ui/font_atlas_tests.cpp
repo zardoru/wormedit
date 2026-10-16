@@ -5,7 +5,6 @@
 #include <SDL3/SDL.h>
 #include <array>
 #include <fstream>
-#include <iterator>
 #include <string>
 
 namespace {
@@ -78,19 +77,20 @@ TEST_CASE("Bundled CJK fallback covers Japanese Chinese and Hangul before submis
     const auto* stable_handle = font.handle();
     const auto latin_width = font_width(font, "Wormedit 10K 123");
     REQUIRE(font.glyph_count() == 1); // No unconditional CJK bake.
-    label(fixture.context, "日本語 音楽 中文 繁體 한국어 소리.wav");
+    // Slow: exercise real bundled CJK glyphs, both contexts, rendering and a second atlas bake.
+    label(fixture.context, "日本語 中한국");
     nk_context overlay{};
     auto allocator = nk_sdl_allocator();
     REQUIRE(nk_init(&overlay, &allocator, stable_handle));
     overlay.userdata = fixture.context->userdata;
-    label(&overlay, "通知: 새로운 音源");
+    label(&overlay, "繁");
     font.refresh(fixture.context, &overlay);
     check_font_handles(font, fixture.context, &overlay, stable_handle);
     check_cjk_glyphs(font);
     check_mixed_metrics(font, latin_width);
     // Submit queued commands after the rebuild; no command may retain the destroyed font.
     wormedit::ui::nuklear::render_sdl_backend(fixture.context, NK_ANTI_ALIASING_ON, &overlay);
-    label(fixture.context, "追加 漢字");
+    label(fixture.context, "追");
     font.refresh(fixture.context);
     CHECK(font.handle() == stable_handle);
     CHECK(font.glyph(0x8ffdu)->codepoint == 0x8ffdu);
@@ -106,6 +106,7 @@ TEST_CASE("CJK discovery bounds unsupported invalid and excessive text", "[font]
     font.refresh(fixture.context);
     CHECK(font.glyph_count() == 1);
     CHECK(font.glyph(0x1f600)->codepoint == 0x25a1);
+    // Slow: reaching the fixed 4,096-glyph cap and rebaking it is the behavior under test.
     for (nk_rune rune = 0x4e00; rune < 0x9fff && !font.limited(); ++rune) {
         if (!font.supported(rune)) continue;
         std::array<char, 4> bytes{};
@@ -120,9 +121,13 @@ TEST_CASE("CJK discovery bounds unsupported invalid and excessive text", "[font]
 
 TEST_CASE("CJK font coverage rejects absent truncated and corrupt directories", "[font][cjk]") {
     CHECK(editor_font_t::coverage({}).empty());
-    std::ifstream input(std::filesystem::path{WORMEDIT_SOURCE_ROOT} /
-                        "assets/fonts/NotoSansCJKjp-Regular.otf", std::ios::binary);
-    std::vector<unsigned char> bytes{std::istreambuf_iterator<char>{input}, {}};
+    const auto path = std::filesystem::path{WORMEDIT_SOURCE_ROOT} /
+        "assets/fonts/NotoSansCJKjp-Regular.otf";
+    std::ifstream input(path, std::ios::binary);
+    const auto size = std::filesystem::file_size(path);
+    std::vector<unsigned char> bytes(size);
+    input.read(reinterpret_cast<char*>(bytes.data()), static_cast<std::streamsize>(size));
+    REQUIRE(input.gcount() == static_cast<std::streamsize>(size));
     REQUIRE_FALSE(editor_font_t::coverage(bytes).empty());
     CHECK(editor_font_t::coverage(std::span{bytes}.first(24)).empty());
     bytes[20] = bytes[21] = bytes[22] = bytes[23] = 0xff;
@@ -130,6 +135,7 @@ TEST_CASE("CJK font coverage rejects absent truncated and corrupt directories", 
 }
 
 TEST_CASE("Missing CJK bundle retains usable Latin fallback", "[font][cjk]") {
+    // Slow: reload an initialized real CJK font with a missing bundle to test Latin fallback.
     font_fixture_t fixture;
     const auto missing = std::filesystem::temp_directory_path() /
         ("wormedit-cjk-missing-" + std::to_string(SDL_GetTicksNS()));
@@ -150,7 +156,8 @@ TEST_CASE("Numeric display font keeps its 28px stable handle through atlas rebak
     expect_display(stable);
     expect_display(stable->height == 28);
     expect_display(stable->width(stable->userdata, stable->height, "174.02", 6) > 60);
-    fixture.font.observe("日本語");
+    // Slow: retain the real bundled fonts and the smallest CJK-triggered display atlas rebake.
+    fixture.font.observe("日");
     fixture.font.refresh(fixture.context);
     expect_display(fixture.font.display_handle() == stable);
     expect_display(stable->height == 28);

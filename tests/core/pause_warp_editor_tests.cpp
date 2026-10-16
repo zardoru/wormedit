@@ -140,11 +140,11 @@ TEST_CASE("same-row pause insertion gets a later source order and updates exact 
     const auto& chart = history.document.charts.front();
     REQUIRE(chart.pauses.back().provenance.source_order == 8);
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto at_row = std::ranges::find(timing.index->rows, std::uint64_t{240},
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto at_row = std::ranges::find(timing.value->rows, std::uint64_t{240},
                                           &timing_row_state_t::absolute_row);
-    REQUIRE(at_row != timing.index->rows.end());
+    REQUIRE(at_row != timing.value->rows.end());
     CHECK(at_row->before_delays_seconds == signed_rational_t{1, 2});
     CHECK(at_row->event_seconds == signed_rational_t{1, 1});
     CHECK(at_row->after_stops_seconds == signed_rational_t{9, 4});

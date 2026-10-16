@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <functional>
 
 namespace wormedit::sys {
 namespace {
@@ -24,6 +25,19 @@ auto overview_fraction(const audio::waveform_t& waveform, const timing_index_t& 
                                    0.0L, static_cast<long double>(waveform.total_frames));
     return static_cast<double>(bounded / waveform.total_frames);
 }
+auto build_waveform_overview(const audio::waveform_t& waveform, const timing_index_t& timing,
+                             const audio::aligned_waveform_request_t& request, bool& succeeded,
+                             compose_scene_cache_t::waveform_state_t::overview_data_t& data) -> bool {
+    const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
+    succeeded = overview.has_value();
+    if (!succeeded) return false;
+    data.rows.clear();
+    for (const auto& row : overview->rows)
+        data.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
+    static std::atomic<std::uint64_t> next_generation{1};
+    data.generation = next_generation.fetch_add(1, std::memory_order_relaxed);
+    return true;
+}
 auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                               const audio::waveform_t& waveform,
                               const audio::aligned_waveform_request_t& request) -> bool {
@@ -34,20 +48,12 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         return false;
     auto& view = flattened.view.compose;
     const auto& timing = *cache.timing.marker_timing_index;
-    if (!cache.waveform.waveform_overview_key || *cache.waveform.waveform_overview_key != waveform.key ||
-        cache.waveform.waveform_overview_identity != &waveform) {
-        const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
-        if (!overview) return false;
-        cache.waveform.waveform_overview_rows.clear();
-        for (const auto& row : overview->rows)
-            cache.waveform.waveform_overview_rows.push_back({row.audio_fraction,
-                                                   std::clamp(row.absolute_peak, 0.0f, 1.0f)});
-        cache.waveform.waveform_overview_key = waveform.key;
-        cache.waveform.waveform_overview_identity = &waveform;
-        static std::atomic<std::uint64_t> next_generation{1};
-        cache.waveform.waveform_overview_generation = next_generation.fetch_add(1, std::memory_order_relaxed);
-    }
-    cache.waveform.waveform_overview_revision = cache.scene.revision;
+    bool succeeded = true;
+    const auto& overview = cache.waveform.overview.get_or_build(
+        std::tuple<const audio::waveform_key_t&, const void*>{waveform.key, &waveform},
+        std::bind_front(build_waveform_overview, std::cref(waveform), std::cref(timing),
+                        std::cref(request), std::ref(succeeded)));
+    if (!succeeded) return false;
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                request.pixels_per_standard_measure;
     const auto begin = overview_fraction(waveform, timing,
@@ -57,7 +63,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
         std::ceil((request.viewport_scroll_pixels + request.viewport_height_pixels) * rows_per_pixel),
         timing_boundary_side_t::after_stops, true);
     if (!begin || !end) return false;
-    for (const auto& row : cache.waveform.waveform_overview_rows) {
+    for (const auto& row : overview.rows) {
         if (!flattened.compose.waveform.overview_row.push_back(row)) {
             flattened.compose.waveform.overview_row.clear();
             return false;
@@ -65,7 +71,7 @@ auto populate_cached_overview(frontend_workspace_view_t& flattened, compose_scen
     }
     view.waveform_overview_rows = flattened.compose.waveform.overview_row.data();
     view.waveform_overview_row_count = flattened.compose.waveform.overview_row.size();
-    view.waveform_overview_generation = cache.waveform.waveform_overview_generation;
+    view.waveform_overview_generation = overview.generation;
     view.waveform_overview_visible_begin_fraction = *begin;
     view.waveform_overview_visible_end_fraction = *end;
     const auto zero = timing.query_seconds(0, timing_boundary_side_t::before_delays);
@@ -143,32 +149,27 @@ auto cpu_row_slot(std::int64_t row, std::size_t count) -> std::size_t {
 }
 auto prepare_cpu_envelope(const envelope_projection_context_t& context, std::size_t count) -> bool {
     auto& ring = context.ring;
-    const bool reset = !ring.valid || ring.rows.size() != count ||
-        ring.source_key != context.overview.key || ring.source_identity != &context.overview ||
-        ring.project != context.project || ring.chart != context.chart ||
-        ring.revision != context.revision || ring.zoom != context.request.pixels_per_standard_measure ||
-        ring.detail_level != context.style.detail_level;
-    if (reset) ring.rows.assign(count, {});
-    ring.valid = true;
-    ring.source_key = context.overview.key;
-    ring.source_identity = &context.overview;
-    ring.revision = context.revision;
-    ring.project = context.project;
-    ring.chart = context.chart;
-    ring.zoom = context.request.pixels_per_standard_measure;
-    ring.detail_level = context.style.detail_level;
+    const auto builds = ring.build_count();
+    const auto geometry = envelope_projection_geometry_t::from(
+        {.document = {.project = wormedit::song_id_t{context.project}, .revision = context.revision},
+         .chart = wormedit::chart_id_t{context.chart}},
+        0, 0, context.request.pixels_per_standard_measure, context.style.detail_level, count);
+    static_cast<void>(ring.get_or_build(envelope_projection_lookup_t{context.overview.key, &context.overview, geometry},
+        [count](auto& data) { data.rows.assign(count, {}); },
+        [count](const auto& data) { return data.rows.size() == count; }));
+    const bool reset = ring.build_count() != builds;
     const auto stats = context.blocks ? context.blocks->stats() : audio::block_cache_stats_t{};
-    const bool changed = reset || ring.detail_identity != context.detail ||
-        (context.detail && ring.detail_key != context.detail->key) ||
-        ring.availability_entries != stats.entries || ring.availability_frames != stats.cached_frames ||
-        ring.availability_evictions != stats.evictions;
-    ring.detail_identity = context.detail;
-    if (context.detail) ring.detail_key = context.detail->key;
-    else ring.detail_key.reset();
-    ring.availability_entries = stats.entries;
-    ring.availability_frames = stats.cached_frames;
-    ring.availability_evictions = stats.evictions;
-    ring.projected_rows = ring.reused_rows = ring.projection_calls = 0;
+    const bool changed = reset || ring.value().detail_identity != context.detail ||
+        (context.detail && ring.value().detail_key != context.detail->key) ||
+        ring.value().availability_entries != stats.entries || ring.value().availability_frames != stats.cached_frames ||
+        ring.value().availability_evictions != stats.evictions;
+    ring.value().detail_identity = context.detail;
+    if (context.detail) ring.value().detail_key = context.detail->key;
+    else ring.value().detail_key.reset();
+    ring.value().availability_entries = stats.entries;
+    ring.value().availability_frames = stats.cached_frames;
+    ring.value().availability_evictions = stats.evictions;
+    ring.value().projected_rows = ring.value().reused_rows = ring.value().projection_calls = 0;
     return changed;
 }
 void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
@@ -181,17 +182,17 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
     auto projected = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
         context.row_table, request, context.blocks, context.style);
     const auto& projected_data = projected ? *projected : projected.error();
-    ++ring.projection_calls;
-    ring.projected_rows += count;
+    ++ring.value().projection_calls;
+    ring.value().projected_rows += count;
     for (std::size_t index = 0; index < count; ++index) {
         const auto world = first + static_cast<std::int64_t>(index);
-        ring.rows[cpu_row_slot(world, ring.rows.size())] = {world, {}, false, false};
+        ring.value().rows[cpu_row_slot(world, ring.value().rows.size())] = {world, {}, false, false};
     }
     const bool incomplete = context.style.detail_level && projected_data.overview_spans != 0;
     for (const auto& row : projected_data.rows) {
         const auto world = first + static_cast<std::int64_t>(std::floor(row.y_pixels));
         if (world < first || world >= first + static_cast<std::int64_t>(count)) continue;
-        auto& stored = ring.rows[cpu_row_slot(world, ring.rows.size())];
+        auto& stored = ring.value().rows[cpu_row_slot(world, ring.value().rows.size())];
         stored = {world, {.y_pixels = static_cast<double>(world) + .5,
             .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
                               std::clamp(row.absolute_peak[1], 0.0f, 1.0f)},
@@ -202,7 +203,7 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
 }
 auto cpu_row_needs_projection(const envelope_projection_ring_t& ring, std::int64_t world,
                               bool changed) -> bool {
-    const auto& row = ring.rows[cpu_row_slot(world, ring.rows.size())];
+    const auto& row = ring.value().rows[cpu_row_slot(world, ring.value().rows.size())];
     return row.world_row != world || (row.incomplete && changed);
 }
 auto populate_cpu_envelope(const envelope_projection_context_t& context,
@@ -218,7 +219,7 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
     std::size_t index = 0;
     while (index < count) {
         const auto world = first + static_cast<std::int64_t>(index);
-        if (!cpu_row_needs_projection(ring, world, changed)) { ++ring.reused_rows; ++index; continue; }
+        if (!cpu_row_needs_projection(ring, world, changed)) { ++ring.value().reused_rows; ++index; continue; }
         const auto begin = index++;
         while (index < count && cpu_row_needs_projection(ring, first + static_cast<std::int64_t>(index), changed))
             ++index;
@@ -226,7 +227,7 @@ auto populate_cpu_envelope(const envelope_projection_context_t& context,
     }
     for (std::size_t row = 0; row < count; ++row) {
         const auto world = first + static_cast<std::int64_t>(row);
-        const auto& stored = ring.rows[cpu_row_slot(world, count)];
+        const auto& stored = ring.value().rows[cpu_row_slot(world, count)];
         if (!stored.present) continue;
         auto value = stored.value;
         value.y_pixels -= std::floor(request.viewport_scroll_pixels);
@@ -287,36 +288,40 @@ void orient_compose_waveform_rows(frame_span<WormUiComposeWaveformRowView>& rows
         row.y_pixels = compose_source_y(row.y_pixels, view.viewport_height_pixels, view.downscroll);
 }
 // Rows are cached per (source, window): projecting the whole song is the costly case.
-auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
-                          const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
-    if (bar.key && *bar.key == waveform.key && bar.identity == &waveform && bar.rows_range == range)
-        return true;
+auto build_bgm_bar_rows(const audio::waveform_t& waveform, bgm_bar_range_t range,
+                        bool& succeeded,
+                        std::vector<WormUiComposeWaveformOverviewRowView>& rows) -> bool {
     const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
                                                          WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
-    if (!projected) return false;
-    bar.rows.clear();
+    succeeded = projected.has_value();
+    if (!succeeded) return false;
+    rows.clear();
     for (const auto& row : projected->rows)
-        bar.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
-    bar.key = waveform.key;
-    bar.identity = &waveform;
-    bar.rows_range = range;
+        rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
     return true;
 }
-void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
-                           bgm_bar_range_t range) {
-    auto& bar = cache.waveform.bgm_bar;
-    if (bar.marks_valid && bar.marks_revision == cache.scene.revision &&
-        bar.marks_total_frames == waveform.total_frames && bar.marks_range == range) return;
-    bar.marks.clear();
-    bar.marks_valid = true;
-    bar.marks_revision = cache.scene.revision;
-    bar.marks_total_frames = waveform.total_frames;
-    bar.marks_range = range;
+auto refresh_bgm_bar_rows(compose_scene_cache_t::bgm_bar_cache_t& bar,
+                          const audio::waveform_t& waveform, bgm_bar_range_t range) -> bool {
+    bool succeeded = true;
+    static_cast<void>(bar.rows.get_or_build(
+        std::tuple<const audio::waveform_key_t&, const void*, bgm_bar_range_t>{waveform.key, &waveform, range},
+        std::bind_front(build_bgm_bar_rows, std::cref(waveform), range, std::ref(succeeded))));
+    return succeeded;
+}
+void build_bgm_bar_marks(const compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+                         bgm_bar_range_t range, std::vector<WormUiComposeBgmBarMarkView>& marks) {
+    marks.clear();
     if (!cache.scene.cached_measure_index || !cache.timing.marker_timing_index) return;
     for (const auto& mark : bgm_bar_measure_marks(*cache.scene.cached_measure_index,
              *cache.timing.marker_timing_index, waveform.sample_rate, waveform.total_frames, range,
              WORM_UI_COMPOSE_BGM_BAR_MARK_CAPACITY))
-        bar.marks.push_back({mark.audio_fraction, mark.measure});
+        marks.push_back({mark.audio_fraction, mark.measure});
+}
+void refresh_bgm_bar_marks(compose_scene_cache_t& cache, const audio::waveform_t& waveform,
+                           bgm_bar_range_t range) {
+    static_cast<void>(cache.waveform.bgm_bar.marks.get_or_build(
+        std::tuple{cache.stamp().document.revision, waveform.total_frames, range},
+        std::bind_front(build_bgm_bar_marks, std::cref(cache), std::cref(waveform), range)));
 }
 // Beat bookmarks sit at a chart row, audio bookmarks at a song time; both land on the bar at
 // their fraction of the song. Bookmarks outside the window are left out.
@@ -358,7 +363,7 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
     const auto& projection_view = flattened.view.compose;
     const bool keep_capture = window_capture && *window_capture &&
         bgm_bar_window_capture_matches(**window_capture, song_id_t{projection_view.project_id},
-            chart_id_t{cache.scene.chart.value}, cache.scene.revision,
+            chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
             asset_id_t{projection_view.selected_audio_asset_id}, waveform.total_frames,
             waveform.sample_rate);
     if (window_capture && *window_capture && !keep_capture) window_capture->reset();
@@ -366,7 +371,7 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
         bgm_bar_pan_override_matches(**pan_override,
             projection_view.waveform_overview_visible_begin_fraction,
             projection_view.waveform_overview_visible_end_fraction,
-            song_id_t{projection_view.project_id}, chart_id_t{cache.scene.chart.value}, cache.scene.revision,
+            song_id_t{projection_view.project_id}, chart_id_t{cache.stamp().chart.value}, cache.stamp().document.revision,
             asset_id_t{projection_view.selected_audio_asset_id});
     if (pan_override && *pan_override && !keep_pan) pan_override->reset();
     const auto range = keep_capture ? bgm_bar_fit((*window_capture)->range, minimum_span)
@@ -377,13 +382,13 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
     if (!refresh_bgm_bar_rows(cache.waveform.bgm_bar, waveform, range)) return;
     refresh_bgm_bar_marks(cache, waveform, range);
     auto& waveform_views = flattened.compose.waveform;
-    for (const auto& row : cache.waveform.bgm_bar.rows) {
+    for (const auto& row : cache.waveform.bgm_bar.rows.value()) {
         if (!waveform_views.bar_row.push_back(row)) {
             waveform_views.bar_row.clear();
             return;
         }
     }
-    for (const auto& mark : cache.waveform.bgm_bar.marks) {
+    for (const auto& mark : cache.waveform.bgm_bar.marks.value()) {
         if (!waveform_views.bar_mark.push_back(mark)) {
             waveform_views.bar_mark.clear();
             waveform_views.bar_row.clear();
@@ -498,7 +503,7 @@ auto populate_compose_waveform_projection(
         .pixels_per_standard_measure = compose.pixels_per_standard_measure,
         .maximum_rows = WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY};
     (void)prepare_compose_display_row_table(cache,
-        request, {compose.project_id, cache.scene.chart.value, cache.scene.revision});
+        request, {compose.project_id, cache.stamp().chart.value, cache.stamp().document.revision});
     const auto window = audio::aligned_waveform_window(waveform, *cache.timing.marker_timing_index, request);
     const auto* selected_waveform = &waveform;
     if (window && detail_analysis && detail_analysis->waveform &&
@@ -511,11 +516,11 @@ auto populate_compose_waveform_projection(
     if (!style.sample_points) {
         const envelope_projection_context_t projection{cache.waveform.waveform_envelope_ring, waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
-            *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.scene.revision,
-            compose.project_id, cache.scene.chart.value, cache.waveform.waveform_row_table};
+            *cache.timing.marker_timing_index, request, decoded_blocks, style, cache.stamp().document.revision,
+            compose.project_id, cache.stamp().chart.value, cache.waveform.waveform_row_table};
         cached_envelope = populate_cpu_envelope(projection, flattened.compose.waveform.row);
     } else {
-        cache.waveform.waveform_envelope_ring.valid = false;
+        cache.waveform.waveform_envelope_ring.invalidate();
     }
     if (!cached_envelope)
         populate_direct_envelope(flattened.compose.waveform.row, waveform, selected_waveform,

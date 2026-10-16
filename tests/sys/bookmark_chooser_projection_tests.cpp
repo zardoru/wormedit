@@ -1,4 +1,5 @@
 #include "sys/bookmark_navigation.h"
+#include <wormedit/core/timing.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -116,4 +117,14 @@ TEST_CASE("bookmark chooser searches every bookmark before paging with case inse
     const auto missing = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "not present");
     CHECK(missing.value().total_count == 0);
     CHECK(missing.value().rows.empty());
+}
+
+TEST_CASE("Bookmark chooser retains a supplied snapshot geometry failure", "[sys][bookmark-chooser]") {
+    const auto document = chooser_document();
+    chart_indices_t indices;
+    indices.measures = std::unexpected(diagnostic_list_t{});
+    const auto result = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 16, {}, {.committed = &indices});
+    REQUIRE_FALSE(result);
+    CHECK(result.error().status == "Bookmark positions could not be resolved.");
+    CHECK(result.error().rows.empty());
 }

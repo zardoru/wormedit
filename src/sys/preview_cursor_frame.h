@@ -15,7 +15,7 @@ namespace wormedit::sys {
 [[nodiscard]] inline auto preview_cursor_row(const measure_index_t& measures,
                                              local_position_t cursor, double subrow)
     -> std::optional<exact_chart_row_t> {
-    const auto absolute = absolute_row(measures, cursor);
+    const auto absolute = (measures).row_of( cursor);
     if (!absolute || !std::isfinite(subrow)) return std::nullopt;
     const auto row = static_cast<long double>(*absolute) + subrow;
     if (row < 0.0L || row > measures.total_rows) return std::nullopt;
@@ -31,12 +31,16 @@ namespace wormedit::sys {
 
 [[nodiscard]] inline auto preview_cursor_frame(const chart_document_t& chart,
                                                const timing_index_t& timing,
-                                               local_position_t cursor, double subrow = 0.0)
+                                               local_position_t cursor, double subrow = 0.0,
+                                               const result_t<measure_index_t, diagnostic_list_t>* geometry = nullptr)
     -> std::variant<std::uint64_t, std::string> {
-    const auto built = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
-    if (!measures) return std::string{"Chart cursor has invalid measure geometry."};
-    const auto row = preview_cursor_row(*measures, cursor, subrow);
+    std::optional<result_t<measure_index_t, diagnostic_list_t>> built;
+    if (!geometry) {
+        built = measure_index_t::from(chart);
+        geometry = &*built;
+    }
+    if (!*geometry) return std::string{"Chart cursor has invalid measure geometry."};
+    const auto row = preview_cursor_row(**geometry, cursor, subrow);
     if (!row) return std::string{"Chart cursor has an invalid fractional position."};
     const auto at = timing.query_seconds(*row);
     if (!at) return std::string{"Chart cursor has no playable timing position."};

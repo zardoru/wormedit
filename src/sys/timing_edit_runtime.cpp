@@ -12,7 +12,7 @@ void timing_edit_t::cancel_if_stale(
         (workspace.active_tab != workspace_tab_t::compose || !workspace.selected_chart ||
          !stage->captured_stamp().is_current(history.document, *workspace.selected_chart,
                                  document_identity_policy_t::revision_only))) {
-        cancel_timing_lane_pseudonote(*stage);
+        cancel_proposal(*stage);
         stage.reset();
     }
 }

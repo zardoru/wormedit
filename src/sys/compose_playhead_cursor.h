@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/grid.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/interaction.h>
 
@@ -14,11 +15,6 @@
 #include <utility>
 
 namespace wormedit::sys {
-
-[[nodiscard]] inline auto playhead_cursor_edit_blocked(const editor_interaction_state_t& state)
-    -> bool {
-    return has_pending_editor_gesture(state);
-}
 
 // While playing, the playhead stays anchored at the edge margin measured from the
 // chart-start side (#000); when paused it only scrolls once it leaves the comfort band.
@@ -63,7 +59,7 @@ namespace wormedit::sys {
                                                    editor_measure_geometry_t geometry = {},
                                                    double following_anchor_fraction = editor_cursor_edge_margin_fraction) -> bool {
     if (!std::isfinite(absolute_row) || absolute_row < 0.0 ||
-        playhead_cursor_edit_blocked(state))
+        state.is_pending())
         return false;
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr || state.active_snap_denominator == 0 ||
@@ -71,12 +67,10 @@ namespace wormedit::sys {
         return false;
     if (geometry.index && (geometry.chart != chart->id ||
                            geometry.document_revision != history.document.revision)) return false;
-    std::optional<measure_index_t> built;
     if (!geometry.index) {
-        auto result = build_measure_index(*chart);
-        if (auto* index = std::get_if<measure_index_t>(&result)) built = std::move(*index);
-        else return false;
-        geometry = {chart->id, history.document.revision, &*built};
+        const auto& measures = history.indices(chart->id)->measures;
+        if (!measures) return false;
+        geometry = {chart->id, history.document.revision, &*measures};
     }
     const auto* index = geometry.index;
     if (!index || index->total_rows == 0) return false;

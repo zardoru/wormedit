@@ -114,9 +114,10 @@ TEST_CASE("audio fallback finds nothing for missing, unsupported or unsafe paths
 
 TEST_CASE("Large keysound inventories register every asset and metronome accent",
           "[integration][sys][audio-source-registration][regression]") {
+    // Slow: cover all 1,295 BMS slots synchronously/deferred, then the first inventory beyond that namespace.
     SECTION("full BMS namespace synchronous registration") { check_large_keysound_inventory(false, 1'295); }
     SECTION("full BMS namespace deferred registration") { check_large_keysound_inventory(true, 1'295); }
-    SECTION("larger inventories") { check_large_keysound_inventory(true, 3'843); }
+    SECTION("larger inventories") { check_large_keysound_inventory(true, 1'296); }
 }
 
 

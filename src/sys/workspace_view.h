@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/bookmark_chooser_view.h"
 
 #include "sys/sound_list_view.h"
 #include "sys/projection_notification_feedback.h"
@@ -214,7 +215,8 @@ struct frontend_workspace_view_t {
                                    WormUiKeysoundDockRequest keysound_request = {},
                                    WormUiSoundUsageRequest sound_usage_request = {},
                                    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
-                                   keysound_list_cache_t* keysound_cache = nullptr) -> frontend_workspace_view_t;
+                                   keysound_list_cache_t* keysound_cache = nullptr,
+                                   const bookmark_chooser_indices_t& bookmark_indices = {}) -> frontend_workspace_view_t;
 
     [[nodiscard]] static auto from(const application_frame_projection_context_t& context)
         -> frontend_workspace_view_t;

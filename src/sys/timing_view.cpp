@@ -12,6 +12,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <functional>
 #include <ranges>
 #include <limits>
 #include <type_traits>
@@ -215,7 +216,7 @@ void populate_timing_stage_view(
     const wormedit::timing_lane_pseudonote_outcome_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
     const auto* report = stage ? stage->report() : nullptr;
-    if (report && report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+    if (report && report->lifecycle.status() == wormedit::proposal_status_t::active &&
         stage->captured_stamp().is_current(chart.id, revision)) {
         view.stage_active = true;
         view.stage_valid = stage->value.has_value();
@@ -243,35 +244,16 @@ void populate_timing_stage_view(
     }
 }
 
-auto compose_total_rows(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
-                        std::uint64_t revision) -> std::uint64_t {
-    if (cache.chart != chart.id || cache.revision != revision)
-        cache = {.chart = chart.id, .revision = revision};
-    if (cache.compose_rows_attempted) return cache.compose_total_rows;
-    cache.compose_rows_attempted = true;
+auto build_compose_total_rows(const wormedit::chart_document_t& chart) -> std::uint64_t {
+    std::uint64_t total_rows{};
     for (const auto& measure : chart.measures) {
         const auto valid = wormedit::measure_capacity_t::from(chart.divisions_per_standard_measure,
-                                                     measure.definition);
-        if (!valid || valid->row_capacity > std::numeric_limits<std::uint64_t>::max() - cache.compose_total_rows) {
-            cache.compose_total_rows = 0;
+                                                             measure.definition);
+        if (!valid || valid->row_capacity > std::numeric_limits<std::uint64_t>::max() - total_rows)
             return 0;
-        }
-        cache.compose_total_rows += valid->row_capacity;
+        total_rows += valid->row_capacity;
     }
-    return cache.compose_total_rows;
-}
-
-auto cached_measures(timing_scene_cache_t& cache, const wormedit::chart_document_t& chart,
-                     std::uint64_t revision) -> const wormedit::measure_index_t* {
-    if (cache.chart != chart.id || cache.revision != revision)
-        cache = {.chart = chart.id, .revision = revision};
-    if (!cache.measure_attempted) {
-        cache.measure_attempted = true;
-        auto result = wormedit::build_measure_index(chart);
-        if (auto* measures = std::get_if<wormedit::measure_index_t>(&result))
-            cache.measures = std::move(*measures);
-    }
-    return cache.measures ? &*cache.measures : nullptr;
+    return total_rows;
 }
 
 void populate_initial_bpm(WormUiTimingView& view, const wormedit::chart_document_t& chart) {
@@ -304,16 +286,18 @@ void populate_timing_view_for_compose(
     view.document_revision = history.document.revision;
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
-    view.total_rows = compose_total_rows(cache, chart, history.document.revision);
+    view.total_rows = cache.get_or_build(std::pair{chart.id, history.document.revision},
+        std::bind_front(build_compose_total_rows, std::cref(chart)));
     view.scene_available = view.total_rows != 0;
     populate_initial_bpm(view, chart);
     view.active_snap_denominator = timing_grid.active_denominator;
     view.supported_snap_denominators = timing_grid.supported_denominators.data();
     view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
     const auto* report = stage ? stage->report() : nullptr;
-    const bool editing_stage = report && report->status == wormedit::timing_lane_pseudonote_status_t::editing;
+    const bool editing_stage = report && report->lifecycle.status() == wormedit::proposal_status_t::active;
     if (!editing_stage) return;
-    const auto* measures = cached_measures(cache, chart, history.document.revision);
+    const auto& indexed = history.indices(chart.id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     const auto row_to_pixels = [&](long double row) {
         return measures && measures->total_rows > 0
             ? static_cast<double>(row / measures->total_rows * view.viewport_height_pixels) : 0.0;

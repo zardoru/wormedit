@@ -44,6 +44,7 @@
 #endif
 
 #include <array>
+#include <tuple>
 #include <cstddef>
 #include <chrono>
 #include <cstdint>
@@ -94,22 +95,56 @@ struct bmson_draft_audition_request_t {
 };
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 // A bounded CPU envelope ring. Geometry and GPU textures live in the frontend.
-struct envelope_projection_ring_t {
+struct envelope_projection_geometry_t {
+    wormedit::chart_stamp_t stamp;
+    std::uint64_t channel{}, source_generation{};
+    double zoom{};
+    bool detail_level{};
+    std::size_t count{};
+    auto operator==(const envelope_projection_geometry_t&) const -> bool = default;
+    static auto from(wormedit::chart_stamp_t stamp, std::uint64_t channel,
+                     std::uint64_t source_generation, double zoom, bool detail_level,
+                     std::size_t count) -> envelope_projection_geometry_t {
+        return {stamp, channel, source_generation, zoom, detail_level, count};
+    }
+};
+struct envelope_projection_data_t {
     struct row_t {
         std::int64_t world_row{std::numeric_limits<std::int64_t>::min()};
         WormUiComposeWaveformRowView value{};
         bool present{}, incomplete{};
     };
     std::vector<row_t> rows;
-    std::optional<audio::waveform_key_t> source_key, detail_key;
-    const void* source_identity{};
+    std::optional<audio::waveform_key_t> detail_key;
     const void* detail_identity{};
-    std::uint64_t revision{}, project{}, chart{}, channel{}, source_generation{}, availability_evictions{};
+    std::uint64_t availability_evictions{};
     std::size_t availability_entries{}, availability_frames{};
-    double zoom{};
-    bool detail_level{}, valid{};
     std::size_t projected_rows{}, reused_rows{}, projection_calls{};
 };
+using envelope_projection_ring_t = wormedit::keyed_cache_t<
+    std::tuple<audio::waveform_key_t, const void*, envelope_projection_geometry_t>,
+    envelope_projection_data_t>;
+using envelope_projection_lookup_t = std::tuple<const audio::waveform_key_t&, const void*,
+                                               envelope_projection_geometry_t>;
+struct compose_channel_projection_data_t {
+    std::vector<WormUiComposeWaveformRowView> rows;
+    struct piece_t {
+        std::uint64_t lane{};
+        bool playable{};
+        std::vector<WormUiComposeWaveformRowView> rows;
+    };
+    std::vector<piece_t> pieces;
+    std::vector<WormUiComposeStemCutView> cuts;
+};
+struct compose_channel_projection_t {
+    wormedit::keyed_cache_t<std::tuple<double, double, double>, compose_channel_projection_data_t> view;
+    envelope_projection_ring_t ring;
+    void invalidate(bool clear_rows) {
+        view.invalidate([clear_rows](auto& data) { if (clear_rows) data.rows.clear(); });
+        ring.invalidate();
+    }
+};
+
 #endif
 
 // Owned marker text and absolute rows; viewport placement/selection stay per frame.
@@ -121,38 +156,77 @@ struct compose_timing_marker_payload_t {
     std::string short_label, detail;
     bool fixed_initial{};
 };
-struct compose_timing_payload_cache_t {
-    const void* document_identity{};
-    const void* chart_identity{};
-    std::uint64_t project{}, chart{}, revision{};
-    bool valid{};
-    std::vector<compose_timing_marker_payload_t> markers;
-    std::size_t build_count{};
-};
+
 
 // Consumers retain different geometry contracts. Keep those policies explicit:
 // transport uses a logical stamp; stem/paint indices own their own stamps.
 enum class compose_scene_key_policy_t { projection, stem_geometry, measure_geometry,
                                         paint_occupancy, transport };
 
+struct compose_scene_source_key_t {
+    const void* document_identity{};
+    const void* chart_identity{};
+    wormedit::chart_stamp_t stamp;
+    auto operator==(const compose_scene_source_key_t&) const -> bool = default;
+
+    static auto from(const wormedit::song_document_t& document,
+                     const wormedit::chart_document_t& chart) -> compose_scene_source_key_t {
+        return {&document, &chart, {.document = {document.id, document.revision}, .chart = chart.id}};
+    }
+};
+
+using compose_timing_payload_cache_t = wormedit::keyed_cache_t<compose_scene_source_key_t,
+    std::vector<compose_timing_marker_payload_t>>;
+
+struct compose_static_layout_key_t {
+    std::uint64_t project{}, chart{}, revision{};
+    double viewport_width{}, zoom{}, field_left{}, field_right{}, bgm_scroll{};
+    bool bga_visible{};
+    std::uint8_t bga_mask{}, timing_mask{};
+    bool timing_focus{}, downscroll{}, lane_legend{};
+    auto operator==(const compose_static_layout_key_t&) const -> bool = default;
+    static auto from(const WormUiComposeView& view) -> compose_static_layout_key_t {
+        return {view.project_id, view.chart_id, view.document_revision, view.viewport_width_pixels,
+                view.pixels_per_standard_measure, view.playable_field_left_pixels,
+                view.playable_field_right_pixels, view.bgm_horizontal_scroll_pixels,
+                view.bga_lane_visible, view.bga_revealed_lane_mask, view.timing_lane_visibility_mask,
+                view.timing_focus, view.downscroll, view.lane_key_legend_visible};
+    }
+};
+struct compose_static_source_key_t {
+    std::size_t rebuild_count{};
+    std::uint64_t style{};
+    compose_static_layout_key_t layout;
+    auto operator==(const compose_static_source_key_t&) const -> bool = default;
+    static auto from(const WormUiComposeView& view, std::size_t rebuild_count,
+                     std::uint64_t style) -> compose_static_source_key_t {
+        return {rebuild_count, style, compose_static_layout_key_t::from(view)};
+    }
+};
+
 struct compose_scene_cache_t {
+    auto stamp() const -> wormedit::chart_stamp_t {
+        return scene.index.key() ? scene.index.key()->stamp : wormedit::chart_stamp_t{};
+    }
     bool is_scene_key_current(const wormedit::song_document_t& document,
         const wormedit::chart_document_t& chart, compose_scene_key_policy_t policy = compose_scene_key_policy_t::projection) const {
-        const bool logical_stamp = scene.chart == chart.id && scene.revision == document.revision;
+        const auto binding = scene.index.key().value_or(compose_scene_source_key_t{});
+        const bool logical_stamp = binding.stamp.chart == chart.id &&
+                                   binding.stamp.document.revision == document.revision;
         if (policy == compose_scene_key_policy_t::transport) return logical_stamp;
-        if (scene.scene_document_identity != &document || scene.scene_chart_identity != &chart)
+        if (binding.document_identity != &document || binding.chart_identity != &chart)
             return false;
         switch (policy) {
         case compose_scene_key_policy_t::projection:
-            return scene.attempted && logical_stamp && scene.scene_song == document.id;
+            return scene.index.has_value() && logical_stamp && binding.stamp.document.project == document.id;
         case compose_scene_key_policy_t::stem_geometry:
-            return stems.stem_index.built && stems.stem_index.document == document.id &&
-                stems.stem_index.chart == chart.id && stems.stem_index.revision == document.revision;
+            return stems.stem_index.value().is_built &&
+                stems.stem_index.key()->stamp == wormedit::chart_stamp_t::from(document, chart.id);
         case compose_scene_key_policy_t::measure_geometry:
             return logical_stamp;
         case compose_scene_key_policy_t::paint_occupancy:
-            return scene.index && scene.index->chart == chart.id &&
-                scene.index->document_revision == document.revision;
+            return scene.index.value() && scene.index.value()->chart == chart.id &&
+                scene.index.value()->document_revision == document.revision;
         case compose_scene_key_policy_t::transport:
             return logical_stamp;
         }
@@ -161,24 +235,40 @@ struct compose_scene_cache_t {
     bool ensure_scene_key(const wormedit::song_document_t& document,
                           const wormedit::chart_document_t& chart);
     void invalidate_scene_cache();
+    auto hit_test_index_for(const wormedit::chart_document_t& chart,
+                            std::uint64_t document_revision)
+        -> const wormedit::editor_hit_test_index_t*;
+  private:
+    void build_scene_index(const wormedit::song_document_t& document,
+                           const wormedit::chart_document_t& chart,
+                           std::optional<wormedit::editor_field_scene_index_t>& index);
+
+  public:
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
+    // Main-loop projection cache; const view builders may populate it.
     mutable compose_timing_payload_cache_t timing_payload_cache;
     // Internal reference-projection bypass for correctness/performance probes.
     bool timing_payload_cache_enabled{true};
-    struct draw_stem_source_cache_t {
-        const void* document{};
-        const void* chart{};
-        std::uint64_t revision{}, build_count{};
+    struct draw_stem_source_data_t {
         std::unordered_map<std::uint64_t, bool> channel_continues;
         std::unordered_map<std::uint64_t, std::size_t> resource_lanes;
         std::unordered_map<std::uint64_t, std::size_t> explicit_stem_resources;
         std::unordered_map<std::uint64_t, std::size_t> resource_indices;
-        std::uint8_t source_kind{};
-        std::uint64_t source_id{};
-        std::string source_label;
-        bool source_label_valid{}, source_missing{};
+        struct label_t {
+            std::string text;
+            bool is_missing{};
+            auto operator==(const label_t&) const -> bool = default;
+            static auto from(const draw_stem_source_data_t& source,
+                             const wormedit::song_document_t& document,
+                             std::uint8_t kind, std::uint64_t id) -> label_t;
+        };
+        // Main-loop label projection; const map readers may populate it.
+        mutable wormedit::keyed_cache_t<std::pair<std::uint8_t, std::uint64_t>, label_t> label;
     };
+    using draw_stem_source_cache_t = wormedit::keyed_cache_t<
+        std::tuple<const wormedit::song_document_t*, const wormedit::chart_document_t*, std::uint64_t>,
+        draw_stem_source_data_t>;
     struct channel_waveform_selection_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};
@@ -187,11 +277,8 @@ struct compose_scene_cache_t {
         wormedit::object_id_t source_lane;
         wormedit::asset_id_t asset;
     };
-    struct selected_source_location_t {
-        wormedit::object_id_t id;
-        bool attempted{};
-        std::optional<std::pair<std::size_t, std::size_t>> location;
-    };
+    using selected_source_location_t = wormedit::keyed_cache_t<
+        wormedit::object_id_t, std::optional<std::pair<std::size_t, std::size_t>>>;
     struct offset_fit_drag_t {
         wormedit::proposal_t<wormedit::beat_interval_drag_t> beat;
         wormedit::timing_index_t timing;
@@ -202,40 +289,24 @@ struct compose_scene_cache_t {
     struct stem_waveform_cache_t {
         wormedit::object_id_t channel;
         std::uint64_t source_lane{};
-        const void* source{};
-        std::uint64_t source_generation{};
-        std::uint64_t revision{};
-        std::optional<wormedit::sound_slice_result_t> slices;
-        double scroll{}, height{}, zoom{};
-        bool valid{}, pending{};
-        std::vector<WormUiComposeWaveformRowView> rows;
-        envelope_projection_ring_t ring;
-        // The rows split by the lane of the slice they belong to, and the cut lines.
-        struct piece_t {
-            std::uint64_t lane{};
-            bool playable{};
-            std::vector<WormUiComposeWaveformRowView> rows;
-        };
-        std::vector<piece_t> pieces;
-        std::vector<WormUiComposeStemCutView> cuts;
+        wormedit::keyed_cache_t<std::tuple<const void*, std::uint64_t, std::uint64_t>,
+            std::optional<wormedit::sound_slice_result_t>> slices;
+        compose_channel_projection_t projection;
         struct point_ref_t {
             std::uint64_t object{}, lane{};
             bool playable{};
         };
-        std::unordered_map<std::uint64_t, point_ref_t> refs;
-        std::uint64_t refs_revision{};
-        bool is_selected{};
+        using point_refs_t = std::unordered_map<std::uint64_t, point_ref_t>;
+        wormedit::keyed_cache_t<std::uint64_t, point_refs_t> refs;
+        bool pending{}, is_selected{};
     };
     struct bgm_bar_cache_t {
-        std::optional<audio::waveform_key_t> key;
-        const void* identity{};
-        bgm_bar_range_t rows_range;
-        std::vector<WormUiComposeWaveformOverviewRowView> rows;
-        std::uint64_t marks_revision{};
-        std::uint64_t marks_total_frames{};
-        bgm_bar_range_t marks_range;
-        bool marks_valid{};
-        std::vector<WormUiComposeBgmBarMarkView> marks;
+        wormedit::keyed_cache_t<
+            std::tuple<audio::waveform_key_t, const void*, bgm_bar_range_t>,
+            std::vector<WormUiComposeWaveformOverviewRowView>> rows;
+        wormedit::keyed_cache_t<
+            std::tuple<std::uint64_t, std::uint64_t, bgm_bar_range_t>,
+            std::vector<WormUiComposeBgmBarMarkView>> marks;
     };
 #endif
     struct hover_timing_snapshot_t {
@@ -251,32 +322,35 @@ struct compose_scene_cache_t {
 
     // Retained chart geometry and reusable projections share the document/chart stamp.
     struct scene_state_t {
-        const void* scene_document_identity{};
-        const void* scene_chart_identity{};
-        wormedit::song_id_t scene_song;
-        wormedit::chart_id_t chart;
-        std::uint64_t revision{};
-        bool attempted{};
-        std::optional<wormedit::editor_field_scene_index_t> index;
+        wormedit::keyed_cache_t<compose_scene_source_key_t,
+            std::optional<wormedit::editor_field_scene_index_t>> index;
         wormedit::editor_field_scene_window_t scene_window;
         std::uint64_t static_scene_style_generation{};
-        std::shared_ptr<frontend_workspace_view_t> static_scene_storage;
-        std::size_t static_scene_rebuild_count{};
-        std::uint64_t static_scene_source_generation{}, static_scene_source_style{};
-        std::size_t static_scene_accounted_bytes{};
+        struct static_projection_data_t {
+            std::array<wormedit::common::static_interval_index_t, 5> indices;
+            // Main-loop interval queries reuse this bounded output buffer.
+            mutable std::vector<std::size_t> scratch;
+            std::size_t accounted_bytes{};
+        };
+        struct static_source_data_t {
+            std::shared_ptr<frontend_workspace_view_t> storage;
+            std::size_t accounted_bytes{};
+            // Main-loop projection builders may populate this through const storage reads.
+            mutable wormedit::keyed_cache_t<std::uint64_t, static_projection_data_t> projection;
+        };
+        wormedit::keyed_cache_t<compose_static_source_key_t, static_source_data_t> static_source;
         std::optional<bool> static_scene_lane_legend;
         std::unordered_map<std::uint64_t, std::uint64_t> bgm_rows_by_id;
         std::vector<double> bgm_lane_widths_pixels;
-        std::array<wormedit::common::static_interval_index_t, 5> static_projection_indices;
-        std::vector<std::size_t> static_projection_scratch;
-        std::uint64_t static_projection_source_generation{};
-        std::size_t static_projection_index_bytes{}, static_projection_scanned{},
-            static_projection_extracted{}, static_projection_reused_frames{};
+        std::size_t static_projection_scanned{}, static_projection_extracted{},
+            static_projection_reused_frames{};
         // Two bounded source locations, invalidated with the document/chart scene.
         selected_source_location_t selected_note_source, selected_bgm_source;
         std::size_t selected_source_scanned{}, selected_source_reused{}, paint_occupancy_scanned{};
-        std::optional<wormedit::measure_index_t> cached_measure_index;
-        std::optional<wormedit::editor_hit_test_index_t> hit_test_index;
+        std::shared_ptr<const wormedit::measure_index_t> cached_measure_index;
+        wormedit::keyed_cache_t<
+            std::tuple<const wormedit::chart_document_t*, wormedit::chart_id_t, std::uint64_t>,
+            std::variant<wormedit::editor_hit_test_index_t, wormedit::diagnostic_list_t>> hit_test_index;
         std::shared_ptr<const wormedit::editor_area_geometry_snapshot_t> area_object_geometry;
     } scene;
 
@@ -295,16 +369,17 @@ struct compose_scene_cache_t {
 
     struct timing_state_t {
         std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_apply_proposal;
-        std::optional<proposal_t<tap_timing_apply_proposal_t>> tap_preview_binding;
-        std::optional<timing_index_t> tap_preview_timing;
+        wormedit::keyed_cache_t<
+            std::tuple<wormedit::chart_id_t, std::uint64_t, wormedit::signed_rational_t,
+                       wormedit::signed_rational_t>, std::optional<timing_index_t>> tap_preview_timing;
         std::optional<wormedit::timing_index_t> marker_timing_index;
         std::optional<dead_spans_view_t> dead_spans;
         std::optional<kiai_spans_view_t> kiai_spans;
         std::optional<sv_steps_view_t> sv_steps;
         std::optional<recipe_areas_view_t> recipe_areas;
         std::optional<speed_spans_view_t> speed_spans;
-        std::optional<wormedit::timing_index_t> proposed_offset_timing_index;
-        std::optional<wormedit::signed_rational_t> proposed_offset_seconds;
+        wormedit::keyed_cache_t<wormedit::signed_rational_t,
+            std::optional<wormedit::timing_index_t>> proposed_offset_timing_index;
         std::optional<wormedit::proposal_t<wormedit::beat_interval_drag_t>> beat_fit_drag;
         std::optional<wormedit::asset_id_t> beat_fit_asset;
         bool beat_fit_onset_snapped{};
@@ -315,9 +390,8 @@ struct compose_scene_cache_t {
         std::optional<audio::waveform_key_t> beat_fit_onset_source;
 #endif
         std::optional<offset_fit_drag_t> offset_fit_drag;
-        std::optional<wormedit::timing_index_t> proposed_beat_timing_index;
-        std::optional<wormedit::signed_rational_t> proposed_beat_bpm;
-        wormedit::object_id_t proposed_beat_event;
+        wormedit::keyed_cache_t<std::pair<wormedit::signed_rational_t, wormedit::object_id_t>,
+            std::optional<wormedit::timing_index_t>> proposed_beat_timing_index;
     } timing;
 
     struct stem_display_state_t {
@@ -329,7 +403,6 @@ struct compose_scene_cache_t {
         std::vector<stem_waveform_cache_t> stem_waveforms;
         packed_waveform_index_t packed_waveform_index;
         audio::display_row_table_t packed_waveform_row_table;
-        std::uint64_t packed_clock_generation{};
         std::vector<stem_waveform_cache_t> packed_waveforms;
         std::vector<WormUiComposeStemWaveformView> stem_waveform_views;
         std::vector<WormUiComposeStemCutView> stem_cut_views;
@@ -353,24 +426,17 @@ struct compose_scene_cache_t {
 
     struct waveform_state_t {
         std::optional<channel_waveform_selection_t> channel_waveform_selection;
-        wormedit::object_id_t channel_waveform_channel;
-        const void* channel_waveform_source{};
-        std::uint64_t channel_waveform_source_generation{};
-        std::optional<wormedit::sound_slice_result_t> channel_waveform_slices;
-        double channel_waveform_scroll_pixels{};
-        double channel_waveform_height_pixels{};
-        double channel_waveform_pixels_per_measure{};
-        bool channel_waveform_projection_valid{};
-        std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::keyed_cache_t<std::tuple<wormedit::object_id_t, const void*, std::uint64_t>,
+            std::optional<wormedit::sound_slice_result_t>> channel_waveform_slices;
+        compose_channel_projection_t channel_projection;
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
-        envelope_projection_ring_t channel_envelope_ring;
-        std::optional<wormedit::audio::waveform_key_t> waveform_overview_key;
-        const void* waveform_overview_identity{};
-        std::uint64_t waveform_overview_revision{};
-        std::uint64_t waveform_overview_generation{};
-        std::vector<WormUiComposeWaveformOverviewRowView> waveform_overview_rows;
+        struct overview_data_t {
+            std::uint64_t generation{};
+            std::vector<WormUiComposeWaveformOverviewRowView> rows;
+        };
+        wormedit::keyed_cache_t<std::tuple<audio::waveform_key_t, const void*>, overview_data_t> overview;
         // BGM bar rows re-project only when the song window or the source changes; measure
         // marks also follow the document revision (tempo and offset edits move them).
         bgm_bar_cache_t bgm_bar;
@@ -762,14 +828,11 @@ auto requested_snap_denominator(const application_command_state_t& application_s
                                 wormedit::chart_id_t chart) -> std::uint64_t;
 auto compose_snap_preferences(const application_command_state_t& state, wormedit::chart_id_t chart)
     -> std::array<std::uint64_t, chart_snap_preferences.size() + 1>;
-auto editor_interaction_has_pending_gesture(
-    const wormedit::editor_interaction_state_t& state) -> bool;
-
 auto begin_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, const wormedit::editor_interaction_state_t& state,
+    const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool;
 auto revise_compose_paste(application_command_state_t& application_state,
-    const wormedit::song_document_t& document, wormedit::chart_id_t chart,
+    const wormedit::document_history_t& history, wormedit::chart_id_t chart,
     wormedit::local_position_t anchor, std::string* failure = nullptr) -> bool;
 auto apply_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,

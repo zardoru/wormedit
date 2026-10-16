@@ -9,7 +9,6 @@
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>
@@ -25,6 +24,7 @@
 #include <SDL3/SDL_scancode.h>
 
 #include <algorithm>
+#include <functional>
 #include <array>
 #include <atomic>
 #include <bit>
@@ -46,19 +46,10 @@
 #include <vector>
 
 namespace wormedit::sys {
-void prepare_draw_stem_sources(compose_scene_cache_t& cache,
-                               const wormedit::song_document_t& document,
-                               const wormedit::chart_document_t& chart) {
-    auto& sources = cache.stems.draw_stem_sources;
-    if (sources.document == &document && sources.chart == &chart &&
-        sources.revision == document.revision)
-        return;
-    const auto builds = sources.build_count + 1;
+void build_draw_stem_sources(const wormedit::song_document_t& document,
+                             const wormedit::chart_document_t& chart,
+                             compose_scene_cache_t::draw_stem_source_data_t& sources) {
     sources = {};
-    sources.document = &document;
-    sources.chart = &chart;
-    sources.revision = document.revision;
-    sources.build_count = builds;
     for (std::size_t index = 0; index < document.resources.size(); ++index) {
         sources.resource_indices.emplace(document.resources[index].id.value, index);
         if (document.resources[index].sound_kind == wormedit::sound_kind_t::stem)
@@ -85,6 +76,14 @@ void prepare_draw_stem_sources(compose_scene_cache_t& cache,
     }
 }
 
+void prepare_draw_stem_sources(compose_scene_cache_t& cache,
+                               const wormedit::song_document_t& document,
+                               const wormedit::chart_document_t& chart) {
+    static_cast<void>(cache.stems.draw_stem_sources.get_or_build(
+        std::tuple{&document, &chart, document.revision},
+        std::bind_front(build_draw_stem_sources, std::cref(document), std::cref(chart))));
+}
+
 auto draw_stem_source_name(frontend_workspace_view_t& flattened, std::string_view name) -> const char* {
     const auto* owned = flattened.arena() ? arena_string(*flattened.arena(), name) : nullptr;
     if (!owned)
@@ -108,28 +107,29 @@ auto bounded_draw_source_label(const wormedit::resource_entry_t& resource) -> st
     return text;
 }
 
+auto compose_scene_cache_t::draw_stem_source_data_t::label_t::from(
+    const draw_stem_source_data_t& source, const wormedit::song_document_t& document,
+    std::uint8_t kind, std::uint64_t id) -> label_t {
+    const auto found = source.resource_indices.find(id);
+    const bool missing = kind != 0 && found == source.resource_indices.end();
+    return {.text = kind == 0 ? "silent note" : missing ? "missing source"
+                   : bounded_draw_source_label(document.resources[found->second]),
+            .is_missing = missing};
+}
+
 void populate_draw_source_label(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                                 const wormedit::song_document_t& document) {
     auto& view = flattened.view.compose;
-    auto& source = cache.stems.draw_stem_sources;
-    if (!source.source_label_valid || source.source_kind != view.draw_source_kind ||
-        source.source_id != view.draw_source_id) {
-        source.source_kind = view.draw_source_kind;
-        source.source_id = view.draw_source_id;
-        const auto found = source.resource_indices.find(view.draw_source_id);
-        source.source_missing =
-            view.draw_source_kind != 0 && found == source.resource_indices.end();
-        source.source_label = view.draw_source_kind == 0 ? "silent note"
-                              : source.source_missing
-                                  ? "missing source"
-                                  : bounded_draw_source_label(document.resources[found->second]);
-        source.source_label_valid = true;
-    }
+    const auto& source = cache.stems.draw_stem_sources.value();
+    const auto& label = source.label.get_or_build(std::pair{view.draw_source_kind, view.draw_source_id},
+        [&source, &document, &view] {
+            return compose_scene_cache_t::draw_stem_source_data_t::label_t::from(
+                source, document, view.draw_source_kind, view.draw_source_id);
+        });
     view.draw_source_label = view.draw_source_kind == 0 ? "silent note"
-                             : source.source_missing
-                                 ? "missing source"
-                                 : draw_stem_source_name(flattened, source.source_label);
-    view.draw_source_missing = source.source_missing;
+                             : label.is_missing ? "missing source"
+                             : draw_stem_source_name(flattened, label.text);
+    view.draw_source_missing = label.is_missing;
 }
 
 // Draw on a BGM lane needs a sound; with a silent source the chip says so.
@@ -143,15 +143,15 @@ void populate_bgm_draw_hint(WormUiComposeView& view, const wormedit::chart_docum
 }
 
 auto compose_sound_is_stem(const compose_scene_cache_t& cache, std::uint64_t resource) -> bool {
-    return cache.stems.draw_stem_sources.resource_lanes.contains(resource) ||
-           cache.stems.draw_stem_sources.explicit_stem_resources.contains(resource);
+    return cache.stems.draw_stem_sources.value().resource_lanes.contains(resource) ||
+           cache.stems.draw_stem_sources.value().explicit_stem_resources.contains(resource);
 }
 
 auto compose_sound_missing(const compose_scene_cache_t& cache,
                            const wormedit::song_document_t& document, std::uint64_t resource)
     -> bool {
-    const auto found = cache.stems.draw_stem_sources.resource_indices.find(resource);
-    return found == cache.stems.draw_stem_sources.resource_indices.end() ||
+    const auto found = cache.stems.draw_stem_sources.value().resource_indices.find(resource);
+    return found == cache.stems.draw_stem_sources.value().resource_indices.end() ||
            document.resources[found->second].missing;
 }
 
@@ -178,8 +178,8 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
     for (auto& row : flattened.compose.keysound.row) {
         row.stem_source_lane_id = 0;
         row.stem_lane_name = "";
-        const auto found = cache.stems.draw_stem_sources.resource_lanes.find(row.resource_id);
-        if (found == cache.stems.draw_stem_sources.resource_lanes.end())
+        const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(row.resource_id);
+        if (found == cache.stems.draw_stem_sources.value().resource_lanes.end())
             continue;
         const auto& lane = chart.bgm_source_lanes[found->second];
         row.stem_source_lane_id = lane.id.value;
@@ -192,8 +192,8 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
     }
     if (view.draw_source_kind != 1 || view.draw_source_is_stem)
         return;
-    const auto found = cache.stems.draw_stem_sources.resource_lanes.find(view.draw_source_id);
-    if (found != cache.stems.draw_stem_sources.resource_lanes.end()) {
+    const auto found = cache.stems.draw_stem_sources.value().resource_lanes.find(view.draw_source_id);
+    if (found != cache.stems.draw_stem_sources.value().resource_lanes.end()) {
         const auto& lane = chart.bgm_source_lanes[found->second];
         view.draw_source_is_stem = true;
         view.draw_source_stem_lane_id = lane.id.value;
@@ -201,8 +201,8 @@ void populate_draw_stem_sources(frontend_workspace_view_t& flattened, compose_sc
         return;
     }
     const auto explicit_source =
-        cache.stems.draw_stem_sources.explicit_stem_resources.find(view.draw_source_id);
-    if (explicit_source != cache.stems.draw_stem_sources.explicit_stem_resources.end()) {
+        cache.stems.draw_stem_sources.value().explicit_stem_resources.find(view.draw_source_id);
+    if (explicit_source != cache.stems.draw_stem_sources.value().explicit_stem_resources.end()) {
         view.draw_source_is_stem = true;
         view.draw_source_stem_lane_name =
             draw_stem_source_name(flattened, document.resources[explicit_source->second].name);

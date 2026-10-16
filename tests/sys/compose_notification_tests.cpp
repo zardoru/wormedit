@@ -489,12 +489,12 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         chart.warps = {{.id = object_id_t{21}, .span = {{measure_id_t{1}, 720}, {measure_id_t{1}, 840}}}};
         REQUIRE(validate_document(history.document).empty());
         history = document_history_t::from(history.document);
-        const auto measures = build_measure_index(history.document.charts.front());
-        REQUIRE(std::holds_alternative<measure_index_t>(measures));
-        const auto timing = build_timing_index(history.document.charts.front());
-        REQUIRE(timing);
+        const auto measures = measure_index_t::from(history.document.charts.front());
+        REQUIRE(measures.has_value());
+        const auto timing = timing_index_t::from(history.document.charts.front());
+        REQUIRE(timing.value);
         cache.timing.dead_spans = dead_spans_view_t::from(history.document.charts.front(),
-            std::get<measure_index_t>(measures), *timing.index, 64);
+            measures.value(), *timing.value, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;
         state.viewport_scroll_pixels = 0;
@@ -546,7 +546,7 @@ TEST_CASE("pasting inside a visual Stop band uses its valid chart row",
     REQUIRE(copied);
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
-    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     const auto y = fixture.stop_band_y();
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = y},
                        {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
@@ -602,7 +602,7 @@ TEST_CASE("the same paste and drag succeed away from the Stop band",
         REQUIRE(copied);
         fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
         std::string status;
-        REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+        REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
         (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE, .x_pixels = fixture.lane_x(), .y_pixels = free_row_y(fixture)},
                            {.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
         CHECK(fixture.history.document.charts.front().measures.front().notes.size() == 2);
@@ -642,7 +642,7 @@ TEST_CASE("pasting a note at a cursor inside a Warp is rejected and changes noth
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     fixture.state.cursor = {measure_id_t{1}, 780};
     std::string status;
-    REQUIRE(begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+    REQUIRE(begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     (void)fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_COMMIT}});
     fixture.check_document_unchanged();
 }
@@ -690,7 +690,7 @@ TEST_CASE("Compose paste keeps its original status after posting a rebind error"
     fixture.application.project.clipboard.chart_clipboard = std::move(*copied);
     std::string status;
     REQUIRE(
-        begin_compose_paste(fixture.application, fixture.history.document, fixture.state, status));
+        begin_compose_paste(fixture.application, fixture.history, fixture.state, status));
     fixture.workspace.limits.maximum_charts = 0;
     const auto returned = fixture.run({{.kind = WORM_UI_COMPOSE_INPUT_PASTE_UPDATE,
                                         .x_pixels = fixture.lane_x(),

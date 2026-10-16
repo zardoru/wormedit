@@ -451,12 +451,12 @@ auto editor_position_y_pixels(const chart_document_t& chart,
         !std::isfinite(view.viewport_scroll_pixels)) {
         return std::nullopt;
     }
-    const auto built_index = build_measure_index(chart);
-    if (std::holds_alternative<diagnostic_list_t>(built_index)) {
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index.has_value()) {
         return std::nullopt;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = absolute_row(index, position);
+    const auto& index = built_index.value();
+    const auto absolute = index.row_of(position);
     if (!absolute.has_value()) {
         return std::nullopt;
     }
@@ -472,11 +472,11 @@ auto editor_position_y_pixels(const chart_document_t& chart,
 auto editor_position_at_y_pixels(const chart_document_t& chart,
                                  const editor_interaction_view_model_t& view, double y_pixels)
     -> std::optional<local_position_t> {
-    const auto built_index = build_measure_index(chart);
-    if (std::holds_alternative<diagnostic_list_t>(built_index)) {
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index.has_value()) {
         return std::nullopt;
     }
-    return position_at_row_y_pixels(chart, std::get<measure_index_t>(built_index), view, y_pixels);
+    return position_at_row_y_pixels(chart, built_index.value(), view, y_pixels);
 }
 
 auto editor_position_at_y_pixels(const chart_document_t& chart, const measure_index_t& index,
@@ -486,13 +486,13 @@ auto editor_position_at_y_pixels(const chart_document_t& chart, const measure_in
 
 auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t document_revision)
     -> std::variant<editor_hit_test_index_t, diagnostic_list_t> {
-    const auto built_index = build_measure_index(chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_index))
-        return *diagnostics;
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index)
+        return built_index.error();
     hit_test_index_builder_t builder{
         .chart = chart,
         .index = {.chart = chart.id, .document_revision = document_revision,
-                  .measures = std::get<measure_index_t>(built_index)},
+                  .measures = built_index.value()},
     };
     builder.index.measure_buckets.resize(builder.index.measures.entries.size());
     builder.bucket_by_measure = measure_lookup_t::from(builder.index.measures);
@@ -726,7 +726,7 @@ auto nearest_note_hover(const chart_document_t& chart, const editor_hit_test_ind
                                                 &editor_hover_index_entry_t::object);
     if (found == index.hover_objects_by_id.end() || found->object != object)
         return {nullptr, std::numeric_limits<double>::infinity()};
-    const auto hit_row = absolute_row(index.measures, note_hit->position);
+    const auto hit_row = index.measures.row_of(note_hit->position);
     const auto y = static_cast<double>(
         static_cast<long double>(hit_row.value_or(found->absolute_row)) *
             static_cast<long double>(view.pixels_per_standard_measure) /

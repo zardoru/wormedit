@@ -1,6 +1,9 @@
 #include "core/text_util.h"
 #include <wormedit/core/rational.h>
 #include "sys/bookmark_navigation.h"
+#include "sys/compose_view.h"
+#include <wormedit/core/command.h>
+#include <wormedit/core/workspace.h>
 
 #include <wormedit/core/timing.h>
 
@@ -11,6 +14,20 @@
 #include <tuple>
 
 namespace wormedit::sys {
+auto bookmark_chooser_indices_t::from(const document_history_t& history, const workspace_view_t& workspace, bool is_open,
+                                      const compose_scene_cache_t& cache) -> bookmark_chooser_indices_t {
+    const auto* compose = std::get_if<workspace_compose_view_t>(&workspace.tab_view);
+    if (!is_open || !compose) return {};
+    const auto chart_id = compose->chart;
+    const auto* indices = history.indices(chart_id);
+    const auto* chart = history.document.find_chart(chart_id);
+    const auto* clock = indices && indices->measures && chart &&
+        cache.is_scene_key_current(history.document, *chart) &&
+        cache.scene.cached_measure_index.get() == &*indices->measures
+            ? &cache.timing.marker_timing_index : nullptr;
+    return {indices, clock};
+}
+
 namespace {
 
 struct ordered_row_t {
@@ -99,7 +116,8 @@ auto matches_query(std::string_view label, std::string_view query) -> bool {
 } // namespace
 
 auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t chart_id,
-                              std::size_t first_row, std::size_t row_limit, std::string_view query)
+                              std::size_t first_row, std::size_t row_limit, std::string_view query,
+                                    const bookmark_chooser_indices_t& indices)
     -> bookmark_chooser_view_outcome_t {
     bookmark_chooser_view_t result{.chart = chart_id,
                                          .document_revision = document.revision,
@@ -114,14 +132,18 @@ auto bookmark_chooser_view_t::from(const song_document_t& document, chart_id_t c
         result.status = "Bookmark chooser requires an active chart.";
         return std::unexpected(std::move(result));
     }
-    const auto measure_build = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(measure_build)) {
+    std::optional<result_t<measure_index_t, diagnostic_list_t>> local;
+    if (!indices.committed) local = measure_index_t::from(*chart);
+    const auto& measure_build = indices.committed ? indices.committed->measures : *local;
+    if (!measure_build) {
         result.status = "Bookmark positions could not be resolved.";
         return std::unexpected(std::move(result));
     }
-    const auto& measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = timing_index_t::from(*chart, {.allow_bounded_clock = true});
-    const auto* timing = timing_build.value ? &*timing_build.value : nullptr;
+    const auto& measures = *measure_build;
+    const auto timing_build = indices.bounded_clock ? decltype(timing_index_t::from(*chart)){}
+        : timing_index_t::from(*chart, {.allow_bounded_clock = true});
+    const auto& timing_value = indices.bounded_clock ? *indices.bounded_clock : timing_build.value;
+    const auto* timing = timing_value ? &*timing_value : nullptr;
     std::vector<ordered_row_t> ordered;
     ordered.reserve(chart->bookmarks.size());
     for (const auto& bookmark : chart->bookmarks) {

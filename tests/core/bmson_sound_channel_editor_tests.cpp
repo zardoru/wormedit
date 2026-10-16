@@ -783,12 +783,12 @@ TEST_CASE("BMSON marker moves translate linked hold ends across measures",
     expect_bmson_core(moved_source->end == moved->end);
     const auto moved_revision = history.document.revision;
     const auto tail_overflow = wormedit::local_position_t{moved_chart.measures.back().id, 900};
-    const auto built_index = wormedit::build_measure_index(moved_chart);
-    expect_bmson_core(std::holds_alternative<wormedit::measure_index_t>(built_index));
-    const auto& index = std::get<wormedit::measure_index_t>(built_index);
-    const auto tail_head_row = wormedit::absolute_row(index, tail_overflow);
-    const auto moved_head_row = wormedit::absolute_row(index, moved->position);
-    const auto moved_end_row = wormedit::absolute_row(index, *moved->end);
+    const auto built_index = wormedit::measure_index_t::from(moved_chart);
+    expect_bmson_core(built_index.has_value());
+    const auto& index = built_index.value();
+    const auto tail_head_row = index.row_of(tail_overflow);
+    const auto moved_head_row = index.row_of(moved->position);
+    const auto moved_end_row = index.row_of(*moved->end);
     expect_bmson_core(tail_head_row && moved_head_row && moved_end_row);
     const auto hold_length = *moved_end_row - *moved_head_row;
     expect_bmson_core(*tail_head_row < index.total_rows &&
@@ -1888,7 +1888,7 @@ TEST_CASE("Mouse stem placement shares decoded span classification and clears fa
         wormedit::end_note_paint_gesture_action_t{lane, position, true, geometry});
     INFO((released.diagnostics.empty() ? "No placement diagnostic" : released.diagnostics.front().message));
     expect_bmson_core(static_cast<bool>(released) == decoded);
-    expect_bmson_core(!state.pending_note_paint_gesture && !state.pending_hold);
+    expect_bmson_core(!state.gesture<wormedit::pending_note_paint_gesture_t>() && !state.hold());
     if (decoded) {
         const auto& channel = history.document.charts.front().sound_channels.front();
         expect_bmson_core(channel.events.back().playable);

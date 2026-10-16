@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <ranges>
 #include <tuple>
 #include <utility>
@@ -127,7 +128,7 @@ void append_proposed_grid_lines(proposed_grid_context_t& projection) {
         if (y < 0.0 || y > projection.view().viewport_height_pixels) continue;
         std::uint32_t measure_number{};
         if (line.kind == wormedit::editor_grid_line_kind_t::measure) {
-            const auto& measures = projection.cache.scene.index->measures.entries;
+            const auto& measures = projection.cache.scene.index.value()->measures.entries;
             const auto found = std::ranges::lower_bound(
                 measures, line.chart_row.whole_rows, {},
                 &wormedit::measure_index_entry_t::absolute_begin_row);
@@ -169,10 +170,10 @@ void append_note_and_bgm_preview_rects(proposed_grid_context_t& projection) {
     rects.reserve(projection.source_scene.note_endpoints.size() +
                   projection.source_scene.bgm_events.size());
     for (const auto& note : projection.source_scene.note_endpoints) {
-        const auto source = projection.cache.scene.index->note_indices_by_id.find(note.note.value);
-        if (source == projection.cache.scene.index->note_indices_by_id.end() || note.proposal_ghost)
+        const auto source = projection.cache.scene.index.value()->note_indices_by_id.find(note.note.value);
+        if (source == projection.cache.scene.index.value()->note_indices_by_id.end() || note.proposal_ghost)
             continue;
-        const auto& indexed = projection.cache.scene.index->notes[source->second];
+        const auto& indexed = projection.cache.scene.index.value()->notes[source->second];
         append_preview_rect(projection, to_frontend_rect(note.bounds),
                             note.tail ? indexed.end_row : indexed.begin_row, 0);
     }
@@ -238,7 +239,7 @@ void append_proposed_marker(proposed_grid_context_t& projection,
         projection.view().truncated = true;
         return;
     }
-    const auto row = (projection.cache.scene.index->measures).row_of(position);
+    const auto row = (projection.cache.scene.index.value()->measures).row_of(position);
     if (!row || *row < projection.rows.first || *row > projection.rows.second) return;
     const auto y = projection.proposed_y(*row);
     if (!y || std::abs(*y - projection.old_y(*row)) < 0.5 || *y < 0.0 ||
@@ -373,7 +374,7 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
     flattened.compose.grid.proposed.clear();
     flattened.compose.timing_preview_rect.clear();
     flattened.compose.timing_preview_marker.clear();
-    if (!cache.scene.index || !cache.frame.interaction_view) return;
+    if (!cache.scene.index.value() || !cache.frame.interaction_view) return;
     const auto downscroll = compose_field_downscroll(chart);
     const auto rows = proposed_visible_source_rows(
         original, proposed, interaction.viewport_scroll_pixels,
@@ -390,13 +391,13 @@ void build_compose_proposed_grid_view(frontend_workspace_view_t& flattened,
         1.0, std::min(remaining_height,
                       static_cast<double>(rows->second - rows->first) * pixels_per_row + 32.0));
     const auto composed = wormedit::editor_field_scene_view_result_t::from(
-        chart, *cache.scene.index, source_view, cache.frame.preview_scene_request);
+        chart, *cache.scene.index.value(), source_view, cache.frame.preview_scene_request);
     if (!composed.value || !composed.ok()) {
         view.truncated = true;
         return;
     }
     const auto scope = compose_chart_scope_t<>::from(
-        {chart, cache.scene.index->measures}, source_view, downscroll, pixels_per_row);
+        {chart, cache.scene.index.value()->measures}, source_view, downscroll, pixels_per_row);
     proposed_grid_context_t projection{scope,    flattened,   cache,           original,
                                        proposed, interaction, *composed.value, *rows};
     append_proposed_grid_lines(projection);
@@ -421,30 +422,35 @@ auto audio_offset_drag_matches(const std::optional<proposal_t<audio_offset_drag_
                                   document_identity_policy_t::revision_only);
 }
 
-void rebuild_offset_timing_index(compose_scene_cache_t& cache,
-                                 const document_history_t& history,
-                                 wormedit::chart_id_t chart_id,
-                                 signed_rational_t proposed_offset) {
-    cache.timing.proposed_offset_timing_index.reset();
-    cache.timing.proposed_offset_seconds = proposed_offset;
+template <class Factory>
+void build_proposed_timing_index(const Factory& make_candidate, std::optional<timing_index_t>& value) {
+    value.reset();
+    const auto candidate = make_candidate();
+    if (!candidate) return;
+    auto built = timing_index_t::from(*candidate);
+    if (built.value) value = std::move(*built.value);
+}
+
+auto make_proposed_offset_chart(const document_history_t& history,
+                                 wormedit::chart_id_t chart_id, signed_rational_t proposed_offset)
+    -> std::optional<chart_document_t> {
     const auto chart = history.document.find_chart(chart_id);
-    if (chart == nullptr) return;
+    if (chart == nullptr) return std::nullopt;
     auto candidate = *chart;
     candidate.beat_zero_audio_offset_seconds = proposed_offset;
-    auto built = timing_index_t::from(candidate);
-    if (built.value) cache.timing.proposed_offset_timing_index = std::move(*built.value);
+    return std::optional{std::move(candidate)};
 }
 
 void build_offset_grid_view(frontend_workspace_view_t& flattened, compose_scene_cache_t& cache,
                          const document_history_t& history,
                          const workspace_controller_t& workspace,
                          const editor_interaction_state_t* interaction) {
-    if (!cache.timing.proposed_offset_timing_index || !workspace.selected_chart || !interaction ||
+    if (!cache.timing.proposed_offset_timing_index.value() || !workspace.selected_chart || !interaction ||
         !cache.timing.marker_timing_index) return;
     const auto chart = history.document.find_chart(*workspace.selected_chart);
     if (chart != nullptr)
         build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
-                                      *cache.timing.proposed_offset_timing_index, *interaction);
+                                      *cache.timing.proposed_offset_timing_index.value(), *interaction);
 }
 
 void update_proposed_beat_zero(frontend_workspace_view_t& flattened,
@@ -476,9 +482,10 @@ void populate_audio_offset_overlay(frontend_workspace_view_t& flattened,
                                    const audio::waveform_analysis_result_t* waveform_analysis) {
     if (!audio_offset_drag_matches(drag, drag_tab, workspace, history)) return;
     flattened.view.compose.waveform_offset_drag_active = true;
-    if (cache.timing.proposed_offset_seconds != drag->payload.proposed_offset_seconds)
-        rebuild_offset_timing_index(cache, history, *workspace.selected_chart,
-                                    drag->payload.proposed_offset_seconds);
+    auto make_candidate = std::bind_front(make_proposed_offset_chart, std::cref(history),
+        *workspace.selected_chart, drag->payload.proposed_offset_seconds);
+    static_cast<void>(cache.timing.proposed_offset_timing_index.get_or_build(drag->payload.proposed_offset_seconds,
+        std::bind_front(build_proposed_timing_index<decltype(make_candidate)>, std::move(make_candidate))));
     build_offset_grid_view(flattened, cache, history, workspace, interaction);
     update_proposed_beat_zero(flattened, drag->payload, waveform_analysis);
 }
@@ -506,20 +513,13 @@ void populate_beat_fit_fields(WormUiComposeView& compose, const beat_interval_dr
     compose.beat_fit_snap_step_denominator = drag.snap_step.denominator;
 }
 
-void rebuild_beat_fit_timing_index(compose_scene_cache_t& cache,
-                                  const wormedit::chart_document_t& chart,
-                                  const beat_interval_drag_t& drag) {
-    if (cache.timing.proposed_beat_bpm == drag.proposed_bpm &&
-        cache.timing.proposed_beat_event == drag.bpm_event) return;
-    cache.timing.proposed_beat_timing_index.reset();
-    cache.timing.proposed_beat_bpm = drag.proposed_bpm;
-    cache.timing.proposed_beat_event = drag.bpm_event;
+auto make_proposed_beat_chart(const wormedit::chart_document_t& chart,
+                               const beat_interval_drag_t& drag) -> std::optional<chart_document_t> {
     auto candidate = chart;
     const auto event = std::ranges::find(candidate.bpms, drag.bpm_event, &bpm_event_t::id);
-    if (event == candidate.bpms.end()) return;
+    if (event == candidate.bpms.end()) return std::nullopt;
     event->beats_per_minute = drag.proposed_bpm;
-    auto built = timing_index_t::from(candidate);
-    if (built.value) cache.timing.proposed_beat_timing_index = std::move(*built.value);
+    return std::optional{std::move(candidate)};
 }
 
 void build_beat_fit_positions_view(WormUiComposeView& compose,
@@ -528,8 +528,8 @@ void build_beat_fit_positions_view(WormUiComposeView& compose,
                                 const editor_interaction_state_t& interaction,
                                 const beat_interval_drag_t& drag) {
     const auto& timing = *cache.timing.marker_timing_index;
-    compose.beat_fit_chart_row = (cache.scene.index->measures).row_of(drag.beat).value_or(0);
-    const auto anchor_row = (cache.scene.index->measures).row_of(drag.original_bpm_position);
+    compose.beat_fit_chart_row = (cache.scene.index.value()->measures).row_of(drag.beat).value_or(0);
+    const auto anchor_row = (cache.scene.index.value()->measures).row_of(drag.original_bpm_position);
     const auto pixels_per_row = compose.pixels_per_standard_measure /
                                 timing.divisions_per_standard_measure;
     const auto downscroll = compose_field_downscroll(chart);
@@ -563,13 +563,16 @@ void populate_beat_fit_overlay(frontend_workspace_view_t& flattened,
     populate_beat_fit_fields(compose, drag.payload);
     compose.beat_fit_onset_snap_active = cache.timing.beat_fit_onset_snapped;
     const auto chart = history.document.find_chart(drag.stamp.chart);
-    if (chart == nullptr || !cache.scene.index || !interaction ||
+    if (chart == nullptr || !cache.scene.index.value() || !interaction ||
         !cache.timing.marker_timing_index) return;
     build_beat_fit_positions_view(compose, cache, *chart, *interaction, drag.payload);
-    rebuild_beat_fit_timing_index(cache, *chart, drag.payload);
-    if (cache.timing.proposed_beat_timing_index)
+    auto make_candidate = std::bind_front(make_proposed_beat_chart, std::cref(*chart), std::cref(drag.payload));
+    static_cast<void>(cache.timing.proposed_beat_timing_index.get_or_build(
+        std::pair{drag.payload.proposed_bpm, drag.payload.bpm_event},
+        std::bind_front(build_proposed_timing_index<decltype(make_candidate)>, std::move(make_candidate))));
+    if (cache.timing.proposed_beat_timing_index.value())
         build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
-                                      *cache.timing.proposed_beat_timing_index, *interaction);
+                                      *cache.timing.proposed_beat_timing_index.value(), *interaction);
 }
 
 } // namespace
@@ -580,8 +583,7 @@ void populate_tap_apply_overlay(frontend_workspace_view_t& flattened,
     compose_scene_cache_t& cache, editor_interaction_state_t* interaction,
     const audio::waveform_analysis_result_t* analysis) {
     if (!cache.timing.tap_apply_proposal) {
-        cache.timing.tap_preview_binding.reset();
-        cache.timing.tap_preview_timing.reset();
+        cache.timing.tap_preview_timing = {};
         return;
     }
     if (!workspace.selected_chart || !interaction ||
@@ -589,23 +591,16 @@ void populate_tap_apply_overlay(frontend_workspace_view_t& flattened,
     const auto& proposal = *cache.timing.tap_apply_proposal;
     if (!proposal.stamp.is_current(history.document, *workspace.selected_chart,
             document_identity_policy_t::revision_only)) return;
-    const auto& bound = cache.timing.tap_preview_binding;
-    if (!bound || std::tie(bound->stamp.chart, bound->stamp.document.revision, bound->payload.beats_per_minute,
-                           bound->payload.beat_zero_audio_offset_seconds) !=
-                  std::tie(proposal.stamp.chart, proposal.stamp.document.revision, proposal.payload.beats_per_minute,
-                           proposal.payload.beat_zero_audio_offset_seconds)) {
-        cache.timing.tap_preview_binding = proposal;
-        cache.timing.tap_preview_timing.reset();
-        const auto candidate = make_tap_timing_preview(history.document, proposal);
-        if (!candidate) return;
-        auto timing = timing_index_t::from(*candidate);
-        if (timing.value) cache.timing.tap_preview_timing = std::move(timing.value);
-    }
-    if (!cache.timing.tap_preview_timing) return;
+    auto make_candidate = std::bind_front(make_tap_timing_preview, std::cref(history.document), std::cref(proposal));
+    static_cast<void>(cache.timing.tap_preview_timing.get_or_build(
+        std::tuple{proposal.stamp.chart, proposal.stamp.document.revision,
+                   proposal.payload.beats_per_minute, proposal.payload.beat_zero_audio_offset_seconds},
+        std::bind_front(build_proposed_timing_index<decltype(make_candidate)>, std::move(make_candidate))));
+    if (!cache.timing.tap_preview_timing.value()) return;
     const auto chart = history.document.find_chart(proposal.stamp.chart);
     if (chart == nullptr) return;
     build_compose_proposed_grid_view(flattened, cache, *chart, *cache.timing.marker_timing_index,
-                                  *cache.timing.tap_preview_timing, *interaction);
+                                  *cache.timing.tap_preview_timing.value(), *interaction);
     const audio_offset_drag_t offset{.sample_rate = proposal.payload.sample_rate,
         .proposed_offset_seconds = proposal.payload.beat_zero_audio_offset_seconds};
     update_proposed_beat_zero(flattened, offset, analysis);

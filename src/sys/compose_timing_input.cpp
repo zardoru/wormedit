@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
@@ -90,8 +91,8 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     if (std::ranges::find(context.state.selected_objects, clicked) ==
         context.state.selected_objects.end())
         return "Select the timing marker before dragging it.";
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto target_row =
         index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels) : std::nullopt;
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
@@ -150,8 +151,8 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
         return stale_action_message("Kiai edit");
     if (context.environment.commands.project.timing_recipe.timing_locked)
         return "Timing is locked.";
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row =
         index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels) : std::nullopt;
     if (!row)
@@ -219,8 +220,8 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     if (!chart || !view) return "Speed edit is stale or invalid.";
     if (!context.is_timing_input_current(input))
         return stale_action_message("Speed edit");
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto speed =
         std::ranges::find(chart->speeds, object_id_t{input.object_id}, &speed_event_t::id);
     if (!index || speed == chart->speeds.end())
@@ -255,7 +256,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     }
     speed_span_edit_t edit;
     if (moved->begin != original.begin) {
-        edit.position = position_at_absolute_row(*index, moved->begin);
+        edit.position = (*index).position_at( moved->begin);
         if (!edit.position)
             return "Speed edit has no valid destination row.";
     }
@@ -314,16 +315,17 @@ auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
         return drag.diagnostics.empty() ? "SV recipe edit was rejected."
                                         : drag.diagnostics.front().message;
     }
-    auto revised = drag.value->revise(context.environment.document.history, *release,
-        context.environment.commands.project.timing_recipe.timing_locked);
+    auto revised = drag.value->revise(context.environment.document.history,
+        {.is_timing_locked = context.environment.commands.project.timing_recipe.timing_locked}, *release);
     if (!revised.value) {
         result.diagnostics = std::move(revised.diagnostics);
         return result.diagnostics.empty() ? "SV recipe edit was rejected."
                                           : result.diagnostics.front().message;
     }
-    const auto committed = apply_sv_recipe_range_drag(
+    const auto committed = apply_proposal(
         context.environment.document.history, *revised.value,
-        context.environment.commands.project.timing_recipe.timing_locked);
+        proposal_application_input_t{
+            .is_timing_locked = context.environment.commands.project.timing_recipe.timing_locked});
     result.accepted = committed.applied;
     result.document_changed = committed.applied;
     result.diagnostics = committed.diagnostics;

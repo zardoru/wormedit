@@ -128,12 +128,12 @@ TEST_CASE("Space range cache expiry remains separate from absent geometry",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     REQUIRE(dispatch_editor_action(history, state, space_range_selection_action_t{}));
-    REQUIRE(state.pending_space_range_selection.has_value());
-    if (missing) state.pending_space_range_selection->hit_index.reset();
+    REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
+    if (missing) state.gesture<wormedit::pending_space_range_selection_t>()->hit_index.reset();
     else {
-        auto cache = std::make_shared<editor_hit_test_index_t>(*state.pending_space_range_selection->hit_index);
+        auto cache = std::make_shared<editor_hit_test_index_t>(*state.gesture<wormedit::pending_space_range_selection_t>()->hit_index);
         ++cache->document_revision;
-        state.pending_space_range_selection->hit_index = std::move(cache);
+        state.gesture<wormedit::pending_space_range_selection_t>()->hit_index = std::move(cache);
     }
     const auto inspected = inspect_editor_interaction(history, state);
     const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected);
@@ -152,7 +152,7 @@ TEST_CASE("Playhead following rejects captured chart and revision expiry without
     auto state = make_state(history);
     const auto cursor = state.cursor;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     editor_measure_geometry_t geometry{chart.id, history.document.revision, &index};
     if (different_chart) geometry.chart = chart_id_t{99};
     else ++geometry.document_revision;
@@ -189,16 +189,16 @@ TEST_CASE("Latched cursor range begins one snap wide follows navigation and comm
     const space_range_selection_action_t toggle{.minimum_snap_width = true};
     const auto started = dispatch_editor_action(history, state, toggle);
     expect_cursor_gesture(started.accepted);
-    const auto& initial = *started.view->pending_space_range_selection;
+    const auto& initial = *started.view->gesture<wormedit::space_range_selection_preview_t>();
     expect_cursor_gesture(initial.first_row == 480 && initial.last_row == 720);
     expect_cursor_gesture(*initial.notes == std::vector<object_id_t>{object_id_t{501}});
     const auto moved = dispatch_editor_action(history, state,
         jump_edit_cursor_action_t{{measure_id_t{2}, 240}, history.document.revision});
     expect_cursor_gesture(moved.accepted);
-    expect_cursor_gesture(moved.view->pending_space_range_selection->first_row == 480);
-    expect_cursor_gesture(moved.view->pending_space_range_selection->last_row == 1200);
+    expect_cursor_gesture(moved.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 480);
+    expect_cursor_gesture(moved.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1200);
     const auto committed = dispatch_editor_action(history, state, toggle);
-    expect_cursor_gesture(committed.accepted && !state.pending_space_range_selection);
+    expect_cursor_gesture(committed.accepted && !state.gesture<wormedit::pending_space_range_selection_t>());
     expect_cursor_gesture(state.retained_canvas_selection_range == canvas_row_span_t{480, 1200});
     expect_cursor_gesture(state.selected_notes == std::vector<object_id_t>{object_id_t{501}, object_id_t{502}});
     expect_cursor_gesture(history.undo.empty());
@@ -215,7 +215,7 @@ TEST_CASE("Latched range commits without movement and Escape cancels its preview
     const auto before = state.retained_canvas_selection_range;
     expect_cursor_gesture(dispatch_editor_action(history, state, toggle).accepted);
     expect_cursor_gesture(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}).accepted);
-    expect_cursor_gesture(!state.pending_space_range_selection);
+    expect_cursor_gesture(!state.gesture<wormedit::pending_space_range_selection_t>());
     expect_cursor_gesture(state.retained_canvas_selection_range == before);
 }
 
@@ -225,17 +225,17 @@ TEST_CASE("Chart preview starts at the fractional cursor instead of its snapped 
     auto& chart = song.charts.front();
     chart.bpms.push_back({.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
                          .beats_per_minute = {120, 1}});
-    const auto timing = build_timing_index(chart);
-    expect_cursor_gesture(bool(timing));
+    const auto timing = timing_index_t::from(chart);
+    expect_cursor_gesture(bool(timing.value));
     const local_position_t cursor{measure_id_t{1}, 480};
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{44'100}});
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, 7.25) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor, 7.25) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{44'766}});
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, -7.25) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor, -7.25) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{43'434}});
     expect_cursor_gesture(std::holds_alternative<std::string>(sys::preview_cursor_frame(
-        chart, *timing.index, cursor, std::numeric_limits<double>::infinity())));
+        chart, *timing.value, cursor, std::numeric_limits<double>::infinity())));
 }
 
 TEST_CASE("Escape restoration returns the Compose cursor to its preplay position",
@@ -281,18 +281,18 @@ auto parallel_hold_result(bool release_newest_first)
     if (!apply(begin_lane_key_hold_gesture_action_t{lane_id_t{1}}) ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
         !apply(begin_lane_key_hold_gesture_action_t{lane_id_t{2}}) ||
-        !state.pending_hold || state.additional_keyboard_holds.size() != 1 ||
+        !state.hold() || state.additional_keyboard_holds().size() != 1 ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}))
         return std::nullopt;
     const auto first_release = release_newest_first ? lane_id_t{2} : lane_id_t{1};
     const auto second_release = release_newest_first ? lane_id_t{1} : lane_id_t{2};
     if (!apply(release_lane_key_hold_gesture_action_t{first_release}) ||
-        note_count(history) != 1 || !state.pending_hold ||
-        state.pending_hold->lane != second_release ||
+        note_count(history) != 1 || !state.hold() ||
+        state.hold()->lane != second_release ||
         !apply(move_edit_cursor_action_t{interaction_direction_t::forward}) ||
         !apply(release_lane_key_hold_gesture_action_t{second_release}) ||
-        note_count(history) != 2 || state.pending_hold ||
-        !state.additional_keyboard_holds.empty())
+        note_count(history) != 2 || state.hold() ||
+        !state.additional_keyboard_holds().empty())
         return std::nullopt;
     const auto* first = find_note(history, object_id_t{101});
     const auto* second = find_note(history, object_id_t{102});
@@ -470,7 +470,7 @@ TEST_CASE("BMS cursor crosses authored boundary and pages through virtual #999",
     CHECK(moved.view->pending_canvas_keyboard_holds.front().anchor_row == 959'040);
     CHECK(state.virtual_bms_cursor_row == 959'280);
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
-    CHECK_FALSE(state.pending_hold);
+    CHECK_FALSE(state.hold());
     REQUIRE(dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward}));
     CHECK(history.document.charts.front().measures.size() == 2);
@@ -570,7 +570,7 @@ TEST_CASE("virtual BMS lane key may move the cursor before confirming a hold",
     REQUIRE(state.virtual_bms_cursor_row);
     const auto end = *state.virtual_bms_cursor_row;
     CHECK(end == anchor + 240);
-    state.pending_hold.reset();
+    state.clear();
     const auto placed = dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{anchor, end, lane_id_t{1}});
     REQUIRE(placed);
@@ -643,7 +643,7 @@ TEST_CASE("virtual BMS hold preview shows transitive authored unions before comm
     CHECK(preview.adds_note);
     CHECK(history.document.charts.front().measures.size() == 2);
     CHECK(history.undo.empty());
-    state.pending_hold.reset();
+    state.clear();
     REQUIRE(dispatch_editor_action(
         history, state, place_virtual_bms_hold_action_t{1'920, 1'680, lane_id_t{1}}));
     REQUIRE(history.document.charts.front().measures[1].notes.size() == 1);
@@ -727,7 +727,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(empty);
     CHECK(state.selected_objects.empty());
     CHECK_FALSE(state.retained_selection_range);
@@ -744,7 +744,7 @@ TEST_CASE("area selection in virtual BMS space excludes authored boundary events
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(crossing);
     CHECK((state.selected_objects == std::vector<editor_selection_object_t>{
                                          {editor_selection_object_kind_t::bgm_event,
@@ -770,10 +770,10 @@ TEST_CASE("Space selection crosses into virtual BMS measures without authoring t
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
-    REQUIRE(moved.view->pending_space_range_selection);
-    CHECK(moved.view->pending_space_range_selection->first_row == 1'680);
-    CHECK(moved.view->pending_space_range_selection->last_row == 1'920);
-    CHECK(*moved.view->pending_space_range_selection->notes ==
+    REQUIRE(moved.view->gesture<wormedit::space_range_selection_preview_t>());
+    CHECK(moved.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 1'680);
+    CHECK(moved.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1'920);
+    CHECK(*moved.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{201}});
     const auto committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{});
@@ -1460,7 +1460,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
             begin_editor_area_selection_action_t{drag[0], drag[1], 100.0, 200.0,
                                                  editor_area_selection_mode_t::replace, true});
         REQUIRE(begun);
-        REQUIRE(begun.view->pending_editor_area_selection.has_value());
+        REQUIRE(static_cast<bool>(begun.view->gesture<wormedit::editor_area_selection_preview_t>()));
         CHECK(state.selected_notes.empty());
         const auto committed =
             dispatch_editor_action(history, state,
@@ -1468,13 +1468,13 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
                                        .x_pixels = drag[2],
                                        .y_pixels = drag[3],
                                        .pointer_captured = true,
-                                       .phase = wormedit::editor_gesture_phase_t::commit});
+                                       .operation = wormedit::proposal_operation_t::apply});
         REQUIRE(committed);
         CHECK(committed.view->selected_notes ==
               std::vector<object_id_t>{object_id_t{101}, object_id_t{102}});
         CHECK(committed.view->retained_selection_range ==
               position_span_t{{measure_id_t{1}, 240}, {measure_id_t{1}, 480}});
-        CHECK_FALSE(committed.view->pending_editor_area_selection.has_value());
+        CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::editor_area_selection_preview_t>()));
         CHECK_FALSE(committed.document_changed);
         CHECK(history.document.revision == 1);
     }
@@ -1495,7 +1495,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
                                           .x_pixels = 190.0,
                                           .y_pixels = 50.0,
                                           .pointer_captured = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     };
     const auto added = select_first(editor_area_selection_mode_t::add);
     REQUIRE(added);
@@ -1515,7 +1515,7 @@ TEST_CASE("area selection normalizes all drag directions and applies replace, ad
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 75.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(cleared);
     CHECK(state.selected_notes.empty());
 }
@@ -1560,10 +1560,10 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto armed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(armed);
-    REQUIRE(armed.view->pending_space_range_selection.has_value());
-    CHECK(armed.view->pending_space_range_selection->anchor ==
+    REQUIRE(static_cast<bool>(armed.view->gesture<wormedit::space_range_selection_preview_t>()));
+    CHECK(armed.view->gesture<wormedit::space_range_selection_preview_t>()->anchor ==
           local_position_t{measure_id_t{1}, 480});
-    CHECK(*armed.view->pending_space_range_selection->notes ==
+    CHECK(*armed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(history.document.revision == 1);
@@ -1571,11 +1571,11 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto extended = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(extended);
-    REQUIRE(extended.view->pending_space_range_selection.has_value());
+    REQUIRE(static_cast<bool>(extended.view->gesture<wormedit::space_range_selection_preview_t>()));
     CHECK(extended.view->cursor == local_position_t{measure_id_t{1}, 720});
-    CHECK(extended.view->pending_space_range_selection->first_row == 480);
-    CHECK(extended.view->pending_space_range_selection->last_row == 720);
-    CHECK(*extended.view->pending_space_range_selection->notes ==
+    CHECK(extended.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 480);
+    CHECK(extended.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 720);
+    CHECK(*extended.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
@@ -1586,7 +1586,7 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
           std::vector<object_id_t>{object_id_t{102}, object_id_t{105}});
     CHECK(committed.view->retained_selection_range ==
           position_span_t{{measure_id_t{1}, 480}, {measure_id_t{1}, 720}});
-    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::space_range_selection_preview_t>()));
     CHECK_FALSE(committed.document_changed);
     CHECK(history.document.revision == 1);
 
@@ -1599,15 +1599,15 @@ TEST_CASE("Space range selection excludes its ending row across measures and dra
     const auto reverse_armed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
     REQUIRE(reverse_armed);
-    CHECK(*reverse_armed.view->pending_space_range_selection->notes ==
+    CHECK(*reverse_armed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{});
     const auto reversed = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(reversed);
     CHECK(reversed.view->cursor == local_position_t{measure_id_t{2}, 0});
-    CHECK(reversed.view->pending_space_range_selection->first_row == 960);
-    CHECK(reversed.view->pending_space_range_selection->last_row == 1200);
-    CHECK(*reversed.view->pending_space_range_selection->notes ==
+    CHECK(reversed.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 960);
+    CHECK(reversed.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 1200);
+    CHECK(*reversed.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{102}, object_id_t{103}, object_id_t{105}});
     const auto reverse_committed = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
@@ -1746,18 +1746,18 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         begin_editor_area_selection_action_t{120.0, 47.0, 100.0, 200.0,
                                              editor_area_selection_mode_t::replace, true, scope});
     REQUIRE(area_begin);
-    REQUIRE(area_begin.view->pending_editor_area_selection.has_value());
-    REQUIRE(area_begin.view->pending_editor_area_selection->objects != nullptr);
+    REQUIRE(static_cast<bool>(area_begin.view->gesture<wormedit::editor_area_selection_preview_t>()));
+    REQUIRE(area_begin.view->gesture<wormedit::editor_area_selection_preview_t>()->objects != nullptr);
     const auto area_commit = dispatch_editor_action(
         history, state,
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(area_commit);
     CHECK(state.selected_notes.empty());
     CHECK(state.selected_objects.size() == 11);
-    CHECK_FALSE(area_commit.view->pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(area_commit.view->gesture<wormedit::editor_area_selection_preview_t>()));
 
     const editor_selection_scope_t bgm_only{.notes = false, .bgm = true};
     REQUIRE(dispatch_editor_action(
@@ -1769,7 +1769,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_objects.size() == 10);
     CHECK(std::ranges::none_of(state.selected_objects, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::bgm_event;
@@ -1783,7 +1783,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         update_editor_area_selection_action_t{.x_pixels = 180.0,
                                               .y_pixels = 49.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_objects.size() == 11);
 
     const auto before_cancel = state.selected_objects;
@@ -1800,8 +1800,8 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
     const auto moved = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(moved);
-    REQUIRE(moved.view->pending_space_range_selection.has_value());
-    const auto preview = moved.view->pending_space_range_selection->objects;
+    REQUIRE(static_cast<bool>(moved.view->gesture<wormedit::space_range_selection_preview_t>()));
+    const auto preview = moved.view->gesture<wormedit::space_range_selection_preview_t>()->objects;
     REQUIRE(preview != nullptr);
     CHECK(std::ranges::none_of(*preview, [](const auto& object) {
         return object.kind == editor_selection_object_kind_t::warp_event &&
@@ -1814,7 +1814,7 @@ TEST_CASE("area and Space selection address scoped BGM, timing, and BGA objects 
         return object.kind == editor_selection_object_kind_t::bgm_event &&
                object.id == object_id_t{201};
     }));
-    CHECK_FALSE(committed.view->pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(committed.view->gesture<wormedit::space_range_selection_preview_t>()));
 }
 
 TEST_CASE("typed object selection validates BGM events and synchronizes note selection",
@@ -1961,21 +1961,21 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
         history, state, cycle_edit_snap_action_t{interaction_direction_t::forward});
     REQUIRE(finer_snap);
     CHECK(finer_snap.view->active_snap_denominator == 8);
-    CHECK(finer_snap.view->pending_space_range_selection->anchor ==
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->anchor ==
           local_position_t{measure_id_t{1}, 240});
-    CHECK(finer_snap.view->pending_space_range_selection->first_row == 240);
-    CHECK(finer_snap.view->pending_space_range_selection->last_row == 240);
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->first_row == 240);
+    CHECK(finer_snap.view->gesture<wormedit::space_range_selection_preview_t>()->last_row == 240);
     const auto first_step = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(first_step);
     CHECK(first_step.view->cursor == local_position_t{measure_id_t{1}, 360});
-    CHECK(*first_step.view->pending_space_range_selection->notes ==
+    CHECK(*first_step.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{101}});
     const auto second_step = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(second_step);
     CHECK(second_step.view->cursor == local_position_t{measure_id_t{1}, 480});
-    CHECK(*second_step.view->pending_space_range_selection->notes ==
+    CHECK(*second_step.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{101}});
     const auto added = dispatch_editor_action(
         history, state, space_range_selection_action_t{editor_area_selection_mode_t::replace});
@@ -2000,7 +2000,7 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     const auto cancelled = dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2014,10 +2014,10 @@ TEST_CASE("Space range selection supports add and toggle and cancels safely",
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
-    CHECK_FALSE(state.pending_space_range_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
 
@@ -2053,8 +2053,8 @@ TEST_CASE("Space range selection uses span indexes for a sparse 50k-note chart",
     auto state = std::move(*setup.state);
     const auto selected = advance_sparse_space_selection(history, state);
     REQUIRE(selected);
-    REQUIRE(selected.view->pending_space_range_selection.has_value());
-    CHECK(*selected.view->pending_space_range_selection->notes ==
+    REQUIRE(static_cast<bool>(selected.view->gesture<wormedit::space_range_selection_preview_t>()));
+    CHECK(*selected.view->gesture<wormedit::space_range_selection_preview_t>()->notes ==
           std::vector<object_id_t>{object_id_t{13'000}});
     CHECK(state.selected_notes.empty());
 }
@@ -2098,7 +2098,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = *body_end,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(selected_body);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(history.document.revision == 1);
@@ -2117,7 +2117,7 @@ TEST_CASE("area selection maps through zoom and scroll and intersects cross-meas
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = *tail_y,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(selected_tail);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 }
@@ -2143,7 +2143,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
                                              editor_area_selection_mode_t::replace, false});
     CHECK_FALSE(failed_begin);
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -2152,7 +2152,7 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
     const auto capture_lost = dispatch_editor_action(
         history, state, update_editor_area_selection_action_t{290.0, 100.0, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2164,9 +2164,9 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         update_editor_area_selection_action_t{.x_pixels = 290.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = false,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(capture_lost_on_release);
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
 
     REQUIRE(dispatch_editor_action(
@@ -2181,15 +2181,15 @@ TEST_CASE("area selection capture loss cancels and stale revisions preserve comm
         update_editor_area_selection_action_t{.x_pixels = 290.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
     REQUIRE(dispatch_editor_action(history, state, cancel_editor_area_selection_action_t{}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
-    CHECK_FALSE(state.pending_editor_area_selection.has_value());
+    CHECK_FALSE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
 }
 
 TEST_CASE("area selection narrows a 50k-note query to a sparse row interval",
@@ -2244,13 +2244,13 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
     REQUIRE(preview);
-    REQUIRE(preview.view->pending_note_paint_gesture.has_value());
-    REQUIRE(preview.view->pending_note_paint_gesture->targets != nullptr);
-    CHECK(preview.view->pending_note_paint_gesture->targets->size() == 3);
+    REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>() != nullptr);
+    REQUIRE(preview.view->gesture<note_paint_gesture_preview_t>()->targets != nullptr);
+    CHECK(preview.view->gesture<note_paint_gesture_preview_t>()->targets->size() == 3);
     REQUIRE(dispatch_editor_action(
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true}));
-    CHECK(state.pending_note_paint_gesture->targets->size() == 3);
+    CHECK(state.gesture<wormedit::pending_note_paint_gesture_t>()->targets->size() == 3);
     CHECK(note_count(history) == 0);
     CHECK(history.document.revision == 1);
 
@@ -2259,7 +2259,7 @@ TEST_CASE("note paint interpolates snap rows, suppresses duplicates, and commits
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 480}, true});
     REQUIRE(committed);
     CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     CHECK(note_count(history) == 3);
     CHECK(history.undo.size() == 1);
     CHECK(history.document.charts.front().measures.front().notes[0].position.row == 0);
@@ -2342,7 +2342,7 @@ TEST_CASE("note paint rejects a sound that is not an existing sample and changes
         const auto rejected = paint_stroke(history, state, bad);
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_id));
-        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+        CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
         CHECK(history.document.revision == revision);
         CHECK(note_count(history) == 0);
         CHECK(history.undo.empty());
@@ -2360,12 +2360,12 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
                 history, state,
                 begin_editor_area_selection_action_t{110.0, 95.0, 100.0, 200.0,
                                                      editor_area_selection_mode_t::replace, true}));
-            REQUIRE(state.pending_editor_area_selection.has_value());
+            REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()));
         } else {
             REQUIRE(dispatch_editor_action(
                 history, state,
                 space_range_selection_action_t{editor_area_selection_mode_t::replace}));
-            REQUIRE(state.pending_space_range_selection.has_value());
+            REQUIRE(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()));
         }
 
         const auto rejected = dispatch_editor_action(
@@ -2373,9 +2373,9 @@ TEST_CASE("note painting rejects active area and Space range selection gestures"
             begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
         CHECK_FALSE(rejected);
         CHECK(has_code(rejected.diagnostics, diagnostic_code_t::invalid_hold));
-        CHECK_FALSE(state.pending_note_paint_gesture.has_value());
-        CHECK(state.pending_editor_area_selection.has_value() == (selection_kind == 0));
-        CHECK(state.pending_space_range_selection.has_value() == (selection_kind == 1));
+        CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
+        CHECK(static_cast<bool>(state.gesture<wormedit::pending_editor_area_selection_t>()) == (selection_kind == 0));
+        CHECK(static_cast<bool>(state.gesture<wormedit::pending_space_range_selection_t>()) == (selection_kind == 1));
         CHECK(note_count(history) == 0);
     }
 }
@@ -2410,12 +2410,12 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
     require_layer_brush(dispatch_editor_action(
         history, state,
         begin_semantic_layer_paint_gesture_action_t{layer_id_t{7}, object_id_t{101}, true}));
-    require_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    require_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
     require_layer_brush(dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{102}, true}));
-    check_layer_brush(state.pending_semantic_layer_paint_gesture->notes->size() == 2);
+    check_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>()->notes->size() == 2);
     check_layer_brush(history.document.revision == 1);
 
     const auto committed =
@@ -2423,10 +2423,10 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
                                update_semantic_layer_paint_gesture_action_t{
                                    .note = object_id_t{},
                                    .pointer_captured = true,
-                                   .phase = wormedit::editor_gesture_phase_t::commit});
+                                   .operation = wormedit::proposal_operation_t::apply});
     require_layer_brush(committed);
     check_layer_brush(committed.document_changed);
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     check_layer_brush(history.undo.size() == 1);
     check_layer_brush(find_note(history, object_id_t{101})->semantic_layers == std::vector{layer_id_t{7}});
     check_layer_brush(find_note(history, object_id_t{102})->semantic_layers == std::vector{layer_id_t{7}});
@@ -2438,7 +2438,7 @@ TEST_CASE("semantic-layer paint visits mixed notes once and commits one undoable
                                update_semantic_layer_paint_gesture_action_t{
                                    .note = object_id_t{102},
                                    .pointer_captured = true,
-                                   .phase = wormedit::editor_gesture_phase_t::commit});
+                                   .operation = wormedit::proposal_operation_t::apply});
     require_layer_brush(unchanged);
     check_no_layer_brush(unchanged.document_changed);
     check_layer_brush(history.undo.size() == 1);
@@ -2470,7 +2470,7 @@ TEST_CASE("semantic-layer remove preserves nonmembers and repeated strokes creat
         require_layer_brush(
             dispatch_editor_action(history, state,
                                    update_semantic_layer_paint_gesture_action_t{
-                                       .phase = wormedit::editor_gesture_phase_t::commit}));
+                                       .operation = wormedit::proposal_operation_t::apply}));
         check_layer_brush(history.undo.size() == 1);
         check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
         check_layer_brush(find_note(history, object_id_t{102})->semantic_layers.empty());
@@ -2508,7 +2508,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
     check_layer_brush(has_code(locked.diagnostics, diagnostic_code_t::invalid_id));
     check_layer_brush(history.document.revision == 1);
     check_layer_brush(history.undo.empty());
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture);
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>());
 
     require_layer_brush(dispatch_editor_action(
         history, state,
@@ -2516,7 +2516,7 @@ TEST_CASE("semantic-layer paint requires an editable visible layer and cancels o
     const auto capture_lost = dispatch_editor_action(
         history, state, update_semantic_layer_paint_gesture_action_t{object_id_t{101}, false});
     require_layer_brush(capture_lost);
-    check_no_layer_brush(state.pending_semantic_layer_paint_gesture.has_value());
+    check_no_layer_brush(state.gesture<wormedit::pending_semantic_layer_paint_gesture_t>() != nullptr);
     check_layer_brush(history.undo.empty());
     check_layer_brush(find_note(history, object_id_t{101})->semantic_layers.empty());
 }
@@ -2569,7 +2569,7 @@ TEST_CASE("single-cell paint toggles taps and rejects hold collisions atomically
     CHECK(colliding_history.document.revision == 1);
     CHECK(colliding_history.undo.empty());
     CHECK(note_count(colliding_history) == 1);
-    CHECK_FALSE(colliding_state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(colliding_state.gesture<wormedit::pending_note_paint_gesture_t>());
 }
 
 TEST_CASE("paint gestures cancel on capture loss and leave previews intact on cap rejection",
@@ -2590,8 +2590,8 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 50'000}, true});
     CHECK_FALSE(capped);
     CHECK(has_code(capped.diagnostics, diagnostic_code_t::invalid_resolution));
-    REQUIRE(state.pending_note_paint_gesture.has_value());
-    CHECK(state.pending_note_paint_gesture->targets->size() == 1);
+    REQUIRE(state.gesture<wormedit::pending_note_paint_gesture_t>() != nullptr);
+    CHECK(state.gesture<wormedit::pending_note_paint_gesture_t>()->targets->size() == 1);
     CHECK(note_count(history) == 0);
     CHECK(history.document.revision == 1);
 
@@ -2599,14 +2599,14 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
         history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     REQUIRE(dispatch_editor_action(
         history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true}));
     REQUIRE(dispatch_editor_action(
         history, state,
         cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost}));
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -2623,10 +2623,10 @@ TEST_CASE("paint gestures cancel on capture loss and leave previews intact on ca
     CHECK(history.document.revision == 2);
     CHECK(note_count(history) == 0);
     CHECK(history.undo.size() == 1);
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
     REQUIRE(dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::escape}));
-    CHECK_FALSE(state.pending_note_paint_gesture.has_value());
+    CHECK_FALSE(state.gesture<wormedit::pending_note_paint_gesture_t>());
 }
 
 TEST_CASE("hit-test buckets handle dense measures and 50k notes within a discrete safety ceiling",
@@ -2959,14 +2959,14 @@ TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its scree
     REQUIRE(setup);
     auto state = *setup.state;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     for (const double pixels : {48.0, 7.3, 0.4, 13.9, 5.55}) {
         const auto scrolled = dispatch_editor_action(
             history, state,
             scroll_editor_view_action_t{pixels, 48.0, editor_field_scroll_direction_t::up});
         REQUIRE(scrolled);
-        const auto drawn_row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+        const auto drawn_row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
         CHECK(drawn_row * pixels_per_row - state.viewport_scroll_pixels == Catch::Approx(48.0).margin(0.01));
         CHECK(scrolled.view->cursor_subrow == state.cursor_subrow);
     }
@@ -3058,9 +3058,9 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     REQUIRE(begun);
     CHECK_FALSE(begun.document_changed);
     REQUIRE(begun.view.has_value());
-    REQUIRE(begun.view->pending_hold.has_value());
-    CHECK(begun.view->pending_hold->position == local_position_t{measure_id_t{1}, 720});
-    CHECK(begun.view->pending_hold->lane == lane_id_t{1});
+    REQUIRE((begun.view->hold() != nullptr));
+    CHECK(begun.view->hold()->position == local_position_t{measure_id_t{1}, 720});
+    CHECK(begun.view->hold()->lane == lane_id_t{1});
     CHECK(history.document.revision == 1);
     CHECK(note_count(history) == 0);
 
@@ -3068,8 +3068,8 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
         history, state, update_hold_preview_action_t{{measure_id_t{2}, 241}});
     REQUIRE(previewed);
     CHECK_FALSE(previewed.document_changed);
-    REQUIRE(previewed.view->pending_hold->preview_end.has_value());
-    CHECK(*previewed.view->pending_hold->preview_end == local_position_t{measure_id_t{2}, 240});
+    REQUIRE(previewed.view->hold()->preview_end.has_value());
+    CHECK(*previewed.view->hold()->preview_end == local_position_t{measure_id_t{2}, 240});
     CHECK(note_count(history) == 0);
 
     const auto committed =
@@ -3077,7 +3077,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     REQUIRE(committed);
     CHECK(committed.document_changed);
     REQUIRE(committed.view.has_value());
-    CHECK_FALSE(committed.view->pending_hold.has_value());
+    CHECK_FALSE((committed.view->hold() != nullptr));
     CHECK(committed.view->cursor == local_position_t{measure_id_t{2}, 240});
     REQUIRE(note_count(history) == 1);
     const auto& hold = history.document.charts.front().measures.front().notes.front();
@@ -3096,7 +3096,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
     const auto merged =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{2}, 0}});
     REQUIRE(merged);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(history.document.revision == 3);
     CHECK(note_count(history) == 1);
     const auto* merged_note = find_note(history, object_id_t{102});
@@ -3106,7 +3106,7 @@ TEST_CASE("two-step hold placement previews, commits across measures, and cancel
 
     const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK_FALSE(cancelled.document_changed);
     CHECK(history.document.revision == 3);
 
@@ -3125,13 +3125,13 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     const auto reverse_preview = dispatch_editor_action(
         history, state, update_hold_preview_action_t{{measure_id_t{1}, 480}});
     REQUIRE(reverse_preview);
-    REQUIRE(reverse_preview.view->pending_hold->preview_end.has_value());
-    CHECK(*reverse_preview.view->pending_hold->preview_end ==
+    REQUIRE(reverse_preview.view->hold()->preview_end.has_value());
+    CHECK(*reverse_preview.view->hold()->preview_end ==
           local_position_t{measure_id_t{1}, 480});
-    REQUIRE(reverse_preview.view->pending_hold->placement_preview.has_value());
-    CHECK(reverse_preview.view->pending_hold->placement_preview->head ==
+    REQUIRE(reverse_preview.view->hold()->placement_preview.has_value());
+    CHECK(reverse_preview.view->hold()->placement_preview->head ==
           local_position_t{measure_id_t{1}, 480});
-    CHECK(reverse_preview.view->pending_hold->placement_preview->tail ==
+    CHECK(reverse_preview.view->hold()->placement_preview->tail ==
           local_position_t{measure_id_t{1}, 720});
     const auto reverse_commit =
         dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 480}});
@@ -3162,8 +3162,8 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
     const auto union_preview = dispatch_editor_action(
         union_history, union_state, update_hold_preview_action_t{{measure_id_t{1}, 720}});
     REQUIRE(union_preview);
-    REQUIRE(union_preview.view->pending_hold->placement_preview.has_value());
-    const auto& placement = *union_preview.view->pending_hold->placement_preview;
+    REQUIRE(union_preview.view->hold()->placement_preview.has_value());
+    const auto& placement = *union_preview.view->hold()->placement_preview;
     CHECK(placement.adds_note);
     CHECK(placement.head == local_position_t{measure_id_t{1}, 0});
     CHECK(placement.tail == local_position_t{measure_id_t{2}, 0});
@@ -3199,7 +3199,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
                                                  commit_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(conflict);
     CHECK(has_code(conflict.diagnostics, diagnostic_code_t::collision));
-    CHECK_FALSE(conflicting_state.pending_hold.has_value());
+    CHECK_FALSE((conflicting_state.hold() != nullptr));
     CHECK(conflicting_history.document.revision == 1);
     CHECK(note_count(conflicting_history) == 1);
 
@@ -3216,7 +3216,7 @@ TEST_CASE("hold placement moves its head before the fixed anchor and normalizes 
         metadata_history, metadata_state, begin_hold_action_t{{measure_id_t{1}, 480}});
     CHECK_FALSE(metadata_conflict);
     CHECK(has_code(metadata_conflict.diagnostics, diagnostic_code_t::collision));
-    CHECK_FALSE(metadata_state.pending_hold.has_value());
+    CHECK_FALSE((metadata_state.hold() != nullptr));
     CHECK(metadata_history.document.revision == 1);
 }
 
@@ -3230,7 +3230,7 @@ TEST_CASE("releasing a pending hold at its head places a tap", "[unit][core][int
 
     REQUIRE(committed);
     CHECK(committed.document_changed);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     REQUIRE(note_count(history) == 1);
     const auto& note = history.document.charts.front().measures.front().notes.front();
     CHECK(note.kind == note_kind_t::tap);
@@ -3246,9 +3246,9 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto pressed =
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
     REQUIRE(pressed);
-    REQUIRE(pressed.view->pending_hold.has_value());
-    CHECK(pressed.view->pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane);
-    CHECK(pressed.view->pending_hold->position == local_position_t{measure_id_t{1}, 720});
+    REQUIRE((pressed.view->hold() != nullptr));
+    CHECK(pressed.view->hold()->gesture_source == hold_gesture_source_t::keyboard_lane);
+    CHECK(pressed.view->hold()->position == local_position_t{measure_id_t{1}, 720});
     CHECK(history.document.revision == 1);
     CHECK(note_count(history) == 0);
 
@@ -3258,8 +3258,8 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto extended_again = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::forward});
     REQUIRE(extended_again);
-    REQUIRE(extended_again.view->pending_hold->preview_end.has_value());
-    CHECK(*extended_again.view->pending_hold->preview_end ==
+    REQUIRE(extended_again.view->hold()->preview_end.has_value());
+    CHECK(*extended_again.view->hold()->preview_end ==
           local_position_t{measure_id_t{2}, 240});
 
     const auto reversed = dispatch_editor_action(
@@ -3268,14 +3268,14 @@ TEST_CASE("lane-key hold gestures snap, extend, contract to a tap, and undo atom
     const auto reversed_again = dispatch_editor_action(
         history, state, move_edit_cursor_action_t{interaction_direction_t::backward});
     REQUIRE(reversed_again);
-    CHECK_FALSE(reversed_again.view->pending_hold->preview_end.has_value());
+    CHECK_FALSE(reversed_again.view->hold()->preview_end.has_value());
     const auto tap =
         dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
     REQUIRE(tap);
     CHECK(tap.document_changed);
     REQUIRE(note_count(history) == 1);
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     REQUIRE(undo_document_command(history));
     CHECK(note_count(history) == 0);
 
@@ -3337,8 +3337,8 @@ TEST_CASE("held lane key follows the cursor through multiple measures",
         second_page.view && second_page.view->cursor == local_position_t{measure_id_t{3}, 0},
         first_page.view && second_page.view &&
             second_page.view->viewport_scroll_pixels > first_page.view->viewport_scroll_pixels,
-        second_page.view && second_page.view->pending_hold &&
-            second_page.view->pending_hold->preview_end ==
+        second_page.view && second_page.view->hold() &&
+            second_page.view->hold()->preview_end ==
                 local_position_t{measure_id_t{3}, 0},
         committed.document_changed,
         note && note->end == local_position_t{measure_id_t{3}, 0},
@@ -3353,10 +3353,10 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
                                        .position = {measure_id_t{1}, 0},
                                        .beats_per_minute = {120, 1}});
     auto history = document_history_t::from(std::move(song));
-    const auto timing = build_timing_index(history.document.charts.front());
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(history.document.charts.front());
+    REQUIRE(timing.value);
     const auto start = sys::preview_cursor_frame(
-        history.document.charts.front(), *timing.index, {measure_id_t{1}, 480});
+        history.document.charts.front(), *timing.value, {measure_id_t{1}, 480});
     auto state = make_state(history);
     const auto followed = sys::follow_compose_playhead(history, state, 1'200.0, true);
     const auto cursor_after_follow = state.cursor;
@@ -3379,13 +3379,13 @@ TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edit
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     for (const double row : {600.3, 600.9, 601.5, 613.77, 700.01}) {
         REQUIRE(sys::follow_compose_playhead(history, state, row, true,
             {chart.id, history.document.revision, &index}, 0.5));
         const auto view = std::get<editor_interaction_view_model_t>(inspect_editor_interaction(history, state));
-        const auto cursor_row = static_cast<double>(*absolute_row(index, view.cursor)) + view.cursor_subrow;
+        const auto cursor_row = static_cast<double>(*index.row_of(view.cursor)) + view.cursor_subrow;
         CHECK(cursor_row * pixels_per_row - view.viewport_scroll_pixels ==
               Catch::Approx(200.0).margin(0.01));
     }
@@ -3400,7 +3400,7 @@ TEST_CASE("Starting playback keeps the cursor where it sits instead of re-anchor
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     // Navigate so the cursor rests well away from the 20 percent margin.
     REQUIRE(sys::follow_compose_playhead(history, state, 2'400.0, false,
         {chart.id, history.document.revision, &index}));
@@ -3468,13 +3468,13 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
     const auto moved = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
     const auto preview_valid = state.virtual_bms_cursor_row &&
-                               state.additional_keyboard_holds.size() == 1 && moved.view &&
+                               state.additional_keyboard_holds().size() == 1 && moved.view &&
                                moved.view->pending_canvas_keyboard_holds.size() == 2 &&
                                history.document.charts.front().measures.size() == 2;
     const auto back = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::backward, 2});
-    const auto returned_to_authored = !state.virtual_bms_cursor_row && state.pending_hold &&
-                                      !state.pending_hold->preview_canvas_row;
+    const auto returned_to_authored = !state.virtual_bms_cursor_row && state.hold() &&
+                                      !state.hold()->preview_canvas_row;
     const auto forward = dispatch_editor_action(
         history, state, page_edit_cursor_action_t{interaction_direction_t::forward, 2});
 
@@ -3482,7 +3482,7 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
         history, state, release_lane_key_hold_gesture_action_t{lane_id_t{1}});
     const auto first_committed = first.document_changed &&
                                  history.document.charts.front().measures.size() == 4 &&
-                                 state.pending_hold && state.pending_hold->lane == lane_id_t{2};
+                                 state.hold() && state.hold()->lane == lane_id_t{2};
     const auto second = dispatch_editor_action(
         history, state, release_lane_key_hold_gesture_action_t{lane_id_t{2}});
     const auto* first_note = find_note(history, object_id_t{101});
@@ -3490,7 +3490,7 @@ TEST_CASE("held BMS lane keys extend into unmaterialized measures and commit ind
     const std::array checks{
         bool(jump), bool(first_press), bool(second_press), bool(moved), preview_valid,
         bool(back), returned_to_authored, bool(forward), bool(first), first_committed,
-        bool(second), second.document_changed, !state.pending_hold,
+        bool(second), second.document_changed, !state.hold(),
         first_note && first_note->end && first_note->end->measure == measure_id_t{4},
         second_note && second_note->end && second_note->end->measure == measure_id_t{4},
     };
@@ -3595,7 +3595,7 @@ TEST_CASE("lane-key press removes an occupied ordinary tap or hold",
         dispatch_editor_action(history, state, begin_lane_key_hold_gesture_action_t{lane_id_t{1}});
     REQUIRE(pressed);
     CHECK(pressed.document_changed);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
     const auto released =
         dispatch_editor_action(history, state, release_lane_key_hold_gesture_action_t{});
@@ -3614,7 +3614,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, false});
     CHECK_FALSE(no_modifier);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
 
     REQUIRE(dispatch_editor_action(
         history, state,
@@ -3626,7 +3626,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         update_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, false, true});
     REQUIRE(modifier_lost);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     REQUIRE(dispatch_editor_action(
@@ -3636,7 +3636,7 @@ TEST_CASE("Alt pointer hold gestures cancel on modifier release or capture loss"
         history, state,
         release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, false});
     REQUIRE(capture_lost);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     REQUIRE(dispatch_editor_action(
@@ -3668,13 +3668,13 @@ TEST_CASE("hold input gestures retire stale previews and can cancel after focus 
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     const auto cancelled = dispatch_editor_action(
         history, state, cancel_editor_gesture_action_t{editor_gesture_cancel_reason_t::focus_lost});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 }
 
@@ -3715,7 +3715,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto committed = dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(committed.document_changed);
     CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
@@ -3738,7 +3738,7 @@ TEST_CASE("tail drag previews and commits the same exact duration delta for a se
     const auto collapsed = dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 0},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(collapsed);
     CHECK(find_note(history, object_id_t{101})->kind == note_kind_t::tap);
     CHECK(find_note(history, object_id_t{102})->end == local_position_t{measure_id_t{1}, 240});
@@ -3825,7 +3825,7 @@ TEST_CASE("selected note moves preview and commit one snapped translation",
     const auto committed = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(committed.document_changed);
     CHECK_FALSE(state.gesture<pending_note_move_gesture_t>() != nullptr);
@@ -3907,7 +3907,7 @@ TEST_CASE("selected note moves translate playable lane columns atomically",
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     REQUIRE(committed);
     CHECK(find_note(history, object_id_t{101})->lane == lane_id_t{2});
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{3});
@@ -4060,13 +4060,13 @@ TEST_CASE("hold previews reject stale document revisions and retire captures",
     CHECK_FALSE(stale);
     CHECK(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK(note_count(history) == 0);
 
     history.document.charts.front().lane_layouts.front().layout.lanes.clear();
     const auto cancelled = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     REQUIRE(cancelled);
-    CHECK_FALSE(state.pending_hold.has_value());
+    CHECK_FALSE((state.hold() != nullptr));
     CHECK_FALSE(cancelled.view.has_value());
     CHECK(has_code(cancelled.diagnostics, diagnostic_code_t::unknown_lane));
 }
@@ -4398,6 +4398,7 @@ TEST_CASE("lane assignment rejects selected and existing collisions atomically",
 
 TEST_CASE("lane assignment remains bounded for fifty thousand selected notes",
           "[unit][core][interaction][selection][lane][stress]") {
+    // Slow: exercises acceptance at the fixed 50,000-note interactive lane-assignment limit.
     auto song = make_song();
     auto& chart = song.charts.front();
     chart.divisions_per_standard_measure = 100'000;
@@ -4439,7 +4440,7 @@ auto resize_through_duration_gesture(document_history_t& history,
     return dispatch_editor_action(
         history, state,
         update_note_duration_gesture_action_t{.reference_end = end,
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
 }
 }
 
@@ -4555,7 +4556,7 @@ void commit_global_first_note(global_marquee_fixture_t& fixture,
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
 }
 } // namespace
 
@@ -4566,7 +4567,7 @@ TEST_CASE("global marquee explicitly permits starting in the rail while default 
         fixture.history, fixture.state,
         outside_field_marquee(editor_area_selection_mode_t::replace, false));
     CHECK_FALSE(strict);
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     commit_global_first_note(fixture, editor_area_selection_mode_t::replace);
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(fixture.history.document.revision == 1);
@@ -4596,7 +4597,7 @@ TEST_CASE("global marquee cancellation preserves the previous committed selectio
     REQUIRE(dispatch_editor_action(fixture.history, fixture.state,
                                     cancel_editor_area_selection_action_t{}));
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -4646,7 +4647,7 @@ TEST_CASE("global marquee selects only the intersected BGM lane using typed geom
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
     CHECK(fixture.state.selected_notes.empty());
@@ -4663,7 +4664,7 @@ TEST_CASE("global marquee in the timing rail excludes same-row BGM and playable 
         update_editor_area_selection_action_t{.x_pixels = 45.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bpm_event, object_id_t{203}}}));
     CHECK(fixture.state.selected_notes.empty());
@@ -4683,7 +4684,7 @@ TEST_CASE("stale global marquee geometry cannot alter the committed selection",
     CHECK_FALSE(rejected);
     test::check_stale_action_message(rejected.diagnostics, "Projected selection geometry");
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
-    CHECK_FALSE(fixture.state.pending_editor_area_selection);
+    CHECK_FALSE(fixture.state.gesture<wormedit::pending_editor_area_selection_t>());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -4711,7 +4712,7 @@ void check_global_projection_change_rejected(double editor_interaction_state_t::
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 55.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(fixture.state.selected_notes == std::vector<object_id_t>{object_id_t{102}});
     CHECK(fixture.history.undo.empty());
 }
@@ -4729,7 +4730,7 @@ TEST_CASE("global marquee keeps the captured source anchor when viewport scroll 
         update_editor_area_selection_action_t{.x_pixels = 355.0,
                                               .y_pixels = 31.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK((fixture.state.selected_objects == std::vector<editor_selection_object_t>{
         {editor_selection_object_kind_t::bgm_event, object_id_t{201}}}));
     CHECK(fixture.history.document.revision == 1);
@@ -4810,9 +4811,9 @@ auto note_paint_intent_stroke(document_history_t& history,
                               note_paint_intent_t intent,
                               std::optional<resource_id_t> sound = std::nullopt)
     -> editor_interaction_result_t {
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
-    const auto begin = position_at_absolute_row(index, begin_row);
-    const auto end = position_at_absolute_row(index, end_row);
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
+    const auto begin = index.position_at(begin_row);
+    const auto end = index.position_at(end_row);
     require_note_paint_intent(begin && end);
     const auto begun = dispatch_editor_action(history, state,
         begin_note_paint_gesture_action_t{lane_id_t{1}, *begin,
@@ -4877,13 +4878,13 @@ TEST_CASE("explicit draw and erase no-ops finish without a document edit",
                                                 note_paint_intent_t::draw);
     require_note_paint_intent(draw);
     check_note_paint_intent(!draw.document_changed);
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
     const auto erase = note_paint_intent_stroke(history, state, 0, 0,
                                                  note_paint_intent_t::erase);
     require_note_paint_intent(erase);
     check_note_paint_intent(!erase.document_changed);
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 1);
     check_note_paint_intent(history.document.revision == 1 && history.undo.empty());
 }
@@ -4913,7 +4914,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
                                           resource_id_t{7}, note_paint_intent_t::draw}));
     require_note_paint_intent(dispatch_editor_action(history, state,
         update_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, false}));
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 0 && history.undo.empty());
 
     require_note_paint_intent(dispatch_editor_action(history, state,
@@ -4930,7 +4931,7 @@ TEST_CASE("explicit note strokes cancel on capture loss or stale deleted sources
         end_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 240}, true});
     check_note_paint_intent(!stale);
     check_note_paint_intent(has_code(stale.diagnostics, diagnostic_code_t::invalid_hold));
-    check_note_paint_intent(!state.pending_note_paint_gesture);
+    check_note_paint_intent(!state.gesture<wormedit::pending_note_paint_gesture_t>());
     check_note_paint_intent(note_count(history) == 0 && history.undo.size() == 1);
 }
 
@@ -4959,12 +4960,12 @@ TEST_CASE("Hold and Roll palette use explicit duration gestures", "[interaction]
         auto state = make_state(history);
         require_note_kind_condition(arm_note_kind(history, state, kind));
         check_note_kind_condition(!(dispatch_editor_action(history, state, begin_note_paint_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}})));
-        check_note_kind_condition(!(state.pending_note_paint_gesture));
+        check_note_kind_condition(!(state.gesture<wormedit::pending_note_paint_gesture_t>()));
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         check_note_kind_condition(note_count(history) == 0);
-        require_note_kind_condition(state.pending_hold);
+        require_note_kind_condition(state.hold());
         check_note_kind_condition(!(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 0}})));
-        check_note_kind_condition(!state.pending_hold);
+        check_note_kind_condition(!state.hold());
         require_note_kind_condition(dispatch_editor_action(history, state, place_tap_action_t{{measure_id_t{1}, 0}}));
         require_note_kind_condition(dispatch_editor_action(history, state, commit_hold_action_t{{measure_id_t{1}, 240}}));
         require_note_kind_condition(note_count(history) == 1);
@@ -5201,7 +5202,7 @@ TEST_CASE("a rejected note move into a warp ends the gesture without a ghost",
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     CHECK_FALSE(released);
     CHECK_FALSE(state.gesture<pending_note_move_gesture_t>() != nullptr);
     CHECK(history.document.charts.front().measures.back().notes.front().position ==
@@ -5271,15 +5272,15 @@ TEST_CASE("DP hit testing and area selection keep stage-local lanes together",
         update_editor_area_selection_action_t{.x_pixels = 199.0,
                                               .y_pixels = 50.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     CHECK(state.selected_notes == std::vector<object_id_t>{object_id_t{201}, object_id_t{202}});
 }
 
 namespace {
 void check_exact_drag_preview(const editor_interaction_result_t& result) {
-    REQUIRE(result.view->pending_editor_area_selection);
-    CHECK(result.view->pending_editor_area_selection->top_pixels == 45.0);
-    CHECK(result.view->pending_editor_area_selection->bottom_pixels == 100.0);
+    REQUIRE(result.view->gesture<wormedit::editor_area_selection_preview_t>());
+    CHECK(result.view->gesture<wormedit::editor_area_selection_preview_t>()->top_pixels == 45.0);
+    CHECK(result.view->gesture<wormedit::editor_area_selection_preview_t>()->bottom_pixels == 100.0);
 }
 void check_retained_drag_range(const document_history_t& history,
                               const editor_interaction_state_t& state, bool snap) {
@@ -5308,7 +5309,7 @@ void check_retained_area_snap(bool snap) {
         update_editor_area_selection_action_t{.x_pixels = 190.0,
                                               .y_pixels = 100.0,
                                               .pointer_captured = true,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     check_retained_drag_range(history, state, snap);
 }
 }
@@ -5323,12 +5324,12 @@ TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
     REQUIRE(dispatch_editor_action(history, state,
         scroll_editor_view_action_t{200.3, 320, editor_field_scroll_direction_t::down}));
     REQUIRE(dispatch_editor_action(history, state, adjust_editor_zoom_action_t{1.5, 20}));
-    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    const auto row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
     CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
         state.viewport_scroll_pixels == Catch::Approx(80));
     CHECK(state.fixed_cursor_screen_y_pixels == 320);
@@ -5340,11 +5341,11 @@ TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
     REQUIRE(sys::follow_compose_playhead(history, state, 1234.5, false,
         {chart.id, history.document.revision, &index}));
-    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    const auto row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
     CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
         state.viewport_scroll_pixels == Catch::Approx(80));
     CHECK(state.fixed_cursor_screen_y_pixels == 320);
@@ -5391,8 +5392,8 @@ TEST_CASE("lane-key interaction captures sound and default layers for authored a
     if (virtual_measure) enter_sound_test_virtual_measure(history, state);
     require_lane_sound(dispatch_editor_action(history, state,
         begin_lane_key_hold_gesture_action_t{lane_id_t{1}, resource_id_t{7}}));
-    require_lane_sound(state.pending_hold);
-    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    require_lane_sound(state.hold());
+    check_lane_sound(state.hold()->sound == resource_id_t{7});
     check_lane_sound(history.undo.empty());
     if (hold) require_lane_sound(dispatch_editor_action(history, state,
         move_edit_cursor_action_t{interaction_direction_t::forward}));
@@ -5421,8 +5422,8 @@ TEST_CASE("alt-pointer hold captures the armed sound and default layers like a l
     require_lane_sound(dispatch_editor_action(history, state,
         begin_alt_pointer_hold_gesture_action_t{lane_id_t{1}, {measure_id_t{1}, 0}, true,
                                                 resource_id_t{7}}));
-    require_lane_sound(state.pending_hold);
-    check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+    require_lane_sound(state.hold());
+    check_lane_sound(state.hold()->sound == resource_id_t{7});
     const auto released = dispatch_editor_action(history, state,
         release_alt_pointer_hold_gesture_action_t{{measure_id_t{1}, 480}, true, true});
     require_lane_sound(released);
@@ -5443,8 +5444,8 @@ TEST_CASE("click placement captures the armed sound for taps and click-click hol
         place_tap_action_t{{measure_id_t{1}, 0}, resource_id_t{7}});
     require_lane_sound(placed);
     if (hold) {
-        require_lane_sound(state.pending_hold);
-        check_lane_sound(state.pending_hold->sound == resource_id_t{7});
+        require_lane_sound(state.hold());
+        check_lane_sound(state.hold()->sound == resource_id_t{7});
         placed = dispatch_editor_action(history, state,
             commit_hold_action_t{{measure_id_t{1}, 480}});
         require_lane_sound(placed);
@@ -5472,7 +5473,7 @@ TEST_CASE("lane-key interaction rejects absent and non-sample sounds without cha
     check_lane_sound_false(rejected);
     require_lane_sound_false(rejected.diagnostics.empty());
     check_lane_sound(rejected.diagnostics.front().message == "paint sound is not an existing sample resource");
-    check_lane_sound_false(state.pending_hold);
+    check_lane_sound_false(state.hold());
     check_lane_sound(history.document.revision == revision);
     check_lane_sound(history.undo.empty());
     check_lane_sound(note_count(history) == 0);
@@ -5599,7 +5600,7 @@ auto drag_note(document_history_t& history, editor_interaction_state_t& state, l
         history, state,
         update_note_move_gesture_action_t{.reference_position = to,
                                           .reference_lane = lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
 }
 } // namespace
 
@@ -5651,7 +5652,6 @@ auto t475_views_match(const editor_interaction_view_model_t& a,
         a.viewport_scroll_pixels == b.viewport_scroll_pixels &&
         a.viewport_height_pixels == b.viewport_height_pixels &&
         a.fixed_cursor_screen_y_pixels == b.fixed_cursor_screen_y_pixels &&
-        a.pending_hold == b.pending_hold && a.additional_keyboard_holds == b.additional_keyboard_holds &&
         a.active_gesture == b.active_gesture &&
         a.retained_selection_range == b.retained_selection_range &&
         a.retained_canvas_selection_range == b.retained_canvas_selection_range &&
@@ -5691,13 +5691,13 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     auto geometry = editor_measure_geometry_t{chart.id, history.document.revision, &index};
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 
     history.document.charts.front().lane_layouts.front().layout.lanes.front().name = "Renamed key";
     ++history.document.revision;
-    const auto layout_index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto layout_index = measure_index_t::from(chart).value();
     geometry = {chart.id, history.document.revision, &layout_index};
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 
@@ -5715,7 +5715,7 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
         update_hold_preview_action_t{{measure_id_t{2}, 240}})));
     const auto retained = inspect_editor_interaction(history, state, geometry);
     t475_require(std::holds_alternative<editor_interaction_view_model_t>(retained));
-    t475_check(std::get<editor_interaction_view_model_t>(retained).pending_hold.has_value());
+    t475_check(std::get<editor_interaction_view_model_t>(retained).hold() != nullptr);
     t475_check(t475_retained_matches_legacy(history, state, geometry));
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 }
@@ -5725,7 +5725,7 @@ TEST_CASE("missing and stale retained interaction geometry falls back to exact i
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const editor_measure_geometry_t valid{chart.id, history.document.revision, &index};
     t475_check(t475_retained_matches_legacy(history, state,
         {chart.id, history.document.revision, nullptr}));
@@ -5817,7 +5817,7 @@ void check_feedback_rejected_release(move_feedback_fixture_t& fixture, local_pos
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = target,
                                           .reference_lane = lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(!result);
     feedback_check(!result.document_changed);
     feedback_check(!fixture.state.gesture<pending_note_move_gesture_t>());
@@ -5871,7 +5871,7 @@ TEST_CASE("move conflict recovery commits final geometry with hold spacing and o
     const auto release = dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_require(release);
     feedback_check(release.document_changed);
     feedback_check(fixture.history.document.revision == fixture.original.revision + 1);
@@ -5982,7 +5982,7 @@ TEST_CASE("move geometry keeps exact integer rows above floating point precision
     feedback_require(dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, row + 100},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(fixture.history, object_id_t{101})->position.row == row + 100);
     feedback_check(find_note(fixture.history, object_id_t{101})->end->row == row + 104);
     feedback_check(fixture.history.undo.size() == 1);
@@ -6061,7 +6061,7 @@ TEST_CASE("move illegal lanes retain all geometry and recover before release",
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(fixture.history.undo.size() == 1);
 }
 
@@ -6114,7 +6114,7 @@ TEST_CASE("move warp conflicts remain accepted previews and clear on recovery",
     feedback_require(dispatch_editor_action(
         fixture.history, fixture.state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 720},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(fixture.history.undo.size() == 1);
 }
 
@@ -6131,7 +6131,7 @@ TEST_CASE("move release validates its actual final cell and outside chart cancel
         const auto release = dispatch_editor_action(
             fixture.history, fixture.state,
             update_note_move_gesture_action_t{.reference_position = {measure_id_t{99}, 0},
-                                              .phase = wormedit::editor_gesture_phase_t::commit});
+                                              .operation = wormedit::proposal_operation_t::apply});
         feedback_check(!release);
         feedback_check(!fixture.state.gesture<pending_note_move_gesture_t>());
         check_feedback_no_document_change(fixture);
@@ -6272,7 +6272,7 @@ TEST_CASE("BGM drag commits row delta and tail in exactly one undo step",
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     const auto* event = bgm_move_event(history, object_id_t{102});
     feedback_require(event);
     feedback_check(event->position == local_position_t{measure_id_t{2}, 0});
@@ -6310,7 +6310,7 @@ TEST_CASE("Move displacement allocates occupants to BGM and preserves hold tails
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 480});
     const auto* event = bgm_move_event(history, object_id_t{102});
     feedback_require(event);
@@ -6339,7 +6339,7 @@ TEST_CASE("A displacement with no permitted BGM capacity rejects the whole move"
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>());
     feedback_check(history.undo.empty() && feedback_document_bytes(history.document) == original);
 }
@@ -6372,7 +6372,7 @@ TEST_CASE("Dragging a retained BMSON hold into BGM shifts its source head and ta
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     for (const auto& diagnostic : released.diagnostics) UNSCOPED_INFO(diagnostic.message);
     feedback_require(released);
     const auto* event = bgm_move_event(history, object_id_t{101});
@@ -6410,7 +6410,7 @@ TEST_CASE("Selected-note BGM drop shifts the whole cohort and ignores playable o
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
                                           .reference_lane = {},
                                           .to_bgm = true,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     for (const auto& preview : pending.bgm_preview) {
         const auto* event = bgm_move_event(history, preview.note);
         feedback_require(event);
@@ -6497,7 +6497,7 @@ TEST_CASE("Mixed dragging from either kind translates heads and tails with one U
     feedback_require(dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = target,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 240});
     const auto* bgm = bgm_move_event(history, object_id_t{301});
     feedback_require(bgm);
@@ -6533,7 +6533,7 @@ TEST_CASE("Mixed dragging rejects either part's collision atomically and clears 
     feedback_check(!dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(feedback_document_bytes(history.document) == feedback_document_bytes(song));
     feedback_check(state.selected_objects == selected);
     feedback_check(history.undo.empty() && !state.gesture<pending_note_move_gesture_t>());
@@ -6552,7 +6552,7 @@ TEST_CASE("Mixed Y-lock preserves both rows while note lane changes remain avail
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{2},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_require(result);
     feedback_check(find_note(history, object_id_t{101})->position == local_position_t{measure_id_t{1}, 0});
     feedback_check(find_note(history, object_id_t{101})->lane == lane_id_t{from_bgm ? 1U : 2U});
@@ -6576,7 +6576,7 @@ TEST_CASE("Mixed drag vacates selected BGM rows together and rejects translated 
     const auto result = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(result.accepted != overflow);
     feedback_check(history.undo.size() == (overflow ? 0 : 1));
     feedback_check(!state.gesture<pending_note_move_gesture_t>());
@@ -6612,7 +6612,7 @@ TEST_CASE("Mixed BMSON drag preserves the retained stem point or rejects both pa
     const auto result = dispatch_editor_action(
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 240},
-                                          .phase = wormedit::editor_gesture_phase_t::commit});
+                                          .operation = wormedit::proposal_operation_t::apply});
     feedback_check(result.accepted != collision);
     feedback_check(history.undo.size() == (collision ? 0 : 1));
     const auto* moved = bgm_move_event(history, object_id_t{301});
@@ -6670,7 +6670,7 @@ TEST_CASE("Single BGM horizontal moves share the gesture and preserve tails unde
                                           .reference_lane = {},
                                           .to_bgm = false,
                                           .preferred_bgm_lane = target.preferred_bgm_lane,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     const auto* moved = bgm_move_event(history, object_id_t{301});
     feedback_check(moved->position == local_position_t{measure_id_t{1}, 480});
     feedback_check(moved->end == local_position_t{measure_id_t{1}, 720});
@@ -6700,7 +6700,7 @@ TEST_CASE("Single BGM collision previews the actual newly allocated lane before 
                                           .reference_lane = {},
                                           .to_bgm = false,
                                           .preferred_bgm_lane = object_id_t{300},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(bgm_move_event(history, object_id_t{301})->source_lane == lane);
     feedback_check(history.undo.size() == 1);
     feedback_require(undo_document_command(history));
@@ -6730,11 +6730,11 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
                                           .to_bgm = false,
                                           .preferred_bgm_lane = object_id_t{300},
                                           .virtual_bgm_row = requested_row,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+                                          .operation = wormedit::proposal_operation_t::apply}));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
     const auto* moved = bgm_move_event(history, object_id_t{301});
-    feedback_check(absolute_row(index, moved->position) == 2400);
-    feedback_check(absolute_row(index, *moved->end) == 2640);
+    feedback_check(index.row_of(moved->position) == 2400);
+    feedback_check(index.row_of(*moved->end) == 2640);
     feedback_check(history.document.charts.front().measures.size() == 3 && history.undo.size() == 1);
     feedback_require(undo_document_command(history));
     auto restored = history.document;
@@ -6764,7 +6764,7 @@ TEST_CASE("Single BGM invalid lane and virtual overflow reject atomically and re
                                           .to_bgm = false,
                                           .preferred_bgm_lane = invalid.preferred_bgm_lane,
                                           .virtual_bgm_row = invalid.virtual_bgm_row,
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>() && history.undo.empty());
     feedback_check(feedback_document_bytes(history.document) == original);
 }
@@ -6797,7 +6797,7 @@ TEST_CASE("Single stem BGM uses shared move policy and rejects virtual targets w
             .to_bgm = false,
             .preferred_bgm_lane = object_id_t{310},
             .virtual_bgm_row = virtual_target ? std::optional<std::uint64_t>{2400} : std::nullopt,
-            .phase = wormedit::editor_gesture_phase_t::commit});
+            .operation = wormedit::proposal_operation_t::apply});
     feedback_check(moved.accepted != virtual_target);
     const auto* event = bgm_move_event(history, object_id_t{301});
     feedback_check(event->source_lane == object_id_t{300} && event->sound_channel_event == object_id_t{402});
@@ -6824,7 +6824,7 @@ TEST_CASE("Single BGM cancel and stale release discard shared previews without m
                                               .to_bgm = false,
                                               .preferred_bgm_lane = object_id_t{300},
                                               .virtual_bgm_row = 2400,
-                                              .phase = wormedit::editor_gesture_phase_t::commit}));
+                                              .operation = wormedit::proposal_operation_t::apply}));
     } else feedback_require(dispatch_editor_action(history, state, cancel_editor_gesture_action_t{}));
     feedback_check(!state.gesture<pending_note_move_gesture_t>() && history.undo.empty());
     feedback_check(history.document.charts.front().measures.size() == 2);
@@ -7065,7 +7065,7 @@ TEST_CASE("Scratch presentation selected drag translates adjacent visual columns
         history, state,
         update_note_move_gesture_action_t{.reference_position = {measure_id_t{2}, 0},
                                           .reference_lane = lane_id_t{1},
-                                          .phase = wormedit::editor_gesture_phase_t::commit}));
+                                          .operation = wormedit::proposal_operation_t::apply}));
     check_scratch_move_commit(history);
 }
 
@@ -7128,7 +7128,7 @@ TEST_CASE("fixed cursor snapping preserves fractional position across shortened 
     REQUIRE(setup);
     auto state = *setup.state;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     state.pixels_per_standard_measure = 960.0;
     state.fixed_cursor_screen_y_pixels = 100.0;
     state.viewport_scroll_pixels = 258.0; // Raw row 358: ten rows after the third head.
@@ -7341,7 +7341,7 @@ TEST_CASE("pointer gesture clocks preserve equal-revision project replacement an
     CHECK(original.active_gesture == replacement.active_gesture);
     const auto applied = dispatch_editor_action(history, original,
         update_note_duration_gesture_action_t{.reference_end = {measure_id_t{1}, 480},
-                                              .phase = editor_gesture_phase_t::commit});
+                                              .operation = proposal_operation_t::apply});
     check_replaced_project_duration(applied, history);
 }
 
@@ -7361,4 +7361,74 @@ TEST_CASE("interaction results retain view failures and command effects", "[core
     CHECK((cancelled.accepted && !cancelled.view &&
            cancelled.diagnostics.size() == failed.diagnostics.size() &&
            cancelled.diagnostics.front().message == failed.diagnostics.front().message));
+}
+
+TEST_CASE("virtual cursor action capabilities preserve navigation selection and zoom",
+          "[core][interaction][action-capabilities]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    const std::array<editor_interaction_action_t, 8> actions{
+        move_edit_cursor_action_t{}, page_edit_cursor_action_t{},
+        select_bms_canvas_measure_action_t{3}, cycle_edit_snap_action_t{},
+        set_edit_snap_action_t{4}, select_editor_notes_action_t{},
+        select_editor_lane_action_t{lane_id_t{2}}, adjust_editor_zoom_action_t{1.25}};
+    for (const auto& action : actions) {
+        const auto result = dispatch_editor_action(history, state, action);
+        feedback_require(result);
+        feedback_check(result.view.has_value());
+        feedback_check(!(result.document_changed));
+        feedback_check(state.virtual_bms_cursor_row.has_value());
+    }
+    feedback_check(state.active_lane == lane_id_t{2});
+    feedback_check(history.undo.empty());
+    feedback_check(history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("virtual cursor rejects ordinary edits before normalizing kind or building a view",
+          "[core][interaction][action-capabilities]") {
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    state.armed_note_kind = note_kind_t::roll; // Not supported by BMS: view preparation would reset it.
+    state.active_snap_denominator = 0; // A view error must not replace the capability diagnostic.
+    const auto before = write_native_project(history.document);
+    const std::array<editor_interaction_action_t, 3> actions{
+        delete_editor_selection_action_t{}, place_tap_action_t{{measure_id_t{1}, 0}},
+        assign_selected_objects_to_lane_action_t{lane_id_t{2}}};
+    for (const auto& action : actions) {
+        const auto result = dispatch_editor_action(history, state, action);
+        feedback_check(!(result));
+        feedback_require(!(result.diagnostics.empty()));
+        feedback_check(result.diagnostics.front().message == "this edit requires a materialized cursor measure");
+        feedback_check(state.armed_note_kind == note_kind_t::roll);
+    }
+    feedback_check(write_native_project(history.document).value == before.value);
+    feedback_check(history.undo.empty());
+}
+
+TEST_CASE("virtual cursor delete permits either selection representation",
+          "[core][interaction][action-capabilities]") {
+    const auto typed_selection = GENERATE(false, true);
+    auto song = make_song();
+    song.charts.front().source_family = format_family_t::bms;
+    song.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 0}, .lane = lane_id_t{1}});
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.virtual_bms_cursor_row = 1920;
+    if (typed_selection)
+        state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    else
+        state.selected_notes = {object_id_t{101}};
+    const auto result = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    feedback_require(result);
+    feedback_check(result.document_changed);
+    feedback_check(note_count(history) == 0);
+    feedback_check(history.undo.size() == 1);
+    feedback_check(state.virtual_bms_cursor_row == 1920);
 }

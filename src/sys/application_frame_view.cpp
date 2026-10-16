@@ -67,7 +67,7 @@ auto stopped_playhead(const application_frame_projection_context_t& context)
     const auto* state = context.compose_interaction_state ? &*context.compose_interaction_state : nullptr;
     if (!state || !context.workspace.selected_chart || state->chart != *context.workspace.selected_chart ||
         state->virtual_bms_cursor_row || !cache.timing.marker_timing_index || !cache.scene.cached_measure_index ||
-        cache.scene.chart != state->chart)
+        cache.stamp().chart != state->chart)
         return std::nullopt;
     const auto at = cache.timing.marker_timing_index->query_seconds(*cache.scene.cached_measure_index, state->cursor);
     const auto end = cache.timing.marker_timing_index->query_seconds(cache.timing.marker_timing_index->total_rows);
@@ -94,15 +94,17 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
     const auto chart = context.history.document.find_chart(*context.workspace.selected_chart);
     if (chart == nullptr || chart->source_family != format_family_t::bmson)
         return {};
-    const auto timing_matches = context.compose_scene_cache.scene.chart == chart->id &&
-        context.compose_scene_cache.scene.revision == context.history.document.revision &&
+    const auto timing_matches = context.compose_scene_cache.stamp().chart == chart->id &&
+        context.compose_scene_cache.stamp().document.revision == context.history.document.revision &&
         context.compose_scene_cache.timing.marker_timing_index.has_value();
     const auto* timing = timing_matches ? &*context.compose_scene_cache.timing.marker_timing_index : nullptr;
     const auto bindings = context.audition_sources.bindings(context.history.document);
+    const auto& measures = context.history.indices(chart->id)->measures;
     return indexed_visible_stem_channels(context.compose_scene_cache.stems.stem_index,
         context.history.document, *chart, context.compose_interaction_state->cursor.measure,
         stem_window_measures(flattened.view.compose.viewport_height_pixels,
-                             flattened.view.compose.pixels_per_standard_measure), bindings, timing);
+                             flattened.view.compose.pixels_per_standard_measure), bindings, wormedit::sys::stem_geometry_indices_t{.timing = timing,
+            .measures = &measures});
 }
 #endif
 
@@ -124,13 +126,15 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
         WormUiBookmarkChooserRequest bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
+        const auto bookmark_indices = bookmark_chooser_indices_t::from(
+            context.history, context.model, bookmark_request.open, context.compose_scene_cache);
         flattened = frontend_workspace_view_t::from(
             context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.stepmania_export_policy, context.frame_arena,
             keysound_request.sort_by_id ? dock_sort_t::bms_id : dock_sort_t::natural_name,
             keysound_request, sound_usage_request, bookmark_request,
-            &context.compose_scene_cache.keysound_list_cache);
+            &context.compose_scene_cache.keysound_list_cache, bookmark_indices);
         flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.metronome_settings().enabled;
@@ -151,7 +155,7 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
             context.preview_state.playing(context.preview_session) ? context.preview_state.current_frame(context.preview_session)
             : context.audition_session.is_active() ? context.audition_session.timeline_frame()
                                                 : context.preview_state.resume_frame;
-        frame_transport.end_frame = context.preview_state.end_frame;
+        frame_transport.end_frame = context.preview_state.compiled.value().end_frame;
         frame_transport.sample_rate = audio::output_sample_rate;
         if (!frame_transport.playing && !frame_transport.paused) {
             if (const auto stopped = stopped_playhead(context)) {

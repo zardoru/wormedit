@@ -1162,11 +1162,11 @@ auto source_origin_seconds(long double milliseconds, fail_t&& fail) -> signed_ra
 
 template <typename fail_t>
 auto osu_measure_index(const chart_document_t& chart, fail_t&& fail) -> measure_index_t {
-    auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    auto built = measure_index_t::from(chart);
+    if (!built.has_value())
         fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
              "derived osu! measure geometry is invalid");
-    return std::get<measure_index_t>(std::move(built));
+    return std::move(built).value();
 }
 
 template <typename fail_t>
@@ -1227,8 +1227,8 @@ auto adjusted_osu_bpms(const chart_document_t& chart,
         if (!begin_position || (index + 1 < anchors.size() && !end_position))
             fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                  "timing point falls outside the derived measure timeline", begin.order);
-        const auto first = absolute_row(measures, *begin_position);
-        const auto last = end_position ? absolute_row(measures, *end_position)
+        const auto first = measures.row_of(*begin_position);
+        const auto last = end_position ? measures.row_of(*end_position)
                                        : std::optional<std::uint64_t>{measures.total_rows};
         if (!first || !last || *last <= *first) continue;
         const auto first_us = source_microseconds(begin.time, fail, begin.order);
@@ -1258,8 +1258,8 @@ void ensure_hold_tail_room(chart_document_t& chart, std::vector<measure_geometry
         const auto head = position_at(object.time);
         const auto tail = position_at(*object.end_time);
         if (!head || !tail) return false;
-        const auto first = absolute_row(index, *head);
-        const auto last = absolute_row(index, *tail);
+        const auto first = index.row_of(*head);
+        const auto last = index.row_of(*tail);
         return first && last && *first == *last && *first == index.total_rows - 1;
     });
     if (!needs_tail) return;
@@ -1281,10 +1281,10 @@ template <typename fail_t>
 auto positive_hold_end(const measure_index_t& measures, local_position_t head,
                        local_position_t tail, bool& quantized, fail_t&& fail, std::size_t order)
     -> local_position_t {
-    const auto begin = absolute_row(measures, head);
-    const auto end = absolute_row(measures, tail);
+    const auto begin = measures.row_of(head);
+    const auto end = measures.row_of(tail);
     if (begin && end && *end > *begin) return tail;
-    const auto next = begin ? position_at_absolute_row(measures, *begin + 1) : std::nullopt;
+    const auto next = begin ? measures.position_at(*begin + 1) : std::nullopt;
     if (!next)
         fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
              "positive hold has no bounded editable endpoint", order);
@@ -1298,7 +1298,7 @@ void append_initial_osu_bpm(chart_document_t& chart, const std::vector<timing_po
                             object_id_t&& take_object_id, fail_t&& fail) {
     const auto measures = osu_measure_index(chart, fail);
     const auto position = position_at(anchors.front().time);
-    const auto row = position ? absolute_row(measures, *position) : std::nullopt;
+    const auto row = position ? measures.row_of(*position) : std::nullopt;
     if (!row || *row == 0) return;
     const auto begin_us = source_microseconds(origin, fail);
     const auto end_us = source_microseconds(anchors.front().time, fail, anchors.front().order);
@@ -2353,7 +2353,7 @@ auto build_osu_bpm_timing(const chart_document_t& chart, const measure_index_t& 
     timing.events.reserve(chart.bpms.size());
     for (std::size_t index = 0; index < chart.bpms.size(); ++index) {
         const auto& event = chart.bpms[index];
-        const auto row = absolute_row(measures, event.position);
+        const auto row = measures.row_of(event.position);
         if (!row)
             fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                  "BPM event lies outside chart geometry", "bpms");
@@ -2426,7 +2426,7 @@ auto infer_osu_offset_ms(const chart_document_t& chart, const measure_index_t& m
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
             const auto source = retained.find(note.id.value);
-            const auto row = absolute_row(measures, note.position);
+            const auto row = measures.row_of(note.position);
             if (source != retained.end() && source->second.head && row)
                 baselines.push_back(source->second.head->value - relative_milliseconds_at(*row));
         }
@@ -2443,7 +2443,7 @@ auto collect_osu_scroll_events(const chart_document_t& chart, const measure_inde
     events.reserve(chart.scrolls.size());
     for (std::size_t index = 0; index < chart.scrolls.size(); ++index) {
         const auto& event = chart.scrolls[index];
-        const auto row = absolute_row(measures, event.position);
+        const auto row = measures.row_of(event.position);
         if (!row)
             fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                  "scroll event lies outside chart geometry", "scrolls");
@@ -2466,7 +2466,7 @@ auto collect_osu_kiai_events(const chart_document_t& chart, const measure_index_
     std::vector<positioned_kiai_write_t> events;
     events.reserve(chart.kiai.size());
     for (std::size_t index = 0; index < chart.kiai.size(); ++index) {
-        const auto row = absolute_row(measures, chart.kiai[index].position);
+        const auto row = measures.row_of(chart.kiai[index].position);
         if (!row)
             fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                  "kiai event lies outside chart geometry", "kiai");
@@ -2700,11 +2700,11 @@ template <typename fail_t>
 auto build_osu_measure_index(const chart_document_t& chart,
                              const osu_mania_write_options_t& options, fail_t&& fail)
     -> measure_index_t {
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    const auto built = measure_index_t::from(chart);
+    if (!built.has_value())
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "chart measure geometry is invalid", "measures");
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto& measures = built.value();
     if (chart.divisions_per_standard_measure == 0 || measures.total_rows == 0)
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "chart must have a positive row resolution", "divisions_per_standard_measure");
@@ -3065,7 +3065,7 @@ auto serialize_osu_note(const note_t& note, std::uint64_t begin_row, std::size_t
         rounded_hit_time, timestamp_at_row, fail);
     std::optional<osu_serialized_time_t> tail;
     if (note.end) {
-        const auto end_row = absolute_row(measures, *note.end);
+        const auto end_row = measures.row_of(*note.end);
         if (!end_row || *end_row < begin_row)
             fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                  "hold tail lies before its head or outside chart geometry", "HitObjects.end");
@@ -3120,7 +3120,7 @@ void append_osu_sample_event(std::vector<osu_output_event_t>& output, std::size_
                              std::uint32_t layer, std::int64_t volume, bool lazer_profile,
                              timestamp_t&& timestamp_at_row, account_t&& account_event,
                              fail_t&& fail) {
-    const auto row = absolute_row(measures, position);
+    const auto row = measures.row_of(position);
     if (!row)
         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
              "sample event lies outside chart geometry", "Events.Sample");
@@ -3216,7 +3216,7 @@ void append_osu_bga_events(std::vector<osu_output_event_t>& output, std::size_t&
                            timestamp_t&& timestamp_at_row, account_t&& account_event,
                            fail_t&& fail) {
     for (const auto& event : chart.bga_events) {
-        const auto row = absolute_row(measures, event.position);
+        const auto row = measures.row_of(event.position);
         if (!row)
             fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                  "visual event lies outside chart geometry", "Events");
@@ -3254,7 +3254,7 @@ auto serialize_osu_bookmarks(const chart_document_t& chart, const measure_index_
             if (!bookmark.position)
                 fail(osu_mania_write_diagnostic_code_t::invalid_document,
                      "beat bookmark is missing its chart position", "Editor.Bookmarks");
-            const auto row = absolute_row(measures, *bookmark.position);
+            const auto row = measures.row_of(*bookmark.position);
             if (!row)
                 fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                      "bookmark lies outside chart geometry", "Editor.Bookmarks");
@@ -3360,7 +3360,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                 if (!lane)
                     fail(osu_mania_write_diagnostic_code_t::invalid_layout,
                          "note refers to a lane outside the osu!mania layout", "HitObjects.lane");
-                const auto begin_row = absolute_row(measures, note.position);
+                const auto begin_row = measures.row_of(note.position);
                 if (!begin_row)
                     fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,
                          "note head lies outside chart geometry", "HitObjects.time");

@@ -5,6 +5,7 @@
 #include "sys/audio_fallback.h"
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
 
@@ -251,10 +252,10 @@ struct sound_picker_cache_t;
 struct keysound_list_cache_t {
     std::shared_ptr<sound_picker_cache_t> sound_picker;
     [[nodiscard]] auto projection_build_count() const noexcept -> std::size_t {
-        return projection_builds_;
+        return legacy_.build_count() + requested_.build_count();
     }
     [[nodiscard]] auto asset_index_build_count() const noexcept -> std::size_t {
-        return asset_index_builds_;
+        return asset_index_.build_count();
     }
 
 public:
@@ -267,6 +268,7 @@ public:
         std::uint64_t chart_id{};
         std::uintptr_t chart_address{};
         auto operator==(const identity_t&) const -> bool = default;
+        static auto from(const song_document_t& document, const chart_document_t* chart) -> identity_t;
     };
     struct legacy_key_t {
         identity_t identity;
@@ -274,6 +276,10 @@ public:
         dock_sort_t sort{dock_sort_t::natural_name};
         bool ids_available{true};
         auto operator==(const legacy_key_t&) const -> bool = default;
+    };
+    struct request_query_t {
+        identity_t identity;
+        const keysound_list_request_t& request;
     };
     struct request_key_t {
         identity_t identity;
@@ -293,20 +299,22 @@ public:
         std::size_t filter_layer_first{}, filter_layer_limit{64};
         dock_sort_t sort{dock_sort_t::natural_name};
         bool ids_available{true};
+        auto operator==(const request_key_t&) const -> bool = default;
+        auto operator==(const request_query_t& query) const -> bool;
+        static auto from(const request_query_t& query) -> request_key_t;
+        void assign(const request_query_t& query);
     };
 
 private:
     [[nodiscard]] auto asset_ids_for(const song_document_t& document)
         -> const std::unordered_set<std::uint64_t>&;
 
-    bool asset_index_valid_{};
-    identity_t asset_index_identity_;
-    std::unordered_set<std::uint64_t> audio_asset_ids_;
-    bool legacy_valid_{}, request_valid_{};
-    legacy_key_t legacy_key_;
-    request_key_t request_key_;
-    keysound_list_view_t legacy_result_, request_result_;
-    std::size_t projection_builds_{}, asset_index_builds_{};
+    static void build_asset_ids(const song_document_t& document,
+                                std::unordered_set<std::uint64_t>& ids);
+
+    keyed_cache_t<identity_t, std::unordered_set<std::uint64_t>> asset_index_;
+    keyed_cache_t<legacy_key_t, keysound_list_view_t> legacy_;
+    keyed_cache_t<request_key_t, keysound_list_view_t> requested_;
 };
 
 // All supported nonzero BMS WAV slots, filtered and projected in a bounded window.

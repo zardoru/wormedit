@@ -231,15 +231,6 @@ void append_report_rows(quantize_preview_t& preview,
     std::ranges::sort(preview.report_rows, report_order);
 }
 
-auto same_request_settings(const quantize_request_t& left, const quantize_request_t& right)
-    -> bool {
-    return left.divisions == right.divisions && left.space == right.space &&
-        left.tie == right.tie && left.collisions == right.collisions &&
-        left.holds == right.holds &&
-        left.allow_resolution_promotion == right.allow_resolution_promotion &&
-        left.selection == right.selection;
-}
-
 auto halfway_position(const detail::quantize_geometry_t& geometry, local_position_t position,
                       const quantize_request_t& request, std::uint64_t resolution,
                       std::uint64_t scale) -> bool {
@@ -518,7 +509,8 @@ auto preview_quantize_selection(const chart_document_t& chart,
 
 auto preview_quantize_selection(const chart_document_t& chart,
                                 const std::vector<object_id_t>& selected,
-                                quantize_request_t request) -> quantize_preview_t {
+                                quantize_request_t request,
+                                const measure_index_t* measures) -> quantize_preview_t {
     quantize_preview_t preview{.selected = request.selection
         ? request.selection->notes.size() + request.selection->bgm_events.size() : selected.size()};
     if (preview.selected == 0) {
@@ -530,9 +522,16 @@ auto preview_quantize_selection(const chart_document_t& chart,
     populate_status(preview, result);
     set_report_resolution(preview, chart, result);
 
-    const auto built_index = build_measure_index(chart);
-    if (std::holds_alternative<measure_index_t>(built_index)) {
-        const detail::quantize_geometry_t geometry{std::get<measure_index_t>(built_index)};
+    std::optional<measure_index_t> built_measures;
+    if (!measures) {
+        auto built = measure_index_t::from(chart);
+        if (built) {
+            built_measures = std::move(*built);
+            measures = &*built_measures;
+        }
+    }
+    if (measures) {
+        const detail::quantize_geometry_t geometry{*measures};
         if (request.selection) populate_typed_report(preview, chart, request, result, geometry);
         else populate_geometry_report(preview, chart, selected, request, result, geometry);
     }
@@ -546,20 +545,42 @@ auto quantize_preview_cache_t::get(const chart_document_t& chart, std::uint64_t 
                quantize_request_t{.divisions = snap_denominator});
 }
 
+auto quantize_preview_cache_t::key_t::from(const query_t& query) -> key_t {
+    key_t key;
+    key.assign(query);
+    return key;
+}
+
+void quantize_preview_cache_t::key_t::assign(const query_t& query) {
+    source = query.source;
+    chart = query.chart;
+    revision = query.revision;
+    selected = query.selected;
+    request = query.request;
+    request.objects.clear();
+}
+
+auto quantize_preview_cache_t::key_t::operator==(const query_t& query) const -> bool {
+    return source == query.source && chart == query.chart && revision == query.revision &&
+        selected == query.selected && request.divisions == query.request.divisions &&
+        request.space == query.request.space && request.tie == query.request.tie &&
+        request.collisions == query.request.collisions && request.holds == query.request.holds &&
+        request.allow_resolution_promotion == query.request.allow_resolution_promotion &&
+        request.selection == query.request.selection;
+}
+
+auto quantize_preview_cache_t::key_t::operator==(const key_t& key) const -> bool {
+    return *this == query_t{key.source, key.chart, key.revision, key.selected, key.request};
+}
+
 auto quantize_preview_cache_t::get(const chart_document_t& chart, std::uint64_t revision,
                                    const std::vector<object_id_t>& selected,
-                                   const quantize_request_t& request) -> const quantize_preview_t& {
-    if (!value_ || source_ != &chart || chart_ != chart.id || revision_ != revision ||
-        selected_ != selected || !same_request_settings(request_, request)) {
-        value_ = preview_quantize_selection(chart, selected, request);
-        source_ = &chart;
-        chart_ = chart.id;
-        revision_ = revision;
-        selected_ = selected;
-        request_ = request;
-        request_.objects.clear();
-    }
-    return *value_;
+                                   const quantize_request_t& request,
+                                   const measure_index_t* measures) -> const quantize_preview_t& {
+    return value_.get_or_build(query_t{&chart, chart.id, revision, selected, request},
+        [&chart, &selected, &request, measures] {
+            return preview_quantize_selection(chart, selected, request, measures);
+        });
 }
 
 } // namespace wormedit::sys

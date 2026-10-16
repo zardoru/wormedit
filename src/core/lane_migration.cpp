@@ -20,19 +20,6 @@ struct lane_migration_proposal_payload_t {
     lane_migration_report_t report;
 };
 
-class lane_migration_proposal_access_t {
-  public:
-    static void seal(const chart_stamp_t& stamp, lane_migration_proposal_t& proposal) {
-        proposal.canonical_ = std::make_shared<const lane_migration_proposal_payload_t>(
-            lane_migration_proposal_payload_t{
-                stamp, proposal.target, proposal.mapping, proposal.report});
-    }
-    static auto canonical(const lane_migration_proposal_t& proposal)
-        -> std::shared_ptr<const lane_migration_proposal_payload_t> {
-        return proposal.canonical_;
-    }
-};
-
 namespace {
 
 struct source_lane_rank_t {
@@ -150,8 +137,6 @@ auto changed_binding_count(const input_profile_t& before, const input_profile_t&
     };
     return missing(before.bindings, after.bindings) + missing(after.bindings, before.bindings);
 }
-
-
 
 auto is_preview_current(const chart_stamp_t& stamp, const lane_migration_proposal_t& proposal,
                          const lane_migration_proposal_payload_t& canonical) -> bool {
@@ -382,8 +367,6 @@ auto source_bms_note_channel(const note_t& note) -> std::optional<std::string_vi
     return std::nullopt;
 }
 
-
-
 void collect_branch_source_orders(const bms_control_node_t& node, bool inside_branch,
                                   std::unordered_set<std::size_t>& orders) {
     const auto in_branch = inside_branch || is_branch_scope(node.kind);
@@ -491,17 +474,30 @@ auto apply_mapping(const chart_document_t& source,
 auto lane_migration_proposal_t::propose(const song_document_t& song, std::uint64_t expected_revision,
     chart_id_t chart_id, lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested)
     -> lane_migration_proposal_outcome_t {
-    lane_migration_proposal_outcome_t result;
-    proposal_t<lane_migration_proposal_t> pending{.stamp = chart_stamp_t::from(song, chart_id)};
-    pending.stamp.document.revision = expected_revision;
-    auto& proposal = pending.payload;
-    proposal.target = std::move(target);
-    if (!pending.stamp.document.is_current(song)) {
+    auto stamp = chart_stamp_t::from(song, chart_id);
+    stamp.document.revision = expected_revision;
+    auto captured = revision_policy.validate(stamp.document, song, false);
+    if (!captured) {
+        lane_migration_proposal_outcome_t result;
         result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
-            stale_action_message("Lane migration"), pending.stamp, std::move(proposal.report)));
+            std::move(captured.error().diagnostic.message), stamp, {}));
         return result;
     }
-    const auto chart = song.find_chart(chart_id);
+    const lane_migration_proposal_t seed;
+    const proposal_read_scope_t<chart_stamp_t> scope{song, stamp};
+    return seed.revise(scope, std::move(target), requested);
+}
+
+auto lane_migration_proposal_t::revise(const proposal_read_scope_t<chart_stamp_t>& scope,
+    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested) const
+    -> lane_migration_proposal_outcome_t {
+    const auto& song = scope.source_document();
+    const auto& stamp = scope.captured_stamp();
+    lane_migration_proposal_outcome_t result;
+    proposal_t<lane_migration_proposal_t> pending{.stamp = stamp};
+    auto& proposal = pending.payload;
+    proposal.target = std::move(target);
+    const auto chart = song.find_chart(stamp.chart);
     if (chart == nullptr) {
         result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::chart_not_found,
             "The selected difficulty is no longer available.", pending.stamp, std::move(proposal.report)));
@@ -564,71 +560,45 @@ auto lane_migration_proposal_t::propose(const song_document_t& song, std::uint64
             "The migration cannot preserve a retained BMS branch channel identity.", pending.stamp, std::move(proposal.report)));
         return result;
     }
-    lane_migration_proposal_access_t::seal(pending.stamp, proposal);
+    proposal.canonical_ = std::make_shared<const lane_migration_proposal_payload_t>(
+        lane_migration_proposal_payload_t{pending.stamp, proposal.target, proposal.mapping, proposal.report});
     result.value = std::move(pending);
     return result;
 }
 
-auto lane_migration_proposal_t::revise(const chart_stamp_t& stamp, const song_document_t& song,
-    lane_input_profile_t target, std::span<const lane_migration_mapping_t> requested) const
-    -> lane_migration_proposal_outcome_t {
-    lane_migration_proposal_outcome_t result;
-    if (!canonical_ || !is_preview_current(stamp, *this, *canonical_)) {
-        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::invalid_mapping,
-            "Lane migration preview data was changed after proposal.", stamp, {}));
-        return result;
-    }
-    if (!stamp.document.is_current(song)) {
-        result.diagnostics.push_back(lane_migration_diagnostic_t::from(lane_migration_issue_t::stale_revision,
-            stale_action_message("Lane migration"), stamp, {}));
-        return result;
-    }
-    return propose(song, stamp.document.revision, stamp.chart, std::move(target), requested);
+auto lane_migration_proposal_t::validate_capture(const chart_stamp_t& stamp) const
+    -> proposal_apply_payload_t<lane_migration_issue_t> {
+    if (!canonical_ || !is_preview_current(stamp, *this, *canonical_))
+        return {.issue = lane_migration_issue_t::invalid_mapping,
+                .message = "Lane migration preview data was changed after proposal."};
+    return {};
 }
 
-auto apply_lane_migration(document_history_t& history,
-    const proposal_t<lane_migration_proposal_t>& pending, bool confirm_drop) -> lane_migration_apply_result_t {
-    const auto& proposal = pending.payload;
-    const auto canonical = lane_migration_proposal_access_t::canonical(proposal);
-    if (!canonical || !is_preview_current(pending.stamp, proposal, *canonical))
-        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = lane_migration_issue_t::invalid_mapping,
-             .message = "Lane migration preview data was changed after proposal."});
-    auto transaction = pending.transaction(history, "Lane migration");
-    if (!transaction.is_ready()) {
-        auto rejected = transaction.finish_without_commit();
-        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = lane_migration_issue_t::stale_revision,
-             .message = std::move(rejected.diagnostics.front().message)});
-    }
-    const auto verified = lane_migration_proposal_t::propose(history.document, canonical->stamp.document.revision,
-        canonical->stamp.chart, canonical->target, canonical->mapping);
-    if (!verified.value || !is_preview_current(verified.value->stamp, verified.value->payload, *canonical)) {
+auto lane_migration_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope, bool confirm_drop) const
+    -> diagnosed_t<std::optional<std::string>, proposal_apply_payload_t<lane_migration_issue_t>> {
+    auto& transaction = scope.transaction();
+    const auto& canonical = *canonical_;
+    const auto verified = revise(scope, canonical.target, canonical.mapping);
+    if (!verified.value || !is_preview_current(verified.value->stamp, verified.value->payload, canonical)) {
         const auto view = lane_migration_preview_view_t::from(verified);
-        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = view.diagnostic ? view.diagnostic->issue : lane_migration_issue_t::stale_revision,
-             .message = view.diagnostic && !view.diagnostic->message.empty()
-                ? view.diagnostic->message : stale_action_message("Lane migration")});
+        return {.diagnostics = {
+            .issue = view.diagnostic ? view.diagnostic->issue : lane_migration_issue_t::stale_revision,
+            .message = view.diagnostic && !view.diagnostic->message.empty()
+                ? view.diagnostic->message : stale_action_message(apply_policy.stale_label)}};
     }
-    if (!confirm_drop && (!proposal.report.dropped_notes.empty() || !proposal.report.dropped_sound_channel_events.empty()))
-        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = lane_migration_issue_t::drop_confirmation_required,
-             .message = "Confirm dropping the listed notes and retained sound events."});
-    if (proposal.report.collision_count != 0)
-        return lane_migration_apply_result_t::from(document_command_transaction_t::from(history).outcome,
-            {.issue = lane_migration_issue_t::lane_collision,
-             .message = "The mapping merges notes that overlap in the target lane."});
-    const auto chart = history.document.find_chart(canonical->stamp.chart);
+    if (!confirm_drop && (!report.dropped_notes.empty() || !report.dropped_sound_channel_events.empty()))
+        return {.diagnostics = {.issue = lane_migration_issue_t::drop_confirmation_required,
+            .message = "Confirm dropping the listed notes and retained sound events."}};
+    if (report.collision_count != 0)
+        return {.diagnostics = {.issue = lane_migration_issue_t::lane_collision,
+            .message = "The mapping merges notes that overlap in the target lane."}};
+    const auto chart = transaction.source_chart(canonical.stamp.chart);
     std::unordered_map<std::uint64_t, std::optional<lane_id_t>> mapping;
-    for (const auto& item : canonical->mapping) mapping.emplace(item.source_lane.value, item.target_lane);
-    auto& proposed = transaction.copy_document();
-    const auto updated = apply_mapping(*chart, mapping, canonical->target);
-    *proposed.find_chart(canonical->stamp.chart) = updated;
-    auto command = transaction.commit("Migrate chart lane profile");
-    const auto applied = static_cast<bool>(command);
-    return lane_migration_apply_result_t::from(std::move(command),
-        {.issue = applied ? lane_migration_issue_t::none : lane_migration_issue_t::invalid_mapping,
-         .message = applied ? std::string{} : "The migrated chart failed document validation."});
+    for (const auto& item : canonical.mapping) mapping.emplace(item.source_lane.value, item.target_lane);
+    auto& proposed = transaction.document();
+    const auto updated = apply_mapping(*chart, mapping, canonical.target);
+    *proposed.find_chart(canonical.stamp.chart) = updated;
+    return {.value = "Migrate chart lane profile"};
 }
 
 } // namespace wormedit

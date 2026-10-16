@@ -68,22 +68,22 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
           "[unit][audio][waveform][aligned]") {
     auto chart = chart_fixture();
     const auto waveform = pulse_waveform();
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const wormedit::audio::aligned_waveform_request_t request{.viewport_scroll_pixels = 0.0,
                                                               .viewport_height_pixels = 960.0,
                                                               .pixels_per_standard_measure = 960.0};
-    const auto base = wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, request);
+    const auto base = wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.value, request);
     REQUIRE(base);
     REQUIRE_FALSE(base->rows.empty());
     CHECK(loudest_row(base) >= 475.0);
     CHECK(loudest_row(base) <= 485.0);
 
     chart.beat_zero_audio_offset_seconds = {1, 2};
-    const auto shifted_timing = wormedit::build_timing_index(chart);
-    REQUIRE(shifted_timing);
+    const auto shifted_timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(shifted_timing.value);
     const auto shifted =
-        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *shifted_timing.index, request);
+        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *shifted_timing.value, request);
     REQUIRE(shifted);
     REQUIRE_FALSE(shifted->rows.empty());
     CHECK(loudest_row(shifted) >= 235.0);
@@ -93,7 +93,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     auto scrolled_request = request;
     scrolled_request.viewport_scroll_pixels = 240.0;
     const auto scrolled =
-        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, scrolled_request);
+        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.value, scrolled_request);
     REQUIRE(scrolled);
     REQUIRE_FALSE(scrolled->rows.empty());
     CHECK(loudest_row(scrolled) >= 235.0);
@@ -102,7 +102,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
     auto before_start = request;
     before_start.viewport_scroll_pixels = -192.0;
     const auto padded =
-        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, before_start);
+        wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.value, before_start);
     REQUIRE(padded);
     REQUIRE_FALSE(padded->rows.empty());
     CHECK(loudest_row(padded) >= 667.0);
@@ -110,7 +110,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
 
     auto too_tall = request;
     too_tall.viewport_height_pixels = 4'097.0;
-    check_projection_error(wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, too_tall), wormedit::failure_code_t::capacity_exceeded);
+    check_projection_error(wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.value, too_tall), wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("song overview retains source peaks while its window follows chart timing",
@@ -122,10 +122,10 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
         .viewport_height_pixels = 480.0,
         .pixels_per_standard_measure = 960.0,
     };
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const auto base =
-        wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, viewport, 200);
+        wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.value, viewport, 200);
     REQUIRE(base);
     REQUIRE(base->rows.size() == 200);
     const auto loudest = std::ranges::max_element(
@@ -138,10 +138,10 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     CHECK(*base->beat_zero_fraction == 0.0);
 
     chart.beat_zero_audio_offset_seconds = {1, 2};
-    const auto shifted_timing = wormedit::build_timing_index(chart);
-    REQUIRE(shifted_timing);
+    const auto shifted_timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(shifted_timing.value);
     const auto shifted =
-        wormedit::audio::waveform_overview_view_result_t::from(waveform, *shifted_timing.index, viewport, 200);
+        wormedit::audio::waveform_overview_view_result_t::from(waveform, *shifted_timing.value, viewport, 200);
     REQUIRE(shifted);
     CHECK(shifted->visible_begin_fraction == 0.25);
     CHECK(shifted->visible_end_fraction == 0.75);
@@ -150,21 +150,21 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     CHECK(shifted->rows[100].absolute_peak == base->rows[100].absolute_peak);
 
     chart.beat_zero_audio_offset_seconds = {-1, 2};
-    const auto early_timing = wormedit::build_timing_index(chart);
-    REQUIRE(early_timing);
+    const auto early_timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(early_timing.value);
     const auto early =
-        wormedit::audio::waveform_overview_view_result_t::from(waveform, *early_timing.index, viewport, 200);
+        wormedit::audio::waveform_overview_view_result_t::from(waveform, *early_timing.value, viewport, 200);
     REQUIRE(early);
     CHECK_FALSE(early->beat_zero_fraction);
 
     auto scrolled = viewport;
     scrolled.viewport_scroll_pixels = 240.0;
     const auto moved =
-        wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, scrolled, 200);
+        wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.value, scrolled, 200);
     REQUIRE(moved);
     CHECK(moved->visible_begin_fraction == 0.25);
     CHECK(moved->visible_end_fraction == 0.75);
-    check_projection_error(wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, viewport, 513), wormedit::failure_code_t::capacity_exceeded);
+    check_projection_error(wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.value, viewport, 513), wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewport",
@@ -176,36 +176,37 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     waveform.bins.resize(400);
     for (auto& bin : waveform.bins)
         bin.frame_count = 441;
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    // Quarter-scale pixels cover the same musical viewport and source cuts.
     const aligned_waveform_request_t viewport{.viewport_scroll_pixels = 0.0,
-                                              .viewport_height_pixels = 1440.0,
-                                              .pixels_per_standard_measure = 960.0};
+                                              .viewport_height_pixels = 360.0,
+                                              .pixels_per_standard_measure = 240.0};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
     const auto base = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
-                                               *timing.index, viewport, source);
+                                               *timing.value, viewport, source);
     REQUIRE(base);
     REQUIRE_FALSE(base->rows.empty());
     // The audio restarts at row 720, so the pulse (one second into the sample) sounds again two
     // beats after it: at row 1200, not where one linear run from the first point would put it.
-    CHECK(loudest_row(base) >= 1195.0);
-    CHECK(loudest_row(base) <= 1205.0);
+    CHECK(loudest_row(base) >= 298.75);
+    CHECK(loudest_row(base) <= 301.25);
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, chart.sound_channels.front(), source.sample_rate, source.total_frames);
     REQUIRE(slices);
     const auto cached = aligned_waveform_view_result_t::from(waveform, chart.sound_channels.front(),
-                                                 *timing.index, viewport, slices, source);
+                                                 *timing.value, viewport, slices, source);
     REQUIRE(cached);
     CHECK(cached->rows.size() == base->rows.size());
     CHECK(loudest_row(cached) == loudest_row(base));
 
     auto scrolled_viewport = viewport;
-    scrolled_viewport.viewport_scroll_pixels = 240.0;
+    scrolled_viewport.viewport_scroll_pixels = 60.0;
     const auto scrolled = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
-                                                   *timing.index, scrolled_viewport, source);
+                                                   *timing.value, scrolled_viewport, source);
     REQUIRE(scrolled);
-    CHECK(loudest_row(scrolled) >= 955.0);
-    CHECK(loudest_row(scrolled) <= 965.0);
+    CHECK(loudest_row(scrolled) >= 238.75);
+    CHECK(loudest_row(scrolled) <= 241.25);
 
     auto slower_chart = chart_fixture();
     slower_chart.bpms.push_back({.id = wormedit::object_id_t{999'999},
@@ -216,52 +217,52 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     longer_waveform.bins.resize(800);
     for (auto& bin : longer_waveform.bins)
         bin.frame_count = 441;
-    const auto slower_timing = wormedit::build_timing_index(slower_chart);
-    REQUIRE(slower_timing);
+    const auto slower_timing = wormedit::timing_index_t::from(slower_chart);
+    REQUIRE(slower_timing.value);
     const auto slowed = aligned_waveform_view_result_t::from(
-        longer_waveform, slower_chart, slower_chart.sound_channels.front(), *slower_timing.index,
+        longer_waveform, slower_chart, slower_chart.sound_channels.front(), *slower_timing.value,
         viewport,
         {.sample_rate = output_sample_rate, .total_frames = longer_waveform.total_frames});
     REQUIRE(slowed);
-    CHECK(loudest_row(slowed) >= 595.0);
-    CHECK(loudest_row(slowed) <= 605.0);
+    CHECK(loudest_row(slowed) >= 148.75);
+    CHECK(loudest_row(slowed) <= 151.25);
 
     chart.beat_zero_audio_offset_seconds = {1, 2};
-    const auto shifted_timing = wormedit::build_timing_index(chart);
-    REQUIRE(shifted_timing);
+    const auto shifted_timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(shifted_timing.value);
     const auto shifted = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
-                                                  *shifted_timing.index, viewport, source);
+                                                  *shifted_timing.value, viewport, source);
     REQUIRE(shifted);
     CHECK(loudest_row(shifted) == loudest_row(base));
 
     chart.beat_zero_audio_offset_seconds = {0, 1};
     chart.sound_channels.front().source_clip.begin_frame = output_sample_rate / 2U;
     const auto clipped = aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(),
-                                                  *timing.index, viewport, source);
+                                                  *timing.value, viewport, source);
     REQUIRE(clipped);
-    CHECK(loudest_row(clipped) >= 475.0);
-    CHECK(loudest_row(clipped) <= 485.0);
+    CHECK(loudest_row(clipped) >= 118.75);
+    CHECK(loudest_row(clipped) <= 121.25);
 
     chart.sound_channels.front().source_clip.begin_frame = 24'000;
     const auto native_48k =
-        aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.index,
+        aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.value,
                                  viewport, {.sample_rate = 48'000, .total_frames = 4U * 48'000U});
     REQUIRE(native_48k);
-    CHECK(loudest_row(native_48k) >= 475.0);
-    CHECK(loudest_row(native_48k) <= 485.0);
+    CHECK(loudest_row(native_48k) >= 118.75);
+    CHECK(loudest_row(native_48k) <= 121.25);
 
     auto shortened = chart_fixture();
     shortened.sound_channels.front().events.resize(2);
     shortened.sound_channels.front().source_clip.end_frame = output_sample_rate * 3U / 4U;
     const auto trimmed = aligned_waveform_view_result_t::from(
-        waveform, shortened, shortened.sound_channels.front(), *timing.index, viewport, source);
+        waveform, shortened, shortened.sound_channels.front(), *timing.value, viewport, source);
     REQUIRE(trimmed);
     CHECK(std::ranges::all_of(trimmed->rows,
                               [](const auto& row) { return row.absolute_peak[0] == 0.0f; }));
 
     auto too_tall = viewport;
     too_tall.viewport_height_pixels = 4097.0;
-    check_projection_error(aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.index,
+    check_projection_error(aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.value,
                                    too_tall, source), wormedit::failure_code_t::capacity_exceeded);
 }
 
@@ -317,8 +318,8 @@ auto stable_sample_follow() -> bool {
     using namespace wormedit::audio;
     auto chart = chart_fixture();
     chart.bpms.front().beats_per_minute = {12000, 1};
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     const auto overview = filled_waveform(256, 0, 88200, 88200);
     const auto detail = filled_waveform(32, 0, 512, 88200);
     decoded_block_cache_t cache;
@@ -333,10 +334,10 @@ auto stable_sample_follow() -> bool {
         }
         const aligned_waveform_request_t request{.viewport_scroll_pixels = frame * 3.0,
             .viewport_height_pixels = 64, .pixels_per_standard_measure = 1923};
-        const auto window = aligned_waveform_window(overview, *timing.index, request);
+        const auto window = aligned_waveform_window(overview, *timing.value, request);
         if (!window) return false;
         update_aligned_waveform_style(style, window->frames_per_pixel);
-        const auto projected = aligned_waveform_view_result_t::from(overview, &detail, *timing.index,
+        const auto projected = aligned_waveform_view_result_t::from(overview, &detail, *timing.value,
                                                                   request, &cache, style);
         if (!projected || projected->rows.empty() || !style.sample_points || !style.detail_level ||
             projected->rows.size() > request.maximum_rows || projected->chosen_frames_per_bin != 32) return false;
@@ -388,20 +389,20 @@ auto display_table_matches_forward_clock() -> bool {
         .duration = {1, 5}, .source_unit = wormedit::pause_unit_t::seconds});
     chart.warps.push_back({.id = wormedit::object_id_t{7003},
         .span = {{second_measure, 480}, {second_measure, 540}}});
-    const auto built = wormedit::build_timing_index(chart);
-    if (!built) return false;
+    const auto built = wormedit::timing_index_t::from(chart);
+    if (!built.value) return false;
     using namespace wormedit::audio;
     display_row_table_t table;
     aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 3};
-    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    if (!(table).prepare( *built.value, request, identity)) return false;
     for (const auto row : {480.0, 480.5, 840.0, 840.5, 1440.0, 1500.0}) {
         for (const auto side : {wormedit::timing_boundary_side_t::before_delays,
                                 wormedit::timing_boundary_side_t::event,
                                 wormedit::timing_boundary_side_t::after_stops}) {
-            const auto expected = expected_seconds(*built.index, row, side);
-            const auto actual = display_seconds_at(table, row, side);
+            const auto expected = expected_seconds(*built.value, row, side);
+            const auto actual = (table).seconds_at( row, side);
             if (expected.has_value() != actual.has_value()) return false;
             if (expected && std::abs(*expected - *actual) > 1e-9) return false;
         }
@@ -411,63 +412,63 @@ auto display_table_matches_forward_clock() -> bool {
 
 auto display_table_reuses_scrolled_rows() -> bool {
     auto chart = chart_fixture();
-    const auto built = wormedit::build_timing_index(chart);
-    if (!built) return false;
+    const auto built = wormedit::timing_index_t::from(chart);
+    if (!built.value) return false;
     using namespace wormedit::audio;
     display_row_table_t table;
     aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 10, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 1};
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.rows.size() != 12 || table.built_rows != 12 || table.reused_rows != 0) return false;
-    const auto generation = table.generation;
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.generation != generation || table.built_rows != 12 || table.reused_rows != 0)
+    if (!(table).prepare( *built.value, request, identity) ||
+        table.viewport.value().rows.size() != 12 || table.viewport.value().built_rows != 12 || table.viewport.value().reused_rows != 0) return false;
+    const auto generation = table.viewport.value().generation;
+    if (!(table).prepare( *built.value, request, identity) ||
+        table.viewport.value().generation != generation || table.viewport.value().built_rows != 12 || table.viewport.value().reused_rows != 0)
         return false;
     request.viewport_scroll_pixels = 1;
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.built_rows != 1 || table.reused_rows != 11) return false;
+    if (!(table).prepare( *built.value, request, identity) ||
+        table.viewport.value().built_rows != 1 || table.viewport.value().reused_rows != 11) return false;
     return true;
 }
 
 auto display_table_rebuilds_on_clock_inputs() -> bool {
     auto chart = chart_fixture();
-    const auto built = wormedit::build_timing_index(chart);
-    if (!built) return false;
+    const auto built = wormedit::timing_index_t::from(chart);
+    if (!built.value) return false;
     using namespace wormedit::audio;
     display_row_table_t table;
     aligned_waveform_request_t request{.viewport_scroll_pixels = 1,
         .viewport_height_pixels = 11, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 1};
-    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    if (!(table).prepare( *built.value, request, identity)) return false;
     auto changed_identity = identity;
     ++changed_identity.revision;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.value, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     ++changed_identity.project;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.value, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     ++changed_identity.chart;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.value, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     request.pixels_per_standard_measure = 1200;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.value, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     request.viewport_height_pixels = 12;
-    const auto before_height_change = table.generation;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.rows.size() != 14 || table.generation != before_height_change + 1) return false;
-    auto changed_timing = *built.index;
+    const auto before_height_change = table.viewport.value().generation;
+    if (!(table).prepare( *built.value, request, changed_identity) ||
+        table.viewport.value().rows.size() != 14 || table.viewport.value().generation != before_height_change + 1) return false;
+    auto changed_timing = *built.value;
     ++changed_timing.source_fingerprint;
-    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( changed_timing, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     changed_timing.discontinuity_profile = wormedit::timing_discontinuity_profile_t::bms_legacy;
-    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( changed_timing, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     changed_timing.bounded_clock = true;
     ++changed_timing.bounded_clock_roundings;
-    return prepare_display_row_table(table, changed_timing, request, changed_identity) &&
-        table.reused_rows == 0;
+    return (table).prepare( changed_timing, request, changed_identity) &&
+        table.viewport.value().reused_rows == 0;
 }
 
 auto display_channel_matches_reference() -> bool {
@@ -477,8 +478,8 @@ auto display_channel_matches_reference() -> bool {
     waveform.total_frames = 4U * output_sample_rate;
     waveform.bins.resize(400);
     for (auto& bin : waveform.bins) bin.frame_count = 441;
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 1440, .pixels_per_standard_measure = 960};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
@@ -486,10 +487,10 @@ auto display_channel_matches_reference() -> bool {
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, channel, source.sample_rate, source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.value, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
-        *timing.index, request, source);
+        *timing.value, request, source);
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return reference && projected && !reference->rows.empty() && !projected->rows.empty() &&
@@ -516,18 +517,18 @@ auto channel_projection_matches_reference(wormedit::chart_document_t& chart,
     const wormedit::audio::waveform_t& waveform,
     wormedit::audio::channel_waveform_source_geometry_t source) -> bool {
     using namespace wormedit::audio;
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 1920, .pixels_per_standard_measure = 960};
     const auto& channel = chart.sound_channels.front();
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, channel, source.sample_rate, source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.value, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
-        *timing.index, request, source);
+        *timing.value, request, source);
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return reference && projected && !reference->rows.empty() && !projected->rows.empty() &&
@@ -622,8 +623,8 @@ auto continuation_delay_keeps_pre_event_source() -> bool {
     chart.pauses.push_back({.id = object_id_t{8104}, .position = {first_measure, 720},
         .kind = pause_kind_t::delay, .duration = {1, 10}, .source_unit = pause_unit_t::seconds});
     const auto waveform = boundary_impulse_waveform();
-    const auto timing = build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 1800, .pixels_per_standard_measure = 960};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
@@ -631,9 +632,9 @@ auto continuation_delay_keeps_pre_event_source() -> bool {
     const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
                                                      source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (!slices || !(table).prepare( *timing.value, request)) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
-        *timing.index, request, source);
+        *timing.value, request, source);
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return reference && projected && channel_peak_near(reference, 720, 1) &&
@@ -651,8 +652,8 @@ struct display_benchmark_result_t {
 auto compare_display_channel_work() -> display_benchmark_result_t {
     using namespace wormedit::audio;
     auto chart = chart_fixture();
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return {};
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return {};
     const auto& channel = chart.sound_channels.front();
     display_benchmark_result_t result{.valid = true};
     std::size_t case_index{};
@@ -666,11 +667,11 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
             const aligned_waveform_request_t request{.viewport_scroll_pixels = zoom / 4,
                 .viewport_height_pixels = 600, .pixels_per_standard_measure = zoom};
             display_row_table_t table;
-            if (!prepare_display_row_table(table, *timing.index, request,
+            if (!(table).prepare( *timing.value, request,
                 {chart.id.value, chart.id.value, 1})) return {};
             const auto reference_start = std::chrono::steady_clock::now();
             const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
-                *timing.index, request, source);
+                *timing.value, request, source);
             const auto reference_end = std::chrono::steady_clock::now();
             const auto display_start = std::chrono::steady_clock::now();
             const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
@@ -681,7 +682,7 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
             result.display_microseconds += std::chrono::duration_cast<std::chrono::microseconds>(
                 display_end - display_start).count();
             if (!reference || !projected ||
-                projected->visited_slices > table.rows.size() + slices.slices.size() ||
+                projected->visited_slices > table.viewport.value().rows.size() + slices.slices.size() ||
                 projected->sampled_bins > projected->visited_slices *
                     (8 + 2 * std::numeric_limits<std::uint64_t>::digits)) return {};
             result.visited[case_index] = projected->visited_slices;
@@ -695,8 +696,8 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
 auto base_only_low_zoom_keeps_channel_peaks() -> bool {
     using namespace wormedit::audio;
     auto chart = chart_fixture();
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     auto waveform = performance_pyramid_waveform(1'048'576);
     waveform.coarser_levels.clear();
     const auto& channel = chart.sound_channels.front();
@@ -706,7 +707,7 @@ auto base_only_low_zoom_keeps_channel_peaks() -> bool {
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 120};
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (!slices || !(table).prepare( *timing.value, request)) return false;
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return projected && !projected->rows.empty() &&
@@ -729,18 +730,18 @@ auto display_slice_boundaries_keep_delay_and_stop_audio() -> bool {
     channel.events.push_back({.id = object_id_t{8103}, .position = {second_measure, 0},
         .lane = lane_id_t{1}, .continuation = false});
     const auto waveform = boundary_impulse_waveform();
-    const auto timing = build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 1800, .pixels_per_standard_measure = 960};
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
     const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
                                                      source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.value, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
-        *timing.index, request, source);
+        *timing.value, request, source);
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table, request, slices, source);
     return reference && projected && channel_peak_near(reference, 720, 1) &&
         channel_peak_near(projected, 720, 1) && channel_peak_near(reference, 960, 0) &&
@@ -755,15 +756,15 @@ auto display_channel_rejects_invalid_slices() -> bool {
         .span = {{chart.measures.front().id, 480}, {chart.measures.at(1).id, 0}}});
     const auto waveform = pulse_waveform();
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
-    const auto timing = build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     const auto& channel = chart.sound_channels.front();
     const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
         source.total_frames);
     const aligned_waveform_request_t request{.viewport_height_pixels = 600,
         .pixels_per_standard_measure = 960};
     display_row_table_t table;
-    if (slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (slices || !(table).prepare( *timing.value, request)) return false;
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return !projected && projected.error().status == wormedit::failure_code_t::invalid_data &&
@@ -776,8 +777,8 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     const auto& channel = chart.sound_channels.front();
     const auto waveform = pulse_waveform();
     const channel_waveform_source_geometry_t source{output_sample_rate, waveform.total_frames};
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, channel, source.sample_rate, source.total_frames);
     if (!slices) return false;
@@ -789,7 +790,7 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     auto invalid_request = good;
     invalid_request.viewport_height_pixels = 0;
     display_row_table_t table;
-    if (!prepare_display_row_table(table, *timing.index, good)) return false;
+    if (!(table).prepare( *timing.value, good)) return false;
     const auto no_request = aligned_waveform_view_result_t::from(waveform, channel, table,
         invalid_request, slices, source);
     if (no_clock || no_request) return false;
@@ -808,7 +809,7 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     eof_view.viewport_scroll_pixels = 1910;
     eof_view.viewport_height_pixels = 10;
     display_row_table_t eof_table;
-    if (!short_slices || !prepare_display_row_table(eof_table, *timing.index, eof_view))
+    if (!short_slices || !(eof_table).prepare( *timing.value, eof_view))
         return false;
     const auto eof = aligned_waveform_view_result_t::from(short_waveform, channel, eof_table,
         eof_view, short_slices, short_source);
@@ -983,17 +984,17 @@ TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
         });
     };
 
-    const auto plain_timing = build_timing_index(chart);
-    REQUIRE(plain_timing);
-    const auto plain = audio::aligned_waveform_view_result_t::from(waveform, *plain_timing.index, request);
+    const auto plain_timing = timing_index_t::from(chart);
+    REQUIRE(plain_timing.value);
+    const auto plain = audio::aligned_waveform_view_result_t::from(waveform, *plain_timing.value, request);
     REQUIRE(plain);
     CHECK(count_rows_between(plain, 480.0, 960.0) > 0);
 
     chart.warps.push_back(
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
-    const auto warped_timing = build_timing_index(chart);
-    REQUIRE(warped_timing);
-    const auto warped = audio::aligned_waveform_view_result_t::from(waveform, *warped_timing.index, request);
+    const auto warped_timing = timing_index_t::from(chart);
+    REQUIRE(warped_timing.value);
+    const auto warped = audio::aligned_waveform_view_result_t::from(waveform, *warped_timing.value, request);
     REQUIRE(warped);
     CHECK(count_rows_between(warped, 0.0, 479.0) > 0);
     CHECK(count_rows_between(warped, 482.0, 958.0) == 0);
@@ -1050,8 +1051,8 @@ TEST_CASE("song overview clamps a viewport that extends past the audio end",
           "[unit][audio][waveform][aligned]") {
     const auto chart = chart_fixture();
     const auto waveform = pulse_waveform();
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
     // The 2 s audio ends long before the 2880-row chart does, so these scrolls reach past it.
     for (const double scroll : {480.0, 960.0, 3840.0, 9600.0}) {
         const wormedit::audio::aligned_waveform_request_t viewport{
@@ -1060,7 +1061,7 @@ TEST_CASE("song overview clamps a viewport that extends past the audio end",
             .pixels_per_standard_measure = 960.0,
         };
         const auto overview =
-            wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, viewport, 200);
+            wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.value, viewport, 200);
         REQUIRE(overview);
         CHECK(overview->visible_end_fraction == 1.0);
         CHECK(overview->visible_begin_fraction >= 0.0);
@@ -1072,17 +1073,17 @@ TEST_CASE("aligned waveform window includes the outward-rounded visible rows", "
     using namespace wormedit;
     using namespace wormedit::audio;
     const auto chart = chart_fixture();
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const auto waveform = pulse_waveform();
     const aligned_waveform_request_t fractional{.viewport_scroll_pixels = 10.25,
         .viewport_height_pixels = 10.5,
-        .pixels_per_standard_measure = static_cast<double>(timing.index->divisions_per_standard_measure)};
-    const auto actual = aligned_waveform_window(waveform, *timing.index, fractional);
+        .pixels_per_standard_measure = static_cast<double>(timing.value->divisions_per_standard_measure)};
+    const auto actual = aligned_waveform_window(waveform, *timing.value, fractional);
     auto rounded = fractional;
     rounded.viewport_scroll_pixels = 10;
     rounded.viewport_height_pixels = 11;
-    const auto expected = aligned_waveform_window(waveform, *timing.index, rounded);
+    const auto expected = aligned_waveform_window(waveform, *timing.value, rounded);
     REQUIRE(actual);
     REQUIRE(expected);
     CHECK(actual->begin_frame == expected->begin_frame);
@@ -1093,10 +1094,10 @@ namespace {
 auto aligned_waveform_expected_error_keeps_selected_bin_size() -> bool {
     using namespace wormedit::audio;
     const auto chart = chart_fixture();
-    const auto timing = wormedit::build_timing_index(chart);
-    if (!timing) return false;
+    const auto timing = wormedit::timing_index_t::from(chart);
+    if (!timing.value) return false;
     const auto waveform = pulse_waveform();
-    auto projected = aligned_waveform_view_result_t::from(waveform, nullptr, *timing.index,
+    auto projected = aligned_waveform_view_result_t::from(waveform, nullptr, *timing.value,
         {.viewport_scroll_pixels = 0, .viewport_height_pixels = 960,
          .pixels_per_standard_measure = 960, .maximum_rows = 1},
         nullptr, {.sample_points = true, .detail_level = true});

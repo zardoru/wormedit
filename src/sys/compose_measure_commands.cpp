@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/timing.h>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -96,17 +97,16 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
     }
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr) return "The selected chart is unavailable.";
-    const auto index = build_measure_index(*chart);
-    const auto* before = std::get_if<measure_index_t>(&index);
+    const auto& index = history.indices(state.chart)->measures;
+    const auto* before = index ? &*index : nullptr;
     const auto row = before ? (*before).row_of(state.cursor) : std::nullopt;
     if (!row) return "The cursor is outside the authored chart.";
     const auto result =
         apply_measure_edit(history, split_measure_action_t{state.chart, state.cursor});
     if (!result) return rejection(result, "The measure could not be split.", severity);
-    const auto current = history.document.find_chart(state.chart);
-    const auto after = build_measure_index(*current);
-    if (const auto* measures = std::get_if<measure_index_t>(&after))
-        if (const auto position = position_at_absolute_row(*measures, *row)) place_cursor_at(state, *position);
+    const auto& after = history.indices(state.chart)->measures;
+    if (after)
+        if (const auto position = after->position_at(*row)) place_cursor_at(state, *position);
     state.retained_selection_range.reset();
     state.retained_canvas_selection_range.reset();
     state.selected_canvas_measure.reset();

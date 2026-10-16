@@ -705,24 +705,26 @@ auto plan_single_bgm_move(const document_history_t& history,
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto plan_move_gesture(const document_history_t& history, const editor_interaction_state_t& state,
-                       const chart_document_t& chart, const measure_index_t& index,
+auto plan_move_gesture(const editor_edit_context_t& context,
                        std::vector<object_id_t> targets, object_id_t reference,
                        local_position_t position, lane_id_t lane, bool exact_position,
                        std::optional<object_id_t> bgm_lane,
                        std::optional<std::uint64_t> virtual_row)
     -> std::variant<note_move_plan_t, diagnostic_list_t> {
+    const auto& state = context.state;
+    const auto& chart = context.scope.chart;
     const auto* bgm = chart.find_bgm_event(reference);
     if (bgm && state.selected_notes.empty() && state.selected_objects.size() == 1 &&
         state.selected_objects.front() ==
             editor_selection_object_t{editor_selection_object_kind_t::bgm_event, reference})
-        return plan_single_bgm_move(history, state, *bgm, position, bgm_lane, virtual_row,
+        return plan_single_bgm_move(context.history, state, *bgm, position, bgm_lane, virtual_row,
                                     exact_position);
     if (virtual_row)
         return diagnostic_list_t{
             error(diagnostic_code_t::row_out_of_range, "Mixed moves require authored chart rows")};
-    return plan_selected_object_move(chart, index, state, std::move(targets), reference, position,
-                                     lane, edit_snap_denominator(chart, state), exact_position);
+    return plan_selected_object_move(chart, context.scope.measures, state, std::move(targets),
+                                     reference, position, lane, edit_snap_denominator(chart, state),
+                                     exact_position);
 }
 } // namespace wormedit::interaction_detail
 
@@ -816,8 +818,8 @@ namespace wormedit {
 using namespace interaction_detail;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,
                                 const duration_resize_plan_t& plan) -> editor_interaction_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     auto changed = false;
     for (const auto& candidate : plan.resized) {
@@ -939,9 +941,9 @@ namespace wormedit {
 using namespace interaction_detail;
 auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
                           const note_move_plan_t& plan) -> editor_interaction_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
-    auto& proposed = transaction.copy_document();
+    auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     const auto changed = plan.staged_bgm_document.has_value() || has_note_move_changes(*chart, plan) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {

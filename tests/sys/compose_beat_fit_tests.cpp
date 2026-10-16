@@ -1,3 +1,4 @@
+#include "compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"
@@ -56,8 +57,9 @@ struct fit_fixture_t {
         state.viewport_scroll_pixels = 40;
         const auto index = build_editor_field_scene_index(chart, history.document.revision);
         expect_fit(std::holds_alternative<editor_field_scene_index_t>(index));
-        cache.scene.index = std::get<editor_field_scene_index_t>(index);
-        cache.timing.marker_timing_index = build_timing_index(chart).index;
+        static_cast<void>(cache.scene.index.get_or_build(compose_scene_source_key_t{},
+            retained_scene_fixture_t{&std::get<editor_field_scene_index_t>(index)}));
+        cache.timing.marker_timing_index = timing_index_t::from(chart).value;
         expect_fit(cache.timing.marker_timing_index.has_value());
         cache.waveform.waveform_overview_sample_rate = 44'100;
         cache.waveform.waveform_overview_total_frames = 441'000;
@@ -216,7 +218,7 @@ TEST_CASE("Compose visible onset query clips negative audio time and outside cha
         fit_fixture_t fixture(down);
         auto& chart = fixture.history.document.charts.front();
         chart.beat_zero_audio_offset_seconds = {-1, 4};
-        fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
+        fixture.cache.timing.marker_timing_index = timing_index_t::from(chart).value;
         fixture.state.viewport_scroll_pixels = -40;
         auto analysis = std::make_shared<audio::waveform_analysis_result_t>();
         analysis->waveform.emplace();

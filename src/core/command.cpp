@@ -129,12 +129,22 @@ auto document_history_t::from(song_document_t document, std::size_t maximum_undo
     };
 }
 
+auto document_history_t::indices_storage(const chart_document_t& chart) const
+    -> const std::shared_ptr<const chart_indices_t>& {
+    auto& slot = chart.indices_slot.value_;
+    if (!slot) slot = std::make_shared<const chart_indices_t>(chart_indices_t::from(chart));
+    return slot;
+}
+
 auto document_history_t::indices(chart_id_t id) const -> const chart_indices_t* {
     const auto* chart = document.find_chart(id);
-    if (!chart) return nullptr;
-    auto& slot = chart->indices_slot.value_;
-    if (!slot) slot = std::make_shared<const chart_indices_t>(chart_indices_t::from(*chart));
-    return slot.get();
+    return chart ? indices_storage(*chart).get() : nullptr;
+}
+
+auto document_history_t::indices_snapshot(chart_id_t id) const
+    -> std::shared_ptr<const chart_indices_t> {
+    const auto* chart = document.find_chart(id);
+    return chart ? indices_storage(*chart) : std::shared_ptr<const chart_indices_t>{};
 }
 
 auto is_document_dirty(const document_history_t& history) noexcept -> bool {
@@ -195,61 +205,70 @@ auto commit_document_command(document_history_t& history, song_document_t propos
     return document_command_result_t::from(commit_validated_document(history, std::move(proposed), std::move(label), options));
 }
 
-auto document_command_transaction_t::from(document_history_t& history)
-    -> document_command_transaction_t {
-    return {.history = history, .outcome = {.revision = history.document.revision}};
+document_command_transaction_t::document_command_transaction_t(document_history_t& history)
+    : history_(history), outcome_{.revision = history.document.revision} {}
+
+document_command_transaction_t::document_command_transaction_t(document_history_t& history,
+    const document_stamp_t& stamp, std::string_view label, document_identity_policy_t policy,
+    diagnostic_code_t stale_code)
+    : document_command_transaction_t(history) {
+    if (!stamp.is_current(source_document(), policy)) {
+        outcome_ = rejection(source_document().revision, stale_code, stale_action_message(label));
+        finished_ = true;
+    }
 }
 
-auto document_command_transaction_t::from(document_history_t& history, const document_stamp_t& stamp,
-    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
-    -> document_command_transaction_t {
-    if (stamp.is_current(history.document, policy)) return from(history);
-    return {.history = history,
-            .outcome = rejection(history.document.revision, stale_code, stale_action_message(label)),
-            .finished = true};
-}
-
-auto document_command_transaction_t::from(document_history_t& history, const chart_stamp_t& stamp,
-    std::string_view label, document_identity_policy_t policy, diagnostic_code_t stale_code)
-    -> document_command_transaction_t {
-    // The proposal owns its target chart; its existing missing-target validation follows this guard.
-    return from(history, stamp.document, label, policy, stale_code);
-}
+document_command_transaction_t::document_command_transaction_t(document_history_t& history,
+    const chart_stamp_t& stamp, std::string_view label, document_identity_policy_t policy,
+    diagnostic_code_t stale_code)
+    // The proposal owns its target chart; its missing-target validation follows this guard.
+    : document_command_transaction_t(history, stamp.document, label, policy, stale_code) {}
 
 auto document_command_transaction_t::is_ready() const noexcept -> bool {
-    return !finished && !diagnostic_queries::has_errors(outcome.diagnostics);
+    return !finished_ && !diagnostic_queries::has_errors(outcome_.diagnostics);
 }
 
 auto document_command_transaction_t::has_copy() const noexcept -> bool {
-    return proposed.has_value();
+    return document_.has_value();
 }
 
-auto document_command_transaction_t::document() const noexcept -> const song_document_t& {
-    return proposed ? *proposed : history.document;
+auto document_command_transaction_t::current_document() const noexcept -> const song_document_t& {
+    return document_ ? *document_ : history_.document;
+}
+
+auto document_command_transaction_t::source_document() const noexcept -> const song_document_t& {
+    return history_.document;
+}
+
+auto document_command_transaction_t::outcome() noexcept -> document_command_result_t& {
+    return outcome_;
+}
+
+auto document_command_transaction_t::outcome() const noexcept -> const document_command_result_t& {
+    return outcome_;
 }
 
 auto document_command_transaction_t::source_chart(chart_id_t id) const -> const chart_document_t* {
-    const auto found = history.document.find_chart(id);
+    const auto found = history_.document.find_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
-auto document_command_transaction_t::copy_document() -> song_document_t& {
-    if (!proposed) {
-        proposed.emplace(history.document);
-        proposed->reset_chart_indices();
+auto document_command_transaction_t::document() -> song_document_t& {
+    if (!document_) {
+        document_.emplace(history_.document);
+        document_->reset_chart_indices();
     }
-    return *proposed;
+    return *document_;
 }
 
 void document_command_transaction_t::adopt_document(song_document_t&& document) {
-    proposed.emplace(std::move(document));
-    proposed->reset_chart_indices();
+    document_.emplace(std::move(document));
+    document_->reset_chart_indices();
 }
 
 auto document_command_transaction_t::chart(chart_id_t id) -> chart_document_t* {
     if (!source_chart(id)) return nullptr;
-    auto& document = copy_document();
-    const auto found = document.find_chart(id);
+    const auto found = document().find_chart(id);
     return found == nullptr ? nullptr : &*found;
 }
 
@@ -266,31 +285,31 @@ auto document_command_transaction_t::rejection(std::uint64_t revision,
 }
 
 auto document_command_transaction_t::finish_without_commit() -> document_command_result_t {
-    finished = true;
-    proposed.reset();
-    return std::move(outcome);
+    finished_ = true;
+    document_.reset();
+    return std::move(outcome_);
 }
 
 auto document_command_transaction_t::finish_with(document_command_result_t result)
     -> document_command_result_t {
-    if (finished) return result;
-    outcome = std::move(result);
+    if (finished_) return result;
+    outcome_ = std::move(result);
     return finish_without_commit();
 }
 
 auto document_command_transaction_t::reject(diagnostic_code_t code, std::string message,
     std::optional<object_id_t> object) -> document_command_result_t {
-    wormedit::reject(outcome, code, std::move(message), object);
-    finished = true;
-    return std::move(outcome);
+    wormedit::reject(outcome_, code, std::move(message), object);
+    finished_ = true;
+    return std::move(outcome_);
 }
 
 auto document_command_transaction_t::commit_outcome(std::string label, document_command_options_t options)
     -> document_command_outcome_t {
-    if (!is_ready() || !proposed) return document_command_result_t::from(std::move(outcome));
-    finished = true;
-    auto working_document = std::move(*proposed);
-    return commit_validated_document(history, std::move(working_document), std::move(label), options);
+    if (!is_ready() || !document_) return document_command_result_t::from(std::move(outcome_));
+    finished_ = true;
+    auto working_document = std::move(*document_);
+    return commit_validated_document(history_, std::move(working_document), std::move(label), options);
 }
 
 auto document_command_transaction_t::commit(std::string label, document_command_options_t options)
@@ -330,8 +349,8 @@ auto apply_quantize_command(document_history_t& history, chart_id_t chart_id,
 
     if (request.selection && !is_quantized_stem_audio_valid(history.document, *chart, *proposal.value.chart,
                                                         result.command.diagnostics)) return result;
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed_document = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed_document = transaction.document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.value.chart);
     result.command =
@@ -361,8 +380,8 @@ auto apply_redivision_command(document_history_t& history,
     }
     result.payload.moves = std::move(proposal.value.moves);
 
-    auto transaction = document_command_transaction_t::from(history);
-    auto& proposed_document = transaction.copy_document();
+    auto transaction = document_command_transaction_t(history);
+    auto& proposed_document = transaction.document();
     const auto proposed_chart = proposed_document.find_chart(chart_id);
     *proposed_chart = std::move(*proposal.value.chart);
     result.command =

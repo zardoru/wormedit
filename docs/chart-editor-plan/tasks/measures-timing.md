@@ -296,7 +296,7 @@ Implementation review (2026-10-04): Atomic Apply, rounded choices, combined cach
 
 - **Status:** done
 - **Outcome:** Ctrl-dragging an unlocked beat marker in the Compose rail pins that beat to the pointer's audio frame by changing only the BPM segment from the previous anchor (or previous BPM change) to the dragged beat; the grid after it moves with the beat (user decision 2026-09-30, question 7); preview and commit work like the existing interval fit.
-- **Read first:** `include/wormedit/core/bpm_editor.h` (`begin_beat_interval_drag`, `revise_beat_interval_drag_to_bpm`, `apply_beat_interval_drag`), `include/wormedit/core/timing_anchor_editor.h`, `src/sys/compose_input.cpp` (existing rail drag), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
+- **Read first:** `include/wormedit/core/bpm_editor.h` (`beat_interval_drag_t::propose`, `proposal_t::revise`, `apply_proposal`), `include/wormedit/core/timing_anchor_editor.h`, `src/sys/compose_input.cpp` (existing rail drag), `docs/chart-editor-plan/playback-audio.md` (beat-fit modes).
 - **Files owned:** `include/wormedit/core/bpm_editor.h`, `src/core/bpm_editor.cpp`, `tests/core/bpm_editor_tests.cpp`, `src/sys/compose_input.cpp`, `src/ui/nuklear/compose_input_panel.cpp`.
 - **Steps:** 1. Core solver: insert or update one BPM change at the previous anchor so the dragged beat lands on the target frame exactly (rational). 2. Reuse the interval-fit preview path. 3. Tests: fit with and without an existing BPM change at the previous anchor; locked anchor between them rejects; undo.
 - **Invariants:** anchors before the previous anchor never move; locked anchors after the dragged beat block the drag with a message instead of moving.

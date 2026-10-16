@@ -88,7 +88,6 @@ TEST_CASE("Retained popups and view stamps remain aggregates with shared queries
           "[frontend-state][popup-lifecycle]") {
     using namespace wormedit::ui::chrome;
     STATIC_REQUIRE(std::is_aggregate_v<retained_popup_t>);
-    STATIC_REQUIRE(std::is_aggregate_v<PopupContextStamp>);
     retained_popup_t popup;
     check_lifecycle(!popup.owns_input());
     popup.open = true;

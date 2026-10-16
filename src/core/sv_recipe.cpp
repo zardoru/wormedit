@@ -21,9 +21,11 @@ namespace wormedit {
 namespace {
 using wormedit::reject;
 
-auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
-                                 const sv_recipe_edit_action_t& action)
-    -> document_command_result_t;
+struct sv_recipe_edit_t {
+    const sv_recipe_edit_action_t& action;
+    [[nodiscard]] auto apply(document_edit_scope_t& scope) const
+        -> diagnosed_t<std::optional<std::string>>;
+};
 
 constexpr long double maximum_parameter_magnitude = 1'000'000.0L;
 constexpr long double maximum_curve_output = 1'000'000'000.0L;
@@ -880,36 +882,17 @@ auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output
     return sv_recipe_compilation_t::from(sv_recipe_compiled_output_t::from(chart, output));
 }
 
-namespace {
-
-auto validate_draft_target(const document_history_t& history, const chart_stamp_t& stamp,
-    const sv_recipe_draft_t& draft) -> result_t<const chart_document_t*, diagnostic_t> {
-    const auto* chart = history.document.find_chart(stamp.chart);
+auto sv_recipe_draft_t::validate_target(const song_document_t& document, chart_id_t selected,
+    proposal_operation_t) const -> result_t<const chart_document_t*, diagnostic_t> {
+    const auto* chart = document.find_chart(selected);
     if (!chart)
         return std::unexpected(error(diagnostic_code_t::invalid_id,
             "SV recipe draft refers to an unknown chart"));
-    if (draft.existing_recipe &&
-        std::ranges::count(chart->sv_recipes, *draft.existing_recipe, &sv_recipe_t::id) != 1)
+    if (existing_recipe && std::ranges::count(chart->sv_recipes, *existing_recipe, &sv_recipe_t::id) != 1)
         return std::unexpected(error(diagnostic_code_t::invalid_id,
             "SV recipe draft target is missing or ambiguous"));
     return chart;
 }
-
-auto validate_draft_binding(const document_history_t& history, const chart_stamp_t& stamp,
-    sv_recipe_draft_t& draft, bool timing_locked) -> result_t<const chart_document_t*, diagnostic_t> {
-    if (timing_locked ||
-        !stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
-        draft.status = sv_recipe_draft_status_t::cancelled;
-        return std::unexpected(error(diagnostic_code_t::invalid_binding,
-            timing_locked ? "SV recipe draft was cancelled by timing lock"
-                          : stale_action_message("SV recipe draft")));
-    }
-    auto target = validate_draft_target(history, stamp, draft);
-    if (!target) draft.status = sv_recipe_draft_status_t::cancelled;
-    return target;
-}
-
-} // namespace
 
 auto sv_recipe_draft_t::preview_candidate() const -> sv_recipe_t {
     auto preview = candidate;
@@ -920,14 +903,12 @@ auto sv_recipe_draft_t::preview_candidate() const -> sv_recipe_t {
 auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t chart_id,
                            sv_recipe_t candidate, bool timing_locked) -> proposal_outcome_t<sv_recipe_draft_t> {
     proposal_outcome_t<sv_recipe_draft_t> outcome;
-    proposal_t<sv_recipe_draft_t> pending{
-        .stamp = chart_stamp_t::from(history.document, chart_id),
-        .payload = {.status = sv_recipe_draft_status_t::editing,
-                    .candidate = std::move(candidate)}};
+    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history.document, chart_id),
+        sv_recipe_draft_t{.candidate = std::move(candidate)});
     auto& draft = pending.payload;
     if (timing_locked) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
-                     "SV recipe editing is unavailable while timing is locked"));
+                     std::string(begin_locked_message)));
         return outcome;
     }
     const auto* chart = history.document.find_chart(chart_id);
@@ -953,14 +934,12 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
                                     recipe_id_t recipe_id, bool timing_locked)
     -> proposal_outcome_t<sv_recipe_draft_t> {
     proposal_outcome_t<sv_recipe_draft_t> outcome;
-    proposal_t<sv_recipe_draft_t> pending{
-        .stamp = chart_stamp_t::from(history.document, chart_id),
-        .payload = {.status = sv_recipe_draft_status_t::editing,
-                    .existing_recipe = recipe_id}};
+    auto pending = proposal_t<sv_recipe_draft_t>::from(chart_stamp_t::from(history.document, chart_id),
+        sv_recipe_draft_t{.existing_recipe = recipe_id});
     auto& draft = pending.payload;
     if (timing_locked) {
         outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
-                     "SV recipe editing is unavailable while timing is locked"));
+                     std::string(begin_locked_message)));
         return outcome;
     }
     const auto* chart = history.document.find_chart(chart_id);
@@ -981,41 +960,24 @@ auto sv_recipe_draft_t::propose(const document_history_t& history, chart_id_t ch
     return outcome;
 }
 
-auto sv_recipe_draft_t::revise(const chart_stamp_t& stamp, const document_history_t& history,
-    sv_recipe_t candidate, bool timing_locked, diagnostic_list_t diagnostics)
-    -> proposal_outcome_t<sv_recipe_draft_t> {
+auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>&,
+    sv_recipe_t candidate) -> bool {
     auto& draft = *this;
-    proposal_outcome_t<sv_recipe_draft_t> outcome{.diagnostics = std::move(diagnostics)};
-    if (status != sv_recipe_draft_status_t::editing) return outcome;
-    auto bound = validate_draft_binding(history, stamp, draft, timing_locked);
-    outcome.diagnostics.clear();
-    if (!bound) {
-        outcome.diagnostics.push_back(std::move(bound.error()));
-        return outcome;
-    }
     candidate.id = draft.existing_recipe.value_or(recipe_id_t{});
     draft.candidate = std::move(candidate);
-    outcome.value = proposal_t<sv_recipe_draft_t>{stamp, std::move(draft)};
-    return outcome;
+    return true;
 }
 
-auto sv_recipe_draft_t::revise(const chart_stamp_t& stamp, const document_history_t& history,
-    position_span_t pointer_hits, std::uint64_t active_snap_denominator, bool timing_locked,
-    diagnostic_list_t diagnostics) -> proposal_outcome_t<sv_recipe_draft_t> {
+auto sv_recipe_draft_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
+    position_span_t pointer_hits, std::uint64_t active_snap_denominator)
+    -> bool {
     auto& draft = *this;
-    proposal_outcome_t<sv_recipe_draft_t> outcome{.diagnostics = std::move(diagnostics)};
-    if (status != sv_recipe_draft_status_t::editing) return outcome;
-    auto bound = validate_draft_binding(history, stamp, draft, timing_locked);
-    outcome.diagnostics.clear();
-    if (!bound) {
-        outcome.diagnostics.push_back(std::move(bound.error()));
-        return outcome;
-    }
-    const auto* chart = *bound;
+    auto& diagnostics = scope.diagnostics();
+    const auto* chart = scope.target();
     auto built_index = measure_index_t::from(*chart);
     if (!built_index) {
-        outcome.diagnostics = std::move(built_index.error());
-        return outcome;
+        diagnostics = std::move(built_index.error());
+        return false;
     }
     const auto& index = *built_index;
     const auto snapped_begin = snapped_position(*chart, index, pointer_hits.begin, active_snap_denominator);
@@ -1025,49 +987,35 @@ auto sv_recipe_draft_t::revise(const chart_stamp_t& stamp, const document_histor
     const auto end_row = snapped_end
         ? index.row_of(*snapped_end, measure_chart_end_policy_t::allow) : std::nullopt;
     if (!begin_row || !end_row) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
+        diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
                      "SV recipe draft range cannot be represented on the active grid"));
-        return outcome;
+        return false;
     }
     if (*begin_row == *end_row) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
+        diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                      "SV recipe draft range must have a nonzero width"));
-        return outcome;
+        return false;
     }
     const auto first_row = std::min(*begin_row, *end_row);
     const auto last_row = std::max(*begin_row, *end_row);
     const auto begin_position = index.position_at(first_row);
     const auto end_position = index.position_at(last_row, measure_chart_end_policy_t::allow);
     if (!begin_position || !end_position) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
+        diagnostics.push_back(error(diagnostic_code_t::row_out_of_range,
                      "SV recipe draft range exceeds the chart grid"));
-        return outcome;
+        return false;
     }
     draft.candidate.range = {*begin_position, *end_position};
-    outcome.value = proposal_t<sv_recipe_draft_t>{stamp, std::move(draft)};
-    return outcome;
+    return true;
 }
 
 auto preview_sv_recipe_draft(const document_history_t& history, const proposal_t<sv_recipe_draft_t>& pending,
     std::span<const diagnostic_t> recent_diagnostics) -> sv_recipe_draft_preview_t {
     const auto& draft = pending.payload;
     sv_recipe_draft_preview_t preview{.effective_output = {.output = draft.candidate.output}};
-    if (draft.status != sv_recipe_draft_status_t::editing) {
-        preview.diagnostics.assign(recent_diagnostics.begin(), recent_diagnostics.end());
-        if (preview.diagnostics.empty()) {
-            reject(preview.diagnostics, diagnostic_code_t::invalid_binding,
-                   "SV recipe draft is not active");
-        }
-        return preview;
-    }
-    if (!pending.stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
-        reject(preview.diagnostics, diagnostic_code_t::invalid_binding,
-               stale_action_message("SV recipe draft"));
-        return preview;
-    }
-    auto target = validate_draft_target(history, pending.stamp, draft);
+    auto target = pending.inspect(history, recent_diagnostics);
     if (!target) {
-        preview.diagnostics.push_back(std::move(target.error()));
+        preview.diagnostics = std::move(target.error());
         return preview;
     }
     const auto* chart = *target;
@@ -1084,55 +1032,21 @@ auto preview_sv_recipe_draft(const document_history_t& history, const proposal_t
     return preview;
 }
 
-auto apply_sv_recipe_draft(document_history_t& history, proposal_t<sv_recipe_draft_t>& pending,
-    bool timing_locked, std::span<const diagnostic_t> recent_diagnostics) -> document_command_result_t {
-    auto& draft = pending.payload;
-    document_command_result_t result{.revision = history.document.revision};
-    if (draft.status != sv_recipe_draft_status_t::editing) {
-        result.diagnostics.assign(recent_diagnostics.begin(), recent_diagnostics.end());
-        return result;
-    }
-    if (timing_locked) {
-        result.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
-            "SV recipe draft was cancelled by timing lock"));
-        draft.status = sv_recipe_draft_status_t::cancelled;
-        return result;
-    }
-    auto transaction = pending.transaction(history, "SV recipe draft",
-        document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding);
-    if (!transaction.is_ready()) {
-        result = transaction.commit({});
-        draft.status = sv_recipe_draft_status_t::cancelled;
-        return result;
-    }
-    auto target = validate_draft_target(history, pending.stamp, draft);
-    if (!target) {
-        draft.status = sv_recipe_draft_status_t::cancelled;
-        result.diagnostics.push_back(std::move(target.error()));
-        return result;
-    }
+auto sv_recipe_draft_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
+    const proposal_application_input_t&) -> diagnosed_t<std::optional<std::string>> {
+    auto& draft = *this;
+    const auto& stamp = scope.captured_stamp();
     auto candidate = draft.candidate;
     candidate.id = draft.existing_recipe.value_or(recipe_id_t{});
     const sv_recipe_edit_action_t action =
         draft.existing_recipe
             ? sv_recipe_edit_action_t{wormedit::update_edit_t<wormedit::sv_recipe_t>{
-                  .chart = pending.stamp.chart,
+                  .chart = stamp.chart,
                   .id = *draft.existing_recipe,
                   .value = std::move(candidate)}}
             : sv_recipe_edit_action_t{wormedit::insert_edit_t<wormedit::sv_recipe_t>{
-                  .chart = pending.stamp.chart, .value = std::move(candidate)}};
-    result = apply_sv_recipe_transaction(transaction, action);
-    if (result.diagnostics.empty()) {
-        draft.status = sv_recipe_draft_status_t::applied;
-    }
-    return result;
-}
-
-void cancel_sv_recipe_draft(proposal_t<sv_recipe_draft_t>& pending) noexcept {
-    auto& draft = pending.payload;
-    if (draft.status == sv_recipe_draft_status_t::editing) {
-        draft.status = sv_recipe_draft_status_t::cancelled;
-    }
+                  .chart = stamp.chart, .value = std::move(candidate)}};
+    return sv_recipe_edit_t{.action = action}.apply(scope);
 }
 
 namespace {
@@ -1338,8 +1252,7 @@ auto sv_recipe_range_drag_t::propose(const document_history_t& history, chart_id
     drag.original_range = recipe->range;
     drag.preview_range = recipe->range;
     drag.snapped_pointer_anchor = *snapped;
-    drag.status = sv_recipe_range_drag_status_t::previewing;
-    outcome.value = std::move(pending);
+    outcome.value = proposal_t<sv_recipe_range_drag_t>::from(pending.stamp, std::move(drag));
     return outcome;
 }
 
@@ -1384,77 +1297,49 @@ auto prepare_sv_recipe_range(const chart_document_t& chart, const sv_recipe_t& r
 }
 } // namespace
 
-auto sv_recipe_range_drag_t::revise(const chart_stamp_t& stamp,
-    const document_history_t& history, local_position_t pointer_position, bool timing_locked)
-    -> proposal_outcome_t<sv_recipe_range_drag_t> {
-    proposal_outcome_t<sv_recipe_range_drag_t> outcome;
-    if (status != sv_recipe_range_drag_status_t::previewing) return outcome;
-    if (timing_locked ||
-        !stamp.document.is_current(history.document, document_identity_policy_t::revision_only)) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_binding,
-            timing_locked ? "SV recipe range drag was cancelled by timing lock"
-                          : stale_action_message("SV recipe range drag")));
-        status = sv_recipe_range_drag_status_t::rejected;
-        return outcome;
-    }
-    const auto* chart = history.document.find_chart(stamp.chart);
-    const auto* target_recipe = chart ? recipe_by_id(*chart, recipe) : nullptr;
-    if (!chart || !target_recipe) {
-        outcome.diagnostics.push_back(error(diagnostic_code_t::invalid_id,
-            "SV recipe range drag target no longer exists"));
-        status = sv_recipe_range_drag_status_t::rejected;
-        return outcome;
+auto sv_recipe_range_drag_t::validate_target(const song_document_t& document, chart_id_t selected,
+    proposal_operation_t operation) const -> result_t<const chart_document_t*, diagnostic_t> {
+    // The numeric editor owns Apply target validation after the captured no-op check.
+    if (operation == proposal_operation_t::apply) return nullptr;
+    const auto* chart = document.find_chart(selected);
+    if (!chart)
+        return std::unexpected(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
+    return chart;
+}
+
+auto sv_recipe_range_drag_t::is_unchanged() const noexcept -> bool {
+    return preview_range == original_range;
+}
+
+auto sv_recipe_range_drag_t::revise(proposal_revision_scope_t<chart_stamp_t>& scope,
+    local_position_t pointer_position) -> bool {
+    auto& diagnostics = scope.diagnostics();
+    const auto* chart = scope.target();
+    const auto* target_recipe = recipe_by_id(*chart, recipe);
+    if (!target_recipe) {
+        scope.invalidate_target();
+        diagnostics.push_back(error(diagnostic_code_t::invalid_id, std::string(invalid_target_message)));
+        return false;
     }
     auto built_index = measure_index_t::from(*chart);
     if (!built_index) {
-        outcome.diagnostics = std::move(built_index.error());
-        status = sv_recipe_range_drag_status_t::rejected;
-        return outcome;
+        diagnostics = std::move(built_index.error());
+        scope.invalidate_target();
+        return false;
     }
     auto prepared = prepare_sv_recipe_range(*chart, *target_recipe,
         *built_index, *this, pointer_position);
-    outcome.diagnostics = std::move(prepared.diagnostics);
-    if (!prepared.value) return outcome;
+    diagnostics = std::move(prepared.diagnostics);
+    if (!prepared.value) return false;
     preview_range = *prepared.value;
-    outcome.value = proposal_t<sv_recipe_range_drag_t>{stamp, *this};
-    return outcome;
+    return true;
 }
 
-auto apply_sv_recipe_range_drag(document_history_t& history,
-    proposal_t<sv_recipe_range_drag_t>& pending, bool timing_locked) -> document_command_result_t {
-    auto& drag = pending.payload;
-    document_command_result_t result{.revision = history.document.revision};
-    if (drag.status != sv_recipe_range_drag_status_t::previewing) {
-        reject(result.diagnostics, diagnostic_code_t::invalid_binding,
-               "SV recipe range drag is not active");
-        return result;
-    }
-    if (timing_locked) {
-        reject(result.diagnostics, diagnostic_code_t::invalid_binding,
-               "SV recipe range drag was cancelled by timing lock");
-        drag.status = sv_recipe_range_drag_status_t::rejected;
-        return result;
-    }
-    auto transaction = pending.transaction(history, "SV recipe range drag",
-        document_identity_policy_t::revision_only, diagnostic_code_t::invalid_binding);
-    if (!transaction.is_ready()) {
-        result = transaction.commit({});
-        drag.status = sv_recipe_range_drag_status_t::rejected;
-        return result;
-    }
-    if (drag.preview_range == drag.original_range) {
-        drag.status = sv_recipe_range_drag_status_t::cancelled;
-        return result;
-    }
-    result = apply_sv_recipe_transaction(transaction,
-        move_sv_recipe_range_action_t{pending.stamp.chart, drag.recipe, drag.preview_range});
-    drag.status = result ? sv_recipe_range_drag_status_t::committed : sv_recipe_range_drag_status_t::rejected;
-    return result;
-}
-
-void cancel_sv_recipe_range_drag(proposal_t<sv_recipe_range_drag_t>& pending) noexcept {
-    if (pending.payload.status == sv_recipe_range_drag_status_t::previewing)
-        pending.payload.status = sv_recipe_range_drag_status_t::cancelled;
+auto sv_recipe_range_drag_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
+    const proposal_application_input_t&) -> diagnosed_t<std::optional<std::string>> {
+    const sv_recipe_edit_action_t action =
+        move_sv_recipe_range_action_t{scope.captured_stamp().chart, recipe, preview_range};
+    return sv_recipe_edit_t{.action = action}.apply(scope);
 }
 
 namespace {
@@ -1470,14 +1355,14 @@ struct sv_recipe_edit_context_t {
 
 auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> const chart_document_t* {
-    const auto chart = context.transaction.document().find_chart(id);
+    const auto chart = context.transaction.current_document().find_chart(id);
     if (!id || chart == nullptr) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
         return nullptr;
     }
     if (chart->sv_recipes.size() > maximum_sv_recipes_per_chart) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "selected chart exceeds the SV recipe cap");
         return nullptr;
     }
@@ -1487,14 +1372,14 @@ auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
 auto editable_recipe(sv_recipe_edit_context_t& context, const chart_document_t& chart,
                      recipe_id_t id) -> const sv_recipe_t* {
     if (!id) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit uses the reserved zero ID");
         return nullptr;
     }
     auto* recipe = recipe_by_id(chart, id);
     if (recipe == nullptr ||
         std::ranges::count(chart.sv_recipes, id, &sv_recipe_t::id) != 1) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to a missing or ambiguous recipe");
         return nullptr;
     }
@@ -1517,26 +1402,26 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     const auto* chart = editable_recipe_chart(context, edit.chart);
     if (!chart) return;
     if (chart->sv_recipes.size() >= maximum_sv_recipes_per_chart) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe insertion would exceed the per-chart cap");
         return;
     }
     auto recipe = edit.value;
     if (!recipe.id) {
-        const auto id = next_recipe_id(context.transaction.document());
+        const auto id = next_recipe_id(context.transaction.current_document());
         if (!id) {
-            reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+            reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe ID sequence is exhausted");
             return;
         }
         recipe.id = *id;
-    } else if (is_globally_used_recipe_id(context.transaction.document(), recipe.id)) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::duplicate_id,
+    } else if (is_globally_used_recipe_id(context.transaction.current_document(), recipe.id)) {
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::duplicate_id,
                "SV recipe ID is already used by a generator recipe");
         return;
     }
-    if (!append_recipe_validation(context.transaction.outcome, *chart, recipe)) return;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, recipe)) return;
+    auto* target = context.transaction.document().find_chart(edit.chart);
     target->sv_recipes.push_back(std::move(recipe));
     context.label = "Insert SV recipe";
     context.changed = true;
@@ -1550,9 +1435,9 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe) return;
     auto replacement = edit.value;
     replacement.id = edit.id;
-    if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, replacement)) return;
     context.changed = *recipe != replacement;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
         *recipe_by_id(*target, edit.id) = std::move(replacement);
         context.label = "Update SV recipe";
@@ -1575,7 +1460,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe)
         return;
     if (edit.new_index >= chart.sv_recipes.size()) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe reorder index is outside the recipe list");
         return;
     }
@@ -1612,9 +1497,9 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe) return;
     auto replacement = *recipe;
     replacement.range = edit.range;
-    if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, replacement)) return;
     context.changed = replacement.range != recipe->range;
-    auto* target = context.transaction.copy_document().find_chart(edit.chart);
+    auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
         recipe_by_id(*target, edit.id)->range = edit.range;
         context.label = "Move SV recipe range";
@@ -1651,10 +1536,10 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     scratch.sv_recipes.front().enabled = true;
     auto baked = bake_sv_recipes_for_export(scratch);
     if (!baked.value || !baked.diagnostics.empty()) {
-        context.transaction.outcome.diagnostics.insert(context.transaction.outcome.diagnostics.end(),
+        context.transaction.outcome().diagnostics.insert(context.transaction.outcome().diagnostics.end(),
                                           baked.diagnostics.begin(), baked.diagnostics.end());
-        if (context.transaction.outcome.diagnostics.empty())
-            reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        if (context.transaction.outcome().diagnostics.empty())
+            reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe could not be materialized");
         return;
     }
@@ -1671,7 +1556,7 @@ template <typename Edit>
 void apply_recipe_operation(sv_recipe_edit_context_t& context, const Edit& edit) {
     const auto* source = editable_recipe_chart(context, edit.chart);
     if (!source || !editable_recipe(context, *source, edit.id)) return;
-    auto* chart = context.transaction.copy_document().find_chart(edit.chart);
+    auto* chart = context.transaction.document().find_chart(edit.chart);
     apply_recipe_operation(context, *chart, edit);
 }
 
@@ -1680,30 +1565,31 @@ void sv_recipe_edit_context_t::operator()(const Edit& edit) {
     apply_recipe_operation(*this, edit);
 }
 
-auto apply_sv_recipe_transaction(document_command_transaction_t& transaction,
-                                 const sv_recipe_edit_action_t& action)
-    -> document_command_result_t {
-    auto& result = transaction.outcome;
+
+auto sv_recipe_edit_t::apply(document_edit_scope_t& scope) const
+    -> diagnosed_t<std::optional<std::string>> {
+    auto& transaction = scope.transaction();
+    auto& result = transaction.outcome();
     sv_recipe_edit_context_t context{.transaction = transaction, .label = {}, .changed = false};
     std::visit(context, action);
-    if (!result.diagnostics.empty() || !context.changed) {
-        return transaction.finish_without_commit();
-    }
-    return transaction.commit(std::move(context.label));
+    if (!result.diagnostics.empty() || !context.changed) return {};
+    return {.value = std::move(context.label)};
 }
 
 } // namespace
 
+// Temporary: removed by T-637; native_chart_edit_action.h dispatches into existing transactions.
 auto apply_sv_recipe_edit(document_command_transaction_t& transaction,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
-    if (!transaction.is_ready()) return transaction.finish_without_commit();
-    return apply_sv_recipe_transaction(transaction, action);
+    document_edit_scope_t scope{transaction};
+    return apply_proposal_edit(scope, sv_recipe_edit_t{.action = action});
 }
 
 auto apply_sv_recipe_edit(document_history_t& history,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    return apply_sv_recipe_transaction(transaction, action);
+    auto transaction = document_command_transaction_t(history);
+    document_edit_scope_t scope{transaction};
+    return apply_proposal_edit(scope, sv_recipe_edit_t{.action = action});
 }
 
 } // namespace wormedit

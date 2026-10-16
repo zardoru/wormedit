@@ -10,7 +10,6 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
-#include <wormedit/core/interaction_gestures.h>
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>
@@ -56,7 +55,7 @@ using namespace compose_navigation_input_detail;
 
 namespace wormedit::sys::compose_input_detail {
 auto validate_bmson_marker_positions(
-    const wormedit::chart_document_t& chart,
+    const wormedit::chart_indices_t& indices,
     std::span<const wormedit::bmson_sound_marker_insertion_t> markers) -> std::string;
 
 auto find_bmson_marker_channel(const wormedit::chart_document_t& chart,
@@ -406,8 +405,8 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
                                           false,
                                           lane,
                                           virtual_row,
-                                          releasing ? editor_gesture_phase_t::commit
-                                                    : editor_gesture_phase_t::update});
+                                          releasing ? proposal_operation_t::apply
+                                                    : proposal_operation_t::revise});
     if (!result.accepted)
         return compose_input_family_result_t::from(
             result.diagnostics.empty() ? "Selected-object move could not be applied."
@@ -658,23 +657,18 @@ struct compose_input_context_t {
                                  const wormedit::editor_interaction_view_model_t& view,
                                  double x_pixels, double y_pixels)
         -> std::optional<wormedit::editor_hit_target_t> {
-        if (!environment.controls.cache.scene.hit_test_index) {
-            auto built = wormedit::build_editor_hit_test_index(
-                chart, environment.document.history.document.revision);
-            if (!std::holds_alternative<wormedit::editor_hit_test_index_t>(built))
-                return std::nullopt;
-            environment.controls.cache.scene.hit_test_index =
-                std::get<wormedit::editor_hit_test_index_t>(std::move(built));
-        }
+        const auto* index = environment.controls.cache.hit_test_index_for(
+            chart, environment.document.history.document.revision);
+        if (!index) return std::nullopt;
         if (environment.commands.project.compose_gesture.note_paint_mode_active)
             return resolve_compose_paint_cell(
-                chart, *environment.controls.cache.scene.hit_test_index, view, x_pixels,
+                chart, *index, view, x_pixels,
                 y_pixels, field_left_pixels, field_width_pixels,
                 compose_field_downscroll(
                     chart, environment.commands.preferences.editor_preferences),
                 wormedit::edit_snap_denominator(chart, state));
         return wormedit::hit_test_editor(
-            chart, *environment.controls.cache.scene.hit_test_index, view,
+            chart, *index, view,
             {.x_pixels = x_pixels,
              .y_pixels = compose_source_y(
                  y_pixels, view.viewport_height_pixels,
@@ -734,7 +728,7 @@ struct compose_input_context_t {
                             const wormedit::editor_interaction_view_model_t& view, double x_pixels,
                             double y_pixels)
         -> std::optional<std::pair<std::uint64_t, wormedit::lane_id_t>> {
-        if (!environment.controls.cache.scene.index)
+        if (!environment.controls.cache.scene.index.value())
             return std::nullopt;
         const auto row = virtual_bms_row_at(chart, view, y_pixels);
         if (!row)
@@ -742,7 +736,7 @@ struct compose_input_context_t {
         auto request = environment.controls.cache.frame.preview_scene_request;
         request.include_virtual_bms_tail = true;
         const auto composed = wormedit::editor_field_scene_view_result_t::from(
-            chart, *environment.controls.cache.scene.index, view, request);
+            chart, *environment.controls.cache.scene.index.value(), view, request);
         if (!composed.value || !composed.ok())
             return std::nullopt;
         for (const auto& lane : composed.value->lanes) {
@@ -832,13 +826,13 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
     if (state.gesture<wormedit::pending_note_duration_gesture_t>()) {
         result = dispatch_editor_action(history, state,
                                         update_note_duration_gesture_action_t{
-                                            *position, releasing ? editor_gesture_phase_t::commit
-                                                                 : editor_gesture_phase_t::update});
+                                            *position, releasing ? proposal_operation_t::apply
+                                                                 : proposal_operation_t::revise});
         accepted = releasing ? (result.document_changed ? "Note duration committed."
                                                         : "Note resize released.")
                              : "Note resize preview updated.";
     } else {
-        const auto sound = state.pending_hold ? state.pending_hold->sound : std::nullopt;
+        const auto sound = state.hold() ? state.hold()->sound : std::nullopt;
         result = releasing ? dispatch_editor_action(history, state,
                                                     release_alt_pointer_hold_gesture_action_t{
                                                         .position = *position,
@@ -884,7 +878,7 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
     if (!application_state.project.compose_gesture.note_paint_mode_active) {
-        if (state.pending_note_paint_gesture) {
+        if (state.gesture<wormedit::pending_note_paint_gesture_t>()) {
             result = dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
             accepted = "Note-paint stroke canceled because paint mode is inactive.";
         } else {
@@ -906,19 +900,20 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
             return compose_input_family_result_t::from(
                 "Begin note painting over an editable chart lane.");
         if (input.kind != WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE ||
-            !state.pending_note_paint_gesture) {
+            !state.gesture<wormedit::pending_note_paint_gesture_t>()) {
             result.accepted = true;
             accepted = "Note-paint preview retained outside editable chart geometry.";
             return compose_input_family_result_t::continue_with_result();
         }
-        const auto pending = *state.pending_note_paint_gesture;
+        const auto& pending = *state.gesture<wormedit::pending_note_paint_gesture_t>();
+        const auto sound = pending.sound;
         result = dispatch_editor_action(
             history, state,
             end_note_paint_gesture_action_t{
                 .lane = pending.last_lane,
                 .position = pending.last_position,
                 .source_geometry = compose_stem_geometry(history, state, cache, pending.sound)});
-        advance_sound_after_paint_commit(result, pending.sound, !state.selected_notes.empty());
+        advance_sound_after_paint_commit(result, sound, !state.selected_notes.empty());
         accepted = "Note-paint stroke released at its last editable cell.";
         return compose_input_family_result_t::continue_with_result();
     }
@@ -942,8 +937,8 @@ auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
                 .lane = target->lane, .position = target->position, .pointer_captured = captured});
         accepted = "Note-paint preview updated.";
     } else {
-        const auto stroke_sound = state.pending_note_paint_gesture
-                                      ? state.pending_note_paint_gesture->sound
+        const auto stroke_sound = state.gesture<wormedit::pending_note_paint_gesture_t>()
+                                      ? state.gesture<wormedit::pending_note_paint_gesture_t>()->sound
                                       : std::nullopt;
         result = dispatch_editor_action(
             history, state,
@@ -1081,7 +1076,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
                 .to_bgm = input.note_move_to_bgm,
                 .preferred_bgm_lane =
                     input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt,
-                .phase = wormedit::editor_gesture_phase_t::commit});
+                .operation = wormedit::proposal_operation_t::apply});
         accepted =
             result.document_changed ? "Selected notes moved." : "Selected-note move released.";
     }
@@ -1165,7 +1160,7 @@ auto dispatch_compose_selection_input(
                                             .x_pixels = input.x_pixels,
                                             .y_pixels = input_source_y(input.y_pixels),
                                             .pointer_captured = true,
-                                            .phase = wormedit::editor_gesture_phase_t::commit});
+                                            .operation = wormedit::proposal_operation_t::apply});
         accepted = "Area selection committed.";
         break;
     case WORM_UI_COMPOSE_INPUT_SPACE_RANGE_SELECTION:
@@ -1180,7 +1175,7 @@ auto dispatch_compose_selection_input(
                 .mode = *selection_mode(input.selection_mode),
                 .minimum_snap_width = input.kind == WORM_UI_COMPOSE_INPUT_LATCHED_RANGE_SELECTION,
             });
-        accepted = state.pending_space_range_selection ? "Range selection started."
+        accepted = state.gesture<wormedit::pending_space_range_selection_t>() ? "Range selection started."
                                                        : "Range selection committed.";
         break;
     default:
@@ -1331,10 +1326,10 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
     using namespace wormedit;
     // A pending hold keeps the sound captured at its first click; the end click only commits.
     const auto sound =
-        context.state.pending_hold ? context.state.pending_hold->sound : note_paint_sound(input);
+        context.state.hold() ? context.state.hold()->sound : note_paint_sound(input);
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
-        context.state.pending_hold
+        context.state.hold()
             ? editor_interaction_action_t{commit_hold_action_t{
                   target.position,
                   compose_stem_geometry(context.environment.document.history, context.state,
@@ -1348,7 +1343,7 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
         context.environment.commands.preferences.editor_preferences.audition_on_click,
         context.environment.document.history, context.state, result);
     accepted =
-        context.state.pending_hold ? "Hold gesture started; click its end row." : "Note placed.";
+        context.state.hold() ? "Hold gesture started; click its end row." : "Note placed.";
 }
 
 auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
@@ -1529,10 +1524,6 @@ auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
 auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
-
-auto bga_draw_geometry(const compose_input_context_t& context,
-                       const wormedit::chart_document_t& chart)
-    -> std::variant<wormedit::measure_index_t, wormedit::diagnostic_list_t>;
 
 auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_context_t& context,
                   const wormedit::chart_document_t& chart, const wormedit::measure_index_t& index)

@@ -211,8 +211,8 @@ auto pending_registration(std::uint64_t asset, std::string_view name = "keysound
 namespace {
 void check_pending_inventory(wormedit::audio::decoded_source_registry_t& registry) {
     using namespace wormedit::audio;
-    CHECK(registry.size() == 1'000);
-    CHECK(registry.pending_count() == 1'000);
+    CHECK(registry.size() == 2);
+    CHECK(registry.pending_count() == 2);
     CHECK(registry.open_decoder_count() == 0);
     CHECK(registry.bindings().empty());
     CHECK_FALSE(registry.binding(wormedit::asset_id_t{1}));
@@ -225,10 +225,10 @@ void check_pending_inventory(wormedit::audio::decoded_source_registry_t& registr
 
 namespace {
 void check_probed_inventory(wormedit::audio::decoded_source_registry_t& registry, std::size_t probed) {
-    CHECK(probed == 1'000);
+    CHECK(probed == 2);
     CHECK(registry.pending_count() == 0);
-    CHECK(registry.bindings().size() == 1'000);
-    CHECK(registry.binding(wormedit::asset_id_t{500})->output_frame_count > 0);
+    CHECK(registry.bindings().size() == 2);
+    CHECK(registry.binding(wormedit::asset_id_t{2})->output_frame_count > 0);
     CHECK(registry.take_probe_failures().empty());
 }
 } // namespace
@@ -236,8 +236,9 @@ void check_probed_inventory(wormedit::audio::decoded_source_registry_t& registry
 TEST_CASE("pending registration opens no decoder until a probe runs",
           "[unit][audio][source-registry][lazy]") {
     using namespace wormedit::audio;
-    decoded_source_registry_t registry{2'048};
-    for (std::uint64_t asset = 1; asset <= 1'000; ++asset) {
+    // Two sources distinguish the queue head from the remaining pending registration.
+    decoded_source_registry_t registry{2};
+    for (std::uint64_t asset = 1; asset <= 2; ++asset) {
         const auto added = registry.create_pending_source(pending_registration(asset));
         REQUIRE(added.has_value());
     }

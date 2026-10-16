@@ -1,3 +1,4 @@
+#include "interaction_gesture_runner.h"
 #include "chart_object_ids.h"
 #include "interaction_internal.h"
 namespace wormedit::interaction_detail {
@@ -60,9 +61,10 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
     -> std::variant<std::vector<editor_interaction_view_model_t::virtual_hold_preview_t>,
                     diagnostic_list_t> {
     std::vector<editor_interaction_view_model_t::virtual_hold_preview_t> previews;
-    auto pending = state.additional_keyboard_holds;
-    if (state.pending_hold)
-        pending.push_back(*state.pending_hold);
+    const auto additional = state.additional_keyboard_holds();
+    auto pending = std::vector<pending_hold_t>{additional.begin(), additional.end()};
+    if (state.hold())
+        pending.push_back(*state.hold());
     for (const auto& hold : pending) {
         if (!hold.anchor_canvas_row && !hold.preview_canvas_row)
             continue;
@@ -73,7 +75,7 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            "canvas lane hold is stale or outside BMS geometry")};
         }
-        if (!hold.stamp.is_revision_current(revision))
+        if (!state.gesture_stamp<hold_gesture_t>()->is_revision_current(revision))
             return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                            stale_action_message("Editor gesture"))};
         auto planned = plan_hold_rows(chart, index, hold.lane, *anchor, *end);
@@ -373,14 +375,16 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
                            editor_interaction_result_t result) -> editor_interaction_result_t {
     if (!result)
         return diagnostic_result(context.history, context.state, result.diagnostics);
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(scratch.document));
     const auto command = transaction.commit("Place note in virtual BMS measure");
     if (!command)
         return diagnostic_result(context.history, context.state, command.diagnostics);
-    context.state.pending_hold.reset();
-    for (auto& pending : context.state.additional_keyboard_holds)
-        pending.stamp = document_stamp_t::from(context.history.document.revision);
+    if (auto* holds = context.state.gesture<hold_gesture_t>()) {
+        holds->discard_primary();
+        if (holds->has_pending()) refresh_gesture_stamp<hold_gesture_t>(context);
+        else context.state.clear();
+    }
     restore_cursor_pose(context.state, capture_cursor_pose(staged));
     context.state.active_lane = staged.active_lane;
     auto published = editor_interaction_result_t::from(context.history, context.state, true);
@@ -393,14 +397,14 @@ namespace wormedit {
 using namespace interaction_detail;
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
-                         const virtual_hold_rows_t& rows) -> editor_interaction_result_t {
+                         const virtual_hold_rows_t& rows, const pending_hold_t* captured) -> editor_interaction_result_t {
     auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, rows.measure_count))
-        return diagnostic_result(context.history, context.state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     const auto built = measure_index_t::from(*chart);
     if (!built)
-        return diagnostic_result(context.history, context.state, built.error());
+        return editor_interaction_result_t{.diagnostics = built.error()};
     const auto& index = *built;
     const auto anchor = position_at(index, rows.anchor);
     const auto end = position_at(index, rows.end);
@@ -410,21 +414,18 @@ auto commit_virtual_hold(editor_edit_context_t& context,
             {error(diagnostic_code_t::row_out_of_range, "virtual hold endpoints are unavailable")});
     auto staged = context.state;
     staged.virtual_bms_cursor_row.reset();
-    staged.additional_keyboard_holds.clear();
-    if (!staged.pending_hold)
-        staged.pending_hold = pending_hold_t{.position = *anchor,
-                                             .lane = action.lane,
-                                             .stamp = document_stamp_t::from(scratch.document.revision),
-                                             .sound = action.sound,
-                                             .kind = staged.armed_note_kind,
-                                             .layers = staged.armed_note_layers};
-    auto& pending = *staged.pending_hold;
+    if (!captured) captured = context.state.hold();
+    auto pending = captured ? *captured : pending_hold_t{.position = *anchor,
+        .lane = action.lane, .sound = action.sound, .kind = staged.armed_note_kind,
+        .layers = staged.armed_note_layers};
+    staged.clear();
     pending.position = *anchor;
     pending.anchor_canvas_row.reset();
     pending.preview_canvas_row.reset();
     pending.gesture_source.reset();
     editor_edit_context_t placement{scratch, staged, {*chart, index}};
-    auto result = commit_hold(placement, *end, action.source_geometry);
+    auto result = pending.apply(placement, *end, action.source_geometry);
+    if (!result) return result;
     return publish_row_placement(context, scratch, staged, std::move(result));
 }
 } // namespace wormedit
@@ -439,7 +440,9 @@ auto place_virtual_bms_hold(editor_edit_context_t& context,
     auto rows = resolve_virtual_hold_rows(context, action);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&rows))
         return diagnostic_result(context.history, context.state, *diagnostics);
-    return commit_virtual_hold(context, action, std::get<virtual_hold_rows_t>(rows));
+    auto result = commit_virtual_hold(context, action, std::get<virtual_hold_rows_t>(rows));
+    if (!result) return diagnostic_result(context.history, context.state, std::move(result.diagnostics));
+    return result;
 }
 } // namespace wormedit
 
@@ -519,12 +522,13 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         scratch, staged, place_tap_action_t{position, action.sample, action.source_geometry});
     if (!result)
         return diagnostic_result(context.history, context.state, result.diagnostics);
-    if (staged.pending_hold) {
-        auto pending = *staged.pending_hold;
+    if (staged.hold()) {
+        auto holds = std::move(*staged.gesture<hold_gesture_t>());
+        auto& pending = *holds.primary();
         pending.position = context.state.cursor;
         pending.anchor_canvas_row = resolved.row;
         pending.preview_canvas_row = resolved.row;
-        context.state.pending_hold = std::move(pending);
+        capture_gesture(context, std::move(holds));
         context.state.active_lane = action.lane;
         return editor_interaction_result_t::from(context.history, context.state, false);
     }
@@ -652,7 +656,7 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
     const auto command = transaction.commit(created ? "Place note" : "Remove note");
     if (!command)
@@ -661,83 +665,5 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     auto result = editor_interaction_result_t::from(context.history, state, true);
     result.created_note = created;
     return result;
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto append_semantic_paint_note(editor_edit_context_t& context, object_id_t note_id,
-                                bool pointer_captured) -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
-    if (!pointer_captured)
-        return cancel_pointer_gesture(context);
-    if (!state.pending_semantic_layer_paint_gesture)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "semantic-layer paint update requires an active gesture")});
-    auto& pending = *state.pending_semantic_layer_paint_gesture;
-    if (!pending.stamp.is_revision_current(history.document.revision))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   stale_action_message("Editor gesture"))});
-    if (!context.scope.chart.find_note(note_id))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "semantic-layer paint target does not identify a chart note", note_id)});
-    if (pending.visited.contains(note_id.value))
-        return editor_interaction_result_t::from(history, state);
-    if (!pending.notes || !pending.bgm_events ||
-        pending.notes->size() + pending.bgm_events->size() >= maximum_note_paint_targets)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_resolution,
-                   "semantic-layer paint exceeds the per-gesture note target cap")});
-    auto expanded = std::make_shared<std::vector<object_id_t>>(*pending.notes);
-    expanded->push_back(note_id);
-    pending.notes = std::move(expanded);
-    pending.visited.insert(note_id.value);
-    return editor_interaction_result_t::from(history, state);
-}
-} // namespace wormedit
-
-namespace wormedit {
-using namespace interaction_detail;
-auto append_semantic_paint_bgm_event(editor_edit_context_t& context, object_id_t event_id,
-                                     bool pointer_captured) -> editor_interaction_result_t {
-    auto& history = context.history;
-    auto& state = context.state;
-    if (!pointer_captured)
-        return cancel_pointer_gesture(context);
-    if (!state.pending_semantic_layer_paint_gesture)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "semantic-layer paint update requires an active gesture")});
-    auto& pending = *state.pending_semantic_layer_paint_gesture;
-    if (!pending.stamp.is_revision_current(history.document.revision))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   stale_action_message("Editor gesture"))});
-    if (!context.scope.chart.find_bgm_event(event_id))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_id,
-                   "semantic-layer paint target does not identify a BGM event", event_id)});
-    if (pending.visited.contains(event_id.value))
-        return editor_interaction_result_t::from(history, state);
-    if (!pending.bgm_events || !pending.notes ||
-        pending.bgm_events->size() + pending.notes->size() >= maximum_note_paint_targets)
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_resolution,
-                   "semantic-layer paint exceeds the per-gesture target cap")});
-    auto expanded = std::make_shared<std::vector<object_id_t>>(*pending.bgm_events);
-    expanded->push_back(event_id);
-    pending.bgm_events = std::move(expanded);
-    pending.visited.insert(event_id.value);
-    return editor_interaction_result_t::from(history, state);
 }
 } // namespace wormedit

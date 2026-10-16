@@ -1,3 +1,4 @@
+#include "sys/compose_interaction_view.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/compose_actions.h"
@@ -232,7 +233,7 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
     const auto* chart = context.environment.document.history.document.find_chart(
         state ? state->chart : chart_id_t{});
     if (!state || chart == nullptr || (!disable && !state->retained_selection_range) ||
-        editor_interaction_has_pending_gesture(*state) ||
+        state->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session ||
         !context.environment.editor.commands.services.transport_set_loop_selection)
         return compose_action_outcome_t::from(
@@ -248,12 +249,12 @@ auto loop_selection_command(command_context_t& context) -> command_result_t {
             "Loop selection disabled.", notification_severity_t::success,
             notification_source_t::audio, compose_message_lifetime_t::borrowed);
     }
-    const auto indexed = build_measure_index(*chart);
-    const auto* measures = std::get_if<measure_index_t>(&indexed);
+    const auto& indexed = context.environment.document.history.indices(chart->id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     const auto begin =
-        measures ? absolute_row(*measures, state->retained_selection_range->begin) : std::nullopt;
+        measures ? (*measures).row_of( state->retained_selection_range->begin) : std::nullopt;
     const auto end =
-        measures ? absolute_row(*measures, state->retained_selection_range->end) : std::nullopt;
+        measures ? (*measures).row_of( state->retained_selection_range->end) : std::nullopt;
     if (!begin || !end || *begin >= *end ||
         !context.environment.editor.commands.services.transport_set_loop_selection(
             state->chart, context.environment.document.history.document.revision, *begin, *end,
@@ -373,7 +374,7 @@ auto clipboard_commands(command_context_t& context) -> command_result_t {
         std::string message;
         const bool accepted =
             begin_compose_paste(context.environment.editor.commands,
-                                context.environment.document.history.document, *state, message);
+                                context.environment.document.history, *state, message);
         return compose_action_outcome_t::from(std::move(message),
                                               accepted ? notification_severity_t::hint
                                                        : notification_severity_t::warning,
@@ -493,17 +494,15 @@ auto selection_commands(command_context_t& context) -> command_result_t {
 
 // Audio-time markers need the chart's timing index. A failed build is reported
 // once and navigation falls back to beat-anchored markers only.
-auto marker_timing_index(const wormedit::chart_document_t& chart, notification_sink_t& sink)
-    -> std::optional<wormedit::timing_index_t> {
-    if (!wormedit::sys::has_audio_marker_navigation(chart))
-        return std::nullopt;
-    auto built = wormedit::timing_index_t::from(chart);
-    if (built.value)
-        return std::move(built.value);
+auto marker_timing_index(const wormedit::chart_document_t& chart,
+                         const wormedit::chart_indices_t& indices, notification_sink_t& sink)
+    -> const wormedit::timing_index_t* {
+    if (!wormedit::sys::has_audio_marker_navigation(chart)) return nullptr;
+    if (indices.timing.value) return &*indices.timing.value;
     sink.post_feedback(
         notification_severity_t::warning, notification_source_t::input,
         "Audio-time bookmarks are skipped because the chart timing could not be built.");
-    return std::nullopt;
+    return nullptr;
 }
 
 auto navigate_active_markers(command_context_t& context,
@@ -514,12 +513,13 @@ auto navigate_active_markers(command_context_t& context,
     const auto* chart = selected_chart(context.environment.document.history,
                                        context.environment.document.workspace);
     const auto timing =
-        chart ? marker_timing_index(*chart, context.environment.document.notifications)
-              : std::nullopt;
+        chart ? marker_timing_index(*chart, *context.environment.document.history.indices(chart->id),
+                                    context.environment.document.notifications)
+              : nullptr;
     return marker_navigation_match_t::from(context.environment.document.history.document,
                                            context.environment.document.history.document.revision,
                                            state.chart, state.cursor, direction, {}, {},
-                                           timing ? &*timing : nullptr);
+                                           timing);
 }
 
 void post_marker_warnings(notification_sink_t& sink,
@@ -600,7 +600,7 @@ auto open_bookmark_chooser_command(command_context_t& context) -> command_result
         return compose_action_outcome_t::from(
             "Bookmark chooser requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction))
+    if (interaction->is_pending())
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
@@ -621,7 +621,7 @@ auto open_sound_picker_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Sound picker requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
@@ -668,7 +668,7 @@ auto project_export_command(command_context_t& context) -> command_result_t {
             "Export requires a selected project difficulty.", notification_severity_t::warning,
             notification_source_t::export_, diagnostic_code_t::unsupported_feature);
     if ((context.environment.editor.retained &&
-         editor_interaction_has_pending_gesture(*context.environment.editor.retained)) ||
+         context.environment.editor.retained->is_pending()) ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active editor gesture before exporting.",
@@ -707,7 +707,7 @@ auto compose_auxiliary_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Dock command requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*interaction) ||
+    if (interaction->is_pending() ||
         context.environment.editor.commands.project.clipboard.paste_session)
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture first.", notification_severity_t::warning,
@@ -752,7 +752,7 @@ auto bookmark_commands(command_context_t& context) -> command_result_t {
             "Bookmark commands require the active Compose chart.", notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::markers_add_bookmark &&
-        (editor_interaction_has_pending_gesture(*state) ||
+        (state->is_pending() ||
          context.environment.editor.commands.project.clipboard.paste_session))
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before editing bookmarks.",
@@ -827,7 +827,7 @@ auto timing_lock_command(command_context_t& context) -> command_result_t {
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     app.project.timing_recipe.timing_locked = !app.project.timing_recipe.timing_locked;
     if (app.project.timing_recipe.timing_locked && context.environment.editor.timing_stage) {
-        cancel_timing_lane_pseudonote(*context.environment.editor.timing_stage);
+        cancel_proposal(*context.environment.editor.timing_stage);
         context.environment.editor.timing_stage.reset();
     }
     return compose_action_outcome_t::from(
@@ -837,15 +837,15 @@ auto timing_lock_command(command_context_t& context) -> command_result_t {
 }
 
 auto effective_scroll_multiplier_at(const wormedit::chart_document_t& chart,
+                                    const wormedit::chart_indices_t& indices,
                                     wormedit::local_position_t position)
     -> std::optional<wormedit::signed_rational_t> {
     using namespace wormedit;
-    const auto measure_result = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&measure_result);
-    const auto row = measures ? absolute_row(*measures, position) : std::nullopt;
+    const auto* measures = indices.measures ? &*indices.measures : nullptr;
+    const auto row = measures ? (*measures).row_of( position) : std::nullopt;
     if (!row || *row > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max()))
         return std::nullopt;
-    const auto timing = timing_index_t::from(chart);
+    const auto& timing = indices.timing;
     if (!timing.value)
         return std::nullopt;
     const auto scroll = scroll_speed_index_t::from(chart, *timing.value);
@@ -885,7 +885,7 @@ auto timing_insert_command(command_context_t& context) -> command_result_t {
             "Timing insertion is unavailable at a virtual BMS cursor row.",
             notification_severity_t::warning, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*state))
+    if (state->is_pending())
         return compose_action_outcome_t::from(
             "Finish or cancel the active Compose gesture before inserting timing.",
             notification_severity_t::warning, notification_source_t::edit,
@@ -901,7 +901,8 @@ auto timing_insert_command(command_context_t& context) -> command_result_t {
                 diagnostic_code_t::unsupported_feature);
         initial = timing_bpm_value_t{*bpm};
     } else {
-        const auto multiplier = effective_scroll_multiplier_at(*chart, state->cursor);
+        const auto multiplier = effective_scroll_multiplier_at(
+            *chart, *context.environment.document.history.indices(chart->id), state->cursor);
         if (!multiplier)
             return compose_action_outcome_t::from(
                 "The effective SV value could not be resolved at the cursor.",
@@ -947,8 +948,7 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
             "Select requires the active Compose chart.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind != command_kind_t::edit_tool_select &&
-        !std::holds_alternative<wormedit::editor_interaction_view_model_t>(
-            wormedit::inspect_editor_interaction(context.environment.document.history, *state)))
+        !compose_view_for_state(context.environment.document.history, *state))
         return compose_action_outcome_t::from(
             "Draw and Layer require editable chart geometry.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
@@ -959,7 +959,7 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
         return compose_action_outcome_t::from(
             "Pick an unlocked visible layer in the Layers dock.", notification_severity_t::warning,
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
-    if (editor_interaction_has_pending_gesture(*state)) {
+    if (state->is_pending()) {
         const auto canceled =
             wormedit::dispatch_editor_action(context.environment.document.history, *state,
                                              wormedit::cancel_editor_gesture_action_t{});

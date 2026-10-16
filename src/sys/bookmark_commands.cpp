@@ -19,20 +19,18 @@ auto is_playing(const application_command_state_t& application) -> bool {
     return application.services.transport_preview_playing && application.services.transport_preview_playing();
 }
 
-auto beat_position_for_audio_milliseconds(const chart_document_t& chart,
+auto beat_position_for_audio_milliseconds(const chart_indices_t& indices,
                                           std::int64_t milliseconds)
     -> std::optional<local_position_t> {
-    const auto measures = build_measure_index(chart);
-    const auto timing = timing_index_t::from(chart);
-    if (!std::holds_alternative<measure_index_t>(measures) || !timing.value)
+    if (!indices.measures || !indices.timing.value)
         return std::nullopt;
-    const auto query = timing.value->query_position(signed_rational_t{milliseconds, 1'000});
+    const auto query = indices.timing.value->query_position(signed_rational_t{milliseconds, 1'000});
     if (!query || query->value.numerator < 0 ||
         query->value.denominator == 0)
         return std::nullopt;
     const auto row = static_cast<std::uint64_t>(query->value.numerator) /
                      query->value.denominator;
-    return (std::get<measure_index_t>(measures)).position_at(row);
+    return indices.measures->position_at(row);
 }
 
 } // namespace
@@ -68,16 +66,15 @@ auto absolute_row_of(const measure_index_t& index, local_position_t position)
     return entry->absolute_begin_row + position.row;
 }
 
-auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
+auto playing_bookmark_origin(const chart_indices_t& indices, chart_id_t chart_id,
                               const application_command_state_t& application,
                               marker_navigation_direction_t direction)
     -> std::optional<local_position_t> {
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built) ||
+    if (!indices.measures ||
         !application.project.transport.preview_playhead_absolute_row ||
         !std::isfinite(*application.project.transport.preview_playhead_absolute_row))
         return std::nullopt;
-    const auto& index = std::get<measure_index_t>(built);
+    const auto& index = *indices.measures;
     if (index.total_rows == 0) return std::nullopt;
     if (direction == marker_navigation_direction_t::previous)
         if (const auto recent = application.bookmarks.recent_seek_row(chart_id))
@@ -91,14 +88,13 @@ auto playing_bookmark_origin(const chart_document_t& chart, chart_id_t chart_id,
     return (index).position_at(static_cast<std::uint64_t>(origin));
 }
 
-void record_playing_seek(const chart_document_t& chart, chart_id_t chart_id,
+void record_playing_seek(const chart_indices_t& indices, chart_id_t chart_id,
                          application_command_state_t& application, local_position_t target,
                          bool sought) {
     application.bookmarks.clear_seek_record();
     if (!sought) return;
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built)) return;
-    if (const auto row = absolute_row_of(std::get<measure_index_t>(built), target))
+    if (!indices.measures) return;
+    if (const auto row = absolute_row_of(*indices.measures, target))
         application.bookmarks.record_seek(chart_id, *row);
 }
 
@@ -114,9 +110,10 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
     if (!chart)
         return compose_action_outcome_t::blocked(
             "Bookmark navigation requires the active Compose chart.", notification_source_t::input);
+    const auto& indices = *history.indices(state.chart);
     const bool playing = is_playing(application);
     if (!playing) application.bookmarks.clear_seek_record();
-    const auto origin = playing ? playing_bookmark_origin(*chart, state.chart, application, direction)
+    const auto origin = playing ? playing_bookmark_origin(indices, state.chart, application, direction)
                                 : std::optional<local_position_t>{state.cursor};
     if (!origin)
         return compose_action_outcome_t::blocked("The playhead row is not available yet.",
@@ -143,7 +140,7 @@ auto bookmark_navigation_t::navigate_beat_bookmark(document_history_t& history,
     const auto target = *marker.value.item->beat_position;
     auto outcome = navigate_compose_position(history, state, application,
         {.position = target}, marker.value.document_revision);
-    if (playing) record_playing_seek(*chart, state.chart, application, target, outcome.accepted);
+    if (playing) record_playing_seek(indices, state.chart, application, target, outcome.accepted);
     else if (outcome.accepted)
         outcome.message =
             previous ? "Moved to the previous bookmark." : "Moved to the next bookmark.";
@@ -176,7 +173,7 @@ auto bookmark_navigation_t::navigate_to_bookmark(document_history_t& history,
     } else if (bookmark->anchor == marker_anchor_t::audio_time && bookmark->audio_milliseconds) {
         target.audio_milliseconds = bookmark->audio_milliseconds;
         if (!is_playing(application)) {
-            const auto position = beat_position_for_audio_milliseconds(*chart, *bookmark->audio_milliseconds);
+            const auto position = beat_position_for_audio_milliseconds(*history.indices(chart_id), *bookmark->audio_milliseconds);
             if (!position)
                 return compose_action_outcome_t::blocked(
                     "Audio-time bookmark has no musical position in this chart.",
@@ -202,12 +199,12 @@ auto bookmark_navigation_t::add_beat_bookmark_here(document_history_t& history,
                                                  notification_source_t::edit);
     auto position = state.cursor;
     if (is_playing(application)) {
-        const auto built = build_measure_index(*chart);
+        const auto& indices = *history.indices(state.chart);
         if (!application.project.transport.preview_playhead_absolute_row ||
-            !std::holds_alternative<measure_index_t>(built))
+            !indices.measures)
             return compose_action_outcome_t::blocked("The playhead row is not available yet.",
                                                      notification_source_t::edit);
-        const auto& index = std::get<measure_index_t>(built);
+        const auto& index = *indices.measures;
         const auto row = nearest_snap_row(*chart, index, *application.project.transport.preview_playhead_absolute_row,
                                           state.active_snap_denominator);
         const auto snapped = row ? (index).position_at(*row) : std::nullopt;

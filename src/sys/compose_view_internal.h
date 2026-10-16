@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/keyed_cache.h>
 #include "sys/compose_area_actions.h"
 #include "sys/compose_draw_source_view.h"
 #include "sys/compose_note_to_bgm.h"
@@ -10,7 +11,6 @@
 #include "sys/recipe_form.h"
 #include "ui/nuklear/arrow_glyph.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction_gestures.h>
 #include <wormedit/core/sv_recipe.h>
 
 #include <wormedit/core/editor_scene.h>
@@ -102,11 +102,8 @@ auto cached_lane_layout_profile_choices(wormedit::format_family_t family,
                                         wormedit::editor_mode_family_t mode)
     -> const std::vector<wormedit::lane_input_profile_t>&;
 
-struct measure_removal_cache_t {
-    bool valid{};
-    std::uint64_t song{}, revision{}, chart{}, measure{};
-    wormedit::measure_removal_proposal_t proposal;
-};
+using measure_removal_cache_t = wormedit::keyed_cache_t<
+    std::pair<wormedit::chart_stamp_t, wormedit::measure_id_t>, wormedit::measure_removal_proposal_t>;
 
 auto cached_measure_removal(const wormedit::song_document_t& song,
                             const wormedit::chart_document_t& chart, wormedit::measure_id_t measure)
@@ -772,35 +769,44 @@ void populate_compose_staged_draft(frontend_workspace_view_t& flattened,
                                    application_command_state_t& application_state,
                                    WormUiComposeView& view);
 
-template <class Event>
-auto cached_selected_source(const wormedit::chart_document_t& chart, wormedit::object_id_t id,
-                            compose_scene_cache_t::selected_source_location_t& slot,
-                            std::vector<Event> wormedit::measure_chunk_t::* container,
-                            compose_scene_cache_t& cache) -> const Event* {
-    if (slot.attempted && slot.id == id) {
-        if (!slot.location)
-            return nullptr;
-        const auto [group, item] = *slot.location;
-        if (group < chart.measures.size()) {
-            const auto& events = chart.measures[group].*container;
-            if (item < events.size() && events[item].id == id) {
-                ++cache.scene.selected_source_reused;
-                return &events[item];
-            }
-        }
-    }
-    slot = {.id = id, .attempted = true};
+template <typename Event>
+auto is_selected_source_location_current(const wormedit::chart_document_t& chart,
+    wormedit::object_id_t id, std::vector<Event> wormedit::measure_chunk_t::* container,
+    const std::optional<std::pair<std::size_t, std::size_t>>& location) -> bool {
+    if (!location) return true;
+    const auto [group, item] = *location;
+    if (group >= chart.measures.size()) return false;
+    const auto& events = chart.measures[group].*container;
+    return item < events.size() && events[item].id == id;
+}
+
+template <typename Event>
+auto find_selected_source_location(const wormedit::chart_document_t& chart,
+    wormedit::object_id_t id, std::vector<Event> wormedit::measure_chunk_t::* container,
+    compose_scene_cache_t& cache) -> std::optional<std::pair<std::size_t, std::size_t>> {
     for (std::size_t group = 0; group < chart.measures.size(); ++group) {
         const auto& events = chart.measures[group].*container;
         for (std::size_t item = 0; item < events.size(); ++item) {
             ++cache.scene.selected_source_scanned;
-            if (events[item].id != id)
-                continue;
-            slot.location = std::pair{group, item};
-            return &events[item];
+            if (events[item].id == id) return std::pair{group, item};
         }
     }
-    return nullptr;
+    return std::nullopt;
+}
+
+template <typename Event>
+auto cached_selected_source(const wormedit::chart_document_t& chart, wormedit::object_id_t id,
+                            compose_scene_cache_t::selected_source_location_t& slot,
+                            std::vector<Event> wormedit::measure_chunk_t::* container,
+                            compose_scene_cache_t& cache) -> const Event* {
+    const auto builds = slot.build_count();
+    const auto& location = slot.get_or_build(id,
+        std::bind_front(find_selected_source_location<Event>, std::cref(chart), id, container, std::ref(cache)),
+        std::bind_front(is_selected_source_location_current<Event>, std::cref(chart), id, container));
+    if (!location) return nullptr;
+    if (slot.build_count() == builds) ++cache.scene.selected_source_reused;
+    const auto [group, item] = *location;
+    return &(chart.measures[group].*container)[item];
 }
 
 void populate_compose_selected_bgm(
@@ -814,7 +820,9 @@ void populate_compose_selected_note(
     WormUiComposeView& view, compose_scene_cache_t& cache);
 
 auto cached_compose_measures(frontend_workspace_view_t& flattened,
-                             const wormedit::chart_document_t& chart, compose_scene_cache_t& cache)
+                             const wormedit::chart_document_t& chart,
+                             const wormedit::document_history_t& history,
+                             compose_scene_cache_t& cache)
     -> const wormedit::measure_index_t*;
 
 void discard_compose_static_source(compose_scene_cache_t& cache);
@@ -857,8 +865,7 @@ auto compose_static_storage_bytes(const frontend_workspace_view_t& storage) -> s
 
 void publish_compose_static_source(compose_scene_cache_t& cache, WormUiComposeView& view);
 
-auto compose_static_source_layout_matches(const WormUiComposeView& source,
-                                          const WormUiComposeView& view) -> bool;
+
 
 void clear_static_source_selection(frontend_workspace_view_t& storage);
 

@@ -30,13 +30,13 @@ auto hover_chart() -> chart_document_t {
 
 auto label_at(const chart_document_t& chart, std::int64_t frame,
               std::uint32_t sample_rate = 48'000) -> std::string {
-    const auto measure_result = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(measure_result));
-    const auto timing_result = build_timing_index(chart);
-    REQUIRE(timing_result.index);
+    const auto measure_result = measure_index_t::from(chart);
+    REQUIRE(measure_result.has_value());
+    const auto timing_result = timing_index_t::from(chart);
+    REQUIRE(timing_result.value);
     std::array<char, 64> label{};
-    REQUIRE(format_compose_hover_timing(chart, std::get<measure_index_t>(measure_result),
-        *timing_result.index, frame, sample_rate, label.data(), label.size()));
+    REQUIRE(format_compose_hover_timing(chart, measure_result.value(),
+        *timing_result.value, frame, sample_rate, label.data(), label.size()));
     return label.data();
 }
 
@@ -75,16 +75,16 @@ TEST_CASE("Compose hover time is signed before the beat-zero audio offset",
 TEST_CASE("Compose hover formatter rejects missing output and sample rate",
           "[sys][compose-hover-timing]") {
     const auto chart = hover_chart();
-    const auto measure_result = build_measure_index(chart);
-    const auto timing_result = build_timing_index(chart);
-    REQUIRE(timing_result.index);
-    const auto& measures = std::get<measure_index_t>(measure_result);
+    const auto measure_result = measure_index_t::from(chart);
+    const auto timing_result = timing_index_t::from(chart);
+    REQUIRE(timing_result.value);
+    const auto& measures = measure_result.value();
     std::array<char, 64> label{};
-    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.index,
+    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.value,
         0, 0, label.data(), label.size()));
-    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.index,
+    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.value,
         0, 48'000, nullptr, label.size()));
     std::array<char, 4> too_small{};
-    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.index,
+    CHECK_FALSE(format_compose_hover_timing(chart, measures, *timing_result.value,
         0, 48'000, too_small.data(), too_small.size()));
 }

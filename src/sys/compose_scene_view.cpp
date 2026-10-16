@@ -346,9 +346,9 @@ void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t&
             continue;
         lane.bmson_channel_id = source->stem_channel->value;
         const auto continues =
-            cache.stems.draw_stem_sources.channel_continues.find(lane.bmson_channel_id);
+            cache.stems.draw_stem_sources.value().channel_continues.find(lane.bmson_channel_id);
         lane.bmson_channel_continues =
-            continues != cache.stems.draw_stem_sources.channel_continues.end() && continues->second;
+            continues != cache.stems.draw_stem_sources.value().channel_continues.end() && continues->second;
     }
 }
 
@@ -639,7 +639,7 @@ bool initialize_compose_view_state(
     view.semantic_layer_paint_mode_active =
         notes_editable && application_state.project.compose_gesture.semantic_layer_paint_mode_active;
     view.semantic_layer_gesture_active =
-        retained_state && editor_interaction_has_pending_gesture(*retained_state);
+        retained_state && retained_state->is_pending();
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
     view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;

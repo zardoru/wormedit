@@ -440,7 +440,7 @@ auto move_notes_to_bgm(document_history_t& history, chart_id_t chart_id,
     if (const auto failure = apply_ordinary_plan(scratch, chart_id, selection->ordinary,
                                                  preferred_lane, policy, revision))
         return *failure;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit(notes.size() == 1 ? "Move note to BGM" : "Move notes to BGM");
 }
@@ -560,8 +560,8 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
                     : step;
             continue;
         }
-        auto scratch_transaction = document_command_transaction_t::from(scratch);
-        auto& proposed = scratch_transaction.copy_document();
+        auto scratch_transaction = document_command_transaction_t(scratch);
+        auto& proposed = scratch_transaction.document();
         auto& proposed_chart = *proposed.find_chart(chart_id);
         if (!convert_bgm_event(proposed_chart, id, lane))
             return document_command_transaction_t::rejection(revision, diagnostic_code_t::collision,
@@ -570,7 +570,7 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
         if (!step.applied) return step.diagnostics.empty() ? document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
             "the event could not move to that lane") : step;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit(events.size() == 1 ? "Move BGM event to lane" : "Move BGM events to lane");
 }
@@ -610,16 +610,12 @@ auto move_selected_objects_to_lane(document_history_t& history,
     }
     if (scratch.document.revision == scratch_revision)
         return {.applied = true, .revision = revision, .diagnostics = {}};
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit("Assign selected objects to lane");
 }
 
 namespace {
-auto is_note_conversion_pending(const editor_interaction_state_t& state) -> bool {
-    return has_pending_editor_gesture(state);
-}
-
 auto selected_conversion_notes(const editor_interaction_state_t& state) -> std::vector<object_id_t> {
     auto ids = state.selected_notes;
     for (const auto& object : state.selected_objects)
@@ -662,7 +658,7 @@ auto move_editor_selection_to_bgm(document_history_t& history,
     auto moving = selected_conversion_notes(state);
     if (moving.empty()) return {};
     selected_note_to_bgm_result_t result{.payload = {.handled = true}};
-    if (is_note_conversion_pending(state)) {
+    if (state.is_pending()) {
         result.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
                                    "note move to BGM has stale input or an active gesture");
         return result;

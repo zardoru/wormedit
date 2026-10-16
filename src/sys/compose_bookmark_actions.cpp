@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_actions_internal.h"
 #include "sys/native_chart_edit_action.h"
 #include "sys/projection_notification_feedback.h"
@@ -5,23 +6,23 @@ namespace wormedit::sys::compose_action_detail {
 beat_section_edit_t make_beat_section_insertion(compose_action_context_t& context,
                                                 const wormedit::chart_document_t& chart) {
     using namespace wormedit;
-    const auto built = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto& indexed = context.environment.document.history.indices(chart.id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     if (!measures)
         return {.error = "The chart measure geometry cannot define a section span."};
     position_span_t span;
     bool from_selection{};
     if (context.state.retained_selection_range) {
         const auto& selection = *context.state.retained_selection_range;
-        const auto begin = absolute_row(*measures, selection.begin);
-        const auto end = absolute_row(*measures, selection.end);
+        const auto begin = (*measures).row_of( selection.begin);
+        const auto end = (*measures).row_of( selection.end);
         if (!begin || !end || *begin >= *end)
             return {.error =
                         "The retained area/Space interval is no longer valid; select it again."};
         span = selection;
         from_selection = true;
     } else {
-        const auto begin = absolute_row(*measures, context.state.cursor);
+        const auto begin = (*measures).row_of( context.state.cursor);
         const auto denominator = context.state.active_snap_denominator;
         if (!begin || denominator == 0 || chart.divisions_per_standard_measure % denominator != 0)
             return {.error = "The active Compose grid cannot define a section span."};

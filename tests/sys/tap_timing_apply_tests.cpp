@@ -38,11 +38,11 @@ TEST_CASE("Tap Apply binds a stable proposal and records both values once", "[sy
     const auto proposal = *runtime.apply_proposal();
     const auto preview = make_tap_timing_preview(history.document, proposal);
     REQUIRE(preview);
-    const auto original = build_timing_index(history.document.charts.front());
-    const auto proposed = build_timing_index(*preview);
-    REQUIRE(original);
-    REQUIRE(proposed);
-    const auto ghost = proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index,
+    const auto original = timing_index_t::from(history.document.charts.front());
+    const auto proposed = timing_index_t::from(*preview);
+    REQUIRE(original.value);
+    REQUIRE(proposed.value);
+    const auto ghost = proposed_timing_y_on_fixed_waveform(*original.value, *proposed.value,
                                                          {120, {}}, 0, 1);
     REQUIRE(ghost);
     CHECK(*ghost != Catch::Approx(120.0));

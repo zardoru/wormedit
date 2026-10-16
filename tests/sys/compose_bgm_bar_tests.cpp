@@ -80,34 +80,34 @@ TEST_CASE("bgm bar pan keeps the span and clamps at the song edges", "[sys][bgm-
 
 TEST_CASE("bgm bar measure marks cover the window in order", "[sys][bgm-bar]") {
     const auto chart = chart_fixture();
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(built));
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = measure_index_t::from(chart);
+    REQUIRE(built.has_value());
+    const auto& measures = built.value();
     REQUIRE(measures.entries.size() > 2);
 
-    const auto all = bgm_bar_measure_marks(measures, *timing.index, sample_rate, total_frames,
+    const auto all = bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames,
                                            {0.0, 1.0}, 4096);
     REQUIRE(all.size() == measures.entries.size());
     CHECK(all.front().measure == 0);
     CHECK(std::ranges::is_sorted(all, {}, &bgm_bar_mark_t::audio_fraction));
 
     const auto window = bgm_bar_range_t{all[1].audio_fraction, all[2].audio_fraction};
-    const auto inside = bgm_bar_measure_marks(measures, *timing.index, sample_rate, total_frames,
+    const auto inside = bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames,
                                               window, 4096);
     REQUIRE(inside.size() == 2);
     CHECK(inside[0].measure == 1);
     CHECK(inside[1].measure == 2);
 
-    const auto thinned = bgm_bar_measure_marks(measures, *timing.index, sample_rate, total_frames,
+    const auto thinned = bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames,
                                                {0.0, 1.0}, 2);
     CHECK(thinned.size() <= 2);
     CHECK(thinned.front().measure == 0);
 
-    CHECK(bgm_bar_measure_marks(measures, *timing.index, 0, total_frames, {0.0, 1.0}, 8).empty());
-    CHECK(bgm_bar_measure_marks(measures, *timing.index, sample_rate, total_frames, {0.5, 0.5}, 8).empty());
-    CHECK(bgm_bar_measure_marks(measures, *timing.index, sample_rate, total_frames, {0.0, 1.0}, 0).empty());
+    CHECK(bgm_bar_measure_marks(measures, *timing.value, 0, total_frames, {0.0, 1.0}, 8).empty());
+    CHECK(bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames, {0.5, 0.5}, 8).empty());
+    CHECK(bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames, {0.0, 1.0}, 0).empty());
 }
 
 TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][bgm-bar]") {

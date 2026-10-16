@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_area_actions.h"
 #include "core/timing_arithmetic.h"
 #include "sys/compose_action_context.h"
@@ -22,7 +23,7 @@ auto can_apply_compose_quantize(const application_command_state_t& application,
                                 const editor_interaction_state_t& state) -> bool {
     return !application.project.compose_view.compose_timing_focus &&
            !application.project.clipboard.paste_session &&
-           !wormedit::has_pending_editor_gesture(state);
+           !(state).is_pending();
 }
 
 auto apply_compose_quantize_selection(document_history_t& history,
@@ -33,14 +34,14 @@ auto apply_compose_quantize_selection(document_history_t& history,
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
-    const auto geometry = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(geometry))
+    const auto& geometry = history.indices(chart->id)->measures;
+    if (!geometry)
         return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
     auto request = quantize_request_from_action(action, {});
     if (!request)
         return compose_action_outcome_t::blocked("Selection quantization has invalid settings.");
     request->selection = editor_quantize_selection(state);
-    auto report = preview_quantize_selection(*chart, request->selection->notes, *request);
+    auto report = preview_quantize_selection(*chart, request->selection->notes, *request, &*geometry);
     auto result = apply_quantize_command(history, state.chart, *request);
     if (!result.command.applied)
         return result.command.diagnostics.empty()
@@ -160,8 +161,8 @@ auto add_speed_span_over_area_action_t::validate(compose_action_context_t& conte
     if (!context.state.retained_selection_range)
         return compose_action_outcome_t::blocked("Select an area first.");
     span = *context.state.retained_selection_range;
-    const auto begin = absolute_row(measures, span.begin);
-    const auto end = absolute_row(measures, span.end);
+    const auto begin = (measures).row_of( span.begin);
+    const auto end = (measures).row_of( span.end);
     if (!begin || !end || *begin >= *end || chart.divisions_per_standard_measure == 0)
         return compose_action_outcome_t::blocked("The area must cover at least one row.");
     beats = timing_arithmetic::rows_to_beat_fraction<rational_t>(
@@ -201,8 +202,8 @@ auto select_compose_area_contents(wormedit::document_history_t& history,
     if (!state.retained_selection_range)
         return std::nullopt;
     const auto span = *state.retained_selection_range;
-    const auto begin = absolute_row(*measures, span.begin);
-    const auto end = absolute_row(*measures, span.end);
+    const auto begin = (*measures).row_of( span.begin);
+    const auto end = (*measures).row_of( span.end);
     if (!begin || !end || *begin >= *end)
         return std::nullopt;
     auto temporary = state;
@@ -406,12 +407,12 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
     using namespace wormedit;
     if (!state.retained_selection_range)
         return false;
-    const auto begin = absolute_row(index, state.retained_selection_range->begin);
-    const auto end = absolute_row(index, state.retained_selection_range->end);
+    const auto begin = (index).row_of( state.retained_selection_range->begin);
+    const auto end = (index).row_of( state.retained_selection_range->end);
     if (!begin || !end || *begin >= *end)
         return false;
     const auto point_inside = [&](local_position_t position) {
-        const auto row = absolute_row(index, position);
+        const auto row = (index).row_of( position);
         return row && *row >= *begin && *row < *end;
     };
     const auto positioned = [&](const auto& values) {
@@ -419,8 +420,8 @@ auto compose_area_delete_supported(const wormedit::chart_document_t& chart,
                                    [&](const auto& value) { return point_inside(value.position); });
     };
     const auto span_inside = [&](position_span_t span) {
-        const auto first = absolute_row(index, span.begin);
-        const auto last = absolute_row(index, span.end);
+        const auto first = (index).row_of( span.begin);
+        const auto last = (index).row_of( span.end);
         return first && last && *first < *end && *last >= *begin;
     };
     const auto warp = std::ranges::any_of(
@@ -442,8 +443,8 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
     const auto* chart = history.document.find_chart(state.chart);
     if (chart == nullptr)
         return false;
-    const auto built = wormedit::build_measure_index(*chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto& measures = history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     if (!index)
         return false;
     const auto selected = select_compose_area_contents(history, state, *index);
@@ -471,8 +472,8 @@ auto run_routed_area_action(compose_action_context_t& context) -> compose_action
         context.environment.document.history.document.find_chart(context.state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
-    const auto built = build_measure_index(*chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto& indexed = context.environment.document.history.indices(chart->id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     if (!measures)
         return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
     Action action{};

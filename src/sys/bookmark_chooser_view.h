@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/result.h>
 
 #include <cstddef>
@@ -10,7 +11,19 @@
 #include <string_view>
 #include <vector>
 
+namespace wormedit { struct document_history_t; struct workspace_view_t; }
+
 namespace wormedit::sys {
+struct compose_scene_cache_t;
+
+struct bookmark_chooser_indices_t {
+    const chart_indices_t* committed{};
+    // An empty supplied optional is a retained failed build, not a request to retry.
+    const std::optional<timing_index_t>* bounded_clock{};
+    // Main-loop construction; only history may fill the committed snapshot's slot.
+    [[nodiscard]] static auto from(const document_history_t& history, const workspace_view_t& workspace, bool is_open,
+                                   const compose_scene_cache_t& cache) -> bookmark_chooser_indices_t;
+};
 
 struct bookmark_chooser_row_t {
     object_id_t bookmark_id;
@@ -33,7 +46,8 @@ struct bookmark_chooser_view_t {
     std::string status;
 
     [[nodiscard]] static auto from(const song_document_t&, chart_id_t,
-                                   std::size_t first_row, std::size_t row_limit, std::string_view query = {}) -> result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
+                                   std::size_t first_row, std::size_t row_limit, std::string_view query = {},
+                                   const bookmark_chooser_indices_t& indices = {}) -> result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
 };
 using bookmark_chooser_view_outcome_t =
     result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;

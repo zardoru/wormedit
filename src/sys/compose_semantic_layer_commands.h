@@ -93,7 +93,7 @@ inline auto finish_compose_layer_paint(document_history_t& history,
                                              .note = note,
                                              .pointer_captured = true,
                                              .bgm_event = bgm_event,
-                                             .phase = wormedit::editor_gesture_phase_t::commit});
+                                             .operation = wormedit::proposal_operation_t::apply});
     if (!result.accepted)
         (void)dispatch_editor_action(history, state, cancel_editor_gesture_action_t{});
     return result;

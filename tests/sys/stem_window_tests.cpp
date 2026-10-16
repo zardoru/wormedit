@@ -125,10 +125,10 @@ TEST_CASE("a continuation consumes the remaining audio from its restart",
              {.id = object_id_t{202}, .position = {measure_id_t{60}, 0}},
              {.id = object_id_t{203}, .position = {measure_id_t{71}, 0}, .continuation = true}}}};
     link_stem_fixture(chart);
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const auto near_end =
-        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, &*timing.index);
+        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, wormedit::sys::stem_geometry_indices_t{.timing = &*timing.value});
     CHECK(near_end.size() == 2);
     // The first stem ends near measure 81; the second restart remains active at measure 85.
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{85}, 0).size() == 1);
@@ -188,17 +188,17 @@ void check_generated_windows(sys::stem_index_t& index, const song_document_t& so
 void check_selection_reuse(sys::stem_index_t& index, const song_document_t& song,
     const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
-    const auto built_at_warp = index.selection_build_count;
+    const auto built_at_warp = index.value().selection.build_count();
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{10}, 0, bindings));
-    CHECK(index.selection_build_count == built_at_warp);
+    CHECK(index.value().selection.build_count() == built_at_warp);
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{11}, 0, bindings));
-    CHECK(index.selection_build_count == built_at_warp + 1);
+    CHECK(index.value().selection.build_count() == built_at_warp + 1);
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings));
-    const auto cached_selection = index.selected;
-    const auto build_count = index.selection_build_count;
+    const auto cached_selection = index.value().selection.value();
+    const auto build_count = index.value().selection.build_count();
     const auto same_window = sys::indexed_visible_stem_channels(index, song, chart, measure_id_t{32}, 3, bindings);
-    CHECK(index.selected == cached_selection);
-    CHECK(index.selection_build_count == build_count);
+    CHECK(index.value().selection.value() == cached_selection);
+    CHECK(index.value().selection.build_count() == build_count);
     CHECK(same_window.size() == cached_selection.size());
 
 }
@@ -207,18 +207,18 @@ void check_binding_refresh(sys::stem_index_t& index, const song_document_t& song
     const chart_document_t& chart, std::vector<audio::decoded_source_binding_t>& bindings) {
     bindings.front().source_frame_count = 44'100;
     expect_index_matches_reference(index, song, chart, measure_id_t{32}, 3, bindings);
-    CHECK(index.bindings == bindings);
-    CHECK(index.channels[0].source_lane == 9101);
-    CHECK(index.channels[1].source_lane == 9100);
+    CHECK(index.key()->bindings == bindings);
+    CHECK(index.value().channels[0].source_lane == 9101);
+    CHECK(index.value().channels[1].source_lane == 9100);
 }
 
 void check_revision_and_document_invalidation(sys::stem_index_t& index, song_document_t& song,
     const chart_document_t& chart, const std::vector<audio::decoded_source_binding_t>& bindings) {
-    const auto short_selection_size = index.selected.size();
+    const auto short_selection_size = index.value().selection.value().size();
     ++song.revision;
     const auto revision_result = sys::indexed_visible_stem_channels(index, song, chart,
         measure_id_t{32}, 3, bindings);
-    CHECK(index.revision == song.revision);
+    CHECK(index.key()->stamp.document.revision == song.revision);
     CHECK(revision_result.size() == short_selection_size);
 
     song_document_t replacement;
@@ -237,7 +237,7 @@ void check_revision_and_document_invalidation(sys::stem_index_t& index, song_doc
         replacement_chart, measure_id_t{1}, 0, {});
     REQUIRE(result.size() == 1);
     CHECK(result.front()->id == object_id_t{3000});
-    CHECK(index.document == replacement.id);
+    CHECK(index.key()->stamp.document.project == replacement.id);
 }
 
 void expand_stem_benchmark_chart(chart_document_t& chart) {
@@ -315,7 +315,7 @@ TEST_CASE("indexed stem lane uses its explicit link despite marker encounter ord
     sys::stem_index_t index;
     static_cast<void>(sys::indexed_visible_stem_channels(index, song, chart,
         measure_id_t{1}, 0, bindings));
-    CHECK(index.channels[0].source_lane == 9102);
+    CHECK(index.value().channels[0].source_lane == 9102);
 }
 
 TEST_CASE("expired continuation events do not make a stem visible again",
@@ -405,10 +405,10 @@ void check_mixed_stem_ids(const std::vector<const sound_channel_t*>& channels) {
 }
 
 void check_filtered_index_positions(const sys::stem_index_t& index) {
-    REQUIRE(index.channels.size() == 3);
-    CHECK(index.channels[0].chart_position == 1);
-    CHECK(index.channels[1].chart_position == 500);
-    CHECK(index.channels[2].chart_position == 1001);
+    REQUIRE(index.value().channels.size() == 3);
+    CHECK(index.value().channels[0].chart_position == 1);
+    CHECK(index.value().channels[1].chart_position == 500);
+    CHECK(index.value().channels[2].chart_position == 1001);
 }
 } // namespace
 
@@ -487,20 +487,20 @@ auto t459_packed_fixture() -> song_document_t {
 
 auto t459_piece(const sys::packed_waveform_index_t& index, std::uint64_t id)
     -> const sys::packed_waveform_piece_t* {
-    const auto found = std::ranges::find_if(index.pieces, [id](const auto& piece) {
+    const auto found = std::ranges::find_if(index.value().pieces, [id](const auto& piece) {
         return piece.event == object_id_t{id};
     });
-    return found == index.pieces.end() ? nullptr : &*found;
+    return found == index.value().pieces.end() ? nullptr : &*found;
 }
 
 auto t459_threshold_clipping_and_native_clip() -> bool {
     auto song = t459_packed_fixture();
     auto& chart = song.charts.front();
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (!index.valid || t459_piece(index, 200) || t459_piece(index, 201)) return false;
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
+    if (!index.has_value() || t459_piece(index, 200) || t459_piece(index, 201)) return false;
     const auto* fractional_long = t459_piece(index, 202);
     const auto* clipped = t459_piece(index, 203);
     const auto* native_clip = t459_piece(index, 207);
@@ -520,15 +520,15 @@ auto t459_threshold_clipping_and_native_clip() -> bool {
     for (auto& asset : short_song.audio_assets) asset.stream.frame_count = 200;
     ++short_song.revision;
     auto& short_chart = short_song.charts.front();
-    const auto short_timing = build_timing_index(short_chart);
-    if (!short_timing.index) return false;
+    const auto short_timing = timing_index_t::from(short_chart);
+    if (!short_timing.value) return false;
     sys::packed_waveform_index_t short_index;
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    return short_index.valid && short_index.pieces.empty() && short_index.builds == 1 &&
-        short_index.cache_hits == 1 &&
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
+    return short_index.has_value() && short_index.value().pieces.empty() && short_index.build_count() == 1 &&
+        short_index.value().cache_hits == 1 &&
         sys::visible_packed_waveform_pieces(short_index, 0, 100).empty() &&
-        short_index.queried_pieces == 0;
+        short_index.value().queried_pieces == 0;
 }
 
 auto t459_unknown_dense_fixture() -> song_document_t {
@@ -555,30 +555,30 @@ auto t459_unknown_dense_fixture() -> song_document_t {
 auto t459_dense_unknown_query_is_bounded() -> bool {
     auto song = t459_unknown_dense_fixture();
     auto& chart = song.charts.front();
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (!index.valid || index.builds != 1 || index.cache_hits != 1 || index.pieces.size() != 4000)
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
+    if (!index.has_value() || index.build_count() != 1 || index.value().cache_hits != 1 || index.value().pieces.size() != 4000)
         return false;
     const auto pending = t459_piece(index, 16'000);
     const auto selected = sys::visible_packed_waveform_pieces(index, 30.001, 30.005);
     if (!pending || pending->sample_rate != 0 || pending->source_frames ||
         !std::ranges::any_of(selected, [pending](const auto* piece) { return piece == pending; }) ||
-        index.queried_pieces >= index.pieces.size() / 10) return false;
+        index.value().queried_pieces >= index.value().pieces.size() / 10) return false;
 
     auto short_song = t459_unknown_dense_fixture();
     short_song.audio_assets.front().stream = {100, 2, 50, true};
     auto& short_chart = short_song.charts.front();
-    const auto short_timing = build_timing_index(short_chart);
-    if (!short_timing.index) return false;
+    const auto short_timing = timing_index_t::from(short_chart);
+    if (!short_timing.value) return false;
     sys::packed_waveform_index_t short_index;
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
     const auto empty = sys::visible_packed_waveform_pieces(short_index, 30.001, 30.005);
-    return short_index.valid && short_index.builds == 1 && short_index.cache_hits == 1 &&
-        short_index.pieces.empty() && empty.empty() && short_index.queried_pieces == 0;
+    return short_index.has_value() && short_index.build_count() == 1 && short_index.value().cache_hits == 1 &&
+        short_index.value().pieces.empty() && empty.empty() && short_index.value().queried_pieces == 0;
 }
 } // namespace
 
@@ -603,11 +603,11 @@ auto t459_stacked_piece_endpoints(bool reverse) -> bool {
     t459_add_packed_event(chart, 4, 0, 2003, 501, 1);
     t459_add_packed_event(chart, 4, 0, 2004, 501, 4);
     if (reverse) for (auto& measure : chart.measures) std::ranges::reverse(measure.bgm_events);
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    if (index.pieces.size() != 4) return false;
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
+    if (index.value().pieces.size() != 4) return false;
     for (const auto id : {2000U, 2001U}) {
         const auto* piece = t459_piece(index, id);
         if (!piece || piece->next_row != 480 || piece->end_seconds != 1.0) return false;
@@ -623,4 +623,19 @@ TEST_CASE("packed waveform stacks share the next strictly later column trigger",
           "[sys][stem][bmson][T459]") {
     CHECK(t459_stacked_piece_endpoints(false));
     CHECK(t459_stacked_piece_endpoints(true));
+}
+
+TEST_CASE("Stem visibility retains a supplied committed geometry failure", "[sys][stem]") {
+    song_document_t song{.id = {1}, .charts = {{.id = {2}, .divisions_per_standard_measure = 960,
+        .measures = {{.id = {3}}},
+        .bpms = {{.id = {4}, .position = {{3}, 0}, .beats_per_minute = {120, 1}}}}}};
+    const auto& chart = song.charts.front();
+    const result_t<measure_index_t, diagnostic_list_t> failure = std::unexpected(diagnostic_list_t{});
+    sys::stem_index_t cache;
+    const auto channels = sys::indexed_visible_stem_channels(cache, song, chart, measure_id_t{3}, 1, {},
+        {.measures = &failure});
+    CHECK_FALSE(cache.has_value());
+    CHECK(channels.empty());
+    static_cast<void>(sys::indexed_visible_stem_channels(cache, song, chart, measure_id_t{3}, 1, {}));
+    CHECK(cache.value().is_built);
 }

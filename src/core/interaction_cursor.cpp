@@ -1,3 +1,4 @@
+#include "interaction_gesture_runner.h"
 #include "interaction_internal.h"
 #include "interaction_geometry.h"
 #include "interaction_cursor.h"
@@ -56,13 +57,13 @@ static auto apply_cursor_navigation_target(cursor_navigation_context_t& context,
                                            std::string_view description)
     -> editor_interaction_result_t {
     auto& state = context.edit.state;
-    if (state.pending_hold &&
-        state.pending_hold->gesture_source == hold_gesture_source_t::keyboard_lane) {
-        if (!target || state.pending_hold->anchor_canvas_row ||
-            std::ranges::any_of(state.additional_keyboard_holds,
+    if (state.hold() &&
+        state.hold()->gesture_source == hold_gesture_source_t::keyboard_lane) {
+        if (!target || state.hold()->anchor_canvas_row ||
+            std::ranges::any_of(state.additional_keyboard_holds(),
                                 [](const auto& hold) { return hold.anchor_canvas_row.has_value(); }))
-            return update_canvas_keyboard_holds(context.edit, canvas_row);
-        return update_keyboard_holds(context.edit, *target);
+            return revise_gesture<hold_gesture_t>(context.edit, canvas_row);
+        return revise_gesture<hold_gesture_t>(context.edit, *target);
     }
     auto proposed = state;
     place_cursor_on_canvas_row(proposed, target, canvas_row);
@@ -172,7 +173,7 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
 auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& index,
                          editor_interaction_state_t& candidate) -> bool {
     const auto row = candidate.virtual_bms_cursor_row
-        ? candidate.virtual_bms_cursor_row : absolute_row(index, candidate.cursor);
+        ? candidate.virtual_bms_cursor_row : index.row_of(candidate.cursor);
     const auto maximum = maximum_viewport_scroll(chart, index,
         candidate.pixels_per_standard_measure, candidate.viewport_height_pixels);
     if (!row || !maximum) return false;
@@ -214,7 +215,7 @@ auto jump_edit_cursor(cursor_navigation_context_t& context,
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_id,
                    stale_action_message("Cursor jump"))});
-    if (!absolute_row(context.edit.scope.measures, action.position))
+    if (!context.edit.scope.measures.row_of(action.position))
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor jump target lies outside chart geometry")});
@@ -326,7 +327,7 @@ auto synchronize_editor_cursor_to_viewport(const chart_document_t& chart,
     const auto snapped = snap_canvas_row(chart, index, bounded, state.active_snap_denominator, *rows);
     if (!snapped) return false;
     const auto row = *snapped;
-    const auto position = position_at_absolute_row(index, row);
+    const auto position = index.position_at(row);
     const auto from = state.cursor;
     place_cursor_on_canvas_row(state, position, row, static_cast<double>(bounded - row));
     if (position) {

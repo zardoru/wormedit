@@ -1,3 +1,4 @@
+#include "compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "sys/compose_input.h"
 #include "sys/waveform_view.h"
@@ -29,7 +30,7 @@ void require_minimap(bool condition) { REQUIRE(condition); }
 void check_minimap(bool condition) { CHECK(condition); }
 
 auto make_timing_index(const chart_document_t& chart) -> timing_index_t {
-    return *build_timing_index(chart).index;
+    return *timing_index_t::from(chart).value;
 }
 
 auto minimap_chart() -> chart_document_t {
@@ -74,13 +75,13 @@ struct projection_fixture_t {
 
     projection_fixture_t() {
         cache.timing.marker_timing_index = timing;
-        cache.scene.chart = chart.id;
-        cache.scene.revision = 5;
+        static_cast<void>(cache.scene.index.get_or_build(compose_scene_source_key_t{
+            .stamp = {.document = {.revision = 5}, .chart = chart.id}}, retained_scene_fixture_t{}));
         flattened.view.compose.visible = true;
         flattened.view.compose.scene_available = true;
         flattened.view.compose.project_id = 1;
         flattened.view.compose.chart_id = chart.id.value;
-        flattened.view.compose.document_revision = cache.scene.revision;
+        flattened.view.compose.document_revision = cache.stamp().document.revision;
         flattened.view.compose.selected_audio_asset_id = 12;
         flattened.view.compose.viewport_height_pixels = 200;
         flattened.view.compose.pixels_per_standard_measure = 200;

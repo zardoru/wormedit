@@ -438,7 +438,7 @@ auto apply_bulk_sound_import(document_history_t& history,
         if (!import_entry(draft, action.entries[index], stem_chart, ids, (*identifiers)[index], result)) return result;
     }
     if (!apply_import_groups(draft.document, action, first_imported_resource, result)) return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(draft.document));
     return transaction.commit(action.groups.empty() ? "Import sounds" : "Import sounds and groups");
 }

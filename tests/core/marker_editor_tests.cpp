@@ -401,9 +401,9 @@ namespace {
 
 auto kiai_spans(const document_history_t& history) -> std::vector<kiai_span_t> {
     const auto& chart = history.document.charts.front();
-    const auto index = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    return kiai_spans_of(chart, std::get<measure_index_t>(index));
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index.has_value());
+    return kiai_spans_of(chart, index.value());
 }
 
 auto edit_kiai(document_history_t& history, kiai_span_edit_t edit) -> document_command_result_t {

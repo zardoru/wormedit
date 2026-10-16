@@ -1,4 +1,5 @@
 #pragma once
+#include "sys/compose_interaction_view.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
@@ -11,7 +12,6 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_selection.h"
 #include <wormedit/core/chart_clipboard.h>
-#include <wormedit/core/interaction_gestures.h>
 
 #include <wormedit/audio/decoder.h>
 #include <wormedit/core/audio_offset_editor.h>
@@ -67,9 +67,6 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
 namespace wormedit::sys {
 auto compose_result_status(const wormedit::editor_interaction_result_t& result,
                            std::string_view accepted) -> std::string;
-auto compose_view_for_state(const wormedit::document_history_t& history,
-                            const wormedit::editor_interaction_state_t& state)
-    -> std::optional<wormedit::editor_interaction_view_model_t>;
 auto compose_navigation_action(WormUiComposeNavigationAction action)
     -> std::optional<wormedit::editor_navigation_action_t>;
 } // namespace wormedit::sys

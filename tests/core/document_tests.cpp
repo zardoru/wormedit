@@ -362,9 +362,9 @@ TEST_CASE("measure index preserves exact variable-length prefixes", "[unit][core
     CHECK(index.entries[1].absolute_begin_row == 960);
     CHECK(index.entries[1].row_capacity == 720);
     CHECK(index.total_rows == 1680);
-    CHECK(absolute_row(index, {measure_id_t{2}, 120}) == 1080);
-    CHECK_FALSE(absolute_row(index, {measure_id_t{2}, 720}));
-    CHECK_FALSE(absolute_row(index, {measure_id_t{99}, 0}));
+    CHECK(index.row_of({measure_id_t{2}, 120}) == 1080);
+    CHECK_FALSE(index.row_of({measure_id_t{2}, 720}));
+    CHECK_FALSE(index.row_of({measure_id_t{99}, 0}));
 }
 
 namespace {
@@ -384,9 +384,9 @@ auto chart_with_measure_ids(std::initializer_list<std::uint64_t> ids) -> chart_d
 } // namespace
 
 TEST_CASE("measure index keeps document order for unsorted unique IDs", "[unit][core][document]") {
-    const auto result = build_measure_index(chart_with_measure_ids({7, 3, 9}));
-    REQUIRE(std::holds_alternative<measure_index_t>(result));
-    const auto& index = std::get<measure_index_t>(result);
+    const auto result = measure_index_t::from(chart_with_measure_ids({7, 3, 9}));
+    REQUIRE(result.has_value());
+    const auto& index = result.value();
     REQUIRE(index.entries.size() == 3);
     CHECK(index.entries[0].id == measure_id_t{7});
     CHECK(index.entries[1].id == measure_id_t{3});
@@ -401,9 +401,9 @@ TEST_CASE("measure index diagnoses each later duplicate by its measure number",
                             std::initializer_list<std::uint64_t>{2, 5, 2},
                             std::initializer_list<std::uint64_t>{4, 4, 9, 4}}) {
         const auto chart = chart_with_measure_ids(ids);
-        const auto result = build_measure_index(chart);
-        REQUIRE(std::holds_alternative<diagnostic_list_t>(result));
-        const auto& diagnostics = std::get<diagnostic_list_t>(result);
+        const auto result = measure_index_t::from(chart);
+        REQUIRE(!result.has_value());
+        const auto& diagnostics = result.error();
         std::size_t expected = 0;
         std::vector<std::uint64_t> seen;
         for (std::size_t position = 0; position < ids.size(); ++position) {
@@ -665,9 +665,9 @@ TEST_CASE("exact redivision previews every moved position", "[unit][core][docume
     CHECK(result.value.chart->sound_channels[0].events[0].end->row == 96);
     CHECK(result.value.moves.size() == 14);
 
-    const auto index = build_measure_index(*result.value.chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    CHECK(std::get<measure_index_t>(index).total_rows == 336);
+    const auto index = measure_index_t::from(*result.value.chart);
+    REQUIRE(index.has_value());
+    CHECK(index.value().total_rows == 336);
 }
 
 TEST_CASE("inexact redivision rejects atomically", "[unit][core][document][negative]") {
@@ -719,10 +719,10 @@ TEST_CASE("measure buckets validate and index fifty thousand notes",
     song.charts.push_back(std::move(chart));
 
     CHECK(validate_document(song).empty());
-    const auto index = build_measure_index(song.charts.front());
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    CHECK(std::get<measure_index_t>(index).entries.size() == 1'000);
-    CHECK(std::get<measure_index_t>(index).total_rows == 960'000);
+    const auto index = measure_index_t::from(song.charts.front());
+    REQUIRE(index.has_value());
+    CHECK(index.value().entries.size() == 1'000);
+    CHECK(index.value().total_rows == 960'000);
     std::size_t note_count{};
     for (const auto& measure : song.charts.front().measures) {
         note_count += measure.notes.size();
@@ -847,9 +847,9 @@ TEST_CASE("Layout query row overload preserves unordered segments and later ties
         {.position = {measure_id_t{1}, 240}, .layout = {.profile_id = "last"}},
         {.position = {measure_id_t{2}, 0}, .layout = {.profile_id = "invalid"}},
     };
-    const auto built = build_measure_index(chart);
-    require_owner_query(std::holds_alternative<measure_index_t>(built));
-    const auto& index = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(chart);
+    require_owner_query(built.has_value());
+    const auto& index = built.value();
     check_owner_query(layout_at(chart, index, std::uint64_t{239}) == &chart.lane_layouts[1].layout);
     check_owner_query(layout_at(chart, index, std::uint64_t{240}) == &chart.lane_layouts[2].layout);
     check_owner_query(layout_at(chart, index, local_position_t{measure_id_t{1}, 240}) ==
@@ -893,9 +893,8 @@ TEST_CASE("Measure row owners agree at shortened measure boundaries",
     for (const auto row : std::array<std::uint64_t, 4>{0, 959, 960, 1439}) {
         const auto position = index.position_at(row);
         REQUIRE(position);
-        check_owner_query(index.row_of(*position) == row);
         check_owner_query(lookup.row_of(*position) == row);
-        check_owner_query(absolute_row(index, *position) == row);
+        check_owner_query(index.row_of(*position) == row);
     }
     check_owner_query(index.entry_for(measure_id_t{2}) == &index.entries.back());
     check_owner_query(lookup.entry_for(measure_id_t{2}) == &index.entries.back());
@@ -941,9 +940,8 @@ TEST_CASE("Measure row owners retain checked addition without an extra total-row
         .entries = {{measure_id_t{1}, maximum - 1, 4}}, .total_rows = maximum};
     const auto lookup = measure_lookup_t::from(index);
     check_owner_query(!index.entries.front().row_of(2));
-    check_owner_query(!index.row_of({measure_id_t{1}, 2}));
     check_owner_query(!lookup.row_of({measure_id_t{1}, 2}));
-    check_owner_query(!absolute_row(index, {measure_id_t{1}, 2}));
+    check_owner_query(!index.row_of({measure_id_t{1}, 2}));
     check_owner_query(index.row_of({measure_id_t{1}, 1}) == maximum);
     check_owner_query(lookup.row_of({measure_id_t{1}, 1}) == maximum);
 }

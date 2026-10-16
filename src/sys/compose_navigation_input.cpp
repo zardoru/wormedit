@@ -10,16 +10,6 @@ auto compose_result_status(const wormedit::editor_interaction_result_t& result,
                                       : result.diagnostics.front().message;
 }
 
-auto compose_view_for_state(const wormedit::document_history_t& history,
-                            const wormedit::editor_interaction_state_t& state)
-    -> std::optional<wormedit::editor_interaction_view_model_t> {
-    const auto inspected = wormedit::inspect_editor_interaction(history, state);
-    if (const auto* view = std::get_if<wormedit::editor_interaction_view_model_t>(&inspected)) {
-        return *view;
-    }
-    return std::nullopt;
-}
-
 auto compose_navigation_action(WormUiComposeNavigationAction action)
     -> std::optional<wormedit::editor_navigation_action_t> {
     using namespace wormedit;
@@ -105,7 +95,7 @@ auto skip_playhead_for_navigation(wormedit::editor_navigation_action_t action,
                          action == editor_navigation_action_t::double_page_forward;
     const auto measures = navigation_measure_count(action);
     const auto paged = measures != 0;
-    return skip_playing_playhead(application, *found, state.active_snap_denominator,
+    return skip_playing_playhead(history, application, *found, state.active_snap_denominator,
                                  paged ? playhead_skip_unit_t::page : playhead_skip_unit_t::beat,
                                  (forward ? 1.0 : -1.0) *
                                      (paged ? static_cast<double>(measures) : 1.0));

@@ -22,7 +22,8 @@ struct label_search_hit_t {
 // Notes whose label contains `text` and the match a step lands on: `first` is the earliest match,
 // `next` the first one strictly after the cursor and `previous` the last one strictly before it,
 // both wrapping around. Never mutates the chart.
-[[nodiscard]] auto find_label_search_hit(const chart_document_t& chart, std::string_view text,
+[[nodiscard]] auto find_label_search_hit(const chart_document_t& chart, const measure_index_t& measures,
+                                         std::string_view text,
                                          local_position_t cursor, label_search_step_t step)
     -> std::optional<label_search_hit_t>;
 

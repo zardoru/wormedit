@@ -1,3 +1,4 @@
+#include "sys/application_timing_stage.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
@@ -56,14 +57,14 @@ auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
     return chart.divisions_per_standard_measure / active_denominator;
 }
 
-auto timing_position_from_fraction(const wormedit::chart_document_t& chart, double fraction,
+auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
+                                   const wormedit::chart_indices_t& indices, double fraction,
                                    std::uint64_t active_denominator)
     -> std::optional<wormedit::local_position_t> {
     if (!std::isfinite(fraction) || fraction < 0.0 || fraction >= 1.0) {
         return std::nullopt;
     }
-    const auto measures_result = wormedit::build_measure_index(chart);
-    const auto* measures = std::get_if<wormedit::measure_index_t>(&measures_result);
+    const auto* measures = indices.measures ? &*indices.measures : nullptr;
     if (!measures || measures->total_rows == 0) {
         return std::nullopt;
     }
@@ -126,6 +127,7 @@ auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
 }
 
 auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
+                                    const wormedit::chart_indices_t& indices,
                                     wormedit::timing_lane_kind_t kind,
                                     wormedit::local_position_t position,
                                     std::uint64_t active_snap_denominator)
@@ -143,8 +145,7 @@ auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart
     case timing_lane_kind_t::delay:
         return timing_pause_value_t{{1, 1}, pause_unit_t::beats};
     case timing_lane_kind_t::warp: {
-        const auto measures_result = build_measure_index(chart);
-        const auto* measures = std::get_if<measure_index_t>(&measures_result);
+        const auto* measures = indices.measures ? &*indices.measures : nullptr;
         const auto step = timing_stage_grid_step(chart, active_snap_denominator);
         const auto start = measures ? (*measures).row_of(position) : std::nullopt;
         if (!measures || !start || step == 0 ||
@@ -184,7 +185,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
     }
     if (action.timing_object_id != 0) {
         auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{*requested_kind, object_id_t{action.timing_object_id}}, timing_locked);
-        if (preview.report()->status == timing_lane_pseudonote_status_t::editing &&
+        if (preview.report()->lifecycle.status() == proposal_status_t::active &&
             action.timing_has_target_y) {
             const auto chart =
                 history.document.find_chart(preview.captured_stamp().chart);
@@ -192,7 +193,8 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
                 chart == nullptr
                     ? std::optional<local_position_t>{}
                     : timing_position_from_fraction(
-                          *chart, wormedit::sys::timing_target_fraction(action.timing_target),
+                          *chart, *history.indices(chart->id),
+                          wormedit::sys::timing_target_fraction(action.timing_target),
                           active_snap_denominator);
             if (!target ||
                 !(preview = timing_lane_pseudonote_preview_t::revise(std::move(preview), history, *target, timing_locked)).value.has_value()) {
@@ -209,14 +211,16 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         return rejected;
     }
     const auto position = timing_position_from_fraction(
-        *found, wormedit::sys::timing_target_fraction(action.timing_target),
+        *found, *history.indices(found->id),
+        wormedit::sys::timing_target_fraction(action.timing_target),
         active_snap_denominator);
     if (!position) {
         return rejected;
     }
 
     const auto kind = *requested_kind;
-    auto initial = make_initial_timing_value_for_stage(*found, kind, *position, active_snap_denominator);
+    auto initial = make_initial_timing_value_for_stage(
+        *found, *history.indices(found->id), kind, *position, active_snap_denominator);
     if (!initial) {
         return rejected;
     }
@@ -364,6 +368,7 @@ auto timing_stage_pause_value(const TimingStageInput& input)
 }
 
 auto timing_stage_warp_value(const TimingStageInput& input, const wormedit::chart_document_t& chart,
+                             const wormedit::chart_indices_t& indices,
                              std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t> {
     using namespace wormedit;
@@ -373,8 +378,7 @@ auto timing_stage_warp_value(const TimingStageInput& input, const wormedit::char
         return std::nullopt;
     }
     const auto units = static_cast<std::uint64_t>(*input.secondary_numerator);
-    const auto measures = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto* index = indices.measures ? &*indices.measures : nullptr;
     const auto start = index ? (*index).row_of(input.preview.position) : std::nullopt;
     const auto step = input.preview.existing_event
                           ? std::uint64_t{1}
@@ -412,6 +416,7 @@ auto timing_stage_anchor_value(const TimingStageInput& input)
 
 auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
                         const wormedit::chart_document_t& chart,
+                        const wormedit::chart_indices_t& indices,
                         const WormUiWorkspaceAction& action, std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t> {
     using namespace wormedit;
@@ -435,7 +440,7 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
     case timing_lane_kind_t::delay:
         return timing_stage_pause_value(input);
     case timing_lane_kind_t::warp:
-        return timing_stage_warp_value(input, chart, active_snap_denominator);
+        return timing_stage_warp_value(input, chart, indices, active_snap_denominator);
     case timing_lane_kind_t::kiai:
         return timing_stage_toggle_value(input);
     case timing_lane_kind_t::anchor:

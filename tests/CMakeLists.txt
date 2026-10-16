@@ -190,7 +190,6 @@ add_executable(wormedit_core_tests
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-            WORMEDIT_SOURCE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/src"
 )
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)
@@ -202,9 +201,11 @@ target_link_libraries(wormedit_core_tests
         nlohmann_json::nlohmann_json
 )
 
+# Catch expands list-valued PROPERTIES; repeat scalar LABELS/ENVIRONMENT properties
+# so CTest appends each value without shifting subsequent property names.
 catch_discover_tests(wormedit_core_tests
     TEST_PREFIX "core."
-    PROPERTIES LABELS "unit;core"
+    PROPERTIES LABELS unit LABELS core
     DISCOVERY_MODE PRE_TEST
 )
 
@@ -275,12 +276,12 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
             wormedit::audio_decoder Catch2::Catch2WithMain)
         catch_discover_tests(wormedit_audio_project_import_no_ffmpeg_tests
             TEST_PREFIX "audio-no-ffmpeg."
-            PROPERTIES LABELS "unit;audio"
+            PROPERTIES LABELS unit LABELS audio
             DISCOVERY_MODE PRE_TEST)
     endif()
     catch_discover_tests(wormedit_audio_tests
         TEST_PREFIX "audio."
-        PROPERTIES LABELS "unit;audio"
+        PROPERTIES LABELS unit LABELS audio
         DISCOVERY_MODE PRE_TEST
     )
 
@@ -312,7 +313,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         )
         catch_discover_tests(wormedit_sdl_audio_tests
             TEST_PREFIX "sdl-audio."
-            PROPERTIES LABELS "integration;audio;sdl" TIMEOUT 30
+            PROPERTIES LABELS integration LABELS audio LABELS sdl TIMEOUT 30
             DISCOVERY_MODE PRE_TEST
         )
     endif()
@@ -330,7 +331,7 @@ if(WORMEDIT_ENABLE_IMAGE_DECODER)
     )
     catch_discover_tests(wormedit_visual_tests
         TEST_PREFIX "visual."
-        PROPERTIES LABELS "unit;visual"
+        PROPERTIES LABELS unit LABELS visual
         DISCOVERY_MODE PRE_TEST
     )
 endif()
@@ -350,7 +351,7 @@ if(TARGET wormedit_video_decoder)
     )
     catch_discover_tests(wormedit_video_tests
         TEST_PREFIX "video."
-        PROPERTIES LABELS "unit;visual;video"
+        PROPERTIES LABELS unit LABELS visual LABELS video
         DISCOVERY_MODE PRE_TEST
     )
 endif()
@@ -375,7 +376,7 @@ if(TARGET wormedit_video_decoder AND TARGET wormedit_visual_decoder)
     )
     catch_discover_tests(wormedit_player_preview_delivery_tests
         TEST_PREFIX "player-preview-delivery."
-        PROPERTIES LABELS "integration;visual;video"
+        PROPERTIES LABELS integration LABELS visual LABELS video
         DISCOVERY_MODE PRE_TEST
     )
 endif()
@@ -393,7 +394,7 @@ target_link_libraries(wormedit_player_preview_status_tests PRIVATE
 )
 catch_discover_tests(wormedit_player_preview_status_tests
     TEST_PREFIX "player-preview-status."
-    PROPERTIES LABELS "unit;sys"
+    PROPERTIES LABELS unit LABELS sys
     DISCOVERY_MODE PRE_TEST
 )
 
@@ -409,7 +410,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::core SDL3::SDL3 nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_options_state_tests
         TEST_PREFIX "frontend-state."
-        PROPERTIES LABELS "unit;options"
+        PROPERTIES LABELS unit LABELS options
         DISCOVERY_MODE PRE_TEST)
 
     add_executable(wormedit_external_player_tests
@@ -424,7 +425,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
     catch_discover_tests(wormedit_external_player_tests
         TEST_PREFIX "external_player."
-        PROPERTIES LABELS "integration;external_player"
+        PROPERTIES LABELS integration LABELS external_player
         DISCOVERY_MODE PRE_TEST
     )
 
@@ -468,7 +469,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
     catch_discover_tests(wormedit_frontend_state_tests
         TEST_PREFIX "frontend-state."
-        PROPERTIES LABELS "unit;frontend"
+        PROPERTIES LABELS unit LABELS frontend
         DISCOVERY_MODE PRE_TEST
     )
 
@@ -480,13 +481,11 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/tooltip.cpp)
     target_include_directories(wormedit_nuklear_popup_combo_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_SOURCE_DIR}/include")
-    target_compile_definitions(wormedit_nuklear_popup_combo_tests PRIVATE
-        WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_nuklear_popup_combo_tests PRIVATE
         wormedit::core wormedit::ui_frontend nlohmann_json::nlohmann_json Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_popup_combo_tests
         TEST_PREFIX "frontend-state."
-        PROPERTIES LABELS "unit;frontend;architecture"
+        PROPERTIES LABELS unit LABELS frontend LABELS architecture
         DISCOVERY_MODE PRE_TEST)
 
     add_executable(wormedit_nuklear_sdl_backend_tests
@@ -504,8 +503,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_nuklear_sdl_backend_tests
         TEST_PREFIX "nuklear-sdl-backend."
-        PROPERTIES LABELS "unit;frontend;rendering"
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
+        PROPERTIES LABELS unit LABELS frontend LABELS rendering
+            ENVIRONMENT SDL_VIDEODRIVER=dummy ENVIRONMENT SDL_AUDIODRIVER=dummy
         DISCOVERY_MODE PRE_TEST)
 
     add_executable(wormedit_field_renderer_tests
@@ -524,8 +523,8 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         wormedit::ui_frontend SDL3::SDL3 Catch2::Catch2WithMain)
     catch_discover_tests(wormedit_field_renderer_tests
         TEST_PREFIX "field-renderer."
-        PROPERTIES LABELS "unit;frontend;rendering"
-            ENVIRONMENT "SDL_VIDEODRIVER=dummy;SDL_AUDIODRIVER=dummy"
+        PROPERTIES LABELS unit LABELS frontend LABELS rendering
+            ENVIRONMENT SDL_VIDEODRIVER=dummy ENVIRONMENT SDL_AUDIODRIVER=dummy
         DISCOVERY_MODE PRE_TEST)
 
     add_executable(wormedit_player_preview_texture_tests
@@ -546,7 +545,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     )
     catch_discover_tests(wormedit_player_preview_texture_tests
         TEST_PREFIX "player-preview-texture."
-        PROPERTIES LABELS "integration;frontend;visual"
+        PROPERTIES LABELS integration LABELS frontend LABELS visual
         DISCOVERY_MODE PRE_TEST
     )
 endif()
@@ -562,7 +561,7 @@ if(WORMEDIT_ENABLE_LUA)
     )
     catch_discover_tests(wormedit_lua_tests
         TEST_PREFIX "lua."
-        PROPERTIES LABELS "unit;lua"
+        PROPERTIES LABELS unit LABELS lua
         DISCOVERY_MODE PRE_TEST
     )
 endif()
@@ -825,7 +824,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     target_compile_definitions(wormedit_frame_timing_tests PRIVATE
         WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY=1)
     catch_discover_tests(wormedit_frame_timing_tests TEST_PREFIX "frame-timing."
-        PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
+        PROPERTIES LABELS unit LABELS sys LABELS performance DISCOVERY_MODE PRE_TEST)
 endif()
 
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
@@ -877,7 +876,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         endif()
     endif()
     catch_discover_tests(wormedit_frame_projection_arena_tests TEST_PREFIX "frame-arena."
-        PROPERTIES LABELS "unit;sys;performance" DISCOVERY_MODE PRE_TEST)
+        PROPERTIES LABELS unit LABELS sys LABELS performance DISCOVERY_MODE PRE_TEST)
 endif()
 
 add_executable(wormedit_compose_mode_tests ui/compose_mode_tests.cpp)
@@ -885,7 +884,7 @@ target_include_directories(wormedit_compose_mode_tests PRIVATE "${CMAKE_SOURCE_D
 target_link_libraries(wormedit_compose_mode_tests PRIVATE Catch2::Catch2WithMain)
 catch_discover_tests(wormedit_compose_mode_tests
     TEST_PREFIX "frontend-state."
-    PROPERTIES LABELS "unit;compose_mode"
+    PROPERTIES LABELS unit LABELS compose_mode
     DISCOVERY_MODE PRE_TEST)
 
 add_executable(wormedit_convert_tests tools/wormedit_convert_tests.cpp)
@@ -904,7 +903,7 @@ target_link_libraries(wormedit_convert_tests
 add_dependencies(wormedit_convert_tests wormedit-convert)
 catch_discover_tests(wormedit_convert_tests
     TEST_PREFIX "wormedit_convert."
-    PROPERTIES LABELS "unit;tools"
+    PROPERTIES LABELS unit LABELS tools
     DISCOVERY_MODE PRE_TEST
 )
 
@@ -924,3 +923,7 @@ if(APPLE AND WORMEDIT_BUILD_APP)
     target_link_libraries(wormedit_macos_menu_tests PRIVATE wormedit::core SDL3::SDL3 Catch2::Catch2WithMain "-framework AppKit")
     catch_discover_tests(wormedit_macos_menu_tests TEST_PREFIX "macos-menu.")
 endif()
+
+# Label after Catch discovery so its existing labels and properties are preserved.
+set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/slow_tests.cmake")

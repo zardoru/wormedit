@@ -296,22 +296,22 @@ auto visible_display_slices(const waveform_t& waveform, const display_row_table_
     const sound_slice_result_t& slices, channel_waveform_source_geometry_t source)
     -> std::vector<display_channel_slice_t> {
     std::vector<display_channel_slice_t> result;
-    if (table.rows.empty() || slices.slices.empty()) return result;
-    const auto first_row = table.rows.front().begin_row;
-    const auto last_row = table.rows.back().end_row;
+    if (table.viewport.value().rows.empty() || slices.slices.empty()) return result;
+    const auto first_row = table.viewport.value().rows.front().begin_row;
+    const auto last_row = table.viewport.value().rows.back().end_row;
     auto after = std::ranges::lower_bound(slices.slices, first_row, {}, &derived_sound_slice_t::absolute_row);
     auto index = after == slices.slices.begin() ? std::size_t{0}
         : static_cast<std::size_t>(std::prev(after) - slices.slices.begin());
     for (; index < slices.slices.size(); ++index) {
         const auto& slice = slices.slices[index];
         if (static_cast<double>(slice.absolute_row) >= last_row) break;
-        const auto next = index + 1 < slices.slices.size() ? slices.slices[index + 1].absolute_row : table.total_rows;
+        const auto next = index + 1 < slices.slices.size() ? slices.slices[index + 1].absolute_row : table.clock.value().total_rows;
         const auto begin = display_output_frame(slice.source_begin_frame, source.sample_rate, waveform);
         const auto end = slice.source_end_frame
             ? display_output_frame(*slice.source_end_frame, source.sample_rate, waveform)
             : std::optional{waveform.total_frames};
-        const auto origin = display_seconds_at(table, static_cast<double>(slice.absolute_row));
-        const auto finish = display_seconds_at(table, static_cast<double>(next),
+        const auto origin = (table).seconds_at( static_cast<double>(slice.absolute_row));
+        const auto finish = (table).seconds_at( static_cast<double>(next),
             index + 1 < slices.slices.size() ? timing_boundary_side_t::event : timing_boundary_side_t::after_stops);
         if (begin && end && origin && finish && *begin < *end && *origin < *finish)
             result.push_back({*origin, *finish, *begin, *end});
@@ -359,8 +359,8 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const soun
     const sound_slice_result_t& slices, channel_waveform_source_geometry_t source) -> aligned_waveform_view_outcome_t {
     aligned_waveform_view_result_t result;
     if (!is_valid_channel_waveform_request(request)) return aligned_waveform_view_result_t::from(std::move(result));
-    if (!table.valid || !slices) { result.status = failure_code_t::invalid_data; return aligned_waveform_view_result_t::from(std::move(result)); }
-    if (table.zoom != request.pixels_per_standard_measure) return aligned_waveform_view_result_t::from(std::move(result));
+    if (!table.viewport.has_value() || !slices) { result.status = failure_code_t::invalid_data; return aligned_waveform_view_result_t::from(std::move(result)); }
+    if (table.zoom() != request.pixels_per_standard_measure) return aligned_waveform_view_result_t::from(std::move(result));
     if (!is_valid_channel_source(waveform, channel, source)) {
         result.status = failure_code_t::invalid_geometry; return aligned_waveform_view_result_t::from(std::move(result));
     }
@@ -370,7 +370,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const soun
     const auto visible = visible_display_slices(waveform, table, slices, source);
     std::size_t cursor = 0;
     result.rows.reserve(static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)));
-    for (const auto& row : table.rows) {
+    for (const auto& row : table.viewport.value().rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
         if (!row.valid || y < 0 || y >= request.viewport_height_pixels) continue;
         if (auto projected = build_display_channel_row_view(waveform, row, visible, cursor, result)) {

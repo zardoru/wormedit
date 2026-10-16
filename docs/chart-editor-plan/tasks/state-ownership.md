@@ -14,7 +14,7 @@ Behavior is preserved except explicit owner decisions. Every approved behavior c
 
 Keep the audit's necessary complexity: ordered explicit cancellation/join/cleanup/output close, notifications last and probe scheduler after resident loader; generation bump first; stack frame projections and local tap timestamp/viewport delta; project-owned chart-keyed maps; decoder feature blocks; captured-state, cache/workspace and per-batch-item stamps; staged scratch histories/Undo merging and distinct plan/parse/query/storage/dispatch semantics. Do not pursue rejected claims or merge boundary calls with different triggers.
 
-Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake) → T-631 (views as `T::from`; drake, or any free lane once T-630 lands) → T-632 (indices owned by the committed snapshot; one cache type); T-620 core, then its sys/UI inventory (hydra); then T-633 (cut down the outcome and status types, after the sys/UI wave and T-630); then T-634 (one active gesture and one runner for gestures and proposals, after T-630); T-635 (one async shell; independent, after T-620's sys/UI wave); then the ceremony audit's cards ([audit](../../audits/ceremony-2026-10-15.md), 2026-10-15): T-636 (one route per command and compose enum, plus command completion), T-637 (core edit operations and one target query), T-638 (reuse the chart-object ID traversal), T-640 (action capabilities beside execution), and proposed T-639 (timing kind→storage), T-641 (UI capture continuation, input to the Nuklear audit) and T-642 (namespace and private forwarders, last); then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards, after T-631 and T-632 so it reads the final view names and cache type; then a shrink-wrap audit (owner, 2026-10-14) of the whole tree for abstractions low on purpose that lower cohesion: one-line forwarders and adapters, wrapper types around a single field or call, pass-through layers, single-use helpers split away from their only caller (including helpers extracted only to pass the complexity check, which should be cohesive steps, not fragments), and parallel types for one concept. Known target: the 70 `*_result_t::from(*_outcome_t&&)` adapters T-620 keeps for sys/UI callers (2026-10-14), which its sys/UI follow-up should delete. Keep an abstraction when it names a recurring pattern, owns an invariant or is the one owner of a fact; the audit produces its own cards; T-621 (folders) stays last.
+Order after the current waves (owner, 2026-10-14): T-618 → T-624 → hot-file leftovers → T-630 (drake) → T-631 (views as `T::from`; drake, or any free lane once T-630 lands) → T-632 (indices owned by the committed snapshot; one cache type); T-620 core, then its sys/UI inventory (hydra); then T-633 (cut down the outcome and status types, after the sys/UI wave and T-630); then T-634 (one active gesture and one runner for gestures and proposals, after T-630); T-635 (one async shell; independent, after T-620's sys/UI wave); then the ceremony audit's cards ([audit](../../audits/ceremony-2026-10-15.md), 2026-10-15): T-636 (one route per command and compose enum, plus command completion), T-637 (core edit operations and one target query), T-638 (reuse the chart-object ID traversal), T-640 (action capabilities beside execution), and proposed T-639 (timing kind→storage), T-641 (UI capture continuation, input to the Nuklear audit) and T-642 (namespace and private forwarders, last) and T-643 (every ID domain through one reducer, from the owner's 2026-10-15 question); T-644 (reduce low-value and redundant tests, owner 2026-10-15, after T-633); T-651 (one owner for lane occupancy, owner 2026-10-16, after T-633 and T-639); T-652 (auditions ride the outcome, owner 2026-10-16, after T-633); T-653 (`ui_codec<Abi>::from`/`::into` at the C ABI, owner 2026-10-16, after T-633); the Nuklear pattern audit ([audit](../../audits/nuklear-2026-10-16.md), 2026-10-16) proposed T-645–T-650 and extensions to T-641/T-642, awaiting owner review; then a pattern-recognition audit of `src/ui/nuklear` in the style of this audit (ownership, repeated widget/panel/popup shapes, state lifetimes, helpers copied under other names), producing its own cards, after T-631 and T-632 so it reads the final view names and cache type; then a shrink-wrap audit (owner, 2026-10-14) of the whole tree for abstractions low on purpose that lower cohesion: one-line forwarders and adapters, wrapper types around a single field or call, pass-through layers, single-use helpers split away from their only caller (including helpers extracted only to pass the complexity check, which should be cohesive steps, not fragments), and parallel types for one concept. Known target: the 70 `*_result_t::from(*_outcome_t&&)` adapters T-620 keeps for sys/UI callers (2026-10-14), which its sys/UI follow-up should delete. Keep an abstraction when it names a recurring pattern, owns an invariant or is the one owner of a fact; the audit produces its own cards; T-621 (folders) stays last.
 
 Each implementation card runs the full Verify gate. After T-622 lands, add `cmake --preset linux-clang`, `cmake --build --preset linux-clang` and `ctest --preset linux-clang --output-on-failure` to each gate. libc++ is gated only after the owner installs it; record configured/not run until then. No Xvfb in implementer sandboxes. A failing gate is fixed within authorized scope or stops the card and is reported.
 
@@ -729,7 +729,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-631 Build views with their type's `from`
 
-- **Status:** In progress (core wave done 2026-10-15, `d54bbc4`…`ed94084`; sys/UI and audio views after hydra's T-620 wave)
+- **Status:** Done (2026-10-15). Core wave `d54bbc4`…`ed94084`; sys/UI and audio wave `ae64772`…`f0eb5ad` (hydra, 4 parts: five Compose timing-overlay families; sys catalogs, bookmark chooser, chart tables and the frontend frame; audio waveform views with six free wrappers removed; sys scene callers moved to the diagnosed view factories). All 61 remaining `build_*_view` names are classified (C ABI structs and plain containers). Kept bridges, marked for T-642: `bms_branch_view.h:52` (core preview/format/status consumers) and `editor_scene.h:257` (core tests and retained-window metadata); workspace and player-preview bridges are gone. No behavior, ABI, allocation or cache-key change. Gate on main (`f0eb5ad`): GCC and linux-clang `100% tests passed out of 3944`, event harness `509/509`, documentation `3/3`, Compose screenshot normal.
 - **Core wave (2026-10-15):** Commits `d54bbc4` (BMS branch views, plus the full inventory: 97 builder names, kept in the lane backups as `inventories/T-631-inventory.txt`), `19dbce1` (workspace outlines; cached `from` overload), `a76b40e` (player-preview scene views), `ed94084` (editor scenes and metadata). No free core `build_*_view` remains. Forced sys call-site renames only: `workspace_view.cpp`, `player_preview_presenter.cpp`, `compose_input_internal.h`, `compose_view.cpp`, `compose_view_internal.h`, `compose_waveform_overlays.cpp`. Kept, marked with their removal card: the `*_view_result_t::from(outcome&&)` bridges and legacy factories for sys `.view`/bool callers (BMS branch, workspace, player preview, editor scene; T-642), and the `make_editor_field_scene` alias in `editor_scene.h` for its one caller in `tests/core/interaction_tests.cpp` (T-634, which owns that file). Gate on main (`ed94084`): GCC and linux-clang `100% tests passed out of 3893`, event harness `509/509`, documentation `2/2`, Xvfb Compose screenshot normal. Remaining: sys/UI views (`workspace_view.h`, `application_frame_view.h`, `sound_list_view.h`, `bga_list_view.h`, …) and audio views (`waveform.h`, `aligned_waveform.h`, `waveform_viewport.h`), after hydra.
 - **Findings closed:** NV follow-up (owner amendment of D13, 2026-10-14): views are values built from the document, so they follow the `T::from` rule like every other type.
 - **Stale-plan audit:** Search by behavior: every `build_<x>_view` declaration and its return type; view types not named `*_view_t` (`*_projection_t`, `flattened_workspace_t`, `bga_list_t`, `keysound_list_t`, …); views already wrapped in T-620 result types (`*_view_result_t`, `*_view_outcome_t`); cached variants (`build_keysound_list_cached_view`); existing `*_view_t::from`. On 2026-10-14 there were about 97 `build_*_view` names and one `workspace_view_t::from`; of 36 header declarations, 8 returned a result wrapper and the rest mixed owned C++ types, C ABI structs (`WormUi*View`) and `std::vector`/`std::array`.
@@ -750,7 +750,8 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-632 Let the committed document own its indices
 
-- **Status:** In progress (core steps 1–3 and 5 done 2026-10-15; step 0, step 4's sys/UI entry points and the non-core caches after drake's T-634 and hydra's sys/UI wave)
+- **Status:** Done (2026-10-16). Final parts `d9492fe`…`252053a` (drake): the last callers of the eight free-index bridges use the members (`index.position_at`, `seconds_at`, `row_at`, `row_of`) and the `measure_index_t`/`timing_index_t` factories; the bridges and their markers are gone; `outcome_move_adapter` ratchet 30 → 29. The interaction position helper (`src/core/interaction_geometry.h:8`) and the unchanged timing result adapters (listed in part 39's message) remain for T-633 and the shrink-wrap audit. Gate on main (`252053a`): GCC and linux-clang `100% tests passed out of 4004`, event harness `509/509`, documentation `3/3`, Compose screenshot normal.
+- **Sys/UI wave (2026-10-16):** Commits `bd998dd`…`874d089` (hydra, 34 parts), merged with main in `dd7a580` (main's gesture APIs kept with the cached measure queries). Sys entry points read `history.indices(chart)` and pass committed indices and geometry down (synchronous sys commands, input and command helpers, Compose inspection, quantize preview); hand-rolled caches moved to `keyed_cache_t` with their keys and failure policies (timing-view capacity, project chart tables, tap-meter prefixes, measure-removal preview, player indices, Compose hit testing, scene geometry, and the rest listed per part). No behavior change. Gate on main (`dd7a580`): GCC and linux-clang `100% tests passed out of 4004`, event harness `509/509`, documentation `3/3`, Compose screenshot normal.
 - **Core wave (2026-10-15):** Commits `363135d`…`09845bc` (9 parts). Index owners use their factories and member queries; core callers migrated (geometry/views, note/resource/clipboard, timing and structural editors, sound and BMSON). `b900110`: `chart_indices_slot_t` on `chart_document_t` (private shared immutable value, filled only through `document_history_t::indices(chart_id)` on the main loop; failures retained; copies share) with resets at history creation, working copy, adoption and publication (including direct commits and chart replacement); 13 regression cases (proposals never see the committed index after mutation, undo restores a usable index, equal-revision reopen starts empty, copies share). `include/wormedit/core/keyed_cache.h`: `keyed_cache_t<Key, Value>::get_or_build` (borrowed lookup keys compare without copying); workspace binding validation and the BMS branch-outline cache migrated. Kept distinct on purpose: `kiai_spans.cpp:60` (scans authored entries without row validation) and `marker_navigation.cpp:293` (rejects entry-capacity gaps). Kept, marked `// Temporary: removed by T-632`: `build_measure_index`, `absolute_row`, `build_timing_index`, three `timing_at` overloads, `musical_position_at`, `position_at_absolute_row`, for sys/UI and interaction callers. Inventory in the lane backups (`inventories/T-632-inventory.txt`). Gate on main (`09845bc`): GCC and linux-clang `100% tests passed out of 3922`, event harness `509/509`, documentation `2/2`, Compose screenshot normal.
 - **Findings closed:** UR3 and the build-then-query repetition (owner request 2026-10-14): callers rebuild the same chart index per action, often several times, unwrap it by hand, and about 20 caches each hand-roll their key check.
 - **Stale-plan audit:** Search by behavior: every `build_measure_index`/`build_timing_index`/note- and sound-index build and what it unwraps (`holds_alternative`/`std::get<measure_index_t>`, about 118 on 2026-10-14); free queries taking an index (`absolute_row(index, …)`); helpers rebuilding an index their caller already built (for example `bmson_sound_channel_editor.cpp`, `interaction_hit_test.cpp`); every `*_cache_t` with its key fields, validity flag (`valid`/`populated`/`attempted`) and refill code, including function-local `static` caches (`meter_cache_t`); writes to `history.document` outside `src/core/command.cpp` (none on 2026-10-14) and every `copy_document()`/`adopt_document()` path.
@@ -768,6 +769,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
   - Owner (2026-10-14): after an edit every chart rebuilds lazily on its next read, including untouched charts. Accepted; if profiling shows a meaningful copy → scan → rebuild cost, a later card makes the transaction track which charts it handed out mutably (today all mutation goes through `copy_document()` and `find_chart`).
 - **Steps:**
   0. Rename `transaction.copy_document()` to `transaction.document()` (AST-aware; owner 2026-10-14: inside a mutation scope the document is the working copy, so only reads of the committed version carry a qualifier, as `source_chart(id)` and, if needed, `source_document()`). `transaction.chart(id)` keeps its name. In the same checkpoint the transaction stops being an aggregate (owner 2026-10-14: its lazy copy, single finish and, after this card, slot reset are invariants): private `history_`, `document_`, `outcome_`, `finished_`, reached only through `document()`, `chart(id)`, `source_document()`, `source_chart(id)` and `outcome()`; its two `from` overloads become constructors (owner 2026-10-14: `from` where construction can fail, a constructor where it cannot; a stale stamp yields a transaction born rejected, reported by `is_ready()`, not a failed construction). On 2026-10-14 the outside uses were `transaction.history.document` once (`timing_lane_controller.cpp:474`) and `transaction.outcome` 23 times; `proposed` had none. Its own checkpoint.
+     - Rename done 2026-10-15 (Claude, after T-634): the existing non-copying `document() const` (working copy if one exists, else the committed document) became `current_document()` first, with every caller found by the compiler (proposal.h ×2, chart_clipboard ×1, sv_recipe ×3, tests ×7), then `copy_document()` became `document()` (unique identifier, 86 uses in 31 files). Gate on main: GCC and linux-clang `100% tests passed out of 3981`, event harness `509/509`, documentation `3/3`, Compose screenshot normal. Encapsulation done 2026-10-15 (`6d99cac`, drake): private `history_`, `document_`, `outcome_`, `finished_` behind `document()`, `current_document()`, `chart(id)`, `source_document()`, `source_chart(id)` and `outcome()`; the `from` overloads became constructors (a stale stamp yields a transaction born rejected); 116 construction sites and the outside storage uses (42 outcome, 10 history, 3 proposed, 2 finished) migrated; no behavior change. Gate on main (`6d99cac`): GCC and linux-clang `100% tests passed out of 3984`, event harness `509/509`, documentation `3/3`, Compose screenshot normal. Step 0 is done.
   1. Inventory index builds, unwraps, rebuild chains and caches (`.agent/T-632-inventory.txt`); classify each index as chart-intrinsic or view/option-dependent.
   2. `measure_index_t::from`/`timing_index_t::from` with member queries; migrate callers per module and delete the free builders.
   3. Add the chart slot, `history.indices(chart_id)` and the slot resets, with tests: a proposal never sees the committed index after mutation; undo restores a usable index; recovery/reopen with an equal revision starts empty; copies share.
@@ -813,7 +815,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-634 Run gestures and proposals through one lifecycle
 
-- **Status:** In progress (part 1 `e67a5b1`: `editor_interaction_result_t::from` replaces all 37 view-result unwraps with each caller's acceptance policy kept; `view_result_unwrap` ratchet 37 → 0, `detail_namespace_reopen` 81 → 78; gate on main: GCC and linux-clang `100% tests passed out of 3893`, event harness `509/509`, documentation `2/2`, Xvfb Compose screenshot normal); part 2 `61b64ef`: `active_gesture_t` (a `proposal_t` with a revision-only stamp), the `editor_gesture` contract and the begin/update/commit/cancel runner in `src/core/interaction_gesture_runner.h`, with duration as the first kind (its pending field, preview mirror, stamp and guards gone; the locked exclusivity and stale-ending rules failed before: duration begin accepted paint and Space captures, and a direct stale update left the capture active); part 3 `6c57c3e`: note move on the runner; `de0959a` removed T-631's `make_editor_field_scene` alias. Gate on main (`de0959a`): GCC and linux-clang `100% tests passed out of 3900`, event harness `509/509`, documentation `2/2`, Compose screenshot normal. Remaining: paint, semantic paint, area, Space, hold, `apply_proposal` and owners, verbs, the sys forwarder
+- **Status:** Done (2026-10-15; part 1 `e67a5b1`: `editor_interaction_result_t::from` replaces all 37 view-result unwraps with each caller's acceptance policy kept; `view_result_unwrap` ratchet 37 → 0, `detail_namespace_reopen` 81 → 78; gate on main: GCC and linux-clang `100% tests passed out of 3893`, event harness `509/509`, documentation `2/2`, Xvfb Compose screenshot normal); part 2 `61b64ef`: `active_gesture_t` (a `proposal_t` with a revision-only stamp), the `editor_gesture` contract and the begin/update/commit/cancel runner in `src/core/interaction_gesture_runner.h`, with duration as the first kind (its pending field, preview mirror, stamp and guards gone; the locked exclusivity and stale-ending rules failed before: duration begin accepted paint and Space captures, and a direct stale update left the capture active); part 3 `6c57c3e`: note move on the runner; `de0959a` removed T-631's `make_editor_field_scene` alias. Gate on main (`de0959a`): GCC and linux-clang `100% tests passed out of 3900`, event harness `509/509`, documentation `2/2`, Compose screenshot normal. Remaining: paint, semantic paint, area, Space, hold, `apply_proposal` and owners, verbs, the sys forwarder; parts 4–26 `10d4af9`…`31da692`, merged with main in `4ce9481`: paint, semantic paint, area, Space and hold on the runner (failing-before tests for the locked rules on Space and hold); every drag proposal applies through `apply_proposal` (audio offset, BPM through `execute<Operation>`, tap, clipboard, channel map, lane migration, SV draft, SV range, timing pseudo-notes) and captures its revision in the shared pipeline; dispatch lifecycle and forwarders cleaned; canonical begin/update/commit/cancel verbs, `editor_gesture_phase_t` removed; four pending-gesture query wrappers removed (40 callers on the state owner). Persistent previews keep their coexistence. Remaining for other cards: two `// Temporary: removed by T-634` revision interfaces at `src/sys/compose_view.h:492` for sys owners, the native-dispatch result bridge (`proposal.h:389`, T-633/T-637), the ordinary action visitor (T-640). Gate on main (`4ce9481`): GCC and linux-clang `100% tests passed out of 3981`, event harness `509/509`, documentation `3/3`. Xvfb drag/paint check (Claude): draw clicks place notes, a paint stroke across seven lanes commits seven notes, a select-tool drag moves a note, undo restores it, area drag commits; clicks that snap into the non-existent measure 2 of a new chart are rejected with "Begin note painting over an editable chart lane", identical on a pre-T-634 binary (existing behavior)
 - **Findings closed:** The gesture lifecycle, previously out of scope in the audit (§ proposals), T-610 and T-630 ("core pointer gesture redesign"). Owner (2026-10-15): gestures "with their funny state machine" belong on the plan. On 2026-10-15: `editor_interaction_state_t` holds eight parallel pending fields (`pending_hold`, `additional_keyboard_holds`, `pending_note_duration_gesture`, `pending_note_move_gesture`, `pending_note_paint_gesture`, `pending_semantic_layer_paint_gesture`, `pending_editor_area_selection`, `pending_space_range_selection`; `interaction.h:700`), so the type admits combinations no code path creates; `interaction_gestures.h` needs a member-pointer tuple and a visitor to ask whether anything is pending, clear or stale; a preview struct repeats the same fields (`interaction.h:757`); about 20 action structs mix verbs (`begin_`/`update_`/`release_`, `begin_`/`update_`/`end_`, and commit as `update_…{.phase = commit}` through `editor_gesture_phase_t`); `src/core/interaction_gesture_lifecycle.cpp` is 1441 lines; the sys forwarder `editor_interaction_has_pending_gesture` only calls `has_pending_editor_gesture` (94 sys callers).
 - **Repeated checks (2026-10-15, owner: "a lot of shrink wrap to get to the core actions"):** each begin/update/release handler in `interaction_gesture_lifecycle.cpp` restates the same guards before its planning code: "another gesture is already active" (4 copies), "requires an active gesture" (3), the stamp check (6), and the view-to-result unwrap (`make_view` then three `holds_alternative` branches; 15 copies here, 8 in `interaction.cpp`, 1 in `note_placement.cpp`), plus 67 `diagnostic_result` calls and 38 reopened `namespace wormedit { using namespace interaction_detail;` blocks. The copies disagree: duration and hold begins check three pending fields while move and paint check six or more; a stale move or paint gesture is cleared but a stale duration or hold gesture stays pending.
 - **Proposals share it (2026-10-15, owner: "this should also probably simplify proposals"):** many T-630 proposals are drags too (audio offset, beat interval, SV range, BGA/BGM strokes, BMSON razor), and their `apply_*` functions restate the same steps around the edit: lifecycle-status check, lock check, `pending.transaction(…)`, `if (!transaction.is_ready())` with a status write (23 copies), no-op detection setting `cancelled`, then commit. Two lifecycle enums repeat one set (`sv_recipe_draft_status_t {inactive, editing, applied, cancelled, rejected}`, `sv_recipe_range_drag_status_t {inactive, previewing, committed, cancelled, rejected}`). `is_current(history…)` is called on proposals at 34 sites.
@@ -961,7 +963,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-639 Own timing kind-to-storage routing once
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; core order T-639 → T-643)
 - **Findings closed:** CE6: six timing-controller switches plus the clipboard type-to-lane projection mapping.
 - **Stale-plan audit:** Inventory each timing-kind switch by purpose: storage, value alternative, occupancy, command invocation. Record shared pause storage+kind predicate, warp span.begin, BPM initial restrictions, selected-ID exclusion, invalid-kind fallbacks, insert/update vs delete and postvalidation. Read existing catalog helpers before adding traits. Separate kind labels/selection-kind mapping already owned by T-611.
 - **Outcome:** A typed timing-event access owner carries storage, value and position mapping once; lookup/occupancy/edit operations reuse it with explicit per-domain policies. Six switches do not become six dynamic callbacks or six new tables. Operation algorithms remain discoverable as named queries/edits.
@@ -982,7 +984,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-640 Declare editor action capabilities beside execution
 
-- **Status:** Ready (owner approved the variant allow-lists target, 2026-10-15; from the ceremony audit)
+- **Status:** Done (2026-10-15, `b9cf7a4`). All 38 editor actions declare `editor_action_handler_t<Action>` traits beside their handler (virtual-cursor capability `allowed`/`selection`/forbidden; a missing trait fails to compile, no default) and `perform` calls the real operation; one `std::visit` through `editor_action_dispatch_t` keeps the order cancellation → stale → T-634 admission → virtual-cursor capability → armed kind → initial view/index → perform → terminal cleanup, with one stack `editor_action_context_t`. The 19-alternative allow-list and the forwarding visitor are gone; `variant_allow_list_probe` ratchet 24 → 0. Samples: navigation reaches `move_edit_cursor` directly; delete declares `virtual_cursor = selection` and the visitor checks the same two selection fields before building a view. Supporting: the terminal membership query reuses its existing variadic helper (`interaction_gesture_lifecycle.cpp:1023`). No behavior change. Gate on main (`b9cf7a4`): GCC and linux-clang `100% tests passed out of 3984`, event harness `509/509`, documentation `3/3`, Compose screenshot normal.
 - **Findings closed:** CE7: virtual-cursor 19-alternative allowlist and unnecessary dispatch→visitor→handle forwarding. T-634 terminal/gesture policies remain with its runner.
 - **Stale-plan audit:** Re-inventory editor action variant alternatives and dispatch after T-634. For each, record virtual-cursor capability, runtime exception, context needs, cancellation/stale/initial-view ordering and real algorithm owner. Count forwarding handles only after reading them; do not assume all 38 are transparent. Search capability checks by condition/body as well as name.
 - **Outcome:** One typed operation owner per action declares virtual-cursor permission and execution. One visitor performs boundary checks in existing order and reaches real operations directly. A new alternative without explicit capability fails compilation; no permissive default and no second action registry/table. A small stack context supplies common view/cursor data once.
@@ -1004,10 +1006,11 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-641 Share UI capture continuation without merging click policies
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; UI order T-641 → T-645 → T-646/T-647/T-648/T-650 → T-649)
 - **Findings closed:** CE9's seven verified continuation owners; extend inventory after the scheduled audit rather than claiming all UI drags are identical.
 - **Stale-plan audit:** Follow existing compose_drag_capture_t and continue_span_capture before adding helpers. For each drag, record begin/active/runtime state, focus/occlusion/overflow, identity/source/geometry checks, lost-button cancellation, threshold rules, release/click/replay behavior and emitted action. Test bookmark project reset invariant before calling project omission a bug. Include Audio Slices outer stale-cancel/render path, not only its match helper.
 - **Outcome:** Existing capture owner provides a typed stack continuation decision with explicit source/release policies. Emitters contain domain action payload construction and intentional click/replay hooks, not repeated common guards. Core proposal/gesture validity and UI input capture stay separate boundaries.
+- **Addition (Nuklear audit CEn1, 2026-10-16):** see `docs/audits/nuklear-2026-10-16.md` for the seven-owner policy matrix. Keep the bookmark project-reset result; trace the timing-stage overflow path through its outer cancellation before any change; keep every click/release difference. The existing span continuation and capture identity are the owners; no new UI lifetime or core runner.
 - **Read first:** `docs/audits/ceremony-2026-10-15.md` CE9; scheduled Nuklear audit; D6; `src/ui/nuklear/compose_drag_capture.h`; `src/ui/nuklear/compose_timing_input.cpp:121`; `docs/frontend-event-harness.md`; T-631/T-632/T-634 completions.
 - **Files owned:** `src/ui/nuklear/compose_drag_capture.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_viewport_input.cpp`, `src/ui/nuklear/compose_timing_input.cpp`, `src/ui/nuklear/audio_panel.cpp`; exact state/header support recorded after inventory. Existing harness support/tests: `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/markers_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/audio_sounds_workflow_event_harness_tests.cpp` as needed; any focused new harness path registered/recorded.
 - **Runs after/before:** After T-631/T-632/T-634 and the Nuklear pattern audit; before T-642/T-621. Coordinate other input-routing cards first.
@@ -1026,10 +1029,11 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-642 Remove residual namespace and private forwarding ceremony
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16, including the command-menu forward extension; last before T-621)
 - **Findings closed:** CE10: 81 namespace blocks in three additional core files; six bounded private forwarding sites. T-634 already owns the other 38 gesture-lifecycle blocks.
 - **Stale-plan audit:** Count reopened namespaces and repeated includes after T-634/T-640; inspect lookup/anonymous scope boundaries. For each short function, read callers and identify invariant/policy/ABI/test purpose before deleting. Confirm six private sites still only forward. Do not classify parser trim policies, synchronized accessors or convenience transaction boundaries as transparent.
 - **Outcome:** Cohesive contiguous blocks per actual namespace/owner and direct calls to existing helpers where private aliases add no policy. Domain helpers extracted for meaningful steps survive; no complexity-driven giant function results.
+- **Addition (Nuklear audit CEn8, 2026-10-16, for owner review):** the four UI wrapper sites remain; optional scope extension `src/ui/nuklear/command_menu.cpp:147,157` reusing `modal_input.h::forward_modal_key` (full text-event forwarding stays; keep captured scancode, IME and close ownership; rerun the command-menu harness).
 - **Read first:** `docs/audits/ceremony-2026-10-15.md` CE10; code-style checklist; T-634/T-640 completion notes; actual wrapper definitions/callers; AST-aware rename guidance if any symbol rename is needed.
 - **Files owned:** `src/core/note_move.cpp`, `src/core/note_placement.cpp`, `src/core/interaction_selection.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/formats/native_project_storage.cpp`, `src/formats/osu_mania.cpp`. No header/API changes by default; exact supporting caller declarations only if justified and recorded.
 - **Runs after/before:** After T-634/T-640/T-641 and the Nuklear audit, plus T-620/T-631/T-632/T-633; immediately before T-621 folder moves. Split core scaffolding and private wrappers into separate checkpoints if still worthwhile.
@@ -1043,3 +1047,296 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Reject/failure behavior:** Any name-binding ambiguity or complexity increase is a failed refactor; keep the original boundary or extract a cohesive step, never NOLINT. A failed gate stops completion.
 - **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure` (includes the ceremony ratchet); `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox; appropriate existing core interaction, formats, frontend/harness tests. No new tests for namespace whitespace or one-line forwarding deletion; meaningful production tests suffice.
 - **Out of scope:** Public ABI/export wrappers, test probes, synchronized accessors, file-dialog completion boundaries, result adapters owned by T-620, mass inlining, provenance claims that a helper was created “only for complexity.”
+
+## T-643 Allocate every ID domain through one reducer
+
+- **Status:** Ready (owner approved 2026-10-16; after T-633)
+- **Findings closed:** T-638 made `object_id_ceiling_t` the one reducer for chart object IDs, but the same "maximum over this domain's declarations, plus one, or nothing when exhausted" shape is hand-written for six more typed domains: `next_measure_id` (`measure_editor.cpp:42`), `next_layer_id` (`semantic_layer_editor.cpp:192`), `next_recipe_id` with a second declaration list in `is_globally_used_recipe_id` (`sv_recipe.cpp:248,259`), `next_resource_id` (`chart_import.cpp:267`), `next_resource_asset_id` (`resource_assignment.cpp:1460`) and `next_sound_group_id` (`sound_import.cpp:363`). The domains stay distinct on purpose (chart-scoped vs song-scoped, typed IDs); only the reducer repeats.
+- **Stale-plan audit:** Search by behavior: max reductions over `.id.value`, `== std::numeric_limits<std::uint64_t>::max()` exhaustion checks, "already used" scans; per domain record its owner scope (chart or song), declaration list, cap, exhaustion message and whether allocation reserves several IDs at once. Include `next_bga_header_id` (`bmson_writer.cpp:1182`) and decide whether it is the same shape.
+- **Outcome:** One generic ceiling reducer over the ID type (`id_ceiling_t<Id>`, generalizing `object_id_ceiling_t`), and per domain one `visit_<domain>_ids(owner, f)` that lists its declarations once; next-ID and is-used queries both read that list. No domain merged; no persistent index.
+- **Read first:** T-638 completion; `src/core/chart_object_ids.h`; `include/wormedit/core/id.h`; the six allocators; code-style "Repetition and scaffolding".
+- **Files owned:** `src/core/chart_object_ids.h` (or a new `src/core/id_ceiling.h` if the reducer outgrows chart objects), the six allocator files above and their existing tests.
+- **Runs after/before:** After T-633 (result types on these paths); before the shrink-wrap audit and T-621.
+- **Decisions applied:** T-638's rule that distinct ID domains stay distinct.
+- **Steps:**
+  1. Inventory per domain (scope, declarations, cap, messages, multi-ID reservation).
+  2. Generalize the reducer; migrate one domain per checkpoint with its tests (maximum in each declaration list, empty, cap, UINT64_MAX).
+  3. Delete the local scans and duplicate declaration lists; add a ratchet row for the pattern.
+- **Invariants:** Same IDs, caps, exhaustion and diagnostics per domain; no allocation added.
+- **Reject/failure behavior:** UINT64_MAX never wraps; multi-ID reservation stays atomic. A failed gate stops completion.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp; the linux-clang preset. Skip Xvfb in the sandbox.
+- **Out of scope:** Merging ID domains, changing ID formats or caps, cloning/remapping.
+
+## T-644 Reduce low-value and redundant tests
+
+- **Status:** In progress (steps 1, 3, 5 done 2026-10-16; steps 2 and 4 after T-633; shrinking the slow tests continues)
+- **Parts 1–9 (2026-10-16):** Commits `7e1a5cf`…`8ec26bd` (drake). Inventory of all 3974 `TEST_CASE` bodies (lane backups `inventories/T-644-inventory.txt`): (a) runner safeguard re-tested per owner 56, (b) structure-only 4, (c) repeated diagnostic text 106, (d) slow 33, (e) duplicates 0, (f) keep 3775 — far fewer redundant tests than estimated; most tests cover distinct domain behavior. The four source-scan tests (cursor helpers, dropdowns, two others) became ceremony ratchet rows; 36 tests carry a `slow` label (fast selection 3932 tests, about 48 s wall vs 113 s for the full GCC suite on a shared host); none were shrunk yet. Found a pre-existing Catch label-expansion bug at `tests/CMakeLists.txt:206` (semicolon label lists produce malformed properties such as `core=SKIP_RETURN_CODE`). Gate on main (`8ec26bd`): GCC and linux-clang `100% tests passed out of 3980`, event harness `509/509`, documentation `3/3`, Compose screenshot normal.
+- **Parts 10–16 (2026-10-16):** Commits `454cc2a`…`139fb42` (drake). Part 10 fixed the Catch label/environment expansion (ctest JSON verified before/after). Parts 11–16 reviewed the 24 slow tests outside hydra's files: 12 shrunk to the smallest size that keeps their assertions (WAV slot batch 1200 → 36 files, still crossing a base-36 digit, 14.5 s → 0.03 s; chart comparison at a scaled endpoint budget; audio queues, PCM, SDL captures, CJK font fixture, subprocess waits on observed output) and lost the label; 12 keep `slow` with the reason in the test (the fixed 50,000-note lane-assignment bound, the 4096+1 BMSON channel cap, the full export loss matrix). Slow labels 36 → 24; no test removed. Gate on main (`139fb42`): GCC and linux-clang `100% tests passed out of 3980` (GCC wall 112 s on a loaded host, was 145 s), event harness `509/509`, documentation `3/3`. Remaining: hydra's 12 slow cases after T-632, steps 2 and 4 after T-633.
+- **Findings closed:** Owner (2026-10-15): "that's so many test. do they all really provide value." On 2026-10-15 main had 3984 ctest entries (3974 Catch2 `TEST_CASE`s: core 2211, frontend-state 761, frame-timing 522, audio 244), up from 3567 when this refactor began. The median test takes 0.02 s, but 33 tests over 1 s take 135 of the suite's 242 CPU-seconds (for example `core.BMS WAV slot batches accept 1200 files…` 14.6 s, `core.All editor cursor writes use the centralized cursor helpers` 12 s, the frame-timing arena exhaustion tests 6–12 s, `core.lane assignment remains bounded for fifty thousand selected notes` 9.5 s), and every gate builds the test TUs twice (GCC and clang).
+- **Stale-plan audit:** Classify every `TEST_CASE` by what it protects, by reading it, not by name: (a) a shared runner's safeguard tested again per owner (exclusivity, stale, not-ready, no-op, single commit, route completion), written before T-630/T-634/T-636/T-637 moved those checks into one runner; (b) structure rather than behavior (source scans, `is_aggregate_v`/`is_same_v` checks, type-name pins); (c) the same diagnostic text asserted at many callers where the text is not the contract; (d) slow tests whose limit can be proven at a smaller size; (e) tests that duplicate another test's inputs and assertions; (f) everything else (keep). Record counts per class and per prefix.
+- **Outcome:**
+  - Each shared runner's safeguards are tested once, at the runner (gesture runner, `apply_proposal`, `execute<Operation>`, command routes and finisher, `async_job_t`, `keyed_cache_t`); each owner keeps its domain behavior tests plus one wiring test that it goes through the runner.
+  - Source-scan tests become ceremony ratchet rows (`cmake/ceremony_ratchet.txt`) or are deleted when a type or the compiler already enforces the rule.
+  - Diagnostic text is asserted where it is the contract (D8's stale message once, user-facing format errors); elsewhere tests assert the diagnostic code.
+  - Slow tests prove their bound at the smallest size that still exercises it, or move to a `slow` label run by the full gate but not by lane iteration.
+  - Test count, CPU time and gate wall time before and after are recorded.
+- **Read first:** `docs/architecture.md`; code-style.md; the T-630, T-634, T-635, T-636 and T-637 completion notes (which runner owns which safeguard); `docs/frontend-event-harness.md`.
+- **Files owned:** `tests/**` and `tests/CMakeLists.txt`, `cmake/ceremony_ratchet.txt`. No production source changes except a test seam that a merged test needs, recorded per part.
+- **Runs after/before:** After T-633 (result types in assertions settle). Before the shrink-wrap audit and T-621. One test family (prefix and module) per checkpoint.
+- **Decisions applied:**
+  - Owner (2026-10-15): reduce low-value and redundant tests.
+  - Coordinator default: a test is removed only when another test still covers the same behavior, named in the commit body; coverage of behavior never drops.
+- **Steps:**
+  1. Inventory (`.agent/T-644-inventory.txt`): every test with its class (a)–(f), its covering test for (a)/(e), and its runtime; summary counts.
+  2. Per runner: write or confirm the runner-level safeguard tests, then delete the per-owner copies, keeping one wiring test per owner.
+  3. Move source scans to ratchet rows; delete structure-only checks the compiler enforces.
+  4. Replace repeated text assertions with code assertions where the text is not the contract.
+  5. Shrink or label the slow tests.
+  6. Run every Verify command; record per family the tests removed with their covering test, kept tests with reason, before/after counts and times, and gate tails.
+- **Invariants:** The event harness, the failing-before regressions for owner decisions, the T-636 routing baseline, format round-trips and the D8 stale-message test stay. No production behavior change. Every removed test names the test that still covers its behavior.
+- **Reject/failure behavior:** If no other test covers a behavior, keep the test (or merge it into the runner test first). A failed gate stops completion.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
+- **Out of scope:** Production refactors, new coverage for untested behavior (list gaps instead), changing test frameworks.
+
+
+## T-651 Give lane occupancy one owner
+
+- **Status:** Ready (owner request 2026-10-16: "is there a bit of redundancy over the note placement policy?"; after T-633 and T-639)
+- **Findings closed:** The fact "which rows a note occupies on its lane" is computed separately at least six times, and the copies disagree: `time_shift.cpp:124` `is_lanes_free_of_overlap` (per lane, inclusive `[head, tail]`); `chart_clipboard.cpp:459,481` paste (inclusive, BGM lanes separate, only pasted-vs-existing and pasted-vs-pasted); `quantize.cpp:168,173` (a `"row:lane"` string key from the head only, so a tap snapped into a hold body does not collide, and one string allocation per note); `note_placement.cpp:166` paint/tap intervals; `note_move.cpp:103,433,811` move/resize collisions and conflict counts; `editor_scene.cpp:973,1423` the preview's own copies of the move and paint conflict rules. BMSON marker-lane occupancy (`bmson_sound_channel_editor.cpp:353,649`) is a different domain and stays out.
+- **Stale-plan audit:** Search by behavior: per-lane interval building from `note.position`/`note.end`, sort-then-sweep overlap checks, `(row, lane)` keys, collision diagnostics; record for each operation which pairs it compares (existing/existing, proposed/existing, proposed/proposed), whether BGM lanes are separate, whether the moved notes are excluded, inclusive vs exclusive ends, and its diagnostic text and order.
+- **Outcome:** One owner of the occupancy fact, e.g. `lane_occupancy_t::from(chart, index)` with `collides(lane, begin_row, end_row)` and an exclusion set, built once per operation without per-note string allocation. Each operation keeps only its policy on top (which pairs count, paint toggle/erase, move exclusion, paste's BGM lanes). The scene preview reads the same owner as the commit, so preview and commit cannot disagree.
+- **Read first:** `docs/architecture.md`; code-style.md (one table per fact, Repetition and scaffolding, Tests); the T-632 index notes (built indices are passed down); T-634 (move/paint gestures); the six implementations above.
+- **Files owned:** a new `src/core/lane_occupancy.h` (or the existing index owner if the inventory shows it belongs there), `src/core/time_shift.cpp`, `src/core/chart_clipboard.cpp`, `src/core/quantize.cpp`, `src/core/note_placement.cpp`, `src/core/note_move.cpp`, `src/core/editor_scene.cpp` and their existing tests; a focused `tests/core/lane_occupancy_tests.cpp`.
+- **Runs after/before:** After T-633 (result types) and T-639 (timing access owner); before T-644 steps 2 and 4, the shrink-wrap audit and T-621.
+- **Decisions applied:**
+  - Owner (2026-10-16): a note inside another note's hold body, including on its head or tail row, is a collision, the same lane-interval rule time-shift and paste already use. Quantize's head-only rule changes to it; that is a behavior change with a failing-before test (a tap quantized into a hold body on the same lane is rejected or reported per quantize's existing collision policy).
+- **Steps:**
+  1. Inventory (`.agent/T-651-inventory.txt`): each implementation's pairs, lane split, exclusion, end inclusivity, diagnostics; current behavior differences listed.
+  2. Add the occupancy owner with tests (tap vs tap, tap in body, tap on head/tail, hold vs hold, different lanes, BGM separation, exclusion set, empty).
+  3. Migrate one operation per checkpoint (time shift, paste, quantize with the owner's rule and its failing-before test, paint/tap, move/resize, scene preview), deleting the local interval code.
+  4. Add a ratchet row for hand-built per-lane note intervals; run the Verify gate.
+- **Invariants:** Same results for time shift, paste, paint, move and preview; quantize changes only where a note lands inside or on the ends of a same-lane hold. Same diagnostic text and order per operation. No per-note allocation added; one build per operation.
+- **Reject/failure behavior:** Any other behavior difference found in step 1 is recorded and kept unless the owner decides it. A failed gate stops completion.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox; Claude runs a paint/move check after merge.
+- **Out of scope:** BMSON marker-lane occupancy, changing paint toggle semantics, new placement features.
+
+## T-652 Deliver auditions with the outcome
+
+- **Status:** Ready (owner request 2026-10-16: `process_compose_audition_requests` "reads as noise"; "less surface area is always nice"; after T-633)
+- **Findings closed:** Auditions travel through three mailboxes drained by the frame loop: core's `editor_interaction_result_t::audition` is copied into the render cache (`compose_input.cpp:2050`, `compose_scene_cache.frame.audition_request`); BMSON drafts write `frame.draft_audition_request` (`compose_input_internal.h:535`); catalog sounds write `project.sound_selection.pending_sound_audition` (`compose_sound_actions.cpp:689`). `application.cpp:3329–3343` drains them at two separate places, each with its own `#if WORMEDIT_HAS_AUDIO_DECODER` pair, and `compose_audition_requests.h/.cpp` keeps stub copies of both entry points for builds without audio. `process_compose_audition_requests` only exchanges two optionals and forwards; `compose_input.cpp:2323` resets them.
+- **Stale-plan audit:** Search by behavior: every write and drain of an audition request (object, BMSON draft, catalog sound, and any other), the frame order between input dispatch, the drain and preview pausing, the build-without-audio paths, and `std::exchange(…, std::nullopt)` drains elsewhere in sys/UI (`frontend.cpp` `layer_creation_request` is a smaller candidate to check, not migrate blindly).
+- **Outcome:** An audition request is a side effect carried by the outcome that caused it: `std::optional<audition_request_t>` (a variant of object, BMSON draft and catalog sound) on the gesture result and the Compose action outcome, delivered by the one finisher to one audition owner that holds the audio services. The owner keeps `process_object_request`/`process_draft_request`/sound playback as its operations. The three mailboxes, the render-cache copy and reset, both drain call sites and their `#if` pairs go; the build without audio is one branch inside the audition owner that posts "Audio preview is unavailable in this build."
+- **Read first:** `docs/architecture.md` (results going up; the finisher); code-style.md (Repetition and scaffolding, Tests); T-618/T-636 finisher notes; `src/sys/compose_audition_requests.*`; the call site in `src/sys/application.cpp`.
+- **Files owned:** `src/sys/compose_audition_requests.h/.cpp`, `src/sys/compose_input.cpp`, `src/sys/compose_input_internal.h`, `src/sys/compose_sound_actions.cpp`, `src/sys/compose_view.h` (the mailbox fields), `src/sys/application.cpp` (the drain sites), the finisher (`src/sys/compose_action_outcome.*`), `tests/sys/audition_notification_tests.cpp`.
+- **Runs after/before:** After T-633 (outcome types). Before the shrink-wrap audit and T-621.
+- **Decisions applied:**
+  - Owner (2026-10-16): less surface area; auditions ride the outcome.
+  - Coordinator default: one optional request, not a general effects list, while auditions are the only effect kind.
+- **Steps:**
+  1. Inventory writes, drains, frame order and no-audio paths; record the current order of "input dispatch → preview pause → output start → notification".
+  2. Add the request type on the outcomes and delivery through the finisher to the audition owner; migrate object, draft and sound requests one per checkpoint, deleting each mailbox with its writer and drain.
+  3. Collapse the no-audio build to the owner's single branch; delete the stubs and call-site `#if` pairs.
+  4. Run the Verify gate; record surface removed (functions, fields, `#if` blocks).
+- **Invariants:** Same audition timing within the frame (after the input that requested it, before the next frame), same preview pause, same notifications and text, at most one audition start per request. No audio work on the input path that was not there before.
+- **Reject/failure behavior:** A stale request still reports the D8 stale message; a missing resource stays silent as today. A failed gate stops completion.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset; build once with the audio decoder disabled (`-DWORMEDIT_ENABLE_AUDIO_DECODER=OFF` headless preset) to prove the no-audio branch. Skip Xvfb in the sandbox.
+- **Out of scope:** Audio resolution algorithms, preview/session ownership, new audition features.
+
+## T-653 Map each C ABI type through one ui_codec
+
+- **Status:** Ready (owner request 2026-10-16: "an into sort of family", "ui_codec sounds closer to what the stl might"; after T-633)
+- **Findings closed:** ABI ↔ core conversions in sys are free functions with three spellings and no single owner per pair: `recipe_form_from_recipe`/`recipe_from_form` (`src/sys/recipe_form.h:19,26`), `timing_lane_kind_to_ui`/`timing_lane_kind_from_ui`, `timing_pause_unit_from_ui`, `stepmania_policy_from_ui`, `quantize_request_from_action`, `keysound_row_from_resource`, `to_frontend_rect`, and others the inventory finds. The ABI struct cannot hold members (flat C ABI) and core must not see the frontend ABI, so the pair belongs to a glue owner in sys keyed by the ABI type.
+- **Stale-plan audit:** Search by behavior, not by name: functions in `src/sys` (and `src/ui/frontend` C++ glue) whose parameters or return include a `WormUi*` struct or enum and whose body only maps fields or values (not dispatchers that run commands). Record each pair's direction, failure mode (`std::optional`, result, total), callers and whether the inverse exists. Exclude `build_<x>_view` for C ABI views (T-631's rule stays) unless the inventory shows a view built field-for-field from one core value with no document query, which is then listed for the owner.
+- **Outcome:** `template <class Abi> struct ui_codec;` declared once in sys; each ABI type with a core counterpart gets one specialization next to its users with static `from(core…) -> Abi` and/or `into(const Abi&, …) -> core value or result`. Plain enum-to-enum mappings use one constexpr table inside the specialization. `grep 'ui_codec<'` lists every mapping; `grep '::into('` lists every UI → core parse. The free converter names are deleted; callers migrate in the same part.
+- **Read first:** code-style.md naming table (the `ui_codec` row), "Types", "Repetition and scaffolding"; `docs/architecture.md`; the T-631 completion (C ABI views keep `build_<x>_view`); `src/sys/recipe_form.h/.cpp`.
+- **Files owned:** a new `src/sys/ui_codec.h` (the primary template only), `src/sys/recipe_form.h/.cpp` and each converter's header/source with its callers and tests, recorded per part (one ABI type or family per checkpoint). `src/ui/frontend` struct names, layouts and capacities do not change.
+- **Runs after/before:** After T-633 (result types for failing `into`). Before the shrink-wrap audit and T-621.
+- **Decisions applied:**
+  - Owner (2026-10-16): conversions at the C ABI go through `ui_codec<Abi>::from`/`::into`, an STL-style customization point that is its own glue layer and does not touch the UI or core types. Core-to-core construction keeps `T::from`.
+- **Steps:**
+  1. Inventory (`.agent/T-653-inventory.txt`): every ABI ↔ core mapping with direction, failure mode, callers and inverse.
+  2. Add the primary template; migrate the recipe form first (the owner's example) as the sample, then one ABI type or family per checkpoint, deleting the free names.
+  3. Add a ratchet row for `_from_ui(`/`_to_ui(` free functions (target 0) and update docs/architecture.md if a "Where to look" row is affected.
+  4. Run the Verify gate; record mapped types, kept exceptions with reasons, gate tails.
+- **Invariants:** Same field values, parsing rules, failure cases and messages; C ABI layouts unchanged; no added allocation or copy (return by value as today).
+- **Reject/failure behavior:** A converter that also queries the document or runs policy is not a codec; record it and leave it. A failed gate stops completion.
+- **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
+- **Out of scope:** Core `x_from_y` helpers (core keeps `T::from`), C ABI layout changes, `build_<x>_view` view builders, dispatchers.
+## T-645 Name Compose input ownership queries by their consumer
+
+- **Status:** Ready (owner approved 2026-10-16; after T-641)
+- **Findings closed:** CEn2; separate from CEn1/T-641 continuation phases.
+- **Stale-plan audit:** Re-read the seven sites at `compose_panel.cpp:1258,1351,1380` and `frontend.cpp:1033,1391,1399,3045`; compare every member, local consumed flag and evaluation phase with the current cancellation registry. Drop already-shared expressions.
+- **Outcome:** Canvas hover, paint admission and frontend editor-modal gates read named queries on the existing Compose owner instead of reconstructing overlapping field inventories.
+- **Read first:** `docs/architecture.md`; `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/compose_panel.cpp`; `src/ui/nuklear/frontend.cpp`; `src/ui/nuklear/compose_input_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/compose_input_queries.h` (new borrowed query interface if needed), `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/gesture_lifecycle_event_harness_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `tests/ui/tap_timing_panel_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`.
+- **Runs after/before:** After T-641/T-634 and active frontend routing work; before T-649 and T-642/T-621. Coordinate frontend.cpp ownership with T-648.
+- **Steps:**
+  1. Save a consumer × state-term × phase membership matrix, including menu inclusion, paint/hover differences and locally accumulated fit/mix/resize consumption.
+  2. Add only purpose-specific state queries, without moving state; share common membership predicates where the matrix proves equivalence.
+  3. Replace the seven bounded inventory sites while keeping external conditions and between-phase recomputation explicit.
+  4. Confirm existing event behavior at the query boundary plus domain wiring; add only missing meaningful coverage, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same routing order, candidate/release ownership, popup service before occlusion, transient consumption and cancel-action handling. D6: no lifetime regrouping; no cached whole-frame answer.
+- **Reject/failure behavior:** Focus loss/overflow/stale input cancels exactly as before; a suspicious membership difference is preserved and reported. Failed event baseline or gate stops completion.
+- **Verify:** GATE; focused hover, popup/inline-editor, command-menu and tap routing cases in the owned harness files. Compare action kinds/count/order and release consumption with step 1 baseline.
+- **Target shape:**
+  ```cpp
+  const compose_input_queries_t claims{state};
+  const bool hover_blocked = claims.is_canvas_hover_blocked() || fit_consumed;
+  input.compose_pointer_captured = hover_blocked || mix_consumed || resize_consumed;
+  const bool paint_blocked = claims.is_paint_blocked() || fit_consumed ||
+      mix_consumed || resize_consumed || compose_action_has_cancel(action);
+  process_compose_canvas_tools(input, paint_blocked);
+  ```
+  Grep the original field sets/call shapes; policy membership must live at the query owner, not reappear in caller helpers.
+- **Out of scope:** Capture continuation T-641; popup begin/end T-649; state lifetime split forbidden by D6; redundant-test deletion T-644; folder moves T-621. Do not union every active state into one generic blocked flag.
+
+## T-646 Give native icon widgets one availability and feedback shell
+
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
+- **Findings closed:** CEn3; two native icon cell bodies and bounded toolbar disable/render/enable callers.
+- **Stale-plan audit:** Re-read `chrome.h:281–331`, `components.cpp:25–38,159–168` and toolbar disable scopes by body. Record native click timing vs custom Button and parent-disabled behavior; do not count multi-control scopes as single-widget copies.
+- **Outcome:** Native icon widgets own cell style, disabled non-activation and feedback once; toolbar code states availability and the action it emits.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/chrome.h`; `src/ui/nuklear/components.cpp`; `src/ui/nuklear/compose_toolbar.cpp`; `tests/ui/components_tests.cpp`.
+- **Files owned:** `src/ui/nuklear/chrome.h`, `src/ui/nuklear/components.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `tests/ui/components_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`. Start with the three standalone toolbar sites at lines 65/89/101; record any extension within toolbar before edits.
+- **Runs after/before:** Independent of T-645; before T-642/T-621. No parallel edits with catalog/chrome implementation or theme work.
+- **Steps:**
+  1. Save click/tint/disabled-tooltip behavior for both glyph sources and their parent-disabled scopes.
+  2. Share the native button cell/feedback protocol, retaining Lucide and existing raw draw-function glyphs; add trailing defaulted enabled fields without constructors.
+  3. Migrate the three bounded toolbar sites; leave domain action-slot/capacity checks at emitters.
+  4. Verify native disabled/selected/hover behavior once at the shell and toolbar wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same native activation phase, bounds/layout consumption, selected tint, style restoration, clipping and occluded/disabled tooltip policy. No new per-event callbacks or allocations.
+- **Reject/failure behavior:** Disabled or parent-disabled widget never activates; invalid widget retains existing behavior. No silent tooltip or click-policy unification; gate failure stops.
+- **Verify:** GATE; run owned component tests for native activation/disabled parent and one production toolbar harness path. Existing custom Button tests are not proof of native equivalence.
+- **Target shape:**
+  ```cpp
+  const bool clicked = chrome::IconButton{
+      .glyph = Glyph::audio_lines,
+      .tooltip = tooltip,
+      .selected = view.bgm_bar_reserved,
+      .enabled = view.bgm_bar_available,
+  }.render(context);
+  if (clicked) append_bgm_bar_toggle(action, view.bgm_bar_reserved);
+  ```
+  Grep for duplicate `nk_button_label_styled(context, &style, "")` shells and the three removed caller guard sequences; native shell owns them once.
+- **Out of scope:** Custom Button click-policy migration has no evidence of equivalence; mass conversion of all 110 scopes rejected in CEn3. Capture/ownership T-641/T-645, catalog chrome T-647, test pruning T-644.
+
+## T-647 Share catalog headers, use filters and ID-capacity feedback
+
+- **Status:** Ready (owner approved 2026-10-16; after T-645). Owner decision 2026-10-16: UI-only; the grouped-count formatting copy in sys is recorded for the shrink-wrap audit, not moved here
+- **Findings closed:** CEn4's two headers, two four-choice use-filter controls, two ID footers and two UI grouped-count bodies.
+- **Stale-plan audit:** Search header tuple `{ID, Name, Uses, State}`, right-edge offsets, comma insertion and >90% amber formula; compare BGA thumbnail/action reservation with sounds chips/armed status. Existing selection and catalog confirmation already own their protocols.
+- **Outcome:** Sounds and BGA render header facts, four-choice use filters and ID-capacity feedback through one catalog chrome owner while keeping their domain rows and geometry.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/compose_sounds_panel.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`; `src/ui/nuklear/catalog_confirmation.h`; `src/ui/nuklear/keysound_list_state.h`.
+- **Files owned:** `src/ui/nuklear/catalog_chrome.h` (new header-only shared chrome), `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `tests/ui/components_tests.cpp`, `cmake/ceremony_ratchet.txt`. Neutral formatting helper/sys consumer are not authorized by this list; request coordinator scope first if pursued.
+- **Runs after/before:** After current sound/BGA input changes and any T-646 overlap; before T-642/T-621. Coordinate BGA edits with T-641/T-649.
+- **Steps:**
+  1. Record existing columns, spacing, threshold/colors, zero and large count formatting; note third grouping body at `src/sys/audio_source_registration.cpp:388`.
+  2. Add shared catalog header/filter/capacity rendering with explicit existing geometry presets; return chosen filter values to each caller for its existing reset/scroll behavior; keep helper implementation cohesive rather than per-panel wrappers.
+  3. Migrate both headers/filter controls/footers and remove their UI grouping copies; report remaining sys copy or obtain coordinator scope for a neutral home.
+  4. Verify shared chrome behavior once and existing domain wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Exact labels, order, colors, row reservations, formatting and >90% comparison; no new frame allocation. Selection and staged action pointer ownership stay unchanged.
+- **Reject/failure behavior:** Unavailable ID capacity renders no footer as today; small-width layout preserves current clamps. No change to missing/unused deletion or arming eligibility; gate failure stops.
+- **Verify:** GATE; component-level numeric/header plan checks and existing sound/BGA workflow tests. Coordinator may visually review both docks outside sandbox; no source-scanning tests.
+- **Target shape:**
+  ```cpp
+  const auto columns = catalog_columns_t::from(bounds, catalog_layout_t::bga);
+  render_catalog_header(context, columns);
+  render_bga_rows(context, view, state, action);
+  if (view.bga_ids_available) {
+      render_catalog_capacity(context, view.bga_ids_used, view.bga_ids_total,
+                              view.bga_largest_free_run);
+  }
+  ```
+  Grep header tuple and footer strings: each shared fact has one owner; any retained third grouping consumer is named in evidence.
+- **Out of scope:** Generic catalog/list controller rejected by CEn4; filter reset/scroll differences and audition distinctions remain domain policy (D4). Capture T-641, retained popup T-649, transparent local raise wrappers T-642, tests T-644.
+
+## T-648 Put remaining-content-height arithmetic in one layout helper
+
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
+- **Findings closed:** CEn5's eight calculations in seven files and Audio's local helper.
+- **Stale-plan audit:** Search bottom-minus-widget-Y arithmetic, not helper names. Save minimum/reserve/spacing/upper-cap matrix for Audio, Sounds (two), BGA, Layers, Measures, Compare and recent list.
+- **Outcome:** Each panel states its reserved height and clamp policy while a shared layout helper computes available logical content height.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md`; `src/ui/nuklear/content_margin.h`; `src/ui/nuklear/audio_panel.cpp`; `src/ui/nuklear/compose_sounds_panel.cpp`; `src/ui/nuklear/compare_panel.cpp`.
+- **Files owned:** `src/ui/nuklear/content_layout.h` (new header-only helper), `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/compose_sounds_panel.cpp`, `src/ui/nuklear/compose_bga_panel.cpp`, `src/ui/nuklear/compose_layers_panel.cpp`, `src/ui/nuklear/compose_measures_panel.cpp`, `src/ui/nuklear/compare_panel.cpp`, `src/ui/nuklear/frontend.cpp`, `tests/ui/components_tests.cpp`, `cmake/ceremony_ratchet.txt`.
+- **Runs after/before:** After active edits in these panels, coordinated with T-645/T-647/T-649; before T-642/T-621. Bounded one-formula migration, not panel redesign.
+- **Steps:**
+  1. Record all eight calculations and Audio helper's three callers, including clamp order and logical coordinate origins.
+  2. Add the pure layout policy/calculation owner with current explicit minimum/reserve/spacing settings.
+  3. Replace the eight calculations; preserve recent-list upper cap and all per-panel minima.
+  4. Verify representative numeric layout cases once at the helper and existing panel wiring, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Same layout row height for same context; minima 48/60/80/160, footer reserves, spacing and tiny-window behavior unchanged. No persistent geometry state or allocation.
+- **Reject/failure behavior:** Invalid/small geometry follows existing clamp order; do not introduce new sanitization silently. Any layout regression or gate failure stops.
+- **Verify:** GATE; component tests for content origin, next-row position, reserve/spacing, minimum and optional caller cap. Do not repeat numeric helper tests in every panel.
+- **Target shape:**
+  ```cpp
+  const content_height_policy_t policy{
+      .minimum = 60.0f,
+      .reserved = footer_height,
+      .include_spacing = true,
+  };
+  const auto height = remaining_content_height(context, policy);
+  render_sound_list(panel, height);
+  ```
+  Grep `region.y + region.h - nk_widget_position` and its `content`/`area` aliases; only shared owner retains bottom-minus-next-row arithmetic for this population.
+- **Out of scope:** Popup centering/coordinate concern CEn6/T-649; generic layout DSL has no evidence of need; capture T-641; lifetime split D6; test pruning T-644; folder moves T-621.
+
+## T-649 Share retained-picker close and release mechanics
+
+- **Status:** Ready (owner approved 2026-10-16; last of the UI chain). First establish the bookmark chooser's positioning in a moved host with an event-harness test and report it; change nothing about it without an owner decision
+- **Findings closed:** CEn6, bounded to two consumers already deriving from retained_popup_t.
+- **Stale-plan audit:** Compare ContextMenu's current begin/update/retire/end owner with sound picker/bookmark chooser. Record idle, begin-failure, cancel, close-pending, release and revision-change paths; do not infer semantics from shared flags.
+- **Outcome:** The two pickers reuse popup-lifecycle operations for begin/close/end/release while their content, revision and dismissal policies remain explicit.
+- **Read first:** `src/ui/nuklear/popup_lifecycle.h`; `src/ui/nuklear/context_menu.cpp`; `src/ui/nuklear/compose_sound_picker.cpp`; `src/ui/nuklear/compose_bookmark_chooser.cpp`; `docs/frontend-event-harness.md`.
+- **Files owned:** `src/ui/nuklear/popup_lifecycle.h`, `src/ui/nuklear/compose_sound_picker.cpp`, `src/ui/nuklear/compose_bookmark_chooser.cpp`, `tests/ui/popup_lifecycle_tests.cpp`, `tests/ui/sound_picker_event_harness_tests.cpp`, `tests/ui/bookmark_chooser_event_harness_tests.cpp`, `cmake/ceremony_ratchet.txt`. No state-header relocation or ContextMenu rewrite by default.
+- **Runs after/before:** After T-641/T-645; before T-642/T-621. Coordinate with any popup/IME fixes.
+- **Steps:**
+  1. Save two-picker lifecycle policy matrix, including revision refresh vs cancel, outside dismissal, quiet-key set, edit unfocus and current bounds math.
+  2. Extend existing popup lifecycle operations over existing flags with a stack decision; retain policy-specific validity and dismissal at the consumer.
+  3. Migrate sound picker then bookmark chooser; keep ContextMenu and other popups as separate consumers, not migration targets.
+  4. Verify mechanical safeguards once and each picker's revision/content/wiring behavior, lower/add ratchet rows, review checklist, run GATE.
+- **Invariants:** Release leakage prevention, opening press, focus, selection, query refresh, all-key quietness and end-call balance unchanged. D6 forbids lifetime regrouping; no stored callbacks/ref mirrors or heap shell.
+- **Reject/failure behavior:** Preserve each current begin-failure path, including its return ownership. Sound revision cancels; bookmark revision refreshes. If a shared operation cannot preserve both policies without vague bool bundles, stop/report.
+- **Verify:** GATE; owned lifecycle tests plus production picker harness checks for cancel/focus/release, revision behavior and IME Enter wiring. Add failing-before regression only for separately owner-approved corrections.
+- **Target shape:**
+  ```cpp
+  if (state.open && !sound_context_is_current(state, view, focused))
+      cancel_compose_sound_picker(state);
+  auto popup = begin_retained_popup(context, state, title, bounds, policy);
+  if (popup.has_contents()) {
+      render_search(context, state);
+      render_results(context, view, action, compose);
+  }
+  end_retained_popup(context, state, popup);
+  ```
+  Grep two renderers for manual close_pending/begin-failure/end choreography; keep deliberate policy checks visible instead of forwarding through per-picker shell aliases.
+- **Out of scope:** Moved-host geometry Q in CEn6 needs reproduction/owner decision; preserve current bounds now. Inline label editor already shared; inline timing/confirmations/Dialog have distinct contracts. Capture T-641; input queries T-645; tests T-644.
+
+## T-650 Serialize metadata rational action text once
+
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
+- **Findings closed:** CEn7's three identical numerator/denominator buffer writers.
+- **Stale-plan audit:** Search writes to action_numerator_text followed by denominator/pointer assignment; recheck shared parse/display helpers and absent/blank/unset-rating behavior. Wire fraction text is not decimal display text.
+- **Outcome:** Existing metadata state serializes one rational into its existing frontend-owned action arrays; offset, chart and batch emitters only assign their domain fields.
+- **Read first:** `src/ui/nuklear/metadata_state.h`; `src/ui/nuklear/metadata_state.cpp`; `src/ui/nuklear/metadata_audio_section.cpp`; `src/ui/nuklear/metadata_difficulty_section.cpp`; `tests/ui/nuklear_metadata_state_tests.cpp`.
+- **Files owned:** The four production files above, `tests/ui/nuklear_metadata_state_tests.cpp`, `cmake/ceremony_ratchet.txt`. Use the existing test target; no new test/CMake registration needed.
+- **Runs after/before:** Independent once metadata edits settle; before T-642/T-621.
+- **Steps:**
+  1. Confirm the three buffer pairs' capacities, signedness, formatting and lifetime through immediate action dispatch.
+  2. Add a metadata-state member that writes those existing arrays and returns borrowed pointer fields; do not create a result/outcome adapter.
+  3. Replace the offset/chart/batch formatting pairs, retaining action gates and optional rating logic.
+  4. Verify serialization once plus existing domain wiring, lower/add ratchet row, review checklist, run GATE.
+- **Invariants:** Same wire bytes for signed numerator/unsigned denominator and same storage lifetime; arrays stay on existing persistent state. No parser/display-policy changes or new allocation.
+- **Reject/failure behavior:** Invalid input and unavailable/already-used action slots retain current no-action behavior. Do not serialize absent rating or silently normalize denominators; failed gate stops.
+- **Verify:** GATE; owned metadata tests cover zero/negative numerator, unsigned denominator and pointer lifetime into state, plus existing offset/chart/batch semantics. No duplicate per-emitter buffer tests.
+- **Target shape:**
+  ```cpp
+  const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
+  action.metadata_edit = WORM_UI_METADATA_EDIT_CHART;
+  action.metadata_document_revision = metadata.document_revision;
+  action.metadata_chart_id = metadata.chart_id;
+  action.metadata_chart_rating_numerator_text = wire.numerator;
+  action.metadata_chart_rating_denominator_text = wire.denominator;
+  ```
+  Grep writes to action_numerator_text: serialization lives once at the metadata-state owner; action-specific pointer field assignments stay local.
+- **Out of scope:** Format-schema fallback A/Q needs its own policy inventory; field validation/parser redesign unapproved. UI lifetime split D6; runner/result work T-633; redundant tests T-644.

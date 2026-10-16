@@ -317,9 +317,9 @@ auto next_from(const song_document_t& song, std::uint32_t row, const timing_inde
 TEST_CASE("timing projection adds audio-time markers at exact rows",
           "[unit][core][marker-navigation]") {
     const auto song = projected_song();
-    const auto built = build_timing_index(song.charts.front());
-    REQUIRE(built);
-    const auto* timing = &*built.index;
+    const auto built = timing_index_t::from(song.charts.front());
+    REQUIRE(built.value);
+    const auto* timing = &*built.value;
 
     // 120 BPM: 250 ms is row 120, 500 ms row 240, 750 ms row 360.
     const auto first = next_from(song, 0, timing);
@@ -348,10 +348,10 @@ TEST_CASE("timing projection adds audio-time markers at exact rows",
 TEST_CASE("timing projection skips out-of-range markers with a diagnostic",
           "[unit][core][marker-navigation][negative]") {
     const auto song = projected_song();
-    const auto built = build_timing_index(song.charts.front());
-    REQUIRE(built);
+    const auto built = timing_index_t::from(song.charts.front());
+    REQUIRE(built.value);
 
-    const auto result = next_from(song, 480, &*built.index);
+    const auto result = next_from(song, 480, &*built.value);
     REQUIRE(result.value.status == marker_navigation_phase_t::found);
     CHECK(result.value.item->object == object_id_t{1});
     REQUIRE(result.diagnostics.size() == 1);
@@ -366,11 +366,11 @@ TEST_CASE("beat navigation without a timing index ignores audio-time markers",
     REQUIRE(is_marker_navigation_accepted(result));
     CHECK(result.value.item->object == object_id_t{1});
 
-    const auto built = build_timing_index(song.charts.front());
-    REQUIRE(built);
+    const auto built = timing_index_t::from(song.charts.front());
+    REQUIRE(built.value);
     const auto previous = marker_navigation_match_t::from(
         song, 4, chart_id_t{2}, local_position_t{measure_id_t{2}, 0},
-        marker_navigation_direction_t::previous, {}, {}, &*built.index);
+        marker_navigation_direction_t::previous, {}, {}, &*built.value);
     REQUIRE(previous.value.status == marker_navigation_phase_t::found);
     CHECK(previous.value.item->object == object_id_t{3});
 }

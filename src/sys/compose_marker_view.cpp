@@ -430,34 +430,26 @@ void build_compose_markers_view(
     build_compose_audio_markers_view(input);
 }
 
+void build_compose_timing_payloads(const wormedit::chart_document_t& chart,
+                                   const wormedit::measure_index_t& measures,
+                                   std::vector<compose_timing_marker_payload_t>& markers) {
+    markers.clear();
+    append_compose_chart_timing_markers(chart, measures,
+        [&measures, &markers](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
+            std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
+            std::string detail, bool fixed_initial) {
+            markers.push_back({measures.row_of(position), id, source_order, storage_order, lane,
+                               std::move(short_label), std::move(detail), fixed_initial});
+        });
+}
+
 auto cached_compose_timing_payloads(const wormedit::song_document_t& document,
                                     const wormedit::chart_document_t& chart,
                                     const compose_scene_cache_t& cache)
     -> const std::vector<compose_timing_marker_payload_t>& {
-    auto& stored = cache.timing_payload_cache;
-    if (stored.valid && stored.document_identity == &document && stored.chart_identity == &chart &&
-        stored.project == document.id.value && stored.chart == chart.id.value &&
-        stored.revision == document.revision)
-        return stored.markers;
-    stored.valid = false;
-    stored.markers.clear();
-    append_compose_chart_timing_markers(
-        chart, cache.scene.index->measures,
-        [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
-            std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
-            std::string detail, bool fixed_initial) {
-            stored.markers.push_back({(cache.scene.index->measures).row_of(position), id,
-                                      source_order, storage_order, lane, std::move(short_label),
-                                      std::move(detail), fixed_initial});
-        });
-    stored.document_identity = &document;
-    stored.chart_identity = &chart;
-    stored.project = document.id.value;
-    stored.chart = chart.id.value;
-    stored.revision = document.revision;
-    stored.valid = true;
-    ++stored.build_count;
-    return stored.markers;
+    return cache.timing_payload_cache.get_or_build(compose_scene_source_key_t::from(document, chart),
+        std::bind_front(build_compose_timing_payloads, std::cref(chart),
+                        std::cref(cache.scene.index.value()->measures)));
 }
 
 void populate_compose_timing_markers(
@@ -522,11 +514,11 @@ void populate_compose_timing_markers(
                                  marker.fixed_initial);
     } else {
         append_compose_chart_timing_markers(
-            chart, cache.scene.index->measures,
+            chart, cache.scene.index.value()->measures,
             [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
                 std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
                 std::string detail, bool fixed_initial) {
-                append_timing_marker((cache.scene.index->measures).row_of(position), id,
+                append_timing_marker((cache.scene.index.value()->measures).row_of(position), id,
                                      source_order, storage_order, lane, std::move(short_label),
                                      std::move(detail), fixed_initial);
             });
@@ -536,10 +528,10 @@ void populate_compose_timing_markers(
     view.timing_marker_count = flattened.compose.timing_marker.size();
     const auto* stage_report = timing_stage ? timing_stage->report() : nullptr;
     if (stage_report &&
-        stage_report->status == wormedit::timing_lane_pseudonote_status_t::editing &&
+        stage_report->lifecycle.status() == wormedit::proposal_status_t::active &&
         timing_stage->captured_stamp().is_current(chart.id, view.document_revision)) {
         const auto stage_row =
-            (cache.scene.index->measures).row_of(stage_report->position);
+            (cache.scene.index.value()->measures).row_of(stage_report->position);
         if (stage_row) {
             const auto y = compose_project_y(*stage_row, pixels_per_row,
                                              interaction_view.viewport_scroll_pixels,

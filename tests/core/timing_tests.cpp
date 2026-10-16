@@ -69,23 +69,23 @@ auto aria_timing_chart() -> chart_document_t {
 
 auto seconds_at(const timing_index_t& timing, std::uint64_t row,
                 timing_boundary_side_t side = timing_boundary_side_t::event) -> signed_rational_t {
-    const auto result = timing_at(timing, row, side);
+    const auto result = timing.seconds_at(row, side);
     REQUIRE(result);
     return *result.seconds;
 }
 
 auto row_at(const timing_index_t& timing, signed_rational_t seconds,
             timing_inverse_options_t options = {}) -> signed_rational_t {
-    const auto result = musical_position_at(timing, seconds, options);
+    const auto result = timing.row_at(seconds, options);
     REQUIRE(result);
     return *result.absolute_row;
 }
 
 auto bounded_segment_round_trip(const timing_index_t& timing, const timing_segment_t& segment)
     -> bool {
-    const auto forward = timing_at(timing, exact_chart_row_t{segment.begin_row, {1, 4}});
+    const auto forward = timing.seconds_at(exact_chart_row_t{segment.begin_row, {1, 4}});
     if (!forward) return false;
-    const auto inverse = musical_position_at(timing, *forward.seconds);
+    const auto inverse = timing.row_at(*forward.seconds);
     if (!inverse) return false;
     const auto row = static_cast<long double>(inverse.absolute_row->numerator) /
                      inverse.absolute_row->denominator;
@@ -112,10 +112,10 @@ TEST_CASE("exact timing distinguishes delay event and stop departure boundaries"
          .provenance = {.source_order = 2}},
     };
 
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
     REQUIRE(built.diagnostics.empty());
-    const auto& timing = *built.index;
+    const auto& timing = *built.value;
     CHECK(seconds_at(timing, 0) == signed_rational_t{1, 1});
     CHECK(seconds_at(timing, 240, timing_boundary_side_t::before_delays) ==
           signed_rational_t{3, 2});
@@ -129,23 +129,23 @@ TEST_CASE("exact timing distinguishes delay event and stop departure boundaries"
 TEST_CASE("fractional grid rows retain exact timing across tempo and warp boundaries",
           "[unit][core][timing][grid]") {
     auto chart = base_chart();
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
-    const auto& timing = *built.index;
-    const auto before_change = timing_at(timing, exact_chart_row_t{959, {1, 2}});
-    const auto after_change = timing_at(timing, exact_chart_row_t{960, {1, 2}});
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
+    const auto& timing = *built.value;
+    const auto before_change = timing.seconds_at(exact_chart_row_t{959, {1, 2}});
+    const auto after_change = timing.seconds_at(exact_chart_row_t{960, {1, 2}});
     REQUIRE(before_change);
     REQUIRE(after_change);
     CHECK(*before_change.seconds == signed_rational_t{2'879, 960});
     CHECK(*after_change.seconds == signed_rational_t{1'441, 480});
-    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {1, 0}}));
-    CHECK_FALSE(timing_at(timing, exact_chart_row_t{960, {2, 2}}));
+    CHECK_FALSE(timing.seconds_at(exact_chart_row_t{960, {1, 0}}));
+    CHECK_FALSE(timing.seconds_at(exact_chart_row_t{960, {2, 2}}));
 
     chart.warps.push_back(
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
-    const auto warped = build_timing_index(chart);
-    REQUIRE(warped);
-    const auto inside = timing_at(*warped.index, exact_chart_row_t{720, {1, 2}});
+    const auto warped = timing_index_t::from(chart);
+    REQUIRE(warped.value);
+    const auto inside = warped.value->seconds_at(exact_chart_row_t{720, {1, 2}});
     REQUIRE(inside);
     CHECK(inside.inside_warp);
     CHECK(*inside.seconds == signed_rational_t{2, 1});
@@ -153,9 +153,9 @@ TEST_CASE("fractional grid rows retain exact timing across tempo and warp bounda
 
 TEST_CASE("chart waveform pointer resolves fractional rows to source frames",
           "[unit][core][timing][waveform-pointer]") {
-    const auto built = build_timing_index(base_chart());
-    REQUIRE(built);
-    const auto& timing = *built.index;
+    const auto built = timing_index_t::from(base_chart());
+    REQUIRE(built.value);
+    const auto& timing = *built.value;
     CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 60.0, 300.0, 48'000) == 72'000);
     CHECK(sample_frame_at_chart_y(timing, 0.0, 240.0, 90.0, 300.0, 48'000) == 84'000);
     CHECK(sample_frame_at_chart_y(timing, 240.0, 240.0, 60.0, 300.0, 48'000) == 192'000);
@@ -168,32 +168,32 @@ TEST_CASE("chart waveform pointer resolves fractional rows to source frames",
 TEST_CASE("timing preview projects rows onto the fixed source waveform",
           "[unit][core][timing][preview-projection]") {
     auto chart = base_chart();
-    const auto original = build_timing_index(chart);
-    REQUIRE(original);
+    const auto original = timing_index_t::from(chart);
+    REQUIRE(original.value);
     chart.bpms.front().beats_per_minute = {60, 1};
-    const auto proposed = build_timing_index(chart);
-    REQUIRE(proposed);
-    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {480, {}}, 0.0,
+    const auto proposed = timing_index_t::from(chart);
+    REQUIRE(proposed.value);
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.value, *proposed.value, {480, {}}, 0.0,
                                               240.0) == 240.0);
-    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {240, {}}, 30.0,
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.value, *proposed.value, {240, {}}, 30.0,
                                               240.0) == 90.0);
 
     chart = base_chart();
     chart.beat_zero_audio_offset_seconds = {2, 1};
-    const auto offset = build_timing_index(chart);
-    REQUIRE(offset);
-    CHECK(proposed_timing_y_on_fixed_waveform(*original.index, *offset.index, {240, {}}, 0.0,
+    const auto offset = timing_index_t::from(chart);
+    REQUIRE(offset.value);
+    CHECK(proposed_timing_y_on_fixed_waveform(*original.value, *offset.value, {240, {}}, 0.0,
                                               240.0) == 180.0);
 
     chart = base_chart();
     chart.warps.push_back(
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
-    const auto warped = build_timing_index(chart);
-    REQUIRE(warped);
-    CHECK(proposed_timing_y_on_fixed_waveform(*warped.index, *warped.index, {720, {1, 2}}, 0.0,
+    const auto warped = timing_index_t::from(chart);
+    REQUIRE(warped.value);
+    CHECK(proposed_timing_y_on_fixed_waveform(*warped.value, *warped.value, {720, {1, 2}}, 0.0,
                                               240.0) == 180.125);
     CHECK_FALSE(
-        proposed_timing_y_on_fixed_waveform(*original.index, *proposed.index, {480, {}}, 0.0, 0.0));
+        proposed_timing_y_on_fixed_waveform(*original.value, *proposed.value, {480, {}}, 0.0, 0.0));
 }
 
 TEST_CASE("interval beat fitting solves exact source frames across pauses and warps",
@@ -278,14 +278,14 @@ TEST_CASE("warps consume no elapsed time and suppress interior pauses and events
                             .duration = {2, 1},
                             .source_unit = pause_unit_t::seconds});
 
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
     REQUIRE(built.diagnostics.size() == 1);
     CHECK(built.diagnostics[0].severity == diagnostic_severity_t::warning);
-    const auto& timing = *built.index;
-    const auto begin = timing_at(timing, 480);
-    const auto inside = timing_at(timing, 720);
-    const auto end = timing_at(timing, 960);
+    const auto& timing = *built.value;
+    const auto begin = timing.seconds_at(480);
+    const auto inside = timing.seconds_at(720);
+    const auto end = timing.seconds_at(960);
     REQUIRE(begin);
     REQUIRE(inside);
     REQUIRE(end);
@@ -313,9 +313,9 @@ TEST_CASE("inverse timing maps delays and stops to their row and preserves fract
          .duration = {500, 1},
          .source_unit = pause_unit_t::milliseconds},
     };
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
-    const auto& timing = *built.index;
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
+    const auto& timing = *built.value;
 
     CHECK(row_at(timing, {5, 4}) == signed_rational_t{120, 1});
     CHECK(row_at(timing, {3, 2}) == signed_rational_t{240, 1});
@@ -339,23 +339,23 @@ TEST_CASE("inverse timing exposes the selected side of a half-open warp plateau"
     auto chart = base_chart();
     chart.warps.push_back(
         {.id = object_id_t{30}, .span = {{measure_id_t{1}, 480}, {measure_id_t{2}, 0}}});
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
-    const auto& timing = *built.index;
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
+    const auto& timing = *built.value;
 
-    const auto entry = musical_position_at(timing, {2, 1});
+    const auto entry = timing.row_at({2, 1});
     REQUIRE(entry);
     CHECK(entry.absolute_row == signed_rational_t{480, 1});
     CHECK(entry.inside_warp);
     const auto exit =
-        musical_position_at(timing, {2, 1}, {.warp_side = timing_warp_inverse_side_t::exit});
+        timing.row_at({2, 1}, {.warp_side = timing_warp_inverse_side_t::exit});
     REQUIRE(exit);
     CHECK(exit.absolute_row == signed_rational_t{960, 1});
     CHECK_FALSE(exit.inside_warp);
     CHECK(row_at(timing, {9, 4}) == signed_rational_t{1'020, 1});
 
-    const auto begin_round_trip = timing_at(timing, 480);
-    const auto end_round_trip = timing_at(timing, 960);
+    const auto begin_round_trip = timing.seconds_at(480);
+    const auto end_round_trip = timing.seconds_at(960);
     REQUIRE(begin_round_trip);
     REQUIRE(end_round_trip);
     CHECK(*begin_round_trip.seconds == *end_round_trip.seconds);
@@ -369,31 +369,30 @@ TEST_CASE("inverse timing honors signed beat-zero offsets and reports bounded fa
           "[unit][core][timing][inverse][bounds]") {
     auto chart = base_chart();
     chart.beat_zero_audio_offset_seconds = {-1, 1};
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
-    const auto& timing = *built.index;
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
+    const auto& timing = *built.value;
 
     CHECK(row_at(timing, {-1, 1}) == signed_rational_t{0, 1});
     CHECK(row_at(timing, {-3, 4}) == signed_rational_t{120, 1});
-    const auto too_early = musical_position_at(timing, {-3, 2});
+    const auto too_early = timing.row_at({-3, 2});
     REQUIRE_FALSE(too_early);
     CHECK(too_early.error->code == timing_error_code_t::position_out_of_range);
-    const auto pre_zero = musical_position_at(
-        timing, {-3, 2}, {.extrapolate_before_chart = true});
+    const auto pre_zero = timing.row_at({-3, 2}, {.extrapolate_before_chart = true});
     REQUIRE(pre_zero);
     CHECK(pre_zero.absolute_row == signed_rational_t{-240, 1});
-    const auto too_late = musical_position_at(timing, {10, 1});
+    const auto too_late = timing.row_at({10, 1});
     REQUIRE_FALSE(too_late);
     CHECK(too_late.error->code == timing_error_code_t::position_out_of_range);
-    const auto invalid_rational = musical_position_at(timing, {0, 0});
+    const auto invalid_rational = timing.row_at({0, 0});
     REQUIRE_FALSE(invalid_rational);
     CHECK(invalid_rational.error->code == timing_error_code_t::invalid_document);
 
     chart.beat_zero_audio_offset_seconds = {};
-    const auto zero_offset = build_timing_index(chart);
-    REQUIRE(zero_offset);
+    const auto zero_offset = timing_index_t::from(chart);
+    REQUIRE(zero_offset.value);
     const auto unrepresentable =
-        musical_position_at(*zero_offset.index, {std::numeric_limits<std::int64_t>::max(),
+        zero_offset.value->row_at({std::numeric_limits<std::int64_t>::max(),
                                                  std::numeric_limits<std::uint64_t>::max() - 2});
     REQUIRE_FALSE(unrepresentable);
     CHECK(unrepresentable.error->code == timing_error_code_t::arithmetic_overflow);
@@ -414,12 +413,12 @@ TEST_CASE("same-row BPM source order controls beat-derived pause duration",
                             .duration = {1, 1},
                             .source_unit = pause_unit_t::beats});
 
-    const auto built = build_timing_index(chart);
-    REQUIRE(built);
-    CHECK(seconds_at(*built.index, 0) == signed_rational_t{});
-    CHECK(seconds_at(*built.index, 0, timing_boundary_side_t::after_stops) ==
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value);
+    CHECK(seconds_at(*built.value, 0) == signed_rational_t{});
+    CHECK(seconds_at(*built.value, 0, timing_boundary_side_t::after_stops) ==
           signed_rational_t{1, 1});
-    CHECK(seconds_at(*built.index, 240) == signed_rational_t{2, 1});
+    CHECK(seconds_at(*built.value, 240) == signed_rational_t{2, 1});
 }
 
 TEST_CASE("sample-frame conversion is exact with explicit rounding",
@@ -559,9 +558,9 @@ TEST_CASE("preview schedule keeps separate sorted queues and stable simultaneous
          .provenance = {.source_order = 9}},
     };
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000});
     REQUIRE(built);
     const auto& schedule = *built.schedule;
     REQUIRE(schedule.playable.size() == 2);
@@ -588,11 +587,11 @@ TEST_CASE("metronome count-in extrapolates exact signed times from row zero",
                             .kind = pause_kind_t::delay,
                             .duration = {500, 1},
                             .source_unit = pause_unit_t::milliseconds});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
     const auto built =
-        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 4});
+        build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000, .count_in_pulses = 4});
     REQUIRE(built);
     const auto& clicks = built.schedule->metronome;
     REQUIRE(clicks.size() == 11);
@@ -614,9 +613,9 @@ auto music_source_tracks_frames_for_signed_offsets() -> bool {
                               signed_rational_t{2, 1}}) {
         auto chart = base_chart();
         chart.beat_zero_audio_offset_seconds = offset;
-        const auto timing = build_timing_index(chart);
-        if (!timing) return false;
-        const auto beat_zero = timing_at(*timing.index, 0);
+        const auto timing = timing_index_t::from(chart);
+        if (!timing.value) return false;
+        const auto beat_zero = timing.value->seconds_at(0);
         if (!beat_zero || *beat_zero.seconds != offset) return false;
         const auto music = preview_schedule_t::music_event_t::from(resource_id_t{7}, 200'000);
         if (!music) return false;
@@ -633,12 +632,12 @@ auto beat_zero_note_frame_matches_music_source_time() -> bool {
                                 .position = {measure_id_t{1}, 0},
                                 .lane = lane_id_t{1},
                                 .sound = resource_id_t{5}}};
-    const auto timing = build_timing_index(chart);
-    if (!timing) return false;
-    const auto beat_zero_time = timing_at(*timing.index, 0);
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
+    const auto beat_zero_time = timing.value->seconds_at(0);
     if (!beat_zero_time || *beat_zero_time.seconds != signed_rational_t{2, 1}) return false;
     const auto note_schedule = build_preview_schedule(
-        chart, *timing.index, {.sample_rate = 44'100, .include_metronome = false});
+        chart, *timing.value, {.sample_rate = 44'100, .include_metronome = false});
     if (!note_schedule || note_schedule.schedule->playable.size() != 1) return false;
     const auto music = preview_schedule_t::music_event_t::from(resource_id_t{7}, 200'000);
     if (!music) return false;
@@ -681,11 +680,11 @@ TEST_CASE("preview schedule materializes BMSON same-pulse discontinuity order",
                                 .resource = resource_id_t{9},
                                 .provenance = {.source_order = 10}});
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    CHECK(timing.index->discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    CHECK(timing.value->discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0);
     const auto built = build_preview_schedule(
-        chart, *timing.index, {.sample_rate = 48'000, .include_metronome = false});
+        chart, *timing.value, {.sample_rate = 48'000, .include_metronome = false});
     REQUIRE(built);
     CHECK(built.schedule->discontinuity_profile == timing_discontinuity_profile_t::bmson_1_0);
 
@@ -702,7 +701,7 @@ TEST_CASE("preview schedule materializes BMSON same-pulse discontinuity order",
     CHECK(at_pulse[3] == preview_discontinuity_kind_t::stop);
 
     const auto capped = build_preview_schedule(
-        chart, *timing.index,
+        chart, *timing.value,
         {.sample_rate = 48'000,
          .maximum_discontinuity_events = 3,
          .include_metronome = false});
@@ -714,14 +713,14 @@ TEST_CASE("timing index permits an explicit discontinuity-profile override",
           "[unit][core][timing][preview][discontinuity]") {
     auto chart = base_chart();
     chart.source_family = format_family_t::bmson;
-    const auto timing = build_timing_index(
+    const auto timing = timing_index_t::from(
         chart, {.discontinuity_profile = timing_discontinuity_profile_t::canonical});
-    REQUIRE(timing);
-    CHECK(timing.index->discontinuity_profile == timing_discontinuity_profile_t::canonical);
+    REQUIRE(timing.value);
+    CHECK(timing.value->discontinuity_profile == timing_discontinuity_profile_t::canonical);
 
-    const auto invalid = build_timing_index(
+    const auto invalid = timing_index_t::from(
         chart, {.discontinuity_profile = static_cast<timing_discontinuity_profile_t>(255)});
-    REQUIRE_FALSE(invalid);
+    REQUIRE_FALSE(invalid.value);
     CHECK(invalid.diagnostics.back().code == timing_error_code_t::invalid_document);
 }
 
@@ -734,22 +733,21 @@ TEST_CASE("visual count-in extrapolates from row-zero arrival without weakening 
                             .kind = pause_kind_t::delay,
                             .duration = {1, 2},
                             .source_unit = pause_unit_t::seconds});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto scroll = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto scroll = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(scroll);
 
-    const auto strict = musical_position_at(*timing.index, {3, 2});
+    const auto strict = timing.value->row_at({3, 2});
     REQUIRE_FALSE(strict);
-    const auto preview = musical_position_at(
-        *timing.index, {3, 2}, {.extrapolate_before_chart = true});
+    const auto preview = timing.value->row_at({3, 2}, {.extrapolate_before_chart = true});
     REQUIRE(preview);
     CHECK(preview.absolute_row == signed_rational_t{-240, 1});
 
     const auto strict_scroll =
-        scroll_speed_at(*scroll.index, *timing.index, *preview.absolute_row);
+        scroll_speed_at(*scroll.index, *timing.value, *preview.absolute_row);
     REQUIRE_FALSE(strict_scroll);
-    const auto preview_scroll = scroll_speed_at(*scroll.index, *timing.index,
+    const auto preview_scroll = scroll_speed_at(*scroll.index, *timing.value,
                                                 *preview.absolute_row,
                                                 timing_boundary_side_t::event, true);
     REQUIRE(preview_scroll);
@@ -776,10 +774,10 @@ TEST_CASE("preview schedule canonicalizes fused linked notes without merging ord
          .lane = lane_id_t{1},
          .sound = resource_id_t{7}},
     };
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
-    const auto built = build_preview_schedule(chart, *timing.index,
+    const auto built = build_preview_schedule(chart, *timing.value,
                                               {.sample_rate = 48'000, .include_metronome = false});
     REQUIRE(built);
     REQUIRE(built.schedule->playable.size() == 2);
@@ -793,11 +791,11 @@ TEST_CASE("count-in accents retain compound meter grouping across negative pulse
     auto chart = base_chart();
     chart.measures[0].definition = {{3, 4}, meter_t{6, 8}};
     chart.beat_zero_audio_offset_seconds = {3, 1};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
     const auto built =
-        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 6});
+        build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000, .count_in_pulses = 6});
     REQUIRE(built);
     const auto& clicks = built.schedule->metronome;
     REQUIRE(clicks.size() >= 7);
@@ -833,11 +831,11 @@ TEST_CASE("count-in follows row-zero event time while chart clicks honor pauses 
     };
     chart.warps.push_back(
         {.id = object_id_t{23}, .span = {{measure_id_t{1}, 480}, {measure_id_t{1}, 720}}});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
     const auto built =
-        build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000, .count_in_pulses = 4});
+        build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000, .count_in_pulses = 4});
     REQUIRE(built);
     const auto& clicks = built.schedule->metronome;
     const auto row_zero = std::ranges::find_if(clicks, [](const auto& click) {
@@ -864,10 +862,10 @@ TEST_CASE("negative count-in times are diagnosed without wrapping into large fra
           "[unit][core][timing][preview][count-in][offset]") {
     auto chart = base_chart();
     chart.beat_zero_audio_offset_seconds = {-1, 1};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
-    const auto built = build_preview_schedule(chart, *timing.index,
+    const auto built = build_preview_schedule(chart, *timing.value,
                                               {.sample_rate = 48'000, .count_in_pulses = 128});
     REQUIRE(built);
     CHECK(std::ranges::none_of(built.schedule->metronome,
@@ -887,11 +885,11 @@ TEST_CASE("count-in construction obeys the metronome queue cap atomically",
           "[unit][core][timing][preview][count-in][bounds]") {
     auto chart = base_chart();
     chart.beat_zero_audio_offset_seconds = {2, 1};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
     const auto built = build_preview_schedule(
-        chart, *timing.index,
+        chart, *timing.value,
         {.sample_rate = 48'000, .maximum_metronome_events = 10, .count_in_pulses = 4});
     REQUIRE_FALSE(built);
     CHECK_FALSE(built.schedule.has_value());
@@ -902,9 +900,9 @@ TEST_CASE("unmetered partial measures keep quarter-note clicks without blocking 
           "[unit][core][timing][preview][partial-measure]") {
     auto chart = base_chart();
     chart.measures[0].definition = {{721, 960}, std::nullopt};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000});
     REQUIRE(built);
     REQUIRE(built.diagnostics.empty());
     const auto& clicks = built.schedule->metronome;
@@ -918,9 +916,9 @@ TEST_CASE("partial unmetered count-in retains quarter-note spacing",
     auto chart = base_chart();
     chart.measures[0].definition = {{721, 960}, std::nullopt};
     chart.beat_zero_audio_offset_seconds = {4, 1};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_preview_schedule(chart, *timing.index,
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_preview_schedule(chart, *timing.value,
         {.sample_rate = 48'000, .count_in_pulses = 4});
     REQUIRE(built);
     REQUIRE(built.schedule->metronome.size() == 11);
@@ -932,9 +930,9 @@ TEST_CASE("one-row unmetered measures have a single metronome onset",
           "[unit][core][timing][preview][partial-measure]") {
     auto chart = base_chart();
     chart.measures[0].definition = {{1, 960}, std::nullopt};
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000});
     REQUIRE(built);
     REQUIRE(built.schedule->metronome.size() == 4);
     CHECK(built.schedule->metronome.front().sample_frame == 48'000);
@@ -966,9 +964,9 @@ TEST_CASE("Preview schedules reject stale geometry and source fingerprints disti
           "[unit][core][timing][stale-preview]") {
     const auto geometry_changed = GENERATE(false, true);
     const auto chart = base_chart();
-    const auto built = build_timing_index(chart);
-    REQUIRE(built.index.has_value());
-    auto timing = *built.index;
+    const auto built = timing_index_t::from(chart);
+    REQUIRE(built.value.has_value());
+    auto timing = *built.value;
     if (geometry_changed) ++timing.total_rows;
     else ++timing.source_fingerprint;
     const auto result = build_preview_schedule(chart, timing, {.include_metronome = false});
@@ -979,29 +977,29 @@ TEST_CASE("Preview schedules reject stale geometry and source fingerprints disti
 
 TEST_CASE("timing and preview capacities reject atomically", "[unit][core][timing][bounds]") {
     auto chart = base_chart();
-    const auto timing_too_small = build_timing_index(chart, {.maximum_boundaries = 1});
-    REQUIRE_FALSE(timing_too_small);
+    const auto timing_too_small = timing_index_t::from(chart, {.maximum_boundaries = 1});
+    REQUIRE_FALSE(timing_too_small.value);
     CHECK(timing_too_small.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
     const auto events_too_small =
-        build_timing_index(chart, {.maximum_boundaries = 100, .maximum_timing_events = 1});
-    REQUIRE_FALSE(events_too_small);
+        timing_index_t::from(chart, {.maximum_boundaries = 100, .maximum_timing_events = 1});
+    REQUIRE_FALSE(events_too_small.value);
     CHECK(events_too_small.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
     chart.measures[0].notes.push_back({.id = object_id_t{80},
                                        .position = {measure_id_t{1}, 0},
                                        .lane = lane_id_t{1},
                                        .sound = resource_id_t{1}});
     const auto schedule = build_preview_schedule(
-        chart, *timing.index, {.maximum_playable_events = 0, .include_metronome = false});
+        chart, *timing.value, {.maximum_playable_events = 0, .include_metronome = false});
     REQUIRE_FALSE(schedule);
     CHECK_FALSE(schedule.schedule.has_value());
     CHECK(schedule.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
 
     auto changed = chart;
     changed.bpms[0].beats_per_minute = {90, 1};
-    const auto stale = build_preview_schedule(changed, *timing.index, {.include_metronome = false});
+    const auto stale = build_preview_schedule(changed, *timing.value, {.include_metronome = false});
     REQUIRE_FALSE(stale);
     CHECK(stale.diagnostics.back().code == timing_error_code_t::invalid_document);
 }
@@ -1027,12 +1025,12 @@ TEST_CASE("fifty-thousand-note preview compilation stays within the interaction 
     }
     chart.bpms.push_back(
         {.id = object_id_t{1}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
 
     const auto started = std::chrono::steady_clock::now();
     const auto schedule = build_preview_schedule(
-        chart, *timing.index, {.maximum_playable_events = 50'000, .include_metronome = false});
+        chart, *timing.value, {.maximum_playable_events = 50'000, .include_metronome = false});
     const auto elapsed = std::chrono::steady_clock::now() - started;
     REQUIRE(schedule);
     REQUIRE(schedule.schedule->playable.size() == 50'000);
@@ -1075,21 +1073,21 @@ TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
          .transition_beats = {2, 1}},
     };
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(built);
-    CHECK(is_scroll_speed_index_current(*built.index, chart, *timing.index));
+    CHECK(is_scroll_speed_index_current(*built.index, chart, *timing.value));
 
-    auto shared_midpoint = scroll_speed_state_t::from(*built.index, *timing.index, {120, 1});
+    auto shared_midpoint = scroll_speed_state_t::from(*built.index, *timing.value, {120, 1});
     const auto midpoint = scroll_speed_query_result_t::from(std::move(shared_midpoint));
     REQUIRE(midpoint);
     CHECK(midpoint.state->speed_multiplier == signed_rational_t{3, 2});
     CHECK(midpoint.state->displacement_beats == signed_rational_t{5, 8});
 
-    const auto row_240_before = scroll_speed_at(*built.index, *timing.index, {240, 1},
+    const auto row_240_before = scroll_speed_at(*built.index, *timing.value, {240, 1},
                                                 timing_boundary_side_t::before_delays);
-    const auto row_240 = scroll_speed_at(*built.index, *timing.index, {240, 1});
+    const auto row_240 = scroll_speed_at(*built.index, *timing.value, {240, 1});
     REQUIRE(row_240_before);
     REQUIRE(row_240);
     CHECK(row_240_before.state->scroll_multiplier == signed_rational_t{1, 1});
@@ -1098,15 +1096,15 @@ TEST_CASE("scroll and speed evaluation is exact, composable, and seekable",
     CHECK(row_240.state->effective_multiplier == signed_rational_t{-4, 1});
     CHECK(row_240.state->displacement_beats == signed_rational_t{3, 2});
 
-    const auto row_720 = scroll_speed_at(*built.index, *timing.index, {720, 1});
+    const auto row_720 = scroll_speed_at(*built.index, *timing.value, {720, 1});
     REQUIRE(row_720);
     CHECK(row_720.state->speed_multiplier == signed_rational_t{3, 2});
     CHECK(row_720.state->effective_multiplier == signed_rational_t{-3, 1});
 
     // Seeking backwards and jumping past several compiled starts uses the
     // same binary-searchable evaluator and cumulative displacement prefix.
-    const auto late = scroll_speed_at(*built.index, *timing.index, {960, 1});
-    const auto early_again = scroll_speed_at(*built.index, *timing.index, {120, 1});
+    const auto late = scroll_speed_at(*built.index, *timing.value, {960, 1});
+    const auto early_again = scroll_speed_at(*built.index, *timing.value, {120, 1});
     REQUIRE(late);
     REQUIRE(early_again);
     CHECK(late.state->speed_multiplier == signed_rational_t{0, 1});
@@ -1135,13 +1133,13 @@ TEST_CASE("same-row speed source order retargets from the value reached at that 
          .transition_beats = {1, 1},
          .provenance = {.source_order = 1}},
     };
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto built = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto built = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(built);
 
-    const auto at_retarget = scroll_speed_at(*built.index, *timing.index, {240, 1});
-    const auto one_beat_later = scroll_speed_at(*built.index, *timing.index, {480, 1});
+    const auto at_retarget = scroll_speed_at(*built.index, *timing.value, {240, 1});
+    const auto one_beat_later = scroll_speed_at(*built.index, *timing.value, {480, 1});
     REQUIRE(at_retarget);
     REQUIRE(one_beat_later);
     CHECK(at_retarget.state->speed_multiplier == signed_rational_t{2, 1});
@@ -1162,13 +1160,13 @@ TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
                               .multiplier = {3, 1},
                               .transition_beats = {1, 1},
                               .transition_is_seconds = true});
-    auto stopped_timing = build_timing_index(stopped);
-    REQUIRE(stopped_timing);
-    const auto stopped_speed = build_scroll_speed_index(stopped, *stopped_timing.index);
+    auto stopped_timing = timing_index_t::from(stopped);
+    REQUIRE(stopped_timing.value);
+    const auto stopped_speed = build_scroll_speed_index(stopped, *stopped_timing.value);
     REQUIRE(stopped_speed);
-    const auto arrival = scroll_speed_at(*stopped_speed.index, *stopped_timing.index, {240, 1},
+    const auto arrival = scroll_speed_at(*stopped_speed.index, *stopped_timing.value, {240, 1},
                                          timing_boundary_side_t::before_delays);
-    const auto departure = scroll_speed_at(*stopped_speed.index, *stopped_timing.index, {240, 1},
+    const auto departure = scroll_speed_at(*stopped_speed.index, *stopped_timing.value, {240, 1},
                                            timing_boundary_side_t::after_stops);
     REQUIRE(arrival);
     REQUIRE(departure);
@@ -1183,13 +1181,13 @@ TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
                                    .position = {measure_id_t{1}, 0},
                                    .multiplier = {3, 1},
                                    .transition_beats = {2, 1}});
-    const auto beat_timing = build_timing_index(beat_stopped);
-    REQUIRE(beat_timing);
-    const auto beat_speed = build_scroll_speed_index(beat_stopped, *beat_timing.index);
+    const auto beat_timing = timing_index_t::from(beat_stopped);
+    REQUIRE(beat_timing.value);
+    const auto beat_speed = build_scroll_speed_index(beat_stopped, *beat_timing.value);
     REQUIRE(beat_speed);
-    const auto beat_arrival = scroll_speed_at(*beat_speed.index, *beat_timing.index, {240, 1},
+    const auto beat_arrival = scroll_speed_at(*beat_speed.index, *beat_timing.value, {240, 1},
                                               timing_boundary_side_t::before_delays);
-    const auto beat_departure = scroll_speed_at(*beat_speed.index, *beat_timing.index, {240, 1},
+    const auto beat_departure = scroll_speed_at(*beat_speed.index, *beat_timing.value, {240, 1},
                                                 timing_boundary_side_t::after_stops);
     REQUIRE(beat_arrival);
     REQUIRE(beat_departure);
@@ -1204,11 +1202,11 @@ TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
                              .position = {measure_id_t{1}, 0},
                              .multiplier = {3, 1},
                              .transition_beats = {2, 1}});
-    const auto warped_timing = build_timing_index(warped);
-    REQUIRE(warped_timing);
-    const auto warped_speed = build_scroll_speed_index(warped, *warped_timing.index);
+    const auto warped_timing = timing_index_t::from(warped);
+    REQUIRE(warped_timing.value);
+    const auto warped_speed = build_scroll_speed_index(warped, *warped_timing.value);
     REQUIRE(warped_speed);
-    const auto warp_exit = scroll_speed_at(*warped_speed.index, *warped_timing.index, {720, 1});
+    const auto warp_exit = scroll_speed_at(*warped_speed.index, *warped_timing.value, {720, 1});
     REQUIRE(warp_exit);
     CHECK(warp_exit.state->speed_multiplier == signed_rational_t{3, 1});
     CHECK(warp_exit.state->displacement_beats == signed_rational_t{3, 2});
@@ -1221,24 +1219,24 @@ TEST_CASE("beat and second speed transitions use distinct stop and warp clocks",
                                    .multiplier = {3, 1},
                                    .transition_beats = {2, 1},
                                    .transition_is_seconds = true});
-    const auto seconds_warp_timing = build_timing_index(seconds_warp);
-    REQUIRE(seconds_warp_timing);
+    const auto seconds_warp_timing = timing_index_t::from(seconds_warp);
+    REQUIRE(seconds_warp_timing.value);
     const auto seconds_warp_speed =
-        build_scroll_speed_index(seconds_warp, *seconds_warp_timing.index);
+        build_scroll_speed_index(seconds_warp, *seconds_warp_timing.value);
     REQUIRE(seconds_warp_speed);
     const auto seconds_warp_exit =
-        scroll_speed_at(*seconds_warp_speed.index, *seconds_warp_timing.index, {720, 1});
+        scroll_speed_at(*seconds_warp_speed.index, *seconds_warp_timing.value, {720, 1});
     REQUIRE(seconds_warp_exit);
     CHECK(seconds_warp_exit.state->speed_multiplier == signed_rational_t{3, 2});
 
     auto skipped_event = warped;
     skipped_event.scrolls.push_back(
         {.id = object_id_t{62}, .position = {measure_id_t{1}, 240}, .multiplier = {-4, 1}});
-    const auto skipped_index = build_scroll_speed_index(skipped_event, *warped_timing.index);
+    const auto skipped_index = build_scroll_speed_index(skipped_event, *warped_timing.value);
     REQUIRE(skipped_index);
     REQUIRE(skipped_index.diagnostics.size() == 1);
     CHECK(skipped_index.diagnostics[0].severity == diagnostic_severity_t::warning);
-    const auto after_warp = scroll_speed_at(*skipped_index.index, *warped_timing.index, {720, 1});
+    const auto after_warp = scroll_speed_at(*skipped_index.index, *warped_timing.value, {720, 1});
     REQUIRE(after_warp);
     CHECK(after_warp.state->scroll_multiplier == signed_rational_t{1, 1});
 }
@@ -1258,12 +1256,12 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
                                  .position = {measure_id_t{1}, 0},
                                  .multiplier = {4, 1},
                                  .transition_beats = {3, 1}});
-    const auto beat_timing = build_timing_index(beat_chart);
-    REQUIRE(beat_timing);
-    const auto beat_speed = build_scroll_speed_index(beat_chart, *beat_timing.index);
+    const auto beat_timing = timing_index_t::from(beat_chart);
+    REQUIRE(beat_timing.value);
+    const auto beat_speed = build_scroll_speed_index(beat_chart, *beat_timing.value);
     REQUIRE(beat_speed);
     const auto beat_span =
-        scroll_speed_transition_span(*beat_speed.index, *beat_timing.index, object_id_t{82});
+        scroll_speed_transition_span(*beat_speed.index, *beat_timing.value, object_id_t{82});
     REQUIRE(beat_span);
     CHECK(beat_span.span->begin_row == signed_rational_t{0, 1});
     CHECK(beat_span.span->end_row == signed_rational_t{720, 1});
@@ -1284,12 +1282,12 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
                                     .multiplier = {3, 1},
                                     .transition_beats = {2, 1},
                                     .transition_is_seconds = true});
-    const auto seconds_timing = build_timing_index(seconds_chart);
-    REQUIRE(seconds_timing);
-    const auto seconds_speed = build_scroll_speed_index(seconds_chart, *seconds_timing.index);
+    const auto seconds_timing = timing_index_t::from(seconds_chart);
+    REQUIRE(seconds_timing.value);
+    const auto seconds_speed = build_scroll_speed_index(seconds_chart, *seconds_timing.value);
     REQUIRE(seconds_speed);
     const auto seconds_span =
-        scroll_speed_transition_span(*seconds_speed.index, *seconds_timing.index, object_id_t{84});
+        scroll_speed_transition_span(*seconds_speed.index, *seconds_timing.value, object_id_t{84});
     REQUIRE(seconds_span);
     CHECK(seconds_span.span->begin_row == signed_rational_t{0, 1});
     CHECK(seconds_span.span->end_row == signed_rational_t{240, 1});
@@ -1308,13 +1306,13 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
                              std::numeric_limits<std::uint64_t>::max()},
         .transition_is_seconds = true,
     });
-    const auto reducible_timing = build_timing_index(reducible_duration_chart);
-    REQUIRE(reducible_timing);
+    const auto reducible_timing = timing_index_t::from(reducible_duration_chart);
+    REQUIRE(reducible_timing.value);
     const auto reducible_speed =
-        build_scroll_speed_index(reducible_duration_chart, *reducible_timing.index);
+        build_scroll_speed_index(reducible_duration_chart, *reducible_timing.value);
     REQUIRE(reducible_speed);
     const auto reducible_span = scroll_speed_transition_span(
-        *reducible_speed.index, *reducible_timing.index, object_id_t{89});
+        *reducible_speed.index, *reducible_timing.value, object_id_t{89});
     REQUIRE(reducible_span);
     CHECK(reducible_span.span->end_seconds == signed_rational_t{1, 1});
     CHECK_FALSE(reducible_span.span->clipped);
@@ -1337,18 +1335,18 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
          .multiplier = {2, 1},
          .transition_beats = {0, 1}},
     };
-    const auto replaced_timing = build_timing_index(replaced_chart);
-    REQUIRE(replaced_timing);
-    const auto replaced_speed = build_scroll_speed_index(replaced_chart, *replaced_timing.index);
+    const auto replaced_timing = timing_index_t::from(replaced_chart);
+    REQUIRE(replaced_timing.value);
+    const auto replaced_speed = build_scroll_speed_index(replaced_chart, *replaced_timing.value);
     REQUIRE(replaced_speed);
     const auto clipped_span = scroll_speed_transition_span(*replaced_speed.index,
-                                                           *replaced_timing.index, object_id_t{86});
+                                                           *replaced_timing.value, object_id_t{86});
     REQUIRE(clipped_span);
     CHECK(clipped_span.span->end_row == signed_rational_t{240, 1});
     CHECK(clipped_span.span->end_seconds == signed_rational_t{1, 1});
     CHECK(clipped_span.span->clipped);
     const auto zero_span = scroll_speed_transition_span(*replaced_speed.index,
-                                                        *replaced_timing.index, object_id_t{87});
+                                                        *replaced_timing.value, object_id_t{87});
     REQUIRE(zero_span);
     CHECK(zero_span.span->begin_row == zero_span.span->end_row);
     CHECK(zero_span.span->begin_seconds == zero_span.span->end_seconds);
@@ -1360,12 +1358,12 @@ TEST_CASE("speed transition spans preserve their clock and clip at replacements 
                                       .position = {measure_id_t{2}, 480},
                                       .multiplier = {5, 1},
                                       .transition_beats = {2, 1}});
-    const auto chart_end_timing = build_timing_index(chart_end_chart);
-    REQUIRE(chart_end_timing);
-    const auto chart_end_speed = build_scroll_speed_index(chart_end_chart, *chart_end_timing.index);
+    const auto chart_end_timing = timing_index_t::from(chart_end_chart);
+    REQUIRE(chart_end_timing.value);
+    const auto chart_end_speed = build_scroll_speed_index(chart_end_chart, *chart_end_timing.value);
     REQUIRE(chart_end_speed);
     const auto chart_end_span = scroll_speed_transition_span_t::from(
-        *chart_end_speed.index, *chart_end_timing.index, object_id_t{88});
+        *chart_end_speed.index, *chart_end_timing.value, object_id_t{88});
     REQUIRE(chart_end_span);
     CHECK(chart_end_span->value.begin_row == signed_rational_t{1'440, 1});
     CHECK(chart_end_span->value.end_row == signed_rational_t{1'680, 1});
@@ -1391,18 +1389,18 @@ TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps"
          .multiplier = {3, 1},
          .transition_beats = {0, 1}},
     };
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto speed = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto speed = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(speed);
 
-    const auto all = scroll_speed_transition_spans(*speed.index, *timing.index);
+    const auto all = scroll_speed_transition_spans(*speed.index, *timing.value);
     REQUIRE(all);
     REQUIRE(all.spans.size() == speed.index->speed_segments.size());
     REQUIRE(all.diagnostics.empty());
     for (std::size_t i = 0; i < all.spans.size(); ++i) {
         const auto single = scroll_speed_transition_span(
-            *speed.index, *timing.index, speed.index->speed_segments[i].source_event);
+            *speed.index, *timing.value, speed.index->speed_segments[i].source_event);
         REQUIRE(single);
         CHECK(all.spans[i].source_event == speed.index->speed_segments[i].source_event);
         CHECK(all.spans[i].begin_row == single.span->begin_row);
@@ -1414,7 +1412,7 @@ TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps"
     }
 
     const auto capped =
-        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 1});
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.value, {.maximum_spans = 1});
     REQUIRE(capped.ok());
     REQUIRE(capped.value.spans.size() == 1);
     CHECK(capped.value.truncated);
@@ -1424,14 +1422,14 @@ TEST_CASE("bulk SPEEDS transition spans preserve compiled order and report caps"
     CHECK(capped.value.spans[0].source_event == speed.index->speed_segments[0].source_event);
 
     const auto zero_cap =
-        scroll_speed_transition_spans_t::from(*speed.index, *timing.index, {.maximum_spans = 0});
+        scroll_speed_transition_spans_t::from(*speed.index, *timing.value, {.maximum_spans = 0});
     REQUIRE(zero_cap.ok());
     CHECK(zero_cap.value.spans.empty());
     CHECK(zero_cap.value.truncated);
     REQUIRE(zero_cap.diagnostics.size() == 1);
     CHECK(zero_cap.diagnostics[0].severity == diagnostic_severity_t::warning);
 
-    auto stale_timing = *timing.index;
+    auto stale_timing = *timing.value;
     ++stale_timing.source_fingerprint;
     const auto stale = scroll_speed_transition_spans(*speed.index, stale_timing);
     REQUIRE_FALSE(stale);
@@ -1450,15 +1448,15 @@ TEST_CASE("bulk SPEEDS span evaluation remains bounded for fifty thousand events
                                 .position = {measure_id_t{1}, i % 960},
                                 .multiplier = {2, 1}});
     }
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto speed = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto speed = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(speed);
     REQUIRE(speed.index->speed_segments.size() == speed_count);
 
     const auto start = std::chrono::steady_clock::now();
     const auto spans =
-        scroll_speed_transition_spans(*speed.index, *timing.index, {.maximum_spans = speed_count});
+        scroll_speed_transition_spans(*speed.index, *timing.value, {.maximum_spans = speed_count});
     const auto elapsed = std::chrono::steady_clock::now() - start;
 
     REQUIRE(spans);
@@ -1477,40 +1475,40 @@ TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inp
     chart.beat_zero_audio_offset_seconds = {};
     chart.scrolls.push_back(
         {.id = object_id_t{70}, .position = {measure_id_t{1}, 0}, .multiplier = {-1, 0}});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto malformed_scroll = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto malformed_scroll = build_scroll_speed_index(chart, *timing.value);
     REQUIRE_FALSE(malformed_scroll);
     CHECK(malformed_scroll.diagnostics.back().code == timing_error_code_t::invalid_scroll);
 
     chart.scrolls[0].multiplier = {-1, 1};
-    const auto cap = build_scroll_speed_index(chart, *timing.index,
+    const auto cap = build_scroll_speed_index(chart, *timing.value,
                                               {.maximum_events = 10, .maximum_segments = 1});
     REQUIRE_FALSE(cap);
     CHECK(cap.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
     const auto boundary_cap = build_scroll_speed_index(
-        chart, *timing.index,
+        chart, *timing.value,
         {.maximum_events = 10, .maximum_timing_boundaries = 1, .maximum_segments = 10});
     REQUIRE_FALSE(boundary_cap);
     CHECK(boundary_cap.diagnostics.back().code == timing_error_code_t::capacity_exceeded);
 
-    const auto built = build_scroll_speed_index(chart, *timing.index);
+    const auto built = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(built);
     auto changed = chart;
     changed.scrolls[0].multiplier = {2, 1};
-    CHECK_FALSE(is_scroll_speed_index_current(*built.index, changed, *timing.index));
-    const auto negative_row = scroll_speed_at(*built.index, *timing.index, {-1, 1});
-    const auto invalid_row = scroll_speed_at(*built.index, *timing.index, {0, 0});
+    CHECK_FALSE(is_scroll_speed_index_current(*built.index, changed, *timing.value));
+    const auto negative_row = scroll_speed_at(*built.index, *timing.value, {-1, 1});
+    const auto invalid_row = scroll_speed_at(*built.index, *timing.value, {0, 0});
     REQUIRE_FALSE(negative_row);
     REQUIRE_FALSE(invalid_row);
 
     auto invalid_speed_chart = base_chart();
     invalid_speed_chart.speeds.push_back(
         {.id = object_id_t{71}, .position = {measure_id_t{1}, 0}, .multiplier = {-1, 1}});
-    const auto invalid_speed_timing = build_timing_index(invalid_speed_chart);
-    REQUIRE(invalid_speed_timing);
+    const auto invalid_speed_timing = timing_index_t::from(invalid_speed_chart);
+    REQUIRE(invalid_speed_timing.value);
     const auto invalid_speed =
-        build_scroll_speed_index(invalid_speed_chart, *invalid_speed_timing.index);
+        build_scroll_speed_index(invalid_speed_chart, *invalid_speed_timing.value);
     REQUIRE_FALSE(invalid_speed);
     CHECK(invalid_speed.diagnostics.back().code == timing_error_code_t::invalid_speed);
 
@@ -1521,9 +1519,9 @@ TEST_CASE("scroll and speed compilation rejects stale malformed and over-cap inp
     overflow_chart.speeds.push_back({.id = object_id_t{73},
                                      .position = {measure_id_t{2}, 719},
                                      .multiplier = {std::numeric_limits<std::int64_t>::max(), 1}});
-    const auto overflow_timing = build_timing_index(overflow_chart);
-    REQUIRE(overflow_timing);
-    const auto overflow_index = build_scroll_speed_index(overflow_chart, *overflow_timing.index);
+    const auto overflow_timing = timing_index_t::from(overflow_chart);
+    REQUIRE(overflow_timing.value);
+    const auto overflow_index = build_scroll_speed_index(overflow_chart, *overflow_timing.value);
     REQUIRE_FALSE(overflow_index);
     CHECK(overflow_index.diagnostics.back().code == timing_error_code_t::arithmetic_overflow);
 }
@@ -1583,30 +1581,30 @@ TEST_CASE("bounded timing interpolation preserves half rows across negative time
 TEST_CASE("dense original Aria timing requires explicit bounded clock opt in",
           "[unit][core][timing][bounded]") {
     const auto chart = aria_timing_chart();
-    CHECK_FALSE(build_timing_index(chart));
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    CHECK(built.index->bounded_clock);
+    CHECK_FALSE(timing_index_t::from(chart).value);
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    CHECK(built.value->bounded_clock);
     CHECK_FALSE(built.diagnostics.empty());
     CHECK(chart.bpms.back().beats_per_minute == signed_rational_t{130, 1});
 }
 
 TEST_CASE("bounded timing opt in preserves ordinary exact clocks",
           "[unit][core][timing][bounded]") {
-    const auto exact = build_timing_index(base_chart());
-    const auto allowed = build_timing_index(base_chart(), {.allow_bounded_clock = true});
-    REQUIRE(exact);
-    REQUIRE(allowed);
-    CHECK_FALSE(allowed.index->bounded_clock);
+    const auto exact = timing_index_t::from(base_chart());
+    const auto allowed = timing_index_t::from(base_chart(), {.allow_bounded_clock = true});
+    REQUIRE(exact.value);
+    REQUIRE(allowed.value);
+    CHECK_FALSE(allowed.value->bounded_clock);
     CHECK(allowed.diagnostics.empty());
-    CHECK(seconds_at(*allowed.index, 1) == seconds_at(*exact.index, 1));
+    CHECK(seconds_at(*allowed.value, 1) == seconds_at(*exact.value, 1));
 }
 
 TEST_CASE("dense Aria bounded clock retains precise chart completion samples",
           "[unit][core][timing][bounded]") {
-    const auto built = build_timing_index(aria_timing_chart(), {.allow_bounded_clock = true});
-    REQUIRE(built);
-    const auto end = timing_at(*built.index, built.index->total_rows);
+    const auto built = timing_index_t::from(aria_timing_chart(), {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    const auto end = built.value->seconds_at(built.value->total_rows);
     REQUIRE(end);
     const auto frame = sample_frame_at(*end.seconds, 44100);
     REQUIRE(frame);
@@ -1617,27 +1615,27 @@ TEST_CASE("bounded timing rejects excessive clock and row ranges",
           "[unit][core][timing][bounded]") {
     auto chart = aria_timing_chart();
     chart.beat_zero_audio_offset_seconds = {10'000'000, 1};
-    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+    CHECK_FALSE(timing_index_t::from(chart, {.allow_bounded_clock = true}).value);
     chart.beat_zero_audio_offset_seconds = {0, 1};
     chart.measures.back().definition.length = {3'000'000, 1};
     chart.measures.back().definition.meter.reset();
-    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+    CHECK_FALSE(timing_index_t::from(chart, {.allow_bounded_clock = true}).value);
 }
 
 TEST_CASE("bounded timing rejects positive intervals that collapse to zero",
           "[unit][core][timing][bounded]") {
     auto chart = aria_timing_chart();
     chart.bpms.back().beats_per_minute = {std::numeric_limits<std::int64_t>::max(), 1};
-    CHECK_FALSE(build_timing_index(chart, {.allow_bounded_clock = true}));
+    CHECK_FALSE(timing_index_t::from(chart, {.allow_bounded_clock = true}).value);
 }
 
 
 TEST_CASE("bounded Aria forward and inverse queries cover every segment interior",
           "[unit][core][timing][bounded]") {
-    const auto built = build_timing_index(aria_timing_chart(), {.allow_bounded_clock = true});
-    REQUIRE(built);
-    for (const auto& segment : built.index->segments) {
-        CHECK(bounded_segment_round_trip(*built.index, segment));
+    const auto built = timing_index_t::from(aria_timing_chart(), {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    for (const auto& segment : built.value->segments) {
+        CHECK(bounded_segment_round_trip(*built.value, segment));
     }
 }
 
@@ -1647,9 +1645,9 @@ TEST_CASE("bounded Aria preview schedules playable events after the overflowing 
     chart.measures.back().notes.push_back({.id = object_id_t{200},
                                           .position = {measure_id_t{85}, 0},
                                           .lane = lane_id_t{1}, .sound = resource_id_t{7}});
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    const auto schedule = build_preview_schedule(chart, *built.index);
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    const auto schedule = build_preview_schedule(chart, *built.value);
     REQUIRE(schedule);
     REQUIRE(schedule.schedule->playable.size() == 1);
     CHECK(schedule.schedule->playable.front().sample_frame > 6'000'000);
@@ -1659,10 +1657,10 @@ TEST_CASE("bounded Aria preview schedules playable events after the overflowing 
 
 TEST_CASE("bounded timing respects explicitly lowered rounding capacity",
           "[unit][core][timing][bounded]") {
-    CHECK_FALSE(build_timing_index(aria_timing_chart(),
-        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 1}));
-    CHECK(build_timing_index(base_chart(),
-        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 0}));
+    CHECK_FALSE(timing_index_t::from(aria_timing_chart(),
+        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 1}).value);
+    CHECK(timing_index_t::from(base_chart(),
+        {.allow_bounded_clock = true, .maximum_bounded_clock_roundings = 0}).value);
 }
 
 
@@ -1672,11 +1670,11 @@ TEST_CASE("bounded timing retains stop boundary ownership after the dense ramp",
     chart.pauses.push_back({.id = object_id_t{300}, .position = {measure_id_t{70}, 0},
                             .kind = pause_kind_t::stop, .duration = {1, 4},
                             .source_unit = pause_unit_t::seconds});
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    CHECK(row_at(*built.index, seconds_at(*built.index, 250'560)) ==
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    CHECK(row_at(*built.value, seconds_at(*built.value, 250'560)) ==
           signed_rational_t{250'560, 1});
-    CHECK(row_at(*built.index, seconds_at(*built.index, 250'560,
+    CHECK(row_at(*built.value, seconds_at(*built.value, 250'560,
                                          timing_boundary_side_t::after_stops)) ==
           signed_rational_t{250'560, 1});
 }
@@ -1686,11 +1684,11 @@ TEST_CASE("bounded timing retains warp plateau entry and exit ownership",
     auto chart = aria_timing_chart();
     chart.warps.push_back({.id = object_id_t{301},
                            .span = {{measure_id_t{72}, 0}, {measure_id_t{73}, 0}}});
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    const auto plateau = seconds_at(*built.index, 258'240);
-    CHECK(row_at(*built.index, plateau) == signed_rational_t{258'240, 1});
-    CHECK(row_at(*built.index, plateau, {.warp_side = timing_warp_inverse_side_t::exit}) ==
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    const auto plateau = seconds_at(*built.value, 258'240);
+    CHECK(row_at(*built.value, plateau) == signed_rational_t{258'240, 1});
+    CHECK(row_at(*built.value, plateau, {.warp_side = timing_warp_inverse_side_t::exit}) ==
           signed_rational_t{262'080, 1});
 }
 
@@ -1699,13 +1697,13 @@ TEST_CASE("bounded preview clock extrapolates negative rows before a positive au
           "[unit][core][timing][bounded][preview]") {
     auto chart = aria_timing_chart();
     chart.beat_zero_audio_offset_seconds = {2, 1};
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    const auto prechart = musical_position_at(*built.index, {0, 1},
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    const auto prechart = built.value->row_at({0, 1},
                                                {.extrapolate_before_chart = true});
     REQUIRE(prechart);
     CHECK(prechart.absolute_row == signed_rational_t{-4'160, 1});
-    CHECK_FALSE(musical_position_at(*built.index, {0, 1}));
+    CHECK_FALSE(built.value->row_at({0, 1}));
 }
 
 
@@ -1713,15 +1711,15 @@ TEST_CASE("bounded clock prechart inverse preserves large in-range fractional qu
           "[unit][core][timing][bounded][preview]") {
     auto chart = aria_timing_chart();
     chart.beat_zero_audio_offset_seconds = {3'000'000, 1};
-    const auto built = build_timing_index(chart, {.allow_bounded_clock = true});
-    REQUIRE(built);
-    const auto query = musical_position_at(*built.index, {1, 44100},
+    const auto built = timing_index_t::from(chart, {.allow_bounded_clock = true});
+    REQUIRE(built.value);
+    const auto query = built.value->row_at({1, 44100},
                                             {.extrapolate_before_chart = true});
     REQUIRE(query);
     const auto row = static_cast<long double>(query.absolute_row->numerator) /
                      query.absolute_row->denominator;
     CHECK(std::abs(row - (-6'240'000'000.0L + 2080.0L / 44100)) < 1e-6L);
-    CHECK_FALSE(musical_position_at(*built.index, {-6'000'000, 1},
+    CHECK_FALSE(built.value->row_at({-6'000'000, 1},
                                      {.extrapolate_before_chart = true}));
 }
 
@@ -1769,12 +1767,12 @@ auto layer_tick_chart() -> chart_document_t {
 TEST_CASE("Layer assist positions include soundless heads and BGM through shared exact timing",
           "[unit][timing][layer-assist]") {
     const auto chart = layer_tick_chart();
-    const auto timing = build_timing_index(chart);
-    require_layer_tick(static_cast<bool>(timing));
-    const auto ordinary = build_preview_schedule(chart, *timing.index, {.sample_rate = 48000});
+    const auto timing = timing_index_t::from(chart);
+    require_layer_tick(static_cast<bool>(timing.value));
+    const auto ordinary = build_preview_schedule(chart, *timing.value, {.sample_rate = 48000});
     require_layer_tick(static_cast<bool>(ordinary));
     check_layer_tick(ordinary.schedule->layer_ticks.empty());
-    const auto ticks = build_preview_schedule(chart, *timing.index,
+    const auto ticks = build_preview_schedule(chart, *timing.value,
         {.sample_rate = 48000, .count_in_pulses = 4, .include_layer_ticks = true});
     require_layer_tick(static_cast<bool>(ticks));
     require_layer_tick(ticks.schedule->layer_ticks.size() == 6);
@@ -1787,9 +1785,9 @@ TEST_CASE("Layer assist positions include soundless heads and BGM through shared
 TEST_CASE("Layer assist construction rejects its own bounded capacity without truncation",
           "[unit][timing][layer-assist]") {
     const auto chart = layer_tick_chart();
-    const auto timing = build_timing_index(chart);
-    require_layer_tick(static_cast<bool>(timing));
-    const auto ticks = build_preview_schedule(chart, *timing.index,
+    const auto timing = timing_index_t::from(chart);
+    require_layer_tick(static_cast<bool>(timing.value));
+    const auto ticks = build_preview_schedule(chart, *timing.value,
         {.include_layer_ticks = true, .maximum_layer_tick_events = 2});
     check_layer_tick(!ticks);
     check_layer_tick(!ticks.schedule.has_value());
@@ -1809,31 +1807,29 @@ TEST_CASE("Timing owner queries retain exact boundary sides and inverse options"
     auto chart = base_chart();
     chart.pauses = {{.id = object_id_t{90}, .position = {measure_id_t{1}, 240},
                      .kind = pause_kind_t::stop, .duration = {1, 1}}};
-    const auto built = build_timing_index(chart);
-    require_timing_query(static_cast<bool>(built));
-    const auto& index = *built.index;
+    const auto built = timing_index_t::from(chart);
+    require_timing_query(static_cast<bool>(built.value));
+    const auto& index = *built.value;
     for (const auto side : {timing_boundary_side_t::before_delays,
                             timing_boundary_side_t::event, timing_boundary_side_t::after_stops}) {
         auto shared = index.query_seconds(240, side);
         const auto member = timing_query_result_t::from(std::move(shared));
-        const auto original = timing_at(index, 240, side);
+        const auto original = index.seconds_at(240, side);
         require_timing_query(static_cast<bool>(member.seconds));
         check_timing_query(static_cast<bool>(member.seconds == original.seconds));
         check_timing_query(static_cast<bool>(member.inside_warp == original.inside_warp));
     }
-    const auto fractional = exact_chart_row_t{120, {1, 2}};
-    check_timing_query(static_cast<bool>(index.seconds_at(fractional).seconds == timing_at(index, fractional).seconds));
     auto shared_inverse = index.query_position({0, 1}, {.extrapolate_before_chart = true});
     const auto inverse = timing_position_query_result_t::from(std::move(shared_inverse));
-    check_timing_query(static_cast<bool>(inverse.absolute_row == musical_position_at(index, {0, 1},
+    check_timing_query(static_cast<bool>(inverse.absolute_row == index.row_at({0, 1},
         {.extrapolate_before_chart = true}).absolute_row));
     check_timing_query(static_cast<bool>(index.row_at({0, 1}).error->code == timing_error_code_t::position_out_of_range));
 }
 
 TEST_CASE("Timing display queries name and preserve each chart end policy", "[unit][timing]") {
-    const auto built = build_timing_index(base_chart());
-    require_timing_query(static_cast<bool>(built));
-    const auto& index = *built.index;
+    const auto built = timing_index_t::from(base_chart());
+    require_timing_query(static_cast<bool>(built.value));
+    const auto& index = *built.value;
     const auto end = index.seconds_at(index.total_rows, timing_boundary_side_t::after_stops);
     require_timing_query(static_cast<bool>(end.seconds));
     const auto end_time = to_double(*end.seconds);
@@ -1865,9 +1861,9 @@ TEST_CASE("Timing display queries name and preserve each chart end policy", "[un
 }
 
 TEST_CASE("Timing owner display queries reject invalid clocks and frame bounds", "[unit][timing]") {
-    const auto built = build_timing_index(base_chart());
-    require_timing_query(static_cast<bool>(built));
-    const auto& index = *built.index;
+    const auto built = timing_index_t::from(base_chart());
+    require_timing_query(static_cast<bool>(built.value));
+    const auto& index = *built.value;
     check_timing_query(!(index.row_at_approx({1, 0}, chart_end_policy_t::clamp_to_end)));
     check_timing_query(!(index.row_at_frame(1, 0, chart_end_policy_t::clamp_to_end)));
     check_timing_query(!(index.row_at_frame(std::numeric_limits<std::uint64_t>::max(), 48000,
@@ -1879,16 +1875,16 @@ TEST_CASE("Timing owner display queries reject invalid clocks and frame bounds",
 }
 
 TEST_CASE("Timing frame last-row policy preserves playback clock rejection", "[unit][timing]") {
-    const auto built = build_timing_index(base_chart());
-    require_timing_query(static_cast<bool>(built));
-    check_timing_query(!built.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
-    check_timing_query(built.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_end) ==
+    const auto built = timing_index_t::from(base_chart());
+    require_timing_query(static_cast<bool>(built.value));
+    check_timing_query(!built.value->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
+    check_timing_query(built.value->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_end) ==
                        std::optional<double>{0});
     auto chart = base_chart();
     chart.beat_zero_audio_offset_seconds = {-100, 1};
-    const auto before_zero = build_timing_index(chart);
-    require_timing_query(static_cast<bool>(before_zero));
-    check_timing_query(!before_zero.index->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
+    const auto before_zero = timing_index_t::from(chart);
+    require_timing_query(static_cast<bool>(before_zero.value));
+    check_timing_query(!before_zero.value->row_at_frame(0, 48000, chart_end_policy_t::clamp_to_last_row));
 }
 
 TEST_CASE("timing query adapters preserve an empty error without fabricating a diagnostic",

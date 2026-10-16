@@ -230,13 +230,13 @@ auto begin_compose_beat_fit(
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t {
     using namespace wormedit;
     if (application_state.project.timing_recipe.timing_locked || scene_cache.timing.beat_fit_drag ||
-        editor_interaction_has_pending_gesture(state) || !scene_cache.scene.index ||
+        state.is_pending() || !scene_cache.scene.index.value() ||
         !scene_cache.timing.marker_timing_index || scene_cache.waveform.waveform_overview_sample_rate == 0 ||
         scene_cache.waveform.waveform_overview_total_frames == 0 || !input_chart || input.object_id == 0) {
         return compose_input_family_result_t::from(
             "Beat fitting requires an unlocked waveform and idle chart gesture.");
     }
-    const auto& measures = scene_cache.scene.index->measures;
+    const auto& measures = scene_cache.scene.index.value()->measures;
     const auto beat_row = input.object_id;
     const auto measure = std::ranges::upper_bound(measures.entries, beat_row, {},
                                                   &measure_index_entry_t::absolute_begin_row);
@@ -280,7 +280,7 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                               std::uint64_t target_frame, bool timing_locked)
     -> wormedit::beat_interval_drag_outcome_t {
     using namespace wormedit;
-    const auto frame_update = drag.revise(history.document, target_frame, timing_locked);
+    const auto frame_update = drag.revise(history.document, {.is_timing_locked = timing_locked}, target_frame);
     if (!frame_update.ok() || !frame_update.value || !input.beat_fit_ctrl_held || input.beat_fit_onset_snap_held)
         return frame_update;
     const auto snapped_bpm =
@@ -288,7 +288,7 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
                      {input.beat_fit_snap_step_numerator, input.beat_fit_snap_step_denominator});
     if (!snapped_bpm)
         return {};
-    return frame_update.value->revise(history.document, *snapped_bpm, timing_locked);
+    return frame_update.value->revise(history.document, {.is_timing_locked = timing_locked}, *snapped_bpm);
 }
 
 auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
@@ -348,7 +348,7 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
             "Previewing exact sample-frame beat fit.", notification_severity_t::hint,
             notification_source_t::input);
     }
-    const auto committed = apply_beat_interval_drag(history, *scene_cache.timing.beat_fit_drag,
+    const auto committed = apply_proposal(history, *scene_cache.timing.beat_fit_drag,
                                                      application_state.project.timing_recipe.timing_locked);
     scene_cache.clear_beat_fit_capture();
     if (!committed.applied) {
@@ -377,7 +377,7 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
         cache.waveform.waveform_overview_total_frames == 0 || cache.waveform.waveform_overview_sample_rate == 0 ||
         !context.input_chart)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
-    if (editor_interaction_has_pending_gesture(state))
+    if (state.is_pending())
         return compose_input_family_result_t::from(
             "Finish or cancel the active gesture before navigating the waveform.");
     const auto& timing = *cache.timing.marker_timing_index;
@@ -414,8 +414,8 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     if (input.overview_shift)
         return seek_compose_waveform(input, context, result, accepted);
     auto& cache = context.environment.controls.cache;
-    if (!cache.timing.marker_timing_index || !cache.scene.index || !context.input_chart ||
-        editor_interaction_has_pending_gesture(context.state))
+    if (!cache.timing.marker_timing_index || !cache.scene.index.value() || !context.input_chart ||
+        context.state.is_pending())
         return compose_input_family_result_t::from(
             "Waveform overview seek is unavailable during an active gesture.");
     const auto end =
@@ -425,10 +425,10 @@ auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input
     const auto target = compose_minimap_target(
         input.audio_fraction, cache.waveform.waveform_overview_total_frames,
         cache.waveform.waveform_overview_sample_rate, audio::output_sample_rate, *cache.timing.marker_timing_index,
-        cache.scene.index->measures, edit_snap_denominator(*context.input_chart, context.state), end);
+        cache.scene.index.value()->measures, edit_snap_denominator(*context.input_chart, context.state), end);
     if (!target)
         return compose_input_family_result_t::from("Waveform overview seek is unavailable.");
-    const auto position = (cache.scene.index->measures).position_at(target->snapped_row);
+    const auto position = (cache.scene.index.value()->measures).position_at(target->snapped_row);
     if (!position)
         return compose_input_family_result_t::from("Waveform cursor position is unavailable.");
     auto outcome = navigate_compose_position(

@@ -14,7 +14,7 @@ void validate_preview_binding(const song_document_t& document,
                               const workspace_controller_t& workspace,
                               runtime::chart_preview_t& state,
                               sdl_preview_output_t& output, const notification_sink_t& notifications) {
-    if (!state.chart || state.matches_selection(document, workspace))
+    if (!state.chart() || state.matches_selection(document, workspace))
         return;
     const bool interrupted = output.playing() || state.paused;
     if (output.playing())
@@ -79,9 +79,9 @@ auto preview_failure_message(const sdl_preview_service_result_t& result) -> cons
 
 auto preview_playhead_row(const runtime::chart_preview_t& state,
                           const audio::preview_session_t& session) -> std::optional<double> {
-    if (!state.timing || (!state.playing(session) && !state.paused))
+    if (!state.compiled.value().timing || (!state.playing(session) && !state.paused))
         return std::nullopt;
-    return state.timing->row_at_frame(state.current_frame(session), audio::output_sample_rate,
+    return state.compiled.value().timing->row_at_frame(state.current_frame(session), audio::output_sample_rate,
                                      chart_end_policy_t::clamp_to_last_row);
 }
 

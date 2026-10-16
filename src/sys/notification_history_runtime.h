@@ -2,10 +2,13 @@
 
 #include "ui/frontend.h"
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/interaction.h>
 #include <wormedit/core/workspace.h>
 
 #include <array>
+#include <tuple>
 #include <optional>
 #include <string_view>
 
@@ -30,15 +33,11 @@ auto notification_copy_payload(const notification_center_t& center, notification
 struct notification_history_runtime_t {
     bool visible{};
     std::array<WormUiNotificationHistoryRow, WORM_UI_NOTIFICATION_HISTORY_CAPACITY> rows{};
-    struct target_cache_entry_t {
-        notification_id_t id{};
-        WormUiNotificationTargetAvailability availability{WORM_UI_NOTIFICATION_NO_TARGET};
-    };
-    std::array<target_cache_entry_t, WORM_UI_NOTIFICATION_HISTORY_CAPACITY> target_cache{};
-    const song_document_t* cached_document{};
-    song_id_t cached_song{};
-    std::uint64_t cached_revision{};
-    std::uint64_t cached_generation{};
+    using target_entries_t = std::array<
+        keyed_cache_t<notification_id_t, WormUiNotificationTargetAvailability>,
+        WORM_UI_NOTIFICATION_HISTORY_CAPACITY>;
+    keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t>,
+                  target_entries_t> target_cache;
     auto project(const notification_center_t& center, const song_document_t& document,
                  notification_time_t now, std::uint64_t document_generation = 0) -> WormUiNotificationHistoryView;
     auto apply(const WormUiNotificationAction& action, notification_center_t& center) -> bool;

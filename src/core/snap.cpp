@@ -116,11 +116,6 @@ auto snap_absolute_row(const chart_document_t& chart, std::uint64_t row,
     return built ? snap_absolute_row(chart, *built, row, denominator) : std::nullopt;
 }
 
-auto position_at_absolute_row(const measure_index_t& index, std::uint64_t absolute)
-    -> std::optional<local_position_t> {
-    return index.position_at(absolute);
-}
-
 auto snap_position(const chart_document_t& chart, const measure_index_t& index,
                    local_position_t position, std::uint64_t denominator)
     -> std::optional<local_position_t> {

@@ -953,11 +953,11 @@ auto writer_geometry(const chart_document_t& chart) -> std::pair<bmson_grid_t, m
     if (!grid || grid->resolution == 0 || grid->resolution > UINT32_MAX)
         fail(bmson_write_diagnostic_code_t::invalid_geometry,
              "chart resolution cannot be represented by BMSON 1.0", "$.info.resolution");
-    const auto built_index = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built_index))
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index.has_value())
         fail(bmson_write_diagnostic_code_t::invalid_geometry,
              "chart measures cannot be mapped to BMSON pulse positions", "$.lines");
-    return {*grid, std::get<measure_index_t>(built_index)};
+    return {*grid, built_index.value()};
 }
 
 struct writer_output_context_t {

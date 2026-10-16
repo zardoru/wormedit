@@ -79,6 +79,15 @@ auto fixture_audio_path(std::string_view name, std::string_view extension)
            (std::string(name) + "." + std::string(extension));
 }
 
+void check_validated_import_copy(const wormedit::project_asset_copy_outcome_t& copied,
+                                 bool validated, std::string_view extension) {
+    INFO("extension: " << extension << ", status: "
+         << (copied ? static_cast<int>(copied->status) : static_cast<int>(copied.error().code))
+         << ", message: " << (copied ? std::string_view{} : std::string_view{copied.error().message}));
+    CHECK(validated);
+    CHECK(copied);
+}
+
 TEST_CASE("audio import-copy validates the byte-verified temporary before publication",
           "[unit][audio][resources]") {
     const auto root = std::filesystem::temp_directory_path() /
@@ -96,11 +105,8 @@ TEST_CASE("audio import-copy validates the byte-verified temporary before public
             validated = decoder.open(temporary);
             return validated;
         };
-        const auto copied = wormedit::copy_resource_file_into_project(request);
-        INFO("extension: " << extension << ", status: " << static_cast<int>(copied.status)
-                           << ", message: " << copied.message);
-        CHECK(validated);
-        CHECK(copied);
+        const auto copied = wormedit::create_project_asset_copy(request);
+        check_validated_import_copy(copied, validated, extension);
     }
     std::error_code error;
     std::filesystem::remove_all(root, error);

@@ -22,13 +22,13 @@ auto stage_output_music(const wormedit::song_document_t& snapshot,
     if (asset == nullptr)
         return "The music resource has no audio asset.";
     const auto copied =
-        copy_resource_file_into_export({.project_directory = asset_base,
+        create_export_asset_copy({.project_directory = asset_base,
                                         .source_path = asset->source_path,
                                         .relative_output_path = group.relative_output_path,
                                         .asset = asset->id},
                                        stop);
     if (!copied)
-        return "Could not stage music for export: " + copied.message;
+        return "Could not stage music for export: " + copied.error().message;
     return std::nullopt;
 }
 

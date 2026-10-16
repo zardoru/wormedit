@@ -119,8 +119,8 @@ auto failed_copy_worker(const resource_copy_request_t&, std::stop_token)
 auto cancelled_copy_worker(const resource_copy_request_t&, std::stop_token)
     -> resource_copy_job_t::work_outcome_t {
     return resource_copy_job_t::work_outcome_t{
-        std::in_place, std::unexpected(wormedit::error_t<project_asset_copy_status_t>{
-                           project_asset_copy_status_t::cancelled, {}})};
+        std::in_place, std::unexpected(wormedit::error_t<failure_code_t>{
+                           failure_code_t::cancelled, {}})};
 }
 
 auto make_export_task(runtime::output_group_export_t& runtime,

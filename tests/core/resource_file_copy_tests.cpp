@@ -44,9 +44,15 @@ auto read_text(const std::filesystem::path& path) -> std::string {
 
 namespace {
 void require_copy_status(const wormedit::project_asset_copy_outcome_t& copy,
-                         wormedit::project_asset_copy_status_t status) {
+                         wormedit::project_asset_copy_phase_t status) {
     REQUIRE(copy);
     REQUIRE(copy->status == status);
+}
+
+void require_copy_failure(const wormedit::project_asset_copy_outcome_t& copy,
+                          wormedit::failure_code_t code) {
+    REQUIRE_FALSE(copy);
+    REQUIRE(copy.error().code == code);
 }
 
 } // namespace
@@ -59,14 +65,14 @@ TEST_CASE("project asset copy publishes bytes once and reuses an identical desti
     const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
                                                          .source_path = source,
                                                          .asset = wormedit::asset_id_t{12}};
-    const auto copied = wormedit::copy_resource_file_into_project(request);
+    const auto copied = wormedit::create_project_asset_copy(request);
     REQUIRE(copied);
-    CHECK(copied.status == wormedit::project_asset_copy_status_t::copied);
-    CHECK(copied.relative_path == std::filesystem::path{"assets/12-kick.wav"});
-    CHECK(read_text(copied.absolute_path) == "first audio bytes");
-    const auto reused = wormedit::copy_resource_file_into_project(request);
-    CHECK(reused.status == wormedit::project_asset_copy_status_t::reused);
-    CHECK(reused.relative_path == copied.relative_path);
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
+    CHECK(copied->relative_path == std::filesystem::path{"assets/12-kick.wav"});
+    CHECK(read_text(copied->absolute_path) == "first audio bytes");
+    const auto reused = wormedit::create_project_asset_copy(request);
+    require_copy_status(reused, wormedit::project_asset_copy_phase_t::reused);
+    CHECK(reused->relative_path == copied->relative_path);
     CHECK(std::distance(std::filesystem::directory_iterator(directory.path / "assets"),
                         std::filesystem::directory_iterator{}) == 1);
 }
@@ -78,8 +84,8 @@ TEST_CASE("project asset copy leaves the project unchanged when its source is mi
         .project_directory = directory.path,
         .source_path = directory.path / "missing.wav",
         .asset = wormedit::asset_id_t{12}};
-    const auto result = wormedit::copy_resource_file_into_project(request);
-    CHECK(result.status == wormedit::project_asset_copy_status_t::source_unavailable);
+    const auto result = wormedit::create_project_asset_copy(request);
+    require_copy_failure(result, wormedit::failure_code_t::unavailable);
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
 }
 
@@ -92,16 +98,16 @@ TEST_CASE("unlinked copy cleanup removes only its own intact publication",
                                                          .source_path = source,
                                                          .asset = wormedit::asset_id_t{21}};
     const auto copied = wormedit::create_project_asset_copy(request);
-    require_copy_status(copied, wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
     REQUIRE(copied->published_identity);
     CHECK(wormedit::discard_unlinked_project_asset_copy(request, *copied));
     CHECK_FALSE(std::filesystem::exists(copied->absolute_path));
     CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *copied));
 
     const auto again = wormedit::create_project_asset_copy(request);
-    require_copy_status(again, wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(again, wormedit::project_asset_copy_phase_t::copied);
     const auto reused = wormedit::create_project_asset_copy(request);
-    require_copy_status(reused, wormedit::project_asset_copy_status_t::reused);
+    require_copy_status(reused, wormedit::project_asset_copy_phase_t::reused);
     CHECK_FALSE(wormedit::discard_unlinked_project_asset_copy(request, *reused));
     CHECK(std::filesystem::exists(again->absolute_path));
     write_text(again->absolute_path, "modified audio");
@@ -123,10 +129,10 @@ TEST_CASE("unlinked export copy cleanup preserves a symlinked destination direct
                                                         .relative_output_path = "charts/song.bmson",
                                                         .asset = wormedit::asset_id_t{22}};
     const auto copied = wormedit::create_export_asset_copy(request);
-    require_copy_status(copied, wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
     CHECK(wormedit::discard_unlinked_export_asset_copy(request, *copied));
     const auto again = wormedit::create_export_asset_copy(request);
-    require_copy_status(again, wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(again, wormedit::project_asset_copy_phase_t::copied);
     const auto assets = directory.path / "charts/assets";
     const auto moved = directory.path / "elsewhere";
     std::filesystem::rename(assets, moved);
@@ -146,10 +152,10 @@ TEST_CASE("project asset copy rejects collisions without replacing the existing 
     const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
                                                          .source_path = source,
                                                          .asset = wormedit::asset_id_t{12}};
-    REQUIRE(wormedit::copy_resource_file_into_project(request));
+    REQUIRE(wormedit::create_project_asset_copy(request));
     write_text(source, "new bytes");
-    const auto collision = wormedit::copy_resource_file_into_project(request);
-    CHECK(collision.status == wormedit::project_asset_copy_status_t::destination_collision);
+    const auto collision = wormedit::create_project_asset_copy(request);
+    require_copy_failure(collision, wormedit::failure_code_t::conflict);
     CHECK(read_text(directory.path / "assets/12-kick.wav") == "old bytes");
 }
 
@@ -161,24 +167,20 @@ TEST_CASE("project asset inspection reports availability and conflicts without w
     const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
                                                          .source_path = source,
                                                          .asset = wormedit::asset_id_t{12}};
-    CHECK(wormedit::inspect_project_asset_copy(request).status ==
-          wormedit::project_asset_copy_status_t::not_staged);
+    require_copy_failure(wormedit::inspect_project_asset_file(request), wormedit::failure_code_t::not_found);
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
-    const auto copied = wormedit::copy_resource_file_into_project(request);
+    const auto copied = wormedit::create_project_asset_copy(request);
     REQUIRE(copied);
-    CHECK(wormedit::inspect_project_asset_copy(request).status ==
-          wormedit::project_asset_copy_status_t::reused);
+    require_copy_status(wormedit::inspect_project_asset_file(request), wormedit::project_asset_copy_phase_t::reused);
     write_text(source, "different bytes");
-    CHECK(wormedit::inspect_project_asset_copy(request).status ==
-          wormedit::project_asset_copy_status_t::destination_collision);
-    CHECK(read_text(copied.absolute_path) == "audio bytes");
+    require_copy_failure(wormedit::inspect_project_asset_file(request), wormedit::failure_code_t::conflict);
+    CHECK(read_text(copied->absolute_path) == "audio bytes");
     std::error_code error;
-    std::filesystem::remove(copied.absolute_path, error);
+    std::filesystem::remove(copied->absolute_path, error);
     REQUIRE_FALSE(error);
-    std::filesystem::create_symlink(source, copied.absolute_path, error);
+    std::filesystem::create_symlink(source, copied->absolute_path, error);
     if (!error)
-        CHECK(wormedit::inspect_project_asset_copy(request).status ==
-              wormedit::project_asset_copy_status_t::destination_collision);
+        require_copy_failure(wormedit::inspect_project_asset_file(request), wormedit::failure_code_t::conflict);
 }
 
 TEST_CASE("project asset validation rejects a temporary before publishing its name",
@@ -195,9 +197,9 @@ TEST_CASE("project asset validation rejects a temporary before publishing its na
             examined = true;
             return read_text(temporary) == "different bytes";
         }};
-    const auto rejected = wormedit::copy_resource_file_into_project(request);
+    const auto rejected = wormedit::create_project_asset_copy(request);
     CHECK(examined);
-    CHECK(rejected.status == wormedit::project_asset_copy_status_t::validation_failed);
+    require_copy_failure(rejected, wormedit::failure_code_t::invalid_data);
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets/17-music.wav"));
     CHECK(std::filesystem::is_empty(directory.path / "assets"));
     std::stop_source cancelled;
@@ -206,15 +208,13 @@ TEST_CASE("project asset validation rejects a temporary before publishing its na
         cancelled.request_stop();
         return true;
     };
-    CHECK(wormedit::copy_resource_file_into_project(interrupted, cancelled.get_token()).status ==
-          wormedit::project_asset_copy_status_t::cancelled);
+    require_copy_failure(wormedit::create_project_asset_copy(interrupted, cancelled.get_token()), wormedit::failure_code_t::cancelled);
     CHECK(std::filesystem::is_empty(directory.path / "assets"));
     auto accepted = request;
     accepted.validate_temporary = [](const auto& temporary) {
         return read_text(temporary) == "audio bytes";
     };
-    CHECK(wormedit::copy_resource_file_into_project(accepted).status ==
-          wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(wormedit::create_project_asset_copy(accepted), wormedit::project_asset_copy_phase_t::copied);
 }
 
 TEST_CASE("project asset copy validates relative sources, limits, and cancellation",
@@ -225,24 +225,19 @@ TEST_CASE("project asset copy validates relative sources, limits, and cancellati
     const wormedit::project_asset_copy_request_t request{.project_directory = directory.path,
                                                          .source_path = "kick.wav",
                                                          .asset = wormedit::asset_id_t{5}};
-    CHECK(wormedit::copy_resource_file_into_project(request).status ==
-          wormedit::project_asset_copy_status_t::copied);
+    require_copy_status(wormedit::create_project_asset_copy(request), wormedit::project_asset_copy_phase_t::copied);
     auto invalid = request;
     invalid.source_path = "../kick.wav";
-    CHECK(wormedit::copy_resource_file_into_project(invalid).status ==
-          wormedit::project_asset_copy_status_t::invalid_request);
+    require_copy_failure(wormedit::create_project_asset_copy(invalid), wormedit::failure_code_t::invalid_request);
     invalid = request;
     invalid.asset = wormedit::asset_id_t{6};
     invalid.maximum_bytes = 2;
-    CHECK(wormedit::copy_resource_file_into_project(invalid).status ==
-          wormedit::project_asset_copy_status_t::invalid_request);
+    require_copy_failure(wormedit::create_project_asset_copy(invalid), wormedit::failure_code_t::invalid_request);
     std::stop_source cancelled;
     cancelled.request_stop();
-    CHECK(wormedit::copy_resource_file_into_project(invalid, cancelled.get_token()).status ==
-          wormedit::project_asset_copy_status_t::invalid_request);
+    require_copy_failure(wormedit::create_project_asset_copy(invalid, cancelled.get_token()), wormedit::failure_code_t::invalid_request);
     invalid.maximum_bytes = 100;
-    CHECK(wormedit::copy_resource_file_into_project(invalid, cancelled.get_token()).status ==
-          wormedit::project_asset_copy_status_t::cancelled);
+    require_copy_failure(wormedit::create_project_asset_copy(invalid, cancelled.get_token()), wormedit::failure_code_t::cancelled);
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets/6-kick.wav"));
 }
 
@@ -255,22 +250,20 @@ TEST_CASE("export asset copy stages beside an output group without changing proj
                                                         .relative_output_path =
                                                             "exports/bms/chart.bms",
                                                         .asset = wormedit::asset_id_t{12}};
-    const auto copied = wormedit::copy_resource_file_into_export(request);
+    const auto copied = wormedit::create_export_asset_copy(request);
     REQUIRE(copied);
-    CHECK(copied.relative_path == std::filesystem::path{"exports/bms/assets/12-kick.wav"});
+    CHECK(copied->relative_path == std::filesystem::path{"exports/bms/assets/12-kick.wav"});
     CHECK(
-        wormedit::export_asset_reference_path(request.relative_output_path, copied.relative_path) ==
+        wormedit::export_asset_reference_path(request.relative_output_path, copied->relative_path) ==
         std::filesystem::path{"assets/12-kick.wav"});
     CHECK_FALSE(
         wormedit::export_asset_reference_path(request.relative_output_path, "outside/12-kick.wav"));
-    CHECK(read_text(copied.absolute_path) == "first audio bytes");
+    CHECK(read_text(copied->absolute_path) == "first audio bytes");
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets/12-kick.wav"));
-    CHECK(wormedit::copy_resource_file_into_export(request).status ==
-          wormedit::project_asset_copy_status_t::reused);
+    require_copy_status(wormedit::create_export_asset_copy(request), wormedit::project_asset_copy_phase_t::reused);
     write_text(directory.path / "kick.wav", "changed audio bytes");
-    CHECK(wormedit::copy_resource_file_into_export(request).status ==
-          wormedit::project_asset_copy_status_t::destination_collision);
-    CHECK(read_text(copied.absolute_path) == "first audio bytes");
+    require_copy_failure(wormedit::create_export_asset_copy(request), wormedit::failure_code_t::conflict);
+    CHECK(read_text(copied->absolute_path) == "first audio bytes");
 }
 
 TEST_CASE("export asset inspection recovers identical staged copies without writing",
@@ -282,25 +275,23 @@ TEST_CASE("export asset inspection recovers identical staged copies without writ
                                                         .relative_output_path =
                                                             "exports/chart.bmson",
                                                         .asset = wormedit::asset_id_t{12}};
-    const auto absent = wormedit::inspect_export_asset_copy(request);
-    CHECK(absent.status == wormedit::project_asset_copy_status_t::not_staged);
+    const auto absent = wormedit::inspect_export_asset_file(request);
+    require_copy_failure(absent, wormedit::failure_code_t::not_found);
     CHECK_FALSE(std::filesystem::exists(directory.path / "exports"));
-    const auto copied = wormedit::copy_resource_file_into_export(request);
+    const auto copied = wormedit::create_export_asset_copy(request);
     REQUIRE(copied);
-    const auto recovered = wormedit::inspect_export_asset_copy(request);
-    CHECK(recovered.status == wormedit::project_asset_copy_status_t::reused);
-    CHECK(recovered.relative_path == copied.relative_path);
+    const auto recovered = wormedit::inspect_export_asset_file(request);
+    require_copy_status(recovered, wormedit::project_asset_copy_phase_t::reused);
+    CHECK(recovered->relative_path == copied->relative_path);
     write_text(directory.path / "kick.wav", "different bytes");
-    CHECK(wormedit::inspect_export_asset_copy(request).status ==
-          wormedit::project_asset_copy_status_t::destination_collision);
-    CHECK(read_text(copied.absolute_path) == "audio bytes");
+    require_copy_failure(wormedit::inspect_export_asset_file(request), wormedit::failure_code_t::conflict);
+    CHECK(read_text(copied->absolute_path) == "audio bytes");
     std::error_code error;
-    std::filesystem::remove(copied.absolute_path, error);
+    std::filesystem::remove(copied->absolute_path, error);
     REQUIRE_FALSE(error);
-    std::filesystem::create_symlink(directory.path / "kick.wav", copied.absolute_path, error);
+    std::filesystem::create_symlink(directory.path / "kick.wav", copied->absolute_path, error);
     if (!error)
-        CHECK(wormedit::inspect_export_asset_copy(request).status ==
-              wormedit::project_asset_copy_status_t::destination_collision);
+        require_copy_failure(wormedit::inspect_export_asset_file(request), wormedit::failure_code_t::conflict);
 }
 
 TEST_CASE("export asset validation rejects a temporary before publication",
@@ -314,8 +305,7 @@ TEST_CASE("export asset validation rejects a temporary before publication",
         .relative_output_path = "exports/chart.bmson",
         .asset = wormedit::asset_id_t{19},
         .validate_temporary = [](const auto&) { return false; }};
-    CHECK(wormedit::copy_resource_file_into_export(request).status ==
-          wormedit::project_asset_copy_status_t::validation_failed);
+    require_copy_failure(wormedit::create_export_asset_copy(request), wormedit::failure_code_t::invalid_data);
     CHECK_FALSE(std::filesystem::exists(directory.path / "exports/assets/19-music.ogg"));
     CHECK(std::filesystem::is_empty(directory.path / "exports/assets"));
 }
@@ -329,19 +319,16 @@ TEST_CASE("export asset copy rejects traversal and symlinked output directories"
                                                   .relative_output_path = "exports/chart.bms",
                                                   .asset = wormedit::asset_id_t{5}};
     request.relative_output_path = "../outside/chart.bms";
-    CHECK(wormedit::copy_resource_file_into_export(request).status ==
-          wormedit::project_asset_copy_status_t::invalid_request);
+    require_copy_failure(wormedit::create_export_asset_copy(request), wormedit::failure_code_t::invalid_request);
     request.relative_output_path = directory.path / "outside/chart.bms";
-    CHECK(wormedit::copy_resource_file_into_export(request).status ==
-          wormedit::project_asset_copy_status_t::invalid_request);
+    require_copy_failure(wormedit::create_export_asset_copy(request), wormedit::failure_code_t::invalid_request);
     request.relative_output_path = "exports/chart.bms";
     std::filesystem::create_directory(directory.path / "actual");
     std::error_code error;
     std::filesystem::create_directory_symlink(directory.path / "actual", directory.path / "exports",
                                               error);
     if (!error) {
-        CHECK(wormedit::copy_resource_file_into_export(request).status ==
-              wormedit::project_asset_copy_status_t::invalid_request);
+        require_copy_failure(wormedit::create_export_asset_copy(request), wormedit::failure_code_t::invalid_request);
         CHECK_FALSE(std::filesystem::exists(directory.path / "actual/assets/5-kick.wav"));
     }
 }
@@ -355,11 +342,11 @@ TEST_CASE("export asset copy accepts an output group directory path", "[unit][co
                                                         .asset = wormedit::asset_id_t{5}};
     CHECK(wormedit::export_asset_directory(request.relative_output_path) ==
           std::filesystem::path{"charts/assets"});
-    const auto copied = wormedit::copy_resource_file_into_export(request);
+    const auto copied = wormedit::create_export_asset_copy(request);
     REQUIRE(copied);
-    CHECK(copied.relative_path == std::filesystem::path{"charts/assets/5-kick.wav"});
+    CHECK(copied->relative_path == std::filesystem::path{"charts/assets/5-kick.wav"});
     CHECK(
-        wormedit::export_asset_reference_path(request.relative_output_path, copied.relative_path) ==
+        wormedit::export_asset_reference_path(request.relative_output_path, copied->relative_path) ==
         std::filesystem::path{"assets/5-kick.wav"});
-    CHECK(read_text(copied.absolute_path) == "source data");
+    CHECK(read_text(copied->absolute_path) == "source data");
 }

@@ -9,12 +9,12 @@
 namespace wormedit::sys {
 
 namespace {
-auto copy_failure_severity(wormedit::project_asset_copy_status_t status)
+auto copy_failure_severity(wormedit::failure_code_t status)
     -> wormedit::notification_severity_t {
     using namespace wormedit;
-    if (status == project_asset_copy_status_t::cancelled)
+    if (status == failure_code_t::cancelled)
         return notification_severity_t::info;
-    if (status == project_asset_copy_status_t::destination_collision)
+    if (status == failure_code_t::conflict)
         return notification_severity_t::warning;
     return notification_severity_t::error;
 }
@@ -74,7 +74,7 @@ auto complete_project_resource_copy(const resource_copy_identity_t& request,
         !rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty))
         return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
                 true, notification_source_t::document};
-    return {copied.status == project_asset_copy_status_t::reused
+    return {copied.status == project_asset_copy_phase_t::reused
                 ? "Existing project copy linked to the resource."
                 : "Resource copied into the project and linked.",
             notification_severity_t::success};
@@ -92,7 +92,7 @@ auto complete_resource_copy(const resource_copy_identity_t& request,
     if (!reference)
         return {"Export copy finished, but its chart-relative path is invalid.",
                 notification_severity_t::warning};
-    return {copied.status == project_asset_copy_status_t::reused
+    return {copied.status == project_asset_copy_phase_t::reused
                 ? "Identical export resource is available; export will verify it."
                 : "Resource copied into the export folder; export will verify it.",
             notification_severity_t::success};

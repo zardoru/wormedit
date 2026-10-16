@@ -123,7 +123,7 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
                            const std::filesystem::path& relative_directory,
                            const project_asset_copy_receipt_t& copy) -> bool {
     namespace fs = std::filesystem;
-    if (copy.status != project_asset_copy_status_t::copied || !copy.published_identity ||
+    if (copy.status != project_asset_copy_phase_t::copied || !copy.published_identity ||
         !request.project_directory.is_absolute() || !is_valid_relative(relative_directory) ||
         request.source_path.filename().empty())
         return false;
@@ -181,24 +181,24 @@ auto write_chunk(copy_output_handle_t output, const char* data, std::size_t size
 
 auto write_flushed(const std::filesystem::path& path, const std::filesystem::path& source,
                    std::uintmax_t maximum_bytes, std::stop_token stop)
-    -> project_asset_copy_status_t {
+    -> std::optional<failure_code_t> {
     std::ifstream input(source, std::ios::binary);
     if (!input) {
-        return project_asset_copy_status_t::source_unavailable;
+        return failure_code_t::unavailable;
     }
 #if defined(_WIN32)
     HANDLE output = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW,
                                 FILE_ATTRIBUTE_NORMAL, nullptr);
     if (output == INVALID_HANDLE_VALUE) {
-        return project_asset_copy_status_t::io_error;
+        return failure_code_t::io_failed;
     }
 #else
     const int output = ::open(path.c_str(), O_WRONLY | O_CREAT | O_EXCL, 0600);
     if (output < 0) {
-        return project_asset_copy_status_t::io_error;
+        return failure_code_t::io_failed;
     }
 #endif
-    auto status = project_asset_copy_status_t::copied;
+    std::optional<failure_code_t> status;
     std::uintmax_t written = 0;
     std::array<char, 64 * 1024> buffer{};
     while (!stop.stop_requested()) {
@@ -206,11 +206,11 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
         const auto count = input.gcount();
         if (count > 0) {
             if (written + static_cast<std::uintmax_t>(count) > maximum_bytes) {
-                status = project_asset_copy_status_t::invalid_request;
+                status = failure_code_t::invalid_request;
                 break;
             }
             if (!write_chunk(output, buffer.data(), static_cast<std::size_t>(count))) {
-                status = project_asset_copy_status_t::io_error;
+                status = failure_code_t::io_failed;
                 break;
             }
             written += static_cast<std::uintmax_t>(count);
@@ -219,31 +219,31 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
             break;
         }
         if (input.bad() || input.fail()) {
-            status = project_asset_copy_status_t::io_error;
+            status = failure_code_t::io_failed;
             break;
         }
     }
     if (stop.stop_requested()) {
-        status = project_asset_copy_status_t::cancelled;
+        status = failure_code_t::cancelled;
     }
-    if (status == project_asset_copy_status_t::copied) {
+    if (!status) {
 #if defined(_WIN32)
         if (!FlushFileBuffers(output)) {
-            status = project_asset_copy_status_t::io_error;
+            status = failure_code_t::io_failed;
         }
 #else
         if (::fsync(output) != 0) {
-            status = project_asset_copy_status_t::io_error;
+            status = failure_code_t::io_failed;
         }
 #endif
     }
 #if defined(_WIN32)
     if (!CloseHandle(output)) {
-        status = project_asset_copy_status_t::io_error;
+        status = failure_code_t::io_failed;
     }
 #else
     if (::close(output) != 0) {
-        status = project_asset_copy_status_t::io_error;
+        status = failure_code_t::io_failed;
     }
 #endif
     return status;
@@ -252,7 +252,7 @@ auto write_flushed(const std::filesystem::path& path, const std::filesystem::pat
 auto prepare_copy_directory(const std::filesystem::path& project_directory,
                             const std::filesystem::path& relative_directory, bool inspect_only,
                             std::filesystem::path& directory)
-    -> result_t<void, error_t<project_asset_copy_status_t>> {
+    -> result_t<void, error_t<failure_code_t>> {
     namespace fs = std::filesystem;
     std::error_code error;
     directory = project_directory;
@@ -264,24 +264,24 @@ auto prepare_copy_directory(const std::filesystem::path& project_directory,
             error.clear();
             if (inspect_only) {
                 return std::unexpected(
-                    error_t<project_asset_copy_status_t>{project_asset_copy_status_t::not_staged,
+                    error_t<failure_code_t>{failure_code_t::not_found,
                                                          "Asset copy destination is available."});
             }
             if (!fs::create_directory(directory, error) && error) {
-                return std::unexpected(error_t<project_asset_copy_status_t>{
-                    project_asset_copy_status_t::io_error,
+                return std::unexpected(error_t<failure_code_t>{
+                    failure_code_t::io_failed,
                     "Could not create the asset destination directory."});
             }
             error.clear();
             const auto created = fs::symlink_status(directory, error);
             if (error || fs::is_symlink(created) || !fs::is_directory(created)) {
-                return std::unexpected(error_t<project_asset_copy_status_t>{
-                    project_asset_copy_status_t::invalid_request,
+                return std::unexpected(error_t<failure_code_t>{
+                    failure_code_t::invalid_request,
                     "Asset destination directory changed during creation."});
             }
         } else if (error || fs::is_symlink(status) || !fs::is_directory(status)) {
-            return std::unexpected(error_t<project_asset_copy_status_t>{
-                project_asset_copy_status_t::invalid_request,
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::invalid_request,
                 "Asset destination contains a symlink or non-directory component."});
         }
     }
@@ -306,20 +306,20 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
          std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
     std::error_code error;
     const auto copied = write_flushed(temporary, location.source, request.maximum_bytes, stop);
-    if (copied != project_asset_copy_status_t::copied || stop.stop_requested() ||
+    if (copied.has_value() || stop.stop_requested() ||
         !file_bytes_equal(location.source, temporary, stop)) {
         fs::remove(temporary, error);
-        const auto status = stop.stop_requested() ? project_asset_copy_status_t::cancelled
-                            : copied != project_asset_copy_status_t::copied
-                                ? copied
-                                : project_asset_copy_status_t::source_unavailable;
-        return std::unexpected(error_t<project_asset_copy_status_t>{
+        const auto status = stop.stop_requested() ? failure_code_t::cancelled
+                            : copied.has_value()
+                                ? *copied
+                                : failure_code_t::unavailable;
+        return std::unexpected(error_t<failure_code_t>{
             status, "Source changed, copy failed, or copy was cancelled."});
     }
     if (stop.stop_requested()) {
         fs::remove(temporary, error);
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::cancelled, "Copy cancelled."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::cancelled, "Copy cancelled."});
     }
     if (request.validate_temporary) {
         bool valid{};
@@ -330,15 +330,15 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
         }
         if (!valid) {
             fs::remove(temporary, error);
-            return std::unexpected(error_t<project_asset_copy_status_t>{
-                project_asset_copy_status_t::validation_failed,
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::invalid_data,
                 "Copied asset failed validation before publication."});
         }
     }
     if (stop.stop_requested()) {
         fs::remove(temporary, error);
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::cancelled, "Copy cancelled."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::cancelled, "Copy cancelled."});
     }
 #if defined(_WIN32)
     const auto installed =
@@ -353,12 +353,12 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
             fs::is_regular_file(destination_status) &&
             file_bytes_equal(location.source, location.destination, stop)) {
             return project_asset_copy_receipt_t::from(location.relative, location.destination,
-                                                      project_asset_copy_status_t::reused);
+                                                      project_asset_copy_phase_t::reused);
         }
-        return std::unexpected(error_t<project_asset_copy_status_t>{
+        return std::unexpected(error_t<failure_code_t>{
             fs::exists(location.destination, error)
-                ? project_asset_copy_status_t::destination_collision
-                : project_asset_copy_status_t::io_error,
+                ? failure_code_t::conflict
+                : failure_code_t::io_failed,
             "Could not publish the project asset without overwriting a file."});
     }
 #if !defined(_WIN32)
@@ -369,19 +369,19 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
     }
 #endif
     return project_asset_copy_receipt_t::from(location.relative, location.destination,
-                                              project_asset_copy_status_t::copied);
+                                              project_asset_copy_phase_t::copied);
 }
 
 } // namespace
 
 auto project_asset_copy_receipt_t::from(const std::filesystem::path& relative_path,
                                         const std::filesystem::path& absolute_path,
-                                        project_asset_copy_status_t status)
+                                        project_asset_copy_phase_t status)
     -> project_asset_copy_receipt_t {
     return {.status = status,
             .relative_path = relative_path,
             .absolute_path = absolute_path,
-            .published_identity = status == project_asset_copy_status_t::copied
+            .published_identity = status == project_asset_copy_phase_t::copied
                                       ? wormedit::published_identity(absolute_path)
                                       : std::nullopt};
 }
@@ -394,14 +394,14 @@ static auto copy_resource_file_to_relative_directory(
         request.maximum_bytes == 0 ||
         (!request.source_path.is_absolute() && !is_valid_relative(request.source_path)) ||
         !is_valid_relative(relative_directory)) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Asset, project directory, or source path is invalid."});
     }
     const auto filename = request.source_path.filename();
     if (filename.empty() || filename == "." || filename == "..") {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request, "Source has no filename."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, "Source has no filename."});
     }
     const auto source = request.source_path.is_absolute()
                             ? request.source_path
@@ -409,18 +409,18 @@ static auto copy_resource_file_to_relative_directory(
     std::error_code error;
     const auto root_status = fs::symlink_status(request.project_directory, error);
     if (error || fs::is_symlink(root_status) || !fs::is_directory(root_status)) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Project directory is unavailable or is a symlink."});
     }
     if (!fs::is_regular_file(source, error) || error) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::source_unavailable, "Source file is unavailable."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::unavailable, "Source file is unavailable."});
     }
     const auto size = fs::file_size(source, error);
     if (error || size > request.maximum_bytes) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Source file exceeds the copy limit or cannot be measured."});
     }
     std::filesystem::path directory;
@@ -434,29 +434,29 @@ static auto copy_resource_file_to_relative_directory(
     const copy_location_t location{source, directory, relative,
                                    request.project_directory / relative};
     if (stop.stop_requested()) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::cancelled, "Copy cancelled."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::cancelled, "Copy cancelled."});
     }
     const auto destination_status = fs::symlink_status(location.destination, error);
     if (!error) {
         if (!fs::is_symlink(destination_status) && fs::is_regular_file(destination_status) &&
             file_bytes_equal(source, location.destination, stop)) {
             return project_asset_copy_receipt_t::from(location.relative, location.destination,
-                                                      project_asset_copy_status_t::reused);
+                                                      project_asset_copy_phase_t::reused);
         }
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            stop.stop_requested() ? project_asset_copy_status_t::cancelled
-                                  : project_asset_copy_status_t::destination_collision,
+        return std::unexpected(error_t<failure_code_t>{
+            stop.stop_requested() ? failure_code_t::cancelled
+                                  : failure_code_t::conflict,
             "Asset destination filename already contains different data."});
     }
     if (error != std::errc::no_such_file_or_directory) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::io_error, "Could not inspect the asset destination."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed, "Could not inspect the asset destination."});
     }
     error.clear();
     if (inspect_only)
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::not_staged, "Asset copy destination is available."});
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::not_found, "Asset copy destination is available."});
     return publish_copy(request, location, stop);
 }
 
@@ -495,8 +495,8 @@ auto create_export_asset_copy(const export_asset_copy_request_t& request, std::s
     -> project_asset_copy_outcome_t {
     const auto directory = export_asset_directory(request.relative_output_path);
     if (!directory) {
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Export output path must be a project-relative file or directory."});
     }
     const project_asset_copy_request_t copy{.project_directory = request.project_directory,
@@ -511,49 +511,14 @@ auto inspect_export_asset_file(const export_asset_copy_request_t& request, std::
     -> project_asset_copy_outcome_t {
     const auto directory = export_asset_directory(request.relative_output_path);
     if (!directory)
-        return std::unexpected(error_t<project_asset_copy_status_t>{
-            project_asset_copy_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
             "Export output path must be a project-relative file or directory."});
     const project_asset_copy_request_t inspect{.project_directory = request.project_directory,
                                                .source_path = request.source_path,
                                                .asset = request.asset,
                                                .maximum_bytes = request.maximum_bytes};
     return copy_resource_file_to_relative_directory(inspect, *directory, stop, true);
-}
-
-auto project_asset_copy_result_t::from(project_asset_copy_outcome_t&& outcome)
-    -> project_asset_copy_result_t {
-    if (!outcome)
-        return {.status = outcome.error().code,
-                .relative_path = {},
-                .absolute_path = {},
-                .message = std::move(outcome.error().message),
-                .published_identity = std::nullopt};
-    return {.status = outcome->status,
-            .relative_path = std::move(outcome->relative_path),
-            .absolute_path = std::move(outcome->absolute_path),
-            .message = {},
-            .published_identity = std::move(outcome->published_identity)};
-}
-
-auto copy_resource_file_into_project(const project_asset_copy_request_t& request,
-                                     std::stop_token stop) -> project_asset_copy_result_t {
-    return project_asset_copy_result_t::from(create_project_asset_copy(request, stop));
-}
-
-auto inspect_project_asset_copy(const project_asset_copy_request_t& request, std::stop_token stop)
-    -> project_asset_copy_result_t {
-    return project_asset_copy_result_t::from(inspect_project_asset_file(request, stop));
-}
-
-auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
-                                    std::stop_token stop) -> project_asset_copy_result_t {
-    return project_asset_copy_result_t::from(create_export_asset_copy(request, stop));
-}
-
-auto inspect_export_asset_copy(const export_asset_copy_request_t& request, std::stop_token stop)
-    -> project_asset_copy_result_t {
-    return project_asset_copy_result_t::from(inspect_export_asset_file(request, stop));
 }
 
 auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,

@@ -85,7 +85,7 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
     const auto absent = wormedit::discover_staged_export_assets(song, group, temporary.path);
     REQUIRE(absent);
     CHECK(absent.mappings.empty());
-    const auto copied = wormedit::copy_resource_file_into_export(
+    const auto copied = wormedit::create_export_asset_copy(
         {.project_directory = temporary.path,
          .source_path = "tone.wav",
          .relative_output_path = group.relative_output_path,
@@ -96,7 +96,7 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
     REQUIRE(recovered.mappings.size() == 1);
     CHECK(recovered.mappings.front().asset == wormedit::asset_id_t{5});
     CHECK(recovered.mappings.front().relative_path == "assets/5-tone.wav");
-    REQUIRE(wormedit::copy_resource_file_into_export(
+    REQUIRE(wormedit::create_export_asset_copy(
         {.project_directory = temporary.path,
          .source_path = "bgm.wav",
          .relative_output_path = group.relative_output_path,
@@ -125,7 +125,7 @@ TEST_CASE("StepMania output discovery maps a staged music file beside the chart"
     const wormedit::output_group_t group{.family = wormedit::format_family_t::stepmania,
                                          .charts = {wormedit::chart_id_t{1}},
                                          .relative_output_path = "ssc"};
-    REQUIRE(wormedit::copy_resource_file_into_export(
+    REQUIRE(wormedit::create_export_asset_copy(
         {.project_directory = temporary.path,
          .source_path = "music.ogg",
          .relative_output_path = group.relative_output_path,
@@ -145,7 +145,7 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
         wormedit::song_id_t{112}, music, "Title", "Artist", 7);
     REQUIRE(document);
     for (const auto& group : document->output_groups) {
-        const auto copied = wormedit::copy_resource_file_into_export(
+        const auto copied = wormedit::create_export_asset_copy(
             {.project_directory = temporary.path,
              .source_path = music,
              .relative_output_path = group.relative_output_path,
@@ -176,7 +176,7 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
         REQUIRE(published.published);
         CHECK(std::filesystem::exists(
             temporary.path / group.relative_output_path / converted.outputs.front().suggested_filename));
-        CHECK(std::filesystem::exists(temporary.path / copied.relative_path));
+        CHECK(std::filesystem::exists(temporary.path / copied->relative_path));
     }
 }
 

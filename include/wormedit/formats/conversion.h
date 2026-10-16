@@ -57,7 +57,7 @@ struct conversion_request_t {
     struct staged_asset_t {
         asset_id_t asset;
         // Path relative to the output chart's directory, after a successful
-        // copy_resource_file_into_export publication.
+        // create_export_asset_copy publication.
         std::filesystem::path relative_path;
         auto operator==(const staged_asset_t&) const -> bool = default;
     };

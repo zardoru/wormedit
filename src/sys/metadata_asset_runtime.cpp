@@ -25,8 +25,8 @@ namespace {
 
 struct metadata_asset_import_task_result_t {
     wormedit::project_asset_copy_outcome_t copy{std::unexpected(
-        wormedit::error_t<wormedit::project_asset_copy_status_t>{
-            wormedit::project_asset_copy_status_t::invalid_request, {}})};
+        wormedit::error_t<wormedit::failure_code_t>{
+            wormedit::failure_code_t::invalid_request, {}})};
     std::optional<wormedit::audio_stream_info_t> stream;
     std::string decode_error;
 };
@@ -176,9 +176,9 @@ auto failed_import_feedback(const wormedit::task_outcome_t& completed,
     }
     if (!imported->copy) {
         const auto status = imported->copy.error().code;
-        const auto severity = status == project_asset_copy_status_t::cancelled
+        const auto severity = status == failure_code_t::cancelled
                                   ? notification_severity_t::info
-                              : status == project_asset_copy_status_t::destination_collision
+                              : status == failure_code_t::conflict
                                   ? notification_severity_t::warning
                                   : notification_severity_t::error;
         return metadata_import_feedback_t{
@@ -232,21 +232,22 @@ auto copy_preview_feedback(const metadata_copy_inspection_job_t::completion_t& c
                     : notification_severity_t::error};
     }
     const auto& inspected = completed->payload;
-    using copy_status_t = project_asset_copy_status_t;
-    const auto status = inspected->has_value() ? (*inspected)->status : inspected->error().code;
-    const auto severity = status == copy_status_t::destination_collision
+    const auto failure = inspected->has_value() ? std::nullopt
+                                                : std::optional{inspected->error().code};
+    const bool is_reused = inspected->has_value() &&
+                           (*inspected)->status == project_asset_copy_phase_t::reused;
+    const auto severity = failure == failure_code_t::conflict
                               ? notification_severity_t::warning
-                          : status == copy_status_t::not_staged ||
-                                    status == copy_status_t::reused ||
-                                    status == copy_status_t::cancelled
+                          : failure == failure_code_t::not_found || is_reused ||
+                                    failure == failure_code_t::cancelled
                               ? notification_severity_t::info
                               : notification_severity_t::error;
     auto message = inspected->has_value() ? std::string{} : inspected->error().message;
-    if (status == copy_status_t::not_staged)
+    if (failure == failure_code_t::not_found)
         message = "Destination is free; copy will create it.";
-    else if (status == copy_status_t::reused)
+    else if (is_reused)
         message = "Identical file exists; copy will reuse it.";
-    else if (status == copy_status_t::destination_collision)
+    else if (failure == failure_code_t::conflict)
         message = "Different file occupies destination; copy will preserve it.";
     else if (message.empty())
         message = "Copy destination cannot be used.";
@@ -269,7 +270,7 @@ auto process_pending_metadata_asset_import(
         wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
     auto feedback = complete_import_feedback(request, *completed, imported, history, workspace);
     if (imported && imported->copy && imported->copy->status ==
-                        wormedit::project_asset_copy_status_t::copied &&
+                        wormedit::project_asset_copy_phase_t::copied &&
         !feedback.linked) {
         const wormedit::project_asset_copy_request_t copy_request{
             .project_directory = asset_base,
@@ -385,7 +386,7 @@ auto copy_and_decode_metadata_audio(const wormedit::project_asset_copy_request_t
         if (!completed->stream && completed->decode_error.empty())
             completed->decode_error = "Published audio has invalid stream geometry.";
     }
-    if (stop.stop_requested() && completed->copy && completed->copy->status == project_asset_copy_status_t::copied) {
+    if (stop.stop_requested() && completed->copy && completed->copy->status == project_asset_copy_phase_t::copied) {
         if (export_copy)
             (void)discard_unlinked_export_asset_copy(
                 {.project_directory = copy_request.project_directory,
@@ -598,7 +599,7 @@ void metadata_asset_t::cleanup(const std::filesystem::path& asset_base) {
             const auto imported =
                 wormedit::task_value_cast<metadata_asset_import_task_result_t>(*completed);
             if (imported && imported->copy && imported->copy->status ==
-                                wormedit::project_asset_copy_status_t::copied) {
+                                wormedit::project_asset_copy_phase_t::copied) {
                 const auto& request = *impl_->pending_import;
                 if (request.export_copy)
                     (void)wormedit::discard_unlinked_export_asset_copy(

@@ -12,17 +12,7 @@
 
 namespace wormedit {
 
-enum class project_asset_copy_status_t {
-    copied,
-    reused,
-    not_staged,
-    invalid_request,
-    source_unavailable,
-    destination_collision,
-    io_error,
-    validation_failed,
-    cancelled,
-};
+enum class project_asset_copy_phase_t { copied, reused };
 
 struct project_asset_copy_request_t {
     std::filesystem::path project_directory;
@@ -60,7 +50,7 @@ export_asset_reference_path(const std::filesystem::path& relative_output_path,
 struct project_asset_copy_receipt_t {
     [[nodiscard]] static auto from(const std::filesystem::path& relative_path,
                                    const std::filesystem::path& absolute_path,
-                                   project_asset_copy_status_t status)
+                                   project_asset_copy_phase_t status)
         -> project_asset_copy_receipt_t;
 
     struct published_identity_t {
@@ -70,44 +60,44 @@ struct project_asset_copy_receipt_t {
         std::filesystem::file_time_type modified{};
         auto operator==(const published_identity_t&) const -> bool = default;
     };
-    project_asset_copy_status_t status{project_asset_copy_status_t::copied};
+    project_asset_copy_phase_t status{project_asset_copy_phase_t::copied};
     std::filesystem::path relative_path;
     std::filesystem::path absolute_path;
     std::optional<published_identity_t> published_identity;
     auto operator==(const project_asset_copy_receipt_t&) const -> bool = default;
 };
 using project_asset_copy_outcome_t =
-    result_t<project_asset_copy_receipt_t, error_t<project_asset_copy_status_t>>;
+    result_t<project_asset_copy_receipt_t, error_t<failure_code_t>>;
 
+// Publishes a byte-identical copy under project_directory/assets with a
+// deterministic asset-ID-prefixed filename. A same-directory temporary is
+// flushed and atomically installed without replacing an existing destination.
+// Existing identical files are reused; differing files reject. The caller
+// commits the returned relative path through apply_resource_asset_relink.
 [[nodiscard]] auto create_project_asset_copy(const project_asset_copy_request_t& request,
                                              std::stop_token stop = {})
     -> project_asset_copy_outcome_t;
+
+// Read-only check for a project asset destination. A missing directory or
+// destination returns not_found; identical bytes return reused; differing
+// bytes or unsafe path components reject without creating files.
 [[nodiscard]] auto inspect_project_asset_file(const project_asset_copy_request_t& request,
                                               std::stop_token stop = {})
     -> project_asset_copy_outcome_t;
+
+// Stages a resource beside one output group's chart under its assets folder.
+// The result's relative path is project-relative. No document reference is
+// changed; the exporter may use the path relative to the output directory.
 [[nodiscard]] auto create_export_asset_copy(const export_asset_copy_request_t& request,
                                             std::stop_token stop = {})
     -> project_asset_copy_outcome_t;
+
+// Read-only check for the deterministic export copy. Returns reused with its
+// path only when source and staged bytes still match; missing destinations
+// return not_found and no directories or files are created.
 [[nodiscard]] auto inspect_export_asset_file(const export_asset_copy_request_t& request,
                                              std::stop_token stop = {})
     -> project_asset_copy_outcome_t;
-
-struct project_asset_copy_result_t {
-    [[nodiscard]] static auto from(project_asset_copy_outcome_t&& outcome)
-        -> project_asset_copy_result_t;
-
-    using published_identity_t = project_asset_copy_receipt_t::published_identity_t;
-    project_asset_copy_status_t status{project_asset_copy_status_t::invalid_request};
-    std::filesystem::path relative_path;
-    std::filesystem::path absolute_path;
-    std::string message;
-    // Filled only for a newly published file; used to discard an unlinked import safely.
-    std::optional<published_identity_t> published_identity;
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return status == project_asset_copy_status_t::copied ||
-               status == project_asset_copy_status_t::reused;
-    }
-};
 
 // Discards a newly published, still byte-identical copy when an import cannot
 // be linked. Returns false and leaves the file alone if ownership is uncertain.
@@ -117,35 +107,5 @@ struct project_asset_copy_result_t {
 [[nodiscard]] auto discard_unlinked_export_asset_copy(const export_asset_copy_request_t& request,
                                                       const project_asset_copy_receipt_t& copy)
     -> bool;
-
-// Publishes a byte-identical copy under project_directory/assets with a
-// deterministic asset-ID-prefixed filename. A same-directory temporary is
-// flushed and atomically installed without replacing an existing destination.
-// Existing identical files are reused; differing files reject. The caller
-// commits the returned relative path through apply_resource_asset_relink.
-[[nodiscard]] auto copy_resource_file_into_project(const project_asset_copy_request_t& request,
-                                                   std::stop_token stop = {})
-    -> project_asset_copy_result_t;
-
-// Read-only check for a project asset destination. A missing directory or
-// destination returns not_staged; identical bytes return reused; differing
-// bytes or unsafe path components reject without creating files.
-[[nodiscard]] auto inspect_project_asset_copy(const project_asset_copy_request_t& request,
-                                              std::stop_token stop = {})
-    -> project_asset_copy_result_t;
-
-// Stages a resource beside one output group's chart under its assets folder.
-// The result's relative path is project-relative. No document reference is
-// changed; the exporter may use the path relative to the output directory.
-[[nodiscard]] auto copy_resource_file_into_export(const export_asset_copy_request_t& request,
-                                                  std::stop_token stop = {})
-    -> project_asset_copy_result_t;
-
-// Read-only check for the deterministic export copy. Returns reused with its
-// path only when source and staged bytes still match; missing destinations
-// return not_staged and no directories or files are created.
-[[nodiscard]] auto inspect_export_asset_copy(const export_asset_copy_request_t& request,
-                                             std::stop_token stop = {})
-    -> project_asset_copy_result_t;
 
 } // namespace wormedit

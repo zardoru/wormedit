@@ -194,12 +194,12 @@ auto append_discovered_asset(const song_document_t& song, const output_group_t& 
     if ((audio == nullptr) == (visual == song.visual_assets.end()))
         return std::unexpected(std::string{"A resource has no unique source asset."});
     const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
-    const auto inspected = inspect_export_asset_copy({.project_directory = project_directory,
+    const auto inspected = inspect_export_asset_file({.project_directory = project_directory,
         .source_path = source, .relative_output_path = group.relative_output_path, .asset = asset}, stop);
-    if (inspected.status == project_asset_copy_status_t::not_staged) return {};
-    if (inspected.status != project_asset_copy_status_t::reused)
-        return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + ": " + inspected.message});
-    const auto relative = export_asset_reference_path(group.relative_output_path, inspected.relative_path);
+    if (!inspected && inspected.error().code == failure_code_t::not_found) return {};
+    if (!inspected)
+        return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + ": " + inspected.error().message});
+    const auto relative = export_asset_reference_path(group.relative_output_path, inspected->relative_path);
     if (!relative)
         return std::unexpected(std::string{"Verified export asset has an invalid chart-relative path."});
     mappings.push_back({asset, *relative});

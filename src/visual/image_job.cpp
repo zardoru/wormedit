@@ -26,14 +26,16 @@ auto append_within_result_limit(image_job_result_t& result, const resolved_visua
     -> void {
     const auto bytes = image->pixels.size();
     if (bytes > maximum_result_bytes || result_bytes > maximum_result_bytes - bytes) {
-        result.items.push_back(image_job_item_value_t::from(
-            source, image_status_t::byte_limit_exceeded, {},
-            "decoded image batch exceeds the configured byte limit"));
+        result.items.push_back(std::unexpected(image_job_item_outcome_t::error_type{
+            .context = source,
+            .payload = {},
+            .cause = {failure_code_t::capacity_exceeded,
+                      "decoded image batch exceeds the configured byte limit"}}));
         return;
     }
     result_bytes += bytes;
     result.items.push_back(image_job_item_value_t::from(
-        source, image_status_t::ready, std::move(image)));
+        source, std::move(image)));
 }
 
 auto decode_images(const image_request_t& request, std::stop_token stop)
@@ -59,8 +61,8 @@ auto decode_images(const image_request_t& request, std::stop_token stop)
         }
         auto decoded = open_image_rgba(source, options.decode_limits);
         if (!decoded) {
-            result.items.push_back(image_job_item_value_t::from(
-                source, decoded.error().code, {}, std::move(decoded.error().message)));
+            result.items.push_back(std::unexpected(image_job_item_outcome_t::error_type{
+                .context = source, .payload = {}, .cause = std::move(decoded.error())}));
             continue;
         }
         if (stop.stop_requested()) {

@@ -58,7 +58,7 @@ auto has_bounded_decode_error() -> bool {
     const auto is_expected = error.context.identity.project == song_id_t{9} &&
                              error.context.identity.document_revision == 8 &&
                              error.context.source.resource == item.resource && error.context.clock.event == object_id_t{30} &&
-                             error.cause.code == video_frame_status_t::byte_limit_exceeded && !error.payload &&
+                             error.cause.code == failure_code_t::capacity_exceeded && !error.payload &&
                              !error.cause.message.empty();
     return is_expected && cache.size() == 0;
 }
@@ -135,7 +135,7 @@ TEST_CASE("video jobs and decoder reject invalid bounded or cancelled requests",
     cancelled.request_stop();
     const auto decoded = decode_video_frame_rgba(item, clock(item.resource, 0), {}, cancelled.get_token());
     REQUIRE_FALSE(decoded.has_value());
-    CHECK(decoded.error().code == video_frame_status_t::cancelled);
+    CHECK(decoded.error().code == failure_code_t::cancelled);
 }
 
 TEST_CASE("completed video worker preserves bounded decode failure identity",

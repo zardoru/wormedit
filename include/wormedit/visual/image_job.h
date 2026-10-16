@@ -58,9 +58,9 @@ struct image_job_options_t {
 };
 
 
-using image_job_item_value_t = visual_job_value_t<resolved_visual_asset_t, rgba_image_t, image_status_t>;
+using image_job_item_value_t = visual_job_value_t<resolved_visual_asset_t, rgba_image_t>;
 using image_job_item_outcome_t = result_t<image_job_item_value_t,
-    visual_job_error_t<resolved_visual_asset_t, rgba_image_t, image_status_t>>;
+    visual_job_error_t<resolved_visual_asset_t, rgba_image_t>>;
 
 struct image_job_result_t {
     // A failed first match has no publishable image, even if a later item repeats its resource.

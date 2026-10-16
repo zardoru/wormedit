@@ -2,14 +2,52 @@
 
 #include <wormedit/core/diagnostic.h>
 
-#include <expected>
 #include <concepts>
+#include <cstdint>
+#include <expected>
 #include <optional>
 #include <string>
 
 namespace wormedit {
 
 template <class T, class E> using result_t = std::expected<T, E>;
+
+// Failures share a vocabulary; success and lifecycle states stay with their owner.
+enum class failure_code_t : std::uint8_t {
+    invalid_request,
+    capacity_exceeded,
+    stale_generation,
+    cancelled,
+    decode_failed,
+    not_started,
+    not_ready,
+    unavailable,
+    not_found,
+    io_failed,
+    unsupported,
+    invalid_data,
+    invalid_geometry,
+    arithmetic_overflow,
+    out_of_memory,
+    dependency_failed,
+    task_failed,
+    task_threw,
+    scheduler_stopped,
+    invalid_state,
+    conflict,
+    allocation_failed,
+    publication_failed,
+    seek_failed,
+    underrun,
+    device_failed,
+    render_failed,
+    pump_failed,
+    session_failed,
+    transport_failed,
+    materialize_failed,
+    prime_failed,
+    resolve_failed,
+};
 
 template <class Code> struct error_t {
     Code code;

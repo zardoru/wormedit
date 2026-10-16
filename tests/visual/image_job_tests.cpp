@@ -17,7 +17,7 @@ namespace {
 using namespace wormedit;
 using namespace wormedit::visual;
 
-auto has_item_error(const image_job_item_outcome_t& item, image_status_t status,
+auto has_item_error(const image_job_item_outcome_t& item, failure_code_t status,
                     const resolved_visual_asset_t& requested) -> bool {
     return !item && item.error().cause.code == status && !item.error().cause.message.empty() &&
            item.error().context.resource == requested.resource &&
@@ -140,8 +140,8 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
     REQUIRE(completion);
     REQUIRE(*completion);
     REQUIRE(completion->value().payload->items.size() == 2);
-    CHECK(has_item_error(completion->value().payload->items[0], image_status_t::byte_limit_exceeded, valid));
-    CHECK(has_item_error(completion->value().payload->items[1], image_status_t::read_failed, missing));
+    CHECK(has_item_error(completion->value().payload->items[0], failure_code_t::capacity_exceeded, valid));
+    CHECK(has_item_error(completion->value().payload->items[1], failure_code_t::io_failed, missing));
     CHECK(cache.size() == 0);
 
     CHECK(job.request(song_id_t{}, 20, sources).error().code ==
@@ -159,15 +159,16 @@ TEST_CASE("image job retains per-source failures and bounds aggregate publicatio
 TEST_CASE("visual job publication requires a payload and preserves success messages",
           "[unit][visual][image-job][negative]") {
     const auto item_source = source(resource_id_t{4}, asset_id_t{5}, "synthetic.bmp");
-    auto missing = image_job_item_value_t::from(item_source, image_status_t::ready, {}, "missing payload");
+    auto missing = image_job_item_value_t::from(item_source, {}, "missing payload");
     REQUIRE_FALSE(missing.has_value());
-    CHECK(missing.error().cause.code == image_status_t::ready);
-    auto present = image_job_item_value_t::from(item_source, image_status_t::ready,
+    CHECK(missing.error().cause.code == failure_code_t::invalid_request);
+    auto present = image_job_item_value_t::from(item_source,
         std::make_shared<const rgba_image_t>(), "cached image");
     REQUIRE(present.has_value());
     CHECK(present->message == "cached image");
-    const auto failed = image_job_item_value_t::from(
-        item_source, image_status_t::decode_failed, present->payload, "failed image");
+    const image_job_item_outcome_t failed = std::unexpected(image_job_item_outcome_t::error_type{
+        .context = item_source, .payload = present->payload,
+        .cause = {failure_code_t::decode_failed, "failed image"}});
     REQUIRE_FALSE(failed);
     CHECK(failed.error().payload == present->payload);
 }
@@ -178,9 +179,10 @@ TEST_CASE("image batch lookup preserves the first source result",
     const auto other = source(resource_id_t{6}, asset_id_t{7}, "other.bmp");
     const auto image = std::make_shared<const rgba_image_t>();
     const image_job_result_t batch{.project = song_id_t{1}, .document_revision = 2, .items = {
-        image_job_item_value_t::from(first, image_status_t::read_failed, {}, "unreadable"),
-        image_job_item_value_t::from(first, image_status_t::ready, image),
-        image_job_item_value_t::from(other, image_status_t::ready, image)}};
+        std::unexpected(image_job_item_outcome_t::error_type{
+            .context = first, .payload = {}, .cause = {failure_code_t::io_failed, "unreadable"}}),
+        image_job_item_value_t::from(first, image),
+        image_job_item_value_t::from(other, image)}};
     CHECK(batch.find(first.resource) == nullptr);
     REQUIRE(batch.find(other.resource));
     CHECK(batch.find(other.resource)->payload == image);

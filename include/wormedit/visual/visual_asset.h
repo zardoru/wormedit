@@ -10,22 +10,13 @@
 
 namespace wormedit::visual {
 
-enum class visual_asset_status_t : std::uint8_t {
-    ready,
-    unknown_resource,
-    missing_resource,
-    unknown_asset,
-    empty_path,
-    relative_path_without_base,
-};
-
 // Decoder-neutral result of resolving a visual resource through a document.
 // Static images and video adapters share this value without depending on one
 // another's codec implementation.
 struct resolved_visual_asset_t {
     [[nodiscard]] static auto from(const song_document_t& document, resource_id_t resource,
                                    const std::filesystem::path& project_directory)
-        -> result_t<resolved_visual_asset_t, error_t<visual_asset_status_t>>;
+        -> result_t<resolved_visual_asset_t, error_t<failure_code_t>>;
 
     resource_id_t resource;
     asset_id_t asset;
@@ -36,6 +27,6 @@ struct resolved_visual_asset_t {
 };
 
 using visual_asset_resolution_outcome_t =
-    result_t<resolved_visual_asset_t, error_t<visual_asset_status_t>>;
+    result_t<resolved_visual_asset_t, error_t<failure_code_t>>;
 
 } // namespace wormedit::visual

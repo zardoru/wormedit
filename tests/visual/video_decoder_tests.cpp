@@ -51,7 +51,7 @@ auto check_primary_pixel(const video_frame_decode_result_t& decoded, std::size_t
     }
 }
 
-auto check_video_error(const video_frame_decode_result_t& decoded, video_frame_status_t code) -> void {
+auto check_video_error(const video_frame_decode_result_t& decoded, failure_code_t code) -> void {
     REQUIRE_FALSE(decoded.has_value());
     CHECK(decoded.error().code == code);
 }
@@ -100,40 +100,40 @@ TEST_CASE("video decoder session retains forward state and seeks backward exactl
 
 TEST_CASE("video decoder reports invalid sources clocks and files",
           "[unit][visual][video][negative]") {
-    check_video_error(decode_video_frame_rgba(video_source(asset_kind_t::image), video_clock(0)), video_frame_status_t::unsupported_asset_kind);
+    check_video_error(decode_video_frame_rgba(video_source(asset_kind_t::image), video_clock(0)), failure_code_t::unsupported);
 
     auto wrong_resource = video_clock(0);
     wrong_resource.resource = resource_id_t{99};
-    check_video_error(decode_video_frame_rgba(video_source(), wrong_resource), video_frame_status_t::invalid_request);
+    check_video_error(decode_video_frame_rgba(video_source(), wrong_resource), failure_code_t::invalid_request);
 
     auto missing = video_source();
     missing.path += ".missing";
-    check_video_error(decode_video_frame_rgba(missing, video_clock(0)), video_frame_status_t::open_failed);
+    check_video_error(decode_video_frame_rgba(missing, video_clock(0)), failure_code_t::io_failed);
 
     auto huge = video_clock(0);
     huge.media_time_numerator = std::numeric_limits<std::uint64_t>::max();
-    check_video_error(decode_video_frame_rgba(video_source(), huge), video_frame_status_t::timestamp_out_of_range);
+    check_video_error(decode_video_frame_rgba(video_source(), huge), failure_code_t::invalid_request);
 }
 
 TEST_CASE("video decoder enforces geometry packet and declaration bounds",
           "[unit][visual][video][bounds]") {
     auto dimensions = video_frame_decode_limits_t{};
     dimensions.maximum_width = 8;
-    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), dimensions), video_frame_status_t::dimension_limit_exceeded);
+    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), dimensions), failure_code_t::capacity_exceeded);
 
     auto pixels = video_frame_decode_limits_t{};
     pixels.maximum_pixels = 128;
-    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), pixels), video_frame_status_t::pixel_limit_exceeded);
+    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), pixels), failure_code_t::capacity_exceeded);
 
     auto bytes = video_frame_decode_limits_t{};
     bytes.maximum_rgba_bytes = 1023;
-    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), bytes), video_frame_status_t::byte_limit_exceeded);
+    check_video_error(decode_video_frame_rgba(video_source(), video_clock(0), bytes), failure_code_t::capacity_exceeded);
 
     auto declared = video_source();
     declared.declared_height = 15;
-    check_video_error(decode_video_frame_rgba(declared, video_clock(0)), video_frame_status_t::declared_geometry_mismatch);
+    check_video_error(decode_video_frame_rgba(declared, video_clock(0)), failure_code_t::invalid_geometry);
 
     auto packets = video_frame_decode_limits_t{};
     packets.maximum_packets = 1;
-    check_video_error(decode_video_frame_rgba(video_source(), video_clock(5, 2), packets), video_frame_status_t::decode_failed);
+    check_video_error(decode_video_frame_rgba(video_source(), video_clock(5, 2), packets), failure_code_t::decode_failed);
 }

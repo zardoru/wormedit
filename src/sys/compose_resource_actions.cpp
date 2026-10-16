@@ -222,11 +222,12 @@ auto inspect_imported_resource(const std::filesystem::path& path, wormedit::reso
     imported_resource_metadata_t metadata;
     if (role == wormedit::resource_role_t::bga) {
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-        const auto decoded = wormedit::visual::load_image_rgba(
+        const auto decoded = wormedit::visual::open_image_rgba(
             {.kind = wormedit::asset_kind_t::image, .path = path});
         if (!decoded)
-            return decoded.message.empty() ? "The image could not be decoded." : decoded.message;
-        metadata.image = std::pair{decoded.image->width, decoded.image->height};
+            return decoded.error().message.empty() ? "The image could not be decoded."
+                                                   : decoded.error().message;
+        metadata.image = std::pair{decoded->width, decoded->height};
 #else
         return "Image import is unavailable in this build.";
 #endif

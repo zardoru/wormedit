@@ -52,22 +52,21 @@ auto ffmpeg_message(int error) -> std::string {
     return message;
 }
 
-auto checked_rgba_bytes(int width, int height, video_frame_decode_limits_t limits,
-                        std::size_t& byte_count) -> video_frame_status_t {
+auto checked_rgba_bytes(int width, int height, video_frame_decode_limits_t limits)
+    -> std::optional<std::size_t> {
     if (width <= 0 || height <= 0 || static_cast<std::uint64_t>(width) > limits.maximum_width ||
         static_cast<std::uint64_t>(height) > limits.maximum_height) {
-        return video_frame_status_t::dimension_limit_exceeded;
+        return std::nullopt;
     }
     const auto pixels = static_cast<std::uint64_t>(width) * static_cast<std::uint64_t>(height);
     if (pixels > limits.maximum_pixels) {
-        return video_frame_status_t::pixel_limit_exceeded;
+        return std::nullopt;
     }
     if (width > INT_MAX / 4 || pixels > std::numeric_limits<std::size_t>::max() / 4U) {
-        return video_frame_status_t::byte_limit_exceeded;
+        return std::nullopt;
     }
-    byte_count = static_cast<std::size_t>(pixels) * 4U;
-    return byte_count <= limits.maximum_rgba_bytes ? video_frame_status_t::ready
-                                                   : video_frame_status_t::byte_limit_exceeded;
+    const auto byte_count = static_cast<std::size_t>(pixels) * 4U;
+    return byte_count <= limits.maximum_rgba_bytes ? std::optional{byte_count} : std::nullopt;
 }
 
 auto clock_timestamp(const video_preview_clock_t& clock, AVRational time_base,
@@ -129,20 +128,20 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
     -> video_frame_decode_result_t {
     const auto* selected = session.current.get();
     if (timestamp_of(selected) == AV_NOPTS_VALUE || selected->width <= 0 || selected->height <= 0) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::timestamp_missing,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_data,
                        "video decoder produced no timestamped frame at the requested time"});
     }
 
-    std::size_t rgba_bytes{};
-    const auto geometry = checked_rgba_bytes(selected->width, selected->height, limits, rgba_bytes);
-    if (geometry != video_frame_status_t::ready) {
-        return std::unexpected(error_t<video_frame_status_t>{geometry, "decoded video frame geometry exceeds the configured limit"});
+    const auto rgba_bytes = checked_rgba_bytes(selected->width, selected->height, limits);
+    if (!rgba_bytes) {
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
+            "decoded video frame geometry exceeds the configured limit"});
     }
     if ((session.source.declared_width &&
          *session.source.declared_width != static_cast<std::uint32_t>(selected->width)) ||
         (session.source.declared_height &&
          *session.source.declared_height != static_cast<std::uint32_t>(selected->height))) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::declared_geometry_mismatch,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_geometry,
                        "decoded video geometry differs from the document declaration"});
     }
 
@@ -152,7 +151,7 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
         .path = session.source.path,
         .width = static_cast<std::uint32_t>(selected->width),
         .height = static_cast<std::uint32_t>(selected->height),
-        .pixels = std::vector<std::uint8_t>(rgba_bytes),
+        .pixels = std::vector<std::uint8_t>(*rgba_bytes),
         .presentation_timestamp = selected->best_effort_timestamp,
         .next_presentation_timestamp =
             timestamp_of(session.lookahead.get()) == AV_NOPTS_VALUE
@@ -167,7 +166,7 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
                        static_cast<AVPixelFormat>(selected->format), selected->width,
                        selected->height, AV_PIX_FMT_RGBA, SWS_BILINEAR, nullptr, nullptr, nullptr);
     if (!scaler) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                        "video RGBA conversion context could not be created"});
     }
     std::uint8_t* destination[] = {output.pixels.data(), nullptr, nullptr, nullptr};
@@ -176,7 +175,7 @@ auto render_frame(video_decoder_session_t::impl_t& session, video_frame_decode_l
                                   destination, strides);
     sws_freeContext(scaler);
     if (scaled != selected->height) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                        "video frame could not be converted completely to RGBA8"});
     }
     return output;
@@ -196,9 +195,9 @@ auto seek_to_target(video_decoder_session_t::impl_t& session, std::int64_t targe
                                            target, AVSEEK_FLAG_BACKWARD);
     if (result < 0) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video seek was cancelled"});
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video seek was cancelled"});
         }
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::seek_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::seek_failed,
                        "video stream could not seek to the requested time: " +
                            ffmpeg_message(result)});
     }
@@ -220,14 +219,14 @@ auto retain_decoded_frame(video_decoder_session_t::impl_t& session, std::int64_t
     const auto timestamp = timestamp_of(session.scratch.get());
     if (timestamp == AV_NOPTS_VALUE) {
         av_frame_unref(session.scratch.get());
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::timestamp_missing,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_data,
                        "video decoder produced a frame without a timestamp"});
     }
     auto* destination = timestamp <= target ? session.current.get() : session.lookahead.get();
     const auto copied = copy_frame(destination, session.scratch.get());
     av_frame_unref(session.scratch.get());
     if (copied < 0) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                        "decoded video frame could not be retained: " + ffmpeg_message(copied)});
     }
     if (timestamp > target) {
@@ -244,7 +243,7 @@ auto feed_video_decoder(video_decoder_session_t::impl_t& session,
         if (!session.flush_sent) {
             const auto result = avcodec_send_packet(session.decoder.get(), nullptr);
             if (result < 0 && result != AVERROR_EOF) {
-                return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+                return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                                "video decoder flush failed: " + ffmpeg_message(result)});
             }
             session.flush_sent = true;
@@ -265,9 +264,9 @@ auto feed_video_decoder(video_decoder_session_t::impl_t& session,
     }
     if (result < 0) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video packet read was cancelled"});
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video packet read was cancelled"});
         }
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                        "video packet read failed: " + ffmpeg_message(result)});
     }
     ++packet_count;
@@ -278,7 +277,7 @@ auto feed_video_decoder(video_decoder_session_t::impl_t& session,
     }
     av_packet_unref(session.packet.get());
     if (result < 0) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                        "video packet submission failed: " + ffmpeg_message(result)});
     }
     return std::nullopt;
@@ -301,10 +300,10 @@ auto video_decoder_session_t::source() const noexcept -> const resolved_visual_a
 auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop_token stop)
     -> video_decoder_session_open_result_t {
     if (stop.stop_requested()) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video decoder open was cancelled"});
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video decoder open was cancelled"});
     }
     if (source.kind != asset_kind_t::video) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::unsupported_asset_kind,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::unsupported,
                             "only video assets can be decoded as timed frames"});
     }
 
@@ -313,7 +312,7 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     impl->active_stop = stop;
     AVFormatContext* opened = avformat_alloc_context();
     if (!opened) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::open_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
                             "video format context could not be allocated"});
     }
     opened->interrupt_callback = {.callback = interrupt_ffmpeg, .opaque = impl.get()};
@@ -322,18 +321,18 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     impl->format.reset(opened);
     if (result < 0) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video input open was cancelled"});
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video input open was cancelled"});
         }
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::open_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::io_failed,
                             "video input could not be opened: " + ffmpeg_message(result)});
     }
     result = avformat_find_stream_info(impl->format.get(), nullptr);
     if (result < 0) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
                                 "video stream discovery was cancelled"});
         }
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::stream_info_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "video stream information could not be read: " +
                                 ffmpeg_message(result)});
     }
@@ -342,7 +341,7 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     impl->stream_index =
         av_find_best_stream(impl->format.get(), AVMEDIA_TYPE_VIDEO, -1, -1, &decoder_type, 0);
     if (impl->stream_index < 0 || decoder_type == nullptr) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::no_video_stream,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "asset contains no supported video stream"});
     }
     auto* stream = impl->format->streams[impl->stream_index];
@@ -350,7 +349,7 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     impl->stream_start = stream->start_time == AV_NOPTS_VALUE ? 0 : stream->start_time;
     impl->decoder.reset(avcodec_alloc_context3(decoder_type));
     if (!impl->decoder) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decoder_open_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "video decoder context could not be allocated"});
     }
     result = avcodec_parameters_to_context(impl->decoder.get(), stream->codecpar);
@@ -359,14 +358,14 @@ auto open_video_decoder_session(const resolved_visual_asset_t& source, std::stop
     }
     if (result < 0) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
                                 "video decoder open was cancelled"});
         }
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decoder_open_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "video decoder could not be opened: " + ffmpeg_message(result)});
     }
     if (!impl->scratch || !impl->current || !impl->lookahead || !impl->packet) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                             "video packet or frame storage could not be allocated"});
     }
     return std::unique_ptr<video_decoder_session_t>{new video_decoder_session_t{std::move(impl)}};
@@ -378,17 +377,17 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
     auto& session = *impl_;
     session.active_stop = stop;
     if (stop.stop_requested()) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video frame decode was cancelled"});
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video frame decode was cancelled"});
     }
     if (session.source.resource != clock.resource || limits.maximum_width == 0 ||
         limits.maximum_height == 0 || limits.maximum_pixels == 0 ||
         limits.maximum_rgba_bytes == 0 || limits.maximum_packets == 0) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::invalid_request,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
                        "video source, media clock, or decode limits are invalid"});
     }
     const auto requested = clock_timestamp(clock, session.time_base, session.stream_start);
     if (!requested) {
-        return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::timestamp_out_of_range,
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
                        "video media timestamp is outside FFmpeg's signed range"});
     }
     const auto target = *requested;
@@ -413,7 +412,7 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
     std::size_t packet_count{};
     while (packet_count < limits.maximum_packets) {
         if (stop.stop_requested()) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::cancelled, "video frame decode was cancelled"});
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled, "video frame decode was cancelled"});
         }
         auto result = avcodec_receive_frame(session.decoder.get(), session.scratch.get());
         if (result >= 0) {
@@ -427,7 +426,7 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
             return render_frame(session, limits);
         }
         if (result != AVERROR(EAGAIN)) {
-            return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                            "video frame decode failed: " + ffmpeg_message(result)});
         }
 
@@ -435,7 +434,7 @@ auto video_decoder_session_t::decode(const video_preview_clock_t& clock,
             return std::move(*fed);
         }
     }
-    return std::unexpected(error_t<video_frame_status_t>{video_frame_status_t::decode_failed,
+    return std::unexpected(error_t<failure_code_t>{failure_code_t::decode_failed,
                    "video decode exceeded the configured packet limit"});
 }
 

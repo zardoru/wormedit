@@ -148,37 +148,37 @@ auto video_frame_job_t::run_decode(const video_decode_request_t& request, std::s
     -> work_outcome_t {
     video_job_context_t context{.identity = {request.project, request.document_revision},
                                 .source = request.source, .clock = request.clock};
-    auto status = video_frame_status_t::decode_failed;
+    std::optional<error_t<failure_code_t>> failure;
     std::shared_ptr<const rgba_video_frame_t> result_frame;
-    std::string message;
     if (stop.stop_requested()) {
         return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
                                                           "video frame request was superseded"});
     }
     if (auto cached = request.owner.cache_.find(request.project, request.document_revision,
                                                 request.source, request.clock)) {
-        status = video_frame_status_t::ready;
         result_frame = std::move(cached);
     } else {
         auto decoded = request.owner.decode_uncached_frame(request, stop);
         if (decoded) {
-            status = video_frame_status_t::ready;
             auto frame = std::make_shared<const rgba_video_frame_t>(std::move(*decoded));
             result_frame =
                 request.owner.cache_.insert(request.project, request.document_revision,
                                             request.source, request.clock, std::move(frame));
         } else {
-            status = decoded.error().code;
-            message = std::move(decoded.error().message);
+            failure = std::move(decoded.error());
         }
     }
     if (stop.stop_requested()) {
         return std::unexpected(error_t<task_error_code_t>{task_error_code_t::cancelled,
                                                           "video frame request was superseded"});
     }
+    if (failure) {
+        return work_outcome_t{std::in_place, std::unexpected(video_job_outcome_t::error_type{
+            .context = std::move(context), .payload = std::move(result_frame),
+            .cause = std::move(*failure)})};
+    }
     return work_outcome_t{std::in_place,
-                          video_job_frame_t::from(std::move(context), status,
-                                                  std::move(result_frame), std::move(message))};
+                          video_job_frame_t::from(std::move(context), std::move(result_frame))};
 }
 
 auto video_frame_job_t::request(song_id_t project, std::uint64_t document_revision,

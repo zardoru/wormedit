@@ -58,9 +58,9 @@ struct video_job_context_t {
     resolved_visual_asset_t source;
     video_preview_clock_t clock;
 };
-using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>;
+using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_frame_t>;
 using video_job_outcome_t = result_t<video_job_frame_t,
-    visual_job_error_t<video_job_context_t, rgba_video_frame_t, video_frame_status_t>>;
+    visual_job_error_t<video_job_context_t, rgba_video_frame_t>>;
 
 using video_job_completion_outcome_t =
     async_job_completion_outcome_t<async_job_project_identity_t, video_job_outcome_t>;

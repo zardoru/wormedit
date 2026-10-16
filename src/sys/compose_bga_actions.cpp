@@ -16,9 +16,9 @@ namespace {
 auto probe_image(const std::filesystem::path& path)
     -> std::optional<std::pair<std::uint32_t, std::uint32_t>> {
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    const auto image = visual::load_image_rgba({.path = path});
+    const auto image = visual::open_image_rgba({.path = path});
     if (image)
-        return std::pair{image.image->width, image.image->height};
+        return std::pair{image->width, image->height};
 #else
     (void)path;
 #endif

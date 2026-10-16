@@ -14,25 +14,6 @@
 
 namespace wormedit::visual {
 
-enum class video_frame_status_t : std::uint8_t {
-    ready,
-    invalid_request,
-    unsupported_asset_kind,
-    open_failed,
-    stream_info_failed,
-    no_video_stream,
-    decoder_open_failed,
-    timestamp_out_of_range,
-    seek_failed,
-    decode_failed,
-    timestamp_missing,
-    dimension_limit_exceeded,
-    pixel_limit_exceeded,
-    byte_limit_exceeded,
-    declared_geometry_mismatch,
-    cancelled,
-};
-
 struct video_frame_decode_limits_t {
     std::uint32_t maximum_width{16'384};
     std::uint32_t maximum_height{16'384};
@@ -56,9 +37,9 @@ struct rgba_video_frame_t {
 };
 
 class video_decoder_session_t;
-using video_frame_decode_result_t = result_t<rgba_video_frame_t, error_t<video_frame_status_t>>;
+using video_frame_decode_result_t = result_t<rgba_video_frame_t, error_t<failure_code_t>>;
 using video_decoder_session_open_result_t =
-    result_t<std::unique_ptr<video_decoder_session_t>, error_t<video_frame_status_t>>;
+    result_t<std::unique_ptr<video_decoder_session_t>, error_t<failure_code_t>>;
 
 class video_decoder_session_t {
   public:

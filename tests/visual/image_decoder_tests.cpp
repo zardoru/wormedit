@@ -9,6 +9,8 @@
 #include <filesystem>
 #include <fstream>
 #include <span>
+#include <string_view>
+#include <utility>
 
 namespace {
 
@@ -69,12 +71,12 @@ TEST_CASE("visual resources resolve through explicit project-relative asset path
     CHECK(resolved->declared_height == 480);
 
     CHECK(resolved_visual_asset_t::from(document, resource_id_t{99}, "/project/song").error().code ==
-          visual_asset_status_t::unknown_resource);
+          failure_code_t::not_found);
     CHECK(resolved_visual_asset_t::from(document, resource_id_t{10}, {}).error().code ==
-          visual_asset_status_t::relative_path_without_base);
+          failure_code_t::invalid_request);
     document.resources.front().missing = true;
     CHECK(resolved_visual_asset_t::from(document, resource_id_t{10}, "/project/song").error().code ==
-          visual_asset_status_t::missing_resource);
+          failure_code_t::not_found);
 }
 
 TEST_CASE("bounded static image decoding publishes exact RGBA8 pixels", "[unit][visual][decode]") {
@@ -96,35 +98,35 @@ TEST_CASE("bounded static image decoding publishes exact RGBA8 pixels", "[unit][
 TEST_CASE("image decoding rejects unsupported kinds malformed data and every configured cap",
           "[unit][visual][decode][negative]") {
     CHECK(rgba_image_t::from(image_source(asset_kind_t::video), encoded_bmp()).error().code ==
-          image_status_t::unsupported_asset_kind);
+          failure_code_t::unsupported);
 
     const std::array<std::byte, 8> malformed{};
-    CHECK(rgba_image_t::from(image_source(), malformed).error().code == image_status_t::decode_failed);
+    CHECK(rgba_image_t::from(image_source(), malformed).error().code == failure_code_t::decode_failed);
 
     auto input_limited = image_decode_limits_t{};
     input_limited.maximum_input_bytes = 10;
     CHECK(rgba_image_t::from(image_source(), encoded_bmp(), input_limited).error().code ==
-          image_status_t::input_too_large);
+          failure_code_t::capacity_exceeded);
 
     auto dimension_limited = image_decode_limits_t{};
     dimension_limited.maximum_width = 1;
     CHECK(rgba_image_t::from(image_source(), encoded_bmp(), dimension_limited).error().code ==
-          image_status_t::dimension_limit_exceeded);
+          failure_code_t::capacity_exceeded);
 
     auto pixel_limited = image_decode_limits_t{};
     pixel_limited.maximum_pixels = 1;
     CHECK(rgba_image_t::from(image_source(), encoded_bmp(), pixel_limited).error().code ==
-          image_status_t::pixel_limit_exceeded);
+          failure_code_t::capacity_exceeded);
 
     auto byte_limited = image_decode_limits_t{};
     byte_limited.maximum_rgba_bytes = 7;
     CHECK(rgba_image_t::from(image_source(), encoded_bmp(), byte_limited).error().code ==
-          image_status_t::byte_limit_exceeded);
+          failure_code_t::capacity_exceeded);
 
     auto mismatched = image_source();
     mismatched.declared_width = 3;
     CHECK(rgba_image_t::from(mismatched, encoded_bmp()).error().code ==
-          image_status_t::declared_geometry_mismatch);
+          failure_code_t::invalid_geometry);
 }
 
 TEST_CASE("visual image file loading is bounded before decode", "[unit][visual][file]") {
@@ -144,8 +146,25 @@ TEST_CASE("visual image file loading is bounded before decode", "[unit][visual][
 
     auto bounded = image_decode_limits_t{};
     bounded.maximum_input_bytes = two_pixel_bmp.size() - 1;
-    CHECK(open_image_rgba(source, bounded).error().code == image_status_t::input_too_large);
+    CHECK(open_image_rgba(source, bounded).error().code == failure_code_t::capacity_exceeded);
 
     source.path += ".missing";
-    CHECK(open_image_rgba(source).error().code == image_status_t::read_failed);
+    CHECK(open_image_rgba(source).error().code == failure_code_t::io_failed);
+}
+
+TEST_CASE("shared image capacity failures retain their precise messages", "[unit][visual][decode]") {
+    const std::array cases{
+        std::pair{image_decode_limits_t{.maximum_width = 1},
+                  std::string_view{"decoded image dimensions exceed the configured limit"}},
+        std::pair{image_decode_limits_t{.maximum_pixels = 1},
+                  std::string_view{"decoded image pixel count exceeds the configured limit"}},
+        std::pair{image_decode_limits_t{.maximum_rgba_bytes = 7},
+                  std::string_view{"decoded RGBA storage exceeds the configured byte limit"}},
+    };
+    for (const auto& [limits, message] : cases) {
+        const auto rejected = rgba_image_t::from(image_source(), encoded_bmp(), limits);
+        REQUIRE_FALSE(rejected);
+        CHECK(rejected.error().code == failure_code_t::capacity_exceeded);
+        CHECK(rejected.error().message == message);
+    }
 }

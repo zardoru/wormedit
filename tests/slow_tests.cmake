@@ -65,3 +65,8 @@ wormedit_label_slow_tests(wormedit_frontend_event_harness_tests_TESTS
     "frontend-state.Missing CJK bundle retains usable Latin fallback"
     "frontend-state.Numeric display font keeps its 28px stable handle through atlas rebakes"
 )
+
+# external_player: preserve regression sizes and matrices; keep these in the full gate.
+wormedit_label_slow_tests(wormedit_external_player_tests_TESTS
+    "external_player.external_player actual stub receives quoted filenames source measure and active branch"
+)

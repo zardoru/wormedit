@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_area_actions.h"
 #include "core/timing_arithmetic.h"
 #include "sys/compose_action_context.h"
@@ -33,8 +34,8 @@ auto apply_compose_quantize_selection(document_history_t& history,
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
-    const auto geometry = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(geometry))
+    const auto& geometry = history.indices(chart->id)->measures;
+    if (!geometry)
         return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
     auto request = quantize_request_from_action(action, {});
     if (!request)
@@ -442,8 +443,8 @@ auto compose_area_delete_supported(wormedit::document_history_t& history,
     const auto* chart = history.document.find_chart(state.chart);
     if (chart == nullptr)
         return false;
-    const auto built = wormedit::build_measure_index(*chart);
-    const auto* index = std::get_if<wormedit::measure_index_t>(&built);
+    const auto& measures = history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     if (!index)
         return false;
     const auto selected = select_compose_area_contents(history, state, *index);
@@ -471,8 +472,8 @@ auto run_routed_area_action(compose_action_context_t& context) -> compose_action
         context.environment.document.history.document.find_chart(context.state.chart);
     if (!chart)
         return compose_action_outcome_t::blocked("The chart is no longer available.");
-    const auto built = build_measure_index(*chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto& indexed = context.environment.document.history.indices(chart->id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     if (!measures)
         return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
     Action action{};

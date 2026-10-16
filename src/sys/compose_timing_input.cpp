@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
@@ -90,8 +91,8 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     if (std::ranges::find(context.state.selected_objects, clicked) ==
         context.state.selected_objects.end())
         return "Select the timing marker before dragging it.";
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto target_row =
         index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels) : std::nullopt;
     const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max());
@@ -150,8 +151,8 @@ auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input
         return stale_action_message("Kiai edit");
     if (context.environment.commands.project.timing_recipe.timing_locked)
         return "Timing is locked.";
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row =
         index ? timing_pointer_row(context, *chart, *view, *index, input.y_pixels) : std::nullopt;
     if (!row)
@@ -219,8 +220,8 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
     if (!chart || !view) return "Speed edit is stale or invalid.";
     if (!context.is_timing_input_current(input))
         return stale_action_message("Speed edit");
-    const auto measures = build_measure_index(*chart);
-    const auto* index = std::get_if<measure_index_t>(&measures);
+    const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto speed =
         std::ranges::find(chart->speeds, object_id_t{input.object_id}, &speed_event_t::id);
     if (!index || speed == chart->speeds.end())

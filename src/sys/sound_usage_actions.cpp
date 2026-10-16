@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include <wormedit/core/rational.h>
 #include "sys/sound_usage_actions.h"
 
@@ -32,8 +33,8 @@ auto interaction_for_jump(const document_history_t& history, const chart_documen
     -> std::optional<editor_interaction_state_t> {
     if (previous && previous->chart == chart.id)
         return previous;
-    const auto built = build_measure_index(chart);
-    const auto* index = std::get_if<measure_index_t>(&built);
+    const auto& measures = history.indices(chart.id)->measures;
+    const auto* index = measures ? &*measures : nullptr;
     const auto row = index ? (*index).row_of(position) : std::nullopt;
     const lane_layout_segment_t* active{};
     std::uint64_t active_row{};

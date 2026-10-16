@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_actions_internal.h"
 #include "sys/native_chart_edit_action.h"
 #include "sys/projection_notification_feedback.h"
@@ -5,8 +6,8 @@ namespace wormedit::sys::compose_action_detail {
 beat_section_edit_t make_beat_section_insertion(compose_action_context_t& context,
                                                 const wormedit::chart_document_t& chart) {
     using namespace wormedit;
-    const auto built = build_measure_index(chart);
-    const auto* measures = std::get_if<measure_index_t>(&built);
+    const auto& indexed = context.environment.document.history.indices(chart.id)->measures;
+    const auto* measures = indexed ? &*indexed : nullptr;
     if (!measures)
         return {.error = "The chart measure geometry cannot define a section span."};
     position_span_t span;

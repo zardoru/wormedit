@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/grid.h>
+#include <wormedit/core/timing.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/interaction.h>
 
@@ -71,12 +72,10 @@ namespace wormedit::sys {
         return false;
     if (geometry.index && (geometry.chart != chart->id ||
                            geometry.document_revision != history.document.revision)) return false;
-    std::optional<measure_index_t> built;
     if (!geometry.index) {
-        auto result = build_measure_index(*chart);
-        if (auto* index = std::get_if<measure_index_t>(&result)) built = std::move(*index);
-        else return false;
-        geometry = {chart->id, history.document.revision, &*built};
+        const auto& measures = history.indices(chart->id)->measures;
+        if (!measures) return false;
+        geometry = {chart->id, history.document.revision, &*measures};
     }
     const auto* index = geometry.index;
     if (!index || index->total_rows == 0) return false;

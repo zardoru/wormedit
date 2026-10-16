@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/bookmark_commands.h"
@@ -2966,11 +2967,11 @@ auto find_compose_selection_snap_action_t::validate(compose_action_context_t& co
         return compose_action_outcome_t::blocked("Select a chart first.",
                                                  notification_source_t::edit);
     const auto positions = selected_snap_positions(*chart, context.state);
-    const auto geometry = build_measure_index(*chart);
-    if (!std::holds_alternative<measure_index_t>(geometry))
+    const auto& geometry = context.environment.document.history.indices(chart->id)->measures;
+    if (!geometry)
         return compose_action_outcome_t::blocked("This chart has invalid measure geometry.",
                                                  notification_source_t::edit);
-    const auto fitting = fitting_snap_denominator(*chart, std::get<measure_index_t>(geometry), positions);
+    const auto fitting = fitting_snap_denominator(*chart, *geometry, positions);
     if (!fitting)
         return compose_action_outcome_t::blocked(
             "Select notes or BGM events to find a fitting snap.", notification_source_t::edit);

@@ -1,3 +1,4 @@
+#include <wormedit/core/timing.h>
 #include "sys/compose_actions_internal.h"
 #include "sys/resource_action_context.h"
 namespace wormedit::sys::compose_action_detail {
@@ -614,9 +615,9 @@ finish_compose_resource_placement(compose_action_context_t& context,
                                            context.environment.document.workspace);
         std::optional<local_position_t> position;
         if (chart) {
-            const auto built = build_measure_index(*chart);
-            if (const auto* index = std::get_if<measure_index_t>(&built))
-                position = timing_position_at_row(*index, *state.virtual_bms_cursor_row);
+            const auto& measures = context.environment.document.history.indices(chart->id)->measures;
+            if (measures)
+                position = timing_position_at_row(*measures, *state.virtual_bms_cursor_row);
         }
         place_cursor_at(state, position.value_or(state.cursor));
     }

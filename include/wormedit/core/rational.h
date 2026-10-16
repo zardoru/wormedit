@@ -54,20 +54,7 @@ inline constexpr std::array<std::uint64_t, 6> default_snap_denominators{4, 8, 16
 
 inline constexpr std::uint32_t maximum_rationalization_iterations = 128;
 
-enum class rationalization_status_t {
-    exact,
-    approximation,
-    error,
-};
-
-enum class rationalization_error_t {
-    none,
-    non_finite,
-    non_positive,
-    invalid_limits,
-    no_positive_candidate,
-    approximation_exceeds_error_limit,
-};
+enum class rationalization_phase_t : std::uint8_t { exact, approximation };
 
 struct rationalization_options_t {
     std::uint64_t maximum_denominator{1'000'000};
@@ -78,18 +65,21 @@ struct rationalization_options_t {
 };
 
 struct rationalization_error_info_t {
-    rationalization_error_t code{rationalization_error_t::none};
+    failure_code_t code{failure_code_t::invalid_request};
     long double absolute_error_bound{};
     std::uint32_t iterations{};
     auto operator==(const rationalization_error_info_t&) const -> bool = default;
 };
 
+// Converts a positive finite IEEE-754 double deterministically to a reduced
+// positive rational. Exact binary values are retained when both limits allow
+// it; otherwise bounded continued fractions return a previewable approximation.
 struct rationalized_value_t {
     [[nodiscard]] static auto from(double value, const rationalization_options_t& options = {})
         -> result_t<rationalized_value_t, rationalization_error_info_t>;
 
     rational_t value;
-    rationalization_status_t status{rationalization_status_t::exact};
+    rationalization_phase_t status{rationalization_phase_t::exact};
     // The conservative bound and actual iterations also travel with rejected approximations.
     long double absolute_error_bound{};
     std::uint32_t iterations{};
@@ -98,18 +88,6 @@ struct rationalized_value_t {
 
 using rationalization_result_t = result_t<rationalized_value_t, rationalization_error_info_t>;
 
-// Converts a positive finite IEEE-754 double deterministically to a reduced
-// positive rational. Exact binary values are retained when both limits allow
-// it; otherwise bounded continued fractions return a previewable approximation.
-[[nodiscard]] auto rationalize_positive_double(double value,
-                                               const rationalization_options_t& options = {})
-    -> rationalization_result_t;
-
-enum class snap_state_error_t {
-    none,
-    zero_resolution,
-};
-
 struct snap_state_t {
     // Configured order is preserved, unsupported values and duplicates removed.
     // If none remain, the exact one-row fallback (1 / resolution) is inserted.
@@ -117,10 +95,10 @@ struct snap_state_t {
     std::uint64_t active_denominator{};
     bool active_was_fallback{};
     bool inserted_resolution_fallback{};
-    snap_state_error_t error{snap_state_error_t::none};
+    std::optional<failure_code_t> error;
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return error == snap_state_error_t::none;
+        return !error.has_value();
     }
 };
 

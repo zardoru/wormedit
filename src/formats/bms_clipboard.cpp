@@ -152,7 +152,7 @@ struct decode_context_t {
         .maximum_denominator = 192U * 64U,
         .maximum_absolute_error = 1e-9L,
     };
-    const auto result = rationalize_positive_double(rows / 192.0, limits);
+    const auto result = rationalized_value_t::from(rows / 192.0, limits);
     return result ? std::optional{result->value} : std::nullopt;
 }
 

@@ -793,10 +793,10 @@ auto rationalize(long double value, std::uint64_t maximum_denominator = 1'000'00
     if (!std::isfinite(value) || value <= 0.0L ||
         value > static_cast<long double>(std::numeric_limits<double>::max()))
         return std::nullopt;
-    const auto result = rationalize_positive_double(static_cast<double>(value),
-                                                    {.maximum_denominator = maximum_denominator,
-                                                     .iteration_limit = 96,
-                                                     .maximum_absolute_error = 1.0e-10L});
+    const auto result = rationalized_value_t::from(static_cast<double>(value),
+                                                  {.maximum_denominator = maximum_denominator,
+                                                   .iteration_limit = 96,
+                                                   .maximum_absolute_error = 1.0e-10L});
     return result ? std::optional{result->value} : std::nullopt;
 }
 

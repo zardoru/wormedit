@@ -37,44 +37,44 @@ TEST_CASE("Exact decimal text rejects malformed exponents and unrepresentable va
 
 TEST_CASE("IEEE-754 rationalization distinguishes exact and approximate values",
           "[unit][core][rational]") {
-    const auto exact = rationalize_positive_double(0.5);
+    const auto exact = rationalized_value_t::from(0.5);
     REQUIRE(exact);
-    CHECK(exact->status == rationalization_status_t::exact);
+    CHECK(exact->status == rationalization_phase_t::exact);
     CHECK((exact->value == rational_t{1, 2}));
     CHECK(exact->absolute_error_bound == 0.0L);
     CHECK(exact->iterations == 0);
 
     const auto approximate =
-        rationalize_positive_double(0.1, {.maximum_denominator = 100, .iteration_limit = 64});
+        rationalized_value_t::from(0.1, {.maximum_denominator = 100, .iteration_limit = 64});
     REQUIRE(approximate);
-    CHECK(approximate->status == rationalization_status_t::approximation);
+    CHECK(approximate->status == rationalization_phase_t::approximation);
     CHECK((approximate->value == rational_t{1, 10}));
     CHECK(approximate->absolute_error_bound > 0.0L);
 }
 
 TEST_CASE("IEEE-754 rationalization obeys denominator and iteration bounds",
           "[unit][core][rational]") {
-    const auto denominator_bounded = rationalize_positive_double(
+    const auto denominator_bounded = rationalized_value_t::from(
         3.141592653589793, {.maximum_denominator = 1, .iteration_limit = 64});
     REQUIRE(denominator_bounded);
-    CHECK(denominator_bounded->status == rationalization_status_t::approximation);
+    CHECK(denominator_bounded->status == rationalization_phase_t::approximation);
     CHECK(denominator_bounded->value.denominator == 1);
     CHECK(denominator_bounded->iterations <= 64);
 
-    const auto iteration_bounded = rationalize_positive_double(
+    const auto iteration_bounded = rationalized_value_t::from(
         3.141592653589793, {.maximum_denominator = 1'000'000, .iteration_limit = 1});
     REQUIRE(iteration_bounded);
-    CHECK(iteration_bounded->status == rationalization_status_t::approximation);
+    CHECK(iteration_bounded->status == rationalization_phase_t::approximation);
     CHECK(iteration_bounded->value.denominator == 1);
     CHECK(iteration_bounded->iterations == 1);
 
     const auto below_one_single_iteration =
-        rationalize_positive_double(0.9, {.maximum_denominator = 3, .iteration_limit = 1});
+        rationalized_value_t::from(0.9, {.maximum_denominator = 3, .iteration_limit = 1});
     REQUIRE(below_one_single_iteration);
     CHECK((below_one_single_iteration->value == rational_t{1, 1}));
 
     const auto small_positive =
-        rationalize_positive_double(std::numeric_limits<double>::denorm_min(),
+        rationalized_value_t::from(std::numeric_limits<double>::denorm_min(),
                                     {.maximum_denominator = 100, .iteration_limit = 64});
     REQUIRE(small_positive);
     CHECK(small_positive->value.numerator > 0);
@@ -83,22 +83,22 @@ TEST_CASE("IEEE-754 rationalization obeys denominator and iteration bounds",
 
 TEST_CASE("IEEE-754 rationalization rejects invalid values and excessive error",
           "[unit][core][rational][negative]") {
-    CHECK(rationalize_positive_double(0.0).error().code == rationalization_error_t::non_positive);
-    CHECK(rationalize_positive_double(-0.25).error().code == rationalization_error_t::non_positive);
-    CHECK(rationalize_positive_double(std::numeric_limits<double>::infinity()).error().code ==
-          rationalization_error_t::non_finite);
-    CHECK(rationalize_positive_double(std::numeric_limits<double>::quiet_NaN()).error().code ==
-          rationalization_error_t::non_finite);
+    CHECK(rationalized_value_t::from(0.0).error().code == failure_code_t::invalid_request);
+    CHECK(rationalized_value_t::from(-0.25).error().code == failure_code_t::invalid_request);
+    CHECK(rationalized_value_t::from(std::numeric_limits<double>::infinity()).error().code ==
+          failure_code_t::invalid_data);
+    CHECK(rationalized_value_t::from(std::numeric_limits<double>::quiet_NaN()).error().code ==
+          failure_code_t::invalid_data);
     CHECK(
-        rationalize_positive_double(0.5, {.maximum_denominator = 0, .iteration_limit = 64}).error().code ==
-        rationalization_error_t::invalid_limits);
+        rationalized_value_t::from(0.5, {.maximum_denominator = 0, .iteration_limit = 64}).error().code ==
+        failure_code_t::invalid_request);
 
-    const auto rejected = rationalize_positive_double(
+    const auto rejected = rationalized_value_t::from(
         0.1,
         {.maximum_denominator = 100, .iteration_limit = 64, .maximum_absolute_error = 1.0e-30L});
     CHECK_FALSE(rejected);
     CHECK_FALSE(rejected.has_value());
-    CHECK(rejected.error().code == rationalization_error_t::approximation_exceeds_error_limit);
+    CHECK(rejected.error().code == failure_code_t::capacity_exceeded);
     CHECK(rejected.error().absolute_error_bound > 1.0e-30L);
 }
 
@@ -135,7 +135,7 @@ TEST_CASE("snap filtering preserves configured order and exact fallback", "[unit
 TEST_CASE("snap filtering rejects zero resolution", "[unit][core][snap][negative]") {
     const auto state = filter_snap_denominators(0, std::span<const std::uint64_t>{}, 1);
     CHECK_FALSE(state);
-    CHECK(state.error == snap_state_error_t::zero_resolution);
+    CHECK(state.error == failure_code_t::invalid_request);
 }
 
 #include "../../src/core/text_util.h"

@@ -168,14 +168,14 @@ auto make_approximation(double input, rational_t candidate, std::uint32_t iterat
     const auto bound = error_bound(input, candidate);
     if (options.maximum_absolute_error.has_value() && bound > *options.maximum_absolute_error) {
         return std::unexpected(rationalization_error_info_t{
-            .code = rationalization_error_t::approximation_exceeds_error_limit,
+            .code = failure_code_t::capacity_exceeded,
             .absolute_error_bound = bound,
             .iterations = iterations,
         });
     }
     return rationalized_value_t{
         .value = candidate,
-        .status = rationalization_status_t::approximation,
+        .status = rationalization_phase_t::approximation,
         .absolute_error_bound = bound,
         .iterations = iterations,
     };
@@ -304,16 +304,16 @@ auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> max
 auto rationalized_value_t::from(double value, const rationalization_options_t& options)
     -> rationalization_result_t {
     if (!std::isfinite(value)) {
-        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::non_finite});
+        return std::unexpected(rationalization_error_info_t{.code = failure_code_t::invalid_data});
     }
     if (!(value > 0.0)) {
-        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::non_positive});
+        return std::unexpected(rationalization_error_info_t{.code = failure_code_t::invalid_request});
     }
     if (options.maximum_denominator == 0 || options.iteration_limit == 0 ||
         (options.maximum_absolute_error.has_value() &&
          (!std::isfinite(*options.maximum_absolute_error) ||
           *options.maximum_absolute_error < 0.0L))) {
-        return std::unexpected(rationalization_error_info_t{.code = rationalization_error_t::invalid_limits});
+        return std::unexpected(rationalization_error_info_t{.code = failure_code_t::invalid_request});
     }
 
     const auto maximum_denominator = options.maximum_denominator;
@@ -321,7 +321,7 @@ auto rationalized_value_t::from(double value, const rationalization_options_t& o
         exact.has_value() && exact->denominator <= maximum_denominator) {
         return rationalized_value_t{
             .value = *exact,
-            .status = rationalization_status_t::exact,
+            .status = rationalization_phase_t::exact,
             .absolute_error_bound = 0.0L,
             .iterations = 0,
         };
@@ -340,16 +340,11 @@ auto rationalized_value_t::from(double value, const rationalization_options_t& o
     return make_approximation(value, best, completed_iterations, options);
 }
 
-auto rationalize_positive_double(double value, const rationalization_options_t& options)
-    -> rationalization_result_t {
-    return rationalized_value_t::from(value, options);
-}
-
 auto filter_snap_denominators(std::uint64_t divisions_per_standard_measure,
                               std::span<const std::uint64_t> ordered_denominators,
                               std::uint64_t requested_active_denominator) -> snap_state_t {
     if (divisions_per_standard_measure == 0) {
-        return {.error = snap_state_error_t::zero_resolution};
+        return {.error = failure_code_t::invalid_request};
     }
 
     snap_state_t state;

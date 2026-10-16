@@ -58,7 +58,7 @@ auto tap_tempo_estimator_t::estimate() const -> std::optional<tap_tempo_estimate
     const auto fitted = fit();
     if (!is_valid() || !fitted) return std::nullopt;
     const auto bpm = static_cast<double>(60.0L * options_.sample_rate / fitted->slope);
-    const auto rational = rationalize_positive_double(bpm);
+    const auto rational = rationalized_value_t::from(bpm);
     if (!rational) return std::nullopt;
     const auto deviation = static_cast<double>(1000.0L * fitted->residual / options_.sample_rate);
     const auto coverage = std::min(1.0, static_cast<double>(count_) / 8.0);

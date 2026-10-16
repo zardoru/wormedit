@@ -30,9 +30,6 @@ struct preview_output_telemetry_t {
 };
 using sdl_preview_service_result_t =
     sdl_session_service_result_t<audio::preview_session_pump_effect_t, preview_output_telemetry_t>;
-// Temporary: removed by T-633.
-using sdl_preview_service_outcome_t =
-    sdl_session_service_outcome_t<audio::preview_session_pump_effect_t, preview_output_telemetry_t>;
 
 // SDL3 output for an owned chart-preview timeline. The stream lock serializes
 // rendering with start/seek/Stop. The refill worker decodes and queues loop PCM
@@ -56,7 +53,7 @@ class sdl_preview_output_t {
           std::uint64_t minimum_end_frame = 0) -> sdl_preview_start_result_t;
     [[nodiscard]] auto seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t;
     [[nodiscard]] auto set_loop_region(std::optional<audio::preview_loop_region_t> region) -> bool;
-    [[nodiscard]] auto service() -> std::optional<sdl_preview_service_outcome_t>;
+    [[nodiscard]] auto service() -> std::optional<sdl_preview_service_result_t>;
     [[nodiscard]] auto stop() noexcept -> audio::transport_stop_result_t;
     // The requested rate is applied at the next SDL callback, without restarting.
     [[nodiscard]] auto set_playback_rate(rational_t rate) noexcept -> bool;
@@ -94,7 +91,7 @@ class sdl_preview_output_t {
         std::optional<audio::preview_session_pump_effect_t> pumped,
         bool rate_unavailable, std::uint64_t silenced_voices,
         std::uint64_t silenced_music_voices)
-        -> std::optional<sdl_preview_service_outcome_t>;
+        -> std::optional<sdl_preview_service_result_t>;
     void reset_output(std::uint64_t frame) noexcept;
     [[nodiscard]] auto read_output_playhead() const noexcept -> audio::playhead_state_t;
     void publish_output_playhead() noexcept;

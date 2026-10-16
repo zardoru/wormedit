@@ -394,7 +394,7 @@ auto sdl_preview_output_t::set_loop_region(
     return true;
 }
 
-auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_outcome_t> {
+auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_result_t> {
     const auto rate_unavailable = rate_unavailable_.exchange(false, std::memory_order_acq_rel);
     const auto silenced_voices = silenced_voices_.exchange(0, std::memory_order_acq_rel);
     const auto silenced_music_voices =
@@ -402,13 +402,13 @@ auto sdl_preview_output_t::service() -> std::optional<sdl_preview_service_outcom
     const auto callback_failure =
         callback_failure_.exchange(std::nullopt, std::memory_order_acq_rel);
     if (callback_failure) {
-        return std::unexpected(sdl_preview_service_result_t{
+        return sdl_preview_service_result_t{
             .status = *callback_failure,
             .pump = std::nullopt,
             .telemetry = {.rate_unavailable = rate_unavailable,
                           .silenced_voices = silenced_voices,
                           .silenced_music_voices = silenced_music_voices},
-        });
+        };
     }
     // Callback publication owns ordinary latency updates; frame service must
     // not wait for its stream lock while active audio is being rendered.
@@ -426,7 +426,7 @@ auto sdl_preview_output_t::service_refill_result(
     std::optional<audio::preview_session_pump_effect_t> pumped,
     bool rate_unavailable, std::uint64_t silenced_voices,
     std::uint64_t silenced_music_voices)
-    -> std::optional<sdl_preview_service_outcome_t> {
+    -> std::optional<sdl_preview_service_result_t> {
     if (pumped) {
         const auto& effect = *pumped;
         if (effect.status == failure_code_t::not_started)
@@ -454,7 +454,7 @@ auto sdl_preview_output_t::service_refill_result(
     };
     if (!result.pump->status.is_in_phase(::wormedit::audio::preview_session_pump_phase_t::ready)) {
         result.status = failure_code_t::pump_failed;
-        return std::unexpected(std::move(result));
+        return result;
     }
     return result;
 }

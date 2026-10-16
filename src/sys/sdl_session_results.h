@@ -38,9 +38,4 @@ template <class Pump, class Telemetry = std::monostate> struct sdl_session_servi
     [[no_unique_address]] Telemetry telemetry{};
 };
 
-// Temporary: removed by T-633.
-template <class Pump, class Telemetry = std::monostate>
-using sdl_session_service_outcome_t = result_t<sdl_session_service_result_t<Pump, Telemetry>,
-                                               sdl_session_service_result_t<Pump, Telemetry>>;
-
 } // namespace wormedit::sys

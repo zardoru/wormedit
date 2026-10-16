@@ -96,7 +96,7 @@ TEST_CASE("SDL dummy output drives and hard-stops a primed audition session",
     while (session.timeline_frame() == 0 && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service) {
-            REQUIRE(*service);
+            REQUIRE_FALSE(service->status.has_failure());
         }
         SDL_Delay(2);
     }

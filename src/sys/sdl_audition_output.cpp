@@ -166,14 +166,14 @@ auto sdl_audition_output_t::start(std::span<const audio::audition_clip_t> clips)
     return {.error = std::move(error), .session = std::move(started)};
 }
 
-auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outcome_t> {
+auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_result_t> {
     const auto callback_failure =
         callback_failure_.exchange(std::nullopt, std::memory_order_acq_rel);
     if (callback_failure) {
-        return std::unexpected(sdl_audition_service_result_t{
+        return sdl_audition_service_result_t{
             .status = *callback_failure,
             .pump = std::nullopt,
-        });
+        };
     }
     auto pumped = take_refill_result();
     if (!pumped)
@@ -183,7 +183,7 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outc
     };
     if (result.pump->status.has_failure()) {
         result.status = failure_code_t::pump_failed;
-        return std::unexpected(std::move(result));
+        return result;
     }
     return result;
 }

@@ -27,7 +27,7 @@ void validate_preview_binding(const song_document_t& document,
 
 void service_audition(sdl_audition_output_t& output, const notification_sink_t& notifications) {
     const auto serviced = output.service();
-    if (!serviced || *serviced)
+    if (!serviced || !serviced->status.has_failure())
         return;
     static_cast<void>(output.stop());
     post_audition_service_notifications(*serviced, notifications);
@@ -39,10 +39,10 @@ void service_chart_preview(sdl_preview_output_t& output,
     if (!serviced)
         return;
     post_preview_service_notifications(*serviced, notifications);
-    if (*serviced) return;
+    if (!serviced->status.has_failure()) return;
     const auto failed_frame = output.timeline_frame();
     static_cast<void>(output.stop());
-    if (serviced->error().status.has_failure(failure_code_t::pump_failed))
+    if (serviced->status.has_failure(failure_code_t::pump_failed))
         state.pause_at(failed_frame);
     else
         state.reset_transport();
@@ -87,16 +87,16 @@ auto preview_playhead_row(const runtime::chart_preview_t& state,
 
 } // namespace
 
-void post_audition_service_notifications(const sdl_audition_service_outcome_t& result,
+void post_audition_service_notifications(const sdl_audition_service_result_t& result,
                                          const notification_sink_t& notifications) {
-    if (result) return;
+    if (!result.status.has_failure()) return;
     notifications.post(notification_severity_t::error, notification_source_t::audio,
-                       audition_failure_message(result.error()));
+                       audition_failure_message(result));
 }
 
-void post_preview_service_notifications(const sdl_preview_service_outcome_t& result,
+void post_preview_service_notifications(const sdl_preview_service_result_t& result,
                                         const notification_sink_t& notifications) {
-    const auto& effect = result ? *result : result.error();
+    const auto& effect = result;
     if (effect.telemetry.rate_unavailable)
         notifications.post(notification_severity_t::warning, notification_source_t::audio,
             "Playback mode change is unavailable; preview keeps its previous mode.");
@@ -107,7 +107,7 @@ void post_preview_service_notifications(const sdl_preview_service_outcome_t& res
                     ? " preview voice(s), including music, that were not decoded in time."
                     : " preview voice(s) that were not decoded in time."));
     }
-    if (!result)
+    if (result.status.has_failure())
         notifications.post(notification_severity_t::error, notification_source_t::audio,
                            preview_failure_message(effect));
 }

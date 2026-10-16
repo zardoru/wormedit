@@ -38,7 +38,7 @@ auto wait_for_silent_preview_frame(wormedit::audio::preview_session_t& session,
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
-        if (service && !*service)
+        if (service && service->status.has_failure())
             return false;
         SDL_Delay(2);
     }
@@ -113,7 +113,7 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
         if (service)
-            REQUIRE(*service);
+            REQUIRE_FALSE(service->status.has_failure());
         SDL_Delay(2);
     }
     CHECK(session.timeline_frame() > 0);
@@ -384,7 +384,7 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     const auto serviced = output.service();
     const bool repeated = start_clock_aligned && bounded && wrapped && token && initial_token &&
         token->generation > initial_token->generation && session.playhead().generation == generation &&
-        (!serviced || static_cast<bool>(*serviced)) && output.playing() &&
+        (!serviced || !serviced->status.has_failure()) && output.playing() &&
         session.loop_region() == std::optional<preview_loop_region_t>{loop};
     static_cast<void>(output.stop());
     std::array<float, 32> stopped{};
@@ -446,7 +446,7 @@ auto service_until_after_frame(wormedit::sys::sdl_preview_output_t& output,
                                std::uint64_t frame, std::uint64_t deadline) -> bool {
     while (SDL_GetTicks() < deadline) {
         const auto serviced = output.service();
-        if (serviced && !*serviced) return false;
+        if (serviced && serviced->status.has_failure()) return false;
         if (session.timeline_frame() > frame && output.playing()) return true;
         SDL_Delay(1);
     }
@@ -612,7 +612,7 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     bool saw_drain{}, restarted{};
     while (output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
-        expect_pitch(!service || static_cast<bool>(*service));
+        expect_pitch(!service || !service->status.has_failure());
         if (!session.is_active() && output.playing()) {
             saw_drain = true;
             if (!restarted) {
@@ -666,7 +666,7 @@ void wait_capture_frames(device_capture_t& capture, wormedit::sys::sdl_preview_o
     const auto deadline = SDL_GetTicks() + 2000;
     while (capture.count.load() < frames && output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
-        expect_pitch(!service || static_cast<bool>(*service));
+        expect_pitch(!service || !service->status.has_failure());
         SDL_Delay(2);
     }
     expect_pitch(capture.count.load() >= frames);
@@ -678,7 +678,7 @@ void wait_pitch_mode(wormedit::sys::sdl_preview_output_t& output, bool preserve,
     while ((output.keep_pitch() != preserve || output.playback_rate() != rate) &&
            output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
-        expect_pitch(!service || static_cast<bool>(*service));
+        expect_pitch(!service || !service->status.has_failure());
         SDL_Delay(2);
     }
     expect_pitch(output.keep_pitch() == preserve && output.playback_rate() == rate);
@@ -767,8 +767,8 @@ void exercise_background_refill() {
     const auto maximum = *std::ranges::max_element(samples, {}, [](float value) { return std::abs(value); });
     expect_pitch(std::abs(maximum) > 0.9);
     const auto service = output.service();
-    expect_pitch(service && static_cast<bool>(*service));
-    expect_pitch(service->value().telemetry.silenced_voices == 0);
+    expect_pitch(service && !service->status.has_failure());
+    expect_pitch(service->telemetry.silenced_voices == 0);
     static_cast<void>(output.stop());
     std::array<float, 256> silence;
     silence.fill(1.0F);
@@ -796,7 +796,7 @@ void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std:
     expect_pitch(static_cast<bool>(sought));
     SDL_Delay(2);
     const auto service = output.service();
-    expect_pitch(!service || static_cast<bool>(*service));
+    expect_pitch(!service || !service->status.has_failure());
 }
 
 void exercise_refill_generations() {
@@ -829,7 +829,7 @@ void exercise_refill_generations() {
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
     SDL_Delay(20);
     const auto service = output.service();
-    expect_pitch(!service || static_cast<bool>(*service));
+    expect_pitch(!service || !service->status.has_failure());
     static_cast<void>(output.stop());
     output.close();
     expect_pitch(output.open());
@@ -862,9 +862,9 @@ void exercise_pending_refill_failure() {
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && !*failed && failed->error().status.has_failure(wormedit::failure_code_t::pump_failed));
-    expect_pitch(failed->error().pump && !failed->error().pump->status.is_in_phase(
-        ::wormedit::audio::preview_session_pump_phase_t::ready) && failed->error().pump->status == wormedit::failure_code_t::decode_failed);
+    expect_pitch(failed && failed->status.has_failure() && failed->status.has_failure(wormedit::failure_code_t::pump_failed));
+    expect_pitch(failed->pump && !failed->pump->status.is_in_phase(
+        ::wormedit::audio::preview_session_pump_phase_t::ready) && failed->pump->status == wormedit::failure_code_t::decode_failed);
     static_cast<void>(output.stop());
 }
 

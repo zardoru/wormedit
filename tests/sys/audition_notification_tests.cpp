@@ -135,11 +135,11 @@ TEST_CASE("Catalog SDL start failure and real dummy success use typed audition f
 
 namespace {
 auto wait_audition_failure(sdl_audition_output_t& output)
-    -> std::optional<sdl_audition_service_outcome_t> {
+    -> std::optional<sdl_audition_service_result_t> {
     const auto deadline = SDL_GetTicks() + 2000;
     while (SDL_GetTicks() < deadline) {
         auto result = output.service();
-        if (result && !*result) return result;
+        if (result && result->status.has_failure()) return result;
         SDL_Delay(2);
     }
     return std::nullopt;
@@ -156,11 +156,11 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(static_cast<bool>(fixture.output.start(std::span{&missing, 1})));
     const auto failed = wait_audition_failure(fixture.output);
     expect_audition(failed.has_value());
-    expect_audition(!*failed);
-    expect_audition(failed->error().status.has_failure(wormedit::failure_code_t::pump_failed));
-    expect_audition(failed->error().pump.has_value());
-    expect_audition(failed->error().pump->status.has_failure());
-    expect_audition(failed->error().pump->status == wormedit::failure_code_t::unavailable);
+    expect_audition(failed->status.has_failure());
+    expect_audition(failed->status.has_failure(wormedit::failure_code_t::pump_failed));
+    expect_audition(failed->pump.has_value());
+    expect_audition(failed->pump->status.has_failure());
+    expect_audition(failed->pump->status == wormedit::failure_code_t::unavailable);
     static_cast<void>(fixture.output.stop());
     post_audition_service_notifications(*failed, fixture.sink);
     const auto entries = fixture.entries();

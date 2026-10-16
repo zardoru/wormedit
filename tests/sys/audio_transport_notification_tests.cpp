@@ -52,7 +52,7 @@ TEST_CASE("Audio service producer preserves fallbacks before the terminal device
     const sdl_preview_service_result_t result{
         .status = wormedit::failure_code_t::device_failed,
         .telemetry = {.rate_unavailable = true, .silenced_voices = 3, .silenced_music_voices = 1}};
-    post_preview_service_notifications(std::unexpected(result), sink);
+    post_preview_service_notifications(result, sink);
     const auto rows = drained(center);
     verify_audio_notification(rows.size() == 3);
     check_audio_error(rows[0], "Chart preview stopped after an output-device failure.");
@@ -70,8 +70,8 @@ TEST_CASE("Audio underruns dedupe while ready service results stay quiet",
     post_preview_service_notifications({}, sink);
     verify_audio_notification(drained(center).empty());
     const sdl_audition_service_result_t underrun{.status = wormedit::failure_code_t::render_failed};
-    post_audition_service_notifications(std::unexpected(underrun), sink);
-    post_audition_service_notifications(std::unexpected(underrun), sink);
+    post_audition_service_notifications(underrun, sink);
+    post_audition_service_notifications(underrun, sink);
     const auto rows = drained(center);
     verify_audio_notification(rows.size() == 1);
     verify_audio_notification(rows.front().count == 2);
@@ -85,7 +85,7 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
     sdl_audition_service_result_t audition{.status = wormedit::failure_code_t::pump_failed,
         .pump = audio::audition_pump_effect_t{
             .status = wormedit::failure_code_t::unavailable}};
-    post_audition_service_notifications(std::unexpected(audition), sink);
+    post_audition_service_notifications(audition, sink);
     auto rows = drained(center);
     check_audio_error(rows[0], "Audio preview stopped because its decoded source is unavailable.");
     sdl_preview_service_result_t preview{.status = wormedit::failure_code_t::pump_failed,
@@ -93,15 +93,15 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
             .status = wormedit::failure_code_t::decode_failed,
             .decode = audio::preview_pump_effect_t{
                 .status = wormedit::failure_code_t::unavailable}}};
-    post_preview_service_notifications(std::unexpected(preview), sink);
+    post_preview_service_notifications(preview, sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped because a decoded source is unavailable.");
     preview.pump.reset();
-    post_preview_service_notifications(std::unexpected(preview), sink);
+    post_preview_service_notifications(preview, sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a bounded refill failure.");
     preview.status = wormedit::failure_code_t::render_failed;
-    post_preview_service_notifications(std::unexpected(preview), sink);
+    post_preview_service_notifications(preview, sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a realtime mix failure.");
 }

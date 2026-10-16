@@ -445,7 +445,7 @@ auto sdl_preview_output_t::service_refill_result(
     const auto& effect = *pumped ? pumped->value() : pumped->error();
     if (effect.decode) {
         const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
-        if (decoded.status == audio::preview_pump_status_t::stale_generation)
+        if (decoded.status == failure_code_t::stale_generation)
             return std::nullopt;
     }
     sdl_preview_service_result_t result{

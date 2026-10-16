@@ -53,14 +53,15 @@ auto pump_status(preview_session_pump_status_t status) -> const char* {
     return "unknown";
 }
 
-auto decode_status(preview_pump_status_t status) -> const char* {
-    switch (status) {
-    case preview_pump_status_t::ready: return "ready";
-    case preview_pump_status_t::stale_generation: return "stale_generation";
-    case preview_pump_status_t::invalid_request: return "invalid_request";
-    case preview_pump_status_t::capacity_exceeded: return "capacity_exceeded";
-    case preview_pump_status_t::source_unavailable: return "source_unavailable";
-    case preview_pump_status_t::decode_failed: return "decode_failed";
+auto decode_status(operation_state_t<std::monostate> status) -> const char* {
+    if (!status.has_failure()) return "ready";
+    switch (std::get<failure_code_t>(status.value())) {
+    case failure_code_t::stale_generation: return "stale_generation";
+    case failure_code_t::invalid_request: return "invalid_request";
+    case failure_code_t::capacity_exceeded: return "capacity_exceeded";
+    case failure_code_t::unavailable: return "source_unavailable";
+    case failure_code_t::decode_failed: return "decode_failed";
+    default: break;
     }
     return "unknown";
 }
@@ -136,7 +137,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
         const auto samples = static_cast<std::size_t>(frames) * output_channel_count;
         const auto rendered_outcome = session.render_frames(scratch.first(samples));
         const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
-        if (rendered.status.has_failure(failure_code_t::underrun)) {
+        if (rendered.status.has_failure(wormedit::failure_code_t::underrun)) {
             const auto position = musical_position_at(
                 timing, {static_cast<std::int64_t>(before), output_sample_rate});
             const auto row = position.absolute_row.value_or(signed_rational_t{0, 1});

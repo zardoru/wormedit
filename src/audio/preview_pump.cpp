@@ -17,13 +17,13 @@ auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std:
     return begin + count;
 }
 
-auto failure_status(block_decode_status_t status) -> preview_pump_status_t {
+auto failure_status(block_decode_status_t status) -> failure_code_t {
     switch (status) {
     case block_decode_status_t::stale_generation:
-        return preview_pump_status_t::stale_generation;
+        return failure_code_t::stale_generation;
     case block_decode_status_t::invalid_key:
     case block_decode_status_t::decoder_unavailable:
-        return preview_pump_status_t::source_unavailable;
+        return failure_code_t::unavailable;
     case block_decode_status_t::cache_hit:
     case block_decode_status_t::decoded:
         break;
@@ -32,13 +32,13 @@ auto failure_status(block_decode_status_t status) -> preview_pump_status_t {
     case block_decode_status_t::decode_failed:
     case block_decode_status_t::cache_capacity_exceeded:
     case block_decode_status_t::session_queue_full:
-        return preview_pump_status_t::decode_failed;
+        return failure_code_t::decode_failed;
     }
-    return preview_pump_status_t::decode_failed;
+    return failure_code_t::decode_failed;
 }
 
 struct preview_key_plan_t {
-    preview_pump_status_t status{preview_pump_status_t::ready};
+    operation_state_t<std::monostate> status;
     std::vector<audio_block_key_t> keys;
     std::size_t overlapping_voices{};
     auto operator==(const preview_key_plan_t&) const -> bool = default;
@@ -49,7 +49,7 @@ auto append_voice_keys(const transport_voice_t& voice, std::uint64_t timeline_fr
                        preview_key_plan_t& plan) -> bool {
     const auto voice_end = checked_end(voice.timeline_start_frame, voice.frame_count);
     if (!voice_end.has_value()) {
-        plan.status = preview_pump_status_t::invalid_request;
+        plan.status = failure_code_t::invalid_request;
         return false;
     }
     const auto overlap_begin = std::max(timeline_frame, voice.timeline_start_frame);
@@ -67,7 +67,7 @@ auto append_voice_keys(const transport_voice_t& voice, std::uint64_t timeline_fr
         const audio_block_key_t key{voice.source, block};
         if (std::ranges::find(plan.keys, key) == plan.keys.end()) {
             if (plan.keys.size() >= maximum_blocks) {
-                plan.status = preview_pump_status_t::capacity_exceeded;
+                plan.status = failure_code_t::capacity_exceeded;
                 return false;
             }
             plan.keys.push_back(key);
@@ -156,21 +156,21 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
         options.maximum_voices == 0 || options.maximum_voices > maximum_preview_pump_voices ||
         options.maximum_blocks == 0 || options.maximum_blocks > maximum_preview_pump_blocks) {
         return std::unexpected(
-            preview_pump_effect_t{.status = preview_pump_status_t::invalid_request});
+            preview_pump_effect_t{.status = failure_code_t::invalid_request});
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value())
         return std::unexpected(
-            preview_pump_effect_t{.status = preview_pump_status_t::invalid_request});
+            preview_pump_effect_t{.status = failure_code_t::invalid_request});
 
     auto snapshot = transport.snapshot_voices(token, options.maximum_voices);
     const auto snapshot_status = snapshot ? std::nullopt : std::optional{snapshot.error()};
     if (snapshot_status == failure_code_t::stale_generation)
         return std::unexpected(
-            preview_pump_effect_t{.status = preview_pump_status_t::stale_generation});
+            preview_pump_effect_t{.status = failure_code_t::stale_generation});
     if (snapshot_status == failure_code_t::capacity_exceeded) {
         return std::unexpected(
-            preview_pump_effect_t{.status = preview_pump_status_t::capacity_exceeded,
+            preview_pump_effect_t{.status = failure_code_t::capacity_exceeded,
                                   .active_voices = options.maximum_voices + 1});
     }
 
@@ -181,20 +181,20 @@ auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transp
         preview_pump_effect_t result{.status = plan.status};
         result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
-        if (plan.status == preview_pump_status_t::capacity_exceeded) {
+        if (plan.status == failure_code_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
         return std::unexpected(std::move(result));
     }
     const auto& plan = *planned;
     if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
-        preview_pump_effect_t result{.status = preview_pump_status_t::capacity_exceeded};
+        preview_pump_effect_t result{.status = failure_code_t::capacity_exceeded};
         result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         result.requested_blocks = plan.keys.size();
         return std::unexpected(std::move(result));
     }
-    preview_pump_effect_t result{.status = preview_pump_status_t::ready};
+    preview_pump_effect_t result{.status = std::monostate{}};
     result.active_voices = snapshot.value().size();
     result.overlapping_voices = plan.overlapping_voices;
     return decode_preview_plan(sources, transport, token, plan, std::move(result));

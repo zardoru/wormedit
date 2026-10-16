@@ -2,10 +2,11 @@
 
 #include <wormedit/audio/source_registry.h>
 #include <wormedit/audio/transport.h>
-#include <wormedit/core/result.h>
+#include <wormedit/core/operation_state.h>
 
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 
 namespace wormedit::audio {
 
@@ -29,17 +30,12 @@ struct preview_pump_options_t {
     std::size_t maximum_blocks{maximum_preview_pump_blocks};
 };
 
-enum class preview_pump_status_t {
-    ready,
-    stale_generation,
-    invalid_request,
-    capacity_exceeded,
-    source_unavailable,
-    decode_failed,
-};
+
+static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
+static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct preview_pump_effect_t {
-    preview_pump_status_t status{preview_pump_status_t::invalid_request};
+    operation_state_t<std::monostate> status{failure_code_t::invalid_request};
     std::size_t active_voices{};
     std::size_t overlapping_voices{};
     std::size_t requested_blocks{};

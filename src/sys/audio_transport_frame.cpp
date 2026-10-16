@@ -70,7 +70,7 @@ auto preview_failure_message(const sdl_preview_service_result_t& result) -> cons
         const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
         if (pumped.decode) {
             const auto& decoded = *pumped.decode ? pumped.decode->value() : pumped.decode->error();
-            if (decoded.status == audio::preview_pump_status_t::source_unavailable)
+            if (decoded.status == failure_code_t::unavailable)
                 return "Chart preview stopped because a decoded source is unavailable.";
         }
     }

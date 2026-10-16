@@ -92,7 +92,7 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
         .pump = std::unexpected(audio::preview_session_pump_effect_t{
             .status = audio::preview_session_pump_status_t::decode_failed,
             .decode = std::unexpected(audio::preview_pump_effect_t{
-                .status = audio::preview_pump_status_t::source_unavailable})})};
+                .status = wormedit::failure_code_t::unavailable})})};
     post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped because a decoded source is unavailable.");

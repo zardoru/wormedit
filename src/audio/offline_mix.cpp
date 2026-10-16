@@ -60,7 +60,7 @@ auto prime_status(const preview_session_start_error_t& error) -> failure_code_t 
         const auto status = materialization_status(*detail.materialize);
         if (status) return *status;
     }
-    if (detail.prime && detail.prime->error().status == preview_pump_status_t::capacity_exceeded)
+    if (detail.prime && detail.prime->error().status == failure_code_t::capacity_exceeded)
         return failure_code_t::capacity_exceeded;
     return failure_code_t::decode_failed;
 }
@@ -79,7 +79,7 @@ auto pump_session(preview_session_t& session, preview_pump_options_t options,
     if (pumped) return std::nullopt;
     if (effect.decode) {
         const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
-        if (decoded.status == preview_pump_status_t::capacity_exceeded)
+        if (decoded.status == failure_code_t::capacity_exceeded)
             return failure_code_t::capacity_exceeded;
     }
     return failure_code_t::decode_failed;

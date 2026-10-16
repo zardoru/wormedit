@@ -47,7 +47,7 @@ auto prime_offline_session(preview_session_t& session, preview_session_start_out
     started->detail.prime = effect.decode;
     if (!pumped) {
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::prime_failed,
+            .code = failure_code_t::prime_failed,
             .detail = std::move(started->detail),
             .token = started->token});
     }

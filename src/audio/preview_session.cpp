@@ -41,7 +41,7 @@ auto preview_session_t::start_session(const preview_schedule_t& schedule,
     auto started = bridge_.start_preview(schedule, objects, metronome, start_frame);
     if (!started) {
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
+            .code = failure_code_t::transport_failed, .detail = {.bridge = started}});
     }
     minimum_end_frame_ = minimum_end_frame;
     return prime_started(started, start_frame, options);
@@ -53,7 +53,7 @@ auto preview_session_t::seek_session(std::uint64_t sample_frame, preview_pump_op
     auto started = bridge_.seek_preview(sample_frame);
     if (!started) {
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
+            .code = failure_code_t::transport_failed, .detail = {.bridge = started}});
     }
     return prime_started(started, sample_frame, options);
 }
@@ -68,7 +68,7 @@ auto preview_session_t::restart_session_loop(std::uint64_t expected_generation)
     const auto started = bridge_.seek_preview(loop_region_->begin_frame);
     if (!started)
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::bridge_failed, .detail = {.bridge = started}});
+            .code = failure_code_t::transport_failed, .detail = {.bridge = started}});
     return prime_started(started, loop_region_->begin_frame, {}, true);
 }
 
@@ -86,7 +86,7 @@ auto preview_session_t::prime_started(preview_bridge_start_outcome_t started,
         static_cast<void>(bridge_.stop());
         clear_state();
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::materialize_failed,
+            .code = failure_code_t::materialize_failed,
             .detail = std::move(detail)});
     }
     const auto materialized = bridge_.materialize_preview(*window_end, timeline_frame);
@@ -96,7 +96,7 @@ auto preview_session_t::prime_started(preview_bridge_start_outcome_t started,
         static_cast<void>(bridge_.stop());
         clear_state();
         return std::unexpected(preview_session_start_error_t{
-            .code = preview_session_start_status_t::materialize_failed,
+            .code = failure_code_t::materialize_failed,
             .detail = std::move(detail)});
     }
     prime_pending_ = true;

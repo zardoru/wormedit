@@ -12,13 +12,6 @@
 
 namespace wormedit::audio {
 
-enum class preview_session_start_status_t {
-    started,
-    bridge_failed,
-    materialize_failed,
-    prime_failed,
-};
-
 struct preview_session_start_detail_t {
     std::optional<preview_bridge_start_outcome_t> bridge{};
     std::optional<preview_bridge_pump_outcome_t> materialize{};
@@ -31,7 +24,7 @@ struct started_preview_session_t {
     auto operator==(const started_preview_session_t&) const -> bool = default;
 };
 struct preview_session_start_error_t {
-    preview_session_start_status_t code{preview_session_start_status_t::bridge_failed};
+    failure_code_t code{failure_code_t::transport_failed};
     preview_session_start_detail_t detail{};
     // Synchronous priming can fail after the session has already started.
     std::optional<session_token_t> token{};

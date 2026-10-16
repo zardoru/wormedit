@@ -1579,7 +1579,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                           std::size_t order = 0,
                           std::optional<std::size_t> offset = std::nullopt) -> void {
         result.diagnostics.push_back(
-            {diagnostic_severity_t::error, code, std::move(message), order, offset});
+            {diagnostic_severity_t::error, code, std::move(message), {order, offset}});
         throw parse_abort_t{};
     };
     try {
@@ -1725,7 +1725,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
                 osu_mania_parse_diagnostic_code_t::timing_quantization,
                 "osu! timing was quantized to the 960-division editor grid; editable BPMs "
                 "retain bounded source-time alignment and original timestamps are preserved",
-                0, std::nullopt});
+                {0, std::nullopt}});
     } catch (const parse_abort_t&) {
         result.value.reset();
     } catch (const std::exception& error) {
@@ -1733,12 +1733,12 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         result.diagnostics.push_back({diagnostic_severity_t::error,
                                       osu_mania_parse_diagnostic_code_t::internal_conversion_error,
                                       std::string("osu! import failed atomically: ") + error.what(),
-                                      0, std::nullopt});
+                                      {0, std::nullopt}});
     } catch (...) {
         result.value.reset();
         result.diagnostics.push_back({diagnostic_severity_t::error,
                                       osu_mania_parse_diagnostic_code_t::internal_conversion_error,
-                                      "osu! import failed atomically", 0, std::nullopt});
+                                      "osu! import failed atomically", {0, std::nullopt}});
     }
     return result;
 }
@@ -2034,7 +2034,7 @@ void warn_omitted_passthrough(std::vector<osu_mania_write_diagnostic_t>& diagnos
     diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                            .code = osu_mania_write_diagnostic_code_t::invalid_metadata,
                            .message = "unsafe retained osu! metadata was omitted",
-                           .field = std::string(identity)});
+                           .location = std::string(identity)});
 }
 
 void append_passthrough_event(std::vector<passthrough_field_t>& output,
@@ -2109,7 +2109,7 @@ auto record_retained_field(const format_metadata_t& group, std::size_t index,
             diagnostics.push_back({.severity = diagnostic_severity_t::error,
                                    .code = osu_mania_write_diagnostic_code_t::invalid_metadata,
                                    .message = "conflicting scoped copies of one retained osu! field",
-                                   .field = std::string(identity)});
+                                   .location = std::string(identity)});
         return true;
     }
     retained.push_back({group.encoding.original_bytes.get(), order,
@@ -3285,7 +3285,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
                                       .code = code,
                                       .message = std::move(message),
-                                      .field = std::move(field)});
+                                      .location = std::move(field)});
         throw osu_write_abort_t{};
     };
     const auto warn = [&](osu_mania_write_diagnostic_code_t code, std::string message,
@@ -3293,7 +3293,7 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
         result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                                       .code = code,
                                       .message = std::move(message),
-                                      .field = std::move(field)});
+                                      .location = std::move(field)});
     };
     try {
         const auto* chart = select_osu_chart(song, options, fail);
@@ -3427,13 +3427,13 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
             {.severity = diagnostic_severity_t::error,
              .code = osu_mania_write_diagnostic_code_t::invalid_document,
              .message = std::string("osu! export failed atomically: ") + error.what(),
-             .field = "document"});
+             .location = "document"});
     } catch (...) {
         result.value.reset();
         result.diagnostics.push_back({.severity = diagnostic_severity_t::error,
                                       .code = osu_mania_write_diagnostic_code_t::invalid_document,
                                       .message = "osu! export failed atomically",
-                                      .field = "document"});
+                                      .location = "document"});
     }
     return result;
 }

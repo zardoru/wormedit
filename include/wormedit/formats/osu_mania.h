@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/formats/text_source_location.h>
 
 #include <cstddef>
 #include <filesystem>
@@ -39,7 +40,7 @@ enum class osu_mania_parse_diagnostic_code_t {
 };
 
 using osu_mania_parse_diagnostic_t =
-    text_parse_diagnostic_t<osu_mania_parse_diagnostic_code_t,
+    format_diagnostic_t<osu_mania_parse_diagnostic_code_t, text_source_location_t,
                             osu_mania_parse_diagnostic_code_t::malformed_field>;
 
 struct osu_mania_parse_options_t {
@@ -53,7 +54,7 @@ struct osu_mania_parse_options_t {
     std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
-using osu_mania_parse_outcome_t = diagnosed_t<std::optional<song_document_t>, std::vector<osu_mania_parse_diagnostic_t>>;
+using osu_mania_parse_outcome_t = attempt_t<song_document_t, std::vector<osu_mania_parse_diagnostic_t>>;
 
 enum class osu_mania_write_diagnostic_code_t {
     missing_chart,
@@ -70,7 +71,7 @@ enum class osu_mania_write_diagnostic_code_t {
 };
 
 using osu_mania_write_diagnostic_t =
-    text_write_diagnostic_t<osu_mania_write_diagnostic_code_t,
+    format_diagnostic_t<osu_mania_write_diagnostic_code_t, std::string,
                             osu_mania_write_diagnostic_code_t::invalid_document>;
 
 struct osu_mania_write_options_t {
@@ -89,7 +90,7 @@ struct osu_mania_write_options_t {
     std::size_t max_metadata_bytes{1U * 1024U * 1024U};
 };
 
-using osu_mania_write_outcome_t = diagnosed_t<std::optional<std::string>, std::vector<osu_mania_write_diagnostic_t>>;
+using osu_mania_write_outcome_t = attempt_t<std::string, std::vector<osu_mania_write_diagnostic_t>>;
 
 // Parses one stable-v14 or lazer-v128 UTF-8 osu!mania .osu file. Other
 // file-format versions reject explicitly. Parsing is bounded and transactional:

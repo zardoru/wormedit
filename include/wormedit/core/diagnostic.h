@@ -2,7 +2,6 @@
 
 #include <wormedit/core/id.h>
 
-#include <cstddef>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -62,23 +61,6 @@ template <class Code, Code DefaultCode> struct path_diagnostic_t {
     std::string message;
     std::string path;
     auto operator==(const path_diagnostic_t&) const -> bool = default;
-};
-
-template <class Code, Code DefaultCode> struct text_parse_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::size_t source_order{};
-    std::optional<std::size_t> byte_offset;
-    auto operator==(const text_parse_diagnostic_t&) const -> bool = default;
-};
-
-template <class Code, Code DefaultCode> struct text_write_diagnostic_t {
-    diagnostic_severity_t severity{diagnostic_severity_t::error};
-    Code code{DefaultCode};
-    std::string message;
-    std::string field;
-    auto operator==(const text_write_diagnostic_t&) const -> bool = default;
 };
 
 using diagnostic_t = object_diagnostic_t<diagnostic_code_t, diagnostic_code_t::invalid_id>;

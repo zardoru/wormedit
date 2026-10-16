@@ -1389,7 +1389,7 @@ auto compile_storyboard_schedule(const storyboard_document_model_t& document,
 
 
 auto storyboard_event_cursor_t::start(const storyboard_schedule_t& schedule, std::int64_t time_ms)
-    -> storyboard_cursor_status_t {
+    -> result_t<void, failure_code_t> {
     if (!std::ranges::is_sorted(schedule.events, [](const auto& left, const auto& right) {
             return std::tie(left.time_ms, left.source_order, left.stable_object_id,
                             left.stable_node_id, left.edge, left.schedule_order) <
@@ -1398,29 +1398,29 @@ auto storyboard_event_cursor_t::start(const storyboard_schedule_t& schedule, std
         })) {
         schedule_ = nullptr;
         active_ = false;
-        return storyboard_cursor_status_t::invalid_schedule;
+        return std::unexpected(failure_code_t::invalid_data);
     }
     schedule_ = &schedule;
     active_ = true;
     return seek(time_ms);
 }
 
-auto storyboard_event_cursor_t::seek(std::int64_t time_ms) -> storyboard_cursor_status_t {
+auto storyboard_event_cursor_t::seek(std::int64_t time_ms) -> result_t<void, failure_code_t> {
     if (!active_ || schedule_ == nullptr)
-        return storyboard_cursor_status_t::not_started;
+        return std::unexpected(failure_code_t::not_started);
     const auto first =
         std::ranges::lower_bound(schedule_->events, time_ms, {}, &storyboard_event_t::time_ms);
     head_ = static_cast<std::size_t>(std::distance(schedule_->events.begin(), first));
     last_end_time_ms_ = time_ms;
-    return storyboard_cursor_status_t::ready;
+    return {};
 }
 
 auto storyboard_event_cursor_t::advance_events(std::int64_t exclusive_end_time_ms) noexcept
     -> storyboard_cursor_outcome_t {
     if (!active_ || schedule_ == nullptr)
-        return std::unexpected(storyboard_cursor_status_t::not_started);
+        return std::unexpected(failure_code_t::not_started);
     if (exclusive_end_time_ms < last_end_time_ms_) {
-        return std::unexpected(storyboard_cursor_status_t::non_monotonic_window);
+        return std::unexpected(failure_code_t::invalid_state);
     }
     const auto begin = head_;
     while (head_ < schedule_->events.size() &&

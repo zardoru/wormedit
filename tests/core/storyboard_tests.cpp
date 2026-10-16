@@ -224,15 +224,15 @@ TEST_CASE("storyboard schedule seeks by time and advances one contiguous head",
     CHECK(bounded.diagnostics.front().code == storyboard_diagnostic_code_t::capacity_exceeded);
 
     storyboard_event_cursor_t cursor;
-    CHECK(cursor.start(*built.value, 10) == storyboard_cursor_status_t::ready);
+    CHECK(cursor.start(*built.value, 10).has_value());
     const auto first_window = cursor.advance_events(21);
     REQUIRE(first_window);
     CHECK(first_window->size() == 3);
     CHECK((*first_window)[0].time_ms == 10);
     CHECK((*first_window)[2].time_ms == 20);
-    CHECK(cursor.advance_events(19).error() == storyboard_cursor_status_t::non_monotonic_window);
+    CHECK(cursor.advance_events(19).error() == failure_code_t::invalid_state);
 
-    CHECK(cursor.seek(25) == storyboard_cursor_status_t::ready);
+    CHECK(cursor.seek(25).has_value());
     const auto after_seek = cursor.advance_events(31);
     REQUIRE(after_seek);
     REQUIRE(after_seek->size() == 1);
@@ -333,7 +333,7 @@ TEST_CASE("storyboard cursor errors and missing properties remain distinct outco
     storyboard_event_cursor_t cursor;
     const auto advance = cursor.advance_events(1);
     REQUIRE_FALSE(advance);
-    CHECK(advance.error() == storyboard_cursor_status_t::not_started);
+    CHECK(advance.error() == failure_code_t::not_started);
     const storyboard_sprite_t sprite;
     auto evaluated = evaluate_storyboard_property(sprite, storyboard_opcode_t::fade, 0);
     REQUIRE(evaluated);

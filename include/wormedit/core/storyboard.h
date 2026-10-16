@@ -169,14 +169,7 @@ using storyboard_schedule_outcome_t = diagnosed_t<std::optional<storyboard_sched
                                                storyboard_schedule_options_t options = {})
     -> storyboard_schedule_outcome_t;
 
-enum class storyboard_cursor_status_t : std::uint8_t {
-    ready,
-    not_started,
-    invalid_schedule,
-    non_monotonic_window,
-};
-
-using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>, storyboard_cursor_status_t>;
+using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>, failure_code_t>;
 
 
 // The schedule must outlive this cursor. seek() is logarithmic; advance() only
@@ -184,8 +177,8 @@ using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>
 class storyboard_event_cursor_t {
   public:
     [[nodiscard]] auto start(const storyboard_schedule_t& schedule, std::int64_t time_ms)
-        -> storyboard_cursor_status_t;
-    [[nodiscard]] auto seek(std::int64_t time_ms) -> storyboard_cursor_status_t;
+        -> result_t<void, failure_code_t>;
+    [[nodiscard]] auto seek(std::int64_t time_ms) -> result_t<void, failure_code_t>;
     [[nodiscard]] auto advance_events(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_outcome_t;
 
     void stop() noexcept;

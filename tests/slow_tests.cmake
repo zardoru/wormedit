@@ -35,3 +35,19 @@ wormedit_label_slow_tests(wormedit_sdl_audio_tests_TESTS
     "sdl-audio.SDL refill worker advances through prime windows without frame service and hard Stop stays silent"
     "sdl-audio.SDL selection loops restart at every rate with either pitch mode"
 )
+
+# frame-timing: preserve regression sizes and matrices; keep these in the full gate.
+wormedit_label_slow_tests(wormedit_frame_timing_tests_TESTS
+    "frame-timing.Affine waveform clock preserves BPM pause warp boundaries during600 playback frames"
+    "frame-timing.BMSON editor export publishes sliced audio and reports conversion losses"
+    "frame-timing.Compose BGM arena rows preserve fresh and retained projection labels and clipping"
+    "frame-timing.Compose BGM arena storage remains stable across 1000 reused frames"
+    "frame-timing.Compose controls retain measure geometry until the document revision changes"
+    "frame-timing.Compose grid arena exhaustion publishes only complete paired units"
+    "frame-timing.Compose marker arena exhaustion publishes complete per-anchor prefixes"
+    "frame-timing.Compose pinch dispatch preserves anchor and cancels prior viewport motion"
+    "frame-timing.Compose pinch rejects invalid ratios and anchors before motion cancellation"
+    "frame-timing.Compose semantic arena exhaustion publishes only complete named rows"
+    "frame-timing.Frame timing projects real play follow on a 50000 note chart"
+    "frame-timing.Indexed retained scalar publication matches full composition while following and reversing"
+)

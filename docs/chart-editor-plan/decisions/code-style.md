@@ -150,6 +150,17 @@ it in new code even before the card lands.
   commit that lowers a count; raising one needs the owner's approval. When an audit finds a new
   ceremony pattern, add a row.
 
+## Tests (owner, 2026-10-15)
+
+- **Test a safeguard where it lives.** A shared runner's checks (exclusivity, stale, not-ready,
+  no-op, single commit, routing, completion) are tested once, at the runner. An owner tests its
+  domain behavior plus one wiring test that it goes through the runner; it does not re-test the
+  runner's safeguards. *(T-644)*
+- **Assert the contract.** Assert a diagnostic's code; assert its text only where the text is the
+  contract. Rules about source shape belong in the ceremony ratchet, not in a test that scans files.
+- **Size limits small.** Prove a bound at the smallest size that exercises it; anything over a
+  second needs a reason in the test or the `slow` label.
+
 ## Files and folders
 
 - Group files in folders by subsystem and keep the file-name prefix

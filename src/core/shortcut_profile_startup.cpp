@@ -38,46 +38,48 @@ auto fallback_diagnostic(diagnostic_severity_t severity, std::string message) ->
 
 auto apply_startup_shortcut_profile(const std::filesystem::path& path, command_registry_t& registry)
     -> shortcut_profile_startup_outcome_t {
-    shortcut_profile_startup_outcome_t result{.value =
-                                                  shortcut_profile_startup_status_t::unavailable};
+    shortcut_profile_startup_outcome_t result{.value = failure_code_t::unavailable};
     auto loaded = open_shortcut_profile(path);
-    const auto status = loaded ? shortcut_profile_load_status_t::loaded : loaded.error().value.code;
-    switch (status) {
-    case shortcut_profile_load_status_t::missing:
-        result.value = shortcut_profile_startup_status_t::missing;
-        return result;
-    case shortcut_profile_load_status_t::invalid:
-        result.value = shortcut_profile_startup_status_t::rejected;
-        result.diagnostics = std::move(loaded.error().diagnostics);
-        if (result.diagnostics.empty()) {
-            result.diagnostics =
-                fallback_diagnostic(diagnostic_severity_t::warning,
-                                    "Shortcut preferences are invalid and were ignored.");
-        }
-        break;
-    case shortcut_profile_load_status_t::resource_limit:
-        result.value = shortcut_profile_startup_status_t::rejected;
-        result.diagnostics =
-            fallback_diagnostic(diagnostic_severity_t::warning,
-                                "Shortcut preferences exceed the supported size and were ignored.");
-        break;
-    case shortcut_profile_load_status_t::io_error:
-        result.value = shortcut_profile_startup_status_t::unavailable;
-        result.diagnostics =
-            fallback_diagnostic(diagnostic_severity_t::warning,
-                                "Shortcut preferences could not be read and were ignored.");
-        break;
-    case shortcut_profile_load_status_t::loaded: {
+    if (loaded) {
         auto applied = apply_shortcut_profile(registry, *loaded);
         result.diagnostics = std::move(applied.diagnostics);
-        result.value = applied.value ? shortcut_profile_startup_status_t::applied
-                                       : shortcut_profile_startup_status_t::rejected;
+        result.value = applied.value
+                           ? operation_state_t{shortcut_profile_startup_phase_t::applied}
+                           : failure_code_t::invalid_data;
         if (!applied.value && result.diagnostics.empty()) {
             result.diagnostics =
                 fallback_diagnostic(diagnostic_severity_t::warning,
                                     "Shortcut preferences could not be applied and were ignored.");
         }
-    } break;
+    } else {
+        switch (loaded.error().value.code) {
+        case failure_code_t::not_found:
+            result.value = shortcut_profile_startup_phase_t::missing;
+            return result;
+        case failure_code_t::invalid_data:
+            result.value = failure_code_t::invalid_data;
+            result.diagnostics = std::move(loaded.error().diagnostics);
+            if (result.diagnostics.empty()) {
+                result.diagnostics =
+                    fallback_diagnostic(diagnostic_severity_t::warning,
+                                        "Shortcut preferences are invalid and were ignored.");
+            }
+            break;
+        case failure_code_t::capacity_exceeded:
+            result.value = failure_code_t::invalid_data;
+            result.diagnostics =
+                fallback_diagnostic(diagnostic_severity_t::warning,
+                                    "Shortcut preferences exceed the supported size and were ignored.");
+            break;
+        case failure_code_t::io_failed:
+            result.value = failure_code_t::unavailable;
+            result.diagnostics =
+                fallback_diagnostic(diagnostic_severity_t::warning,
+                                    "Shortcut preferences could not be read and were ignored.");
+            break;
+        default:
+            break;
+        }
     }
     bound_diagnostics(result.diagnostics);
     return result;

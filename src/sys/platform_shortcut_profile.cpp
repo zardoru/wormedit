@@ -31,7 +31,7 @@ auto load_platform_shortcut_profile(command_registry_t& registry)
             message += "...";
         }
         return {
-            .value = shortcut_profile_startup_status_t::unavailable,
+            .value = failure_code_t::unavailable,
             .diagnostics = {{.severity = diagnostic_severity_t::warning,
                              .code = diagnostic_code_t::invalid_binding,
                              .message = std::move(message)}},

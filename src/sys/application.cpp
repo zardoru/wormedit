@@ -406,7 +406,7 @@ auto shortcut_profile_path(const wormedit::sys::program_preferences_runtime_t& p
 auto load_preferred_shortcuts(const wormedit::sys::program_preferences_runtime_t& preferences,
     wormedit::command_registry_t& registry) -> wormedit::shortcut_profile_startup_outcome_t {
     if (preferences.path.empty())
-        return {.value = wormedit::shortcut_profile_startup_status_t::unavailable,
+        return {.value = wormedit::failure_code_t::unavailable,
                 .diagnostics = {}};
     return wormedit::apply_startup_shortcut_profile(shortcut_profile_path(preferences), registry);
 }

@@ -11,11 +11,13 @@ namespace wormedit {
 // copying; their owned Key supplies from/assign to retain only miss-time state.
 // A nullary builder returns a replacement value. A void(Value&) builder borrows
 // the retained storage only on a miss, allowing capacity reuse or early release.
+// A bound lookup permits owner updates; value() remains read-only inspection.
+// Nullary builds capture borrowed keys before replacing the retained value.
 template <class Key, class Value>
 class keyed_cache_t {
   public:
     template <class Lookup, class Builder>
-    [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder) -> const Value& {
+    [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder) -> Value& {
         if (valid_ && *key_ == key) return value_;
         if constexpr (std::is_invocable_v<Builder>) {
             auto value = std::forward<Builder>(builder)();

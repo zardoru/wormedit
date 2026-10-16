@@ -217,3 +217,29 @@ TEST_CASE("A refill may invalidate its old value without losing key publication"
     CHECK(cache.build_count() == 2);
     CHECK(calls == 2);
 }
+
+TEST_CASE("A bound cache value supports owner updates without rebuilding", "[core][keyed-cache]") {
+    keyed_cache_t<int, std::vector<int>> cache;
+    std::size_t calls{};
+    auto& retained = cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1}});
+    retained.push_back(2);
+    CHECK(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {9}}).size() == 2);
+    CHECK(calls == 1);
+    CHECK(cache.get_or_build(2, counting_builder_t<std::vector<int>>{calls, {9}}).front() == 9);
+    CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("A borrowed key is captured before its retained source value is replaced", "[core][keyed-cache]") {
+    keyed_cache_t<owned_key_t, std::vector<int>> cache;
+    std::size_t calls{}, captures{}, assignments{};
+    const std::vector<int> seed{1}, original{2, 3}, replacement{4, 5};
+    static_cast<void>(cache.get_or_build(key_view_t{seed, captures, assignments},
+        counting_builder_t<std::vector<int>>{calls, original}));
+    const key_view_t borrowed{cache.value(), captures, assignments};
+    static_cast<void>(cache.get_or_build(borrowed,
+        counting_builder_t<std::vector<int>>{calls, replacement}));
+    CHECK(cache.key()->values == original);
+    CHECK(cache.value() == replacement);
+    CHECK(assignments == 1);
+    CHECK(calls == 2);
+}

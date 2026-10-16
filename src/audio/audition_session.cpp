@@ -31,21 +31,19 @@ auto audition_session_t::snapshot_pump_state() const -> pump_state_t {
     return {token_, clips_, timeline_frame_};
 }
 
-auto audition_session_t::complete_pump(session_token_t token, audition_pump_outcome_t result)
-    -> audition_pump_outcome_t {
+auto audition_session_t::complete_pump(session_token_t token, audition_pump_effect_t result)
+    -> audition_pump_effect_t {
     const std::scoped_lock lock(mutex_);
     if (token_ != token)
-        return std::unexpected(
-            audition_pump_effect_t{.status = failure_code_t::stale_generation});
-    if (result) prime_pending_ = false;
+        return audition_pump_effect_t{.status = failure_code_t::stale_generation};
+    if (!result.status.has_failure()) prime_pending_ = false;
     return result;
 }
 
-auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_outcome_t {
+auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_effect_t {
     const auto state = snapshot_pump_state();
     if (!state.token)
-        return std::unexpected(
-            audition_pump_effect_t{.status = failure_code_t::stale_generation});
+        return audition_pump_effect_t{.status = failure_code_t::stale_generation};
     auto result = pump_audition_blocks(sources_, transport_, *state.token, state.clips,
                                           state.timeline_frame, options);
     return complete_pump(*state.token, std::move(result));

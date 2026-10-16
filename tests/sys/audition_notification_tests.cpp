@@ -159,8 +159,8 @@ TEST_CASE("Deferred audition source failure retains existing notification and is
     expect_audition(!*failed);
     expect_audition(failed->error().status.has_failure(wormedit::failure_code_t::pump_failed));
     expect_audition(failed->error().pump.has_value());
-    expect_audition(!*failed->error().pump);
-    expect_audition(failed->error().pump->error().status == wormedit::failure_code_t::unavailable);
+    expect_audition(failed->error().pump->status.has_failure());
+    expect_audition(failed->error().pump->status == wormedit::failure_code_t::unavailable);
     static_cast<void>(fixture.output.stop());
     post_audition_service_notifications(*failed, fixture.sink);
     const auto entries = fixture.entries();

@@ -102,7 +102,7 @@ auto plan_audition_keys(std::span<const audition_clip_t> clips, std::uint64_t ti
 
 auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& transport,
                           session_token_t token, const audition_key_plan_t& plan)
-    -> audition_pump_outcome_t {
+    -> audition_pump_effect_t {
     audition_pump_effect_t result{.status = audition_pump_phase_t::ready,
                                   .requested_blocks = plan.keys.size(),
                                   .decoded_blocks = 0,
@@ -121,7 +121,7 @@ auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& trans
         }
         result.status = decode_failure_status(decoded.status);
         result.failure = decoded;
-        return std::unexpected(std::move(result));
+        return result;
     }
     return result;
 }
@@ -152,19 +152,16 @@ auto prime_resident_audition_blocks(transport_t& transport, session_token_t toke
 auto pump_audition_blocks(decoded_source_registry_t& sources, transport_t& transport,
                           session_token_t token, std::span<const audition_clip_t> clips,
                           std::uint64_t timeline_frame, audition_pump_options_t options)
-    -> audition_pump_outcome_t {
+    -> audition_pump_effect_t {
     if (!transport.is_current(token)) {
-        return std::unexpected(
-            audition_pump_effect_t{.status = failure_code_t::stale_generation});
+        return audition_pump_effect_t{.status = failure_code_t::stale_generation};
     }
     if (!is_valid_options(clips, options)) {
-        return std::unexpected(
-            audition_pump_effect_t{.status = failure_code_t::invalid_request});
+        return audition_pump_effect_t{.status = failure_code_t::invalid_request};
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value()) {
-        return std::unexpected(
-            audition_pump_effect_t{.status = failure_code_t::invalid_request});
+        return audition_pump_effect_t{.status = failure_code_t::invalid_request};
     }
     const auto plan =
         plan_audition_keys(clips, timeline_frame, *window_end, options.maximum_blocks);
@@ -173,7 +170,7 @@ auto pump_audition_blocks(decoded_source_registry_t& sources, transport_t& trans
         if (plan.error() == failure_code_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
-        return std::unexpected(std::move(result));
+        return result;
     }
     if (!plan->active) {
         return audition_pump_effect_t{.status = audition_pump_phase_t::complete};

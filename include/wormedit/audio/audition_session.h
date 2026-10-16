@@ -16,7 +16,7 @@ struct started_audition_session_t {
     session_token_t token;
     audition_start_outcome_t transport{
         std::unexpected(failure_code_t::transport_failed)};
-    std::optional<audition_pump_outcome_t> prime;
+    std::optional<audition_pump_effect_t> prime;
     auto operator==(const started_audition_session_t&) const -> bool = default;
 };
 struct audition_session_start_error_t {
@@ -40,7 +40,7 @@ class audition_session_t {
 
     [[nodiscard]] auto start_session(std::span<const audition_clip_t> clips)
         -> audition_session_start_outcome_t;
-    [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_outcome_t;
+    [[nodiscard]] auto pump(audition_pump_options_t options = {}) -> audition_pump_effect_t;
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo)
         -> session_render_effect_t;
     [[nodiscard]] auto stop() noexcept -> transport_stop_result_t;
@@ -58,8 +58,8 @@ class audition_session_t {
         std::uint64_t timeline_frame{};
     };
     [[nodiscard]] auto snapshot_pump_state() const -> pump_state_t;
-    [[nodiscard]] auto complete_pump(session_token_t token, audition_pump_outcome_t result)
-        -> audition_pump_outcome_t;
+    [[nodiscard]] auto complete_pump(session_token_t token, audition_pump_effect_t result)
+        -> audition_pump_effect_t;
     void clear_state() noexcept;
     void publish_playhead() noexcept;
 

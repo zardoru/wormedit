@@ -46,11 +46,11 @@ TEST_CASE("audition lookahead fills exact blocks before the headless mixer consu
 
     const auto pumped = pump_audition_blocks(sources, transport, started.value().token,
                                                 std::span{&clip, 1}, 0, {.lookahead_frames = 512});
-    REQUIRE(pumped);
-    CHECK(pumped.value().status == audition_pump_phase_t::ready);
-    CHECK(pumped.value().requested_blocks == 2);
-    CHECK(pumped.value().decoded_blocks == 2);
-    CHECK(pumped.value().cached_blocks == 0);
+    REQUIRE_FALSE(pumped.status.has_failure());
+    CHECK(pumped.status == audition_pump_phase_t::ready);
+    CHECK(pumped.requested_blocks == 2);
+    CHECK(pumped.decoded_blocks == 2);
+    CHECK(pumped.cached_blocks == 0);
 
     std::vector<float> output(512 * output_channel_count);
     const auto mixed = transport.mix_frames(started.value().token, 0, output);
@@ -75,20 +75,20 @@ TEST_CASE("audition lookahead plans capacity atomically and reuses cached blocks
 
     const auto bounded = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                  {.lookahead_frames = 512, .maximum_blocks = 1});
-    REQUIRE_FALSE(bounded);
-    CHECK(bounded.error().status == wormedit::failure_code_t::capacity_exceeded);
+    REQUIRE(bounded.status.has_failure());
+    CHECK(bounded.status == wormedit::failure_code_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     const auto first = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                {.lookahead_frames = 512, .maximum_blocks = 2});
-    REQUIRE(first);
-    CHECK(first.value().requested_blocks == 2);
-    CHECK(first.value().decoded_blocks == 2);
+    REQUIRE_FALSE(first.status.has_failure());
+    CHECK(first.requested_blocks == 2);
+    CHECK(first.decoded_blocks == 2);
     const auto repeated = pump_audition_blocks(sources, transport, started.value().token, layered, 0,
                                                   {.lookahead_frames = 512, .maximum_blocks = 2});
-    REQUIRE(repeated);
-    CHECK(repeated.value().decoded_blocks == 0);
-    CHECK(repeated.value().cached_blocks == 2);
+    REQUIRE_FALSE(repeated.status.has_failure());
+    CHECK(repeated.decoded_blocks == 0);
+    CHECK(repeated.cached_blocks == 2);
 }
 
 TEST_CASE("audition lookahead rejects stale unknown and invalid requests without decoding",
@@ -105,33 +105,33 @@ TEST_CASE("audition lookahead rejects stale unknown and invalid requests without
 
     const auto complete = pump_audition_blocks(sources, transport, started.value().token,
                                                   std::span{&clip, 1}, clip.frame_count);
-    REQUIRE(complete);
-    CHECK(complete.value().status == audition_pump_phase_t::complete);
-    CHECK(complete.value().requested_blocks == 0);
+    REQUIRE_FALSE(complete.status.has_failure());
+    CHECK(complete.status == audition_pump_phase_t::complete);
+    CHECK(complete.requested_blocks == 0);
 
     const audition_clip_t unknown{{"fixture:unknown", "missing:v1"}, 0, 512, 1.0F};
     const auto unavailable =
         pump_audition_blocks(sources, transport, started.value().token, std::span{&unknown, 1}, 0);
-    REQUIRE_FALSE(unavailable);
-    CHECK(unavailable.error().status == wormedit::failure_code_t::unavailable);
-    REQUIRE(unavailable.error().failure.has_value());
-    CHECK(unavailable.error().failure->status == block_decode_status_t::invalid_key);
+    REQUIRE(unavailable.status.has_failure());
+    CHECK(unavailable.status == wormedit::failure_code_t::unavailable);
+    REQUIRE(unavailable.failure.has_value());
+    CHECK(unavailable.failure->status == block_decode_status_t::invalid_key);
 
     const auto invalid =
         pump_audition_blocks(sources, transport, started.value().token, std::span{&clip, 1}, 0,
                                 {.lookahead_frames = maximum_read_frames + 1});
-    REQUIRE_FALSE(invalid);
-    CHECK(invalid.error().status == wormedit::failure_code_t::invalid_request);
+    REQUIRE(invalid.status.has_failure());
+    CHECK(invalid.status == wormedit::failure_code_t::invalid_request);
     CHECK(cache.stats().entries == 0);
 
     const std::vector too_many(maximum_audition_pump_clips + 1, clip);
     const auto excessive = pump_audition_blocks(sources, transport, started.value().token, too_many, 0);
-    REQUIRE_FALSE(excessive);
-    CHECK(excessive.error().status == wormedit::failure_code_t::invalid_request);
+    REQUIRE(excessive.status.has_failure());
+    CHECK(excessive.status == wormedit::failure_code_t::invalid_request);
 
     static_cast<void>(bridge.stop());
     const auto stale =
         pump_audition_blocks(sources, transport, started.value().token, std::span{&clip, 1}, 0);
-    REQUIRE_FALSE(stale);
-    CHECK(stale.error().status == wormedit::failure_code_t::stale_generation);
+    REQUIRE(stale.status.has_failure());
+    CHECK(stale.status == wormedit::failure_code_t::stale_generation);
 }

@@ -78,7 +78,7 @@ void sdl_audition_output_t::set_refill_enabled(bool enabled) noexcept {
 }
 
 auto sdl_audition_output_t::take_refill_result()
-    -> std::optional<audio::audition_pump_outcome_t> {
+    -> std::optional<audio::audition_pump_effect_t> {
     const std::scoped_lock lock(refill_mutex_);
     return std::exchange(refill_result_, std::nullopt);
 }
@@ -91,21 +91,17 @@ void sdl_audition_output_t::refill_loop(std::stop_token stop) {
         if (stop.stop_requested()) return;
         const auto generation = refill_generation_;
         lock.unlock();
-        audio::audition_pump_outcome_t result =
-            std::unexpected(audio::audition_pump_effect_t{});
+        audio::audition_pump_effect_t result;
         try { result = session_.pump(); }
         catch (...) {
-            auto failed = result ? std::move(*result) : std::move(result.error());
-            failed.status = failure_code_t::decode_failed;
-            result = std::unexpected(std::move(failed));
+            result.status = failure_code_t::decode_failed;
         }
         lock.lock();
-        const auto& effect = result ? *result : result.error();
         if (generation == refill_generation_ && refill_enabled_ &&
-            (!refill_result_ || static_cast<bool>(*refill_result_))) {
-            if (!result || effect.status == audio::audition_pump_phase_t::complete)
+            (!refill_result_ || !refill_result_->status.has_failure())) {
+            if (result.status.has_failure() || result.status == audio::audition_pump_phase_t::complete)
                 refill_enabled_ = false;
-            if (effect.status != failure_code_t::stale_generation)
+            if (result.status != failure_code_t::stale_generation)
                 refill_result_ = std::move(result);
         }
         refill_ready_.wait_for(lock, std::chrono::milliseconds(10), [&] {
@@ -185,7 +181,7 @@ auto sdl_audition_output_t::service() -> std::optional<sdl_audition_service_outc
     sdl_audition_service_result_t result{
         .pump = std::move(pumped),
     };
-    if (!*result.pump) {
+    if (result.pump->status.has_failure()) {
         result.status = failure_code_t::pump_failed;
         return std::unexpected(std::move(result));
     }

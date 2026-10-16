@@ -54,7 +54,7 @@ auto audition_failure_message(const sdl_audition_service_result_t& result) -> co
     else if (result.status.has_failure(failure_code_t::render_failed))
         return "Audio preview stopped after a realtime cache underrun.";
     else if (result.pump) {
-        const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
+        const auto& pumped = *result.pump;
         if (pumped.status == failure_code_t::unavailable)
             return "Audio preview stopped because its decoded source is unavailable.";
     }

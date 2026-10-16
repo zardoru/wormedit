@@ -183,14 +183,14 @@ auto candidate_voices(const event_candidate_t& candidate,
 }
 
 auto pump_error_for_schedule(operation_state_t<std::monostate> status)
-    -> std::optional<preview_bridge_pump_status_t> {
+    -> std::optional<failure_code_t> {
     if (!status.has_failure())
         return std::nullopt;
     if (status.has_failure(failure_code_t::capacity_exceeded))
-        return preview_bridge_pump_status_t::capacity_limited;
+        return failure_code_t::capacity_exceeded;
     if (status.has_failure(failure_code_t::stale_generation))
-        return preview_bridge_pump_status_t::stale_generation;
-    return preview_bridge_pump_status_t::transport_rejected_voice;
+        return failure_code_t::stale_generation;
+    return failure_code_t::transport_failed;
 }
 
 auto is_valid_source(const audio_source_identity_t& source) -> bool {
@@ -335,33 +335,33 @@ auto preview_transport_bridge_t::start_preview(
     std::span<const preview_metronome_source_binding_t> metronome, std::uint64_t seek_frame)
     -> preview_bridge_start_outcome_t {
     if (schedule.sample_rate != output_sample_rate) {
-        return std::unexpected(preview_bridge_start_status_t::unsupported_sample_rate);
+        return std::unexpected(failure_code_t::unsupported);
     }
     if (!is_sorted_events(schedule.playable) || !is_sorted_events(schedule.bgm) ||
         !is_sorted_metronome_events(schedule.metronome)) {
-        return std::unexpected(preview_bridge_start_status_t::invalid_schedule);
+        return std::unexpected(failure_code_t::invalid_data);
     }
     std::size_t total_voices{};
     for (const auto& binding : objects) {
         if (binding.voices.size() > maximum_layers_per_object_ ||
             binding.voices.size() > maximum_total_voices_ - total_voices) {
-            return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
+            return std::unexpected(failure_code_t::capacity_exceeded);
         }
         total_voices += binding.voices.size();
     }
     if (objects.size() > maximum_object_bindings_ || total_voices > maximum_total_voices_) {
-        return std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded);
+        return std::unexpected(failure_code_t::capacity_exceeded);
     }
     if (!std::ranges::all_of(objects, &preview_object_source_binding_t::is_valid) ||
         !std::ranges::all_of(metronome, &preview_metronome_source_binding_t::is_valid)) {
-        return std::unexpected(preview_bridge_start_status_t::invalid_source_binding);
+        return std::unexpected(failure_code_t::invalid_request);
     }
 
     std::vector<preview_object_source_binding_t> sorted_objects{objects.begin(), objects.end()};
     std::ranges::sort(sorted_objects, {}, &preview_object_source_binding_t::object);
     if (std::ranges::adjacent_find(sorted_objects, {}, &preview_object_source_binding_t::object) !=
         sorted_objects.end()) {
-        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
+        return std::unexpected(failure_code_t::conflict);
     }
 
     std::vector<preview_metronome_source_binding_t> sorted_metronome{metronome.begin(),
@@ -370,7 +370,7 @@ auto preview_transport_bridge_t::start_preview(
     if (std::ranges::adjacent_find(sorted_metronome, {},
                                    &preview_metronome_source_binding_t::accent) !=
         sorted_metronome.end()) {
-        return std::unexpected(preview_bridge_start_status_t::duplicate_source_binding);
+        return std::unexpected(failure_code_t::conflict);
     }
 
     schedule_ = &schedule;
@@ -382,7 +382,7 @@ auto preview_transport_bridge_t::start_preview(
 auto preview_transport_bridge_t::seek_preview(std::uint64_t sample_frame)
     -> preview_bridge_start_outcome_t {
     if (schedule_ == nullptr) {
-        return std::unexpected(preview_bridge_start_status_t::not_started);
+        return std::unexpected(failure_code_t::not_started);
     }
     return begin_session(sample_frame);
 }
@@ -392,7 +392,7 @@ auto preview_transport_bridge_t::begin_session(std::uint64_t seek_frame)
     const auto token = transport_.start();
     if (!token.has_value()) {
         token_.reset();
-        return std::unexpected(preview_bridge_start_status_t::transport_start_failed);
+        return std::unexpected(failure_code_t::transport_failed);
     }
     token_ = token;
     resumed_objects_.clear();
@@ -543,20 +543,20 @@ auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end
     -> preview_bridge_pump_outcome_t {
     if (schedule_ == nullptr || !token_.has_value()) {
         return std::unexpected(
-            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::not_started});
+            preview_bridge_pump_effect_t{.status = failure_code_t::not_started});
     }
     if (!transport_.is_current(*token_)) {
         return std::unexpected(
-            preview_bridge_pump_effect_t{.status = preview_bridge_pump_status_t::stale_generation});
+            preview_bridge_pump_effect_t{.status = failure_code_t::stale_generation});
     }
     if (exclusive_end_frame < last_materialized_end_) {
         return std::unexpected(preview_bridge_pump_effect_t{
-            .status = preview_bridge_pump_status_t::non_monotonic_window});
+            .status = failure_code_t::invalid_state});
     }
 
     refill_assist_clicks(exclusive_end_frame, current_frame);
     auto result = preview_bridge_pump_effect_t{
-        .status = preview_bridge_pump_status_t::ready,
+        .status = std::monostate{},
     };
     const auto playable = std::span<const preview_audio_event_t>{schedule_->playable};
     const auto bgm = std::span<const preview_audio_event_t>{schedule_->bgm};
@@ -588,7 +588,7 @@ auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end
         }
         if (next_voice_id_ == 0 ||
             sources.size() - 1 > std::numeric_limits<std::uint64_t>::max() - next_voice_id_) {
-            result.status = preview_bridge_pump_status_t::voice_id_exhausted;
+            result.status = failure_code_t::arithmetic_overflow;
             break;
         }
 
@@ -622,7 +622,7 @@ auto preview_transport_bridge_t::materialize_preview(std::uint64_t exclusive_end
         advance_voice_ids(sources.size());
     }
     last_materialized_end_ = exclusive_end_frame;
-    if (result.status != preview_bridge_pump_status_t::ready)
+    if (result.status.has_failure())
         return std::unexpected(std::move(result));
     return result;
 }

@@ -30,11 +30,11 @@ auto materialization_status(const preview_bridge_pump_outcome_t& result)
     -> std::optional<failure_code_t> {
     const auto& effect = result ? *result : result.error();
     if (effect.missing_sources != 0) return failure_code_t::unavailable;
-    if (effect.status == preview_bridge_pump_status_t::capacity_limited ||
-        effect.status == preview_bridge_pump_status_t::voice_id_exhausted ||
-        effect.status == preview_bridge_pump_status_t::transport_rejected_voice)
+    if (effect.status == failure_code_t::capacity_exceeded ||
+        effect.status == failure_code_t::arithmetic_overflow ||
+        effect.status == failure_code_t::transport_failed)
         return failure_code_t::capacity_exceeded;
-    return effect.status == preview_bridge_pump_status_t::ready
+    return effect.status == std::monostate{}
                ? std::nullopt
                : std::optional{failure_code_t::render_failed};
 }

@@ -23,9 +23,9 @@ auto checked_window_end(std::uint64_t timeline_frame, std::size_t lookahead_fram
     return timeline_frame + lookahead_frames;
 }
 
-auto is_materialize_succeeded(preview_bridge_pump_status_t status) -> bool {
-    return status == preview_bridge_pump_status_t::ready ||
-           status == preview_bridge_pump_status_t::capacity_limited;
+auto is_materialize_succeeded(operation_state_t<std::monostate> status) -> bool {
+    return status == std::monostate{} ||
+           status == failure_code_t::capacity_exceeded;
 }
 
 } // namespace

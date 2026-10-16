@@ -244,7 +244,7 @@ auto preview_music_seek_geometry_is_correct() -> bool {
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
     if (!started || bridge.materialize_preview(3 * maximum_read_frames).value().status !=
-                        preview_bridge_pump_status_t::ready)
+                        std::monostate{})
         return false;
     const auto active = transport.snapshot_voices(started.value().token);
     const bool valid = contiguous_music_segments(active) &&
@@ -303,7 +303,7 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
     const auto started = start_primed(session, schedule, std::span{&binding, 1}, {}, 0,
                                        {.lookahead_frames = maximum_read_frames});
     if (!started || bridge.materialize_preview(2 * maximum_read_frames).value().status !=
-                        preview_bridge_pump_status_t::ready ||
+                        std::monostate{} ||
         !dropped_music_segment_is_reported(session, cache, source.source))
         return false;
     const auto pumped = pump_preview_blocks(

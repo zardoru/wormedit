@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/audio/transport.h>
+#include <wormedit/core/operation_state.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/result.h>
 
@@ -10,6 +11,7 @@
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <type_traits>
 #include <vector>
 
 namespace wormedit::audio {
@@ -49,35 +51,21 @@ struct preview_assist_click_grid_t {
     auto operator==(const preview_assist_click_grid_t&) const -> bool = default;
 };
 
-enum class preview_bridge_start_status_t : std::uint8_t {
-    started,
-    not_started,
-    unsupported_sample_rate,
-    invalid_schedule,
-    invalid_source_binding,
-    duplicate_source_binding,
-    source_binding_capacity_exceeded,
-    transport_start_failed,
-};
 
-using preview_bridge_start_outcome_t = result_t<session_token_t, preview_bridge_start_status_t>;
+using preview_bridge_start_outcome_t = result_t<session_token_t, failure_code_t>;
 
-enum class preview_bridge_pump_status_t : std::uint8_t {
-    ready,
-    not_started,
-    stale_generation,
-    capacity_limited,
-    non_monotonic_window,
-    voice_id_exhausted,
-    transport_rejected_voice,
-};
+
+static_assert(sizeof(operation_state_t<std::monostate>) <= 2 * sizeof(std::uint8_t));
+static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct preview_bridge_pump_effect_t {
-    preview_bridge_pump_status_t status{preview_bridge_pump_status_t::not_started};
+    operation_state_t<std::monostate> status{failure_code_t::not_started};
     std::size_t scheduled_events{};
     std::size_t missing_sources{};
     auto operator==(const preview_bridge_pump_effect_t&) const -> bool = default;
 };
+static_assert(sizeof(preview_bridge_pump_effect_t) <= 3 * sizeof(std::size_t));
+static_assert(std::is_trivially_copyable_v<preview_bridge_pump_effect_t>);
 using preview_bridge_pump_outcome_t =
     result_t<preview_bridge_pump_effect_t, preview_bridge_pump_effect_t>;
 

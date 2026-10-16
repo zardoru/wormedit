@@ -789,8 +789,7 @@ void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std:
         ? (*sought_data.session ? -1 : static_cast<int>(sought_data.session->error().code))
         : -1;
     const auto bridge_status = detail && detail->bridge
-        ? static_cast<int>(*detail->bridge ? preview_bridge_start_status_t::started
-                                          : detail->bridge->error())
+        ? (*detail->bridge ? -1 : static_cast<int>(detail->bridge->error()))
         : -1;
     INFO("session status " << session_status);
     INFO("bridge status " << bridge_status);

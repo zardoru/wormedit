@@ -82,7 +82,7 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
     auto pumped = bridge.materialize_preview(event_count * 10);
     require_audio_condition(!pumped);
     scheduled += pumped.error().scheduled_events;
-    check_audio_condition(pumped.error().status == preview_bridge_pump_status_t::capacity_limited);
+    check_audio_condition(pumped.error().status == wormedit::failure_code_t::capacity_exceeded);
     check_audio_condition(pumped.error().scheduled_events == 256);
     check_audio_condition(transport.scheduled_voice_count() == 256);
 
@@ -93,8 +93,8 @@ TEST_CASE("preview bridge windows more than 256 sequential events through bounde
         scheduled += effect.scheduled_events;
         const auto mixed = transport.mix_frames(started.value(), frame, output);
         REQUIRE(mixed.value().status == std::monostate{});
-        CHECK((effect.status == preview_bridge_pump_status_t::ready ||
-               effect.status == preview_bridge_pump_status_t::capacity_limited));
+        CHECK((effect.status == std::monostate{} ||
+               effect.status == wormedit::failure_code_t::capacity_exceeded));
     }
 
     CHECK(scheduled == event_count);
@@ -127,7 +127,7 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
     REQUIRE(started);
 
     const auto pumped = bridge.materialize_preview(1);
-    CHECK(pumped.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(pumped.value().status == std::monostate{});
     CHECK(pumped.value().scheduled_events == 6);
     CHECK(transport.scheduled_voice_count() == 6);
 
@@ -198,7 +198,7 @@ TEST_CASE("preview bridge resumes active BMSON slices at the sought source frame
     check_audio_condition(bridge.stop().scheduled_voices == 1);
     const auto after_stop = bridge.materialize_preview(11);
     require_audio_condition(!after_stop);
-    check_audio_condition(after_stop.error().status == preview_bridge_pump_status_t::not_started);
+    check_audio_condition(after_stop.error().status == wormedit::failure_code_t::not_started);
 }
 
 TEST_CASE("preview bridge seeks and restarts with fresh session generations",
@@ -263,7 +263,7 @@ TEST_CASE("preview bridge Stop invalidates its generation and clears scheduled v
     CHECK(transport.scheduled_voice_count() == 0);
     const auto after_stop = bridge.materialize_preview(20);
     require_audio_condition(!after_stop);
-    CHECK(after_stop.error().status == preview_bridge_pump_status_t::not_started);
+    CHECK(after_stop.error().status == wormedit::failure_code_t::not_started);
     std::array<float, 8> output{1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F, 1.0F};
     const auto stopped_mix = transport.mix_frames(started.value(), 0, output);
     require_audio_condition(!stopped_mix);
@@ -288,17 +288,17 @@ TEST_CASE("preview bridge skips missing sources and advances only consumed queue
     REQUIRE(started);
 
     const auto first = bridge.materialize_preview(11);
-    CHECK(first.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(first.value().status == std::monostate{});
     CHECK(first.value().missing_sources == 1);
     CHECK(first.value().scheduled_events == 0);
     const auto second = bridge.materialize_preview(12);
-    CHECK(second.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(second.value().status == std::monostate{});
     CHECK(second.value().missing_sources == 0);
     CHECK(second.value().scheduled_events == 1);
 
     const auto backwards = bridge.materialize_preview(11);
     require_audio_condition(!backwards);
-    CHECK(backwards.error().status == preview_bridge_pump_status_t::non_monotonic_window);
+    CHECK(backwards.error().status == wormedit::failure_code_t::invalid_state);
 }
 
 TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue head",
@@ -320,13 +320,13 @@ TEST_CASE("preview bridge leaves an over-capacity same-frame event at the queue 
 
     const auto initial = bridge.materialize_preview(11);
     require_audio_condition(!initial.has_value());
-    CHECK(initial.error().status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(initial.error().status == wormedit::failure_code_t::capacity_exceeded);
     CHECK(initial.error().scheduled_events == 2);
     CHECK(transport.scheduled_voice_count() == 2);
     std::array<float, 8> output{};
     REQUIRE(transport.mix_frames(started.value(), 0, output).value().status == std::monostate{});
     const auto resumed = bridge.materialize_preview(11);
-    CHECK(resumed.value().status == preview_bridge_pump_status_t::ready);
+    CHECK(resumed.value().status == std::monostate{});
     CHECK(resumed.value().scheduled_events == 1);
     CHECK(transport.scheduled_voice_count() == 1);
 }
@@ -349,12 +349,12 @@ TEST_CASE("preview bridge schedules every layer of one object atomically",
 
     const auto pumped = bridge.materialize_preview(1);
     require_audio_condition(!pumped);
-    CHECK(pumped.error().status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(pumped.error().status == wormedit::failure_code_t::capacity_exceeded);
     CHECK(pumped.error().scheduled_events == 0);
     CHECK(transport.scheduled_voice_count() == 0);
     const auto still_blocked = bridge.materialize_preview(1);
     require_audio_condition(!still_blocked);
-    CHECK(still_blocked.error().status == preview_bridge_pump_status_t::capacity_limited);
+    CHECK(still_blocked.error().status == wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings",
@@ -367,14 +367,14 @@ TEST_CASE("preview bridge rejects duplicate and unbounded object-layer bindings"
     const std::array duplicates{binding(object_id_t{1}), binding(object_id_t{1})};
     preview_transport_bridge_t bridge{transport};
     CHECK(bridge.start_preview(chart, duplicates) ==
-          std::unexpected(preview_bridge_start_status_t::duplicate_source_binding));
+          std::unexpected(wormedit::failure_code_t::conflict));
 
     auto layered = binding(object_id_t{1});
     layered.voices.push_back({.source = {"asset:layer", "revision:1"}, .frame_count = 64});
     const std::array objects{layered};
     preview_transport_bridge_t bounded{transport, 1, 1, 1};
     CHECK(bounded.start_preview(chart, objects) ==
-          std::unexpected(preview_bridge_start_status_t::source_binding_capacity_exceeded));
+          std::unexpected(wormedit::failure_code_t::capacity_exceeded));
     CHECK(transport.scheduled_voice_count() == 0);
 }
 
@@ -563,7 +563,7 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
     require_metronome(bridge.set_assist_grid(true, assist_grid(100), 0));
     const auto blocked = bridge.materialize_preview(10'000, 0);
     require_metronome(!blocked);
-    require_metronome(blocked.error().status == preview_bridge_pump_status_t::capacity_limited);
+    require_metronome(blocked.error().status == wormedit::failure_code_t::capacity_exceeded);
     require_metronome(bridge.set_assist_grid(true, assist_grid(200), 0));
     std::array<float, 64 * output_channel_count> output{};
     require_metronome(transport.mix_frames(started.value(), 0, output).value().status == std::monostate{});
@@ -573,7 +573,7 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
     require_metronome(bridge.set_assist_grid(true, assist_grid(300), 64));
     const auto replaced = bridge.materialize_preview(10'000, 64);
     require_metronome(!replaced);
-    require_metronome(replaced.error().status == preview_bridge_pump_status_t::capacity_limited);
+    require_metronome(replaced.error().status == wormedit::failure_code_t::capacity_exceeded);
     const auto retained = transport.snapshot_voices(started.value());
     require_metronome(retained.value().front() == voices.value().front());
 }

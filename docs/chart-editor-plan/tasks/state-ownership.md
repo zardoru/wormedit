@@ -963,7 +963,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-639 Own timing kind-to-storage routing once
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; core order T-639 → T-643)
 - **Findings closed:** CE6: six timing-controller switches plus the clipboard type-to-lane projection mapping.
 - **Stale-plan audit:** Inventory each timing-kind switch by purpose: storage, value alternative, occupancy, command invocation. Record shared pause storage+kind predicate, warp span.begin, BPM initial restrictions, selected-ID exclusion, invalid-kind fallbacks, insert/update vs delete and postvalidation. Read existing catalog helpers before adding traits. Separate kind labels/selection-kind mapping already owned by T-611.
 - **Outcome:** A typed timing-event access owner carries storage, value and position mapping once; lookup/occupancy/edit operations reuse it with explicit per-domain policies. Six switches do not become six dynamic callbacks or six new tables. Operation algorithms remain discoverable as named queries/edits.
@@ -1006,7 +1006,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-641 Share UI capture continuation without merging click policies
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; UI order T-641 → T-645 → T-646/T-647/T-648/T-650 → T-649)
 - **Findings closed:** CE9's seven verified continuation owners; extend inventory after the scheduled audit rather than claiming all UI drags are identical.
 - **Stale-plan audit:** Follow existing compose_drag_capture_t and continue_span_capture before adding helpers. For each drag, record begin/active/runtime state, focus/occlusion/overflow, identity/source/geometry checks, lost-button cancellation, threshold rules, release/click/replay behavior and emitted action. Test bookmark project reset invariant before calling project omission a bug. Include Audio Slices outer stale-cancel/render path, not only its match helper.
 - **Outcome:** Existing capture owner provides a typed stack continuation decision with explicit source/release policies. Emitters contain domain action payload construction and intentional click/replay hooks, not repeated common guards. Core proposal/gesture validity and UI input capture stay separate boundaries.
@@ -1029,7 +1029,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-642 Remove residual namespace and private forwarding ceremony
 
-- **Status:** Proposed (ceremony audit 2026-10-15; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16, including the command-menu forward extension; last before T-621)
 - **Findings closed:** CE10: 81 namespace blocks in three additional core files; six bounded private forwarding sites. T-634 already owns the other 38 gesture-lifecycle blocks.
 - **Stale-plan audit:** Count reopened namespaces and repeated includes after T-634/T-640; inspect lookup/anonymous scope boundaries. For each short function, read callers and identify invariant/policy/ABI/test purpose before deleting. Confirm six private sites still only forward. Do not classify parser trim policies, synchronized accessors or convenience transaction boundaries as transparent.
 - **Outcome:** Cohesive contiguous blocks per actual namespace/owner and direct calls to existing helpers where private aliases add no policy. Domain helpers extracted for meaningful steps survive; no complexity-driven giant function results.
@@ -1050,7 +1050,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-643 Allocate every ID domain through one reducer
 
-- **Status:** Proposed (owner question 2026-10-15: "is next_recipe_id not enrolled in the global id emission"; owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-633)
 - **Findings closed:** T-638 made `object_id_ceiling_t` the one reducer for chart object IDs, but the same "maximum over this domain's declarations, plus one, or nothing when exhausted" shape is hand-written for six more typed domains: `next_measure_id` (`measure_editor.cpp:42`), `next_layer_id` (`semantic_layer_editor.cpp:192`), `next_recipe_id` with a second declaration list in `is_globally_used_recipe_id` (`sv_recipe.cpp:248,259`), `next_resource_id` (`chart_import.cpp:267`), `next_resource_asset_id` (`resource_assignment.cpp:1460`) and `next_sound_group_id` (`sound_import.cpp:363`). The domains stay distinct on purpose (chart-scoped vs song-scoped, typed IDs); only the reducer repeats.
 - **Stale-plan audit:** Search by behavior: max reductions over `.id.value`, `== std::numeric_limits<std::uint64_t>::max()` exhaustion checks, "already used" scans; per domain record its owner scope (chart or song), declaration list, cap, exhaustion message and whether allocation reserves several IDs at once. Include `next_bga_header_id` (`bmson_writer.cpp:1182`) and decide whether it is the same shape.
 - **Outcome:** One generic ceiling reducer over the ID type (`id_ceiling_t<Id>`, generalizing `object_id_ceiling_t`), and per domain one `visit_<domain>_ids(owner, f)` that lists its declarations once; next-ID and is-used queries both read that list. No domain merged; no persistent index.
@@ -1100,7 +1100,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-645 Name Compose input ownership queries by their consumer
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-641)
 - **Findings closed:** CEn2; separate from CEn1/T-641 continuation phases.
 - **Stale-plan audit:** Re-read the seven sites at `compose_panel.cpp:1258,1351,1380` and `frontend.cpp:1033,1391,1399,3045`; compare every member, local consumed flag and evaluation phase with the current cancellation registry. Drop already-shared expressions.
 - **Outcome:** Canvas hover, paint admission and frontend editor-modal gates read named queries on the existing Compose owner instead of reconstructing overlapping field inventories.
@@ -1129,7 +1129,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-646 Give native icon widgets one availability and feedback shell
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
 - **Findings closed:** CEn3; two native icon cell bodies and bounded toolbar disable/render/enable callers.
 - **Stale-plan audit:** Re-read `chrome.h:281–331`, `components.cpp:25–38,159–168` and toolbar disable scopes by body. Record native click timing vs custom Button and parent-disabled behavior; do not count multi-control scopes as single-widget copies.
 - **Outcome:** Native icon widgets own cell style, disabled non-activation and feedback once; toolbar code states availability and the action it emits.
@@ -1159,7 +1159,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-647 Share catalog headers, use filters and ID-capacity feedback
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-645). Owner decision 2026-10-16: UI-only; the grouped-count formatting copy in sys is recorded for the shrink-wrap audit, not moved here
 - **Findings closed:** CEn4's two headers, two four-choice use-filter controls, two ID footers and two UI grouped-count bodies.
 - **Stale-plan audit:** Search header tuple `{ID, Name, Uses, State}`, right-edge offsets, comma insertion and >90% amber formula; compare BGA thumbnail/action reservation with sounds chips/armed status. Existing selection and catalog confirmation already own their protocols.
 - **Outcome:** Sounds and BGA render header facts, four-choice use filters and ID-capacity feedback through one catalog chrome owner while keeping their domain rows and geometry.
@@ -1189,7 +1189,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-648 Put remaining-content-height arithmetic in one layout helper
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
 - **Findings closed:** CEn5's eight calculations in seven files and Audio's local helper.
 - **Stale-plan audit:** Search bottom-minus-widget-Y arithmetic, not helper names. Save minimum/reserve/spacing/upper-cap matrix for Audio, Sounds (two), BGA, Layers, Measures, Compare and recent list.
 - **Outcome:** Each panel states its reserved height and clamp policy while a shared layout helper computes available logical content height.
@@ -1219,7 +1219,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-649 Share retained-picker close and release mechanics
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; last of the UI chain). First establish the bookmark chooser's positioning in a moved host with an event-harness test and report it; change nothing about it without an owner decision
 - **Findings closed:** CEn6, bounded to two consumers already deriving from retained_popup_t.
 - **Stale-plan audit:** Compare ContextMenu's current begin/update/retire/end owner with sound picker/bookmark chooser. Record idle, begin-failure, cancel, close-pending, release and revision-change paths; do not infer semantics from shared flags.
 - **Outcome:** The two pickers reuse popup-lifecycle operations for begin/close/end/release while their content, revision and dismissal policies remain explicit.
@@ -1250,7 +1250,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-650 Serialize metadata rational action text once
 
-- **Status:** Proposed (Nuklear pattern audit 2026-10-16, [audit](../../audits/nuklear-2026-10-16.md); owner review before it starts)
+- **Status:** Ready (owner approved 2026-10-16; after T-645)
 - **Findings closed:** CEn7's three identical numerator/denominator buffer writers.
 - **Stale-plan audit:** Search writes to action_numerator_text followed by denominator/pointer assignment; recheck shared parse/display helpers and absent/blank/unset-rating behavior. Wire fraction text is not decimal display text.
 - **Outcome:** Existing metadata state serializes one rational into its existing frontend-owned action arrays; offset, chart and batch emitters only assign their domain fields.

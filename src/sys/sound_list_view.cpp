@@ -3,6 +3,7 @@
 #include "sys/sound_list_view.h"
 
 #include <algorithm>
+#include <functional>
 #include <limits>
 #include <optional>
 #include <unordered_map>
@@ -525,9 +526,8 @@ auto keysound_list_view_t::from(const song_document_t& document, const chart_doc
     return assemble_requested_keysounds(document, chart, request, nullptr);
 }
 
-namespace {
-auto projection_identity(const song_document_t& document, const chart_document_t* chart)
-    -> keysound_list_cache_t::identity_t {
+auto keysound_list_cache_t::identity_t::from(const song_document_t& document,
+                                            const chart_document_t* chart) -> identity_t {
     return {.project_id = document.id.value,
             .project_address = reinterpret_cast<std::uintptr_t>(&document),
             .revision = document.revision,
@@ -535,91 +535,89 @@ auto projection_identity(const song_document_t& document, const chart_document_t
             .chart_address = reinterpret_cast<std::uintptr_t>(chart)};
 }
 
-auto same_request(const keysound_list_cache_t::request_key_t& key,
-                  const keysound_list_request_t& request) -> bool {
-    return key.search == request.search && key.use_filter == request.use_filter &&
-        std::ranges::equal(key.selected_resource_ids, request.selected_resource_ids) &&
-        key.include_selected_metadata == request.include_selected_metadata &&
-        std::ranges::equal(key.group_ids, request.group_ids) &&
-        key.group_filter_active == request.group_filter_active &&
-        key.include_ungrouped == request.include_ungrouped &&
-        key.layer_filter == request.layer_filter && key.layer_id == request.layer_id &&
-        std::ranges::equal(key.collapsed_group_ids, request.collapsed_group_ids) &&
-        key.ungrouped_collapsed == request.ungrouped_collapsed &&
-        key.first_row == request.first_row && key.row_limit == request.row_limit &&
-        key.primary_resource_id == request.primary_resource_id &&
-        key.filter_layer_first == request.filter_layer_first &&
-        key.filter_layer_limit == request.filter_layer_limit && key.sort == request.sort &&
-        key.ids_available == request.ids_available;
+auto keysound_list_cache_t::request_key_t::operator==(const request_query_t& query) const -> bool {
+    const auto& request = query.request;
+    return identity == query.identity && search == request.search && use_filter == request.use_filter &&
+        std::ranges::equal(selected_resource_ids, request.selected_resource_ids) &&
+        include_selected_metadata == request.include_selected_metadata &&
+        std::ranges::equal(group_ids, request.group_ids) &&
+        group_filter_active == request.group_filter_active &&
+        include_ungrouped == request.include_ungrouped &&
+        layer_filter == request.layer_filter && layer_id == request.layer_id &&
+        std::ranges::equal(collapsed_group_ids, request.collapsed_group_ids) &&
+        ungrouped_collapsed == request.ungrouped_collapsed &&
+        first_row == request.first_row && row_limit == request.row_limit &&
+        primary_resource_id == request.primary_resource_id &&
+        filter_layer_first == request.filter_layer_first &&
+        filter_layer_limit == request.filter_layer_limit && sort == request.sort &&
+        ids_available == request.ids_available;
 }
 
-auto copy_request_key(const keysound_list_cache_t::identity_t& identity,
-                      const keysound_list_request_t& request)
-    -> keysound_list_cache_t::request_key_t {
-    return {.identity = identity, .search = std::string{request.search},
-        .use_filter = request.use_filter,
-        .selected_resource_ids = std::vector<std::uint64_t>(request.selected_resource_ids.begin(),
-                                                            request.selected_resource_ids.end()),
-        .include_selected_metadata = request.include_selected_metadata,
-        .group_ids = std::vector<std::uint64_t>(request.group_ids.begin(), request.group_ids.end()),
-        .group_filter_active = request.group_filter_active,
-        .include_ungrouped = request.include_ungrouped, .layer_filter = request.layer_filter,
-        .layer_id = request.layer_id,
-        .collapsed_group_ids = std::vector<std::uint64_t>(request.collapsed_group_ids.begin(),
-                                                           request.collapsed_group_ids.end()),
-        .ungrouped_collapsed = request.ungrouped_collapsed,
-        .first_row = request.first_row, .row_limit = request.row_limit,
-        .primary_resource_id = request.primary_resource_id,
-        .filter_layer_first = request.filter_layer_first,
-        .filter_layer_limit = request.filter_layer_limit,
-        .sort = request.sort, .ids_available = request.ids_available};
+auto keysound_list_cache_t::request_key_t::from(const request_query_t& query) -> request_key_t {
+    request_key_t key;
+    key.assign(query);
+    return key;
 }
-} // namespace
+
+void keysound_list_cache_t::request_key_t::assign(const request_query_t& query) {
+    const auto& request = query.request;
+    identity = query.identity;
+    search = request.search;
+    use_filter = request.use_filter;
+    selected_resource_ids.assign(request.selected_resource_ids.begin(), request.selected_resource_ids.end());
+    include_selected_metadata = request.include_selected_metadata;
+    group_ids.assign(request.group_ids.begin(), request.group_ids.end());
+    group_filter_active = request.group_filter_active;
+    include_ungrouped = request.include_ungrouped;
+    layer_filter = request.layer_filter;
+    layer_id = request.layer_id;
+    collapsed_group_ids.assign(request.collapsed_group_ids.begin(), request.collapsed_group_ids.end());
+    ungrouped_collapsed = request.ungrouped_collapsed;
+    first_row = request.first_row;
+    row_limit = request.row_limit;
+    primary_resource_id = request.primary_resource_id;
+    filter_layer_first = request.filter_layer_first;
+    filter_layer_limit = request.filter_layer_limit;
+    sort = request.sort;
+    ids_available = request.ids_available;
+}
+
+void keysound_list_cache_t::build_asset_ids(const song_document_t& document,
+    std::unordered_set<std::uint64_t>& ids) {
+    ids.clear();
+    ids.reserve(document.audio_assets.size());
+    for (const auto& asset : document.audio_assets) ids.insert(asset.id.value);
+}
 
 auto keysound_list_cache_t::asset_ids_for(const song_document_t& document)
     -> const std::unordered_set<std::uint64_t>& {
-    const identity_t identity{.project_id = document.id.value,
-        .project_address = reinterpret_cast<std::uintptr_t>(&document),
-        .revision = document.revision, .chart_id = 0, .chart_address = 0};
-    if (asset_index_valid_ && asset_index_identity_ == identity) return audio_asset_ids_;
-    asset_index_identity_ = identity;
-    audio_asset_ids_.clear();
-    audio_asset_ids_.reserve(document.audio_assets.size());
-    for (const auto& asset : document.audio_assets) audio_asset_ids_.insert(asset.id.value);
-    asset_index_valid_ = true;
-    ++asset_index_builds_;
-    return audio_asset_ids_;
+    return asset_index_.get_or_build(identity_t::from(document, nullptr),
+        std::bind_front(&keysound_list_cache_t::build_asset_ids, std::cref(document)));
 }
 
 auto keysound_list_view_t::from(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart, std::size_t maximum_rows,
     dock_sort_t sort, bool ids_available) -> const keysound_list_view_t& {
-    const keysound_list_cache_t::legacy_key_t key{.identity = projection_identity(document, chart),
+    const keysound_list_cache_t::legacy_key_t key{
+        .identity = keysound_list_cache_t::identity_t::from(document, chart),
         .maximum_rows = maximum_rows, .sort = sort, .ids_available = ids_available};
-    if (cache.legacy_valid_ && cache.legacy_key_ == key) return cache.legacy_result_;
-    const auto& asset_ids = cache.asset_ids_for(document);
-    cache.legacy_result_ = assemble_legacy_keysounds(document, chart, maximum_rows,
-        sort, ids_available, &asset_ids);
-    cache.legacy_key_ = key;
-    cache.legacy_valid_ = true;
-    ++cache.projection_builds_;
-    return cache.legacy_result_;
+    return cache.legacy_.get_or_build(key,
+        [&cache, &document, chart, maximum_rows, sort, ids_available] {
+            const auto& asset_ids = cache.asset_ids_for(document);
+            return assemble_legacy_keysounds(document, chart, maximum_rows, sort, ids_available,
+                                             &asset_ids);
+        });
 }
 
 auto keysound_list_view_t::from(keysound_list_cache_t& cache,
     const song_document_t& document, const chart_document_t* chart,
     const keysound_list_request_t& request) -> const keysound_list_view_t& {
-    const auto identity = projection_identity(document, chart);
-    if (cache.request_valid_ && cache.request_key_.identity == identity &&
-        same_request(cache.request_key_, request)) return cache.request_result_;
-    const auto owned_key = copy_request_key(identity, request);
-    const auto& asset_ids = cache.asset_ids_for(document);
-    cache.request_result_ = assemble_requested_keysounds(document, chart, request,
-                                                                &asset_ids);
-    cache.request_key_ = std::move(owned_key);
-    cache.request_valid_ = true;
-    ++cache.projection_builds_;
-    return cache.request_result_;
+    const keysound_list_cache_t::request_query_t query{
+        keysound_list_cache_t::identity_t::from(document, chart), request};
+    return cache.requested_.get_or_build(query, [&cache, &document, chart, &request] {
+        const auto& asset_ids = cache.asset_ids_for(document);
+        return assemble_requested_keysounds(document, chart, request, &asset_ids);
+    });
 }
 
 namespace {

@@ -53,21 +53,21 @@ TEST_CASE("video preview clock is seek-stable and restarts on replacement",
 TEST_CASE("video preview clock reports inactive and malformed inputs",
           "[unit][core][video-preview]") {
     CHECK(video_preview_clock_t::from(std::nullopt, 0, 48'000).error() ==
-          video_preview_clock_status_t::inactive);
+          video_preview_clock_phase_t::inactive);
     CHECK(video_preview_clock_t::from(video(), 48'000, 0).error() ==
-          video_preview_clock_status_t::invalid_sample_rate);
+          failure_code_t::invalid_request);
     CHECK(video_preview_clock_t::from(video(101), 100, 48'000).error() ==
-          video_preview_clock_status_t::event_in_future);
+          failure_code_t::not_ready);
 
     auto wrong_kind = video();
     wrong_kind.kind = visual_event_kind_t::background;
     CHECK(video_preview_clock_t::from(wrong_kind, 48'000, 48'000).error() ==
-          video_preview_clock_status_t::invalid_event);
+          failure_code_t::invalid_data);
 
     auto missing_resource = video();
     missing_resource.resource = {};
     CHECK(video_preview_clock_t::from(missing_resource, 48'000, 48'000).error() ==
-          video_preview_clock_status_t::invalid_event);
+          failure_code_t::invalid_data);
 }
 
 TEST_CASE("video preview clock remains exact across the unsigned transport range",

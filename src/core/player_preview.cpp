@@ -294,12 +294,13 @@ auto visible_sorted_lanes(const editor_field_scene_layout_source_t& layout)
 }
 
 auto build_player_video_clock(const player_preview_scene_request_t& request)
-    -> result_t<std::optional<video_preview_clock_t>, video_preview_clock_status_t> {
+    -> result_t<std::optional<video_preview_clock_t>,
+                operation_state_t<video_preview_clock_phase_t>> {
     const auto clock = video_preview_clock_t::from(
         request.visual_layers.video, request.sample_frame, request.sample_rate);
     if (clock)
         return std::optional{*clock};
-    if (clock.error() == video_preview_clock_status_t::inactive)
+    if (clock.error().is_in_phase(video_preview_clock_phase_t::inactive))
         return std::nullopt;
     return std::unexpected(clock.error());
 }

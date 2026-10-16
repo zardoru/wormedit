@@ -3,11 +3,14 @@
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/result.h>
+#include <wormedit/core/keyed_cache.h>
 
 #include <array>
 #include <cstddef>
 #include <optional>
 #include <vector>
+#include <tuple>
+#include <variant>
 
 namespace wormedit { struct sound_slice_result_t; }
 
@@ -36,7 +39,7 @@ struct display_timing_segment_t {
 struct display_row_table_t;
 
 struct display_row_time_t {
-    [[nodiscard]] static auto from(const display_row_table_t& table, std::int64_t world)
+    [[nodiscard]] static auto from(const display_row_table_t& table, std::int64_t world, double zoom)
         -> display_row_time_t;
 
     std::int64_t world_pixel{};
@@ -47,7 +50,7 @@ struct display_row_table_identity_t {
     std::uint64_t project{}, chart{}, revision{};
     auto operator==(const display_row_table_identity_t&) const -> bool = default;
 };
-struct display_row_table_t {
+struct display_clock_source_key_t {
     display_row_table_identity_t identity;
     const timing_index_t* timing_identity{};
     std::uint64_t fingerprint{}, divisions{}, total_rows{};
@@ -56,25 +59,49 @@ struct display_row_table_t {
     std::size_t clock_roundings{}, timing_row_count{}, timing_segment_count{};
     const void* timing_rows_identity{};
     const void* timing_segments_identity{};
-    double zoom{}, scroll{}, height{};
-    std::int64_t first_world_pixel{};
-    std::vector<display_timing_boundary_t> boundaries;
-    std::vector<display_timing_segment_t> segments;
-    std::vector<display_row_time_t> rows;
-    // Work for the last changed generation; identical same-frame prepares do
-    // not change these counters or generation.
-    std::size_t built_rows{}, reused_rows{};
-    std::uint64_t generation{};
-    std::uint64_t clock_generation{};
-    bool valid{};
+    auto operator==(const display_clock_source_key_t&) const -> bool = default;
+    static auto from(const timing_index_t& timing, display_row_table_identity_t identity)
+        -> display_clock_source_key_t {
+        return {identity, &timing, timing.source_fingerprint, timing.divisions_per_standard_measure,
+                timing.total_rows, timing.discontinuity_profile, timing.bounded_clock,
+                timing.bounded_clock_roundings, timing.rows.size(), timing.segments.size(),
+                timing.rows.data(), timing.segments.data()};
+    }
 };
-// Includes one padding row at each end, shared by all envelope rings. Scroll
-// reuses overlapping world pixels; timing/identity/zoom/height changes rebuild.
-[[nodiscard]] auto prepare_display_row_table(display_row_table_t& table,
-    const timing_index_t& timing, aligned_waveform_request_t request,
-    display_row_table_identity_t identity = {}) -> bool;
-[[nodiscard]] auto display_seconds_at(const display_row_table_t& table, double row,
-    timing_boundary_side_t side = timing_boundary_side_t::event) -> std::optional<double>;
+struct display_row_table_t {
+    struct clock_data_t {
+        const timing_index_t* timing_identity{};
+        std::uint64_t divisions{}, total_rows{};
+        std::vector<display_timing_boundary_t> boundaries;
+        std::vector<display_timing_segment_t> segments;
+        std::uint64_t generation{};
+    };
+    // Packed extrapolation follows the base clock's generation, not its own build count.
+    using clock_key_t = std::variant<display_clock_source_key_t, std::uint64_t>;
+    keyed_cache_t<clock_key_t, clock_data_t> clock;
+    struct row_data_t {
+        std::int64_t first_world_pixel{};
+        std::vector<display_row_time_t> rows;
+        std::size_t built_rows{}, reused_rows{};
+        std::uint64_t generation{};
+    };
+    keyed_cache_t<std::tuple<double, double, double>, row_data_t> viewport;
+    // Invalid requests retain the last geometry key, as well as the converted clock.
+    [[nodiscard]] auto scroll() const noexcept -> double {
+        return viewport.key() ? std::get<0>(*viewport.key()) : 0.0;
+    }
+    [[nodiscard]] auto height() const noexcept -> double {
+        return viewport.key() ? std::get<1>(*viewport.key()) : 0.0;
+    }
+    [[nodiscard]] auto zoom() const noexcept -> double {
+        return viewport.key() ? std::get<2>(*viewport.key()) : 0.0;
+    }
+    // Includes one padding row at each end; scroll reuses overlapping world pixels.
+    [[nodiscard]] auto prepare(const timing_index_t& timing, aligned_waveform_request_t request,
+                                display_row_table_identity_t identity = {}) -> bool;
+    [[nodiscard]] auto seconds_at(double row,
+        timing_boundary_side_t side = timing_boundary_side_t::event) const -> std::optional<double>;
+};
 // Complete analyzed pyramids read a bounded handful of closest-level bins.
 // A valid base-only/partial pyramid falls back to aggregating available bins.
 // Peak and RMS retain max reduction, rather than an average across a pixel.

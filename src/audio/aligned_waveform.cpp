@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <cstdint>
 #include <limits>
 #include <optional>
@@ -239,46 +240,49 @@ void append_composed_rows(aligned_waveform_view_result_t& result, const waveform
 
 namespace {
 using wormedit::to_double;
-auto is_display_clock_current(const display_row_table_t& table, const timing_index_t& timing,
-                           display_row_table_identity_t identity) -> bool {
-    return table.valid && table.identity == identity && table.timing_identity == &timing &&
-        table.fingerprint == timing.source_fingerprint &&
-        table.divisions == timing.divisions_per_standard_measure && table.total_rows == timing.total_rows &&
-        table.profile == timing.discontinuity_profile && table.bounded_clock == timing.bounded_clock &&
-        table.clock_roundings == timing.bounded_clock_roundings &&
-        table.timing_row_count == timing.rows.size() && table.timing_segment_count == timing.segments.size() &&
-        table.timing_rows_identity == timing.rows.data() && table.timing_segments_identity == timing.segments.data();
-}
-void rebuild_display_clock(display_row_table_t& table, const timing_index_t& timing,
-                           display_row_table_identity_t identity) {
-    table.identity = identity;
-    table.timing_identity = &timing;
-    table.fingerprint = timing.source_fingerprint;
-    table.divisions = timing.divisions_per_standard_measure;
-    table.total_rows = timing.total_rows;
-    table.profile = timing.discontinuity_profile;
-    table.bounded_clock = timing.bounded_clock;
-    table.clock_roundings = timing.bounded_clock_roundings;
-    table.timing_row_count = timing.rows.size();
-    table.timing_segment_count = timing.segments.size();
-    table.timing_rows_identity = timing.rows.data();
-    table.timing_segments_identity = timing.segments.data();
-    table.boundaries.clear();
-    table.segments.clear();
-    table.boundaries.reserve(timing.rows.size());
-    table.segments.reserve(timing.segments.size());
-    ++table.clock_generation;
+void rebuild_display_clock(const timing_index_t& timing, display_row_table_t::clock_data_t& data) {
+    data.timing_identity = &timing;
+    data.divisions = timing.divisions_per_standard_measure;
+    data.total_rows = timing.total_rows;
+    data.boundaries.clear();
+    data.segments.clear();
+    data.boundaries.reserve(timing.rows.size());
+    data.segments.reserve(timing.segments.size());
+    ++data.generation;
     for (const auto& row : timing.rows)
-        table.boundaries.push_back({static_cast<double>(row.absolute_row),
+        data.boundaries.push_back({static_cast<double>(row.absolute_row),
             to_double(row.before_delays_seconds), to_double(row.event_seconds),
             to_double(row.after_stops_seconds)});
     for (const auto& segment : timing.segments) {
         const auto begin = to_double(segment.begin_seconds);
         const auto distance = static_cast<double>(segment.end_row) - static_cast<double>(segment.begin_row);
-        table.segments.push_back({static_cast<double>(segment.begin_row),
+        data.segments.push_back({static_cast<double>(segment.begin_row),
             static_cast<double>(segment.end_row), begin,
             distance > 0 ? (to_double(segment.end_seconds) - begin) / distance : 0.0});
     }
+}
+void build_display_rows(const display_row_table_t& table, aligned_waveform_request_t request,
+                         bool reuse, display_row_table_t::row_data_t& data) {
+    const auto count = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)) + 2;
+    const auto first = static_cast<std::int64_t>(std::floor(request.viewport_scroll_pixels)) - 1;
+    auto previous = std::move(data.rows);
+    data.rows.clear();
+    const auto old_first = data.first_world_pixel;
+    data.first_world_pixel = first;
+    data.built_rows = data.reused_rows = 0;
+    data.rows.reserve(count);
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto world = first + static_cast<std::int64_t>(index);
+        const auto old_index = world - old_first;
+        if (reuse && old_index >= 0 && static_cast<std::uint64_t>(old_index) < previous.size()) {
+            data.rows.push_back(previous[static_cast<std::size_t>(old_index)]);
+            ++data.reused_rows;
+        } else {
+            data.rows.push_back(display_row_time_t::from(table, world, request.pixels_per_standard_measure));
+            ++data.built_rows;
+        }
+    }
+    ++data.generation;
 }
 auto is_valid_display_request(aligned_waveform_request_t request, bool padding = true) -> bool {
     return std::isfinite(request.viewport_scroll_pixels) && std::abs(request.viewport_scroll_pixels) <= 1e12 &&
@@ -287,35 +291,33 @@ auto is_valid_display_request(aligned_waveform_request_t request, bool padding =
         request.viewport_height_pixels <= static_cast<double>(request.maximum_rows) &&
         std::isfinite(request.pixels_per_standard_measure) && request.pixels_per_standard_measure > 0;
 }
-[[maybe_unused]] auto make_display_row(const display_row_table_t& table, std::int64_t world)
-    -> display_row_time_t {
-    return display_row_time_t::from(table, world);
-}
+
 
 } // namespace
 
-auto display_row_time_t::from(const display_row_table_t& table, std::int64_t world)
+auto display_row_time_t::from(const display_row_table_t& table, std::int64_t world, double zoom)
     -> display_row_time_t {
-    const auto scale = static_cast<double>(table.divisions) / table.zoom;
-    const auto begin = std::clamp(static_cast<double>(world) * scale, 0.0, static_cast<double>(table.total_rows));
-    const auto end = std::clamp((static_cast<double>(world) + 1.0) * scale, 0.0, static_cast<double>(table.total_rows));
-    const auto first = display_seconds_at(table, begin, timing_boundary_side_t::before_delays);
-    const auto last = display_seconds_at(table, end, timing_boundary_side_t::before_delays);
+    const auto scale = static_cast<double>(table.clock.value().divisions) / zoom;
+    const auto begin = std::clamp(static_cast<double>(world) * scale, 0.0, static_cast<double>(table.clock.value().total_rows));
+    const auto end = std::clamp((static_cast<double>(world) + 1.0) * scale, 0.0, static_cast<double>(table.clock.value().total_rows));
+    const auto first = (table).seconds_at( begin, timing_boundary_side_t::before_delays);
+    const auto last = (table).seconds_at( end, timing_boundary_side_t::before_delays);
     return {world, begin, end, first.value_or(0.0), last.value_or(0.0),
             begin < end && first && last && *first <= *last};
 }
 
-auto display_seconds_at(const display_row_table_t& table, double row, timing_boundary_side_t side)
+auto display_row_table_t::seconds_at(double row, timing_boundary_side_t side) const
     -> std::optional<double> {
-    if (!std::isfinite(row) || row < 0 || row > static_cast<double>(table.total_rows)) return std::nullopt;
-    const auto boundary = std::ranges::lower_bound(table.boundaries, row, {}, &display_timing_boundary_t::row);
+    const auto& table = *this;
+    if (!std::isfinite(row) || row < 0 || row > static_cast<double>(table.clock.value().total_rows)) return std::nullopt;
+    const auto boundary = std::ranges::lower_bound(table.clock.value().boundaries, row, {}, &display_timing_boundary_t::row);
     double seconds{};
-    if (boundary != table.boundaries.end() && boundary->row == row) {
+    if (boundary != table.clock.value().boundaries.end() && boundary->row == row) {
         seconds = side == timing_boundary_side_t::before_delays ? boundary->before_seconds
             : (side == timing_boundary_side_t::after_stops ? boundary->after_seconds : boundary->event_seconds);
     } else {
-        const auto after = std::ranges::upper_bound(table.segments, row, {}, &display_timing_segment_t::begin_row);
-        if (after == table.segments.begin()) return std::nullopt;
+        const auto after = std::ranges::upper_bound(table.clock.value().segments, row, {}, &display_timing_segment_t::begin_row);
+        if (after == table.clock.value().segments.begin()) return std::nullopt;
         const auto& segment = *std::prev(after);
         if (row >= segment.end_row) return std::nullopt;
         seconds = segment.begin_seconds + (row - segment.begin_row) * segment.seconds_per_row;
@@ -323,44 +325,28 @@ auto display_seconds_at(const display_row_table_t& table, double row, timing_bou
     return std::isfinite(seconds) ? std::optional{seconds} : std::nullopt;
 }
 
-auto prepare_display_row_table(display_row_table_t& table, const timing_index_t& timing,
+auto display_row_table_t::prepare(const timing_index_t& timing,
     aligned_waveform_request_t request, display_row_table_identity_t identity) -> bool {
     if (!is_valid_display_request(request) || timing.divisions_per_standard_measure == 0 ||
         timing.total_rows == 0 || timing.rows.empty()) {
-        table.valid = false;
-        table.rows.clear();
+        clock.invalidate();
+        viewport.invalidate([](auto& data) { data.rows.clear(); });
         return false;
     }
-    const bool same_clock = is_display_clock_current(table, timing, identity);
-    if (!same_clock) rebuild_display_clock(table, timing, identity);
-    const auto count = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)) + 2;
-    const auto first = static_cast<std::int64_t>(std::floor(request.viewport_scroll_pixels)) - 1;
-    if (same_clock && table.zoom == request.pixels_per_standard_measure &&
-        table.scroll == request.viewport_scroll_pixels && table.height == request.viewport_height_pixels) return true;
-    const bool reuse = same_clock && table.zoom == request.pixels_per_standard_measure &&
-        table.height == request.viewport_height_pixels;
-    auto previous = std::move(table.rows);
-    table.rows.clear();
-    const auto old_first = table.first_world_pixel;
-    table.zoom = request.pixels_per_standard_measure;
-    table.scroll = request.viewport_scroll_pixels;
-    table.height = request.viewport_height_pixels;
-    table.first_world_pixel = first;
-    table.built_rows = table.reused_rows = 0;
-    table.rows.reserve(count);
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto world = first + static_cast<std::int64_t>(index);
-        const auto old_index = world - old_first;
-        if (reuse && old_index >= 0 && static_cast<std::uint64_t>(old_index) < previous.size()) {
-            table.rows.push_back(previous[static_cast<std::size_t>(old_index)]);
-            ++table.reused_rows;
-        } else {
-            table.rows.push_back(display_row_time_t::from(table, world));
-            ++table.built_rows;
-        }
-    }
-    ++table.generation;
-    table.valid = true;
+    const auto builds = clock.build_count();
+    static_cast<void>(clock.get_or_build(clock_key_t{display_clock_source_key_t::from(timing, identity)},
+        std::bind_front(rebuild_display_clock, std::cref(timing)),
+        [this, &timing](const auto& data) {
+            return viewport.has_value() && data.divisions == timing.divisions_per_standard_measure &&
+                   data.total_rows == timing.total_rows && data.timing_identity == &timing;
+        }));
+    const bool same_clock = clock.build_count() == builds;
+    const bool reuse = same_clock && zoom() == request.pixels_per_standard_measure &&
+                       height() == request.viewport_height_pixels;
+    if (!same_clock) viewport.invalidate();
+    static_cast<void>(viewport.get_or_build(
+        std::tuple{request.viewport_scroll_pixels, request.viewport_height_pixels, request.pixels_per_standard_measure},
+        std::bind_front(build_display_rows, std::cref(*this), request, reuse)));
     return true;
 }
 
@@ -702,14 +688,14 @@ auto aligned_waveform_view_result_t::from(const waveform_t& overview, const wave
                                      decoded_block_cache_t* blocks, aligned_waveform_style_t style)
     -> aligned_waveform_view_outcome_t {
     aligned_waveform_view_result_t result;
-    if (!table.valid || !is_valid_display_request(request, false) ||
-        table.zoom != request.pixels_per_standard_measure)
+    if (!table.viewport.has_value() || !is_valid_display_request(request, false) ||
+        table.zoom() != request.pixels_per_standard_measure)
         return from(std::move(result));
     // Exact cached PCM polylines retain their existing sample-position path.
-    if (style.sample_points && table.timing_identity)
-        return from(overview, detail, *table.timing_identity, request, blocks, style);
+    if (style.sample_points && table.clock.value().timing_identity)
+        return from(overview, detail, *table.clock.value().timing_identity, request, blocks, style);
     result.chosen_frames_per_bin = style.detail_level ? 32 : 256;
-    for (const auto& row : table.rows) {
+    for (const auto& row : table.viewport.value().rows) {
         const auto y = static_cast<double>(row.world_pixel) - request.viewport_scroll_pixels + .5;
         if (!row.valid || y < 0 || y >= request.viewport_height_pixels)
             continue;

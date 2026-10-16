@@ -395,13 +395,13 @@ auto display_table_matches_forward_clock() -> bool {
     aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 3};
-    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    if (!(table).prepare( *built.index, request, identity)) return false;
     for (const auto row : {480.0, 480.5, 840.0, 840.5, 1440.0, 1500.0}) {
         for (const auto side : {wormedit::timing_boundary_side_t::before_delays,
                                 wormedit::timing_boundary_side_t::event,
                                 wormedit::timing_boundary_side_t::after_stops}) {
             const auto expected = expected_seconds(*built.index, row, side);
-            const auto actual = display_seconds_at(table, row, side);
+            const auto actual = (table).seconds_at( row, side);
             if (expected.has_value() != actual.has_value()) return false;
             if (expected && std::abs(*expected - *actual) > 1e-9) return false;
         }
@@ -418,15 +418,15 @@ auto display_table_reuses_scrolled_rows() -> bool {
     aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 10, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 1};
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.rows.size() != 12 || table.built_rows != 12 || table.reused_rows != 0) return false;
-    const auto generation = table.generation;
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.generation != generation || table.built_rows != 12 || table.reused_rows != 0)
+    if (!(table).prepare( *built.index, request, identity) ||
+        table.viewport.value().rows.size() != 12 || table.viewport.value().built_rows != 12 || table.viewport.value().reused_rows != 0) return false;
+    const auto generation = table.viewport.value().generation;
+    if (!(table).prepare( *built.index, request, identity) ||
+        table.viewport.value().generation != generation || table.viewport.value().built_rows != 12 || table.viewport.value().reused_rows != 0)
         return false;
     request.viewport_scroll_pixels = 1;
-    if (!prepare_display_row_table(table, *built.index, request, identity) ||
-        table.built_rows != 1 || table.reused_rows != 11) return false;
+    if (!(table).prepare( *built.index, request, identity) ||
+        table.viewport.value().built_rows != 1 || table.viewport.value().reused_rows != 11) return false;
     return true;
 }
 
@@ -439,35 +439,35 @@ auto display_table_rebuilds_on_clock_inputs() -> bool {
     aligned_waveform_request_t request{.viewport_scroll_pixels = 1,
         .viewport_height_pixels = 11, .pixels_per_standard_measure = 960};
     const display_row_table_identity_t identity{1, chart.id.value, 1};
-    if (!prepare_display_row_table(table, *built.index, request, identity)) return false;
+    if (!(table).prepare( *built.index, request, identity)) return false;
     auto changed_identity = identity;
     ++changed_identity.revision;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.index, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     ++changed_identity.project;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.index, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     ++changed_identity.chart;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.index, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     request.pixels_per_standard_measure = 1200;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( *built.index, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     request.viewport_height_pixels = 12;
-    const auto before_height_change = table.generation;
-    if (!prepare_display_row_table(table, *built.index, request, changed_identity) ||
-        table.rows.size() != 14 || table.generation != before_height_change + 1) return false;
+    const auto before_height_change = table.viewport.value().generation;
+    if (!(table).prepare( *built.index, request, changed_identity) ||
+        table.viewport.value().rows.size() != 14 || table.viewport.value().generation != before_height_change + 1) return false;
     auto changed_timing = *built.index;
     ++changed_timing.source_fingerprint;
-    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( changed_timing, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     changed_timing.discontinuity_profile = wormedit::timing_discontinuity_profile_t::bms_legacy;
-    if (!prepare_display_row_table(table, changed_timing, request, changed_identity) ||
-        table.reused_rows != 0) return false;
+    if (!(table).prepare( changed_timing, request, changed_identity) ||
+        table.viewport.value().reused_rows != 0) return false;
     changed_timing.bounded_clock = true;
     ++changed_timing.bounded_clock_roundings;
-    return prepare_display_row_table(table, changed_timing, request, changed_identity) &&
-        table.reused_rows == 0;
+    return (table).prepare( changed_timing, request, changed_identity) &&
+        table.viewport.value().reused_rows == 0;
 }
 
 auto display_channel_matches_reference() -> bool {
@@ -486,7 +486,7 @@ auto display_channel_matches_reference() -> bool {
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, channel, source.sample_rate, source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
         *timing.index, request, source);
@@ -524,7 +524,7 @@ auto channel_projection_matches_reference(wormedit::chart_document_t& chart,
     const auto slices = wormedit::derive_sound_channel_slices(
         chart, channel, source.sample_rate, source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
         *timing.index, request, source);
@@ -631,7 +631,7 @@ auto continuation_delay_keeps_pre_event_source() -> bool {
     const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
                                                      source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (!slices || !(table).prepare( *timing.index, request)) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
         *timing.index, request, source);
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
@@ -666,7 +666,7 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
             const aligned_waveform_request_t request{.viewport_scroll_pixels = zoom / 4,
                 .viewport_height_pixels = 600, .pixels_per_standard_measure = zoom};
             display_row_table_t table;
-            if (!prepare_display_row_table(table, *timing.index, request,
+            if (!(table).prepare( *timing.index, request,
                 {chart.id.value, chart.id.value, 1})) return {};
             const auto reference_start = std::chrono::steady_clock::now();
             const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
@@ -681,7 +681,7 @@ auto compare_display_channel_work() -> display_benchmark_result_t {
             result.display_microseconds += std::chrono::duration_cast<std::chrono::microseconds>(
                 display_end - display_start).count();
             if (!reference || !projected ||
-                projected->visited_slices > table.rows.size() + slices.slices.size() ||
+                projected->visited_slices > table.viewport.value().rows.size() + slices.slices.size() ||
                 projected->sampled_bins > projected->visited_slices *
                     (8 + 2 * std::numeric_limits<std::uint64_t>::digits)) return {};
             result.visited[case_index] = projected->visited_slices;
@@ -706,7 +706,7 @@ auto base_only_low_zoom_keeps_channel_peaks() -> bool {
     const aligned_waveform_request_t request{.viewport_scroll_pixels = 0,
         .viewport_height_pixels = 32, .pixels_per_standard_measure = 120};
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (!slices || !(table).prepare( *timing.index, request)) return false;
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return projected && !projected->rows.empty() &&
@@ -737,7 +737,7 @@ auto display_slice_boundaries_keep_delay_and_stop_audio() -> bool {
     const auto slices = derive_sound_channel_slices(chart, channel, source.sample_rate,
                                                      source.total_frames);
     display_row_table_t table;
-    if (!slices || !prepare_display_row_table(table, *timing.index, request,
+    if (!slices || !(table).prepare( *timing.index, request,
         {chart.id.value, chart.id.value, 1})) return false;
     const auto reference = aligned_waveform_view_result_t::from(waveform, chart, channel,
         *timing.index, request, source);
@@ -763,7 +763,7 @@ auto display_channel_rejects_invalid_slices() -> bool {
     const aligned_waveform_request_t request{.viewport_height_pixels = 600,
         .pixels_per_standard_measure = 960};
     display_row_table_t table;
-    if (slices || !prepare_display_row_table(table, *timing.index, request)) return false;
+    if (slices || !(table).prepare( *timing.index, request)) return false;
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
     return !projected && projected.error().status == aligned_waveform_status_t::invalid_timing &&
@@ -789,7 +789,7 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     auto invalid_request = good;
     invalid_request.viewport_height_pixels = 0;
     display_row_table_t table;
-    if (!prepare_display_row_table(table, *timing.index, good)) return false;
+    if (!(table).prepare( *timing.index, good)) return false;
     const auto no_request = aligned_waveform_view_result_t::from(waveform, channel, table,
         invalid_request, slices, source);
     if (no_clock || no_request) return false;
@@ -808,7 +808,7 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     eof_view.viewport_scroll_pixels = 1910;
     eof_view.viewport_height_pixels = 10;
     display_row_table_t eof_table;
-    if (!short_slices || !prepare_display_row_table(eof_table, *timing.index, eof_view))
+    if (!short_slices || !(eof_table).prepare( *timing.index, eof_view))
         return false;
     const auto eof = aligned_waveform_view_result_t::from(short_waveform, channel, eof_table,
         eof_view, short_slices, short_source);

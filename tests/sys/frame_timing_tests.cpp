@@ -5317,22 +5317,22 @@ TEST_CASE("Shared stem row table is prepared once for song and selected channel 
           "[sys][waveform-projection][bmson][stem][row-table]") {
     channel_projection_fixture_t fixture;
     fixture.project();
-    const auto generation = fixture.cache.waveform.waveform_row_table.generation;
+    const auto generation = fixture.cache.waveform.waveform_row_table.viewport.value().generation;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.generation == generation);
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.built_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().generation == generation);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().built_rows == 202);
     fixture.interaction.viewport_scroll_pixels += 1;
     fixture.project();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.built_rows == 1);
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.reused_rows == 201);
-    const auto scrolled_generation = fixture.cache.waveform.waveform_row_table.generation;
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().built_rows == 1);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().reused_rows == 201);
+    const auto scrolled_generation = fixture.cache.waveform.waveform_row_table.viewport.value().generation;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.generation == scrolled_generation);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().generation == scrolled_generation);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projected_rows == 1);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().reused_rows == 201);
     fixture.flattened.view.compose.pixels_per_standard_measure *= 2;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.built_rows == 202);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().built_rows == 202);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projected_rows == 202);
 }
 
@@ -5340,20 +5340,20 @@ TEST_CASE("Stem row table retires display rings and native cut derivation when t
           "[sys][waveform-projection][bmson][stem][row-table]") {
     channel_projection_fixture_t fixture;
     fixture.project_channel();
-    const auto generation = fixture.cache.waveform.waveform_row_table.clock_generation;
+    const auto generation = fixture.cache.waveform.waveform_row_table.clock.value().generation;
     auto& chart = fixture.history.document.charts.front();
     chart.bpms.front().beats_per_minute = {240, 1};
     fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
     REQUIRE(fixture.cache.timing.marker_timing_index);
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock_generation == generation + 1);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock.value().generation == generation + 1);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projected_rows == 202);
     expect_gpu_work(fixture.cache.waveform.channel_waveform_slices.value().has_value());
-    const auto unchanged = fixture.cache.waveform.waveform_row_table.generation;
+    const auto unchanged = fixture.cache.waveform.waveform_row_table.viewport.value().generation;
     const auto projected = fixture.cache.waveform.channel_projection.ring.value().projected_rows;
     const auto calls = fixture.cache.waveform.channel_projection.ring.value().projection_calls;
     fixture.project_channel();
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.generation == unchanged);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.viewport.value().generation == unchanged);
     // A cache hit leaves the last projection counters intact.
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projected_rows == projected);
     expect_gpu_work(fixture.cache.waveform.channel_projection.ring.value().projection_calls == calls);
@@ -5698,8 +5698,8 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     fixture.project_packed();
     const auto& piece = fixture.piece();
     expect_gpu_work(!piece.pending && piece.row_count > 0);
-    expect_gpu_work(fixture.cache.stems.packed_waveform_row_table.total_rows > authored_rows);
-    expect_gpu_work(fixture.cache.waveform.waveform_row_table.total_rows == authored_rows);
+    expect_gpu_work(fixture.cache.stems.packed_waveform_row_table.clock.value().total_rows > authored_rows);
+    expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock.value().total_rows == authored_rows);
     expect_gpu_work(fixture.cache.timing.marker_timing_index->total_rows == authored_rows);
     expect_gpu_work(chart.measures.size() == 1);
     const auto previous_peak = piece.rows[0].absolute_peak[0];

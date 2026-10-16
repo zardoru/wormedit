@@ -368,6 +368,33 @@ void populate_stem_waveforms(const bmson_waveform_projection_context_t& context)
     context.flattened.view.compose.stem_cut_count = cache.stems.stem_cut_views.size();
 }
 
+void copy_packed_display_clock(const audio::display_row_table_t& base, audio::display_row_table_t& table,
+                                double end, double seconds, double scale,
+                                audio::display_row_table_t::clock_data_t& clock) {
+    clock = base.clock.value();
+    table.viewport = base.viewport;
+    clock.segments.push_back({static_cast<double>(base.clock.value().total_rows), end, seconds, scale});
+    clock.boundaries.push_back({});
+}
+void build_packed_display_rows(const audio::display_row_table_t& table,
+                                audio::aligned_waveform_request_t request,
+                                audio::display_row_table_t::row_data_t& data) {
+    data.first_world_pixel = static_cast<std::int64_t>(std::floor(request.viewport_scroll_pixels)) - 1;
+    data.rows.clear();
+    const auto count = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels)) + 2;
+    const auto end = static_cast<double>(table.clock.value().total_rows);
+    const auto rows_per_pixel = static_cast<double>(table.clock.value().divisions) / request.pixels_per_standard_measure;
+    for (std::size_t index = 0; index < count; ++index) {
+        const auto world = data.first_world_pixel + static_cast<std::int64_t>(index);
+        const auto begin = std::clamp(static_cast<double>(world) * rows_per_pixel, 0.0, end);
+        const auto next = std::clamp((static_cast<double>(world) + 1) * rows_per_pixel, 0.0, end);
+        const auto first = table.seconds_at(begin, timing_boundary_side_t::before_delays);
+        const auto last = table.seconds_at(next, timing_boundary_side_t::before_delays);
+        data.rows.push_back({world, begin, next, first.value_or(0), last.value_or(0),
+                             first && last && begin < next && *first <= *last});
+    }
+}
+
 // Only packed display pieces extend the last tempo beyond authored geometry.
 // The exact timing index and the existing shared stem table are untouched.
 auto packed_display_table(const bmson_waveform_projection_context_t& context)
@@ -375,44 +402,34 @@ auto packed_display_table(const bmson_waveform_projection_context_t& context)
     auto& cache = context.cache;
     const auto& base = cache.waveform.waveform_row_table;
     const auto& view = context.flattened.view.compose;
-    if (!base.valid || !cache.timing.marker_timing_index) return nullptr;
+    if (!base.viewport.has_value() || !cache.timing.marker_timing_index) return nullptr;
     const auto end = std::ceil((context.interaction_state->viewport_scroll_pixels +
-        view.viewport_height_pixels + 2) * static_cast<double>(base.divisions) /
+        view.viewport_height_pixels + 2) * static_cast<double>(base.clock.value().divisions) /
         view.pixels_per_standard_measure);
     if (!std::isfinite(end) || end >= static_cast<double>(std::numeric_limits<std::uint64_t>::max())) return nullptr;
-    if (end <= static_cast<double>(base.total_rows)) return &base;
+    if (end <= static_cast<double>(base.clock.value().total_rows)) return &base;
     const auto& timing = *cache.timing.marker_timing_index;
     const auto seconds = timing.seconds_at_approx(timing.total_rows, chart_end_policy_t::reject, timing_boundary_side_t::after_stops);
     const auto scale = timing.tail_seconds_per_row();
     if (!seconds || !scale) return nullptr;
     auto& table = cache.stems.packed_waveform_row_table;
-    if (!table.valid || cache.stems.packed_clock_generation != base.clock_generation) {
-        table = base;
-        table.segments.push_back({static_cast<double>(base.total_rows), end, *seconds, *scale});
-        table.boundaries.push_back({});
-        cache.stems.packed_clock_generation = base.clock_generation;
-    }
-    table.total_rows = static_cast<std::uint64_t>(end);
-    table.segments.back().end_row = end;
-    const auto finish = *seconds + (end - static_cast<double>(base.total_rows)) * *scale;
+    auto& clock = table.clock.get_or_build(
+        audio::display_row_table_t::clock_key_t{std::in_place_index<1>, base.clock.value().generation},
+        std::bind_front(copy_packed_display_clock, std::cref(base), std::ref(table), end, *seconds, *scale),
+        [&table](const auto&) { return table.viewport.has_value(); });
+    clock.total_rows = static_cast<std::uint64_t>(end);
+    clock.segments.back().end_row = end;
+    const auto finish = *seconds + (end - static_cast<double>(base.clock.value().total_rows)) * *scale;
     if (!std::isfinite(finish)) return nullptr;
-    table.boundaries.back() = {end, finish, finish, finish};
-    table.zoom = view.pixels_per_standard_measure;
-    table.scroll = context.interaction_state->viewport_scroll_pixels;
-    table.height = view.viewport_height_pixels;
-    table.first_world_pixel = static_cast<std::int64_t>(std::floor(table.scroll)) - 1;
-    table.rows.clear();
-    const auto count = static_cast<std::size_t>(std::ceil(table.height)) + 2;
-    const auto rows_per_pixel = static_cast<double>(table.divisions) / table.zoom;
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto world = table.first_world_pixel + static_cast<std::int64_t>(index);
-        const auto begin = std::clamp(static_cast<double>(world) * rows_per_pixel, 0.0, end);
-        const auto next = std::clamp((static_cast<double>(world) + 1) * rows_per_pixel, 0.0, end);
-        const auto first = audio::display_seconds_at(table, begin, timing_boundary_side_t::before_delays);
-        const auto last = audio::display_seconds_at(table, next, timing_boundary_side_t::before_delays);
-        table.rows.push_back({world, begin, next, first.value_or(0), last.value_or(0),
-                             first && last && begin < next && *first <= *last});
-    }
+    clock.boundaries.back() = {end, finish, finish, finish};
+    const audio::aligned_waveform_request_t request{
+        .viewport_scroll_pixels = context.interaction_state->viewport_scroll_pixels,
+        .viewport_height_pixels = view.viewport_height_pixels,
+        .pixels_per_standard_measure = view.pixels_per_standard_measure};
+    static_cast<void>(table.viewport.get_or_build(
+        std::tuple{request.viewport_scroll_pixels, request.viewport_height_pixels, request.pixels_per_standard_measure},
+        std::bind_front(build_packed_display_rows, std::cref(table), request),
+        [](const auto&) { return false; }));
     return &table;
 }
 
@@ -471,15 +488,15 @@ auto build_packed_piece_view(const bmson_waveform_projection_context_t& context,
 
 auto packed_pending_band(const packed_waveform_piece_t& piece,
     const audio::display_row_table_t& table, bool downscroll) -> std::pair<double, double> {
-    double low = table.height, high = 0;
-    for (const auto& row : table.rows) {
+    double low = table.height(), high = 0;
+    for (const auto& row : table.viewport.value().rows) {
         if (!row.valid || row.begin_seconds >= piece.end_seconds || row.end_seconds <= piece.begin_seconds) continue;
-        const auto y = static_cast<double>(row.world_pixel) - std::floor(table.scroll);
+        const auto y = static_cast<double>(row.world_pixel) - std::floor(table.scroll());
         low = std::min(low, y); high = std::max(high, y + 1);
     }
     if (low >= high) return {0, 0};
-    const auto begin = compose_source_y(std::clamp(low, 0.0, table.height), table.height, downscroll);
-    const auto end = compose_source_y(std::clamp(high, 0.0, table.height), table.height, downscroll);
+    const auto begin = compose_source_y(std::clamp(low, 0.0, table.height()), table.height(), downscroll);
+    const auto end = compose_source_y(std::clamp(high, 0.0, table.height()), table.height(), downscroll);
     return {std::min(begin, end), std::max(begin, end)};
 }
 void populate_packed_waveforms(const bmson_waveform_projection_context_t& context) {
@@ -526,10 +543,10 @@ void populate_packed_waveforms(const bmson_waveform_projection_context_t& contex
 auto prepare_compose_display_row_table(compose_scene_cache_t& cache,
     audio::aligned_waveform_request_t request, audio::display_row_table_identity_t identity) -> bool {
     if (!cache.timing.marker_timing_index) return false;
-    const auto previous = cache.waveform.waveform_row_table.clock_generation;
-    const auto prepared = audio::prepare_display_row_table(cache.waveform.waveform_row_table,
+    const auto previous = cache.waveform.waveform_row_table.clock.value().generation;
+    const auto prepared = (cache.waveform.waveform_row_table).prepare(
         *cache.timing.marker_timing_index, request, identity);
-    if (!prepared || previous != cache.waveform.waveform_row_table.clock_generation) {
+    if (!prepared || previous != cache.waveform.waveform_row_table.clock.value().generation) {
         cache.waveform.waveform_envelope_ring.invalidate();
         cache.waveform.channel_projection.invalidate(false);
         cache.waveform.channel_waveform_slices.value().reset();

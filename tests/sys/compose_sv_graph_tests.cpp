@@ -23,9 +23,9 @@ void add_scroll(chart_document_t& chart, std::uint64_t id, std::size_t measure, 
 }
 
 auto project(const chart_document_t& chart, std::size_t limit = 64) -> sv_steps_view_t {
-    const auto measures = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    return sv_steps_view_t::from(chart, std::get<measure_index_t>(measures), limit);
+    const auto measures = measure_index_t::from(chart);
+    REQUIRE(measures.has_value());
+    return sv_steps_view_t::from(chart, measures.value(), limit);
 }
 
 auto y_of(std::uint64_t row) { return static_cast<double>(row); }

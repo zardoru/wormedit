@@ -1162,11 +1162,11 @@ auto source_origin_seconds(long double milliseconds, fail_t&& fail) -> signed_ra
 
 template <typename fail_t>
 auto osu_measure_index(const chart_document_t& chart, fail_t&& fail) -> measure_index_t {
-    auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    auto built = measure_index_t::from(chart);
+    if (!built.has_value())
         fail(osu_mania_parse_diagnostic_code_t::internal_conversion_error,
              "derived osu! measure geometry is invalid");
-    return std::get<measure_index_t>(std::move(built));
+    return std::move(built).value();
 }
 
 template <typename fail_t>
@@ -2700,11 +2700,11 @@ template <typename fail_t>
 auto build_osu_measure_index(const chart_document_t& chart,
                              const osu_mania_write_options_t& options, fail_t&& fail)
     -> measure_index_t {
-    const auto built = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(built))
+    const auto built = measure_index_t::from(chart);
+    if (!built.has_value())
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "chart measure geometry is invalid", "measures");
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto& measures = built.value();
     if (chart.divisions_per_standard_measure == 0 || measures.total_rows == 0)
         fail(osu_mania_write_diagnostic_code_t::invalid_document,
              "chart must have a positive row resolution", "divisions_per_standard_measure");

@@ -144,12 +144,12 @@ auto append_packed_channel(plan_context_t& context, const chart_document_t& char
     const auto end = channel.source_clip.end_frame.value_or(source.native_frame_count);
     if (end <= channel.source_clip.begin_frame)
         return fail(context, "Packed channel clip has no playable frames", source.asset, channel.id);
-    const auto measures = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measures))
+    const auto measures = measure_index_t::from(chart);
+    if (!measures.has_value())
         return fail(context, "Packed channel requires valid measure geometry", source.asset, channel.id);
     derived_sound_slice_t slice{.source_begin_frame = channel.source_clip.begin_frame, .source_end_frame = end, .restart = true, .events = {}};
     for (const auto& event : channel.events) {
-        if (!std::get<measure_index_t>(measures).row_of(event.position))
+        if (!measures.value().row_of(event.position))
             return fail(context, "Packed channel event is outside chart geometry", source.asset, event.id);
         slice.events.push_back(event.id);
     }

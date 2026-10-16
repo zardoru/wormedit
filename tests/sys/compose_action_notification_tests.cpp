@@ -1793,7 +1793,7 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     action.compose_inputs[0].navigation_action = doubled
         ? WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD : WORM_UI_COMPOSE_NAVIGATION_PAGE_FORWARD;
     (void)f.dispatch_input(action);
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto expected = short_measures ? (doubled ? 1919 : 1439) : (doubled ? 2879 : 1919);
     if (playing) check_action(f.application.project.transport.preview_playhead_absolute_row == expected);
     else check_action(index.row_of(f.state.cursor) == expected);

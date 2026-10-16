@@ -6768,7 +6768,7 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     auto state = *setup.state;
     state.retained_selection_range = position_span_t{{measure_id_t{1}, 120}, {measure_id_t{2}, 0}};
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     auto& view = fixture.harness.view().compose;
     view.project_id = history.document.id.value; view.chart_id = state.chart.value;
     view.document_revision = history.document.revision;

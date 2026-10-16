@@ -3126,12 +3126,12 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     auto& branch_resource_edits = resource_state.branch_resource_edits;
     auto& declarations = resource_state.declarations;
 
-    const auto measure_index_result = build_measure_index(chart);
-    if (!std::holds_alternative<measure_index_t>(measure_index_result)) {
+    const auto measure_index_result = measure_index_t::from(chart);
+    if (!measure_index_result.has_value()) {
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "chart measure geometry cannot be represented safely", "$.charts[].measures");
     }
-    const auto& index = std::get<measure_index_t>(measure_index_result);
+    const auto& index = measure_index_result.value();
 
     branch_event_edit_state_t branch_edits{chart, branch_tree, active_branch_orders,
                                            branch_source_bytes, index, {}, {}, {}, {}};

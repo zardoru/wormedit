@@ -288,9 +288,9 @@ auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {
     result.asset_base = opened.value().asset_base;
     result.document = *opened.value().document;
     const auto& chart = result.document.charts.front();
-    const auto measure_build = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(measure_build));
-    result.measures = std::get<measure_index_t>(measure_build);
+    const auto measure_build = measure_index_t::from(chart);
+    REQUIRE(measure_build.has_value());
+    result.measures = measure_build.value();
     const auto timing_build = timing_index_t::from(chart);
     REQUIRE(timing_build.value);
     result.timing = *timing_build.value;

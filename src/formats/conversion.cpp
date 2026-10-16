@@ -420,13 +420,13 @@ void prepare_retained_slice_assets(song_document_t& song, const std::vector<char
 
 auto sliced_bgm_timestamp_error(const chart_document_t& chart) -> long double {
     const auto timing = timing_index_t::from(chart);
-    const auto measures = build_measure_index(chart);
-    if (!timing.value || !std::holds_alternative<measure_index_t>(measures)) return 0;
+    const auto measures = measure_index_t::from(chart);
+    if (!timing.value || !measures.has_value()) return 0;
     long double maximum{};
     for (const auto& measure : chart.measures) {
         for (const auto& event : measure.bgm_events) {
             if (!event.sound) continue;
-            const auto time = timing.value->query_seconds(std::get<measure_index_t>(measures), event.position);
+            const auto time = timing.value->query_seconds(measures.value(), event.position);
             if (!time) continue;
             const auto milliseconds = to_long_double(time->value) * 1000;
             maximum = std::max(maximum, std::abs(std::round(milliseconds) - milliseconds));

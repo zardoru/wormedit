@@ -76,7 +76,7 @@ void check_stale_compose_navigation(fixture_t& fixture) {
 TEST_CASE("nearest snap row picks the closest row and ties go earlier",
           "[unit][sys][bookmark-commands]") {
     const auto chart = bookmark_song().charts.front();
-    auto index = std::get<measure_index_t>(build_measure_index(chart));
+    auto index = measure_index_t::from(chart).value();
     // A quarter-note snap of a 960-division measure is 240 rows.
     CHECK(nearest_snap_row(chart, index, 100.0, 4) == std::optional<std::uint64_t>{0});
     CHECK(nearest_snap_row(chart, index, 130.0, 4) == std::optional<std::uint64_t>{240});
@@ -190,11 +190,11 @@ TEST_CASE("add bookmark uses the cursor or the snapped playhead and refuses dupl
 TEST_CASE("bookmark frames clamp to the preview end", "[unit][sys][bookmark-commands]") {
     const auto song = bookmark_song();
     const auto& chart = song.charts.front();
-    const auto measures = build_measure_index(chart);
+    const auto measures = measure_index_t::from(chart);
     const auto timing = timing_index_t::from(chart);
     REQUIRE(timing.value);
-    REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    const auto& index = std::get<measure_index_t>(measures);
+    REQUIRE(measures.has_value());
+    const auto& index = measures.value();
     const auto frame = bookmark_preview_frame(*timing.value, index, {measure_id_t{4}, 480},
                                               std::nullopt);
     REQUIRE(frame);
@@ -460,7 +460,7 @@ TEST_CASE("Playing bookmarks and following cursor use the current measure grid",
     chart.measures.front().definition.length = {1, 3};
     chart.measures.front().definition.meter.reset();
     chart.sections.clear();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     CHECK(nearest_snap_row(chart, index, 300, 4) == 320);
     CHECK(nearest_snap_row(chart, index, 440, 4) == 320);
     CHECK(nearest_snap_row(chart, index, 441, 4) == 560);

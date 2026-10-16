@@ -40,9 +40,9 @@ TEST_CASE("turning snapping off uses the chart's finest row for every object cla
 TEST_CASE("snapped positions resolve across measures and reject rows past the chart",
           "[unit][core][snap]") {
     const auto chart = snap_chart();
-    const auto built = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(built));
-    const auto& index = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(chart);
+    REQUIRE(built.has_value());
+    const auto& index = built.value();
     const auto snapped = snap_position(chart, index, {measure_id_t{4}, 130}, 4);
     REQUIRE(snapped);
     CHECK((*snapped == local_position_t{measure_id_t{4}, 240}));
@@ -73,7 +73,7 @@ auto fractional_snap_chart() -> chart_document_t {
 TEST_CASE("fractional measures restart snapping and their heads remain reachable",
           "[unit][core][snap][measure-local-snap]") {
     const auto chart = fractional_snap_chart();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     // Shortened boundaries are themselves grid lines, with earlier ties.
     check_measure_snap(snap_absolute_row(chart, 264, 4) == 240);
     check_measure_snap(snap_absolute_row(chart, index, 265, 4) == 288);
@@ -94,7 +94,7 @@ TEST_CASE("fractional measures restart snapping and their heads remain reachable
 TEST_CASE("strict grid neighbors include tiny measure heads and preserve fractional origins",
           "[unit][core][snap][measure-local-snap]") {
     const auto chart = fractional_snap_chart();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto next = [&](long double row, bool forward) {
         return adjacent_snap_canvas_row(chart, index, row, 4, index.total_rows, forward);
     };
@@ -114,7 +114,7 @@ TEST_CASE("strict grid neighbors include tiny measure heads and preserve fractio
 TEST_CASE("standard virtual tail grids start at the fractional authored end",
           "[unit][core][snap][measure-local-snap]") {
     const auto chart = fractional_snap_chart();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto tail_end = index.total_rows + 2 * chart.divisions_per_standard_measure;
     check_measure_snap(adjacent_snap_canvas_row(chart, index, 1128, 4, tail_end, true) == 1368);
     check_measure_snap(adjacent_snap_canvas_row(chart, index, 1368, 4, tail_end, true) == 1608);
@@ -140,7 +140,7 @@ TEST_CASE("measure grid neighbors support fractional beats and reject invalid ge
 TEST_CASE("Fitting snap uses local measure phase and exact common divisions", "[unit][core][snap][fitting]") {
     auto chart = snap_chart();
     chart.measures.front().definition = {{1, 2}, std::nullopt};
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const std::array points{local_position_t{measure_id_t{3}, 192}, local_position_t{measure_id_t{4}, 384}};
     CHECK(fitting_snap_denominator(chart, index, points) == 5);
     const std::array mixed{points[0], local_position_t{measure_id_t{4}, 48}};

@@ -263,10 +263,10 @@ auto resolve_view_geometry(const document_history_t& history,
     // call.
     std::unique_ptr<measure_index_t> owned;
     if (!retained) {
-        auto built = build_measure_index(*chart);
-        if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
-            return *diagnostics;
-        owned = std::make_unique<measure_index_t>(std::get<measure_index_t>(std::move(built)));
+        auto built = measure_index_t::from(*chart);
+        if (!built)
+            return built.error();
+        owned = std::make_unique<measure_index_t>(std::move(built).value());
         retained = owned.get();
     }
     const auto& index = *retained;
@@ -622,12 +622,12 @@ auto editor_interaction_state_t::from(const document_history_t& history, chart_i
             error(diagnostic_code_t::invalid_id, "editor interaction refers to an unknown chart"));
         return result;
     }
-    const auto built_index = build_measure_index(*chart);
-    if (std::holds_alternative<diagnostic_list_t>(built_index)) {
-        result.diagnostics = std::get<diagnostic_list_t>(built_index);
+    const auto built_index = measure_index_t::from(*chart);
+    if (!built_index.has_value()) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = built_index.value();
     if (!index.row_of(cursor).has_value()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::row_out_of_range, "initial editor cursor is outside chart"));
@@ -675,12 +675,12 @@ auto recover_editor_interaction(const document_history_t& history,
                                            "editor interaction refers to an unknown chart"));
         return result;
     }
-    const auto built_index = build_measure_index(*chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built_index)) {
-        result.diagnostics = *diagnostics;
+    const auto built_index = measure_index_t::from(*chart);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
         return result;
     }
-    const auto& index = std::get<measure_index_t>(built_index);
+    const auto& index = built_index.value();
     std::optional<local_position_t> cursor;
     lane_id_t lane;
     auto first_row = std::numeric_limits<std::uint64_t>::max();
@@ -2119,8 +2119,8 @@ struct editor_action_dispatch_t {
         const auto initial_view = make_view(history, state);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&initial_view))
             return diagnostic_result(history, state, *diagnostics);
-        const auto built_index = build_measure_index(*chart);
-        const auto& index = std::get<measure_index_t>(built_index);
+        const auto built_index = measure_index_t::from(*chart);
+        const auto& index = built_index.value();
         editor_action_context_t context{
             {history, state, {*chart, index},
              &std::get<editor_interaction_view_model_t>(initial_view), history.document.revision},
@@ -2196,10 +2196,10 @@ auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& 
     if (!chart)
         return diagnostic_result(history, state, {error(diagnostic_code_t::invalid_id,
                                                         "lane assignment chart is unavailable")});
-    auto built = build_measure_index(*chart);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&built))
-        return diagnostic_result(history, state, *diagnostics);
-    editor_edit_context_t context{history, state, {*chart, std::get<measure_index_t>(built)}};
+    auto built = measure_index_t::from(*chart);
+    if (!built)
+        return diagnostic_result(history, state, built.error());
+    editor_edit_context_t context{history, state, {*chart, built.value()}};
     return assign_selected_notes_to_lane(context, {lane, false});
 }
 

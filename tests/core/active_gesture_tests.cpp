@@ -26,9 +26,9 @@ struct gesture_fixture_t {
         auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
             {measure_id_t{1}, 0}, snaps, 4);
         REQUIRE(setup);
-        auto index = build_measure_index(history.document.charts.front());
-        REQUIRE(std::holds_alternative<measure_index_t>(index));
-        return {std::move(history), std::move(*setup.state), std::get<measure_index_t>(std::move(index))};
+        auto index = measure_index_t::from(history.document.charts.front());
+        REQUIRE(index.has_value());
+        return {std::move(history), std::move(*setup.state), std::move(index).value()};
     }
 
     auto context() -> editor_edit_context_t {

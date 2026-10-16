@@ -1333,13 +1333,6 @@ auto measure_index_t::from(const chart_document_t& chart)
     return index;
 }
 
-auto build_measure_index(const chart_document_t& chart)
-    -> std::variant<measure_index_t, diagnostic_list_t> {
-    auto outcome = measure_index_t::from(chart);
-    if (!outcome) return std::move(outcome.error());
-    return std::move(*outcome);
-}
-
 auto chart_metadata_t::format_group_for(format_family_t family) -> format_metadata_t& {
     return format_group_in(format_groups, family);
 }

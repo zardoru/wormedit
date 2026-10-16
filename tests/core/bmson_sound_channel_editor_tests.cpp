@@ -783,9 +783,9 @@ TEST_CASE("BMSON marker moves translate linked hold ends across measures",
     expect_bmson_core(moved_source->end == moved->end);
     const auto moved_revision = history.document.revision;
     const auto tail_overflow = wormedit::local_position_t{moved_chart.measures.back().id, 900};
-    const auto built_index = wormedit::build_measure_index(moved_chart);
-    expect_bmson_core(std::holds_alternative<wormedit::measure_index_t>(built_index));
-    const auto& index = std::get<wormedit::measure_index_t>(built_index);
+    const auto built_index = wormedit::measure_index_t::from(moved_chart);
+    expect_bmson_core(built_index.has_value());
+    const auto& index = built_index.value();
     const auto tail_head_row = index.row_of(tail_overflow);
     const auto moved_head_row = index.row_of(moved->position);
     const auto moved_end_row = index.row_of(*moved->end);

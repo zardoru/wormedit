@@ -152,7 +152,7 @@ TEST_CASE("Playhead following rejects captured chart and revision expiry without
     auto state = make_state(history);
     const auto cursor = state.cursor;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     editor_measure_geometry_t geometry{chart.id, history.document.revision, &index};
     if (different_chart) geometry.chart = chart_id_t{99};
     else ++geometry.document_revision;
@@ -2959,7 +2959,7 @@ TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its scree
     REQUIRE(setup);
     auto state = *setup.state;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     for (const double pixels : {48.0, 7.3, 0.4, 13.9, 5.55}) {
         const auto scrolled = dispatch_editor_action(
@@ -3379,7 +3379,7 @@ TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edit
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const auto pixels_per_row = state.pixels_per_standard_measure / chart.divisions_per_standard_measure;
     for (const double row : {600.3, 600.9, 601.5, 613.77, 700.01}) {
         REQUIRE(sys::follow_compose_playhead(history, state, row, true,
@@ -3400,7 +3400,7 @@ TEST_CASE("Starting playback keeps the cursor where it sits instead of re-anchor
     auto state = make_state(history);
     state.viewport_height_pixels = 400.0;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     // Navigate so the cursor rests well away from the 20 percent margin.
     REQUIRE(sys::follow_compose_playhead(history, state, 2'400.0, false,
         {chart.id, history.document.revision, &index}));
@@ -4811,7 +4811,7 @@ auto note_paint_intent_stroke(document_history_t& history,
                               note_paint_intent_t intent,
                               std::optional<resource_id_t> sound = std::nullopt)
     -> editor_interaction_result_t {
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
     const auto begin = index.position_at(begin_row);
     const auto end = index.position_at(end_row);
     require_note_paint_intent(begin && end);
@@ -5324,7 +5324,7 @@ TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
     REQUIRE(dispatch_editor_action(history, state,
         scroll_editor_view_action_t{200.3, 320, editor_field_scroll_direction_t::down}));
@@ -5341,7 +5341,7 @@ TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
     REQUIRE(sys::follow_compose_playhead(history, state, 1234.5, false,
         {chart.id, history.document.revision, &index}));
@@ -5691,13 +5691,13 @@ TEST_CASE("retained interaction geometry matches exact views as selection and pr
     state.viewport_height_pixels = 400;
     state.pixels_per_standard_measure = 400;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     auto geometry = editor_measure_geometry_t{chart.id, history.document.revision, &index};
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 
     history.document.charts.front().lane_layouts.front().layout.lanes.front().name = "Renamed key";
     ++history.document.revision;
-    const auto layout_index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto layout_index = measure_index_t::from(chart).value();
     geometry = {chart.id, history.document.revision, &layout_index};
     t475_check(t475_retained_matches_legacy(history, state, geometry));
 
@@ -5725,7 +5725,7 @@ TEST_CASE("missing and stale retained interaction geometry falls back to exact i
     auto history = document_history_t::from(make_song());
     auto state = make_state(history);
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     const editor_measure_geometry_t valid{chart.id, history.document.revision, &index};
     t475_check(t475_retained_matches_legacy(history, state,
         {chart.id, history.document.revision, nullptr}));
@@ -6731,7 +6731,7 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
                                           .preferred_bgm_lane = object_id_t{300},
                                           .virtual_bgm_row = requested_row,
                                           .operation = wormedit::proposal_operation_t::apply}));
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
     const auto* moved = bgm_move_event(history, object_id_t{301});
     feedback_check(index.row_of(moved->position) == 2400);
     feedback_check(index.row_of(*moved->end) == 2640);
@@ -7128,7 +7128,7 @@ TEST_CASE("fixed cursor snapping preserves fractional position across shortened 
     REQUIRE(setup);
     auto state = *setup.state;
     const auto& chart = history.document.charts.front();
-    const auto index = std::get<measure_index_t>(build_measure_index(chart));
+    const auto index = measure_index_t::from(chart).value();
     state.pixels_per_standard_measure = 960.0;
     state.fixed_cursor_screen_y_pixels = 100.0;
     state.viewport_scroll_pixels = 258.0; // Raw row 358: ten rows after the third head.

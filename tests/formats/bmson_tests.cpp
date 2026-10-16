@@ -44,9 +44,9 @@ auto parse_text(std::string_view source, wormedit::bmson_parse_options_t options
 
 auto absolute(const wormedit::chart_document_t& chart, wormedit::local_position_t position)
     -> std::optional<std::uint64_t> {
-    const auto index = wormedit::build_measure_index(chart);
-    if (!std::holds_alternative<wormedit::measure_index_t>(index)) return std::nullopt;
-    return std::get<wormedit::measure_index_t>(index).row_of(position);
+    const auto index = wormedit::measure_index_t::from(chart);
+    if (!index.has_value()) return std::nullopt;
+    return index.value().row_of(position);
 }
 
 auto has_error_code(const wormedit::bmson_parse_outcome_t& result,

@@ -677,17 +677,17 @@ auto authored_release_position(const document_history_t& history,
         std::get<editor_interaction_view_model_t>(model),
         static_cast<double>(raw_row) * 192.0 / 960.0);
     if (!position || denominator == 0) return position;
-    const auto index = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    return snap_position(chart, std::get<measure_index_t>(index), *position, denominator);
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index.has_value());
+    return snap_position(chart, index.value(), *position, denominator);
 }
 
 auto committed_bga_row(const chart_document_t& chart) -> std::uint64_t {
     const auto event = std::ranges::find(chart.bga_events, object_id_t{500}, &bga_event_t::id);
     REQUIRE(event != chart.bga_events.end());
-    const auto index = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto row = std::get<measure_index_t>(index).row_of(event->position);
+    const auto index = measure_index_t::from(chart);
+    REQUIRE(index.has_value());
+    const auto row = index.value().row_of(event->position);
     REQUIRE(row);
     return *row;
 }
@@ -1792,7 +1792,7 @@ TEST_CASE("Retained playhead geometry preserves dispatcher cursor and viewport t
     layout.layout.lanes.front().id = lane_id_t{2};
     chart.lane_layouts.push_back(layout);
     auto history = document_history_t::from(std::move(song));
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
     auto actual = playhead_test_state(history);
     auto expected = actual;
     for (const auto row : {0.0, 59.9, 60.0, 959.9, 960.0, 1920.0, 959999.0, 2000000.0, 60.0}) {
@@ -1804,7 +1804,7 @@ TEST_CASE("Retained playhead geometry preserves dispatcher cursor and viewport t
 }
 TEST_CASE("Retained playhead geometry rejects stale provenance and active gestures", "[sys][frame-timing][follow]") {
     auto history = document_history_t::from(dense_song());
-    const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
     auto state = playhead_test_state(history);
     const auto before = state;
     CHECK_FALSE(follow_compose_playhead(history, state, 1920, true, {chart_id_t{2}, 1, &index}));
@@ -2367,8 +2367,8 @@ auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, st
 }
 auto kiai_areas(compose_test_fixture_t& fixture) -> std::vector<kiai_span_t> {
     const auto& chart = fixture.history.document.charts.front();
-    const auto built = build_measure_index(chart);
-    return kiai_spans_of(chart, std::get<measure_index_t>(built));
+    const auto built = measure_index_t::from(chart);
+    return kiai_spans_of(chart, built.value());
 }
 }
 TEST_CASE("Captured BMSON draft edits and auditions reject stale revisions independently of outer input",
@@ -3815,7 +3815,7 @@ TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport mo
             after.pixels_per_standard_measure - (before.viewport_scroll_pixels + anchor) /
             before.pixels_per_standard_measure) < 1e-9);
         expect_compose_test(after.fixed_cursor_screen_y_pixels == before.fixed_cursor_screen_y_pixels);
-        const auto index = std::get<measure_index_t>(build_measure_index(fixture.history.document.charts.front()));
+        const auto index = measure_index_t::from(fixture.history.document.charts.front()).value();
         const auto cursor_row = static_cast<double>(*index.row_of(after.cursor)) + after.cursor_subrow;
         const auto source_anchor = after.scroll_direction == editor_field_scroll_direction_t::down
             ? after.viewport_height_pixels - *after.fixed_cursor_screen_y_pixels : *after.fixed_cursor_screen_y_pixels;
@@ -3910,7 +3910,7 @@ TEST_CASE("Compose waveform arena output preserves persistent source caches acro
     }
     INFO("Remaining core timing factor allocations: " << minimum_allocations << ".." << maximum_allocations);
     // Exact baseline0ba3ccb fresh-frame producer allocated12 times; two output
-    // allocations are removed. The remaining10 are timing_at factor vectors,
+    // allocations are removed. The remaining10 are seconds_at factor vectors,
     // outside this storage unit. A later core optimization may lower this bound.
     expect_waveform_arena(stable);
     expect_waveform_arena(maximum_allocations <= 10);
@@ -7374,8 +7374,8 @@ auto make_prepared_draw_stroke(const document_history_t& history,
     const editor_interaction_state_t& state, const WormUiComposeInputAction& input)
     -> application_command_state_t::bga_draw_stroke_proposal_t {
     const auto& chart = history.document.charts.front();
-    auto built = build_measure_index(chart);
-    auto* geometry = std::get_if<measure_index_t>(&built);
+    auto built = measure_index_t::from(chart);
+    auto& geometry = built;
     REQUIRE(geometry);
     application_command_state_t::bga_draw_stroke_proposal_t initial{
         .stamp = chart_stamp_t::from(history.document, chart.id),

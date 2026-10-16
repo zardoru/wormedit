@@ -82,9 +82,9 @@ TEST_CASE("bgm bar measure marks cover the window in order", "[sys][bgm-bar]") {
     const auto chart = chart_fixture();
     const auto timing = timing_index_t::from(chart);
     REQUIRE(timing.value);
-    const auto built = build_measure_index(chart);
-    REQUIRE(std::holds_alternative<measure_index_t>(built));
-    const auto& measures = std::get<measure_index_t>(built);
+    const auto built = measure_index_t::from(chart);
+    REQUIRE(built.has_value());
+    const auto& measures = built.value();
     REQUIRE(measures.entries.size() > 2);
 
     const auto all = bgm_bar_measure_marks(measures, *timing.value, sample_rate, total_frames,

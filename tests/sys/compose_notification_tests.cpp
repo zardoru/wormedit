@@ -489,12 +489,12 @@ struct dead_span_fixture_t : compose_notification_fixture_t {
         chart.warps = {{.id = object_id_t{21}, .span = {{measure_id_t{1}, 720}, {measure_id_t{1}, 840}}}};
         REQUIRE(validate_document(history.document).empty());
         history = document_history_t::from(history.document);
-        const auto measures = build_measure_index(history.document.charts.front());
-        REQUIRE(std::holds_alternative<measure_index_t>(measures));
+        const auto measures = measure_index_t::from(history.document.charts.front());
+        REQUIRE(measures.has_value());
         const auto timing = timing_index_t::from(history.document.charts.front());
         REQUIRE(timing.value);
         cache.timing.dead_spans = dead_spans_view_t::from(history.document.charts.front(),
-            std::get<measure_index_t>(measures), *timing.value, 64);
+            measures.value(), *timing.value, 64);
         state.viewport_height_pixels = 400;
         state.pixels_per_standard_measure = 480;
         state.viewport_scroll_pixels = 0;

@@ -29,19 +29,9 @@ struct bga_layer_state_t {
     auto operator==(const bga_layer_state_t&) const -> bool = default;
 };
 
-enum class bga_preview_status_t : std::uint8_t {
-    ready,
-    not_started,
-    stale_generation,
-    invalid_schedule,
-    capacity_exceeded,
-    non_monotonic_window,
-    generation_exhausted,
-};
-
-using bga_preview_position_outcome_t = result_t<bga_preview_token_t, bga_preview_status_t>;
+using bga_preview_position_outcome_t = result_t<bga_preview_token_t, failure_code_t>;
 using bga_preview_advance_outcome_t =
-    result_t<std::span<const preview_visual_event_t>, bga_preview_status_t>;
+    result_t<std::span<const preview_visual_event_t>, failure_code_t>;
 
 // Renderer-neutral cursor over the immutable BGA schedule. The schedule must
 // outlive this consumer's active session. Calls are made by one control/render

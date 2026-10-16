@@ -349,10 +349,10 @@ auto advance_player_preview(const Context& context) -> bga_preview_advance_outco
     auto& state = context.state;
     if (context.sample_frame == std::numeric_limits<std::uint64_t>::max()) {
         fail_player_preview(context, "The player-preview frame exceeds the visual cursor range.");
-        return std::unexpected(bga_preview_status_t::not_started);
+        return std::unexpected(failure_code_t::not_started);
     }
     auto visual = state.visual_queue->advance_events(*state.visual_token, context.sample_frame + 1);
-    if (visual == std::unexpected(bga_preview_status_t::non_monotonic_window)) {
+    if (visual == std::unexpected(failure_code_t::invalid_state)) {
         const auto sought = state.visual_queue->reposition(*state.visual_token, context.sample_frame);
         if (sought) {
             state.visual_token = *sought;

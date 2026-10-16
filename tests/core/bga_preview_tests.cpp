@@ -30,7 +30,7 @@ void check_rejected_window(const bga_preview_advance_outcome_t& rejected,
                            const bga_layer_state_t& previous,
                            const bga_layer_state_t& current) {
     REQUIRE_FALSE(rejected);
-    CHECK(rejected.error() == bga_preview_status_t::non_monotonic_window);
+    CHECK(rejected.error() == failure_code_t::invalid_state);
     CHECK(current == previous);
 }
 
@@ -59,7 +59,7 @@ TEST_CASE("BGA preview queue rejects schedules beyond its configured capacity",
     };
 
     bga_preview_queue_t queue{2};
-    CHECK(queue.begin(chart) == std::unexpected(bga_preview_status_t::capacity_exceeded));
+    CHECK(queue.begin(chart) == std::unexpected(failure_code_t::capacity_exceeded));
     CHECK_FALSE(queue.current_layers({1}).has_value());
 }
 
@@ -82,7 +82,7 @@ TEST_CASE("BGA preview queue accepts Layer 2 without mapping it onto the Layer s
     REQUIRE(sought);
     check_layer2_state(queue.current_layers(*sought).value().layer2 == advanced_layers.layer2);
     const auto stale_restart = queue.reposition(*started, 0);
-    check_layer2_state(stale_restart == std::unexpected(bga_preview_status_t::stale_generation));
+    check_layer2_state(stale_restart == std::unexpected(failure_code_t::stale_generation));
     check_layer2_state(!queue.current_layers(*started).has_value());
 }
 
@@ -186,7 +186,7 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
     REQUIRE(at_seven.value().size() == 1);
     CHECK(at_seven.value().front().resource == resource_id_t{12});
     CHECK(at_seven_layers.background->resource == resource_id_t{12});
-    CHECK(queue.advance_events(*started, 9) == std::unexpected(bga_preview_status_t::stale_generation));
+    CHECK(queue.advance_events(*started, 9) == std::unexpected(failure_code_t::stale_generation));
 
     const auto restarted = queue.reposition(*sought, 0);
     REQUIRE(restarted);
@@ -202,7 +202,7 @@ TEST_CASE("BGA preview seek restores prior layer state and starts a fresh genera
     CHECK(from_zero.value().front().resource == resource_id_t{11});
 
     queue.stop();
-    CHECK(queue.advance_events(*restarted, 10) == std::unexpected(bga_preview_status_t::not_started));
+    CHECK(queue.advance_events(*restarted, 10) == std::unexpected(failure_code_t::not_started));
     CHECK_FALSE(queue.current_layers(*restarted).has_value());
 
     const auto new_session = queue.begin(chart);
@@ -217,21 +217,21 @@ TEST_CASE("BGA preview queue rejects invalid and non-monotonic advancement",
     auto invalid_rate = schedule();
     invalid_rate.sample_rate = 0;
     bga_preview_queue_t queue;
-    CHECK(queue.begin(invalid_rate) == std::unexpected(bga_preview_status_t::invalid_schedule));
+    CHECK(queue.begin(invalid_rate) == std::unexpected(failure_code_t::invalid_data));
 
     auto unsorted = schedule();
     unsorted.bga = {
         visual(2, 1, 1, visual_event_kind_t::background, 0, 0),
         visual(1, 2, 2, visual_event_kind_t::layer, 2, 1),
     };
-    CHECK(queue.begin(unsorted) == std::unexpected(bga_preview_status_t::invalid_schedule));
+    CHECK(queue.begin(unsorted) == std::unexpected(failure_code_t::invalid_data));
 
     auto chart = schedule();
     chart.bga = {visual(1, 1, 1, visual_event_kind_t::background, 0, 0)};
     const auto started = queue.begin(chart);
     REQUIRE(started);
     REQUIRE(queue.advance_events(*started, 3).has_value());
-    CHECK(queue.advance_events(*started, 2) == std::unexpected(bga_preview_status_t::non_monotonic_window));
+    CHECK(queue.advance_events(*started, 2) == std::unexpected(failure_code_t::invalid_state));
 }
 
 TEST_CASE("BGA seek rejects stale generations without moving the active cursor",
@@ -247,7 +247,7 @@ TEST_CASE("BGA seek rejects stale generations without moving the active cursor",
     const auto sought = queue.reposition(*started, 2);
     REQUIRE(sought);
 
-    CHECK(queue.reposition(*started, 3) == std::unexpected(bga_preview_status_t::stale_generation));
+    CHECK(queue.reposition(*started, 3) == std::unexpected(failure_code_t::stale_generation));
     const auto pending = queue.advance_events(*sought, 4);
     REQUIRE(pending.value().size() == 1);
     CHECK(pending.value().front().resource == resource_id_t{2});
@@ -282,7 +282,7 @@ TEST_CASE("BGA preview stale windows return an empty layer snapshot",
     (void)queue.advance_events(*started, 1);
     const auto stale = queue.advance_events({started->generation + 1}, 2);
     const auto stale_layers = queue.current_layers({started->generation + 1}).value_or(bga_layer_state_t{});
-    CHECK(stale == std::unexpected(bga_preview_status_t::stale_generation));
+    CHECK(stale == std::unexpected(failure_code_t::stale_generation));
     CHECK_FALSE(stale.has_value());
     CHECK(stale_layers == bga_layer_state_t{});
 }

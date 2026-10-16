@@ -66,8 +66,8 @@ auto bga_preview_queue_t::begin(const preview_schedule_t& schedule, std::uint64_
         !std::ranges::all_of(schedule.bga,
                              [](const auto& event) { return is_valid_kind(event.kind); })) {
         return std::unexpected(schedule.bga.size() > maximum_events_
-                                   ? bga_preview_status_t::capacity_exceeded
-                                   : bga_preview_status_t::invalid_schedule);
+                                   ? failure_code_t::capacity_exceeded
+                                   : failure_code_t::invalid_data);
     }
 
     layer_indices_t candidate_indices;
@@ -79,7 +79,7 @@ auto bga_preview_queue_t::begin(const preview_schedule_t& schedule, std::uint64_
 
     const auto token = begin_session(sample_frame);
     if (!token.has_value()) {
-        return std::unexpected(bga_preview_status_t::generation_exhausted);
+        return std::unexpected(failure_code_t::arithmetic_overflow);
     }
     schedule_ = &schedule;
     layer_indices_ = std::move(candidate_indices);
@@ -90,10 +90,10 @@ auto bga_preview_queue_t::begin(const preview_schedule_t& schedule, std::uint64_
 auto bga_preview_queue_t::reposition(bga_preview_token_t token, std::uint64_t sample_frame)
     -> bga_preview_position_outcome_t {
     if (schedule_ == nullptr || !active_) {
-        return std::unexpected(bga_preview_status_t::not_started);
+        return std::unexpected(failure_code_t::not_started);
     }
     if (!is_current(token)) {
-        return std::unexpected(bga_preview_status_t::stale_generation);
+        return std::unexpected(failure_code_t::stale_generation);
     }
     const auto new_token = begin_session(sample_frame);
     if (!new_token.has_value()) {
@@ -101,7 +101,7 @@ auto bga_preview_queue_t::reposition(bga_preview_token_t token, std::uint64_t sa
         layer_indices_ = {};
         head_ = {};
         layers_ = {};
-        return std::unexpected(bga_preview_status_t::generation_exhausted);
+        return std::unexpected(failure_code_t::arithmetic_overflow);
     }
     set_position(sample_frame);
     return *new_token;
@@ -123,13 +123,13 @@ auto bga_preview_queue_t::advance_events(bga_preview_token_t token,
                                          std::uint64_t exclusive_end_frame)
     -> bga_preview_advance_outcome_t {
     if (schedule_ == nullptr || !active_) {
-        return std::unexpected(bga_preview_status_t::not_started);
+        return std::unexpected(failure_code_t::not_started);
     }
     if (!is_current(token)) {
-        return std::unexpected(bga_preview_status_t::stale_generation);
+        return std::unexpected(failure_code_t::stale_generation);
     }
     if (exclusive_end_frame < last_advanced_end_) {
-        return std::unexpected(bga_preview_status_t::non_monotonic_window);
+        return std::unexpected(failure_code_t::invalid_state);
     }
 
     const auto events = advance_preview_queue(

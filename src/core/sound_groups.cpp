@@ -257,7 +257,7 @@ auto apply_sound_group_edits(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "sound group edit needs at least one change");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto labels = std::vector<std::string>{};
     auto groups = std::vector<sound_group_id_t>{};

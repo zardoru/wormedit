@@ -859,7 +859,7 @@ TEST_CASE("SV draft inactive views borrow the latest outcome diagnostics",
 TEST_CASE("SV preparation reads an already staged transaction document",
           "[unit][sv-recipe][proposal-stamp]") {
     auto history = document_history_t::from(make_recipe_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     CHECK(&transaction.current_document() == &history.document);
     auto& staged = transaction.document();
     CHECK(&transaction.current_document() == &staged);

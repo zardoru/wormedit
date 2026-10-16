@@ -220,7 +220,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
         auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
         if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
             return diagnostic_result(context.history, context.state, *failures);
-        auto transaction = document_command_transaction_t::from(context.history);
+        auto transaction = document_command_transaction_t(context.history);
         transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
         auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
         if (!committed)
@@ -541,7 +541,7 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return diagnostic_result(context.history, state, *diagnostics);
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(result.document));
     auto command =
         transaction.commit("Paint notes");
@@ -831,7 +831,7 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
     const auto committed = transaction.commit("Place linked BMSON stem note");
     if (!committed)
@@ -874,7 +874,7 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     const auto& placement = std::get<hold_placement_plan_t>(plan);
     if (auto stem = commit_stem_hold(context, pending, placement, *snapped, geometry))
         return *stem;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     std::optional<object_id_t> id;

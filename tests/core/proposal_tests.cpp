@@ -25,7 +25,7 @@ struct metadata_payload_t {
         if (is_rejected_after_edit)
             return {.diagnostics = {error(diagnostic_code_t::invalid_id, "Prepared title rejected.")}};
         if (is_rejected_by_transaction)
-            transaction.outcome.diagnostics.push_back(
+            transaction.outcome().diagnostics.push_back(
                 error(diagnostic_code_t::invalid_id, "Transaction rejected title."));
         return {.value = "Set title"};
     }
@@ -169,7 +169,7 @@ TEST_CASE("Shared proposals reject stale stamps before copying", "[core][proposa
     auto transaction = proposal.transaction(history, "Proposal");
     CHECK_FALSE(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
-    test::check_stale_action_message(transaction.outcome.diagnostics, "Proposal");
+    test::check_stale_action_message(transaction.outcome().diagnostics, "Proposal");
     CHECK(history.document.metadata.title.empty());
     CHECK(history.undo.empty());
 }
@@ -266,7 +266,7 @@ struct action_test_t {
     auto validate(action_test_context_t& context) const
         -> std::optional<document_command_result_t> {
         ++context.validated;
-        if (!context.transaction.is_ready()) return context.transaction.outcome;
+        if (!context.transaction.is_ready()) return context.transaction.outcome();
         return std::nullopt;
     }
     auto perform(action_test_context_t& context) const -> document_command_result_t {
@@ -287,21 +287,21 @@ TEST_CASE("Compose action validation prevents perform and a stale document copy"
     auto history = make_history();
     const auto stamp = document_stamp_t::from(history.document);
     ++history.document.revision;
-    auto transaction = document_command_transaction_t::from(history, stamp, "Test action");
+    auto transaction = document_command_transaction_t(history, stamp, "Test action");
     action_test_context_t context{transaction};
     action_test_t action;
     const auto outcome = run_compose_action(action, context);
     CHECK(context.validated == 1);
     CHECK(context.performed == 0);
     CHECK_FALSE(transaction.has_copy());
-    CHECK(outcome.diagnostics == transaction.outcome.diagnostics);
+    CHECK(outcome.diagnostics == transaction.outcome().diagnostics);
     test::check_stale_action_message(outcome.diagnostics, "Test action");
     CHECK(history.undo.empty());
 }
 
 TEST_CASE("Compose action performance follows one successful validation", "[core][proposal][compose-action]") {
     auto history = make_history();
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     action_test_context_t context{transaction};
     const auto outcome = run_compose_action(action_test_t{}, context);
     CHECK(context.validated == 1);

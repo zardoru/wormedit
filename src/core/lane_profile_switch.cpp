@@ -144,7 +144,7 @@ auto insert_initial_lane_profile(document_history_t& history, chart_id_t chart,
             .chart = chart,
             .value = {.position = *target_position, .layout = prepared->first, .input = bindings}});
     if (!inserted.applied) return inserted;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit(
                                    "Set initial lane profile");

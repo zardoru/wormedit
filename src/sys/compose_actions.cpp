@@ -996,7 +996,7 @@ auto apply_bmson_marker_batch_action_t::perform(compose_action_context_t& contex
         document_identity_policy_t::revision_only);
     if (!transaction.is_ready()) {
         draft.reset();
-        return compose_action_outcome_t::blocked(transaction.outcome.diagnostics.front().message,
+        return compose_action_outcome_t::blocked(transaction.outcome().diagnostics.front().message,
                                                  notification_source_t::edit);
     }
     auto inserted = insert_bmson_sound_markers(transaction, draft->stamp.chart,
@@ -2734,7 +2734,7 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset saved, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto transaction = document_command_transaction_t(context.environment.document.history);
     auto& proposed = transaction.document();
     proposed.quantization_presets.push_back({
         .name = context.action.compose_quantize_preset_name,
@@ -2785,7 +2785,7 @@ auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset deleted, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto transaction = document_command_transaction_t(context.environment.document.history);
     auto& proposed = transaction.document();
     proposed.quantization_presets.erase(proposed.quantization_presets.begin() +
                                         static_cast<std::ptrdiff_t>(index));
@@ -2852,7 +2852,7 @@ auto rename_compose_quantize_preset_action_t::perform(compose_action_context_t& 
     using namespace wormedit;
     constexpr std::string_view rebind_failure =
         "Quantization preset renamed, but workspace rebinding failed.";
-    auto transaction = document_command_transaction_t::from(context.environment.document.history);
+    auto transaction = document_command_transaction_t(context.environment.document.history);
     auto& proposed = transaction.document();
     proposed.quantization_presets[index].name = name;
     auto committed = transaction.commit("Rename quantization preset");

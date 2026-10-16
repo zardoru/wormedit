@@ -1357,12 +1357,12 @@ auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
     -> const chart_document_t* {
     const auto chart = context.transaction.current_document().find_chart(id);
     if (!id || chart == nullptr) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to an unknown chart");
         return nullptr;
     }
     if (chart->sv_recipes.size() > maximum_sv_recipes_per_chart) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "selected chart exceeds the SV recipe cap");
         return nullptr;
     }
@@ -1372,14 +1372,14 @@ auto editable_recipe_chart(sv_recipe_edit_context_t& context, chart_id_t id)
 auto editable_recipe(sv_recipe_edit_context_t& context, const chart_document_t& chart,
                      recipe_id_t id) -> const sv_recipe_t* {
     if (!id) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit uses the reserved zero ID");
         return nullptr;
     }
     auto* recipe = recipe_by_id(chart, id);
     if (recipe == nullptr ||
         std::ranges::count(chart.sv_recipes, id, &sv_recipe_t::id) != 1) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                "SV recipe edit refers to a missing or ambiguous recipe");
         return nullptr;
     }
@@ -1402,7 +1402,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     const auto* chart = editable_recipe_chart(context, edit.chart);
     if (!chart) return;
     if (chart->sv_recipes.size() >= maximum_sv_recipes_per_chart) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe insertion would exceed the per-chart cap");
         return;
     }
@@ -1410,17 +1410,17 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe.id) {
         const auto id = next_recipe_id(context.transaction.current_document());
         if (!id) {
-            reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+            reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe ID sequence is exhausted");
             return;
         }
         recipe.id = *id;
     } else if (is_globally_used_recipe_id(context.transaction.current_document(), recipe.id)) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::duplicate_id,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::duplicate_id,
                "SV recipe ID is already used by a generator recipe");
         return;
     }
-    if (!append_recipe_validation(context.transaction.outcome, *chart, recipe)) return;
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, recipe)) return;
     auto* target = context.transaction.document().find_chart(edit.chart);
     target->sv_recipes.push_back(std::move(recipe));
     context.label = "Insert SV recipe";
@@ -1435,7 +1435,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe) return;
     auto replacement = edit.value;
     replacement.id = edit.id;
-    if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, replacement)) return;
     context.changed = *recipe != replacement;
     auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
@@ -1460,7 +1460,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe)
         return;
     if (edit.new_index >= chart.sv_recipes.size()) {
-        reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_resolution,
+        reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_resolution,
                "SV recipe reorder index is outside the recipe list");
         return;
     }
@@ -1497,7 +1497,7 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     if (!recipe) return;
     auto replacement = *recipe;
     replacement.range = edit.range;
-    if (!append_recipe_validation(context.transaction.outcome, *chart, replacement)) return;
+    if (!append_recipe_validation(context.transaction.outcome(), *chart, replacement)) return;
     context.changed = replacement.range != recipe->range;
     auto* target = context.transaction.document().find_chart(edit.chart);
     if (context.changed) {
@@ -1536,10 +1536,10 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     scratch.sv_recipes.front().enabled = true;
     auto baked = bake_sv_recipes_for_export(scratch);
     if (!baked.value || !baked.diagnostics.empty()) {
-        context.transaction.outcome.diagnostics.insert(context.transaction.outcome.diagnostics.end(),
+        context.transaction.outcome().diagnostics.insert(context.transaction.outcome().diagnostics.end(),
                                           baked.diagnostics.begin(), baked.diagnostics.end());
-        if (context.transaction.outcome.diagnostics.empty())
-            reject(context.transaction.outcome.diagnostics, diagnostic_code_t::invalid_id,
+        if (context.transaction.outcome().diagnostics.empty())
+            reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe could not be materialized");
         return;
     }
@@ -1569,7 +1569,7 @@ void sv_recipe_edit_context_t::operator()(const Edit& edit) {
 auto sv_recipe_edit_t::apply(document_edit_scope_t& scope) const
     -> diagnosed_t<std::optional<std::string>> {
     auto& transaction = scope.transaction();
-    auto& result = transaction.outcome;
+    auto& result = transaction.outcome();
     sv_recipe_edit_context_t context{.transaction = transaction, .label = {}, .changed = false};
     std::visit(context, action);
     if (!result.diagnostics.empty() || !context.changed) return {};
@@ -1587,7 +1587,7 @@ auto apply_sv_recipe_edit(document_command_transaction_t& transaction,
 
 auto apply_sv_recipe_edit(document_history_t& history,
                           const sv_recipe_edit_action_t& action) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     document_edit_scope_t scope{transaction};
     return apply_proposal_edit(scope, sv_recipe_edit_t{.action = action});
 }

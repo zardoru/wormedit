@@ -124,8 +124,8 @@ auto apply_lane_assignment(document_history_t& history,
                            chart_id_t chart_id, const std::vector<object_id_t>& ids,
                            const lane_chooser_t& choose, const char* label,
                            lane_transform_limits_t limits) -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& result = transaction.outcome;
+    auto transaction = document_command_transaction_t(history);
+    auto& result = transaction.outcome();
     if (ids.empty() || ids.size() > limits.maximum_selected_notes) {
         reject(result, diagnostic_code_t::invalid_resolution,
                ids.empty() ? "lane transform requires at least one note"

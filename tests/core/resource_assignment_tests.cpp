@@ -2192,7 +2192,7 @@ TEST_CASE("BGA stroke reuses a captured transaction and publishes one undo entry
           "[core][resources][bga][stroke][transaction]") {
     auto history = document_history_t::from(assignment_song());
     const auto stamp = chart_stamp_t::from(history.document, chart_id_t{2});
-    auto transaction = document_command_transaction_t::from(history, stamp, "BGA Draw stroke");
+    auto transaction = document_command_transaction_t(history, stamp, "BGA Draw stroke");
     const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};
     const auto result = apply_bga_stroke(transaction, chart_id_t{2}, resource_id_t{3}, targets);
     check_bga_stroke(result.applied);
@@ -2206,7 +2206,7 @@ TEST_CASE("BGA stroke reuses a captured transaction and publishes one undo entry
 TEST_CASE("rejected BGA stroke closes its supplied transaction and discards a working copy",
           "[core][resources][bga][stroke][transaction]") {
     auto history = document_history_t::from(assignment_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     const auto original = history.document.metadata.title;
     transaction.document().metadata.title = "Unpublished";
     const std::array targets{bga_stroke_target_t{{measure_id_t{3}, 600}, visual_event_kind_t::layer}};

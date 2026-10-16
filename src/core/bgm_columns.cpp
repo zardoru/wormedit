@@ -61,7 +61,7 @@ auto apply_bgm_column_count(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_id, "BGM column count must be 1 to 128");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     const auto target = proposed.find_chart(chart);
     if (!chart || target == nullptr) {

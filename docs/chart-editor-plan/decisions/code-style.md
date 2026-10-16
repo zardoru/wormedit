@@ -89,7 +89,7 @@ it in new code even before the card lands.
   runner so every edit gets it. Keep `docs/architecture.md` true
   when a runner changes. No scripting layer or reified command objects: undo is snapshots.
 - **Document commands run through `document_command_transaction_t`:** build it with
-  `::from(history)`, reject through it, copy the document lazily and only once, commit through it.
+  a constructor, reject through it, copy the document lazily and only once, commit through it.
   Never hand-write the stamp/copy/commit sequence. Staged edits are orchestration around it.
   Three reads, three guarantees: `document()` is the working copy (the first call copies the
   committed document, once); `current_document()` reads what the transaction sees now (the working

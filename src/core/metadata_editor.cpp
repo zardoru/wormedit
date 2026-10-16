@@ -390,8 +390,8 @@ auto chart_rating_edit_t::from(chart_id_t chart, bool unset, std::string_view nu
 auto apply_batch_chart_metadata_edit(document_history_t& history,
     const batch_chart_metadata_action_t& action, metadata_edit_limits_t limits)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& result = transaction.outcome;
+    auto transaction = document_command_transaction_t(history);
+    auto& result = transaction.outcome();
     if (action.charts.empty() || action.charts.size() > 256) return transaction.reject(diagnostic_code_t::invalid_id, "select between 1 and 256 charts");
     if ((action.author && !is_valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
         (action.edit_rating && action.rating && action.rating->denominator == 0))
@@ -423,8 +423,8 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
 auto apply_metadata_edit(document_history_t& history,
                          const metadata_edit_action_t& action, metadata_edit_limits_t limits)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& result = transaction.outcome;
+    auto transaction = document_command_transaction_t(history);
+    auto& result = transaction.outcome();
     if (limits.maximum_total_metadata_bytes == 0) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::unsupported_feature, "metadata byte cap must be positive"));

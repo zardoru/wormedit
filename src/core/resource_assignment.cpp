@@ -148,8 +148,8 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
                                std::span<const resolved_bga_stroke_target_t> targets,
                                std::optional<resource_id_t> resource, bool erase)
     -> document_command_result_t {
-    auto& history = transaction.history;
-    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
+    const auto& source = transaction.source_document();
+    document_command_result_t unchanged{.revision = source.revision, .diagnostics = {}};
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[chart_offset];
     std::set<std::pair<std::uint64_t, std::size_t>> cells;
@@ -160,7 +160,7 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
             const auto lane = editor_bga_lane_index(event.kind);
             return row && lane && cells.contains({*row, *lane});
         });
-        if (chart.bga_events.size() == history.document.charts[chart_offset].bga_events.size())
+        if (chart.bga_events.size() == source.charts[chart_offset].bga_events.size())
             return unchanged;
         return transaction.commit("Erase BGA events");
     }
@@ -174,7 +174,7 @@ auto commit_bga_stroke_targets(document_command_transaction_t& transaction, std:
     for (const auto& target : targets)
         if (occupied.emplace(target.row, target.lane).second) additions.push_back(target);
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(history.document.charts[chart_offset], default_maximum_chart_objects).id;
+    const auto first_id = next_chart_object_id(source.charts[chart_offset], default_maximum_chart_objects).id;
     if (!first_id || additions.size() - 1 >
             std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -412,7 +412,7 @@ auto apply_bms_identifier_renumber(document_history_t& history,
         reject(result, diagnostic_code_t::invalid_resolution, "BMS identifier namespace has no contiguous run for renumbering");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     for (std::size_t index = 0; index < resources->size(); ++index) {
         auto item = std::ranges::find(proposed.resources, (*resources)[index]->id, &resource_entry_t::id);
@@ -674,7 +674,7 @@ auto apply_resource_placement(document_history_t& history,
     }
     auto target = resolve_placement_target(history.document, action, result);
     if (!target) return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[target->chart_offset];
     auto measure = chart.find_measure(target->position.measure);
@@ -699,20 +699,20 @@ auto run_apply_bga_stroke(document_command_transaction_t& transaction,
                       chart_id_t chart_id, std::optional<resource_id_t> resource,
                       std::span<const bga_stroke_target_t> targets, bool erase)
     -> document_command_result_t {
-    auto& history = transaction.history;
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    const auto& source = transaction.source_document();
+    document_command_result_t result{.revision = source.revision, .diagnostics = {}};
     if (targets.size() > 50'000) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "BGA stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = history.document.find_chart(chart_id);
+    const auto source_chart = source.find_chart(chart_id);
     if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGA stroke chart is missing");
         return result;
     }
     const auto asset_kind = erase ? std::optional<asset_kind_t>{}
-                                  : resolve_bga_stroke_resource(history.document, resource, result);
+                                  : resolve_bga_stroke_resource(source, resource, result);
     if (!erase && !asset_kind) return result;
     const auto built = measure_index_t::from(*source_chart);
     if (!built) {
@@ -722,7 +722,7 @@ auto run_apply_bga_stroke(document_command_transaction_t& transaction,
     auto resolved = resolve_bga_stroke_targets(*built, targets, asset_kind, erase, result);
     if (!resolved) return result;
     if (resolved->empty()) return result;
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
+    const auto chart_offset = static_cast<std::size_t>(source_chart - source.charts.data());
     return commit_bga_stroke_targets(transaction, chart_offset, *built, *resolved, resource, erase);
 }
 
@@ -740,7 +740,7 @@ auto apply_bga_stroke(document_history_t& history,
                       chart_id_t chart_id, std::optional<resource_id_t> resource,
                       std::span<const bga_stroke_target_t> targets, bool erase)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     return apply_bga_stroke(transaction, chart_id, resource, targets, erase);
 }
 
@@ -833,8 +833,8 @@ auto commit_bgm_stroke_erase(document_command_transaction_t& transaction, std::s
                              const measure_index_t& index, object_id_t lane,
                              std::span<const bgm_stroke_cell_t> cells)
     -> document_command_result_t {
-    auto& history = transaction.history;
-    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
+    const auto& source = transaction.source_document();
+    document_command_result_t unchanged{.revision = source.revision, .diagnostics = {}};
     std::set<std::uint64_t> rows;
     for (const auto& cell : cells) rows.insert(cell.row);
     auto& proposed = transaction.document();
@@ -853,10 +853,10 @@ auto commit_bgm_stroke_draw(document_command_transaction_t& transaction, std::si
                             const measure_index_t& index, object_id_t lane, resource_id_t sound,
                             std::span<const bgm_stroke_cell_t> cells)
     -> document_command_result_t {
-    auto& history = transaction.history;
-    document_command_result_t unchanged{.revision = history.document.revision, .diagnostics = {}};
-    const auto& source = history.document.charts[chart_offset];
-    const auto occupied = bgm_stroke_lane_events(source, index, lane);
+    const auto& source = transaction.source_document();
+    document_command_result_t unchanged{.revision = source.revision, .diagnostics = {}};
+    const auto& chart_source = source.charts[chart_offset];
+    const auto occupied = bgm_stroke_lane_events(chart_source, index, lane);
     std::vector<bgm_stroke_cell_t> additions;
     for (const auto& cell : cells) {
         const auto found = occupied.find(cell.row);
@@ -868,7 +868,7 @@ auto commit_bgm_stroke_draw(document_command_transaction_t& transaction, std::si
         }
     }
     if (additions.empty()) return unchanged;
-    const auto first_id = next_chart_object_id(source, default_maximum_chart_objects).id;
+    const auto first_id = next_chart_object_id(chart_source, default_maximum_chart_objects).id;
     if (!first_id || additions.size() - 1 >
                         std::numeric_limits<std::uint64_t>::max() - first_id->value) {
         reject(unchanged, diagnostic_code_t::invalid_id,
@@ -902,14 +902,14 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
                       std::optional<resource_id_t> resource,
                       std::span<const local_position_t> targets, bool erase)
     -> document_command_result_t {
-    auto& history = transaction.history;
-    document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
+    const auto& source = transaction.source_document();
+    document_command_result_t result{.revision = source.revision, .diagnostics = {}};
     if (targets.size() > 50'000) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "BGM stroke exceeds the per-gesture target cap");
         return result;
     }
-    const auto source_chart = history.document.find_chart(chart_id);
+    const auto source_chart = source.find_chart(chart_id);
     if (!chart_id || source_chart == nullptr) {
         reject(result, diagnostic_code_t::invalid_id, "BGM stroke chart is missing");
         return result;
@@ -918,7 +918,7 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
         return apply_bmson_packed_stroke(transaction, chart_id, source_lane,
                                          resource, targets, erase);
     if (!validate_bgm_stroke_lane(*source_chart, source_lane, result)) return result;
-    if (!erase && !validate_bgm_stroke_resource(history.document, *source_chart, resource, result))
+    if (!erase && !validate_bgm_stroke_resource(source, *source_chart, resource, result))
         return result;
     const auto built = measure_index_t::from(*source_chart);
     if (!built) {
@@ -927,7 +927,7 @@ auto run_apply_bgm_stroke(document_command_transaction_t& transaction,
     }
     const auto cells = resolve_bgm_stroke_cells(*built, targets, result);
     if (!cells || cells->empty()) return result;
-    const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
+    const auto chart_offset = static_cast<std::size_t>(source_chart - source.charts.data());
     return erase ? commit_bgm_stroke_erase(transaction, chart_offset, *built, source_lane, *cells)
                  : commit_bgm_stroke_draw(transaction, chart_offset, *built, source_lane, *resource,
                                           *cells);
@@ -951,7 +951,7 @@ auto apply_bgm_stroke(document_history_t& history,
                       std::optional<resource_id_t> resource,
                       std::span<const local_position_t> targets, bool erase)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     return apply_bgm_stroke(transaction, chart_id, source_lane, resource, targets, erase);
 }
 
@@ -1060,7 +1060,7 @@ auto apply_bgm_event_move(document_history_t& history,
     }
     if (*target == original->position && destination_lane == original->source_lane)
         return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[static_cast<std::size_t>(source_chart - history.document.charts.data())];
     if (!destination_lane) {
@@ -1120,7 +1120,7 @@ auto apply_bga_event_move(document_history_t& history,
         action.bga_kind.value_or(found->kind), result);
     if (!kind) return result;
     if (*target == found->position && *kind == found->kind) return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     const auto chart_offset = static_cast<std::size_t>(source_chart - history.document.charts.data());
     const auto moved = std::ranges::find(proposed.charts[chart_offset].bga_events,
@@ -1177,7 +1177,7 @@ auto apply_virtual_bms_resource_placement(
                "virtual resource placement requires an unmaterialized BMS measure");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
@@ -1259,7 +1259,7 @@ auto apply_virtual_bms_bgm_event_move(
                "virtual BGM move requires an unmaterialized BMS measure");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
@@ -1332,7 +1332,7 @@ auto apply_virtual_bms_bga_event_move(
                "virtual BGA move requires an unmaterialized BMS measure");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
@@ -1451,7 +1451,7 @@ auto apply_resource_creation(document_history_t& history,
         }
         resource.target_identities.push_back(*identity);
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     proposed.resources.push_back(std::move(resource));
     return transaction.commit("Create resource");
@@ -1621,7 +1621,7 @@ auto import_primary_music(document_history_t& history,
     auto& roles = draft.document.resources.back().roles;
     if (std::ranges::find(roles, resource_role_t::music) == roles.end())
         roles.insert(roles.begin(), resource_role_t::music);
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(draft.document));
     return transaction.commit("Set song audio");
 }
@@ -1633,7 +1633,7 @@ auto relink_primary_music(document_history_t& history, const resource_entry_t& m
                           const import_resource_asset_action_t& action)
     -> document_command_result_t {
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     const auto asset = proposed.find_audio_asset(music.asset);
     if (asset->source_path.lexically_normal() == source) return result;
@@ -1665,7 +1665,7 @@ auto apply_resource_asset_import(document_history_t& history,
                "reserved import expected a new asset but the source is already registered");
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     if (!asset) {
         if (!append_imported_asset(proposed, action, registered_copy.value_or(path), asset, result))
@@ -1873,7 +1873,7 @@ auto apply_bms_wav_slot_assignment(document_history_t& history,
 
     auto draft = document_history_t::from(history.document, 1, false);
     if (!import_slot_batch_entry(draft, action.imported_file, *value, owner.resource, result)) return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(draft.document));
     return transaction.commit(owner.resource ? "Replace BMS WAV slot sound" : "Assign BMS WAV slot");
 }
@@ -1898,7 +1898,7 @@ auto apply_bms_wav_slot_batch_assignment(document_history_t& history,
         if (!import_slot_batch_entry(draft, std::move((*files)[index]), *first_slot + index,
                                      (*owners)[index], result)) return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(draft.document));
     return transaction.commit("Assign BMS WAV slot batch");
 }
@@ -1957,7 +1957,7 @@ auto apply_resource_asset_relink(document_history_t& history,
     if (current == path) {
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     if (audio != nullptr) {
         const auto index = static_cast<std::size_t>(audio -
@@ -2065,7 +2065,7 @@ auto apply_resource_sound_metadata(document_history_t& history,
     if (resource->name == *name && resource->sound_kind == action.kind && resource->tags == *tags) {
         return result;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto& target = proposed.resources[static_cast<std::size_t>(
         resource - history.document.resources.begin())];
@@ -2110,7 +2110,7 @@ auto apply_resource_deletions(document_history_t& history,
             return result;
         }
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     std::erase_if(proposed.resources,
                   [&](const auto& entry) { return doomed.contains(entry.id.value); });
@@ -2244,7 +2244,7 @@ auto apply_resource_assignment(document_history_t& history,
     document_command_result_t result{.revision = history.document.revision, .diagnostics = {}};
     auto selected = validate_resource_assignment_selection(history.document, action, limits, result);
     if (!selected) return result;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);
     if (!action.chart || chart == nullptr) {

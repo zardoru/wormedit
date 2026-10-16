@@ -875,7 +875,7 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
         return complete_editor_delete(context, true);
     }
 
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
 
     auto& proposed = transaction.document();
     auto staged = stage_delete_stem_points(proposed, context, ids);
@@ -1046,7 +1046,7 @@ auto validate_assignment_intervals(std::span<const assignment_interval_t> interv
 auto apply_note_lane_assignment_document(document_history_t& history, chart_id_t chart_id,
     std::span<const assignment_candidate_t> candidates, lane_id_t lane, std::string label)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(chart_id);
     note_move_plan_t plan;
@@ -1416,7 +1416,7 @@ auto keyboard_entry_plan_t::apply(editor_edit_context_t& context) const -> edito
     auto staged = stage_keyboard_entry(context, lane, position, original, sound, is_displacing, stem, geometry);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&staged)) return {.diagnostics = *failure};
     auto prepared = std::get<prepared_keyboard_entry_t>(std::move(staged));
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(prepared.document));
     auto command = transaction.commit("Enter note from lane key");
     if (!command) return {.diagnostics = std::move(command.diagnostics)};

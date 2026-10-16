@@ -3167,7 +3167,7 @@ TEMPLATE_TEST_CASE("Captured native chart action bindings reject stale transacti
     REQUIRE(before.has_value());
     REQUIRE_FALSE(before->empty());
     const auto revision = history.document.revision;
-    auto transaction = document_command_transaction_t::from(history, stamp, "Native edit");
+    auto transaction = document_command_transaction_t(history, stamp, "Native edit");
     const TestType edit{};
     const auto outcome =
         run_native_chart_edit<TestType>(transaction, edit, native_edit_binding_description);

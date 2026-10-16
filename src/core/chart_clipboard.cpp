@@ -281,7 +281,7 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
         if (!deleted) return deleted;
     }
     if (staged.undo.empty()) return {.accepted = true};
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged.document));
     const auto committed = transaction.commit(options.label);
     if (!committed) return {.diagnostics = committed.diagnostics};
@@ -754,8 +754,8 @@ auto paste_chart_clipboard(document_history_t& history, chart_id_t chart_id,
     const proposal_read_scope_t<chart_stamp_t> scope{history.document, captured};
     auto prepared = chart_paste_proposal_t::from(scope, clipboard, anchor);
     if (!prepared) {
-        auto transaction = document_command_transaction_t::from(history);
-        transaction.outcome.diagnostics.push_back(std::move(static_cast<diagnostic_t&>(prepared.error())));
+        auto transaction = document_command_transaction_t(history);
+        transaction.outcome().diagnostics.push_back(std::move(static_cast<diagnostic_t&>(prepared.error())));
         return transaction.finish_without_commit();
     }
     return apply_proposal(history, proposal_t<chart_paste_proposal_t>::from(captured, std::move(*prepared)));

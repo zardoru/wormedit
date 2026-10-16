@@ -220,7 +220,7 @@ auto step_bpm_by_one(signed_rational_t bpm, bpm_step_direction_t direction)
 
 auto apply_bpm_edit(document_history_t& history,
     const bpm_edit_action_t& action, bpm_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t::from(history).execute<bpm_operation_visitor_t>(action, limits);
+    return document_command_transaction_t(history).execute<bpm_operation_visitor_t>(action, limits);
 }
 
 // Temporary: removed by T-637; native_chart_edit_action.h still dispatches into existing transactions.
@@ -534,7 +534,7 @@ auto beat_interval_drag_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
     const auto chart = stamp.chart;
     auto updated = snap_active ? revise(scope, proposed_bpm) : revise(scope, proposed_sample_frame);
     if (!(updated.value && updated.diagnostics.empty()))
-        return document_command_transaction_t::rejection(scope.transaction().outcome.revision,
+        return document_command_transaction_t::rejection(scope.transaction().outcome().revision,
             std::move(updated.diagnostics));
     if (updated.value->payload.proposed_bpm != proposed_bpm ||
         updated.value->payload.proposed_sample_frame != proposed_sample_frame)

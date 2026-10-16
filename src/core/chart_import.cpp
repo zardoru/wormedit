@@ -389,8 +389,8 @@ auto plan_chart_import(const song_document_t& target, const song_document_t& sou
 auto apply_chart_import(document_history_t& history,
                         const song_document_t& source, const chart_import_paths_t& paths,
                         std::span<const chart_id_t> selected) -> chart_import_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    chart_import_result_t result{.command = transaction.outcome, .payload = {}};
+    auto transaction = document_command_transaction_t(history);
+    chart_import_result_t result{.command = transaction.outcome(), .payload = {}};
     if (selected.empty()) {
         result.command = transaction.reject(diagnostic_code_t::invalid_id, "choose at least one difficulty to import");
         return result;

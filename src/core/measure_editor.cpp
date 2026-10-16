@@ -950,8 +950,8 @@ auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure
 auto apply_measure_edit(document_history_t& history,
                         const measure_edit_action_t& action, measure_edit_limits_t limits)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
-    auto& result = transaction.outcome;
+    auto transaction = document_command_transaction_t(history);
+    auto& result = transaction.outcome();
     if (limits.maximum_measures == 0 || limits.maximum_rows_per_measure == 0) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "measure editor bounds must be positive");

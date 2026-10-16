@@ -289,7 +289,7 @@ public:
     template<class Edit> requires stateful_proposal_payload<Edit>
     [[nodiscard]] static auto prepare_application(Edit& edit, proposal_edit_scope_t<chart_stamp_t>& scope)
         -> std::optional<proposal_application_stage_t> {
-        auto& diagnostics = scope.transaction().outcome.diagnostics;
+        auto& diagnostics = scope.transaction().outcome().diagnostics;
         if constexpr (requires { edit.is_unchanged(); }) {
             if (edit.is_unchanged()) return proposal_application_stage_t::unchanged;
         }
@@ -315,9 +315,9 @@ template<class Diagnostics> struct application_result_t {
         if constexpr (std::same_as<Diagnostics, diagnostic_list_t>) {
             if (diagnostics.empty()) return;
             if (stage == proposal_application_stage_t::preflight) {
-                append_diagnostics(diagnostics, std::move(transaction.outcome.diagnostics));
-                transaction.outcome.diagnostics = std::move(diagnostics);
-            } else append_diagnostics(transaction.outcome.diagnostics, std::move(diagnostics));
+                append_diagnostics(diagnostics, std::move(transaction.outcome().diagnostics));
+                transaction.outcome().diagnostics = std::move(diagnostics);
+            } else append_diagnostics(transaction.outcome().diagnostics, std::move(diagnostics));
             diagnostics.clear();
         }
     }
@@ -375,7 +375,7 @@ template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edi
     if constexpr (requires { scope.input(); std::remove_cvref_t<Edit>::apply_policy; }) {
         if (auto locked = std::remove_cvref_t<Edit>::apply_policy.validate_lock(
                 scope.input().is_timing_locked, proposal_lock_order_t::after_stamp)) {
-            transaction.outcome.diagnostics.push_back(std::move(*locked));
+            transaction.outcome().diagnostics.push_back(std::move(*locked));
             return application_result::finish(edit, transaction.finish_without_commit(), {},
                 proposal_application_stage_t::locked);
         }
@@ -395,7 +395,7 @@ template<class Edit, class Scope, class... Arguments> requires proposal_edit<Edi
     } else {
         application_result::merge(transaction, prepared.diagnostics, proposal_application_stage_t::prepared);
         const bool can_commit = prepared.value.has_value() && prepared.ok() &&
-            !diagnostic_queries::has_errors(transaction.outcome.diagnostics);
+            !diagnostic_queries::has_errors(transaction.outcome().diagnostics);
         if (!can_commit) {
             return application_result::finish(edit, transaction.finish_without_commit(),
                 std::move(prepared.diagnostics), proposal_application_stage_t::prepared);
@@ -565,7 +565,7 @@ template <class Payload, class Stamp = chart_stamp_t> struct proposal_t {
         document_identity_policy_t policy = document_identity_policy_t::project_and_revision,
         diagnostic_code_t stale_code = diagnostic_code_t::invalid_id) const
         -> document_command_transaction_t {
-        return document_command_transaction_t::from(history, stamp, label, policy, stale_code);
+        return document_command_transaction_t(history, stamp, label, policy, stale_code);
     }
 };
 

@@ -635,7 +635,7 @@ auto move_timing_lane_event_group(document_history_t& history, chart_id_t chart_
             return result;
         }
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged.document));
     return transaction.commit("Move timing markers");
 }
@@ -666,7 +666,7 @@ auto timing_lane_pseudonote_preview_t::validate_candidate(const chart_document_t
 auto timing_lane_pseudonote_preview_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope,
     const proposal_application_input_t& input, bool has_applicable_state) -> document_command_result_t {
     auto& transaction = scope.transaction();
-    document_command_result_t result{.revision = transaction.history.document.revision};
+    document_command_result_t result{.revision = transaction.source_document().revision};
     if (!validate_candidate(*scope.target(), input, has_applicable_state, result.diagnostics)) {
         scope.invalidate_preparation();
         return result;
@@ -946,7 +946,7 @@ auto delete_timing_lane_event_group(document_history_t& history, chart_id_t char
             return result;
         }
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged.document));
     return transaction.commit("Delete timing markers");
 }

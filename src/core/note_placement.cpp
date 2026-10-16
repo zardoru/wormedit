@@ -375,7 +375,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
                            editor_interaction_result_t result) -> editor_interaction_result_t {
     if (!result)
         return diagnostic_result(context.history, context.state, result.diagnostics);
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(scratch.document));
     const auto command = transaction.commit("Place note in virtual BMS measure");
     if (!command)
@@ -656,7 +656,7 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};
-    auto transaction = document_command_transaction_t::from(context.history);
+    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
     const auto command = transaction.commit(created ? "Place note" : "Remove note");
     if (!command)

@@ -144,7 +144,7 @@ struct audio_offset_edit_t {
 auto apply_audio_offset_edit(document_history_t& history, chart_id_t chart,
                              signed_rational_t offset_seconds, bool timing_locked)
     -> document_command_result_t {
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     document_edit_scope_t scope{transaction};
     return apply_proposal_edit(scope,
         audio_offset_edit_t{.chart = chart, .offset = offset_seconds, .is_timing_locked = timing_locked});

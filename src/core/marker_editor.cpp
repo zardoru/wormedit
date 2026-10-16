@@ -427,7 +427,7 @@ void marker_edit_context_t::operator()(chart_document_t& chart,
 
 auto apply_marker_edit(document_history_t& history, const marker_edit_action_t& action,
                        marker_edit_limits_t limits) -> document_command_result_t {
-    return document_command_transaction_t::from(history).execute<marker_edit_context_t>(action,
+    return document_command_transaction_t(history).execute<marker_edit_context_t>(action,
                                                                                         limits);
 }
 

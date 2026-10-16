@@ -440,7 +440,7 @@ auto move_notes_to_bgm(document_history_t& history, chart_id_t chart_id,
     if (const auto failure = apply_ordinary_plan(scratch, chart_id, selection->ordinary,
                                                  preferred_lane, policy, revision))
         return *failure;
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit(notes.size() == 1 ? "Move note to BGM" : "Move notes to BGM");
 }
@@ -560,7 +560,7 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
                     : step;
             continue;
         }
-        auto scratch_transaction = document_command_transaction_t::from(scratch);
+        auto scratch_transaction = document_command_transaction_t(scratch);
         auto& proposed = scratch_transaction.document();
         auto& proposed_chart = *proposed.find_chart(chart_id);
         if (!convert_bgm_event(proposed_chart, id, lane))
@@ -570,7 +570,7 @@ auto move_bgm_events_to_lane(document_history_t& history, chart_id_t chart_id,
         if (!step.applied) return step.diagnostics.empty() ? document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
             "the event could not move to that lane") : step;
     }
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit(events.size() == 1 ? "Move BGM event to lane" : "Move BGM events to lane");
 }
@@ -610,7 +610,7 @@ auto move_selected_objects_to_lane(document_history_t& history,
     }
     if (scratch.document.revision == scratch_revision)
         return {.applied = true, .revision = revision, .diagnostics = {}};
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(scratch.document));
     return transaction.commit("Assign selected objects to lane");
 }

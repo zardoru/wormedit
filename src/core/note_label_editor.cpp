@@ -157,7 +157,7 @@ auto apply_note_label_edit(document_history_t& history,
         return result;
     }
 
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
 
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(action.chart);

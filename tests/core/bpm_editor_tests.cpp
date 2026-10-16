@@ -732,7 +732,7 @@ void check_bpm_unchanged(const document_history_t& history) {
 TEST_CASE("BPM execution rejects invalid caps without publishing a document",
           "[unit][core][bpm-editor][execution]") {
     auto history = document_history_t::from(bpm_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     CHECK_FALSE(transaction.has_copy());
     const auto result = apply_bpm_edit(transaction, make_bpm_execution_update(),
                                       {.maximum_bpm_events = 0});
@@ -740,21 +740,21 @@ TEST_CASE("BPM execution rejects invalid caps without publishing a document",
     CHECK(result.diagnostics == diagnostic_list_t{error(diagnostic_code_t::invalid_resolution,
         "BPM event cap must be positive")});
     CHECK_FALSE(transaction.has_copy());
-    CHECK(transaction.finished);
+    CHECK_FALSE(transaction.is_ready());
     check_bpm_unchanged(history);
 }
 
 TEST_CASE("BPM execution preserves warning rejection after the edit",
           "[unit][core][bpm-editor][execution]") {
     auto history = document_history_t::from(bpm_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     const diagnostic_list_t warnings{{.severity = diagnostic_severity_t::warning,
         .code = diagnostic_code_t::unsupported_feature, .message = "retained warning"}};
-    transaction.outcome.diagnostics = warnings;
+    transaction.outcome().diagnostics = warnings;
     const auto result = apply_bpm_edit(transaction, make_bpm_execution_update());
     CHECK_FALSE(result.applied);
     CHECK(result.diagnostics == warnings);
-    CHECK(transaction.finished);
+    CHECK_FALSE(transaction.is_ready());
     CHECK_FALSE(transaction.has_copy());
     check_bpm_unchanged(history);
 }
@@ -762,7 +762,7 @@ TEST_CASE("BPM execution preserves warning rejection after the edit",
 TEST_CASE("BPM execution retains adopted documents and publishes only once",
           "[unit][core][bpm-editor][execution]") {
     auto history = document_history_t::from(bpm_song());
-    auto transaction = document_command_transaction_t::from(history);
+    auto transaction = document_command_transaction_t(history);
     auto prepared = history.document;
     prepared.charts.front().bpms.front().provenance.source_order = 99;
     transaction.adopt_document(std::move(prepared));

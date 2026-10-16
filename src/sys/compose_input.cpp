@@ -1911,7 +1911,7 @@ auto begin_bga_draw_transaction(compose_input_context_t& context,
     const application_command_state_t::bga_draw_stroke_proposal_t& stroke, bool beginning, bool bgm)
     -> wormedit::document_command_transaction_t {
     if (beginning)
-        return wormedit::document_command_transaction_t::from(context.environment.document.history);
+        return wormedit::document_command_transaction_t(context.environment.document.history);
     return stroke.transaction(context.environment.document.history, bgm ? "BGM Draw stroke" : "BGA Draw stroke",
         wormedit::document_identity_policy_t::revision_only);
 }
@@ -1948,7 +1948,7 @@ auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
     auto transaction = begin_bga_draw_transaction(context, *pending, beginning, bgm);
     if (!transaction.is_ready()) {
         pending.reset();
-        return bga_draw_stop(transaction.outcome.diagnostics.front().message);
+        return bga_draw_stop(transaction.outcome().diagnostics.front().message);
     }
     const auto row = bga_draw_row(input, context, *chart, pending->payload.geometry);
     auto revised = pending->revise(input, *chart, context.state, row, beginning);

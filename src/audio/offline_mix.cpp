@@ -89,8 +89,8 @@ auto render_chunk(preview_session_t& session, std::span<float> samples,
                   std::size_t expected_frames) -> bool {
     const auto rendered_outcome = session.render_frames(samples);
     const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
-    const bool valid_status = rendered.is_in_phase(session_render_phase_t::mixed) ||
-                              rendered.is_in_phase(session_render_phase_t::complete);
+    const bool valid_status = rendered.status.is_in_phase(session_render_phase_t::mixed) ||
+                              rendered.status.is_in_phase(session_render_phase_t::complete);
     return valid_status && rendered.mix.frames == expected_frames &&
            rendered.mix.missing_blocks == 0 && rendered.mix.dropped_voices == 0 &&
            rendered.mix.dropped_music_voices == 0;

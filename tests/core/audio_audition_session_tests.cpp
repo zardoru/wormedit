@@ -170,7 +170,7 @@ auto resident_first_pcm_is_exact() -> bool {
     const auto snapshot = store.snapshot();
     std::vector<float> rendered(frames * output_channel_count);
     const auto result = session.render_frames(rendered);
-    return result.value().is_in_phase(session_render_phase_t::complete) &&
+    return result.value().status.is_in_phase(session_render_phase_t::complete) &&
         result.value().first_timeline_frame == 0 && matches_resident_clip(
             rendered, *snapshot, binding.source, source_offset, gain) &&
         session.timeline_frame() == 0 && snapshot->find(binding.source) != nullptr;
@@ -200,7 +200,7 @@ auto resident_replacements_keep_only_latest_pcm() -> bool {
     const auto snapshot = store.snapshot();
     std::vector<float> rendered(frames * output_channel_count);
     const auto result = session.render_frames(rendered);
-    return result.value().is_in_phase(session_render_phase_t::complete) &&
+    return result.value().status.is_in_phase(session_render_phase_t::complete) &&
         matches_resident_clip(rendered, *snapshot, binding.source, source_offset, 1.0F) &&
         transport.scheduled_voice_count() == 0;
 }
@@ -240,13 +240,13 @@ auto old_pump_cannot_clear_replacement() -> bool {
         std::unexpected(audition_pump_effect_t{.status = audition_pump_status_t::source_unavailable}));
     if (stale_failure || stale_failure.error().status != audition_pump_status_t::stale_generation) return false;
     std::vector<float> waiting(32 * output_channel_count, 1.0F);
-    if (!session.render_frames(waiting).value().is_in_phase(session_render_phase_t::priming) ||
+    if (!session.render_frames(waiting).value().status.is_in_phase(session_render_phase_t::priming) ||
         !all_zero(waiting) || session.timeline_frame() != 0) return false;
     if (session.pump().value().status != audition_pump_status_t::ready) return false;
     std::vector<float> rendered(128 * output_channel_count);
     const auto mixed = session.render_frames(rendered);
     const auto decoded = cache.find({new_source.source, 0});
-    return mixed.value().is_in_phase(session_render_phase_t::complete) && decoded &&
+    return mixed.value().status.is_in_phase(session_render_phase_t::complete) && decoded &&
         matches_cached_clip(rendered, *decoded, new_clip.source_start_frame, new_clip.gain);
 }
 
@@ -273,7 +273,7 @@ auto old_pump_cannot_publish_after_stop() -> bool {
         !gate.completion_result &&
         gate.completion_result.error().status == audition_pump_status_t::stale_generation &&
         !session.playhead().active && transport.scheduled_voice_count() == 0 &&
-        session.render_frames(output).value().is_in_phase(session_render_phase_t::stopped) && all_zero(output);
+        session.render_frames(output).value().status.is_in_phase(session_render_phase_t::stopped) && all_zero(output);
 }
 
 } // namespace
@@ -297,7 +297,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
 
     std::vector<float> first(512 * output_channel_count);
     const auto waiting = session.render_frames(first);
-    expect_audition_session(waiting.value().is_in_phase(session_render_phase_t::priming));
+    expect_audition_session(waiting.value().status.is_in_phase(session_render_phase_t::priming));
     expect_audition_session(waiting.value().first_timeline_frame == 0);
     expect_audition_session(all_zero(first));
     expect_audition_session(session.timeline_frame() == 0);
@@ -308,7 +308,7 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
     expect_audition_session(pumped.value().status == audition_pump_status_t::ready);
     expect_audition_session(pumped.value().requested_blocks == 2);
     const auto first_render = session.render_frames(first);
-    expect_audition_session(first_render.value().is_in_phase(session_render_phase_t::mixed));
+    expect_audition_session(first_render.value().status.is_in_phase(session_render_phase_t::mixed));
     expect_audition_session(first_render.value().first_timeline_frame == 0);
     expect_audition_session(first_render.value().mix.missing_blocks == 0);
     expect_audition_session(!all_zero(first));
@@ -317,14 +317,14 @@ TEST_CASE("audition session primes renders and completes one monotonic click pre
 
     std::vector<float> tail(128 * output_channel_count);
     const auto final_render = session.render_frames(tail);
-    expect_audition_session(final_render.value().is_in_phase(session_render_phase_t::complete));
+    expect_audition_session(final_render.value().status.is_in_phase(session_render_phase_t::complete));
     expect_audition_session(final_render.value().first_timeline_frame == 512);
     expect_audition_session(final_render.value().mix.missing_blocks == 0);
     expect_audition_session(!all_zero(tail));
     expect_audition_session(!session.is_active());
 
     std::ranges::fill(tail, 1.0F);
-    expect_audition_session(session.render_frames(tail).value().is_in_phase(session_render_phase_t::stopped));
+    expect_audition_session(session.render_frames(tail).value().status.is_in_phase(session_render_phase_t::stopped));
     expect_audition_session(all_zero(tail));
 }
 
@@ -342,7 +342,7 @@ TEST_CASE("audition session hard Stop silences the next render and invalidates r
     require_audition_session(session.pump());
 
     std::vector<float> before(256 * output_channel_count);
-    expect_audition_session(session.render_frames(before).value().is_in_phase(session_render_phase_t::mixed));
+    expect_audition_session(session.render_frames(before).value().status.is_in_phase(session_render_phase_t::mixed));
     expect_audition_session(!all_zero(before));
     const auto stopped = session.stop();
     expect_audition_session(stopped.scheduled_voices == 1);
@@ -350,7 +350,7 @@ TEST_CASE("audition session hard Stop silences the next render and invalidates r
     expect_audition_session(!session.pump());
 
     std::ranges::fill(before, 1.0F);
-    expect_audition_session(session.render_frames(before).value().is_in_phase(session_render_phase_t::stopped));
+    expect_audition_session(session.render_frames(before).value().status.is_in_phase(session_render_phase_t::stopped));
     expect_audition_session(all_zero(before));
 }
 
@@ -380,7 +380,7 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     require_audition_session(unprimed);
     expect_audition_session(!unprimed.value().prime.has_value());
     std::vector<float> pending(64 * output_channel_count, 1.0F);
-    expect_audition_session(session.render_frames(pending).value().is_in_phase(session_render_phase_t::priming));
+    expect_audition_session(session.render_frames(pending).value().status.is_in_phase(session_render_phase_t::priming));
     expect_audition_session(all_zero(pending));
     expect_audition_session(session.timeline_frame() == 0);
     const auto failed_pump = session.pump();
@@ -395,7 +395,7 @@ TEST_CASE("audition session preserves a live generation on pre-start validation 
     std::vector<float> malformed(output_channel_count + 1, 1.0F);
     const auto malformed_render = session.render_frames(malformed);
     require_audition_session(!malformed_render);
-    expect_audition_session(malformed_render.error().has_failure(wormedit::failure_code_t::invalid_request));
+    expect_audition_session(malformed_render.error().status.has_failure(wormedit::failure_code_t::invalid_request));
     expect_audition_session(all_zero(malformed));
 }
 
@@ -453,12 +453,12 @@ TEST_CASE("render phases preserve stopped acceptance and failed mix metadata",
         session_render_phase_t::stopped, 17,
         {.status = transport_mix_status_t::stale_generation});
     REQUIRE(stopped);
-    CHECK(stopped->is_in_phase(session_render_phase_t::stopped));
+    CHECK(stopped->status.is_in_phase(session_render_phase_t::stopped));
     CHECK(stopped->mix.status == transport_mix_status_t::stale_generation);
 
     const auto failed = session_render_effect_t::from(
         wormedit::failure_code_t::underrun, 17, {.frames = 4, .missing_blocks = 2});
     REQUIRE_FALSE(failed);
-    CHECK(failed.error().has_failure(wormedit::failure_code_t::underrun));
+    CHECK(failed.error().status.has_failure(wormedit::failure_code_t::underrun));
     CHECK(failed.error().mix.missing_blocks == 2);
 }

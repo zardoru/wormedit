@@ -167,7 +167,7 @@ auto rejected_audition_continues_previous_session() -> bool {
     const auto token = bridge.session_token();
     const auto before = session.timeline_frame();
     const auto rejected = output.start({});
-    if (rejected.status != wormedit::sys::sdl_audition_start_status_t::session_failed ||
+    if (rejected.status != wormedit::sys::sdl_session_start_status_t::session_failed ||
         !session.is_active() || bridge.session_token() != token) return false;
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() <= before && session.is_active() && SDL_GetTicks() < deadline)

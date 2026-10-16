@@ -27,8 +27,8 @@ TEST_CASE("Audio service producer preserves fallbacks before the terminal device
     notification_center_t center{[] { return notification_time_t{}; }};
     notification_sink_t sink{center};
     const sdl_preview_service_result_t result{
-        .status = sdl_preview_service_status_t::device_failed,
-        .rate_unavailable = true, .silenced_voices = 3, .silenced_music_voices = 1};
+        .status = sdl_session_service_status_t::device_failed,
+        .telemetry = {.rate_unavailable = true, .silenced_voices = 3, .silenced_music_voices = 1}};
     post_preview_service_notifications(std::unexpected(result), sink);
     const auto rows = drained(center);
     verify_audio_notification(rows.size() == 3);
@@ -46,7 +46,7 @@ TEST_CASE("Audio underruns dedupe while ready service results stay quiet",
     post_audition_service_notifications({}, sink);
     post_preview_service_notifications({}, sink);
     verify_audio_notification(drained(center).empty());
-    const sdl_audition_service_result_t underrun{.status = sdl_audition_service_status_t::render_failed};
+    const sdl_audition_service_result_t underrun{.status = sdl_session_service_status_t::render_failed};
     post_audition_service_notifications(std::unexpected(underrun), sink);
     post_audition_service_notifications(std::unexpected(underrun), sink);
     const auto rows = drained(center);
@@ -59,13 +59,13 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
           "[audio][notifications][audio-notifications]") {
     notification_center_t center{[] { return notification_time_t{}; }};
     notification_sink_t sink{center};
-    sdl_audition_service_result_t audition{.status = sdl_audition_service_status_t::pump_failed,
+    sdl_audition_service_result_t audition{.status = sdl_session_service_status_t::pump_failed,
         .pump = std::unexpected(audio::audition_pump_effect_t{
             .status = audio::audition_pump_status_t::source_unavailable})};
     post_audition_service_notifications(std::unexpected(audition), sink);
     auto rows = drained(center);
     check_audio_error(rows[0], "Audio preview stopped because its decoded source is unavailable.");
-    sdl_preview_service_result_t preview{.status = sdl_preview_service_status_t::pump_failed,
+    sdl_preview_service_result_t preview{.status = sdl_session_service_status_t::pump_failed,
         .pump = std::unexpected(audio::preview_session_pump_effect_t{
             .status = audio::preview_session_pump_status_t::decode_failed,
             .decode = std::unexpected(audio::preview_pump_effect_t{
@@ -77,7 +77,7 @@ TEST_CASE("Audio producer source and bounded failures preserve explicit error me
     post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a bounded refill failure.");
-    preview.status = sdl_preview_service_status_t::render_failed;
+    preview.status = sdl_session_service_status_t::render_failed;
     post_preview_service_notifications(std::unexpected(preview), sink);
     rows = drained(center);
     check_audio_error(rows[0], "Chart preview stopped after a realtime mix failure.");

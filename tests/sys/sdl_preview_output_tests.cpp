@@ -390,7 +390,7 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     std::array<float, 32> stopped{};
     stopped.fill(1.0F);
     const auto silence = session.render_frames(stopped);
-    const bool hard_stop = silence.value().status == preview_session_render_status_t::stopped &&
+    const bool hard_stop = silence.value().status == session_render_status_t::stopped &&
         std::ranges::all_of(stopped, [](float sample) { return sample == 0.0F; });
     output.close();
     return repeated && hard_stop;
@@ -768,12 +768,12 @@ void exercise_background_refill() {
     expect_pitch(std::abs(maximum) > 0.9);
     const auto service = output.service();
     expect_pitch(service && static_cast<bool>(*service));
-    expect_pitch(service->value().silenced_voices == 0);
+    expect_pitch(service->value().telemetry.silenced_voices == 0);
     static_cast<void>(output.stop());
     std::array<float, 256> silence;
     silence.fill(1.0F);
     const auto rendered = session.render_frames(silence);
-    expect_pitch(rendered.value().status == preview_session_render_status_t::stopped);
+    expect_pitch(rendered.value().status == session_render_status_t::stopped);
     expect_pitch(std::ranges::all_of(silence, [](float value) { return value == 0.0F; }));
 }
 void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std::uint64_t seek) {
@@ -864,7 +864,7 @@ void exercise_pending_refill_failure() {
     SDL_Delay(800);
     expect_pitch(!session.is_active());
     const auto failed = output.service();
-    expect_pitch(failed && !*failed && failed->error().status == sys::sdl_preview_service_status_t::pump_failed);
+    expect_pitch(failed && !*failed && failed->error().status == sys::sdl_session_service_status_t::pump_failed);
     expect_pitch(failed->error().pump && !*failed->error().pump && failed->error().pump->error().status == preview_session_pump_status_t::decode_failed);
     static_cast<void>(output.stop());
 }
@@ -1731,7 +1731,7 @@ auto stale_loop_work_preserves_replacement() -> bool {
     const auto hidden = access::snapshot(fixture.output);
     const bool protected_session = replaced && !wrapped && fixture.session.is_active() &&
         fixture.session.playhead().generation != old && !hidden.active && hidden.timeline_frame == 0 &&
-        !rendered && rendered.error().status == preview_session_render_status_t::stale_generation &&
+        !rendered && rendered.error().status == session_render_status_t::stale_generation &&
         std::ranges::all_of(samples, [](float sample) { return sample == 0; });
     access::unlock_stream(fixture.output);
     SDL_Delay(30);

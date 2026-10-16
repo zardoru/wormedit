@@ -19,33 +19,20 @@
 
 namespace wormedit::sys {
 
-enum class sdl_preview_start_status_t {
-    started,
-    unavailable,
-    session_failed,
-    device_failed,
-};
-
 using sdl_preview_start_result_t = result_t<
-    sdl_session_start_result_t<sdl_preview_start_status_t, audio::preview_session_start_outcome_t>,
-    sdl_session_start_result_t<sdl_preview_start_status_t, audio::preview_session_start_outcome_t>>;
+    sdl_session_start_result_t<audio::preview_session_start_outcome_t>,
+    sdl_session_start_result_t<audio::preview_session_start_outcome_t>>;
 
-enum class sdl_preview_service_status_t {
-    ready,
-    pump_failed,
-    render_failed,
-    device_failed,
-};
-
-struct sdl_preview_service_result_t {
-    sdl_preview_service_status_t status{sdl_preview_service_status_t::ready};
-    std::optional<audio::preview_session_pump_outcome_t> pump;
+struct preview_output_telemetry_t {
     bool rate_unavailable{};
     std::uint64_t silenced_voices{};
     std::uint64_t silenced_music_voices{};
 };
+using sdl_preview_service_result_t =
+    sdl_session_service_result_t<audio::preview_session_pump_outcome_t, preview_output_telemetry_t>;
+// Temporary: removed by T-633.
 using sdl_preview_service_outcome_t =
-    result_t<sdl_preview_service_result_t, sdl_preview_service_result_t>;
+    sdl_session_service_outcome_t<audio::preview_session_pump_outcome_t, preview_output_telemetry_t>;
 
 // SDL3 output for an owned chart-preview timeline. The stream lock serializes
 // rendering with start/seek/Stop. The refill worker decodes and queues loop PCM
@@ -128,12 +115,6 @@ class sdl_preview_output_t {
     [[nodiscard]] auto take_refill_result() -> std::optional<audio::preview_session_pump_outcome_t>;
 
     static constexpr std::size_t callback_frames = 4'096;
-    enum class callback_failure_t {
-        none,
-        render,
-        device,
-    };
-
     audio::preview_session_t& session_;
     audio::playhead_snapshot_t output_playhead_;
     std::atomic<bool> output_playhead_cleared_{true};
@@ -147,7 +128,7 @@ class sdl_preview_output_t {
     bool refill_enabled_{};
     std::optional<audio::preview_session_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
-    std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
+    std::atomic<sdl_callback_failure_t> callback_failure_{sdl_callback_failure_t::none};
     std::atomic<std::uint64_t> silenced_voices_{};
     std::atomic<std::uint64_t> silenced_music_voices_{};
     std::atomic<bool> rate_unavailable_{};

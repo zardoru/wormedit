@@ -135,7 +135,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
         const auto samples = static_cast<std::size_t>(frames) * output_channel_count;
         const auto rendered_outcome = session.render_frames(scratch.first(samples));
         const auto& rendered = rendered_outcome ? *rendered_outcome : rendered_outcome.error();
-        if (rendered.status == preview_session_render_status_t::underrun) {
+        if (rendered.status == session_render_status_t::underrun) {
             const auto position = musical_position_at(
                 timing, {static_cast<std::int64_t>(before), output_sample_rate});
             const auto row = position.absolute_row.value_or(signed_rational_t{0, 1});
@@ -150,11 +150,11 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
             static_cast<void>(session.stop());
             break;
         }
-        if (rendered.status == preview_session_render_status_t::complete) {
+        if (rendered.status == session_render_status_t::complete) {
             result.complete = true;
             break;
         }
-        if (rendered.status != preview_session_render_status_t::mixed) {
+        if (rendered.status != session_render_status_t::mixed) {
             std::cout << "render status=" << static_cast<int>(rendered.status)
                       << " at frame=" << before << '\n';
             result.stopped = true;

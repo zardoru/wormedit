@@ -52,60 +52,60 @@ auto audition_session_t::pump(audition_pump_options_t options) -> audition_pump_
 }
 
 auto audition_session_t::render_frames(std::span<float> interleaved_stereo)
-    -> audition_session_render_outcome_t {
+    -> render_outcome_t {
     std::ranges::fill(interleaved_stereo, 0.0F);
     const auto samples_per_frame = static_cast<std::size_t>(output_channel_count);
     if (interleaved_stereo.empty() || interleaved_stereo.size() % samples_per_frame != 0 ||
         interleaved_stereo.size() / samples_per_frame > maximum_read_frames) {
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::invalid_buffer, 0,
+        return session_render_effect_t::from(
+            session_render_status_t::invalid_buffer, 0,
             {.status = transport_mix_status_t::invalid_buffer});
     }
 
     const std::scoped_lock lock(mutex_);
     if (!token_.has_value()) {
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::stopped, timeline_frame_,
+        return session_render_effect_t::from(
+            session_render_status_t::stopped, timeline_frame_,
             {.status = transport_mix_status_t::stale_generation});
     }
     const auto first_frame = timeline_frame_;
     if (!transport_.is_current(*token_)) {
         clear_state();
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::stale_generation, first_frame);
+        return session_render_effect_t::from(
+            session_render_status_t::stale_generation, first_frame);
     }
     if (prime_pending_)
-        return audition_session_render_result_t::from(audition_session_render_status_t::priming,
+        return session_render_effect_t::from(session_render_status_t::priming,
                                                       first_frame);
     const auto mixed_outcome = transport_.mix_frames(*token_, first_frame, interleaved_stereo);
     const auto& mixed = mixed_outcome ? *mixed_outcome : mixed_outcome.error();
     if (mixed.status == transport_mix_status_t::stale_generation) {
         clear_state();
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::stale_generation, first_frame, mixed);
+        return session_render_effect_t::from(
+            session_render_status_t::stale_generation, first_frame, mixed);
     }
     if (mixed.status != transport_mix_status_t::mixed) {
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::transport_failed, first_frame, mixed);
+        return session_render_effect_t::from(
+            session_render_status_t::transport_failed, first_frame, mixed);
     }
     if (mixed.frames > std::numeric_limits<std::uint64_t>::max() - timeline_frame_) {
         static_cast<void>(bridge_.stop());
         clear_state();
         std::ranges::fill(interleaved_stereo, 0.0F);
-        return audition_session_render_result_t::from(
-            audition_session_render_status_t::transport_failed, first_frame, mixed);
+        return session_render_effect_t::from(
+            session_render_status_t::transport_failed, first_frame, mixed);
     }
     timeline_frame_ += mixed.frames;
     publish_playhead();
     if (timeline_frame_ >= duration_frames_) {
         static_cast<void>(bridge_.stop());
         clear_state();
-        return audition_session_render_result_t::from(audition_session_render_status_t::complete,
+        return session_render_effect_t::from(session_render_status_t::complete,
                                                       first_frame, mixed);
     }
-    return audition_session_render_result_t::from(mixed.missing_blocks == 0
-                                                      ? audition_session_render_status_t::mixed
-                                                      : audition_session_render_status_t::underrun,
+    return session_render_effect_t::from(mixed.missing_blocks == 0
+                                                      ? session_render_status_t::mixed
+                                                      : session_render_status_t::underrun,
                                                   first_frame, mixed);
 }
 

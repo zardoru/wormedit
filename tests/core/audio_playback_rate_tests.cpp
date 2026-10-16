@@ -77,7 +77,7 @@ TEST_CASE("audio.playback_rate latency reports source frames without changing sc
     static_cast<void>(session.stop());
     expect(session.timeline_frame() == 0);
     samples.fill(1.0F);
-    expect(session.render_frames(samples).value().status == preview_session_render_status_t::stopped);
+    expect(session.render_frames(samples).value().status == session_render_status_t::stopped);
     for (const auto sample : samples) expect(sample == 0.0F);
 }
 

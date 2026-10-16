@@ -16,29 +16,13 @@
 
 namespace wormedit::sys {
 
-enum class sdl_audition_start_status_t {
-    started,
-    unavailable,
-    session_failed,
-    device_failed,
-};
-
 using sdl_audition_start_result_t =
-    sdl_session_start_result_t<sdl_audition_start_status_t, audio::audition_session_start_outcome_t>;
+    sdl_session_start_result_t<audio::audition_session_start_outcome_t>;
 
-enum class sdl_audition_service_status_t {
-    ready,
-    pump_failed,
-    render_failed,
-    device_failed,
-};
-
-struct sdl_audition_service_result_t {
-    sdl_audition_service_status_t status{sdl_audition_service_status_t::ready};
-    std::optional<audio::audition_pump_outcome_t> pump;
-};
+using sdl_audition_service_result_t = sdl_session_service_result_t<audio::audition_pump_outcome_t>;
+// Temporary: removed by T-633.
 using sdl_audition_service_outcome_t =
-    result_t<sdl_audition_service_result_t, sdl_audition_service_result_t>;
+    sdl_session_service_outcome_t<audio::audition_pump_outcome_t>;
 
 // App-private SDL3 playback adapter. SDL's stream lock serializes callback
 // rendering with replacement and hard Stop. Decoder work runs on one refill
@@ -74,12 +58,6 @@ class sdl_audition_output_t {
     [[nodiscard]] auto resume_device() noexcept -> bool;
 
     static constexpr std::size_t callback_frames = 4'096;
-    enum class callback_failure_t {
-        none,
-        render,
-        device,
-    };
-
     audio::audition_session_t& session_;
     std::mutex refill_mutex_;
     std::condition_variable refill_ready_;
@@ -88,7 +66,7 @@ class sdl_audition_output_t {
     bool refill_enabled_{};
     std::optional<audio::audition_pump_outcome_t> refill_result_;
     SDL_AudioStream* stream_{};
-    std::atomic<callback_failure_t> callback_failure_{callback_failure_t::none};
+    std::atomic<sdl_callback_failure_t> callback_failure_{sdl_callback_failure_t::none};
     std::array<float, callback_frames * audio::output_channel_count> scratch_{};
 };
 

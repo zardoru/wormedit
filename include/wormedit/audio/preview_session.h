@@ -61,20 +61,6 @@ struct preview_session_pump_effect_t {
 using preview_session_pump_outcome_t =
     result_t<preview_session_pump_effect_t, preview_session_pump_effect_t>;
 
-enum class preview_session_render_status_t {
-    mixed,
-    priming,
-    complete,
-    stopped,
-    invalid_buffer,
-    stale_generation,
-    underrun,
-    transport_failed,
-};
-
-using preview_session_render_result_t = session_render_result_t<preview_session_render_status_t>;
-using preview_session_render_outcome_t = session_render_outcome_t<preview_session_render_status_t>;
-
 struct preview_loop_region_t {
     std::uint64_t begin_frame{};
     std::uint64_t end_frame{};
@@ -107,7 +93,7 @@ class preview_session_t {
     // Output producers can require their owned generation; stale work emits
     // silence and leaves a replacement session untouched.
     [[nodiscard]] auto render_frames(std::span<float> interleaved_stereo,
-        std::optional<std::uint64_t> expected_generation = {}) -> preview_session_render_outcome_t;
+        std::optional<std::uint64_t> expected_generation = {}) -> render_outcome_t;
     [[nodiscard]] auto stop(std::optional<std::uint64_t> expected_generation = {}) noexcept
         -> transport_stop_result_t;
 

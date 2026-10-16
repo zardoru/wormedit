@@ -80,12 +80,12 @@ auto append_voice_keys(const transport_voice_t& voice, std::uint64_t timeline_fr
 
 auto plan_preview_keys(std::span<const transport_voice_t> voices, std::uint64_t timeline_frame,
                        std::uint64_t window_end, std::size_t maximum_blocks)
-    -> result_t<preview_key_plan_t, preview_key_plan_t> {
+    -> preview_key_plan_t {
     preview_key_plan_t plan;
     plan.keys.reserve(maximum_blocks);
     for (const auto& voice : voices) {
         if (!append_voice_keys(voice, timeline_frame, window_end, maximum_blocks, plan)) {
-            return std::unexpected(std::move(plan));
+            return plan;
         }
     }
     // Voice slots are reused, so scheduling order is arbitrary. Compressed
@@ -127,7 +127,7 @@ auto is_plan_within_cache(const preview_key_plan_t& plan, block_cache_limits_t l
 
 auto decode_preview_plan(decoded_source_registry_t& sources, transport_t& transport,
                          session_token_t token, const preview_key_plan_t& plan,
-                         preview_pump_effect_t result) -> preview_pump_outcome_t {
+                         preview_pump_effect_t result) -> preview_pump_effect_t {
     result.requested_blocks = plan.keys.size();
     for (const auto& key : plan.keys) {
         const auto decoded_outcome = sources.decode_source_block(transport, token, key);
@@ -142,7 +142,7 @@ auto decode_preview_plan(decoded_source_registry_t& sources, transport_t& transp
         }
         result.status = failure_status(decoded.status);
         result.failure = decoded;
-        return std::unexpected(std::move(result));
+        return result;
     }
     return result;
 }
@@ -151,48 +151,42 @@ auto decode_preview_plan(decoded_source_registry_t& sources, transport_t& transp
 
 auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transport,
                          session_token_t token, std::uint64_t timeline_frame,
-                         preview_pump_options_t options) -> preview_pump_outcome_t {
+                         preview_pump_options_t options) -> preview_pump_effect_t {
     if (options.lookahead_frames == 0 || options.lookahead_frames > maximum_read_frames ||
         options.maximum_voices == 0 || options.maximum_voices > maximum_preview_pump_voices ||
         options.maximum_blocks == 0 || options.maximum_blocks > maximum_preview_pump_blocks) {
-        return std::unexpected(
-            preview_pump_effect_t{.status = failure_code_t::invalid_request});
+        return preview_pump_effect_t{.status = failure_code_t::invalid_request};
     }
     const auto window_end = checked_end(timeline_frame, options.lookahead_frames);
     if (!window_end.has_value())
-        return std::unexpected(
-            preview_pump_effect_t{.status = failure_code_t::invalid_request});
+        return preview_pump_effect_t{.status = failure_code_t::invalid_request};
 
     auto snapshot = transport.snapshot_voices(token, options.maximum_voices);
     const auto snapshot_status = snapshot ? std::nullopt : std::optional{snapshot.error()};
     if (snapshot_status == failure_code_t::stale_generation)
-        return std::unexpected(
-            preview_pump_effect_t{.status = failure_code_t::stale_generation});
+        return preview_pump_effect_t{.status = failure_code_t::stale_generation};
     if (snapshot_status == failure_code_t::capacity_exceeded) {
-        return std::unexpected(
-            preview_pump_effect_t{.status = failure_code_t::capacity_exceeded,
-                                  .active_voices = options.maximum_voices + 1});
+        return preview_pump_effect_t{.status = failure_code_t::capacity_exceeded,
+                                  .active_voices = options.maximum_voices + 1};
     }
 
-    const auto planned =
+    const auto plan =
         plan_preview_keys(snapshot.value(), timeline_frame, *window_end, options.maximum_blocks);
-    if (!planned) {
-        const auto& plan = planned.error();
+    if (plan.status.has_failure()) {
         preview_pump_effect_t result{.status = plan.status};
         result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         if (plan.status == failure_code_t::capacity_exceeded) {
             result.requested_blocks = options.maximum_blocks + 1U;
         }
-        return std::unexpected(std::move(result));
+        return result;
     }
-    const auto& plan = *planned;
     if (!is_plan_within_cache(plan, transport.block_cache_limits())) {
         preview_pump_effect_t result{.status = failure_code_t::capacity_exceeded};
         result.active_voices = snapshot.value().size();
         result.overlapping_voices = plan.overlapping_voices;
         result.requested_blocks = plan.keys.size();
-        return std::unexpected(std::move(result));
+        return result;
     }
     preview_pump_effect_t result{.status = std::monostate{}};
     result.active_voices = snapshot.value().size();

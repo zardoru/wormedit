@@ -44,12 +44,11 @@ struct preview_pump_effect_t {
     std::optional<block_decode_result_t> failure{};
     auto operator==(const preview_pump_effect_t&) const -> bool = default;
 };
-using preview_pump_outcome_t = result_t<preview_pump_effect_t, preview_pump_effect_t>;
 
 [[nodiscard]] auto pump_preview_blocks(decoded_source_registry_t& sources, transport_t& transport,
                                        session_token_t token, std::uint64_t timeline_frame,
                                        preview_pump_options_t options = {})
-    -> preview_pump_outcome_t;
+    -> preview_pump_effect_t;
 
 // Control/worker-thread lookahead for voices already materialized into a chart
 // preview transport generation. The active voice snapshot and every distinct

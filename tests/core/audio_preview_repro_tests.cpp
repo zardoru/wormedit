@@ -94,7 +94,7 @@ void print_pump(const preview_session_pump_outcome_t& pumped, double elapsed_ms)
     const auto& effect = pumped ? *pumped : pumped.error();
     std::cout << "pump status=" << pump_status(effect.status);
     if (effect.decode) {
-        const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
+        const auto& decoded = *effect.decode;
         std::cout << " decode=" << decode_status(decoded.status)
                   << " active_voices=" << decoded.active_voices
                   << " overlapping_voices=" << decoded.overlapping_voices
@@ -128,8 +128,7 @@ auto render_elapsed(preview_session_t& session, std::span<float> scratch,
     const auto& pump_effect = pumped ? *pumped : pumped.error();
     std::size_t active_voices{};
     if (pump_effect.decode) {
-        const auto& decoded = *pump_effect.decode
-            ? pump_effect.decode->value() : pump_effect.decode->error();
+        const auto& decoded = *pump_effect.decode;
         active_voices = decoded.active_voices;
     }
     while (frames_to_render > 0 && session.is_active()) {

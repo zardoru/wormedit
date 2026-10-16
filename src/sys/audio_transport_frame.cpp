@@ -69,7 +69,7 @@ auto preview_failure_message(const sdl_preview_service_result_t& result) -> cons
     else if (result.pump) {
         const auto& pumped = *result.pump ? result.pump->value() : result.pump->error();
         if (pumped.decode) {
-            const auto& decoded = *pumped.decode ? pumped.decode->value() : pumped.decode->error();
+            const auto& decoded = *pumped.decode;
             if (decoded.status == failure_code_t::unavailable)
                 return "Chart preview stopped because a decoded source is unavailable.";
         }

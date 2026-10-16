@@ -444,7 +444,7 @@ auto sdl_preview_output_t::service_refill_result(
     }
     const auto& effect = *pumped ? pumped->value() : pumped->error();
     if (effect.decode) {
-        const auto& decoded = *effect.decode ? effect.decode->value() : effect.decode->error();
+        const auto& decoded = *effect.decode;
         if (decoded.status == failure_code_t::stale_generation)
             return std::nullopt;
     }

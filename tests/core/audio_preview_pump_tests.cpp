@@ -53,17 +53,17 @@ TEST_CASE("preview lookahead decodes only active timeline overlaps and reuses sh
 
     const auto first =
         pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
-    REQUIRE(first);
-    CHECK(first.value().active_voices == 3);
-    CHECK(first.value().overlapping_voices == 2);
-    CHECK(first.value().requested_blocks == 2);
-    CHECK(first.value().decoded_blocks == 2);
+    REQUIRE_FALSE(first.status.has_failure());
+    CHECK(first.active_voices == 3);
+    CHECK(first.overlapping_voices == 2);
+    CHECK(first.requested_blocks == 2);
+    CHECK(first.decoded_blocks == 2);
 
     const auto repeated =
         pump_preview_blocks(sources, transport, *token, 0, {.lookahead_frames = 512});
-    REQUIRE(repeated);
-    CHECK(repeated.value().decoded_blocks == 0);
-    CHECK(repeated.value().cached_blocks == 2);
+    REQUIRE_FALSE(repeated.status.has_failure());
+    CHECK(repeated.decoded_blocks == 0);
+    CHECK(repeated.cached_blocks == 2);
 }
 
 TEST_CASE("preview lookahead rejects bounds and stale generations before cache publication",
@@ -87,21 +87,21 @@ TEST_CASE("preview lookahead rejects bounds and stale generations before cache p
 
     const auto voice_bound = pump_preview_blocks(sources, transport, *token, 0,
                                                     {.lookahead_frames = 128, .maximum_voices = 1});
-    REQUIRE_FALSE(voice_bound);
-    CHECK(voice_bound.error().status == wormedit::failure_code_t::capacity_exceeded);
+    REQUIRE(voice_bound.status.has_failure());
+    CHECK(voice_bound.status == wormedit::failure_code_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     const auto block_bound =
         pump_preview_blocks(sources, transport, *token, 0,
                                {.lookahead_frames = 128, .maximum_voices = 2, .maximum_blocks = 1});
-    REQUIRE_FALSE(block_bound);
-    CHECK(block_bound.error().status == wormedit::failure_code_t::capacity_exceeded);
+    REQUIRE(block_bound.status.has_failure());
+    CHECK(block_bound.status == wormedit::failure_code_t::capacity_exceeded);
     CHECK(cache.stats().entries == 0);
 
     static_cast<void>(transport.stop());
     const auto stale = pump_preview_blocks(sources, transport, *token, 0);
-    REQUIRE_FALSE(stale);
-    CHECK(stale.error().status == wormedit::failure_code_t::stale_generation);
+    REQUIRE(stale.status.has_failure());
+    CHECK(stale.status == wormedit::failure_code_t::stale_generation);
 }
 
 namespace {
@@ -163,9 +163,9 @@ TEST_CASE("preview pump retains many overlapping sources through chunked transpo
 
     const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    REQUIRE(pumped.value().status == std::monostate{});
-    CHECK(pumped.value().requested_blocks == overlapping_source_count);
-    CHECK(pumped.value().decoded_blocks == overlapping_source_count);
+    REQUIRE(pumped.status == std::monostate{});
+    CHECK(pumped.requested_blocks == overlapping_source_count);
+    CHECK(pumped.decoded_blocks == overlapping_source_count);
 
     constexpr std::size_t render_chunk_frames = 4'096;
     static_assert(maximum_read_frames % render_chunk_frames == 0);
@@ -191,9 +191,9 @@ TEST_CASE("default preview cache rejects a pump plan larger than its capacity",
 
     const auto pumped = pump_preview_blocks(
         sources, transport, *token, 0, {.lookahead_frames = maximum_read_frames});
-    REQUIRE_FALSE(pumped.has_value());
-    CHECK(pumped.error().status == wormedit::failure_code_t::capacity_exceeded);
-    CHECK(pumped.error().requested_blocks == overlapping_source_count);
+    REQUIRE(pumped.status.has_failure());
+    CHECK(pumped.status == wormedit::failure_code_t::capacity_exceeded);
+    CHECK(pumped.requested_blocks == overlapping_source_count);
     CHECK(cache.stats().entries == 0);
 }
 
@@ -211,8 +211,8 @@ TEST_CASE("preview pump expected capacity errors retain voice and block counts",
         std::monostate{});
     const auto rejected = pump_preview_blocks(sources, transport, *token, 0,
         {.lookahead_frames = maximum_read_frames, .maximum_voices = 1, .maximum_blocks = 1});
-    REQUIRE_FALSE(rejected.has_value());
-    CHECK(rejected.error().status == wormedit::failure_code_t::capacity_exceeded);
-    CHECK(rejected.error().active_voices == 1);
-    CHECK(rejected.error().requested_blocks == 2);
+    REQUIRE(rejected.status.has_failure());
+    CHECK(rejected.status == wormedit::failure_code_t::capacity_exceeded);
+    CHECK(rejected.active_voices == 1);
+    CHECK(rejected.requested_blocks == 2);
 }

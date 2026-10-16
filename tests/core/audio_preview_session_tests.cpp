@@ -310,7 +310,7 @@ auto dropped_music_segment_does_not_stop_following_segment() -> bool {
         sources, transport, started.value().token, session.timeline_frame(),
         {.lookahead_frames = maximum_read_frames});
     const auto active = transport.snapshot_voices(started.value().token);
-    const bool later_segment_scheduled = pumped && active && active.value().size() == 1 &&
+    const bool later_segment_scheduled = !pumped.status.has_failure() && active && active.value().size() == 1 &&
                                          active.value().front().timeline_start_frame ==
                                              maximum_read_frames;
     const bool later_segment_played = next_music_segment_is_still_playing(
@@ -347,7 +347,7 @@ TEST_CASE("preview session primes advances refills and completes one chart timel
     REQUIRE(started.value().detail.materialize.has_value());
     CHECK(started.value().detail.materialize->value().scheduled_events == 2);
     REQUIRE(started.value().detail.prime.has_value());
-    CHECK(started.value().detail.prime->value().overlapping_voices == 2);
+    CHECK(started.value().detail.prime->overlapping_voices == 2);
     CHECK(session.is_active());
 
     std::vector<float> first(512 * output_channel_count);

@@ -14,3 +14,6 @@ envelope_stamp_unpacked | 0 | src,tests | payload\.revise\([a-z0-9_.>-]*stamp
 detail_namespace_reopen | 40 | src | ^using namespace [a-z_]+_detail;
 dispatch_probe_chain | 0 | src | if \(auto (result|response) = [a-z_]+\(context\)\)
 local_object_id_scan | 2 | src | auto (largest_object_id|largest_id|next_object_id|next_paste_id|scan_chart_objects|conversion_object_id)\(
+
+# Cursor writes belong to the helpers in interaction.h (the existing owner writes count here).
+raw_cursor_write | 18 | src,include | (^|[^A-Za-z0-9_])([A-Za-z0-9_]*state|temporary|candidate|proposed)(\.|->)(cursor(\.[A-Za-z0-9_]+)*|cursor_subrow|virtual_bms_cursor_row|viewport_scroll_pixels|fixed_cursor_screen_y_pixels|scroll_direction|viewport_height_pixels|pixels_per_standard_measure)[ \t]*(=[^=]|\.reset\(|\.emplace\(|\+=|-=)

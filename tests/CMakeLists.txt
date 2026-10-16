@@ -190,7 +190,6 @@ add_executable(wormedit_core_tests
 target_include_directories(wormedit_core_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_compile_definitions(wormedit_core_tests
     PRIVATE WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-            WORMEDIT_SOURCE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}/src"
 )
 if(Iconv_FOUND)
     target_compile_definitions(wormedit_core_tests PRIVATE WORMEDIT_TEST_HAS_ICONV=1)

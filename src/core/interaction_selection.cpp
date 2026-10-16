@@ -80,7 +80,7 @@ struct note_area_query_t {
     auto prepare_layouts() -> void {
         layouts.reserve(chart.lane_layouts.size());
         for (const auto& segment : chart.lane_layouts) {
-            const auto row = absolute_row(index.measures, segment.position);
+            const auto row = index.measures.row_of(segment.position);
             if (row) layouts.push_back({*row, &segment.layout});
         }
         std::ranges::stable_sort(layouts, {}, &area_layout_segment_t::row);

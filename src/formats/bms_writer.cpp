@@ -1793,7 +1793,7 @@ auto ordered_bpm_events(const chart_document_t& chart, const measure_index_t& in
     std::vector<std::pair<const bpm_event_t*, std::uint64_t>> result;
     result.reserve(chart.bpms.size());
     for (const auto& bpm : chart.bpms) {
-        const auto absolute = absolute_row(index, bpm.position);
+        const auto absolute = index.row_of(bpm.position);
         if (!absolute)
             fail(bms_write_diagnostic_code_t::invalid_geometry,
                  "BPM event is outside the chart's measure geometry", "$.charts[].bpms");
@@ -1840,7 +1840,7 @@ void project_flattened_pauses(const chart_document_t& chart, const measure_index
                  "active-projection flattening supports BMS STOP ticks only; delay and other pause units cannot be converted without a timing approximation",
                  path);
         (void)exact_decimal(pause.duration, "$.charts[].pauses[].duration");
-        if (!absolute_row(index, pause.position))
+        if (!index.row_of(pause.position))
             fail(bms_write_diagnostic_code_t::invalid_geometry,
                  "STOP event is outside the chart's measure geometry", "$.charts[].pauses");
         const auto identifier = timing_identifier(ids, pause.duration, result.declarations);
@@ -1933,7 +1933,7 @@ void append_root_hold_tail(const note_t& note, note_export_context_t& context,
         end_measure - context.chart.measures.data());
     append_note_slot(context, end_measure_index, channel, numerator, denominator,
                      std::string(object_id), std::string(path) + ".end");
-    const auto absolute_end = absolute_row(context.index, *note.end);
+    const auto absolute_end = context.index.row_of(*note.end);
     if (!absolute_end)
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "hold tail is outside the chart's measure geometry", std::string(path) + ".end");
@@ -1961,7 +1961,7 @@ void export_root_note(const note_t& note, note_export_context_t& context,
                                                        std::string(path) + ".position");
     append_note_slot(context, measure, channel, numerator, denominator, wav->second,
                      std::string(path));
-    const auto absolute_start = absolute_row(context.index, note.position);
+    const auto absolute_start = context.index.row_of(note.position);
     if (!absolute_start)
         fail(bms_write_diagnostic_code_t::invalid_geometry,
              "hold endpoint is outside the chart's measure geometry", std::string(path));
@@ -2339,7 +2339,7 @@ auto root_bga_channel(const bga_event_t& event, bga_export_context_t& context,
     case visual_event_kind_t::background: return "04";
     case visual_event_kind_t::poor: return "06";
     case visual_event_kind_t::layer: {
-        const auto absolute = absolute_row(context.index, event.position);
+        const auto absolute = context.index.row_of(event.position);
         if (!absolute)
             fail(bms_write_diagnostic_code_t::invalid_geometry,
                  "BGA event is outside the chart's measure geometry", std::string(path) + ".position");
@@ -2370,7 +2370,7 @@ void reserve_explicit_layer2_slots(const chart_document_t& chart,
         if (is_branch_source(context.tree, event.provenance) ||
             (event.kind != visual_event_kind_t::layer && event.kind != visual_event_kind_t::layer2))
             continue;
-        const auto absolute = absolute_row(context.index, event.position);
+        const auto absolute = context.index.row_of(event.position);
         if (!absolute)
             fail(bms_write_diagnostic_code_t::invalid_geometry,
                  "BGA event is outside the chart's measure geometry",
@@ -2765,7 +2765,7 @@ void append_bms_bpm_header(const chart_document_t& chart, bool flattening_active
             root_bpms.push_back(&bpm);
     if (root_bpms.size() > 1 ||
         (!root_bpms.empty() &&
-         absolute_row(index, root_bpms.front()->position) != std::optional<std::uint64_t>{0}))
+         index.row_of(root_bpms.front()->position) != std::optional<std::uint64_t>{0}))
         fail(bms_write_diagnostic_code_t::unsupported_feature,
              "this writer slice can export only one direct BPM at chart position zero",
              "$.charts[].bpms");

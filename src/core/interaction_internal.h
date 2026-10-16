@@ -96,8 +96,8 @@ struct hold_row_expansion_t {
             for (const auto& note : measure.notes) {
                 if (note.lane != lane)
                     continue;
-                const auto note_begin = absolute_row(index, note.position);
-                const auto note_end = note.end ? absolute_row(index, *note.end) : note_begin;
+                const auto note_begin = index.row_of(note.position);
+                const auto note_end = note.end ? index.row_of(*note.end) : note_begin;
                 if (!note_begin || !note_end || *note_end < *note_begin ||
                     !is_intersecting(*note_begin, *note_end))
                     continue;
@@ -157,8 +157,8 @@ inline auto find_active_lane(const chart_document_t& chart, const measure_index_
 
 inline auto normalized_position_span(const measure_index_t& index, local_position_t first,
                               local_position_t second) -> std::optional<position_span_t> {
-    const auto first_row = absolute_row(index, first);
-    const auto second_row = absolute_row(index, second);
+    const auto first_row = index.row_of(first);
+    const auto second_row = index.row_of(second);
     if (!first_row || !second_row || *first_row == *second_row) {
         return std::nullopt;
     }
@@ -296,8 +296,8 @@ auto plan_hold_placement(const chart_document_t& chart, const measure_index_t& i
                          note_kind_t armed_kind = note_kind_t::hold, bool committing = false,
                          hold_overlap_policy_t overlap_policy = hold_overlap_policy_t::merge_plain)
     -> std::variant<hold_placement_t<Removals>, diagnostic_list_t> {
-    const auto anchor_row = absolute_row(index, anchor);
-    const auto moving_row = absolute_row(index, moving);
+    const auto anchor_row = index.row_of(anchor);
+    const auto moving_row = index.row_of(moving);
     if (!anchor_row.has_value() || !moving_row.has_value()) {
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "hold endpoints lie outside chart geometry")};
@@ -683,7 +683,7 @@ struct note_move_context_t {
             !find_active_lane(chart, index, *last, lane))
             return false;
         for (const auto& layout : chart.lane_layouts) {
-            const auto row = absolute_row(index, layout.position);
+            const auto row = index.row_of(layout.position);
             if (row && *row > begin && *row <= end &&
                 !find_active_lane(chart, index, layout.position, lane))
                 return false;

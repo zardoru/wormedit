@@ -1433,11 +1433,6 @@ auto measure_lookup_t::row_of(local_position_t position, measure_chart_end_polic
     return index ? chart_end_row(*index, position, chart_end) : std::nullopt;
 }
 
-auto absolute_row(const measure_index_t& index, local_position_t position)
-    -> std::optional<std::uint64_t> {
-    return index.row_of(position);
-}
-
 namespace {
 
 struct input_profile_validation_t {

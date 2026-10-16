@@ -95,7 +95,7 @@ auto native_reopen(const wormedit::song_document_t& song) -> wormedit::song_docu
 void check_hold_endpoint(const wormedit::note_t& note, const wormedit::measure_index_t& measures,
                           const wormedit::timing_index_t& timing) {
     REQUIRE(note.end);
-    CHECK(wormedit::absolute_row(measures, *note.end) > wormedit::absolute_row(measures, note.position));
+    CHECK(measures.row_of(*note.end) > measures.row_of(note.position));
     CHECK(timing.seconds_at(measures, *note.end));
 }
 

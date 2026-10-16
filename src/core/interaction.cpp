@@ -198,7 +198,7 @@ auto transition_lane(const chart_document_t& chart, const measure_index_t& index
 auto resolve_canvas_cursor(const chart_document_t& chart, const measure_index_t& index,
                            const editor_interaction_state_t& state)
     -> std::variant<canvas_cursor_t, diagnostic_list_t> {
-    auto absolute = absolute_row(index, state.cursor);
+    auto absolute = index.row_of(state.cursor);
     if (!absolute)
         return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                        "editor cursor lies outside chart geometry")};
@@ -577,7 +577,7 @@ auto follow_editor_playhead(document_history_t& history, editor_interaction_stat
         return {.diagnostics = {error(diagnostic_code_t::invalid_id,
                                      stale_action_message("Playhead geometry"))}};
     const auto& index = *geometry.index;
-    if (!absolute_row(index, position))
+    if (!index.row_of(position))
         return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                      "playhead cursor is outside chart geometry")}};
     auto initial = prepare_follow_view_state(history, *chart, index, state, following_anchor_fraction);
@@ -628,7 +628,7 @@ auto editor_interaction_state_t::from(const document_history_t& history, chart_i
         return result;
     }
     const auto& index = std::get<measure_index_t>(built_index);
-    if (!absolute_row(index, cursor).has_value()) {
+    if (!index.row_of(cursor).has_value()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::row_out_of_range, "initial editor cursor is outside chart"));
         return result;
@@ -685,7 +685,7 @@ auto recover_editor_interaction(const document_history_t& history,
     lane_id_t lane;
     auto first_row = std::numeric_limits<std::uint64_t>::max();
     for (const auto& segment : chart->lane_layouts) {
-        const auto row = absolute_row(index, segment.position);
+        const auto row = index.row_of(segment.position);
         if (!row || *row >= first_row)
             continue;
         const auto editable = std::ranges::find_if(segment.layout.lanes, &lane_definition_t::is_editable);
@@ -943,8 +943,8 @@ auto collect_assignment_candidates(const editor_edit_context_t& context)
         for (const auto& note : measure.notes) {
             if (!selected_ids.contains(note.id.value))
                 continue;
-            const auto begin = absolute_row(context.scope.measures, note.position);
-            const auto end = note.end ? absolute_row(context.scope.measures, *note.end) : begin;
+            const auto begin = context.scope.measures.row_of(note.position);
+            const auto end = note.end ? context.scope.measures.row_of(*note.end) : begin;
             if (!begin || !end) {
                 return diagnostic_list_t{error(
                     diagnostic_code_t::row_out_of_range,
@@ -1004,8 +1004,8 @@ auto build_assignment_intervals(const editor_edit_context_t& context,
         for (const auto& note : measure.notes) {
             if (note.lane != target_lane || assigned_ids.contains(note.id.value))
                 continue;
-            const auto begin = absolute_row(context.scope.measures, note.position);
-            const auto end = note.end ? absolute_row(context.scope.measures, *note.end) : begin;
+            const auto begin = context.scope.measures.row_of(note.position);
+            const auto end = note.end ? context.scope.measures.row_of(*note.end) : begin;
             if (!begin || !end) {
                 return diagnostic_list_t{error(diagnostic_code_t::row_out_of_range,
                                                "target-lane note lies outside chart geometry",
@@ -1300,12 +1300,12 @@ auto is_keyboard_entry_editable(const chart_document_t& chart, const note_t& not
 auto keyboard_entry_occupant(const chart_document_t& chart, const measure_index_t& index,
     lane_id_t lane, local_position_t target) -> std::variant<const note_t*, diagnostic_list_t> {
     const note_t* found{};
-    const auto row = absolute_row(index, target);
+    const auto row = index.row_of(target);
     for (const auto& measure : chart.measures)
         for (const auto& note : measure.notes) {
             if (note.lane != lane) continue;
-            const auto begin = absolute_row(index, note.position);
-            const auto end = note.end ? absolute_row(index, *note.end) : begin;
+            const auto begin = index.row_of(note.position);
+            const auto end = note.end ? index.row_of(*note.end) : begin;
             if (!row || !begin || !end || *row < *begin || *row > *end) continue;
             if (note.position != target || found)
                 return diagnostic_list_t{error(diagnostic_code_t::collision,

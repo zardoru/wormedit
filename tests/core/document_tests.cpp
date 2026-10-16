@@ -362,9 +362,9 @@ TEST_CASE("measure index preserves exact variable-length prefixes", "[unit][core
     CHECK(index.entries[1].absolute_begin_row == 960);
     CHECK(index.entries[1].row_capacity == 720);
     CHECK(index.total_rows == 1680);
-    CHECK(absolute_row(index, {measure_id_t{2}, 120}) == 1080);
-    CHECK_FALSE(absolute_row(index, {measure_id_t{2}, 720}));
-    CHECK_FALSE(absolute_row(index, {measure_id_t{99}, 0}));
+    CHECK(index.row_of({measure_id_t{2}, 120}) == 1080);
+    CHECK_FALSE(index.row_of({measure_id_t{2}, 720}));
+    CHECK_FALSE(index.row_of({measure_id_t{99}, 0}));
 }
 
 namespace {
@@ -893,9 +893,8 @@ TEST_CASE("Measure row owners agree at shortened measure boundaries",
     for (const auto row : std::array<std::uint64_t, 4>{0, 959, 960, 1439}) {
         const auto position = index.position_at(row);
         REQUIRE(position);
-        check_owner_query(index.row_of(*position) == row);
         check_owner_query(lookup.row_of(*position) == row);
-        check_owner_query(absolute_row(index, *position) == row);
+        check_owner_query(index.row_of(*position) == row);
     }
     check_owner_query(index.entry_for(measure_id_t{2}) == &index.entries.back());
     check_owner_query(lookup.entry_for(measure_id_t{2}) == &index.entries.back());
@@ -941,9 +940,8 @@ TEST_CASE("Measure row owners retain checked addition without an extra total-row
         .entries = {{measure_id_t{1}, maximum - 1, 4}}, .total_rows = maximum};
     const auto lookup = measure_lookup_t::from(index);
     check_owner_query(!index.entries.front().row_of(2));
-    check_owner_query(!index.row_of({measure_id_t{1}, 2}));
     check_owner_query(!lookup.row_of({measure_id_t{1}, 2}));
-    check_owner_query(!absolute_row(index, {measure_id_t{1}, 2}));
+    check_owner_query(!index.row_of({measure_id_t{1}, 2}));
     check_owner_query(index.row_of({measure_id_t{1}, 1}) == maximum);
     check_owner_query(lookup.row_of({measure_id_t{1}, 1}) == maximum);
 }

@@ -456,7 +456,7 @@ auto editor_position_y_pixels(const chart_document_t& chart,
         return std::nullopt;
     }
     const auto& index = std::get<measure_index_t>(built_index);
-    const auto absolute = absolute_row(index, position);
+    const auto absolute = index.row_of(position);
     if (!absolute.has_value()) {
         return std::nullopt;
     }
@@ -726,7 +726,7 @@ auto nearest_note_hover(const chart_document_t& chart, const editor_hit_test_ind
                                                 &editor_hover_index_entry_t::object);
     if (found == index.hover_objects_by_id.end() || found->object != object)
         return {nullptr, std::numeric_limits<double>::infinity()};
-    const auto hit_row = absolute_row(index.measures, note_hit->position);
+    const auto hit_row = index.measures.row_of(note_hit->position);
     const auto y = static_cast<double>(
         static_cast<long double>(hit_row.value_or(found->absolute_row)) *
             static_cast<long double>(view.pixels_per_standard_measure) /

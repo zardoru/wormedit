@@ -27,7 +27,7 @@ auto effective_layout_by_row(const chart_document_t& chart, local_position_t pos
 struct measure_row_resolver_t {
     const measure_index_t& index;
     auto operator()(local_position_t position) const -> std::optional<std::uint64_t> {
-        return absolute_row(index, position);
+        return index.row_of(position);
     }
 };
 inline auto effective_layout(const chart_document_t& chart, const measure_index_t& index,

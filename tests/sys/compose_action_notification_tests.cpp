@@ -1796,7 +1796,7 @@ TEST_CASE("Page navigation distance and minimum match while stopped and playing"
     const auto index = std::get<measure_index_t>(build_measure_index(chart));
     const auto expected = short_measures ? (doubled ? 1919 : 1439) : (doubled ? 2879 : 1919);
     if (playing) check_action(f.application.project.transport.preview_playhead_absolute_row == expected);
-    else check_action(absolute_row(index, f.state.cursor) == expected);
+    else check_action(index.row_of(f.state.cursor) == expected);
     f.check_unchanged(1);
 }
 

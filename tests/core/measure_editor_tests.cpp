@@ -53,7 +53,7 @@ auto absolute_note_row(const song_document_t& song) -> std::uint64_t {
     const auto& chart = song.charts.front();
     const auto index = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto row = absolute_row(std::get<measure_index_t>(index),
+    const auto row = std::get<measure_index_t>(index).row_of(
                                   chart.measures.back().notes.front().position);
     REQUIRE(row.has_value());
     return *row;
@@ -566,13 +566,13 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
     check_audio_extent(split.measures.size() == 4);
     check_audio_extent(index.total_rows == std::get<measure_index_t>(before).total_rows);
     for (const auto& measure : document.charts.front().measures)
-        check_audio_extent(absolute_row(index, {measure.id,0}) == absolute_row(std::get<measure_index_t>(before),{measure.id,0}));
+        check_audio_extent(index.row_of({measure.id,0}) == std::get<measure_index_t>(before).row_of({measure.id,0}));
     check_audio_extent(split.measures[1].id == measure_id_t{13});
-    check_audio_extent(absolute_row(index,split.measures[0].notes.front().position) == 120);
-    check_audio_extent(absolute_row(index,*split.measures[0].notes.front().end) == 800);
-    check_audio_extent(absolute_row(index,split.measures[1].bgm_events.front().position) == 600);
-    check_audio_extent(absolute_row(index,*split.measures[1].bgm_events.front().end) == 1060);
-    check_audio_extent(absolute_row(index,split.bpms.back().position) == 600);
+    check_audio_extent(index.row_of(split.measures[0].notes.front().position) == 120);
+    check_audio_extent(index.row_of(*split.measures[0].notes.front().end) == 800);
+    check_audio_extent(index.row_of(split.measures[1].bgm_events.front().position) == 600);
+    check_audio_extent(index.row_of(*split.measures[1].bgm_events.front().end) == 1060);
+    check_audio_extent(index.row_of(split.bpms.back().position) == 600);
     const auto timing = timing_index_t::from(split);
     REQUIRE(timing.value);
     REQUIRE(before_timing.value);
@@ -619,8 +619,8 @@ TEST_CASE("Measure split supports imported BMS without moving exported later hea
     REQUIRE(reloaded.value.song);
     const auto& after = reloaded.value.song->charts.front();
     const auto index = build_measure_index(after);
-    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
-    check_audio_extent(absolute_row(std::get<measure_index_t>(index),after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
+    check_audio_extent(std::get<measure_index_t>(index).row_of(after.measures[2].notes.front().position) == after.divisions_per_standard_measure);
+    check_audio_extent(std::get<measure_index_t>(index).row_of(after.measures[3].notes.front().position) == after.divisions_per_standard_measure*2);
 }
 
 TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[core][measure-editor][measure-split]") {
@@ -638,10 +638,10 @@ TEST_CASE("Measure split preserves retained BMSON source heads and tails", "[cor
     const auto index = build_measure_index(split);
     const auto& rows = std::get<measure_index_t>(index);
     const auto& events = split.sound_channels.front().events;
-    check_audio_extent(absolute_row(rows,events[0].position) == 240);
-    check_audio_extent(absolute_row(rows,*events[0].end) == 720);
-    check_audio_extent(absolute_row(rows,events[1].position) == 600);
-    check_audio_extent(absolute_row(rows,*events[1].end) == 1200);
+    check_audio_extent(rows.row_of(events[0].position) == 240);
+    check_audio_extent(rows.row_of(*events[0].end) == 720);
+    check_audio_extent(rows.row_of(events[1].position) == 600);
+    check_audio_extent(rows.row_of(*events[1].end) == 1200);
     const auto written = write_bmson(history.document);
     REQUIRE(written.value);
     const auto reloaded = parse_bmson_bytes(std::as_bytes(std::span{written.value->data(),written.value->size()}));
@@ -739,7 +739,7 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     std::vector<signed_rational_t> times;
     for (const auto& chunk : parsed.value.song->charts.front().measures)
         for (const auto& note : chunk.notes) {
-            const auto row = absolute_row(*measures, note.position);
+            const auto row = measures->row_of(note.position);
             if (!row) return false;
             const auto at = timing.value->seconds_at(*row);
             if (!at) return false;
@@ -810,8 +810,8 @@ auto pause_conversion_bmson_aliases() -> bool {
     const auto& retained = chart.sound_channels.front().events.front();
     const auto& note = chart.measures.front().notes.front();
     return note.sound_channel_event == retained.id && note.position == retained.position && note.end == retained.end &&
-        absolute_row(*measures, note.position) == resolution / 5 &&
-        absolute_row(*measures, *note.end) == resolution * 7 / 10;
+        measures->row_of(note.position) == resolution / 5 &&
+        measures->row_of(*note.end) == resolution * 7 / 10;
 }
 } // namespace
 

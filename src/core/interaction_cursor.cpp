@@ -173,7 +173,7 @@ auto page_edit_cursor(cursor_navigation_context_t& context,
 auto keep_cursor_visible(const chart_document_t& chart, const measure_index_t& index,
                          editor_interaction_state_t& candidate) -> bool {
     const auto row = candidate.virtual_bms_cursor_row
-        ? candidate.virtual_bms_cursor_row : absolute_row(index, candidate.cursor);
+        ? candidate.virtual_bms_cursor_row : index.row_of(candidate.cursor);
     const auto maximum = maximum_viewport_scroll(chart, index,
         candidate.pixels_per_standard_measure, candidate.viewport_height_pixels);
     if (!row || !maximum) return false;
@@ -215,7 +215,7 @@ auto jump_edit_cursor(cursor_navigation_context_t& context,
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::invalid_id,
                    stale_action_message("Cursor jump"))});
-    if (!absolute_row(context.edit.scope.measures, action.position))
+    if (!context.edit.scope.measures.row_of(action.position))
         return cursor_diagnostic_result(context.edit.history, state,
             {error(diagnostic_code_t::row_out_of_range,
                    "cursor jump target lies outside chart geometry")});

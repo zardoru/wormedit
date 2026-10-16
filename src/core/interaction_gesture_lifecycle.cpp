@@ -37,8 +37,8 @@ auto pending_note_duration_gesture_t::revise(editor_edit_context_t& context, loc
     if (!snapped_end)
         return {error(diagnostic_code_t::row_out_of_range,
                       "duration gesture end cannot be snapped inside chart")};
-    const auto head = absolute_row(context.scope.measures, reference->position);
-    const auto target = absolute_row(context.scope.measures, *snapped_end);
+    const auto head = context.scope.measures.row_of(reference->position);
+    const auto target = context.scope.measures.row_of(*snapped_end);
     auto exact_head = false;
     if (head && target && *target < *head) {
         snapped_end = reference->position;
@@ -302,8 +302,8 @@ auto pending_note_paint_gesture_t::revise(editor_edit_context_t& context, lane_i
     if (!target)
         return {error(diagnostic_code_t::row_out_of_range,
                                         "paint target cannot be snapped inside chart")};
-    const auto target_row = absolute_row(context.scope.measures, *target);
-    const auto previous_row = absolute_row(context.scope.measures, pending.last_position);
+    const auto target_row = context.scope.measures.row_of(*target);
+    const auto previous_row = context.scope.measures.row_of(pending.last_position);
     if (!target_row || !previous_row)
         return {error(diagnostic_code_t::row_out_of_range,
                                         "paint gesture lies outside chart geometry")};
@@ -321,7 +321,7 @@ auto pending_note_paint_gesture_t::revise(editor_edit_context_t& context, lane_i
         auto expanded = std::make_shared<std::vector<note_paint_target_t>>(*pending.targets);
         expanded->reserve(expanded->size() + additions.size());
         for (const auto& addition : additions) {
-            const auto row = absolute_row(context.scope.measures, addition.position);
+            const auto row = context.scope.measures.row_of(addition.position);
             expanded->push_back(addition);
             pending.visited.insert({addition.lane, *row});
         }
@@ -366,7 +366,7 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
         return {.diagnostics = std::get<diagnostic_list_t>(resolved)};
-    const auto row = absolute_row(context.scope.measures, *target);
+    const auto row = context.scope.measures.row_of(*target);
     if (!row)
         return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                         "paint start lies outside chart geometry")}};

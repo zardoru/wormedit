@@ -2966,7 +2966,7 @@ TEST_CASE("fractional fixed-cursor scrolling keeps the drawn cursor on its scree
             history, state,
             scroll_editor_view_action_t{pixels, 48.0, editor_field_scroll_direction_t::up});
         REQUIRE(scrolled);
-        const auto drawn_row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+        const auto drawn_row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
         CHECK(drawn_row * pixels_per_row - state.viewport_scroll_pixels == Catch::Approx(48.0).margin(0.01));
         CHECK(scrolled.view->cursor_subrow == state.cursor_subrow);
     }
@@ -3385,7 +3385,7 @@ TEST_CASE("Following audio keeps the cursor at the anchor between snaps and edit
         REQUIRE(sys::follow_compose_playhead(history, state, row, true,
             {chart.id, history.document.revision, &index}, 0.5));
         const auto view = std::get<editor_interaction_view_model_t>(inspect_editor_interaction(history, state));
-        const auto cursor_row = static_cast<double>(*absolute_row(index, view.cursor)) + view.cursor_subrow;
+        const auto cursor_row = static_cast<double>(*index.row_of(view.cursor)) + view.cursor_subrow;
         CHECK(cursor_row * pixels_per_row - view.viewport_scroll_pixels ==
               Catch::Approx(200.0).margin(0.01));
     }
@@ -5329,7 +5329,7 @@ TEST_CASE("Pointer zoom synchronizes the edit row beneath a fixed cursor line",
     REQUIRE(dispatch_editor_action(history, state,
         scroll_editor_view_action_t{200.3, 320, editor_field_scroll_direction_t::down}));
     REQUIRE(dispatch_editor_action(history, state, adjust_editor_zoom_action_t{1.5, 20}));
-    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    const auto row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
     CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
         state.viewport_scroll_pixels == Catch::Approx(80));
     CHECK(state.fixed_cursor_screen_y_pixels == 320);
@@ -5345,7 +5345,7 @@ TEST_CASE("Paused seeks align the chart position with the fixed screen anchor",
     configure_cursor_viewport(state, 400, editor_field_scroll_direction_t::down);
     REQUIRE(sys::follow_compose_playhead(history, state, 1234.5, false,
         {chart.id, history.document.revision, &index}));
-    const auto row = static_cast<double>(*absolute_row(index, state.cursor)) + state.cursor_subrow;
+    const auto row = static_cast<double>(*index.row_of(state.cursor)) + state.cursor_subrow;
     CHECK(row * state.pixels_per_standard_measure / chart.divisions_per_standard_measure -
         state.viewport_scroll_pixels == Catch::Approx(80));
     CHECK(state.fixed_cursor_screen_y_pixels == 320);
@@ -6733,8 +6733,8 @@ TEST_CASE("Single BGM virtual move previews without materializing and restores e
                                           .operation = wormedit::proposal_operation_t::apply}));
     const auto index = std::get<measure_index_t>(build_measure_index(history.document.charts.front()));
     const auto* moved = bgm_move_event(history, object_id_t{301});
-    feedback_check(absolute_row(index, moved->position) == 2400);
-    feedback_check(absolute_row(index, *moved->end) == 2640);
+    feedback_check(index.row_of(moved->position) == 2400);
+    feedback_check(index.row_of(*moved->end) == 2640);
     feedback_check(history.document.charts.front().measures.size() == 3 && history.undo.size() == 1);
     feedback_require(undo_document_command(history));
     auto restored = history.document;

@@ -687,7 +687,7 @@ auto committed_bga_row(const chart_document_t& chart) -> std::uint64_t {
     REQUIRE(event != chart.bga_events.end());
     const auto index = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto row = absolute_row(std::get<measure_index_t>(index), event->position);
+    const auto row = std::get<measure_index_t>(index).row_of(event->position);
     REQUIRE(row);
     return *row;
 }
@@ -3816,7 +3816,7 @@ TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport mo
             before.pixels_per_standard_measure) < 1e-9);
         expect_compose_test(after.fixed_cursor_screen_y_pixels == before.fixed_cursor_screen_y_pixels);
         const auto index = std::get<measure_index_t>(build_measure_index(fixture.history.document.charts.front()));
-        const auto cursor_row = static_cast<double>(*absolute_row(index, after.cursor)) + after.cursor_subrow;
+        const auto cursor_row = static_cast<double>(*index.row_of(after.cursor)) + after.cursor_subrow;
         const auto source_anchor = after.scroll_direction == editor_field_scroll_direction_t::down
             ? after.viewport_height_pixels - *after.fixed_cursor_screen_y_pixels : *after.fixed_cursor_screen_y_pixels;
         expect_compose_test(std::abs(cursor_row * after.pixels_per_standard_measure / 960 -

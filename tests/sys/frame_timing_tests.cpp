@@ -5253,8 +5253,8 @@ auto workspace_timing_cache_tracks_frame_state() -> bool {
     return workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference) &&
         std::ranges::none_of(cached.flattened.compose.timing_marker,
                             [](const auto& marker) { return marker.selected; }) &&
-        cached.cache.timing_payload_cache.build_count == 1 &&
-        reference.cache.timing_payload_cache.build_count == 0;
+        cached.cache.timing_payload_cache.build_count() == 1 &&
+        reference.cache.timing_payload_cache.build_count() == 0;
 }
 auto workspace_timing_cache_invalidates_revision() -> bool {
     compose_test_fixture_t cached(workspace_timing_cache_song());
@@ -5267,7 +5267,7 @@ auto workspace_timing_cache_invalidates_revision() -> bool {
     compose_test_fixture_t reference(document);
     reference.cache.timing_payload_cache_enabled = false;
     reference.project();
-    return cached.cache.timing_payload_cache.build_count == 2 &&
+    return cached.cache.timing_payload_cache.build_count() == 2 &&
         workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference);
 }
 auto workspace_timing_cache_rejects_reused_ids() -> bool {
@@ -5291,11 +5291,11 @@ auto workspace_timing_cache_rejects_reused_ids() -> bool {
     cached.cache = std::move(previous.cache);
     reference.cache.timing_payload_cache_enabled = false;
     cached.project(); reference.project();
-    const auto& payloads = cached.cache.timing_payload_cache.markers;
+    const auto& payloads = cached.cache.timing_payload_cache.value();
     const auto changed = std::ranges::find(payloads, std::uint64_t{10069},
                                           &compose_timing_marker_payload_t::id);
     return changed != payloads.end() && changed->row == 1920 &&
-        cached.cache.timing_payload_cache.build_count == 2 &&
+        cached.cache.timing_payload_cache.build_count() == 2 &&
         workspace_timing_snapshot(cached) == workspace_timing_snapshot(reference);
 }
 } // namespace

@@ -122,14 +122,7 @@ struct compose_timing_marker_payload_t {
     std::string short_label, detail;
     bool fixed_initial{};
 };
-struct compose_timing_payload_cache_t {
-    const void* document_identity{};
-    const void* chart_identity{};
-    std::uint64_t project{}, chart{}, revision{};
-    bool valid{};
-    std::vector<compose_timing_marker_payload_t> markers;
-    std::size_t build_count{};
-};
+
 
 // Consumers retain different geometry contracts. Keep those policies explicit:
 // transport uses a logical stamp; stem/paint indices own their own stamps.
@@ -147,6 +140,9 @@ struct compose_scene_source_key_t {
         return {&document, &chart, {.document = {document.id, document.revision}, .chart = chart.id}};
     }
 };
+
+using compose_timing_payload_cache_t = wormedit::keyed_cache_t<compose_scene_source_key_t,
+    std::vector<compose_timing_marker_payload_t>>;
 
 struct compose_scene_cache_t {
     auto stamp() const -> wormedit::chart_stamp_t {
@@ -190,6 +186,7 @@ struct compose_scene_cache_t {
   public:
     compose_navigation_travel_t navigation_travel;
     keysound_list_cache_t keysound_list_cache;
+    // Main-loop projection cache; const view builders may populate it.
     mutable compose_timing_payload_cache_t timing_payload_cache;
     // Internal reference-projection bypass for correctness/performance probes.
     bool timing_payload_cache_enabled{true};

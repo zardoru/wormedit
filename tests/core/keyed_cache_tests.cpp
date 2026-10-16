@@ -362,3 +362,17 @@ TEST_CASE("Binding invalidation retains the incremental product and retries", "[
     static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}));
     CHECK(calls == 2);
 }
+
+TEST_CASE("A cache binding query distinguishes retained keys from current products", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    std::size_t calls{};
+    CHECK_FALSE(cache.is_bound_to(0));
+    static_cast<void>(cache.get_or_build(1, conditional_refill_t{calls, 17, true}));
+    CHECK(cache.is_bound_to(1));
+    static_cast<void>(cache.get_or_build(2, conditional_refill_t{calls, 23, false}));
+    CHECK(cache.is_bound_to(1));
+    CHECK_FALSE(cache.is_bound_to(2));
+    cache.invalidate();
+    CHECK_FALSE(cache.is_bound_to(1));
+    CHECK(cache.key() == std::optional<int>{1});
+}

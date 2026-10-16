@@ -23,7 +23,7 @@ class keyed_cache_t {
     template <class Lookup, class Builder, class CanReuse = std::nullptr_t>
     [[nodiscard]] auto get_or_build(const Lookup& key, Builder&& builder,
                                     CanReuse&& can_reuse = nullptr) -> Value& {
-        if (valid_ && *key_ == key) {
+        if (is_bound_to(key)) {
             if constexpr (std::is_same_v<std::remove_cvref_t<CanReuse>, std::nullptr_t>) return value_;
             else if (can_reuse(value_)) return value_;
         }
@@ -60,6 +60,11 @@ class keyed_cache_t {
     void invalidate_value() {
         valid_ = false;
         value_ = Value{};
+    }
+
+    template <class Lookup>
+    [[nodiscard]] auto is_bound_to(const Lookup& key) const -> bool {
+        return valid_ && *key_ == key;
     }
 
     [[nodiscard]] auto has_value() const noexcept -> bool { return valid_; }

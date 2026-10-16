@@ -126,6 +126,25 @@ using envelope_projection_ring_t = wormedit::keyed_cache_t<
     envelope_projection_data_t>;
 using envelope_projection_lookup_t = std::tuple<const audio::waveform_key_t&, const void*,
                                                envelope_projection_geometry_t>;
+struct compose_channel_projection_data_t {
+    std::vector<WormUiComposeWaveformRowView> rows;
+    struct piece_t {
+        std::uint64_t lane{};
+        bool playable{};
+        std::vector<WormUiComposeWaveformRowView> rows;
+    };
+    std::vector<piece_t> pieces;
+    std::vector<WormUiComposeStemCutView> cuts;
+};
+struct compose_channel_projection_t {
+    wormedit::keyed_cache_t<std::tuple<double, double, double>, compose_channel_projection_data_t> view;
+    envelope_projection_ring_t ring;
+    void invalidate(bool clear_rows) {
+        view.invalidate([clear_rows](auto& data) { if (clear_rows) data.rows.clear(); });
+        ring.invalidate();
+    }
+};
+
 #endif
 
 // Owned marker text and absolute rows; viewport placement/selection stay per frame.
@@ -270,29 +289,16 @@ struct compose_scene_cache_t {
     struct stem_waveform_cache_t {
         wormedit::object_id_t channel;
         std::uint64_t source_lane{};
-        const void* source{};
-        std::uint64_t source_generation{};
-        std::uint64_t revision{};
-        std::optional<wormedit::sound_slice_result_t> slices;
-        double scroll{}, height{}, zoom{};
-        bool valid{}, pending{};
-        std::vector<WormUiComposeWaveformRowView> rows;
-        envelope_projection_ring_t ring;
-        // The rows split by the lane of the slice they belong to, and the cut lines.
-        struct piece_t {
-            std::uint64_t lane{};
-            bool playable{};
-            std::vector<WormUiComposeWaveformRowView> rows;
-        };
-        std::vector<piece_t> pieces;
-        std::vector<WormUiComposeStemCutView> cuts;
+        wormedit::keyed_cache_t<std::tuple<const void*, std::uint64_t, std::uint64_t>,
+            std::optional<wormedit::sound_slice_result_t>> slices;
+        compose_channel_projection_t projection;
         struct point_ref_t {
             std::uint64_t object{}, lane{};
             bool playable{};
         };
-        std::unordered_map<std::uint64_t, point_ref_t> refs;
-        std::uint64_t refs_revision{};
-        bool is_selected{};
+        using point_refs_t = std::unordered_map<std::uint64_t, point_ref_t>;
+        wormedit::keyed_cache_t<std::uint64_t, point_refs_t> refs;
+        bool pending{}, is_selected{};
     };
     struct bgm_bar_cache_t {
         wormedit::keyed_cache_t<
@@ -421,19 +427,12 @@ struct compose_scene_cache_t {
 
     struct waveform_state_t {
         std::optional<channel_waveform_selection_t> channel_waveform_selection;
-        wormedit::object_id_t channel_waveform_channel;
-        const void* channel_waveform_source{};
-        std::uint64_t channel_waveform_source_generation{};
-        std::optional<wormedit::sound_slice_result_t> channel_waveform_slices;
-        double channel_waveform_scroll_pixels{};
-        double channel_waveform_height_pixels{};
-        double channel_waveform_pixels_per_measure{};
-        bool channel_waveform_projection_valid{};
-        std::vector<WormUiComposeWaveformRowView> channel_waveform_rows;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        wormedit::keyed_cache_t<std::tuple<wormedit::object_id_t, const void*, std::uint64_t>,
+            std::optional<wormedit::sound_slice_result_t>> channel_waveform_slices;
+        compose_channel_projection_t channel_projection;
         audio::display_row_table_t waveform_row_table;
         envelope_projection_ring_t waveform_envelope_ring;
-        envelope_projection_ring_t channel_envelope_ring;
         struct overview_data_t {
             std::uint64_t generation{};
             std::vector<WormUiComposeWaveformOverviewRowView> rows;

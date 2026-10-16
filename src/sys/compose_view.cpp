@@ -73,12 +73,10 @@ void compose_scene_cache_t::invalidate_scene_cache() {
     timing.proposed_beat_timing_index.reset();
     timing.proposed_beat_bpm.reset();
     timing.proposed_beat_event = {};
-    waveform.channel_waveform_channel = {};
-    waveform.channel_waveform_source = nullptr;
-    waveform.channel_waveform_source_generation = 0;
-    waveform.channel_waveform_slices.reset();
-    waveform.channel_waveform_projection_valid = false;
-    waveform.channel_waveform_rows.clear();
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    waveform.channel_waveform_slices.value().reset();
+    waveform.channel_projection.invalidate(true);
+#endif
     frame.interaction_view.reset();
     frame.hover.reset();
     frame.focus_note_label_editor = false;

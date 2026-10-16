@@ -22,21 +22,10 @@ struct migration_t {
     migrate_fn_t migrate{};
 };
 
-enum class migration_status_t {
-    unchanged,
-    migrated,
-    // Version field is missing or is not an unsigned integer.
-    malformed_version,
-    // Version is newer than the target.
-    unsupported_version,
-    // A step in the chain is missing from the table.
-    missing_step,
-    // A migration step reported an error; the document must not be used.
-    failed,
-};
+enum class migration_phase_t : std::uint8_t { unchanged, migrated };
 
-// Success retains whether a migration ran; failures carry their status and message.
-using migration_outcome_t = result_t<migration_status_t, error_t<migration_status_t>>;
+// Success retains whether a migration ran; failures carry a shared code and message.
+using migration_outcome_t = result_t<migration_phase_t, error_t<failure_code_t>>;
 
 // Migrations shipped with the reader: one `migrate_vN_to_vN+1` per released
 // schema bump. Schema 2 added `expression_source` to SV recipes.

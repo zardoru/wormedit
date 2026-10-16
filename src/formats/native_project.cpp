@@ -1311,12 +1311,12 @@ auto graph_diagnostic_text(const diagnostic_t& diagnostic) -> std::string {
     return message;
 }
 
-auto migration_diagnostic_code(native_project_internal::migration_status_t status)
+auto migration_diagnostic_code(failure_code_t status)
     -> native_project_diagnostic_code_t {
     switch (status) {
-    case native_project_internal::migration_status_t::malformed_version:
+    case failure_code_t::invalid_request:
         return native_project_diagnostic_code_t::malformed_json;
-    case native_project_internal::migration_status_t::failed:
+    case failure_code_t::invalid_data:
         return native_project_diagnostic_code_t::invalid_document;
     default:
         return native_project_diagnostic_code_t::unsupported_version;

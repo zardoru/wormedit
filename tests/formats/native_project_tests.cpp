@@ -338,7 +338,7 @@ auto migration_does_not_narrow_enum_values(const nlohmann::json& legacy)
         document, 4, wormedit::native_project_internal::default_migrations());
     return {
         .migrated = outcome && *outcome ==
-                    wormedit::native_project_internal::migration_status_t::migrated,
+                    wormedit::native_project_internal::migration_phase_t::migrated,
         .kind_preserved = document["charts"][0]["bga_events"][2]["kind"] == large_kind,
         .family_preserved =
             document["charts"][0]["bga_events"][2]["provenance"]["family"] == large_family,
@@ -1036,7 +1036,7 @@ TEST_CASE("native project migrations: the current schema passes through the defa
     REQUIRE(document.at("schema_version") == 6);
     const auto before = document;
     const auto outcome = internal::migrate_document(document, 6, internal::default_migrations());
-    CHECK(outcome.value() == internal::migration_status_t::unchanged);
+    CHECK(outcome.value() == internal::migration_phase_t::unchanged);
     CHECK(document == before);
 }
 
@@ -1171,13 +1171,13 @@ TEST_CASE("native project migrations: steps run in order and stop at the target"
         {{1, &fake_v1_to_v2}, {0, &fake_v0_to_v1_chain}}};
     nlohmann::json document{{"schema_version", 0U}};
     const auto outcome = internal::migrate_document(document, 2, table);
-    CHECK(outcome.value() == internal::migration_status_t::migrated);
+    CHECK(outcome.value() == internal::migration_phase_t::migrated);
     CHECK(document.at("chain") == "01");
     CHECK(document.at("schema_version") == 2);
 
     nlohmann::json partial{{"schema_version", 0U}};
     CHECK(internal::migrate_document(partial, 1, table).value() ==
-          internal::migration_status_t::migrated);
+          internal::migration_phase_t::migrated);
     CHECK(partial.at("chain") == "0");
     CHECK(partial.at("schema_version") == 1);
 }
@@ -1187,19 +1187,19 @@ TEST_CASE("native project migrations: future, malformed, and gapped versions rej
     const std::array<internal::migration_t, 1> table{{{1, &fake_v1_to_v2}}};
     nlohmann::json future{{"schema_version", 3U}};
     CHECK(internal::migrate_document(future, 2, table).error().code ==
-          internal::migration_status_t::unsupported_version);
+          wormedit::failure_code_t::unsupported);
     CHECK(future.at("schema_version") == 3);
 
     nlohmann::json negative{{"schema_version", -1}};
     CHECK(internal::migrate_document(negative, 2, table).error().code ==
-          internal::migration_status_t::malformed_version);
+          wormedit::failure_code_t::invalid_request);
     nlohmann::json missing = nlohmann::json::object();
     CHECK(internal::migrate_document(missing, 2, table).error().code ==
-          internal::migration_status_t::malformed_version);
+          wormedit::failure_code_t::invalid_request);
 
     nlohmann::json gap{{"schema_version", 0U}};
     CHECK(internal::migrate_document(gap, 2, table).error().code ==
-          internal::migration_status_t::missing_step);
+          wormedit::failure_code_t::not_found);
 }
 
 TEST_CASE("native project migrations: a failing step publishes no document",
@@ -1214,7 +1214,7 @@ TEST_CASE("native project migrations: a failing step publishes no document",
     nlohmann::json document{{"schema_version", 1U}, {"keep", true}};
     const auto before = document;
     CHECK(internal::migrate_document(document, 2, table).error().code ==
-          internal::migration_status_t::failed);
+          wormedit::failure_code_t::invalid_data);
     CHECK(document == before);
 }
 

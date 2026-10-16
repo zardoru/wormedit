@@ -51,7 +51,7 @@ auto pulse_waveform() -> wormedit::audio::waveform_t {
 
 template <class Payload>
 void check_projection_error(const wormedit::result_t<Payload, Payload>& result,
-                             wormedit::audio::aligned_waveform_status_t expected_status) {
+                             wormedit::failure_code_t expected_status) {
     REQUIRE_FALSE(result);
     CHECK(result.error().status == expected_status);
 }
@@ -110,7 +110,7 @@ TEST_CASE("aligned waveform follows chart timing, offset, and viewport scroll",
 
     auto too_tall = request;
     too_tall.viewport_height_pixels = 4'097.0;
-    check_projection_error(wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, too_tall), wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
+    check_projection_error(wormedit::audio::aligned_waveform_view_result_t::from(waveform, *timing.index, too_tall), wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("song overview retains source peaks while its window follows chart timing",
@@ -164,7 +164,7 @@ TEST_CASE("song overview retains source peaks while its window follows chart tim
     REQUIRE(moved);
     CHECK(moved->visible_begin_fraction == 0.25);
     CHECK(moved->visible_end_fraction == 0.75);
-    check_projection_error(wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, viewport, 513), wormedit::audio::aligned_waveform_status_t::capacity_exceeded);
+    check_projection_error(wormedit::audio::waveform_overview_view_result_t::from(waveform, *timing.index, viewport, 513), wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewport",
@@ -262,7 +262,7 @@ TEST_CASE("BMSON channel waveform maps exact source cuts into its musical viewpo
     auto too_tall = viewport;
     too_tall.viewport_height_pixels = 4097.0;
     check_projection_error(aligned_waveform_view_result_t::from(waveform, chart, chart.sound_channels.front(), *timing.index,
-                                   too_tall, source), aligned_waveform_status_t::capacity_exceeded);
+                                   too_tall, source), wormedit::failure_code_t::capacity_exceeded);
 }
 
 namespace {
@@ -766,7 +766,7 @@ auto display_channel_rejects_invalid_slices() -> bool {
     if (slices || !prepare_display_row_table(table, *timing.index, request)) return false;
     const auto projected = aligned_waveform_view_result_t::from(waveform, channel, table,
         request, slices, source);
-    return !projected && projected.error().status == aligned_waveform_status_t::invalid_timing &&
+    return !projected && projected.error().status == wormedit::failure_code_t::invalid_data &&
         projected.error().rows.empty();
 }
 
@@ -793,8 +793,8 @@ auto display_channel_rejects_invalid_clock_and_request() -> bool {
     const auto no_request = aligned_waveform_view_result_t::from(waveform, channel, table,
         invalid_request, slices, source);
     if (no_clock || no_request) return false;
-    if (no_clock.error().status != aligned_waveform_status_t::invalid_timing || !no_clock.error().rows.empty() ||
-        no_request.error().status != aligned_waveform_status_t::invalid_request || !no_request.error().rows.empty())
+    if (no_clock.error().status != wormedit::failure_code_t::invalid_data || !no_clock.error().rows.empty() ||
+        no_request.error().status != wormedit::failure_code_t::invalid_request || !no_request.error().rows.empty())
         return false;
     auto short_waveform = waveform;
     short_waveform.total_frames = 4'410;
@@ -947,14 +947,14 @@ TEST_CASE("waveform range projection rejects invalid spans and capacity",
           "[unit][audio][waveform][aligned][range]") {
     const auto waveform = pulse_waveform();
     using namespace wormedit::audio;
-    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.5, 0.5, 10), aligned_waveform_status_t::invalid_request);
-    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.6, 0.4, 10), aligned_waveform_status_t::invalid_request);
-    check_projection_error(waveform_overview_view_result_t::from(waveform, -0.1, 0.4, 10), aligned_waveform_status_t::invalid_request);
-    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.5, 10), aligned_waveform_status_t::invalid_request);
-    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.0, 0), aligned_waveform_status_t::invalid_request);
-    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.0, maximum_waveform_range_rows + 1), aligned_waveform_status_t::capacity_exceeded);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.5, 0.5, 10), wormedit::failure_code_t::invalid_request);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.6, 0.4, 10), wormedit::failure_code_t::invalid_request);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, -0.1, 0.4, 10), wormedit::failure_code_t::invalid_request);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.5, 10), wormedit::failure_code_t::invalid_request);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.0, 0), wormedit::failure_code_t::invalid_request);
+    check_projection_error(waveform_overview_view_result_t::from(waveform, 0.0, 1.0, maximum_waveform_range_rows + 1), wormedit::failure_code_t::capacity_exceeded);
     waveform_t empty;
-    check_projection_error(waveform_overview_view_result_t::from(empty, 0.0, 1.0, 10), aligned_waveform_status_t::invalid_waveform);
+    check_projection_error(waveform_overview_view_result_t::from(empty, 0.0, 1.0, 10), wormedit::failure_code_t::invalid_geometry);
 }
 
 TEST_CASE("aligned waveform leaves a blank gap where a warp consumes no time",
@@ -1101,7 +1101,7 @@ auto aligned_waveform_expected_error_keeps_selected_bin_size() -> bool {
          .pixels_per_standard_measure = 960, .maximum_rows = 1},
         nullptr, {.sample_points = true, .detail_level = true});
     if (projected) return false;
-    return projected.error().status == aligned_waveform_status_t::capacity_exceeded &&
+    return projected.error().status == wormedit::failure_code_t::capacity_exceeded &&
            projected.error().chosen_frames_per_bin == 32 && projected.error().rows.empty();
 }
 } // namespace

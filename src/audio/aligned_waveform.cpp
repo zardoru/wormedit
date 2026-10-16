@@ -509,13 +509,13 @@ auto aligned_waveform_window(const waveform_t& waveform, const timing_index_t& t
 
 auto aligned_waveform_view_result_t::from(aligned_waveform_view_result_t&& report)
     -> aligned_waveform_view_outcome_t {
-    if (report.status != aligned_waveform_status_t::projected)
+    if (report.status.has_failure())
         return std::unexpected(std::move(report));
     return std::move(report);
 }
 auto waveform_overview_view_result_t::from(waveform_overview_view_result_t&& report)
     -> waveform_overview_view_outcome_t {
-    if (report.status != aligned_waveform_status_t::projected)
+    if (report.status.has_failure())
         return std::unexpected(std::move(report));
     return std::move(report);
 }
@@ -548,7 +548,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timi
                                    .sample_point = true,
                                    .samples = sample.samples});
     }
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     return from(std::move(result));
 }
 
@@ -565,24 +565,24 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timi
     }
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
         timing.rows.empty()) {
-        result.status = aligned_waveform_status_t::invalid_timing;
+        result.status = failure_code_t::invalid_data;
         return from(std::move(result));
     }
     if (waveform.sample_rate == 0 || waveform.total_frames == 0 ||
         waveform.total_frames >
             static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        result.status = aligned_waveform_status_t::invalid_waveform;
+        result.status = failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     if (request.viewport_height_pixels > static_cast<double>(request.maximum_rows) ||
         request.viewport_height_pixels > static_cast<double>(maximum_aligned_waveform_rows)) {
-        result.status = aligned_waveform_status_t::capacity_exceeded;
+        result.status = failure_code_t::capacity_exceeded;
         return from(std::move(result));
     }
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
                                 request.pixels_per_standard_measure;
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     const auto window = aligned_waveform_window(waveform, timing, request);
     if (!window)
         return from(std::move(result));
@@ -593,8 +593,8 @@ auto aligned_waveform_view_result_t::from(const waveform_t& waveform, const timi
                    .maximum_columns = maximum_aligned_waveform_rows});
     if (!projection) {
         result.status = projection.error() == failure_code_t::capacity_exceeded
-                            ? aligned_waveform_status_t::capacity_exceeded
-                            : aligned_waveform_status_t::invalid_waveform;
+                            ? failure_code_t::capacity_exceeded
+                            : failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     std::vector<aligned_waveform_row_t> pixels(height);
@@ -630,7 +630,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& overview, const wave
     const auto points = style.sample_points ? 2U : 1U;
     if (request.viewport_height_pixels > maximum_aligned_waveform_rows ||
         request.maximum_rows < points) {
-        result.status = aligned_waveform_status_t::capacity_exceeded;
+        result.status = failure_code_t::capacity_exceeded;
         return from(std::move(result));
     }
     const auto height = static_cast<std::size_t>(std::ceil(request.viewport_height_pixels));
@@ -668,7 +668,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& overview, const wave
             append_composed_rows(result, column->column, pixel, end, style.sample_points);
         }
     }
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     return from(std::move(result));
 }
 
@@ -726,7 +726,7 @@ auto aligned_waveform_view_result_t::from(const waveform_t& overview, const wave
                                .absolute_peak = column->column.absolute_peak,
                                .rms = column->column.rms});
     }
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     return from(std::move(result));
 }
 
@@ -743,17 +743,17 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
     }
     if (timing.divisions_per_standard_measure == 0 || timing.total_rows == 0 ||
         timing.rows.empty()) {
-        result.status = aligned_waveform_status_t::invalid_timing;
+        result.status = failure_code_t::invalid_data;
         return from(std::move(result));
     }
     if (waveform.sample_rate == 0 || waveform.total_frames == 0 ||
         waveform.total_frames >
             static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) {
-        result.status = aligned_waveform_status_t::invalid_waveform;
+        result.status = failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     if (maximum_rows > maximum_waveform_overview_rows) {
-        result.status = aligned_waveform_status_t::capacity_exceeded;
+        result.status = failure_code_t::capacity_exceeded;
         return from(std::move(result));
     }
     const auto rows_per_pixel = static_cast<long double>(timing.divisions_per_standard_measure) /
@@ -771,7 +771,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
     const auto end_time = timing.seconds_at(static_cast<std::uint64_t>(last_row),
                                             timing_boundary_side_t::after_stops);
     if (!begin_time || !end_time) {
-        result.status = aligned_waveform_status_t::invalid_timing;
+        result.status = failure_code_t::invalid_data;
         return from(std::move(result));
     }
     const auto begin = frame_at(*begin_time.seconds, waveform.sample_rate, waveform.total_frames,
@@ -779,14 +779,14 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
     const auto end = frame_at(*end_time.seconds, waveform.sample_rate, waveform.total_frames,
                               sample_rounding_t::ceil);
     if (!begin || !end) {
-        result.status = aligned_waveform_status_t::invalid_timing;
+        result.status = failure_code_t::invalid_data;
         return from(std::move(result));
     }
     result.visible_begin_fraction = static_cast<double>(*begin) / waveform.total_frames;
     result.visible_end_fraction = static_cast<double>(*end) / waveform.total_frames;
     const auto beat_zero = timing.seconds_at(0, timing_boundary_side_t::before_delays);
     if (!beat_zero || !beat_zero.seconds || beat_zero.seconds->denominator == 0) {
-        result.status = aligned_waveform_status_t::invalid_timing;
+        result.status = failure_code_t::invalid_data;
         return from(std::move(result));
     }
     const auto beat_zero_fraction =
@@ -801,8 +801,8 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
         result.status = projection.error() == failure_code_t::capacity_exceeded
-                            ? aligned_waveform_status_t::capacity_exceeded
-                            : aligned_waveform_status_t::invalid_waveform;
+                            ? failure_code_t::capacity_exceeded
+                            : failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     result.rows.reserve(projection->columns.size());
@@ -811,7 +811,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, const tim
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});
     }
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     return from(std::move(result));
 }
 
@@ -823,11 +823,11 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, double be
         end_fraction > 1.0 || begin_fraction >= end_fraction || maximum_rows == 0)
         return from(std::move(result));
     if (maximum_rows > maximum_waveform_range_rows) {
-        result.status = aligned_waveform_status_t::capacity_exceeded;
+        result.status = failure_code_t::capacity_exceeded;
         return from(std::move(result));
     }
     if (waveform.sample_rate == 0 || waveform.total_frames == 0) {
-        result.status = aligned_waveform_status_t::invalid_waveform;
+        result.status = failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     const auto total = static_cast<long double>(waveform.total_frames);
@@ -835,7 +835,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, double be
     const auto end_frame = std::min<std::uint64_t>(
         waveform.total_frames, static_cast<std::uint64_t>(std::ceil(end_fraction * total)));
     if (begin_frame >= end_frame) {
-        result.status = aligned_waveform_status_t::invalid_waveform;
+        result.status = failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     const auto projection = waveform_view_t::from(waveform, {.begin_frame = begin_frame,
@@ -844,8 +844,8 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, double be
                                                            .maximum_columns = maximum_rows});
     if (!projection) {
         result.status = projection.error() == failure_code_t::capacity_exceeded
-                            ? aligned_waveform_status_t::capacity_exceeded
-                            : aligned_waveform_status_t::invalid_waveform;
+                            ? failure_code_t::capacity_exceeded
+                            : failure_code_t::invalid_geometry;
         return from(std::move(result));
     }
     result.visible_begin_fraction = begin_fraction;
@@ -856,7 +856,7 @@ auto waveform_overview_view_result_t::from(const waveform_t& waveform, double be
         result.rows.push_back({static_cast<double>(midpoint) / waveform.total_frames,
                                std::max(column.absolute_peak[0], column.absolute_peak[1])});
     }
-    result.status = aligned_waveform_status_t::projected;
+    result.status = std::monostate{};
     return from(std::move(result));
 }
 

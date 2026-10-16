@@ -2,11 +2,13 @@
 
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/operation_state.h>
 #include <wormedit/core/result.h>
 
 #include <array>
 #include <cstddef>
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 namespace wormedit { struct sound_slice_result_t; }
@@ -117,15 +119,11 @@ struct aligned_waveform_row_t {
     auto operator==(const aligned_waveform_row_t&) const -> bool = default;
 };
 
-enum class aligned_waveform_status_t {
-    projected,
-    invalid_request,
-    invalid_timing,
-    invalid_waveform,
-    capacity_exceeded,
-};
+static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
+static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct aligned_waveform_view_result_t {
+    // Temporary: removed by T-633.
     [[nodiscard]] static auto from(aligned_waveform_view_result_t&& report)
         -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
@@ -142,7 +140,7 @@ struct aligned_waveform_view_result_t {
                                    const display_row_table_t& table, aligned_waveform_request_t request,
                                    decoded_block_cache_t* blocks, aligned_waveform_style_t style)
         -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
-    aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
+    operation_state_t<std::monostate> status{failure_code_t::invalid_request};
     std::vector<aligned_waveform_row_t> rows;
     // Composition diagnostics distinguish drawing mode from per-span data availability.
     std::uint32_t chosen_frames_per_bin{};
@@ -179,6 +177,7 @@ struct aligned_waveform_view_result_t {
                                    channel_waveform_source_geometry_t source)
         -> result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
 };
+// Temporary: removed by T-633.
 using aligned_waveform_view_outcome_t = result_t<aligned_waveform_view_result_t, aligned_waveform_view_result_t>;
 
 struct waveform_overview_row_t {
@@ -188,6 +187,7 @@ struct waveform_overview_row_t {
 };
 
 struct waveform_overview_view_result_t {
+    // Temporary: removed by T-633.
     [[nodiscard]] static auto from(waveform_overview_view_result_t&& report)
         -> result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
     [[nodiscard]] static auto from(const waveform_t& waveform, const timing_index_t& timing,
@@ -198,13 +198,14 @@ struct waveform_overview_view_result_t {
                                    double end_fraction,
                                    std::size_t maximum_rows = maximum_waveform_range_rows)
         -> result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
-    aligned_waveform_status_t status{aligned_waveform_status_t::invalid_request};
+    operation_state_t<std::monostate> status{failure_code_t::invalid_request};
     double visible_begin_fraction{};
     double visible_end_fraction{};
     std::optional<double> beat_zero_fraction;
     std::vector<waveform_overview_row_t> rows;
     auto operator==(const waveform_overview_view_result_t&) const -> bool = default;
 };
+// Temporary: removed by T-633.
 using waveform_overview_view_outcome_t = result_t<waveform_overview_view_result_t, waveform_overview_view_result_t>;
 
 } // namespace wormedit::audio

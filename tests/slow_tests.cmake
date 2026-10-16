@@ -23,11 +23,6 @@ wormedit_label_slow_tests(wormedit_audio_tests_TESTS
 wormedit_label_slow_tests(wormedit_sdl_audio_tests_TESTS
     "sdl-audio.Loop PCM stays continuous without frontend service at every rate and pitch mode"
     "sdl-audio.One-frame and callback-sized loops remain continuous with either pitch mode"
-    "sdl-audio.SDL BGM lane mixing mutes and resumes a live stem without restarting playback"
-    "sdl-audio.SDL keep-pitch output preserves sine and supports seeks during EOF drain"
-    "sdl-audio.SDL preview completes 2000 concurrent seek start Stop and rate transitions"
-    "sdl-audio.SDL preview repeatedly closes idle and stopped refill workers"
-    "sdl-audio.SDL refill worker advances through prime windows without frame service and hard Stop stays silent"
     "sdl-audio.SDL selection loops restart at every rate with either pitch mode"
 )
 

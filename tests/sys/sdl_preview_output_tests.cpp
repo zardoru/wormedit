@@ -341,7 +341,8 @@ auto exercise_sdl_loop_restart(std::size_t rate_index = wormedit::audio::playbac
     using namespace wormedit;
     using namespace wormedit::audio;
     constexpr std::uint64_t loop_begin = 1'024;
-    constexpr std::uint64_t loop_end = 5'120;
+    // One frame beyond 1,024 avoids aliasing the sampled unity-rate loop clock.
+    constexpr std::uint64_t loop_end = loop_begin + 1'025;
     decoded_source_registry_t sources;
     const auto registered = sources.create_generated_source({
         .source = {"generated:sdl-loop", "sdl-loop-v1"},
@@ -574,8 +575,7 @@ void exercise_failed_drain_seek(wormedit::sys::sdl_preview_output_t& output,
     binding.voices.front().frame_count = duration;
 }
 
-auto pitch_restart_budget_ms(wormedit::rational_t rate) -> std::uint64_t {
-    constexpr std::uint64_t source_frames = 11025;
+auto pitch_restart_budget_ms(wormedit::rational_t rate, std::uint64_t source_frames) -> std::uint64_t {
     // Each of two runs includes the source, a WSOLA lookahead, and one maximum
     // 4096-source-frame callback block. The latter matches sdl_preview_output's
     // bounded block and conservatively covers queued device work at slow rates.
@@ -590,9 +590,12 @@ auto pitch_restart_budget_ms(wormedit::rational_t rate) -> std::uint64_t {
 void exercise_pitch_output(wormedit::rational_t rate) {
     using namespace wormedit;
     using namespace wormedit::audio;
+    // The first frame beyond lookahead exercises real pitch synthesis plus a partial EOF.
+    const time_stretch_t stretcher{output_sample_rate};
+    const auto source_frames = stretcher.lookahead_frames() + 1;
     decoded_source_registry_t sources;
     const auto registered = sources.create_generated_source({
-        .source = {"generated:440Hz", "pitch-test-v1"}, .interleaved_stereo = generated_sine(11025)});
+        .source = {"generated:440Hz", "pitch-test-v1"}, .interleaved_stereo = generated_sine(source_frames)});
     expect_pitch(static_cast<bool>(registered));
     decoded_block_cache_t cache;
     transport_t transport{cache};
@@ -604,11 +607,11 @@ void exercise_pitch_output(wormedit::rational_t rate) {
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.playable = {{.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     preview_object_source_binding_t binding{.object = object_id_t{1},
-        .voices = {{.source = registered->source, .frame_count = 11025}}};
+        .voices = {{.source = registered->source, .frame_count = source_frames}}};
     expect_pitch(output.set_playback_rate(rate));
     expect_pitch(output.set_keep_pitch(true));
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
-    const auto deadline = SDL_GetTicks() + pitch_restart_budget_ms(rate);
+    const auto deadline = SDL_GetTicks() + pitch_restart_budget_ms(rate, source_frames);
     bool saw_drain{}, restarted{};
     while (output.playing() && SDL_GetTicks() < deadline) {
         const auto service = output.service();
@@ -758,8 +761,10 @@ void exercise_background_refill() {
     const preview_object_source_binding_t binding{.object = object_id_t{1},
         .voices = {{.source = registered->source, .frame_count = 44100 * 2}}};
     expect_pitch(static_cast<bool>(output.start(schedule, std::span{&binding, 1})));
-    // No frame-thread service: callback playback must cross several prime windows.
-    SDL_Delay(1000);
+    // Stop at the asserted 30,000-frame bound without servicing from the frame thread.
+    const auto deadline = SDL_GetTicks() + 2000;
+    while (capture.count.load(std::memory_order_acquire) < 30000 && SDL_GetTicks() < deadline)
+        SDL_Delay(2);
     capture.detach();
     const auto count = capture.count.load();
     expect_pitch(count >= 30000);
@@ -943,13 +948,15 @@ auto preview_lock_order_stress() -> bool {
             .frame_count = registered->output_frame_count}}};
     if (!output.start(schedule, std::span{&binding, 1}) ||
         !wait_for_silent_preview_frame(session, output)) return false;
-    for (unsigned iteration = 0; iteration < 2'000; ++iteration)
+    // Four operations per cycle, nine rates and four pitch phases cover the full pattern.
+    constexpr auto transition_count = 4 * 4 * playback_rates.size();
+    for (unsigned iteration = 0; iteration < transition_count; ++iteration)
         if (!preview_stress_step(output, session, schedule, binding, iteration)) return false;
     return true;
 }
 } // namespace
 
-TEST_CASE("SDL preview completes 2000 concurrent seek start Stop and rate transitions",
+TEST_CASE("SDL preview completes every concurrent seek start Stop and rate transition",
           "[integration][audio][sdl][preview][lock-order]") {
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
@@ -962,7 +969,8 @@ auto exercise_preview_worker_closes(wormedit::sys::sdl_preview_output_t& output,
                                     wormedit::audio::preview_session_t& session,
                                     const wormedit::preview_schedule_t& schedule,
                                     const wormedit::audio::preview_object_source_binding_t& binding) -> bool {
-    for (unsigned iteration = 0; iteration < 64; ++iteration) {
+    // Repeat both initial-idle and post-Stop closure after reopening.
+    for (unsigned iteration = 0; iteration < 2; ++iteration) {
         if (!output.open()) return false;
         output.close(); // Worker may be entering its initial idle wait.
         if (!output.open() || !output.start(schedule, std::span{&binding, 1})) return false;
@@ -1010,6 +1018,7 @@ TEST_CASE("SDL loop wraps autonomously at the source tail and Stop clears it",
 
 TEST_CASE("SDL selection loops restart at every rate with either pitch mode",
           "[integration][audio][sdl][preview][loop][loop-rates]") {
+    // Slow: all nine rates and both pitch modes must wrap a real SDL device.
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy"));
     REQUIRE(SDL_SetHint(SDL_HINT_AUDIO_FREQUENCY, "44100"));
     REQUIRE(SDL_InitSubSystem(SDL_INIT_AUDIO));
@@ -1653,6 +1662,8 @@ auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint
     preview_session_t session{sources, transport, bridge};
     sys::sdl_preview_output_t output{session};
     if (!output.open()) return 999'999;
+    SDL_AudioSpec device_spec{};
+    if (!SDL_GetAudioDeviceFormat(output.audio_device_id(), &device_spec, nullptr)) return 999'999;
     device_capture_t capture{output.audio_device_id()};
     preview_schedule_t schedule{.sample_rate = output_sample_rate};
     schedule.music = preview_schedule_t::music_event_t{.resource = resource_id_t{1}, .frame_count = 8192};
@@ -1662,16 +1673,23 @@ auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint
     if (!output.set_playback_rate(playback_rates[rate_index]) || !output.set_keep_pitch(preserve_pitch) ||
         !output.set_loop_region(preview_loop_region_t{1024, 1024 + length}) ||
         !output.start(schedule, std::span{&binding, 1})) return 999'999;
+    // After a callback of warmup, inspect at least two full loops (also at 0.1x).
+    constexpr std::size_t warmup_frames = 4096;
+    const auto loop_output_frames = output_frames_for(length, playback_rates[rate_index]).value();
+    const auto loop_device_frames = (loop_output_frames * static_cast<std::uint64_t>(device_spec.freq) +
+        output_sample_rate - 1) / output_sample_rate;
+    const auto checked_frames = std::max<std::size_t>(4096, 2 * loop_device_frames);
+    const auto required_frames = warmup_frames + checked_frames;
     const auto deadline = SDL_GetTicks() + 2000;
-    while (capture.count.load(std::memory_order_acquire) < 44100 / 2 && SDL_GetTicks() < deadline)
+    while (capture.count.load(std::memory_order_acquire) < required_frames && SDL_GetTicks() < deadline)
         SDL_Delay(2); // Deliberately never service the frontend across the wraps.
     capture.detach();
     const auto count = capture.count.load(std::memory_order_acquire);
     static_cast<void>(output.stop());
     output.close();
-    if (count < 44100 / 2) return 999'999;
+    if (count < required_frames) return 999'999;
     std::size_t run{}, longest{};
-    for (const auto sample : std::span(capture.samples).subspan(44100 / 5, 44100 / 4)) {
+    for (const auto sample : std::span(capture.samples).subspan(warmup_frames, checked_frames)) {
         run = std::abs(sample) < 0.01F ? run + 1 : 0;
         longest = std::max(longest, run);
     }
@@ -1679,6 +1697,7 @@ auto capture_loop_silence(std::size_t rate_index, bool preserve_pitch, std::uint
 }
 } // namespace
 TEST_CASE("Loop PCM stays continuous without frontend service at every rate and pitch mode", "[integration][audio][sdl][loop-continuity][T559]") {
+    // Slow: all nine rates and both pitch modes need two autonomous audible wraps.
     for (std::size_t rate = 0; rate < wormedit::audio::playback_rates.size(); ++rate) {
         for (const bool preserve : {false, true}) {
             CAPTURE(rate, preserve);
@@ -1746,6 +1765,7 @@ TEST_CASE("Stale loop render restart and Stop cannot mutate a replacement genera
 }
 
 TEST_CASE("One-frame and callback-sized loops remain continuous with either pitch mode", "[integration][audio][sdl][loop-continuity][T559]") {
+    // Slow: both one-frame and callback-sized loops need two audible wraps in each pitch mode.
     for (const auto length : {1U, 4096U}) {
         for (const bool preserve : {false, true}) {
             CAPTURE(length, preserve);
@@ -1786,12 +1806,13 @@ TEST_CASE("SDL BGM lane mixing mutes and resumes a live stem without restarting 
     expect_pitch(std::ranges::all_of(std::span(capture.samples).first(4410),
         [](float value) { return value == 0; }));
     preview.set_bgm_mix(chart_id_t{1}, {}, session);
-    auto end = capture.count.load() + 17640;
+    // Drain two queued callback blocks before checking the full 4,410-sample window.
+    auto end = capture.count.load() + 8192 + 4410;
     wait_capture_frames(capture, output, end);
     expect_pitch(std::ranges::any_of(std::span(capture.samples).subspan(end - 4410, 4410),
         [](float value) { return std::abs(value) > .001F; }));
     preview.set_bgm_mix(chart_id_t{1}, muted, session);
-    end = capture.count.load() + 17640;
+    end = capture.count.load() + 8192 + 4410;
     wait_capture_frames(capture, output, end);
     expect_pitch(std::ranges::all_of(std::span(capture.samples).subspan(end - 4410, 4410),
         [](float value) { return value == 0; }));

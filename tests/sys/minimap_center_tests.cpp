@@ -30,7 +30,7 @@ void require_minimap(bool condition) { REQUIRE(condition); }
 void check_minimap(bool condition) { CHECK(condition); }
 
 auto make_timing_index(const chart_document_t& chart) -> timing_index_t {
-    return *build_timing_index(chart).index;
+    return *timing_index_t::from(chart).value;
 }
 
 auto minimap_chart() -> chart_document_t {

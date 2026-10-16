@@ -251,9 +251,9 @@ TEST_CASE("BPM insert update and delete are undoable and retain exact identity a
     CHECK(updated.beats_per_minute == signed_rational_t{180, 2});
     CHECK(updated.provenance.source_order == inserted.provenance.source_order);
 
-    const auto timing = build_timing_index(history.document.charts.front());
-    REQUIRE(timing);
-    const auto after_one_beat = timing.index->seconds_at(240);
+    const auto timing = timing_index_t::from(history.document.charts.front());
+    REQUIRE(timing.value);
+    const auto after_one_beat = timing.value->seconds_at(240);
     REQUIRE(after_one_beat);
     CHECK(after_one_beat.seconds == signed_rational_t{2, 3});
 
@@ -300,9 +300,9 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
     CHECK(chart.bpms.back().provenance.source_order == 13);
     CHECK(chart.bpms.back().position == chart.bpms.front().position);
 
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto one_beat = timing.index->seconds_at(240);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto one_beat = timing.value->seconds_at(240);
     REQUIRE(one_beat);
     CHECK(one_beat.seconds == signed_rational_t{2, 3});
 
@@ -314,9 +314,9 @@ TEST_CASE("BPM same-row events use source order and remain valid for the timing 
                          {measure_id_t{3}, 0}, wormedit::timing_bpm_value_t{{75, 1}})});
     REQUIRE(updated);
     CHECK(history.document.charts.front().bpms.back().provenance.source_order == 13);
-    const auto updated_timing = build_timing_index(history.document.charts.front());
-    REQUIRE(updated_timing);
-    const auto updated_one_beat = updated_timing.index->seconds_at(240);
+    const auto updated_timing = timing_index_t::from(history.document.charts.front());
+    REQUIRE(updated_timing.value);
+    const auto updated_one_beat = updated_timing.value->seconds_at(240);
     REQUIRE(updated_one_beat);
     CHECK(updated_one_beat.seconds == signed_rational_t{4, 5});
 }

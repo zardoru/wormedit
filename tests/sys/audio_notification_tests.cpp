@@ -733,13 +733,13 @@ void prepare_t459_packed_runtime_fixture(t459_packed_runtime_fixture_t& fixture)
     fixture.interaction.pixels_per_standard_measure = 960;
     fixture.interaction.selected_objects = {
         {editor_selection_object_kind_t::bgm_event, object_id_t{1200}}};
-    const auto timing = build_timing_index(stored_chart);
-    check_audio_worker(timing.index.has_value());
-    if (timing.index) {
+    const auto timing = timing_index_t::from(stored_chart);
+    check_audio_worker(timing.value.has_value());
+    if (timing.value) {
         static_cast<void>(fixture.cache.scene.index.get_or_build(wormedit::sys::compose_scene_source_key_t{
             .stamp = {.document = {.revision = fixture.document.revision}, .chart = stored_chart.id}},
             wormedit::sys::retained_scene_fixture_t{}));
-        fixture.cache.timing.marker_timing_index = *timing.index;
+        fixture.cache.timing.marker_timing_index = *timing.value;
     }
     const auto base = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "audio";
     (void)sys::register_audition_sources(fixture.document, base, 1, fixture.sources);

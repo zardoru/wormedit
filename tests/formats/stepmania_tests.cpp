@@ -245,9 +245,9 @@ TEST_CASE("StepMania matched timing and chart notes parse transactionally",
         REQUIRE(result.value->charts.size() == 1);
         const auto& chart = result.value->charts.front();
         CHECK((chart.beat_zero_audio_offset_seconds == wormedit::signed_rational_t{-1, 8}));
-        const auto timing = wormedit::build_timing_index(chart);
-        REQUIRE(timing.index.has_value());
-        const auto beat_zero = timing.index->seconds_at(0);
+        const auto timing = wormedit::timing_index_t::from(chart);
+        REQUIRE(timing.value.has_value());
+        const auto beat_zero = timing.value->seconds_at(0);
         REQUIRE(beat_zero.seconds.has_value());
         CHECK((*beat_zero.seconds == wormedit::signed_rational_t{-1, 8}));
         REQUIRE(chart.bpms.size() == 2);
@@ -336,13 +336,13 @@ TEST_CASE("StepMania fixture preserves 5.1 same-row timing phases",
     REQUIRE(parsed.value.has_value());
     REQUIRE_FALSE(!parsed.ok());
     const auto& chart = parsed.value->charts.front();
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
-    CHECK(timing.index->discontinuity_profile ==
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    CHECK(timing.value->discontinuity_profile ==
           wormedit::timing_discontinuity_profile_t::stepmania_5_1);
 
     const auto built =
-        wormedit::build_preview_schedule(chart, *timing.index, {.sample_rate = 48'000});
+        wormedit::build_preview_schedule(chart, *timing.value, {.sample_rate = 48'000});
     REQUIRE(built);
     std::vector<wormedit::preview_discontinuity_kind_t> before_delay;
     std::vector<wormedit::preview_discontinuity_kind_t> at_event;

@@ -225,17 +225,17 @@ TEST_CASE("Chart preview starts at the fractional cursor instead of its snapped 
     auto& chart = song.charts.front();
     chart.bpms.push_back({.id = object_id_t{900}, .position = {measure_id_t{1}, 0},
                          .beats_per_minute = {120, 1}});
-    const auto timing = build_timing_index(chart);
-    expect_cursor_gesture(bool(timing));
+    const auto timing = timing_index_t::from(chart);
+    expect_cursor_gesture(bool(timing.value));
     const local_position_t cursor{measure_id_t{1}, 480};
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{44'100}});
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, 7.25) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor, 7.25) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{44'766}});
-    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.index, cursor, -7.25) ==
+    expect_cursor_gesture(sys::preview_cursor_frame(chart, *timing.value, cursor, -7.25) ==
                          std::variant<std::uint64_t, std::string>{std::uint64_t{43'434}});
     expect_cursor_gesture(std::holds_alternative<std::string>(sys::preview_cursor_frame(
-        chart, *timing.index, cursor, std::numeric_limits<double>::infinity())));
+        chart, *timing.value, cursor, std::numeric_limits<double>::infinity())));
 }
 
 TEST_CASE("Escape restoration returns the Compose cursor to its preplay position",
@@ -3353,10 +3353,10 @@ TEST_CASE("preview starts at the cursor time and Compose cursor follows the play
                                        .position = {measure_id_t{1}, 0},
                                        .beats_per_minute = {120, 1}});
     auto history = document_history_t::from(std::move(song));
-    const auto timing = build_timing_index(history.document.charts.front());
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(history.document.charts.front());
+    REQUIRE(timing.value);
     const auto start = sys::preview_cursor_frame(
-        history.document.charts.front(), *timing.index, {measure_id_t{1}, 480});
+        history.document.charts.front(), *timing.value, {measure_id_t{1}, 480});
     auto state = make_state(history);
     const auto followed = sys::follow_compose_playhead(history, state, 1'200.0, true);
     const auto cursor_after_follow = state.cursor;

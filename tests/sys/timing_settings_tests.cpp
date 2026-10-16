@@ -13,9 +13,9 @@ TEST_CASE("Timing count-in converts measures to first-meter pulses and clips neg
         .bpms = {{.id = {2}, .position = {{1}, 0}, .beats_per_minute = {120, 1}}}};
     const auto pulses = wormedit::sys::timing_count_in_pulses(chart, 2);
     REQUIRE(pulses == 14);
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto schedule = build_preview_schedule(chart, *timing.index,
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto schedule = build_preview_schedule(chart, *timing.value,
         {.sample_rate = 48'000, .count_in_pulses = *pulses});
     REQUIRE(schedule);
     CHECK(std::ranges::count_if(schedule.schedule->metronome,
@@ -23,9 +23,9 @@ TEST_CASE("Timing count-in converts measures to first-meter pulses and clips neg
     CHECK(schedule.schedule->metronome.front().pulse == -14);
     CHECK(schedule.schedule->metronome.front().accent == metronome_accent_t::measure);
     chart.beat_zero_audio_offset_seconds = {0, 1};
-    const auto zero_timing = build_timing_index(chart);
-    REQUIRE(zero_timing);
-    const auto clipped = build_preview_schedule(chart, *zero_timing.index,
+    const auto zero_timing = timing_index_t::from(chart);
+    REQUIRE(zero_timing.value);
+    const auto clipped = build_preview_schedule(chart, *zero_timing.value,
         {.sample_rate = 48'000, .count_in_pulses = *pulses});
     REQUIRE(clipped);
     CHECK(std::ranges::none_of(clipped.schedule->metronome,

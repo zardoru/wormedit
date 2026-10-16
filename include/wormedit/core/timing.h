@@ -197,16 +197,6 @@ struct chart_indices_t {
     timing_build_outcome_t timing;
 };
 
-struct timing_build_result_t {
-    [[nodiscard]] static auto from(timing_build_outcome_t&& outcome) -> timing_build_result_t;
-    std::optional<timing_index_t> index;
-    std::vector<timing_diagnostic_t> diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return index.has_value();
-    }
-};
-
 enum class sample_rounding_t {
     floor,
     ceil,
@@ -230,10 +220,6 @@ struct sample_frame_result_t {
         return frame.has_value();
     }
 };
-
-// Temporary: removed by T-632 after the remaining callers migrate to members.
-[[nodiscard]] auto build_timing_index(const chart_document_t& chart,
-                                      timing_build_options_t options = {}) -> timing_build_result_t;
 
 // Resolve a pointer position on the fixed chart waveform to its nearest
 // source frame. Fractional rows are retained to one millionth of a row before

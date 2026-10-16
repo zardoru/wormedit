@@ -125,10 +125,10 @@ TEST_CASE("a continuation consumes the remaining audio from its restart",
              {.id = object_id_t{202}, .position = {measure_id_t{60}, 0}},
              {.id = object_id_t{203}, .position = {measure_id_t{71}, 0}, .continuation = true}}}};
     link_stem_fixture(chart);
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const auto near_end =
-        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, wormedit::sys::stem_geometry_indices_t{.timing = &*timing.index});
+        sys::visible_stem_channels(song, chart, measure_id_t{75}, 0, {}, wormedit::sys::stem_geometry_indices_t{.timing = &*timing.value});
     CHECK(near_end.size() == 2);
     // The first stem ends near measure 81; the second restart remains active at measure 85.
     CHECK(sys::visible_stem_channels(song, chart, measure_id_t{85}, 0).size() == 1);
@@ -496,10 +496,10 @@ auto t459_piece(const sys::packed_waveform_index_t& index, std::uint64_t id)
 auto t459_threshold_clipping_and_native_clip() -> bool {
     auto song = t459_packed_fixture();
     auto& chart = song.charts.front();
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
     if (!index.has_value() || t459_piece(index, 200) || t459_piece(index, 201)) return false;
     const auto* fractional_long = t459_piece(index, 202);
     const auto* clipped = t459_piece(index, 203);
@@ -520,11 +520,11 @@ auto t459_threshold_clipping_and_native_clip() -> bool {
     for (auto& asset : short_song.audio_assets) asset.stream.frame_count = 200;
     ++short_song.revision;
     auto& short_chart = short_song.charts.front();
-    const auto short_timing = build_timing_index(short_chart);
-    if (!short_timing.index) return false;
+    const auto short_timing = timing_index_t::from(short_chart);
+    if (!short_timing.value) return false;
     sys::packed_waveform_index_t short_index;
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
     return short_index.has_value() && short_index.value().pieces.empty() && short_index.build_count() == 1 &&
         short_index.value().cache_hits == 1 &&
         sys::visible_packed_waveform_pieces(short_index, 0, 100).empty() &&
@@ -555,11 +555,11 @@ auto t459_unknown_dense_fixture() -> song_document_t {
 auto t459_dense_unknown_query_is_bounded() -> bool {
     auto song = t459_unknown_dense_fixture();
     auto& chart = song.charts.front();
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
     if (!index.has_value() || index.build_count() != 1 || index.value().cache_hits != 1 || index.value().pieces.size() != 4000)
         return false;
     const auto pending = t459_piece(index, 16'000);
@@ -571,11 +571,11 @@ auto t459_dense_unknown_query_is_bounded() -> bool {
     auto short_song = t459_unknown_dense_fixture();
     short_song.audio_assets.front().stream = {100, 2, 50, true};
     auto& short_chart = short_song.charts.front();
-    const auto short_timing = build_timing_index(short_chart);
-    if (!short_timing.index) return false;
+    const auto short_timing = timing_index_t::from(short_chart);
+    if (!short_timing.value) return false;
     sys::packed_waveform_index_t short_index;
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
-    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.index);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
+    sys::prepare_packed_waveform_index(short_index, short_song, short_chart, {}, *short_timing.value);
     const auto empty = sys::visible_packed_waveform_pieces(short_index, 30.001, 30.005);
     return short_index.has_value() && short_index.build_count() == 1 && short_index.value().cache_hits == 1 &&
         short_index.value().pieces.empty() && empty.empty() && short_index.value().queried_pieces == 0;
@@ -603,10 +603,10 @@ auto t459_stacked_piece_endpoints(bool reverse) -> bool {
     t459_add_packed_event(chart, 4, 0, 2003, 501, 1);
     t459_add_packed_event(chart, 4, 0, 2004, 501, 4);
     if (reverse) for (auto& measure : chart.measures) std::ranges::reverse(measure.bgm_events);
-    const auto timing = build_timing_index(chart);
-    if (!timing.index) return false;
+    const auto timing = timing_index_t::from(chart);
+    if (!timing.value) return false;
     sys::packed_waveform_index_t index;
-    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.index);
+    sys::prepare_packed_waveform_index(index, song, chart, {}, *timing.value);
     if (index.value().pieces.size() != 4) return false;
     for (const auto id : {2000U, 2001U}) {
         const auto* piece = t459_piece(index, id);

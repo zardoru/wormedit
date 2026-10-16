@@ -60,7 +60,7 @@ auto source_note(const wormedit::chart_document_t& chart, std::string_view prefi
     return nullptr;
 }
 
-auto timing_errors(const wormedit::timing_build_result_t& built) -> std::string {
+auto timing_errors(const wormedit::timing_build_outcome_t& built) -> std::string {
     std::string result;
     for (const auto& diagnostic : built.diagnostics) result += diagnostic.message + "\n";
     return result;
@@ -68,15 +68,15 @@ auto timing_errors(const wormedit::timing_build_result_t& built) -> std::string 
 
 void check_core_note_time(const wormedit::chart_document_t& chart, std::string_view source_prefix,
                           long double milliseconds, long double tolerance) {
-    const auto built = wormedit::build_timing_index(chart);
+    const auto built = wormedit::timing_index_t::from(chart);
     INFO(timing_errors(built));
-    REQUIRE(built);
+    REQUIRE(built.value);
     const auto indexed = wormedit::build_measure_index(chart);
     const auto* measures = std::get_if<wormedit::measure_index_t>(&indexed);
     REQUIRE(measures);
     const auto* note = source_note(chart, source_prefix);
     REQUIRE(note);
-    const auto time = built.index->seconds_at(*measures, note->position);
+    const auto time = built.value->seconds_at(*measures, note->position);
     REQUIRE(time);
     const auto actual_ms = static_cast<long double>(time.seconds->numerator) * 1000.0L /
                            time.seconds->denominator;
@@ -100,15 +100,15 @@ void check_hold_endpoint(const wormedit::note_t& note, const wormedit::measure_i
 }
 
 void check_positive_holds(const wormedit::chart_document_t& chart, std::size_t expected) {
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
     const auto indexed = wormedit::build_measure_index(chart);
     const auto* measures = std::get_if<wormedit::measure_index_t>(&indexed);
     REQUIRE(measures);
     std::size_t count{};
     for (const auto& measure : chart.measures)
         for (const auto& note : measure.notes) {
-            check_hold_endpoint(note, *measures, *timing.index);
+            check_hold_endpoint(note, *measures, *timing.value);
             ++count;
         }
     CHECK(count == expected);
@@ -122,7 +122,7 @@ void check_simple_bpm(std::string_view beat, std::int64_t expected) {
     const auto& chart = parsed.value->charts.front();
     REQUIRE(chart.bpms.size() == 1);
     CHECK((chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{expected, 1}));
-    CHECK(wormedit::build_timing_index(chart));
+    CHECK(wormedit::timing_index_t::from(chart).value);
 }
 
 auto write_inline(const wormedit::song_document_t& song,
@@ -525,7 +525,7 @@ TEST_CASE("osu!mania fast and near-stop reset geometry has bounded playback timi
     REQUIRE(written.value);
     const auto reimported = parse_inline(*written.value);
     REQUIRE(reimported.value);
-    CHECK(wormedit::build_timing_index(reimported.value->charts.front()));
+    CHECK(wormedit::timing_index_t::from(reimported.value->charts.front()).value);
 }
 
 TEST_CASE("osu!mania keeps zero source origin after a BPM edit with retained provenance",

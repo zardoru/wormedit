@@ -2045,20 +2045,20 @@ TEST_CASE("BMS active flatten serializes projected BPM, STOP, and fractional mea
     CHECK((roundtrip.measures.front().definition.length ==
            projected.measures.front().definition.length));
 
-    const auto source_timing = wormedit::build_timing_index(projected);
-    const auto roundtrip_timing = wormedit::build_timing_index(roundtrip);
-    REQUIRE(source_timing.index.has_value());
-    REQUIRE(roundtrip_timing.index.has_value());
-    REQUIRE(source_timing.index->rows.size() == roundtrip_timing.index->rows.size());
-    for (std::size_t row = 0; row < source_timing.index->rows.size(); ++row) {
-        CHECK(source_timing.index->rows[row].effective_bpm ==
-              roundtrip_timing.index->rows[row].effective_bpm);
-        CHECK(source_timing.index->rows[row].before_delays_seconds ==
-              roundtrip_timing.index->rows[row].before_delays_seconds);
-        CHECK(source_timing.index->rows[row].event_seconds ==
-              roundtrip_timing.index->rows[row].event_seconds);
-        CHECK(source_timing.index->rows[row].after_stops_seconds ==
-              roundtrip_timing.index->rows[row].after_stops_seconds);
+    const auto source_timing = wormedit::timing_index_t::from(projected);
+    const auto roundtrip_timing = wormedit::timing_index_t::from(roundtrip);
+    REQUIRE(source_timing.value.has_value());
+    REQUIRE(roundtrip_timing.value.has_value());
+    REQUIRE(source_timing.value->rows.size() == roundtrip_timing.value->rows.size());
+    for (std::size_t row = 0; row < source_timing.value->rows.size(); ++row) {
+        CHECK(source_timing.value->rows[row].effective_bpm ==
+              roundtrip_timing.value->rows[row].effective_bpm);
+        CHECK(source_timing.value->rows[row].before_delays_seconds ==
+              roundtrip_timing.value->rows[row].before_delays_seconds);
+        CHECK(source_timing.value->rows[row].event_seconds ==
+              roundtrip_timing.value->rows[row].event_seconds);
+        CHECK(source_timing.value->rows[row].after_stops_seconds ==
+              roundtrip_timing.value->rows[row].after_stops_seconds);
     }
 
     auto non_bms_pause = *imported.value.song;

@@ -1017,14 +1017,6 @@ auto chart_indices_t::from(const chart_document_t& chart) -> chart_indices_t {
     return {.measures = measure_index_t::from(chart), .timing = timing_index_t::from(chart)};
 }
 
-auto timing_build_result_t::from(timing_build_outcome_t&& outcome) -> timing_build_result_t {
-    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto build_timing_index(const chart_document_t& chart, timing_build_options_t options) -> timing_build_result_t {
-    return timing_build_result_t::from(timing_index_t::from(chart, options));
-}
-
 namespace {
 
 auto timing_at_exact_integer_row(const timing_index_t& index, std::uint64_t absolute_row,

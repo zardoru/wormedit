@@ -291,9 +291,9 @@ auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {
     const auto measure_build = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measure_build));
     result.measures = std::get<measure_index_t>(measure_build);
-    const auto timing_build = build_timing_index(chart);
-    REQUIRE(timing_build);
-    result.timing = *timing_build.index;
+    const auto timing_build = timing_index_t::from(chart);
+    REQUIRE(timing_build.value);
+    result.timing = *timing_build.value;
     const auto schedule_build = build_preview_schedule(
         chart, result.timing,
         {.sample_rate = output_sample_rate, .include_metronome = true});

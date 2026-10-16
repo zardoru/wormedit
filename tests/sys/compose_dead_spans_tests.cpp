@@ -33,9 +33,9 @@ auto pause(std::uint64_t id, std::uint64_t row, pause_kind_t kind, std::int64_t 
 auto project(const chart_document_t& chart, std::size_t limit = 64) -> dead_spans_view_t {
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.index, limit);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.value, limit);
 }
 
 } // namespace
@@ -153,14 +153,14 @@ auto project_pause_with_boundaries(signed_rational_t earlier, signed_rational_t 
     chart.pauses = {pause(20, 240, pause_kind_t::stop, 1)};
     const auto measures = build_measure_index(chart);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
-    auto timing = build_timing_index(chart);
-    REQUIRE(timing.index);
-    auto row = std::ranges::find(timing.index->rows, std::uint64_t{240}, &timing_row_state_t::absolute_row);
-    REQUIRE(row != timing.index->rows.end());
+    auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    auto row = std::ranges::find(timing.value->rows, std::uint64_t{240}, &timing_row_state_t::absolute_row);
+    REQUIRE(row != timing.value->rows.end());
     row->before_delays_seconds = earlier;
     row->event_seconds = earlier;
     row->after_stops_seconds = later;
-    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.index, 64);
+    return dead_spans_view_t::from(chart, std::get<measure_index_t>(measures), *timing.value, 64);
 }
 void check_reduced_pause_span(signed_rational_t earlier, signed_rational_t later,
                              signed_rational_t expected) {

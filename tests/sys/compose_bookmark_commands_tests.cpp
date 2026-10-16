@@ -191,17 +191,17 @@ TEST_CASE("bookmark frames clamp to the preview end", "[unit][sys][bookmark-comm
     const auto song = bookmark_song();
     const auto& chart = song.charts.front();
     const auto measures = build_measure_index(chart);
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
     REQUIRE(std::holds_alternative<measure_index_t>(measures));
     const auto& index = std::get<measure_index_t>(measures);
-    const auto frame = bookmark_preview_frame(*timing.index, index, {measure_id_t{4}, 480},
+    const auto frame = bookmark_preview_frame(*timing.value, index, {measure_id_t{4}, 480},
                                               std::nullopt);
     REQUIRE(frame);
     CHECK(*frame > 0);
-    CHECK(bookmark_preview_frame(*timing.index, index, {measure_id_t{4}, 480}, 10) ==
+    CHECK(bookmark_preview_frame(*timing.value, index, {measure_id_t{4}, 480}, 10) ==
           std::optional<std::uint64_t>{10});
-    CHECK(bookmark_preview_frame(*timing.index, index, {measure_id_t{3}, 0}, std::nullopt) ==
+    CHECK(bookmark_preview_frame(*timing.value, index, {measure_id_t{3}, 0}, std::nullopt) ==
           std::optional<std::uint64_t>{0});
 }
 

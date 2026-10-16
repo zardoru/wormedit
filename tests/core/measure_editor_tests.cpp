@@ -76,9 +76,9 @@ TEST_CASE("audio extent appends measures using final BPM and offset without movi
     check_audio_extent(chart.measures[2].notes.front().id == object_id_t{30});
     check_audio_extent(chart.measures[2].notes.front().position == (local_position_t{measure_id_t{12}, 0}));
     check_audio_extent(chart.measures.back().id == measure_id_t{13});
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    check_audio_extent(timing.index->rows.back().after_stops_seconds == (signed_rational_t{13, 1}));
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    check_audio_extent(timing.value->rows.back().after_stops_seconds == (signed_rational_t{13, 1}));
     check_audio_extent(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
     check_audio_extent(chart.measures.size() == 4);
     check_audio_extent(validate_document(song).empty());
@@ -518,8 +518,8 @@ TEST_CASE("removing the first measure keeps layout, BPM and a validating documen
     CHECK(edited.bpms.front().position == local_position_t{measure_id_t{11}, 0});
     const auto index = build_measure_index(edited);
     REQUIRE(std::holds_alternative<measure_index_t>(index));
-    const auto timing = build_timing_index(edited, {.allow_bounded_clock = true});
-    CHECK(timing.index.has_value());
+    const auto timing = timing_index_t::from(edited, {.allow_bounded_clock = true});
+    CHECK(timing.value.has_value());
 }
 
 TEST_CASE("an empty leading measure that anchors BPM and layout cannot be deleted as empty",
@@ -555,7 +555,7 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
     chart.bpms.push_back({.id=object_id_t{42}, .position={measure_id_t{10},600}, .beats_per_minute={150,1}});
     auto history = document_history_t::from(document);
     const auto before = build_measure_index(chart);
-    const auto before_timing = build_timing_index(chart);
+    const auto before_timing = timing_index_t::from(chart);
     const auto result =
         apply_measure_edit(history, split_measure_action_t{chart.id, {measure_id_t{10}, 480}});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
@@ -573,10 +573,10 @@ TEST_CASE("Measure split preserves all existing heads absolute rows and duration
     check_audio_extent(absolute_row(index,split.measures[1].bgm_events.front().position) == 600);
     check_audio_extent(absolute_row(index,*split.measures[1].bgm_events.front().end) == 1060);
     check_audio_extent(absolute_row(index,split.bpms.back().position) == 600);
-    const auto timing = build_timing_index(split);
-    REQUIRE(timing);
-    REQUIRE(before_timing);
-    check_audio_extent(timing.index->rows.back().after_stops_seconds == before_timing.index->rows.back().after_stops_seconds);
+    const auto timing = timing_index_t::from(split);
+    REQUIRE(timing.value);
+    REQUIRE(before_timing.value);
+    check_audio_extent(timing.value->rows.back().after_stops_seconds == before_timing.value->rows.back().after_stops_seconds);
     check_audio_extent(validate_document(history.document).empty());
     check_audio_extent(history.undo.size() == 1);
     check_audio_extent(undo_document_command(history));
@@ -667,19 +667,19 @@ auto pause_conversion_song() -> song_document_t {
 auto pause_conversion_preserves_times(bool resize, pause_kind_t kind) -> bool {
     auto history = document_history_t::from(pause_conversion_song());
     const auto original = history.document;
-    const auto old_timing = build_timing_index(original.charts.front());
+    const auto old_timing = timing_index_t::from(original.charts.front());
     const auto result = apply_measure_edit(
         history, convert_range_to_pause_action_t{
                      chart_id_t{2}, {{measure_id_t{11}, 0}, {measure_id_t{11}, 48}}, kind, resize});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    if (!result.applied || history.undo.size() != 1 || !old_timing) return false;
+    if (!result.applied || history.undo.size() != 1 || !old_timing.value) return false;
     const auto& chart = history.document.charts.front();
-    const auto after = build_timing_index(chart);
+    const auto after = timing_index_t::from(chart);
     UNSCOPED_INFO("pause " << chart.pauses.front().duration.numerator << "/" << chart.pauses.front().duration.denominator);
-    if (!after || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
+    if (!after.value || chart.pauses.size() != 1 || chart.pauses.front().duration != signed_rational_t{1, 5}) return false;
     for (const auto row : {480U, 720U, 1920U, 1968U, 2016U, 2160U}) {
-        const auto old = old_timing.index->seconds_at(row);
-        const auto changed = after.index->seconds_at(row >= 1008 ? row - 48 : row);
+        const auto old = old_timing.value->seconds_at(row);
+        const auto changed = after.value->seconds_at(row >= 1008 ? row - 48 : row);
         if (!old || !changed || old.seconds != changed.seconds) return false;
     }
     const auto capacity = validate_measure(960, chart.measures[1].definition).row_capacity;
@@ -731,8 +731,8 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
     if (!written.value) return false;
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{written.value->data(), written.value->size()}), {.lane_profile_id = "bme-7k-outside-scratch"});
     if (!parsed.value.song) return false;
-    const auto timing = build_timing_index(parsed.value.song->charts.front());
-    if (!timing) return false;
+    const auto timing = timing_index_t::from(parsed.value.song->charts.front());
+    if (!timing.value) return false;
     const auto built = build_measure_index(parsed.value.song->charts.front());
     const auto* measures = std::get_if<measure_index_t>(&built);
     if (!measures) return false;
@@ -741,7 +741,7 @@ auto pause_conversion_bms_round_trip(bool resize) -> bool {
         for (const auto& note : chunk.notes) {
             const auto row = absolute_row(*measures, note.position);
             if (!row) return false;
-            const auto at = timing.index->seconds_at(*row);
+            const auto at = timing.value->seconds_at(*row);
             if (!at) return false;
             times.push_back(*at.seconds);
         }
@@ -826,20 +826,20 @@ TEST_CASE("Range pause conversion keeps BMSON semantic and retained heads and ta
 namespace {
 auto pause_conversion_whole_measure() -> bool {
     auto history = document_history_t::from(pause_conversion_song());
-    const auto old = build_timing_index(history.document.charts.front());
+    const auto old = timing_index_t::from(history.document.charts.front());
     const auto result = apply_measure_edit(
         history, convert_range_to_pause_action_t{chart_id_t{2},
                                                  {{measure_id_t{11}, 0}, {measure_id_t{12}, 0}},
                                                  pause_kind_t::delay,
                                                  true});
     for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
-    if (!result.applied || !old) return false;
+    if (!result.applied || !old.value) return false;
     const auto& chart = history.document.charts.front();
-    const auto after = build_timing_index(chart);
-    if (!after || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
+    const auto after = timing_index_t::from(chart);
+    if (!after.value || chart.measures.size() != 2 || chart.measures.back().id != measure_id_t{12}) return false;
     for (const auto row : {1920U, 1968U, 2016U, 2160U}) {
-        const auto before_time = old.index->seconds_at(row);
-        const auto after_time = after.index->seconds_at(row - 960);
+        const auto before_time = old.value->seconds_at(row);
+        const auto after_time = after.value->seconds_at(row - 960);
         if (!before_time || !after_time || before_time.seconds != after_time.seconds) return false;
     }
     return chart.pauses.front().position == local_position_t{measure_id_t{12}, 0} &&

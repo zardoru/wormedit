@@ -289,11 +289,11 @@ TEST_CASE("NULCTRL: stops end when a real player says they do",
     });
     CHECK(invalid == 2); // 1E+39 overflows; "1e" has no exponent digits.
 
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
     // The 1/8 measure #000 ends at an eighth of a standard measure.
-    const auto measure_one = timing.index->divisions_per_standard_measure / 8;
-    const auto at = timing.index->seconds_at(measure_one);
+    const auto measure_one = timing.value->divisions_per_standard_measure / 8;
+    const auto at = timing.value->seconds_at(measure_one);
     REQUIRE(at.seconds.has_value());
     const auto seconds = static_cast<double>(at.seconds->numerator) /
                          static_cast<double>(at.seconds->denominator);
@@ -337,13 +337,13 @@ TEST_CASE("BMS fixture preserves presentation-first discontinuity order",
     REQUIRE(parsed.value.song.has_value());
     REQUIRE(parsed.ok());
     const auto& chart = parsed.value.song->charts.front();
-    const auto timing = wormedit::build_timing_index(chart);
-    REQUIRE(timing);
-    CHECK(timing.index->discontinuity_profile ==
+    const auto timing = wormedit::timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    CHECK(timing.value->discontinuity_profile ==
           wormedit::timing_discontinuity_profile_t::bms_legacy);
 
     const auto built = wormedit::build_preview_schedule(
-        chart, *timing.index, {.sample_rate = 48'000, .include_metronome = false});
+        chart, *timing.value, {.sample_rate = 48'000, .include_metronome = false});
     REQUIRE(built);
     std::vector<wormedit::preview_discontinuity_kind_t> at_zero;
     for (const auto& event : built.schedule->discontinuities) {

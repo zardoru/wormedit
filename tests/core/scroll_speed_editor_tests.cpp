@@ -81,13 +81,13 @@ TEST_CASE("scroll and speed editing is revision checked and undoable",
     CHECK(speed.provenance.source_order == 8);
 
     const auto& chart = history.document.charts.front();
-    const auto timing = build_timing_index(chart);
-    REQUIRE(timing);
-    const auto curves = build_scroll_speed_index(chart, *timing.index);
+    const auto timing = timing_index_t::from(chart);
+    REQUIRE(timing.value);
+    const auto curves = build_scroll_speed_index(chart, *timing.value);
     REQUIRE(curves);
-    const auto arriving = scroll_speed_at(*curves.index, *timing.index, {240, 1},
+    const auto arriving = scroll_speed_at(*curves.index, *timing.value, {240, 1},
                                           timing_boundary_side_t::before_delays);
-    const auto effective = scroll_speed_at(*curves.index, *timing.index, {240, 1});
+    const auto effective = scroll_speed_at(*curves.index, *timing.value, {240, 1});
     REQUIRE(arriving);
     REQUIRE(effective);
     CHECK(arriving.state->effective_multiplier == signed_rational_t{6, 1});
@@ -171,11 +171,11 @@ TEST_CASE("same-row scroll and speed events keep source ordering and compose the
     REQUIRE(result_chart.scrolls.size() == 3);
     CHECK(result_chart.scrolls.back().provenance.source_order == 12);
 
-    const auto timing = build_timing_index(result_chart);
-    REQUIRE(timing);
-    const auto curves = build_scroll_speed_index(result_chart, *timing.index);
+    const auto timing = timing_index_t::from(result_chart);
+    REQUIRE(timing.value);
+    const auto curves = build_scroll_speed_index(result_chart, *timing.value);
     REQUIRE(curves);
-    const auto effective = scroll_speed_at(*curves.index, *timing.index, {240, 1});
+    const auto effective = scroll_speed_at(*curves.index, *timing.value, {240, 1});
     REQUIRE(effective);
     CHECK(effective.state->scroll_multiplier == signed_rational_t{2, 1});
     CHECK(effective.state->speed_multiplier == signed_rational_t{5, 1});

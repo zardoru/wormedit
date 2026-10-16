@@ -219,9 +219,9 @@ auto sliced_preview_pcm(const song_document_t& song, const std::filesystem::path
         require_span(static_cast<bool>(registered));
     }
     const auto& chart = song.charts.front();
-    const auto timing = build_timing_index(chart);
-    require_span(static_cast<bool>(timing));
-    const auto schedule = build_preview_schedule(chart, *timing.index,
+    const auto timing = timing_index_t::from(chart);
+    require_span(static_cast<bool>(timing.value));
+    const auto schedule = build_preview_schedule(chart, *timing.value,
         {.include_metronome = false});
     require_span(static_cast<bool>(schedule));
     const auto bindings = audio::preview_bindings_resolution_t::from(song, chart.id, *schedule.schedule,

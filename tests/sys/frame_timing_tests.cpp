@@ -928,9 +928,9 @@ void check_overview_replacement(frontend_workspace_view_t& flattened, compose_sc
 TEST_CASE("Compose overview keeps cached rows while moving its visible range", "[sys][waveform-projection]") {
     auto history = document_history_t::from(dense_song());
     compose_scene_cache_t cache;
-    auto timing = build_timing_index(history.document.charts.front());
-    REQUIRE(timing.index);
-    cache.timing.marker_timing_index = std::move(timing.index);
+    auto timing = timing_index_t::from(history.document.charts.front());
+    REQUIRE(timing.value);
+    cache.timing.marker_timing_index = std::move(timing.value);
     frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
     flattened.view.compose.scene_available = true;
@@ -954,7 +954,7 @@ TEST_CASE("Compose waveform remains visible in a padded one-measure viewport", "
     auto song = dense_song();
     song.charts.front().measures.resize(1);
     compose_scene_cache_t cache;
-    cache.timing.marker_timing_index = build_timing_index(song.charts.front()).index;
+    cache.timing.marker_timing_index = timing_index_t::from(song.charts.front()).value;
     REQUIRE(cache.timing.marker_timing_index);
     frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
@@ -974,7 +974,7 @@ namespace { void expect_gpu_work(bool value); }
 TEST_CASE("Compose envelope projects only exposed stable world rows during follow", "[sys][waveform-projection]") {
     auto history = document_history_t::from(dense_song());
     compose_scene_cache_t cache;
-    cache.timing.marker_timing_index = build_timing_index(history.document.charts.front()).index;
+    cache.timing.marker_timing_index = timing_index_t::from(history.document.charts.front()).value;
     expect_gpu_work(cache.timing.marker_timing_index.has_value());
     frontend_workspace_view_t flattened;
     flattened.view.compose.visible = true;
@@ -1032,7 +1032,7 @@ struct envelope_projection_fixture_t {
         static_cast<void>(cache.scene.index.get_or_build(compose_scene_source_key_t{
             .stamp = {.document = {.revision = history.document.revision},
                       .chart = history.document.charts.front().id}}, retained_scene_fixture_t{}));
-        cache.timing.marker_timing_index = build_timing_index(history.document.charts.front()).index;
+        cache.timing.marker_timing_index = timing_index_t::from(history.document.charts.front()).value;
         expect_gpu_work(cache.timing.marker_timing_index.has_value());
         auto& view = flattened.view.compose;
         view.visible = view.scene_available = true;
@@ -1137,7 +1137,7 @@ void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     static_cast<void>(fixture.cache.scene.index.get_or_build(compose_scene_source_key_t{
         .stamp = {.document = {.revision = fixture.history.document.revision}, .chart = chart.id}},
         retained_scene_fixture_t{}));
-    fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
+    fixture.cache.timing.marker_timing_index = timing_index_t::from(chart).value;
     fixture.flattened.view.compose.downscroll = compose_field_downscroll(chart);
     expect_gpu_work(fixture.flattened.view.compose.downscroll);
     audio::waveform_cache_t waveforms;
@@ -1206,7 +1206,7 @@ TEST_CASE("Compose envelope chart identity changes recompute actual source timin
     auto scene_binding = fixture.cache.scene.index.key().value_or(compose_scene_source_key_t{});
     scene_binding.stamp.chart = second.id;
     static_cast<void>(fixture.cache.scene.index.get_or_build(scene_binding, retained_scene_fixture_t{}));
-    fixture.cache.timing.marker_timing_index = build_timing_index(second).index;
+    fixture.cache.timing.marker_timing_index = timing_index_t::from(second).value;
     expect_gpu_work(fixture.cache.timing.marker_timing_index.has_value());
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 202);
@@ -1544,7 +1544,7 @@ auto discontinuous_timing_fixture() -> timing_index_t {
                          .beats_per_minute = {137, 1}});
     chart.warps = {{.id = object_id_t{60003},
                     .span = {{measure_id_t{1}, 720}, {measure_id_t{2}, 120}}}};
-    return *build_timing_index(chart).index;
+    return *timing_index_t::from(chart).value;
 }
 void check_clock_projection(const audio::waveform_t& waveform, const timing_index_t& timing,
                             double scroll, bool descending = false) {
@@ -2950,9 +2950,9 @@ struct overview_generation_fixture_t {
         flattened.view.compose.pixels_per_standard_measure = 200;
     }
     void update_timing() {
-        auto timing = build_timing_index(song.charts.front());
-        expect_compose_test(timing.index.has_value());
-        cache.timing.marker_timing_index = std::move(timing.index);
+        auto timing = timing_index_t::from(song.charts.front());
+        expect_compose_test(timing.value.has_value());
+        cache.timing.marker_timing_index = std::move(timing.value);
     }
     auto project(frontend_workspace_view_t& output,
                  const audio::waveform_analysis_result_t* selected = nullptr) -> std::uint64_t {
@@ -5342,7 +5342,7 @@ TEST_CASE("Stem row table retires display rings and native cut derivation when t
     const auto generation = fixture.cache.waveform.waveform_row_table.clock.value().generation;
     auto& chart = fixture.history.document.charts.front();
     chart.bpms.front().beats_per_minute = {240, 1};
-    fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
+    fixture.cache.timing.marker_timing_index = timing_index_t::from(chart).value;
     REQUIRE(fixture.cache.timing.marker_timing_index);
     fixture.project_channel();
     expect_gpu_work(fixture.cache.waveform.waveform_row_table.clock.value().generation == generation + 1);
@@ -5612,7 +5612,7 @@ struct packed_projection_fixture_t : channel_projection_fixture_t {
         flattened.view.compose.selected_bmson_bgm_event_id = 0;
         interaction.chart = chart.id;
         interaction.pixels_per_standard_measure = interaction.viewport_height_pixels = 200;
-        cache.timing.marker_timing_index = build_timing_index(chart).index;
+        cache.timing.marker_timing_index = timing_index_t::from(chart).value;
         expect_gpu_work(cache.timing.marker_timing_index.has_value());
     }
     void project_packed(bool ready = true) {
@@ -5691,7 +5691,7 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     chart.measures.resize(1);
     chart.measures[0].bgm_events.resize(1);
     ++fixture.history.document.revision;
-    fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
+    fixture.cache.timing.marker_timing_index = timing_index_t::from(chart).value;
     const auto authored_rows = fixture.cache.timing.marker_timing_index->total_rows;
     fixture.interaction.viewport_scroll_pixels = 220;
     fixture.project_packed();
@@ -5704,7 +5704,7 @@ TEST_CASE("BMSON packed sample tail draws beyond authored timing without changin
     const auto previous_peak = piece.rows[0].absolute_peak[0];
     chart.bpms.front().beats_per_minute = {4800, 1};
     ++fixture.history.document.revision;
-    fixture.cache.timing.marker_timing_index = build_timing_index(chart).index;
+    fixture.cache.timing.marker_timing_index = timing_index_t::from(chart).value;
     fixture.project_packed();
     expect_gpu_work(fixture.piece().rows[0].absolute_peak[0] < previous_peak);
 }

@@ -103,7 +103,10 @@ TEST_CASE("Idle audio service and consumed selection interruption never repost",
     service_audio_transport_frame(document, workspace, state, preview_session,
                                   audition, preview, playhead, sink);
     verify_audio_notification(drained(center).empty());
-    state.chart = chart_id_t{42}; state.paused = true; state.resume_frame = 300;
+    static_cast<void>(state.compiled.get_or_build(
+        runtime::chart_preview_t::source_key_t{chart_id_t{42}, 0, std::nullopt, 0}, [](auto&) {}));
+    state.paused = true;
+    state.resume_frame = 300;
     sink.post(notification_severity_t::success, notification_source_t::edit, "Applied edit.");
     service_audio_transport_frame(document, workspace, state, preview_session,
                                   audition, preview, playhead, sink);
@@ -111,7 +114,7 @@ TEST_CASE("Idle audio service and consumed selection interruption never repost",
     verify_audio_notification(rows.size() == 2);
     verify_audio_notification(rows[0].severity == notification_severity_t::hint);
     verify_audio_notification(center.current_line()->message == "Applied edit.");
-    verify_audio_notification(!state.chart && !state.paused && state.resume_frame == 0);
+    verify_audio_notification(!state.chart() && !state.paused && state.resume_frame == 0);
     verify_audio_notification(!playhead);
     service_audio_transport_frame(document, workspace, state, preview_session,
                                   audition, preview, playhead, sink);

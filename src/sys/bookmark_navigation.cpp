@@ -7,7 +7,7 @@ auto bookmark_navigation_t::preserve_preview_revision(chart_id_t chart,
     std::uint64_t previous, std::uint64_t next) -> bool {
 #if defined(WORMEDIT_HAS_PROJECT_AUDIO_OUTPUTS)
     if (!preview || !preview_output || !workspace || !preview_output->playing() ||
-        workspace->selected_chart != chart || preview->chart != chart || preview->revision != previous)
+        workspace->selected_chart != chart || preview->chart() != chart || preview->revision() != previous)
         return false;
     return preview->preserve_bookmark_revision(chart, previous, next);
 #else

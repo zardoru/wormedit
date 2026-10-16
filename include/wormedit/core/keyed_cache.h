@@ -62,6 +62,15 @@ class keyed_cache_t {
         value_ = Value{};
     }
 
+    // A trusted owner may advance a binding when an edit cannot affect its products.
+    // Invalid entries cannot be rebound, and build metrics remain unchanged.
+    template <class Lookup>
+    [[nodiscard]] auto rebind(const Lookup& key) -> bool {
+        if (!valid_) return false;
+        assign_key(key);
+        return true;
+    }
+
     template <class Lookup>
     [[nodiscard]] auto is_bound_to(const Lookup& key) const -> bool {
         return valid_ && *key_ == key;

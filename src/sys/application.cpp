@@ -1873,18 +1873,18 @@ auto build_tap_meter_entries(const wormedit::chart_document_t& chart,
 auto tap_meter_at(const wormedit::song_document_t& document,
                   const wormedit::sys::runtime::chart_preview_t& preview,
                   std::uint64_t frame) -> std::uint16_t {
-    if (!preview.chart || !preview.timing ||
+    if (!preview.chart() || !preview.compiled.value().timing ||
         frame > static_cast<std::uint64_t>(std::numeric_limits<std::int64_t>::max())) return 4;
-    const auto chart = document.find_chart(*preview.chart);
+    const auto chart = document.find_chart(*preview.chart());
     if (chart == nullptr) return 4;
-    const auto position = preview.timing->query_position({static_cast<std::int64_t>(frame), 44'100});
+    const auto position = preview.compiled.value().timing->query_position({static_cast<std::int64_t>(frame), 44'100});
     if (!position) return 4;
     const auto row = position->value.numerator / static_cast<std::int64_t>(position->value.denominator);
     static wormedit::keyed_cache_t<tap_meter_cache_key_t,
         std::vector<std::pair<std::uint64_t, std::uint32_t>>> cache;
     const tap_meter_cache_key_t key{.document = wormedit::document_stamp_t::from(document),
-                                   .chart = *preview.chart,
-                                   .fingerprint = preview.timing->source_fingerprint};
+                                   .chart = *preview.chart(),
+                                   .fingerprint = preview.compiled.value().timing->source_fingerprint};
     const auto& entries = cache.get_or_build(key,
         std::bind_front(build_tap_meter_entries, std::cref(*chart)));
     const auto found = std::upper_bound(entries.begin(), entries.end(),
@@ -1920,18 +1920,18 @@ auto read_tap_clock(tap_clock_context_t& context) -> wormedit::sys::tap_timing_c
             context.epoch = token ? token->generation : 0;
             context.epoch_begin_ns = clock.observed_ns;
         }
-        clock.chart = context.preview.chart ? context.preview.chart->value : 0;
-        clock.revision = context.preview.revision;
-        clock.asset = context.preview.music_asset ? context.preview.music_asset->value : 0;
+        clock.chart = context.preview.chart() ? context.preview.chart()->value : 0;
+        clock.revision = context.preview.revision();
+        clock.asset = context.preview.music_asset() ? context.preview.music_asset()->value : 0;
         clock.epoch = context.epoch;
         clock.epoch_begin_ns = context.epoch_begin_ns;
         clock.playback_rate = rate;
         clock.keep_pitch = keep_pitch;
         clock.playing = playing && context.output.playing();
         if (token == context.bridge.session_token() && rate == context.output.playback_rate() &&
-            keep_pitch == context.output.keep_pitch() && context.preview.schedule &&
-            context.preview.schedule->music) {
-            clock.source_frame = wormedit::preview_music_source_frame_at(*context.preview.schedule->music, frame);
+            keep_pitch == context.output.keep_pitch() && context.preview.compiled.value().schedule &&
+            context.preview.compiled.value().schedule->music) {
+            clock.source_frame = wormedit::preview_music_source_frame_at(*context.preview.compiled.value().schedule->music, frame);
             clock.beats_per_measure = tap_meter_at(context.document, context.preview, frame);
         }
 #endif
@@ -4142,12 +4142,15 @@ struct application_t::implementation_t {
         const auto exact_start = starting ? wormedit::sys::compose_minimap_start_frame(
                                                 commands, session.history, compose_cursor)
                                           : std::nullopt;
+        const auto* indices = starting && !exact_start && compose_cursor
+            ? session.history.indices(compose_cursor->chart) : nullptr;
+        const auto* geometry = indices ? &indices->measures : nullptr;
         const auto result = audio_runtime.preview_state.play_pause(
             selected_chart(session.history, session.workspace), session.history.document,
             audio_runtime.project_sources,             audio_runtime.audition_output, audio_runtime.preview_session,
             audio_runtime.preview_output,
             compose_cursor ? std::optional{compose_cursor->cursor} : std::nullopt, false,
-            exact_start, compose_cursor ? compose_cursor->cursor_subrow : 0.0);
+            exact_start, compose_cursor ? compose_cursor->cursor_subrow : 0.0, geometry);
         if (starting && audio_runtime.preview_output.playing()) {
             commands.project.transport.minimap_start_frame.reset();
             views.inline_preview_cursor.capture(compose_cursor);
@@ -4238,7 +4241,7 @@ struct application_t::implementation_t {
     auto on_transport_preview_end_frame() -> std::optional<std::uint64_t> {
         return audio_runtime.preview_state.matches_selection(session.history.document,
                                                              session.workspace)
-                   ? std::optional{audio_runtime.preview_state.end_frame}
+                   ? std::optional{audio_runtime.preview_state.compiled.value().end_frame}
                    : std::nullopt;
     }
 

@@ -169,9 +169,9 @@ auto chart_music_preview_ignores_waveform_selection() -> bool {
     workspace_controller_t workspace;
     workspace.selected_chart = chart_id_t{9};
     workspace.transport.audio_asset = asset_id_t{6};
-    return registered_music && registered_inspection && !error && preview.schedule &&
-           preview.schedule->music && preview.schedule->music->resource == resource_id_t{7} &&
-           preview.music_asset == asset_id_t{5} && preview.matches_selection(document, workspace);
+    return registered_music && registered_inspection && !error && preview.compiled.value().schedule &&
+           preview.compiled.value().schedule->music && preview.compiled.value().schedule->music->resource == resource_id_t{7} &&
+           preview.music_asset() == asset_id_t{5} && preview.matches_selection(document, workspace);
 }
 
 TEST_CASE("chart music preview follows the document music resource, not waveform selection",
@@ -190,19 +190,19 @@ TEST_CASE("count-in setting recompiles preview pulses without resetting paused m
     wormedit::audio::decoded_source_registry_t& sources = project_sources.registry();
     sys::runtime::chart_preview_t preview;
     REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
-    CHECK(preview.reusable({1}, 2, std::nullopt));
+    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
     preview.pause_at(3000);
     sys::metronome_t metronome;
     project_sources.metronome = &metronome;
     preview.metronome = &metronome;
     metronome.settings.count_in = 2;
-    CHECK_FALSE(preview.reusable({1}, 2, std::nullopt));
+    CHECK_FALSE(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
     REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)));
-    CHECK(preview.reusable({1}, 2, std::nullopt));
+    CHECK(preview.compiled.is_bound_to(wormedit::sys::runtime::chart_preview_t::source_key_t{{1}, 2, std::nullopt, preview.count_in_measures()}));
     CHECK(preview.resume_frame == 3000);
     CHECK(preview.paused);
-    REQUIRE(preview.schedule);
-    CHECK(std::ranges::count_if(preview.schedule->metronome,
+    REQUIRE(preview.compiled.value().schedule);
+    CHECK(std::ranges::count_if(preview.compiled.value().schedule->metronome,
         [](const auto& click) { return click.pulse < 0; }) == 8);
     CHECK(document.revision == 2);
 }
@@ -210,17 +210,16 @@ TEST_CASE("count-in setting recompiles preview pulses without resetting paused m
 TEST_CASE("bookmark insertion can advance only the matching compiled preview revision",
           "[integration][sys][chart-preview][bookmarks]") {
     wormedit::sys::runtime::chart_preview_t preview;
-    preview.schedule.emplace();
-    preview.timing.emplace();
-    preview.chart = wormedit::chart_id_t{9};
-    preview.revision = 12;
+    static_cast<void>(preview.compiled.get_or_build(
+        wormedit::sys::runtime::chart_preview_t::source_key_t{wormedit::chart_id_t{9}, 12, std::nullopt, 0},
+        [](auto& data) { data.schedule.emplace(); data.timing.emplace(); }));
 
     CHECK(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 12, 13));
-    CHECK(preview.revision == 13);
+    CHECK(preview.revision() == 13);
     CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 12, 13));
     CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{8}, 13, 14));
     CHECK_FALSE(preview.preserve_bookmark_revision(wormedit::chart_id_t{9}, 13, 15));
-    CHECK(preview.revision == 13);
+    CHECK(preview.revision() == 13);
 }
 
 namespace {
@@ -425,9 +424,9 @@ auto chart_preview_end_includes_music_tail() -> bool {
 
     sys::runtime::chart_preview_t preview;
     if (preview.compile_if_needed(document.charts.front(), document, retained_sources_for(document, project_sources)) ||
-        !preview.schedule || !preview.schedule->music)
+        !preview.compiled.value().schedule || !preview.compiled.value().schedule->music)
         return false;
-    return preview.schedule->music->frame_count == music_frames && preview.end_frame == music_frames;
+    return preview.compiled.value().schedule->music->frame_count == music_frames && preview.compiled.value().end_frame == music_frames;
 }
 
 TEST_CASE("chart preview end includes decoded music after the visual chart endpoint",
@@ -1125,7 +1124,7 @@ TEST_CASE("chart preview reports a fatal diagnostic after preceding timing warni
     REQUIRE(failed);
     CHECK(*failed == "measure meter cannot produce exact metronome pulse rows");
     expect_preview_feedback(fixture, notification_severity_t::error, false);
-    CHECK_FALSE(fixture.preview.schedule);
+    CHECK_FALSE(fixture.preview.compiled.value().schedule);
 }
 
 namespace {
@@ -1624,11 +1623,12 @@ TEST_CASE("Layer assist runtime filters stable memberships and deduplicates chor
           "[unit][audio][layer-assist]") {
     using namespace wormedit;
     sys::runtime::chart_preview_t preview;
-    preview.chart = chart_id_t{7};
+    static_cast<void>(preview.compiled.get_or_build(
+        sys::runtime::chart_preview_t::source_key_t{chart_id_t{7}, 0, std::nullopt, 0}, [](auto&) {}));
     preview.layer_assist_chart = chart_id_t{7};
     preview.layer_assist_layers = {layer_id_t{11}, layer_id_t{12}};
-    preview.schedule = preview_schedule_t{};
-    preview.schedule->layer_ticks = {{20, {layer_id_t{11}}}, {10, {layer_id_t{11}, layer_id_t{12}}},
+    preview.compiled.value().schedule = preview_schedule_t{};
+    preview.compiled.value().schedule->layer_ticks = {{20, {layer_id_t{11}}}, {10, {layer_id_t{11}, layer_id_t{12}}},
                                      {10, {layer_id_t{12}}}, {30, {layer_id_t{99}}}};
     CHECK(preview.layer_assist_frames() == std::vector<std::uint64_t>{10,20});
     preview.layer_assist_chart = chart_id_t{8};
@@ -1831,4 +1831,23 @@ TEST_CASE("project source reconciliation invalidates preview only when bindings 
     REQUIRE(fixture.project_sources.reconcile(fixture.document, {}) == std::optional<std::size_t>{0});
     check_revision_only_keeps_preview(fixture);
     check_binding_change_invalidates_preview(fixture);
+}
+
+TEST_CASE("Failed preview recompilation preserves prior compiled products", "[integration][sys][chart-preview]") {
+    using namespace wormedit;
+    song_document_t document{.id = {1}, .revision = 2,
+        .charts = {{.id = {1}, .measures = {{.id = {1}}},
+            .bpms = {{.id = {2}, .position = {{1}, 0}, .beats_per_minute = {120, 1}}}}}};
+    sys::project_audio_sources_t sources;
+    sys::runtime::chart_preview_t preview;
+    REQUIRE_FALSE(preview.compile_if_needed(document.charts.front(), document, sources));
+    const auto key = *preview.compiled.key();
+    const auto builds = preview.compiled.build_count();
+    const auto* rows = preview.compiled.value().timing->rows.data();
+    ++document.revision;
+    document.charts.front().divisions_per_standard_measure = 0;
+    REQUIRE(preview.compile_if_needed(document.charts.front(), document, sources));
+    CHECK(preview.compiled.is_bound_to(key));
+    CHECK(preview.compiled.build_count() == builds);
+    CHECK(preview.compiled.value().timing->rows.data() == rows);
 }

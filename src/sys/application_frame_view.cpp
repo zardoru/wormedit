@@ -155,7 +155,7 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
             context.preview_state.playing(context.preview_session) ? context.preview_state.current_frame(context.preview_session)
             : context.audition_session.is_active() ? context.audition_session.timeline_frame()
                                                 : context.preview_state.resume_frame;
-        frame_transport.end_frame = context.preview_state.end_frame;
+        frame_transport.end_frame = context.preview_state.compiled.value().end_frame;
         frame_transport.sample_rate = audio::output_sample_rate;
         if (!frame_transport.playing && !frame_transport.paused) {
             if (const auto stopped = stopped_playhead(context)) {

@@ -376,3 +376,16 @@ TEST_CASE("A cache binding query distinguishes retained keys from current produc
     CHECK_FALSE(cache.is_bound_to(1));
     CHECK(cache.key() == std::optional<int>{1});
 }
+
+TEST_CASE("A trusted cache rebind retains its products and build metrics", "[core][keyed-cache]") {
+    keyed_cache_t<int, int> cache;
+    CHECK_FALSE(cache.rebind(0));
+    std::size_t calls{};
+    static_cast<void>(cache.get_or_build(1, counting_builder_t<int>{calls, 17}));
+    CHECK(cache.rebind(2));
+    CHECK(cache.is_bound_to(2));
+    CHECK(cache.value() == 17);
+    CHECK(cache.build_count() == 1);
+    cache.invalidate();
+    CHECK_FALSE(cache.rebind(3));
+}

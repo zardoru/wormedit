@@ -217,11 +217,8 @@ struct compose_scene_cache_t {
         wormedit::object_id_t source_lane;
         wormedit::asset_id_t asset;
     };
-    struct selected_source_location_t {
-        wormedit::object_id_t id;
-        bool attempted{};
-        std::optional<std::pair<std::size_t, std::size_t>> location;
-    };
+    using selected_source_location_t = wormedit::keyed_cache_t<
+        wormedit::object_id_t, std::optional<std::pair<std::size_t, std::size_t>>>;
     struct offset_fit_drag_t {
         wormedit::proposal_t<wormedit::beat_interval_drag_t> beat;
         wormedit::timing_index_t timing;

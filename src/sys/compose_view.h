@@ -190,19 +190,25 @@ struct compose_scene_cache_t {
     mutable compose_timing_payload_cache_t timing_payload_cache;
     // Internal reference-projection bypass for correctness/performance probes.
     bool timing_payload_cache_enabled{true};
-    struct draw_stem_source_cache_t {
-        const void* document{};
-        const void* chart{};
-        std::uint64_t revision{}, build_count{};
+    struct draw_stem_source_data_t {
         std::unordered_map<std::uint64_t, bool> channel_continues;
         std::unordered_map<std::uint64_t, std::size_t> resource_lanes;
         std::unordered_map<std::uint64_t, std::size_t> explicit_stem_resources;
         std::unordered_map<std::uint64_t, std::size_t> resource_indices;
-        std::uint8_t source_kind{};
-        std::uint64_t source_id{};
-        std::string source_label;
-        bool source_label_valid{}, source_missing{};
+        struct label_t {
+            std::string text;
+            bool is_missing{};
+            auto operator==(const label_t&) const -> bool = default;
+            static auto from(const draw_stem_source_data_t& source,
+                             const wormedit::song_document_t& document,
+                             std::uint8_t kind, std::uint64_t id) -> label_t;
+        };
+        // Main-loop label projection; const map readers may populate it.
+        mutable wormedit::keyed_cache_t<std::pair<std::uint8_t, std::uint64_t>, label_t> label;
     };
+    using draw_stem_source_cache_t = wormedit::keyed_cache_t<
+        std::tuple<const wormedit::song_document_t*, const wormedit::chart_document_t*, std::uint64_t>,
+        draw_stem_source_data_t>;
     struct channel_waveform_selection_t {
         wormedit::chart_id_t chart;
         std::uint64_t revision{};

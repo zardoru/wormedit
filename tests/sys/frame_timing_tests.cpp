@@ -5821,30 +5821,30 @@ TEST_CASE("BMSON Draw projection keeps duplicate asset stem and packed resource 
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 601);
-    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     fixture.application.project.compose_gesture.draw_source_id = 102;
     t475_project(fixture);
     t463_check_projected_rows(fixture);
     t475_check(fixture.flattened.view.compose.draw_source_stem_lane_id == 0);
-    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds);
 }
 TEST_CASE("BMSON Draw resource ownership cache invalidates revision and replacement identity",
           "[sys][compose][bmson][stem][draw-source]") {
     compose_test_fixture_t fixture(t463_shared_asset_song());
     t475_project(fixture);
-    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     auto proposed = fixture.history.document;
     proposed.charts.front().bgm_source_lanes[1].stem_channel.reset();
     t475_require(commit_document_command(fixture.history, std::move(proposed), "Unlink stem"));
     t475_project(fixture);
-    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds + 1);
-    t475_check(!fixture.cache.stems.draw_stem_sources.resource_lanes.contains(101));
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds + 1);
+    t475_check(!fixture.cache.stems.draw_stem_sources.value().resource_lanes.contains(101));
     compose_test_fixture_t replacement(t463_shared_asset_song());
     replacement.history.document.revision = fixture.history.document.revision;
     replacement.cache = std::move(fixture.cache);
     t475_project(replacement);
     t463_check_projected_rows(replacement);
-    t475_check(replacement.cache.stems.draw_stem_sources.build_count == builds + 2);
+    t475_check(replacement.cache.stems.draw_stem_sources.build_count() == builds + 2);
 }
 
 TEST_CASE("BMSON Draw source names remain frame owned after document edits and frame moves",
@@ -5919,7 +5919,7 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     t475_check(std::string_view(fixture.flattened.view.compose.draw_source_label) == "0A 音楽.wav");
     t475_check(!fixture.flattened.view.compose.draw_source_missing);
     t475_check(!fixture.flattened.view.compose.keysound_projected_filters_unrestricted);
-    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     request.automatic_search[0] = '\0';
     request.primary_resource_id = 179;
     request.automatic_row_limit = 8;
@@ -5929,7 +5929,7 @@ TEST_CASE("Tool chip projects the actual off-page filtered sound with a retained
     t475_check(view.keysound_projected_filters_unrestricted && view.keysound_primary_display_index_valid);
     t475_check(view.keysound_primary_display_index == 80);
     t475_check(view.keysound_display_total_count == 81);
-    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds);
 }
 
 TEST_CASE("Tool chip names are bounded UTF-8 and survive a moved frame and source rename",
@@ -6368,9 +6368,9 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     const auto lane = std::ranges::find(lanes, uint64_t{601}, &WormUiComposeBgmLaneView::source_lane_id);
     t475_require(lane != lanes.end());
     t475_check(lane->bmson_channel_id == 301 && lane->bmson_channel_continues);
-    const auto builds = fixture.cache.stems.draw_stem_sources.build_count;
+    const auto builds = fixture.cache.stems.draw_stem_sources.build_count();
     t475_project(fixture);
-    t475_check(fixture.cache.stems.draw_stem_sources.build_count == builds);
+    t475_check(fixture.cache.stems.draw_stem_sources.build_count() == builds);
     t475_require(set_bmson_channel_lane_mode(fixture.history,
         chart_id_t{1}, object_id_t{302}, bmson_channel_lane_mode_t::stem));
     fixture.binding.value->active_tab = workspace_tab_t::audio_slices;

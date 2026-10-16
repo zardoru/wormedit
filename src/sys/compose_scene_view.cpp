@@ -346,9 +346,9 @@ void build_compose_bgm_lane_modes_view(const compose_scene_projection_context_t&
             continue;
         lane.bmson_channel_id = source->stem_channel->value;
         const auto continues =
-            cache.stems.draw_stem_sources.channel_continues.find(lane.bmson_channel_id);
+            cache.stems.draw_stem_sources.value().channel_continues.find(lane.bmson_channel_id);
         lane.bmson_channel_continues =
-            continues != cache.stems.draw_stem_sources.channel_continues.end() && continues->second;
+            continues != cache.stems.draw_stem_sources.value().channel_continues.end() && continues->second;
     }
 }
 

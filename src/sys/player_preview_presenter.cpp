@@ -3,6 +3,7 @@
 
 #include <wormedit/core/bga_preview.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/storyboard_preview.h>
 
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
@@ -17,6 +18,7 @@
 #include <array>
 #include <cmath>
 #include <limits>
+#include <functional>
 #include <ranges>
 #include <string>
 #include <utility>
@@ -24,6 +26,12 @@
 
 namespace wormedit::sys {
 namespace {
+
+struct player_preview_cache_key_t {
+    chart_stamp_t stamp;
+    std::uint32_t sample_rate{};
+    auto operator==(const player_preview_cache_key_t&) const -> bool = default;
+};
 
 struct cached_storyboard_t {
     storyboard_id_t id;
@@ -93,16 +101,28 @@ auto storyboard_resource(const song_document_t& document, std::string_view path)
 } // namespace
 
 struct player_preview_presenter_t::impl_t {
-    song_id_t project;
-    chart_id_t chart;
-    std::uint64_t revision{};
-    bool attempted{};
-    std::optional<player_preview_index_t> index;
+    keyed_cache_t<player_preview_cache_key_t, std::optional<player_preview_index_t>> index;
+    auto prepare_index(const document_history_t& history, const chart_document_t& chart,
+                       std::uint32_t sample_rate
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                       , visual::image_job_t& image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                       , visual::video_frame_job_t& video_job
+#endif
+    ) -> bool;
+    auto build_index(const chart_document_t& chart, const player_preview_cache_key_t& key,
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                     visual::image_job_t& image_job,
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                     visual::video_frame_job_t& video_job,
+#endif
+                     std::optional<player_preview_index_t>& value) -> void;
     std::optional<preview_schedule_t> visual_schedule;
     std::optional<bga_preview_queue_t> visual_queue;
     std::optional<bga_preview_token_t> visual_token;
     std::vector<cached_storyboard_t> storyboards;
-    std::uint32_t sample_rate{};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
     std::vector<resource_id_t> requested_visual_resources;
     std::shared_ptr<const visual::image_job_result_t> decoded_visuals;
@@ -125,12 +145,93 @@ struct player_preview_presenter_t::impl_t {
     std::vector<WormUiPlayerPreviewStoryboardSpriteView> storyboard_sprites;
 };
 
+auto player_preview_presenter_t::impl_t::prepare_index(
+    const document_history_t& history, const chart_document_t& chart, std::uint32_t sample_rate
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    , visual::image_job_t& image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    , visual::video_frame_job_t& video_job
+#endif
+) -> bool {
+    const player_preview_cache_key_t key{
+        .stamp = chart_stamp_t::from(history.document, chart.id), .sample_rate = sample_rate};
+    const auto previous_builds = index.build_count();
+    (void)index.get_or_build(key, std::bind_front(&impl_t::build_index, this,
+        std::cref(chart), std::cref(key)
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+        , std::ref(image_job)
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+        , std::ref(video_job)
+#endif
+    ));
+    // Existing cache hits return ready even when the retained status is an error;
+    // frame preparation publishes that status without rebuilding the failed index.
+    return index.build_count() == previous_builds || status.empty();
+}
+
+auto player_preview_presenter_t::impl_t::build_index(
+    const chart_document_t& chart, const player_preview_cache_key_t& key,
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    visual::image_job_t& image_job,
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    visual::video_frame_job_t& video_job,
+#endif
+    std::optional<player_preview_index_t>& value) -> void {
+    value.reset();
+    visual_schedule.reset();
+    visual_queue.reset();
+    visual_token.reset();
+    storyboards.clear();
+    status.clear();
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    requested_visual_resources.clear();
+    decoded_visuals.reset();
+    image_job.cancel();
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+    requested_video_clock.reset();
+    failed_video_event.reset();
+    video_diagnostic_message.clear();
+    decoded_video.reset();
+    decoded_video_content_id = 0;
+    video_job.cancel();
+#endif
+    auto built = player_preview_index_t::from(chart, key.stamp.document.revision);
+    if (!built.value || !built.diagnostics.empty()) {
+        status = built.diagnostics.empty()
+                     ? "The player-preview visual schedule could not be compiled."
+                     : built.diagnostics.front().message;
+        return;
+    }
+    value = std::move(*built.value);
+    auto schedule = preview_schedule_t::from(
+        chart, value->timing, {.sample_rate = key.sample_rate, .include_metronome = false});
+    if (!schedule.value) {
+        status = schedule.diagnostics.empty()
+                     ? "The visual preview schedule could not be compiled."
+                     : schedule.diagnostics.front().message;
+        return;
+    }
+    visual_schedule = std::move(*schedule.value);
+    visual_queue.emplace();
+    const auto started = visual_queue->begin(*visual_schedule);
+    if (!started) {
+        status = "The visual preview schedule could not be started.";
+        return;
+    }
+    visual_token = *started;
+}
+
 #if defined(WORMEDIT_HAS_VIDEO_DECODER)
 void player_preview_presenter_t::impl_t::consume_video_completion(
     visual::video_frame_job_t& job, song_id_t current_project) {
     auto completion = job.poll();
     if (!completion) return;
     const auto& identity = *completion ? completion->value().identity : completion->error().identity;
+    const auto revision = index.key() ? index.key()->stamp.document.revision : 0;
     if (identity.project != current_project || identity.document_revision != revision) return;
     if (*completion && completion->value().payload) {
         const auto& decoded = *completion->value().payload;
@@ -266,66 +367,6 @@ void fail_player_preview(const Context& context, std::string message) {
 }
 
 template <typename Context>
-auto prepare_player_preview_index(const Context& context) -> bool {
-    auto& state = context.state;
-    const auto& history = context.history;
-    const auto& chart = context.chart;
-    const auto sample_rate = context.sample_rate;
-    if (state.attempted && state.project == history.document.id && state.chart == chart.id &&
-        state.revision == history.document.revision && state.sample_rate == sample_rate)
-        return true;
-    state.project = history.document.id;
-    state.chart = chart.id;
-    state.revision = history.document.revision;
-    state.attempted = true;
-    state.index.reset();
-    state.visual_schedule.reset();
-    state.visual_queue.reset();
-    state.visual_token.reset();
-    state.storyboards.clear();
-    state.sample_rate = sample_rate;
-    state.status.clear();
-#if defined(WORMEDIT_HAS_IMAGE_DECODER)
-    state.requested_visual_resources.clear();
-    state.decoded_visuals.reset();
-    context.image_job.cancel();
-#endif
-#if defined(WORMEDIT_HAS_VIDEO_DECODER)
-    state.requested_video_clock.reset();
-    state.failed_video_event.reset();
-    state.video_diagnostic_message.clear();
-    state.decoded_video.reset();
-    state.decoded_video_content_id = 0;
-    context.video_job.cancel();
-#endif
-    auto built = player_preview_index_t::from(chart, history.document.revision);
-    if (!built.value || !built.diagnostics.empty()) {
-        state.status = built.diagnostics.empty()
-                           ? "The player-preview visual schedule could not be compiled."
-                           : built.diagnostics.front().message;
-        return false;
-    }
-    state.index = std::move(*built.value);
-    auto schedule = preview_schedule_t::from(
-        chart, state.index->timing, {.sample_rate = sample_rate, .include_metronome = false});
-    if (!schedule.value) {
-        state.status = schedule.diagnostics.empty()
-                           ? "The visual preview schedule could not be compiled."
-                           : schedule.diagnostics.front().message;
-        return false;
-    }
-    state.visual_schedule = std::move(*schedule.value);
-    state.visual_queue.emplace();
-    const auto started = state.visual_queue->begin(*state.visual_schedule);
-    if (!started) {
-        state.status = "The visual preview schedule could not be started.";
-        return false;
-    }
-    state.visual_token = *started;
-    return true;
-}
-
-template <typename Context>
 auto prepare_player_preview_storyboards(const Context& context) -> bool {
     auto& state = context.state;
     if (!state.status.empty()) return false;
@@ -375,12 +416,19 @@ template <typename Context>
 auto prepare_player_preview_frame(const Context& context)
     -> std::optional<player_preview_frame_t> {
     auto& state = context.state;
-    if (!prepare_player_preview_index(context)) {
+    if (!state.prepare_index(context.history, context.chart, context.sample_rate
+#if defined(WORMEDIT_HAS_IMAGE_DECODER)
+                             , context.image_job
+#endif
+#if defined(WORMEDIT_HAS_VIDEO_DECODER)
+                             , context.video_job
+#endif
+    )) {
         fail_player_preview(context, state.status);
         return std::nullopt;
     }
     (void)prepare_player_preview_storyboards(context);
-    if (!state.index || !state.visual_schedule || !state.visual_queue || !state.visual_token ||
+    if (!state.index.value() || !state.visual_schedule || !state.visual_queue || !state.visual_token ||
         !state.status.empty()) {
         fail_player_preview(context, state.status);
         return std::nullopt;
@@ -636,7 +684,7 @@ auto present_player_preview_frame(const Context& context, const player_preview_f
     auto& state = context.state;
     auto& view = context.view;
     const auto scene = player_preview_scene_view_t::from(
-        *state.index, {.sample_frame = context.sample_frame,
+        *state.index.value(), {.sample_frame = context.sample_frame,
                        .sample_rate = context.sample_rate,
                        .viewport_width_pixels = view.viewport_width_pixels,
                        .viewport_height_pixels = view.viewport_height_pixels,
@@ -720,9 +768,10 @@ void player_preview_presenter_t::populate(WormUiPlayerPreviewView& view,
     view.visual_layers = state.visual_layers.data();
     view.storyboard_sprites = state.storyboard_sprites.data();
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
+    const auto revision = state.index.key() ? state.index.key()->stamp.document.revision : 0;
     if (auto completion = image_job.poll(); completion && *completion &&
                                             completion->value().identity.project == history.document.id &&
-                                            completion->value().identity.document_revision == state.revision) {
+                                            completion->value().identity.document_revision == revision) {
         state.decoded_visuals = std::move(completion->value().payload);
     }
 #endif

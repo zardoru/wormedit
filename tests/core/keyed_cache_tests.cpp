@@ -4,6 +4,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <functional>
 #include <span>
 #include <string>
 #include <vector>
@@ -20,6 +21,10 @@ struct counting_builder_t {
     auto operator()() -> Value {
         ++calls;
         return value;
+    }
+    void refill(Value& retained) {
+        ++calls;
+        retained = value;
     }
 };
 
@@ -145,4 +150,39 @@ TEST_CASE("Changed borrowed keys update the owned state in place", "[core][keyed
     CHECK(captures == 1);
     CHECK(assignments == 1);
     CHECK(calls == 2);
+}
+
+TEST_CASE("In-place cache refills reuse retained storage only on misses", "[core][keyed-cache]") {
+    keyed_cache_t<int, std::vector<int>> cache;
+    std::size_t calls{};
+    counting_builder_t<std::vector<int>> builder{calls, {17}};
+    const auto refill = std::bind_front(&counting_builder_t<std::vector<int>>::refill,
+                                        std::ref(builder));
+    const auto& first = cache.get_or_build(1, refill);
+    const auto* storage = first.data();
+    CHECK(first == std::vector<int>{17});
+    builder.value.front() = 23;
+    const auto& second = cache.get_or_build(2, refill);
+    CHECK(second.data() == storage);
+    CHECK(second == std::vector<int>{23});
+    builder.value.front() = 29;
+    CHECK(cache.get_or_build(2, refill) == std::vector<int>{23});
+    CHECK(calls == 2);
+    CHECK(cache.build_count() == 2);
+}
+
+TEST_CASE("In-place cache refills retain failures until the key changes", "[core][keyed-cache]") {
+    using value_t = result_t<int, std::string>;
+    keyed_cache_t<int, value_t> cache;
+    std::size_t calls{};
+    counting_builder_t<value_t> builder{calls, std::unexpected(std::string{"failed"})};
+    const auto refill = std::bind_front(&counting_builder_t<value_t>::refill, std::ref(builder));
+    const auto& failed = cache.get_or_build(1, refill);
+    REQUIRE_FALSE(failed.has_value());
+    CHECK(failed.error() == "failed");
+    builder.value = 23;
+    CHECK_FALSE(cache.get_or_build(1, refill).has_value());
+    CHECK(cache.get_or_build(2, refill) == value_t{23});
+    CHECK(calls == 2);
+    CHECK(cache.build_count() == 2);
 }

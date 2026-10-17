@@ -25,3 +25,7 @@ positional_selection_scope | 0 | src,include,tests | editor_selection_scope_t[ a
 
 # T-641: capture continuation owns lost-button guards; remaining object/resize paths are separate domains.
 local_capture_button_guard | 12 | src | !input[.]left_down && !input[.]left_released
+
+# T-645: overlapping Compose input inventories belong to the borrowed query owner.
+local_compose_editor_inventory | 1 | src | compose[.]inline_timing[.]inline_timing_open.*compose[.]inline_offset[.]inline_offset_open.*compose[.]dialogs[.]go_to_measure_open
+local_compose_canvas_inventory | 0 | src | state[.]inline_timing[.]inline_timing_open.*state[.]bookmark_ui[.]bookmark_rename

@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_input_queries.h"
 #include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
 #include "ui/nuklear/modal_input.h"
@@ -1032,20 +1033,8 @@ static void close_notification_history_windows() {
 
 static bool compose_popup_owns_input(bool include_menu) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    return (include_menu && (g_menu_popup_open || g_menu_popup_release_pending)) || compose_quantize_owns_input() ||
-           wormedit::ui::chrome::context_menu_owns_input(compose.snap_grid.snap_grid_menu) ||
-           compose_area_menu_open() || compose_area_menu_consumed() ||
-           compose_recipe_menu_open() || compose_recipe_menu_consumed() ||
-           compose.dialogs.export_dialog_open || compose.dialogs.compose_dialog_release_pending ||
-           compose.layer_editor.layer_creation_context.has_value() ||
-           wormedit::ui::chrome::context_menu_owns_input(compose.layer_editor.layers_menu) || compose.keysound_slots.keysound_slot_confirmation_open ||
-           compose.keysound_slots.keysound_slot_batch.open || compose.keysound_catalog.keysound_group_review.open ||
-           wormedit::ui::chrome::context_menu_owns_input(compose.keysound_catalog.keysound_group_menu) ||
-           compose.keysound_filters.is_popup_open() || compose.keysound_filters.keysound_filter_release_pending ||
-           compose.bga_interaction.bga_stack_open || compose.bga_interaction.bga_stack_release_pending ||
-           compose.bga_catalog.bga_renumber_confirmation_open || compose.bga_catalog.bga_renumber_release_pending ||
-           compose_note_menu_open() || compose_note_menu_consumed() ||
-           (worm_ui_nuklear_bookmark_chooser_owns_input(compose.bookmark_ui.bookmark_chooser) || compose_sound_picker_owns_input(compose.sound_picker_ui.sound_picker));
+    return (include_menu && (g_menu_popup_open || g_menu_popup_release_pending)) ||
+        compose_input_queries_t{compose}.has_popup_input();
 }
 
 int worm_ui_frontend_compose_left_dock_pixels(void) {
@@ -1391,8 +1380,8 @@ static auto context_key(SDL_Keycode key) -> wormedit::ui::chrome::ContextMenuKey
 static bool command_menu_dialog_blocked() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return g_new_project_wizard.open || g_help_dialog != HelpDialog::none ||
-        compose_popup_owns_input() || compose.inline_timing.inline_timing_open || compose.inline_offset.inline_offset_open ||
-        compose.dialogs.go_to_measure_open || compose.bookmark_ui.bookmark_rename.active || compose.bookmark_ui.bookmark_rename.release_pending ||
+        (g_menu_popup_open || g_menu_popup_release_pending) ||
+        compose_input_queries_t{compose}.is_editor_modal_blocked() ||
         notification_editor_gesture_active();
 }
 
@@ -1400,8 +1389,8 @@ static bool context_invocation_blocked() {
     const auto& compose = worm_ui_nuklear_compose_state();
     return !g_context_invocation_allowed || !g_window_focused || nuklear_text_entry_active() || g_ime_composition_active ||
         g_notification_modal || g_new_project_wizard.open || project_dialog_active() ||
-        g_help_dialog != HelpDialog::none || compose_popup_owns_input() ||
-        compose.inline_timing.inline_timing_open || compose.inline_offset.inline_offset_open || compose.dialogs.go_to_measure_open ||
+        g_help_dialog != HelpDialog::none || g_menu_popup_open || g_menu_popup_release_pending ||
+        compose_input_queries_t{compose}.is_context_invocation_blocked() ||
         notification_editor_gesture_active();
 }
 
@@ -3047,8 +3036,8 @@ static void render_tap_timing_tool(const WorkspaceRenderContext& frame) {
     const auto& compose = worm_ui_nuklear_compose_state();
     tap.input_blocked = frame.view.options.visible || g_notification_modal ||
         command_menu_owns_input() || g_new_project_wizard.open || g_help_dialog != HelpDialog::none ||
-        compose_popup_owns_input() || compose.inline_timing.inline_timing_open || compose.inline_offset.inline_offset_open ||
-        compose.dialogs.go_to_measure_open || compose.bookmark_ui.bookmark_rename.active || compose.bookmark_ui.bookmark_rename.release_pending ||
+        (g_menu_popup_open || g_menu_popup_release_pending) ||
+        compose_input_queries_t{compose}.is_editor_modal_blocked() ||
         notification_document_gesture_active();
     for (std::size_t index = 0; index < g_shortcut_event_count; ++index) {
         const auto& key = g_shortcut_events[index];

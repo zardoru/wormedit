@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_input_queries.h"
 #include "ui/nuklear/compose_gesture_registry.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_area_menu.h"
@@ -1255,15 +1256,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         process_compose_note_menu(context, *view, *action, viewport, editor_input_right, window_focused);
     const bool owned_popup = !compose_note_menu_consumed() &&
         process_compose_owned_popups(panel, viewport, editor_input_right);
-    if (view->input_occluded || owned_popup || compose_quantize_owns_input() || state.keysound_catalog.keysound_group_review.open ||
-        wormedit::ui::chrome::context_menu_owns_input(state.keysound_catalog.keysound_group_menu) ||
-        wormedit::ui::chrome::context_menu_owns_input(state.layer_editor.layers_menu) ||
-        wormedit::ui::chrome::context_menu_owns_input(state.snap_grid.snap_grid_menu) ||
-        state.bga_interaction.bga_stack_open || state.bga_interaction.bga_stack_release_pending ||
-        state.bga_catalog.bga_renumber_confirmation_open ||
-        state.bga_catalog.bga_renumber_release_pending || compose_note_menu_consumed() ||
-        state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
-        (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_ui.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker_ui.sound_picker))) {
+    if (view->input_occluded || owned_popup || compose_input_queries_t{state}.is_canvas_input_blocked()) {
         discard_occluded_compose_input(panel);
         draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);
         render_compose_bookmark_rename(context, *view, *action, state.bookmark_ui.bookmark_rename, viewport, window_focused);
@@ -1348,15 +1341,7 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
         update_timing_stage_drag(pointer_event);
     update_kiai_span_drag(pointer_event);
     update_recipe_drag(pointer_event);
-    auto compose_pointer_captured =
-        state.inline_timing.inline_timing_open || state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending || state.pointer_capture.note_paint_pointer_active ||
-        state.bmson_input.bmson_razor_pointer_active ||
-        state.bmson_input.bmson_marker_move_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
-        state.pointer_capture.pointer_hold_active || state.pointer_capture.pointer_hold_begin_pending || state.range_selection.lane_hold_active ||
-        state.note_move.note_move_active || state.note_move.note_move_candidate_active ||
-        state.area_selection.area_selection_active || state.timing_drag.timing_stage_drag_active || state.timing_drag.kiai_drag_active || state.timing_drag.recipe_drag_active ||
-        state.timing_marker.timing_marker_candidate_active || state.timing_marker.timing_marker_drag_active ||
-        state.waveform_drag.waveform_beat_zero_drag_active || state.waveform_drag.waveform_overview_drag_active ||
+    auto compose_pointer_captured = compose_input_queries_t{state}.is_canvas_hover_blocked() ||
         beat_fit_pointer_consumed;
     const auto mix_consumed = process_bgm_mix_controls(pointer_event, compose_pointer_captured);
     compose_pointer_captured |= mix_consumed;
@@ -1377,13 +1362,8 @@ static void render_compose_editor_canvas(const ComposePanelRenderContext& panel,
     pointer_event.compose_pointer_captured = compose_pointer_captured;
     update_compose_sound_hover(pointer_event);
     pointer_event.compose_note_double_click_in_view = compose_note_double_click_in_view;
-    bool paint_pointer_consumed =
-        state.inline_timing.inline_timing_open || state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending || state.pointer_capture.note_paint_pointer_active ||
-        beat_fit_pointer_consumed || resize_consumed || mix_consumed ||
-        state.bmson_input.bmson_razor_pointer_active || state.bmson_input.bmson_marker_move_candidate_active ||
-        state.bmson_input.bmson_marker_move_active || state.pointer_capture.semantic_layer_paint_pointer_active ||
-        state.timing_drag.kiai_drag_active || state.timing_drag.recipe_drag_active || state.timing_drag.timing_stage_drag_active ||
-        compose_action_has_cancel(action);
+    bool paint_pointer_consumed = compose_input_queries_t{state}.is_paint_blocked() ||
+        beat_fit_pointer_consumed || resize_consumed || mix_consumed || compose_action_has_cancel(action);
     process_compose_canvas_tools(pointer_event, paint_pointer_consumed);
 
     draw_compose_editor_scene(panel, canvas, viewport, editor_input_right);

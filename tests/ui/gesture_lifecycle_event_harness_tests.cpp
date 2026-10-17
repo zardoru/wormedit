@@ -1,3 +1,4 @@
+#include "ui/nuklear/compose_input_queries.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_state.h"
@@ -564,4 +565,57 @@ TEST_CASE("A bookmark click replays painting without emitting a bookmark move",
     lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
     lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
     lifecycle_check(!lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE));
+}
+
+TEST_CASE("Compose input claims preserve consumer differences and read live state",
+          "[frontend-state][event-harness][compose-input-queries]") {
+    nuklear_event_harness_t harness{1280, 900};
+    (void)harness.frame();
+    auto& compose = worm_ui_nuklear_compose_state();
+    const compose_input_queries_t claims{compose};
+    lifecycle_require(!claims.is_canvas_input_blocked());
+    lifecycle_require(!claims.is_canvas_hover_blocked());
+    lifecycle_require(!claims.is_paint_blocked());
+    lifecycle_require(!claims.is_editor_modal_blocked());
+
+    SECTION("BMSON candidates reserve paint admission before they capture hover") {
+        compose.bmson_input.bmson_marker_move_candidate_active = true;
+        lifecycle_check(claims.is_paint_blocked());
+        lifecycle_check(!claims.is_canvas_hover_blocked());
+        compose.bmson_input.bmson_marker_move_candidate_active = false;
+        compose.bmson_input.bmson_marker_move_active = true;
+        lifecycle_check(claims.is_paint_blocked());
+        lifecycle_check(claims.is_canvas_hover_blocked());
+    }
+    SECTION("Hold candidates suppress hover while their continuation remains admitted") {
+        compose.pointer_capture.pointer_hold_begin_pending = true;
+        lifecycle_check(claims.is_canvas_hover_blocked());
+        lifecycle_check(!claims.is_paint_blocked());
+        compose.pointer_capture.pointer_hold_begin_pending = false;
+        lifecycle_check(!claims.is_canvas_hover_blocked());
+    }
+    SECTION("Opening an editor between hover and paint is observed without a snapshot") {
+        compose.inline_timing.inline_timing_open = true;
+        lifecycle_check(claims.is_paint_blocked());
+        lifecycle_check(claims.is_editor_modal_blocked());
+        lifecycle_check(claims.is_context_invocation_blocked());
+        compose.inline_timing.inline_timing_open = false;
+        lifecycle_check(!claims.is_paint_blocked());
+    }
+    SECTION("Bookmark release blocks canvas and modal editors but keeps the context policy") {
+        compose.bookmark_ui.bookmark_rename.release_pending = true;
+        lifecycle_check(claims.is_canvas_input_blocked());
+        lifecycle_check(claims.is_canvas_hover_blocked());
+        lifecycle_check(claims.is_paint_blocked());
+        lifecycle_check(claims.is_editor_modal_blocked());
+        lifecycle_check(!claims.is_context_invocation_blocked());
+        lifecycle_check(!claims.has_popup_input());
+    }
+    SECTION("Filter release is a frontend popup gate without occluding the canvas locally") {
+        compose.keysound_filters.keysound_filter_release_pending = true;
+        lifecycle_check(claims.has_popup_input());
+        lifecycle_check(claims.is_editor_modal_blocked());
+        lifecycle_check(claims.is_context_invocation_blocked());
+        lifecycle_check(!claims.is_canvas_input_blocked());
+    }
 }

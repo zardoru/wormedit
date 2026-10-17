@@ -63,6 +63,16 @@ auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::u
     return after == measures.entries.begin() ? row : row - std::prev(after)->absolute_begin_row;
 }
 
+// The measure a real measure line starts; virtual BMS measures and other lines have none.
+auto grid_line_measure_id(const wormedit::editor_field_grid_geometry_t& line, std::uint32_t measure_number,
+                          const wormedit::measure_index_t& measures) -> std::uint64_t {
+    if (line.kind != wormedit::editor_grid_line_kind_t::measure || measure_number == 0 ||
+        measure_number > measures.entries.size() ||
+        measures.entries[measure_number - 1].absolute_begin_row != line.chart_row.whole_rows)
+        return 0;
+    return measures.entries[measure_number - 1].id.value;
+}
+
 void build_compose_grid_lines_view(const compose_scene_projection_context_t& projection) {
     auto& flattened = projection.inputs.frame.flattened;
     const auto& chart = projection.inputs.scope.chart_scope.chart;
@@ -116,7 +126,8 @@ void build_compose_grid_lines_view(const compose_scene_projection_context_t& pro
                                                chart.divisions_per_standard_measure),
                      line.chart_row.fractional_rows.numerator,
                      line.chart_row.fractional_rows.denominator,
-                     chart.divisions_per_standard_measure)},
+                     chart.divisions_per_standard_measure),
+                 .measure_id = grid_line_measure_id(line, measure_number, projection.index.measures)},
                 line.chart_row)) {
             view.truncated = true;
             break;

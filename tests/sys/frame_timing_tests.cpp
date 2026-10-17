@@ -7509,3 +7509,29 @@ TEST_CASE("Compose measure geometry is shared with the committed snapshot",
     history = document_history_t::from(compose_test_song());
     CHECK(cache.scene.cached_measure_index->total_rows == 960);
 }
+
+TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
+          "[frame-timing][measure-lane]") {
+    std::array<WormUiComposeGridLineView, 3> lines{{
+        {.y_pixels = 100, .kind = 3, .measure_number = 1, .measure_id = 10},
+        {.y_pixels = 300, .kind = 3, .measure_number = 2, .measure_id = 11},
+        {.y_pixels = 400, .kind = 1}}};
+    WormUiComposeView view{};
+    view.viewport_height_pixels = 600;
+    view.grid_lines = lines.data();
+    view.grid_line_count = lines.size();
+    editor_area_geometry_snapshot_t hidden;
+    compose_projection_detail::append_area_bar_line_geometry(hidden, view, false);
+    CHECK(hidden.objects.empty());
+    view.measure_lane_visible = true;
+    editor_area_geometry_snapshot_t shown;
+    compose_projection_detail::append_area_bar_line_geometry(shown, view, false);
+    // Only measure 11's bar line: the chart's first is fixed and beat lines have none.
+    REQUIRE(shown.objects.size() == 1);
+    const auto& handle = shown.objects.front();
+    CHECK(handle.object == editor_selection_object_t{editor_selection_object_kind_t::bar_line, object_id_t{11}});
+    CHECK(handle.left_pixels == 0.0);
+    CHECK(handle.right_pixels == wormedit::ui::compose_measure_rail_width);
+    CHECK(handle.top_pixels < 300.0);
+    CHECK(handle.bottom_pixels > 300.0);
+}

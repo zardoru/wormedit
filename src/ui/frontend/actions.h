@@ -207,6 +207,10 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION,
     WORM_UI_COMPOSE_ACTION_OPEN_SELECTED_SOUND_LAYER_MENU,
     WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER,
+    /* Session-only: the measure lane shows bar lines as selectable objects. */
+    WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE,
+    /* Session-only: moved bar lines carry the content after them (off by default). */
+    WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {
@@ -310,6 +314,10 @@ typedef enum WormUiComposeInputKind {
     WORM_UI_COMPOSE_INPUT_BMSON_EMPTY_SELECT,
     WORM_UI_COMPOSE_INPUT_BGM_MUTE,
     WORM_UI_COMPOSE_INPUT_BGM_SOLO,
+    /* Measure lane: object_id is the measure whose bar line is clicked; selection_mode applies. */
+    WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT,
+    /* Measure lane in Draw mode: add a bar line at the snapped row under y_pixels. */
+    WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE,
 } WormUiComposeInputKind;
 
 typedef enum WormUiComposeNavigationAction {

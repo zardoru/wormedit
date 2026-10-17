@@ -1355,6 +1355,57 @@ auto select_compose_bms_measure(const WormUiComposeInputAction& input,
 }
 
 
+auto select_compose_bar_line(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                             wormedit::editor_interaction_result_t& result,
+                             std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    const auto mode = context.selection_mode(input.selection_mode);
+    if (!context.environment.commands.project.compose_view.measure_lane_visible || !mode ||
+        input.object_id == 0)
+        return "Bar line selection is stale or invalid.";
+    result = dispatch_editor_action(
+        context.environment.document.history, context.state,
+        select_editor_objects_action_t{
+            .objects = {{editor_selection_object_kind_t::bar_line, object_id_t{input.object_id}}},
+            .mode = *mode});
+    accepted = "Bar line selected.";
+    return std::nullopt;
+}
+
+// Draw in the measure lane splits the measure at the snapped row and selects the new bar line.
+// Every object keeps its row.
+auto place_compose_bar_line(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                            wormedit::editor_interaction_result_t& result,
+                            std::string_view& accepted) -> std::optional<std::string> {
+    using namespace wormedit;
+    auto& history = context.environment.document.history;
+    const auto* chart = context.chart();
+    const auto view = compose_view_for_state(history, context.state);
+    const auto* indices = chart ? history.indices(chart->id) : nullptr;
+    if (!context.environment.commands.project.compose_view.measure_lane_visible || !chart || !view ||
+        !indices || !indices->measures)
+        return "The measure lane is unavailable.";
+    const auto row = timing_pointer_row(context, *chart, *view, *indices->measures, input.y_pixels);
+    const auto position = row ? indices->measures->position_at(*row) : std::nullopt;
+    if (!position) return "Place bar lines inside the chart.";
+    if (position->row == 0) return "A bar line is already there.";
+    const auto chart_id = chart->id;
+    const auto edited = apply_measure_edit(history, split_measure_action_t{chart_id, *position});
+    if (!edited)
+        return edited.diagnostics.empty() ? "The bar line could not be placed."
+                                          : edited.diagnostics.front().message;
+    const auto& after = history.indices(chart_id)->measures;
+    const auto placed = after ? after->position_at(*row) : std::nullopt;
+    result = placed ? dispatch_editor_action(history, context.state,
+                          select_editor_objects_action_t{
+                              .objects = {{editor_selection_object_kind_t::bar_line,
+                                           object_id_t{placed->measure.value}}}})
+                    : editor_interaction_result_t{.accepted = true};
+    result.document_changed = true;
+    accepted = "Bar line placed.";
+    return std::nullopt;
+}
+
 // Every placement path ends here: the Sounds/BGA dock advances to the next eligible resource.
 
 
@@ -1496,6 +1547,28 @@ auto dispatch_compose_bga_input(const WormUiComposeInputAction& input,
     }
 }
 
+auto dispatch_measure_lane_input(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                                 wormedit::editor_interaction_result_t& result, std::string_view& accepted)
+    -> std::optional<compose_input_family_result_t> {
+    using handler_t = std::optional<std::string> (*)(const WormUiComposeInputAction&, compose_input_context_t&,
+                                                     wormedit::editor_interaction_result_t&, std::string_view&);
+    handler_t handler = nullptr;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) handler = select_compose_bar_line;
+    if (input.kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE) handler = place_compose_bar_line;
+    if (handler == nullptr) return std::nullopt;
+    if (const auto error = handler(input, context, result, accepted))
+        return compose_input_rejection(*error, result);
+    return compose_input_family_result_t::continue_with_result();
+}
+
+// Inputs from the lanes beside the note field: BGA events and bar lines.
+auto dispatch_object_lane_input(const WormUiComposeInputAction& input, compose_input_context_t& context,
+                                wormedit::editor_interaction_result_t& result, std::string_view& accepted)
+    -> std::optional<compose_input_family_result_t> {
+    if (auto handled = dispatch_compose_bga_input(input, context, result, accepted)) return handled;
+    return dispatch_measure_lane_input(input, context, result, accepted);
+}
+
 auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
                                       compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
@@ -1509,7 +1582,7 @@ auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
         return std::move(*status);
     if (auto handled = dispatch_timing_lane_area_input(input, context, result, accepted))
         return std::move(*handled);
-    if (auto handled = dispatch_compose_bga_input(input, context, result, accepted))
+    if (auto handled = dispatch_object_lane_input(input, context, result, accepted))
         return std::move(*handled);
     switch (input.kind) {
     case WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK:
@@ -1610,7 +1683,7 @@ auto compose_input_notification_source(WormUiComposeInputKind kind)
         kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE ||
         kind == WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_RESTART ||
         kind == WORM_UI_COMPOSE_INPUT_UNDO || kind == WORM_UI_COMPOSE_INPUT_REDO ||
-        kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT ||
+        kind == WORM_UI_COMPOSE_INPUT_PASTE_COMMIT || kind == WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE ||
         kind == WORM_UI_COMPOSE_INPUT_KIAI_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_SPEED_SPAN_EDIT ||
         kind == WORM_UI_COMPOSE_INPUT_RECIPE_RANGE_EDIT ||

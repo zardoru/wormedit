@@ -731,6 +731,9 @@ struct application_command_state_t {
             bool compose_timing_focus{};
             bool edit_snap_enabled{true};
             bool y_lock{false};
+            // Session-only, like the bar-line time policy below: never persisted.
+            bool measure_lane_visible{false};
+            wormedit::bar_line_time_t bar_line_time{wormedit::bar_line_time_t::keep_song_time};
             bool player_preview_visible{};
             wormedit::player_preview_skin_t player_preview_skin{
                 wormedit::player_preview_skin_t::neutral};

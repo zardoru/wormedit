@@ -990,7 +990,9 @@ static bool compose_pointer_start_hits_element(const ComposePointerEventContext&
         compose_bgm_event_at(input.view, input.pointer_started_x, input.pointer_started_y) != 0 ||
         compose_bga_event_at(input.view, input.pointer_started_x, input.pointer_started_y) != 0 ||
         bga_lane ||
-        compose_timing_marker_at(*input.view, input.pointer_started_x, input.pointer_started_y);
+        compose_timing_marker_at(*input.view, input.pointer_started_x, input.pointer_started_y) ||
+        wormedit::ui::is_compose_measure_lane_press(*input.view, input.pointer_started_x,
+                                                    input.pointer_started_y);
 }
 
 static void start_compose_note_move_candidate(const ComposePointerEventContext& input) {

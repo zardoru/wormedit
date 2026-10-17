@@ -151,6 +151,25 @@ inline void y_lock(struct nk_command_buffer* canvas, struct nk_rect bounds, stru
     nk_stroke_line(canvas, frame.px(4.0f), frame.py(12.0f), frame.px(20.0f), frame.py(12.0f), thickness, tint);
 }
 
+// Measure lane: a rail with bar-line ticks, like a ruler.
+inline void measure_lane(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_line(canvas, frame.px(6.0f), frame.py(3.0f), frame.px(6.0f), frame.py(21.0f), thickness, tint);
+    for (const auto y : {5.0f, 12.0f, 19.0f})
+        nk_stroke_line(canvas, frame.px(6.0f), frame.py(y), frame.px(20.0f), frame.py(y), thickness, tint);
+}
+
+// Bar-line time propagation: a bar line pushing the content below it along.
+inline void bar_line_time(struct nk_command_buffer* canvas, struct nk_rect bounds, struct nk_color tint) {
+    const auto frame = Frame::fit(bounds);
+    const auto thickness = frame.stroke();
+    nk_stroke_line(canvas, frame.px(3.0f), frame.py(5.0f), frame.px(21.0f), frame.py(5.0f), thickness, tint);
+    nk_stroke_line(canvas, frame.px(12.0f), frame.py(9.0f), frame.px(12.0f), frame.py(21.0f), thickness, tint);
+    const float head[] = {frame.px(7.0f), frame.py(16.0f), frame.px(12.0f), frame.py(21.0f), frame.px(17.0f), frame.py(16.0f)};
+    nk_stroke_polyline(canvas, const_cast<float*>(head), 3, thickness, tint);
+}
+
 // Lucide "list-ordered" in outline: the Compose measures list.
 inline void measure_list(struct nk_command_buffer* canvas, struct nk_rect bounds,
                          struct nk_color tint) {

@@ -1000,15 +1000,35 @@ void process_compose_drag_gestures(const ComposePointerEventContext& input,
     update_area_selection_active(input, paint_pointer_consumed);
 }
 
+static auto is_compose_rail_click(const ComposePointerEventContext& input, bool paint_pointer_consumed) -> bool {
+    return !state.input_queue.action_overflowed && !paint_pointer_consumed && input.view->scene_available &&
+        input.pointer_clicked && input.pointer_inside && input.pointer_x < compose_measure_rail_width &&
+        input.window_focused && !state.pointer_capture.pointer_hold_active &&
+        !state.range_selection.lane_hold_active && !state.note_move.note_move_active &&
+        !state.area_selection.area_selection_active && !state.area_selection.area_selection_candidate_active &&
+        !state.timing_drag.timing_stage_drag_active;
+}
+
+// The measure lane selects the bar line under the pointer, or in Draw mode places one.
+static auto handle_compose_measure_lane_click(const ComposePointerEventContext& input) -> bool {
+    const auto& view = *input.view;
+    if (!wormedit::ui::is_compose_measure_lane_press(view, input.pointer_started_x, input.pointer_started_y))
+        return false;
+    if (const auto* line = wormedit::ui::compose_bar_line_at(view, input.pointer_started_x, input.pointer_started_y))
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, input.pointer_x,
+                             input.pointer_y, 0, false, compose_selection_mode(input.pointer_modifiers),
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, line->measure_id);
+    else
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE, input.pointer_x,
+                             input.pointer_y);
+    return true;
+}
+
 auto handle_compose_measure_click(const ComposePointerEventContext& input,
                                          bool paint_pointer_consumed) -> bool {
-    if (state.input_queue.action_overflowed || paint_pointer_consumed || !input.view->scene_available ||
-        !input.view->bms_measure_labels || !input.pointer_clicked || !input.pointer_inside ||
-        input.pointer_x >= 42.0 || !input.window_focused || state.pointer_capture.pointer_hold_active ||
-        state.range_selection.lane_hold_active || state.note_move.note_move_active || state.area_selection.area_selection_active ||
-        state.area_selection.area_selection_candidate_active ||
-        state.timing_drag.timing_stage_drag_active)
-        return false;
+    if (!is_compose_rail_click(input, paint_pointer_consumed)) return false;
+    if (handle_compose_measure_lane_click(input)) return true;
+    if (!input.view->bms_measure_labels) return false;
     append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_MEASURE_SELECT,
                          input.pointer_x, input.pointer_y);
     return true;

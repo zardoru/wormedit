@@ -1141,7 +1141,8 @@ auto dispatch_compose_selection_input(
                 .field_left_pixels = field_left_pixels,
                 .field_width_pixels = field_width_pixels,
                 .mode = *selection_mode(input.selection_mode),
-                .scope = geometry ? editor_selection_scope_t{true, true, true, true}
+                // Bar lines have projected rectangles only while the measure lane shows them.
+                .scope = geometry ? editor_selection_scope_t{true, true, true, true, true}
                                   : editor_selection_scope_t{},
                 .canvas_pointer_capture = true,
                 .object_geometry = geometry,

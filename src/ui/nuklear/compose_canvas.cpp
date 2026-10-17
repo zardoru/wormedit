@@ -781,6 +781,26 @@ static float compose_projected_y(const ComposePaintContext& paint, double y_pixe
                                     static_cast<float>(paint.view->viewport_height_pixels);
 }
 
+// Bar-line handles in the measure lane. Drawn every frame (not in the cached grid pass) because
+// they follow the selection; the grid line itself stays the one bar-line projection.
+static void draw_compose_measure_lane(const ComposePaintContext& paint) {
+    const auto& view = *paint.view;
+    if (!view.measure_lane_visible) return;
+    auto& field = paint_field(paint.context);
+    for (size_t index = 0; index < view.grid_line_count; ++index) {
+        const auto& line = view.grid_lines[index];
+        const auto bounds = wormedit::ui::compose_bar_line_bounds(view, line);
+        if (!bounds) continue;
+        const auto y = compose_projected_y(paint, line.y_pixels);
+        if (y < paint.viewport.y || y > paint.viewport.y + paint.viewport.h) continue;
+        const bool selected = wormedit::ui::is_compose_bar_line_selected(view, line.measure_id);
+        const auto height = selected ? 5.0f : 3.0f;
+        const auto color = selected ? wormedit::ui::field::color_t{255, 207, 104}
+                                    : wormedit::ui::field::color_t{120, 140, 170};
+        field.rect(1, {paint.rail.x + 2.0f, y - height * 0.5f, paint.rail.w - 4.0f, height}, color);
+    }
+}
+
 static void draw_compose_beat_sections(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->beat_section_count; ++index) {
         const auto& section = paint.view->beat_sections[index];
@@ -3224,6 +3244,7 @@ void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* vie
         draw_compose_cached_pass(paint,5,true,view->beat_fit_drag_active ||
             view->selected_bms_measure_number_plus_one!=0,[&](const ComposePaintContext& cached) { draw_compose_grid_lines(cached); });
         draw_compose_lane_layout_segments(paint);
+        draw_compose_measure_lane(paint);
         draw_compose_dead_spans(paint);
         draw_compose_area_band(paint);
         draw_compose_timing_layer(paint, timing_layout);

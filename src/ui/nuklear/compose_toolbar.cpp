@@ -139,6 +139,27 @@ static void render_layer_tool(const ComposeToolbarContext& toolbar, bool paint_d
     if (disabled && !paint_disabled) nk_widget_disable_end(context);
 }
 
+// The measure lane toggle, and while the lane shows, its time-propagation toggle.
+static void render_measure_lane_toggles(const ComposeToolbarContext& toolbar) {
+    const auto* view = toolbar.view;
+    auto* action = toolbar.action;
+    const auto request = [action](WormUiComposeActionKind kind) {
+        if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) action->compose_action = kind;
+    };
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_lane,
+            view->measure_lane_visible ? "Hide measure lane"
+                                       : "Show measure lane: select, place and move bar lines",
+            view->measure_lane_visible}.render(toolbar.context))
+        request(WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
+    if (!view->measure_lane_visible) return;
+    if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::bar_line_time,
+            view->bar_line_time_propagates
+                ? "Moved bar lines carry the content after them (click to keep it in place)"
+                : "Moved bar lines keep other objects in place (click to carry later content)",
+            view->bar_line_time_propagates}.render(toolbar.context))
+        request(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
+}
+
 static void render_tool_group(const ComposeToolbarContext& toolbar) {
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
@@ -177,6 +198,7 @@ static void render_tool_group(const ComposeToolbarContext& toolbar) {
             view->bga_lane_visible}.render(context) &&
         action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY;
+    render_measure_lane_toggles(toolbar);
     if (!view->scene_available) nk_widget_disable_end(context);
     render_loop_selection_button(toolbar);
 }
@@ -542,19 +564,20 @@ static void layout_toolbar_icons(nk_context* context, int count) {
     wormedit::ui::chrome::IconButton::layout_columns(context, count, 24.0f);
 }
 
-// The full toolbar needs about 1,090 px. Narrower than that its tail is clipped, so the dock toggles
+// The full toolbar needs about 1,150 px (with the measure lane toggles). Narrower than that its tail is clipped, so the dock toggles
 // stay in the middle (where they are always reachable) and move to the right edge only when it fits.
 static auto dock_toggles_at_end(nk_context* context) -> bool {
-    return nk_window_get_bounds(context).w >= 1100.0f;
+    return nk_window_get_bounds(context).w >= 1160.0f;
 }
 
 // `panel_icons` is the dock toggle count; the BMS branch toggle exists only for charts with branches.
-static void layout_compose_toolbar(nk_context* context, int panel_icons, bool timing_focus) {
+// `tool_icons` grows by one while the measure lane shows its time-propagation toggle.
+static void layout_compose_toolbar(nk_context* context, int tool_icons, int panel_icons, bool timing_focus) {
     const auto width = nk_window_get_bounds(context).w;
     nk_layout_row_template_begin(context, 27);
     layout_toolbar_icons(context, 4); // Navigation.
     wormedit::ui::chrome::layout_separator(context);
-    layout_toolbar_icons(context, 8); // Tools.
+    layout_toolbar_icons(context, tool_icons); // Tools.
     wormedit::ui::chrome::layout_separator(context);
     layout_toolbar_icons(context, 3); // Color views.
     wormedit::ui::chrome::layout_separator(context);
@@ -602,7 +625,8 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
-    layout_compose_toolbar(context, 6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
+    layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane_visible ? 1 : 0),
+                           6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
                            toolbar.view->timing_focus);
     render_navigation_group(toolbar);
     wormedit::ui::chrome::toolbar_separator(context);

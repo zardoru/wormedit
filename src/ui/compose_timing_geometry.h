@@ -79,4 +79,38 @@ inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
     return {left, top, std::min(extent->second, std::max(left, right)), top + 16.0};
 }
 
+// The measure lane is the measure rail made editable: each selectable bar line (every real measure
+// line but the chart's first) has a handle across the rail. Drawing, picking and area selection all
+// use this rectangle; a hidden lane has none.
+inline auto compose_bar_line_bounds(const WormUiComposeView& view, const WormUiComposeGridLineView& line)
+    -> std::optional<WormUiComposeRect> {
+    if (!view.measure_lane_visible || line.measure_id == 0 || line.measure_number < 2 ||
+        !std::isfinite(line.y_pixels))
+        return std::nullopt;
+    return WormUiComposeRect{0.0, line.y_pixels - 4.0, compose_measure_rail_width, line.y_pixels + 4.0};
+}
+
+// The bar line whose handle holds the point, if any.
+inline auto compose_bar_line_at(const WormUiComposeView& view, double x, double y)
+    -> const WormUiComposeGridLineView* {
+    for (std::size_t index = 0; index < view.grid_line_count; ++index) {
+        const auto bounds = compose_bar_line_bounds(view, view.grid_lines[index]);
+        if (bounds && x >= bounds->left && x < bounds->right && y >= bounds->top && y <= bounds->bottom)
+            return &view.grid_lines[index];
+    }
+    return nullptr;
+}
+
+// A press the measure lane takes for itself: on a bar line, or anywhere in the lane while drawing.
+inline auto is_compose_measure_lane_press(const WormUiComposeView& view, double x, double y) -> bool {
+    if (!view.measure_lane_visible || !std::isfinite(x) || x < 0.0 || x >= compose_measure_rail_width)
+        return false;
+    return view.note_paint_mode_active || compose_bar_line_at(view, x, y) != nullptr;
+}
+
+inline auto is_compose_bar_line_selected(const WormUiComposeView& view, std::uint64_t measure_id) -> bool {
+    return std::find(view.selected_bar_lines, view.selected_bar_lines + view.selected_bar_line_count,
+                     measure_id) != view.selected_bar_lines + view.selected_bar_line_count;
+}
+
 } // namespace wormedit::ui

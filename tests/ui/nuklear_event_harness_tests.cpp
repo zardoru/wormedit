@@ -770,8 +770,9 @@ TEST_CASE("Compose toolbar color views change frontend state without document ac
     const auto revision = harness.view().compose.document_revision;
     // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
-    // The BGA lane visibility and Y-lock icons add two 27 px cells before the color group.
-    constexpr std::array positions{396.0f, 423.0f, 369.0f};
+    // The BGA lane visibility, Y-lock and measure lane icons add three 27 px cells before the
+    // color group.
+    constexpr std::array positions{423.0f, 450.0f, 396.0f};
     for (std::size_t index = 0; index < views.size(); ++index) {
         const auto clicks = click_at(harness, positions[index], 122.0f);
         CHECK(worm_ui_nuklear_compose_state().input_queue.color_view == views[index]);
@@ -1036,7 +1037,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.close_pending);
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 396, 122);
+    (void)click_at(fixture.harness, 423, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().input_queue.color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1323,7 +1324,7 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 396, 122);
+    (void)click_at(fixture.harness, 423, 122);
     check_layer_menu(worm_ui_nuklear_compose_state().input_queue.color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -8368,4 +8369,80 @@ TEST_CASE("BMS encoding dialog sends the offered identity independently of posit
         CHECK(frame.get().bms_encoding_id == entries[0].id);
     }
     CHECK(opened);
+}
+
+namespace {
+void check_measure_lane(bool condition, const std::source_location location = std::source_location::current()) {
+    INFO("assertion caller line " << location.line());
+    CHECK(condition);
+}
+
+// Three measure lines in the rail; the first starts the chart and has no selectable bar line.
+struct measure_lane_fixture_t {
+    nuklear_event_harness_t harness{1280, 900};
+    std::array<WormUiComposeGridLineView, 3> lines{{
+        {.y_pixels = 100, .kind = 3, .measure_number = 1, .chart_row = 0, .measure_id = 10},
+        {.y_pixels = 300, .kind = 3, .measure_number = 2, .chart_row = 960, .measure_id = 11},
+        {.y_pixels = 500, .kind = 3, .measure_number = 3, .chart_row = 1920, .measure_id = 12}}};
+    WormUiTestingRect viewport{};
+
+    measure_lane_fixture_t() {
+        REQUIRE(harness.ready());
+        (void)harness.frame();
+        REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
+        auto& view = harness.view().compose;
+        view.scene_available = true;
+        view.viewport_width_pixels = viewport.width;
+        view.viewport_height_pixels = viewport.height;
+        view.grid_lines = lines.data();
+        view.grid_line_count = lines.size();
+        (void)harness.frame();
+    }
+
+    auto click_rail(double y) -> std::vector<workspace_action_snapshot_t> {
+        return click_at(harness, viewport.x + 20.0f, viewport.y + static_cast<float>(y));
+    }
+};
+} // namespace
+
+TEST_CASE("The measure lane selects bar lines and places them in Draw mode",
+          "[frontend-state][event-harness][measure-lane]") {
+    measure_lane_fixture_t fixture;
+    auto& view = fixture.harness.view().compose;
+    // Hidden, the rail takes no bar-line input.
+    check_measure_lane(find_compose_input(fixture.click_rail(300), WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) == nullptr);
+    view.measure_lane_visible = true;
+    const auto selected = fixture.click_rail(301);
+    const auto* select = find_compose_input(selected, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT);
+    REQUIRE(select != nullptr);
+    check_measure_lane(select->object_id == 11);
+    check_measure_lane(select->selection_mode == WORM_UI_COMPOSE_SELECTION_REPLACE);
+    check_measure_lane(find_compose_input(selected, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) == nullptr);
+    // The chart's first bar line is fixed, and Select mode ignores the empty lane.
+    const auto first = fixture.click_rail(100);
+    check_measure_lane(find_compose_input(first, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) == nullptr);
+    check_measure_lane(find_compose_input(fixture.click_rail(400), WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE) == nullptr);
+    view.note_paint_mode_active = true;
+    const auto placed = fixture.click_rail(400);
+    const auto* place = find_compose_input(placed, WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE);
+    REQUIRE(place != nullptr);
+    check_measure_lane(std::abs(place->y_pixels - 400.0) < 1.0);
+    // Drawing on an existing bar line selects it instead of placing another.
+    const auto on_line = fixture.click_rail(500);
+    check_measure_lane(find_compose_input(on_line, WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE) == nullptr);
+    check_measure_lane(find_compose_input(on_line, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) != nullptr);
+}
+
+TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propagation",
+          "[frontend-state][event-harness][measure-lane]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    (void)harness.frame();
+    // The measure lane icon follows the BGA lane icon at x=303.
+    const auto lane = click_at(harness, 330.0f, 122.0f);
+    check_measure_lane(lane.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
+    harness.view().compose.measure_lane_visible = true;
+    (void)harness.frame();
+    const auto time = click_at(harness, 357.0f, 122.0f);
+    check_measure_lane(time.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }

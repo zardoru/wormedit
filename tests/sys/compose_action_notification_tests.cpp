@@ -2781,3 +2781,87 @@ TEST_CASE("Compose nested marker and resource groups retain domain rejection at 
         ? notification_source_t::import_ : notification_source_t::edit));
     check_action(entries.front().count == 1);
 }
+
+namespace {
+struct measure_lane_input_fixture_t : action_notification_fixture_t {
+    viewport_input_controller_t viewport;
+    editor_navigation_input_controller_t navigation;
+    compose_scene_cache_t cache;
+    measure_lane_input_fixture_t() {
+        history.document.charts.front().measures.push_back({.id = measure_id_t{2}});
+        state.viewport_height_pixels = 600;
+    }
+    auto input(WormUiComposeInputKind kind, std::uint64_t row = 0, std::uint64_t measure = 0)
+        -> WormUiWorkspaceAction {
+        auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
+        value.compose_input_viewport_width_pixels = 900;
+        value.compose_input_count = 1;
+        const auto y = static_cast<double>(row) * state.pixels_per_standard_measure / 960.0 -
+                       state.viewport_scroll_pixels;
+        value.compose_inputs[0] = {.kind = kind, .object_id = measure, .x_pixels = 20,
+            .y_pixels = compose_source_y(y, state.viewport_height_pixels,
+                compose_field_downscroll(history.document.charts.front(), application.preferences.editor_preferences))};
+        return value;
+    }
+    auto dispatch_input(WormUiWorkspaceAction value) -> std::string {
+        return dispatch_compose_input_action(value, history, workspace, state, viewport,
+            navigation, application, cache, 0, &sink);
+    }
+    auto bar_line_selected(std::uint64_t measure) const -> bool {
+        return std::ranges::find(state.selected_objects, editor_selection_object_t{
+            editor_selection_object_kind_t::bar_line, object_id_t{measure}}) != state.selected_objects.end();
+    }
+};
+} // namespace
+
+TEST_CASE("Measure lane toggles are session view state and hiding drops bar-line selection",
+          "[compose-input][measure-lane]") {
+    measure_lane_input_fixture_t fixture;
+    const auto revision = fixture.history.document.revision;
+    INFO(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE)));
+    check_action(fixture.application.project.compose_view.measure_lane_visible);
+    INFO(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME)));
+    check_action(fixture.application.project.compose_view.bar_line_time == bar_line_time_t::propagate);
+    check_action(fixture.state.bar_line_time == bar_line_time_t::propagate);
+    INFO(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME)));
+    check_action(fixture.state.bar_line_time == bar_line_time_t::keep_song_time);
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, 0, 2)));
+    check_action(fixture.bar_line_selected(2));
+    INFO(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE)));
+    check_action(!fixture.application.project.compose_view.measure_lane_visible);
+    check_action(!fixture.bar_line_selected(2));
+    check_action(fixture.history.document.revision == revision);
+    check_action(fixture.history.undo.empty());
+}
+
+TEST_CASE("Measure lane input selects a bar line only while the lane is shown",
+          "[compose-input][measure-lane]") {
+    measure_lane_input_fixture_t fixture;
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, 0, 2)));
+    check_action(!fixture.bar_line_selected(2));
+    fixture.application.project.compose_view.measure_lane_visible = true;
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, 0, 2)));
+    check_action(fixture.bar_line_selected(2));
+    // The chart's first bar line is fixed and cannot be selected.
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, 0, 1)));
+    check_action(!fixture.bar_line_selected(1));
+}
+
+TEST_CASE("Draw in the measure lane splits the measure and selects the new bar line",
+          "[compose-input][measure-lane]") {
+    measure_lane_input_fixture_t fixture;
+    fixture.application.project.compose_view.measure_lane_visible = true;
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE, 480)));
+    const auto& chart = fixture.history.document.charts.front();
+    require_action(chart.measures.size() == 3);
+    check_action(fixture.history.undo.size() == 1);
+    const auto index = measure_index_t::from(chart).value();
+    check_action(index.entries[1].absolute_begin_row == 480);
+    check_action(fixture.bar_line_selected(chart.measures[1].id.value));
+    // Drawing on an existing bar line changes nothing.
+    INFO(fixture.dispatch_input(fixture.input(WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE, 960)));
+    check_action(fixture.history.document.charts.front().measures.size() == 3);
+    check_action(fixture.history.undo.size() == 1);
+    require_action(undo_document_command(fixture.history));
+    check_action(fixture.history.document.charts.front().measures.size() == 2);
+}

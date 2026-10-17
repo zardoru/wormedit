@@ -671,6 +671,50 @@ struct toggle_compose_y_lock_action_t {
 };
 static_assert(compose_action<toggle_compose_y_lock_action_t, compose_action_context_t>);
 
+struct toggle_compose_measure_lane_action_t {
+    auto operator==(const toggle_compose_measure_lane_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before changing the measure lane."))
+            return std::move(*blocked);
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& view = context.environment.editor.commands.project.compose_view;
+        view.measure_lane_visible = !view.measure_lane_visible;
+        // A hidden lane leaves no bar line selected that the field cannot show.
+        if (!view.measure_lane_visible)
+            std::erase_if(context.state.selected_objects, [](const auto& object) {
+                return object.kind == editor_selection_object_kind_t::bar_line;
+            });
+        return compose_action_outcome_t::from(
+            view.measure_lane_visible ? "Measure lane shown: bar lines are selectable." : "Measure lane hidden.",
+            notification_severity_t::info, notification_source_t::input);
+    }
+};
+static_assert(compose_action<toggle_compose_measure_lane_action_t, compose_action_context_t>);
+
+struct toggle_compose_bar_line_time_action_t {
+    auto operator==(const toggle_compose_bar_line_time_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
+        if (auto blocked = context.require_no_gesture(
+                "Finish or cancel the active Compose gesture before changing how bar lines move."))
+            return std::move(*blocked);
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        auto& view = context.environment.editor.commands.project.compose_view;
+        const bool propagate = view.bar_line_time != bar_line_time_t::propagate;
+        view.bar_line_time = propagate ? bar_line_time_t::propagate : bar_line_time_t::keep_song_time;
+        context.state.bar_line_time = view.bar_line_time;
+        return compose_action_outcome_t::from(
+            propagate ? "Moving bar lines now carries the content after them."
+                      : "Moving bar lines keeps every other object in place.",
+            notification_severity_t::info, notification_source_t::input);
+    }
+};
+static_assert(compose_action<toggle_compose_bar_line_time_action_t, compose_action_context_t>);
+
 struct toggle_compose_timing_lane_action_t {
     auto operator==(const toggle_compose_timing_lane_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) const -> std::optional<compose_action_outcome_t> {
@@ -3144,6 +3188,10 @@ constexpr auto local_route_entries = std::array{
                                run_routed_compose_action<toggle_compose_edit_snap_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_Y_LOCK,
                            .operation = run_routed_compose_action<toggle_compose_y_lock_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE,
+                           .operation = run_routed_compose_action<toggle_compose_measure_lane_action_t>},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME,
+                           .operation = run_routed_compose_action<toggle_compose_bar_line_time_action_t>},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_TOGGLE_TIMING_LANE_VISIBILITY,
                            .operation =
                                run_routed_compose_action<toggle_compose_timing_lane_action_t>},
@@ -3372,7 +3420,7 @@ constinit const std::span<const compose_action_route_t> compose_local_routes{loc
 
 namespace {
 constexpr auto compose_kind_count =
-    static_cast<std::size_t>(WORM_UI_COMPOSE_ACTION_ADD_SELECTED_SOUNDS_TO_LAYER) + 1;
+    static_cast<std::size_t>(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME) + 1;
 auto build_compose_action_routes() -> std::array<compose_action_route_t, compose_kind_count> {
     std::array<compose_action_route_t, compose_kind_count> routes{};
     for (const auto module :

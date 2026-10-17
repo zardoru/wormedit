@@ -132,6 +132,7 @@ struct frontend_workspace_view_t {
             frame_span<wormedit::exact_chart_row_t> row;
             std::vector<WormUiComposeGridLineView> proposed;
         } grid;
+        std::vector<std::uint64_t> selected_bar_line;
         std::vector<WormUiComposeTimingPreviewRectView> timing_preview_rect;
         std::vector<WormUiTimingMarkerView> timing_preview_marker;
         std::vector<WormUiTimingMarkerView> timing_marker;

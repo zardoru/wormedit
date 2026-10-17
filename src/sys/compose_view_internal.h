@@ -999,6 +999,9 @@ void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snap
 void append_area_visual_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                  const WormUiComposeView& view, bool downscroll);
 
+void append_area_bar_line_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
+                                   const WormUiComposeView& view, bool downscroll);
+
 void cache_area_object_geometry(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)

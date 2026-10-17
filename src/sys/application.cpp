@@ -2622,32 +2622,32 @@ struct application_t::implementation_t {
             !drag->stamp.is_current(*workspace.selected_chart, action.audio_offset_drag_document_revision) ||
             drag->payload.sample_rate != *context.selected_sample_rate) {
             return clear_audio_offset_drag(
-                context, "Audio offset drag has no matching captured transaction.");
+                "Audio offset drag has no matching captured transaction.");
         }
         const auto updated = drag->revise(
             history.document, {.is_timing_locked = timing_locked}, action.audio_offset_drag_delta_frames);
         if (!updated.ok() || !updated.value) {
             drag.reset();
             drag_tab.reset();
-            return post_audio_offset_diagnostic(context, updated.diagnostics,
+            return post_audio_offset_diagnostic(updated.diagnostics,
                                                 "Audio offset preview was rejected.",
                                                 notification_severity_t::warning);
         }
         drag = updated.value;
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_UPDATE)
-            return post_audio_offset_feedback(context, notification_severity_t::hint,
+            return post_audio_offset_feedback(notification_severity_t::hint,
                                               "Previewing exact waveform offset.");
         if (action.audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_COMMIT) {
             drag.reset();
             drag_tab.reset();
-            return post_audio_offset_feedback(context, notification_severity_t::warning,
+            return post_audio_offset_feedback(notification_severity_t::warning,
                                               "Invalid audio offset drag action.");
         }
         const auto committed = apply_proposal(history, *drag, timing_locked);
         drag.reset();
         drag_tab.reset();
         if (!committed.applied) {
-            return post_audio_offset_diagnostic(context, committed.diagnostics,
+            return post_audio_offset_diagnostic(committed.diagnostics,
                                                 "Audio offset was unchanged.",
                                                 notification_severity_t::info);
         }
@@ -2811,9 +2811,9 @@ struct application_t::implementation_t {
         views.audio_offset_drag_tab =
             views.audio_offset_drag ? std::optional{session.workspace.active_tab} : std::nullopt;
         if (views.audio_offset_drag)
-            return post_audio_offset_feedback(context, notification_severity_t::hint,
+            return post_audio_offset_feedback(notification_severity_t::hint,
                                               "Dragging waveform offset; release to apply.");
-        return post_audio_offset_diagnostic(context, begun.diagnostics,
+        return post_audio_offset_diagnostic(begun.diagnostics,
                                             "Audio offset drag could not start.",
                                             notification_severity_t::warning);
     }
@@ -2912,10 +2912,10 @@ struct application_t::implementation_t {
 
         AudioOffsetDragContext context{action, timing_locked, selected_sample_rate};
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL)
-            return clear_audio_offset_drag(context, "Audio offset drag cancelled.",
+            return clear_audio_offset_drag("Audio offset drag cancelled.",
                                            wormedit::notification_severity_t::hint);
         if (auto failure = validate_audio_offset_drag_context(context))
-            return clear_audio_offset_drag(context, std::move(*failure));
+            return clear_audio_offset_drag(std::move(*failure));
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_NUDGE)
             return nudge_audio_offset_drag(context);
         if (action.audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN)
@@ -2953,12 +2953,12 @@ struct application_t::implementation_t {
         return true;
     }
 
-    auto clear_audio_offset_drag(AudioOffsetDragContext& context, std::string message,
+    auto clear_audio_offset_drag(std::string message,
                                  wormedit::notification_severity_t severity =
                                      wormedit::notification_severity_t::warning) -> std::string {
         views.audio_offset_drag.reset();
         views.audio_offset_drag_tab.reset();
-        return post_audio_offset_feedback(context, severity, std::move(message));
+        return post_audio_offset_feedback(severity, std::move(message));
     }
 
     auto dispatch_recovery_workspace_action(const WormUiWorkspaceAction& action) -> bool {
@@ -3045,8 +3045,6 @@ struct application_t::implementation_t {
         auto& command_registry = this->command_registry;
         auto& compose_interaction_state = views.compose_interaction_state;
         auto& metadata_asset_runtime = jobs.metadata_asset_runtime;
-        auto& timing_grid = views.timing_grid;
-        auto& timing_edit = views.timing_edit;
         if (action.kind == WORM_UI_WORKSPACE_ACTION_QUIT) {
             running = false;
         } else if (dispatch_project_session_action(action)) {
@@ -3391,28 +3389,28 @@ struct application_t::implementation_t {
         using namespace wormedit;
         if (views.audio_offset_drag) {
             return post_audio_offset_feedback(
-                context, notification_severity_t::warning,
+                notification_severity_t::warning,
                 "Finish or cancel the active audio offset drag before nudging.");
         }
         const auto begun =
             audio_offset_drag_t::propose(session.history.document, *session.workspace.selected_chart,
                                     *context.selected_sample_rate, context.timing_locked);
         if (!begun.ok() || !begun.value) {
-            return post_audio_offset_diagnostic(context, begun.diagnostics,
+            return post_audio_offset_diagnostic(begun.diagnostics,
                                                 "Audio offset nudge could not start.",
                                                 notification_severity_t::warning);
         }
         const auto updated = begun.value->revise(session.history.document,
             {.is_timing_locked = context.timing_locked}, context.action.audio_offset_drag_delta_frames);
         if (!updated.ok() || !updated.value) {
-            return post_audio_offset_diagnostic(context, updated.diagnostics,
+            return post_audio_offset_diagnostic(updated.diagnostics,
                                                 "Audio offset nudge was rejected.",
                                                 notification_severity_t::warning);
         }
         const auto committed =
             apply_proposal(session.history, *updated.value, context.timing_locked);
         if (!committed.applied) {
-            return post_audio_offset_diagnostic(context, committed.diagnostics,
+            return post_audio_offset_diagnostic(committed.diagnostics,
                                                 "Audio offset was unchanged.",
                                                 notification_severity_t::info);
         }
@@ -3427,15 +3425,14 @@ struct application_t::implementation_t {
         return std::move(finished.message);
     }
 
-    auto post_audio_offset_diagnostic(AudioOffsetDragContext& context,
-                                      const diagnostic_list_t& diagnostics, std::string fallback,
+    auto post_audio_offset_diagnostic(const diagnostic_list_t& diagnostics, std::string fallback,
                                       wormedit::notification_severity_t fallback_severity)
         -> std::string {
         if (!diagnostics.empty())
             return post_audio_offset_feedback(
-                context, to_notification_severity(diagnostics.front().severity),
+                to_notification_severity(diagnostics.front().severity),
                 diagnostics.front().message);
-        return post_audio_offset_feedback(context, fallback_severity, std::move(fallback));
+        return post_audio_offset_feedback(fallback_severity, std::move(fallback));
     }
 
     bool dispatch_timing_workspace_action(const WormUiWorkspaceAction& action,
@@ -3717,8 +3714,7 @@ struct application_t::implementation_t {
         return wormedit::sys::invoke_application_command(*command, command_inputs());
     }
 
-    auto post_audio_offset_feedback(AudioOffsetDragContext& context,
-                                    wormedit::notification_severity_t severity, std::string message)
+    auto post_audio_offset_feedback(wormedit::notification_severity_t severity, std::string message)
         -> std::string {
         return post_callback_feedback(platform.notification_sink, severity,
                                       wormedit::notification_source_t::edit, std::move(message));

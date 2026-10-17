@@ -67,7 +67,6 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
         return shift_selection(history, state, *chart, transform == selection_transform_t::shift_later, severity);
     const auto notes = editor_quantize_selection(state).notes;
     if (notes.empty()) return "Select notes before transforming them.";
-    const auto revision = history.document.revision;
     switch (transform) {
     case selection_transform_t::mirror:
         return command_status(apply_lane_mirror(history, {.chart = state.chart, .notes = notes}),

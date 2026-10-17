@@ -72,7 +72,7 @@ auto worm_ui_nuklear_sound_import_add(worm_ui_sound_import_state_t& state,
                    })) {
             ++skipped_duplicate;
         } else {
-            state.items.push_back({path, display_name(path), state.fixed_kind
+            state.items.push_back({.path = path, .name = display_name(path), .kind = state.fixed_kind
                 ? state.fixed_kind : default_kind(path, chart_has_bgm)});
             ++added;
         }

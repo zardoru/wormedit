@@ -114,7 +114,7 @@ auto build_mapping(const chart_document_t& chart, const lane_layout_t& target,
         proposal.mapping.push_back({lane_id_t{id}, mapping.at(id)});
     }
     std::ranges::sort(proposal.mapping, {}, &lane_migration_mapping_t::source_lane);
-    return std::move(mapping);
+    return mapping;
 }
 
 auto absolute_range(const measure_index_t& index, local_position_t begin_position,

@@ -9,8 +9,8 @@
 namespace wormedit::sys {
 namespace {
 
-using wide_unsigned_t = unsigned __int128;
-using wide_signed_t = __int128;
+__extension__ using wide_unsigned_t = unsigned __int128;
+__extension__ using wide_signed_t = __int128;
 
 auto wide_magnitude(wide_signed_t value) -> wide_unsigned_t {
     return value < 0 ? static_cast<wide_unsigned_t>(-(value + 1)) + 1
@@ -73,8 +73,8 @@ auto beat_at_row(const chart_document_t& chart, const measure_index_t& measures,
     std::size_t measure_index = 0;
     while (measure_index + 1 < measures.entries.size() &&
            row.numerator >= 0 &&
-           static_cast<unsigned __int128>(row.numerator) >=
-               static_cast<unsigned __int128>(measures.entries[measure_index + 1].absolute_begin_row) *
+           static_cast<wide_unsigned_t>(row.numerator) >=
+               static_cast<wide_unsigned_t>(measures.entries[measure_index + 1].absolute_begin_row) *
                    row.denominator) {
         ++measure_index;
     }
@@ -83,9 +83,9 @@ auto beat_at_row(const chart_document_t& chart, const measure_index_t& measures,
     if (meter.numerator == 0 || meter.denominator == 0 || chart.divisions_per_standard_measure == 0)
         return {measure_index + 1, 1};
     const auto begin = measures.entries[measure_index].absolute_begin_row;
-    const auto numerator = row.numerator - static_cast<__int128>(begin) * row.denominator;
+    const auto numerator = row.numerator - static_cast<wide_signed_t>(begin) * row.denominator;
     const auto scaled = numerator * meter.denominator;
-    const auto beat_units = static_cast<__int128>(chart.divisions_per_standard_measure) *
+    const auto beat_units = static_cast<wide_signed_t>(chart.divisions_per_standard_measure) *
                             row.denominator;
     auto beat_index = scaled / beat_units;
     if (scaled < 0 && scaled % beat_units != 0) --beat_index;

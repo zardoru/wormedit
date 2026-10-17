@@ -972,7 +972,7 @@ auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComp
     -> bool;
 
 auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input, double field_left,
-                                 double field_width, double pixels_per_row, bool downscroll,
+                                 double field_width, bool downscroll,
                                  bool bindings_truncated) -> bool;
 
 void prepare_compose_bgm_widths(const wormedit::chart_document_t& chart, std::uint64_t project,

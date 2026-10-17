@@ -1,3 +1,4 @@
+#include <wormedit/core/compiler.h>
 #include <wormedit/core/numeric_text.h>
 #include "../core/text_util.h"
 #include "id_source.h"
@@ -180,7 +181,7 @@ struct diagnostic_failure_t {
     throw diagnostic_failure_t{code, std::move(message), std::move(path), offset};
 }
 
-auto required_member(const json_value_t& value, std::string_view key, std::string path)
+WORMEDIT_NO_DANGLING auto required_member(const json_value_t& value, std::string_view key, std::string path)
     -> const json_value_t& {
     const auto* result = member(value, key);
     if (result == nullptr) {
@@ -190,7 +191,7 @@ auto required_member(const json_value_t& value, std::string_view key, std::strin
     return *result;
 }
 
-auto required_string(const json_value_t& value, std::string path) -> const std::string& {
+WORMEDIT_NO_DANGLING auto required_string(const json_value_t& value, std::string path) -> const std::string& {
     if (value.kind != json_value_t::kind_t::string) {
         fail(bmson_parse_diagnostic_code_t::invalid_type,
              "BMSON field must be a string", std::move(path), value.begin);
@@ -198,7 +199,7 @@ auto required_string(const json_value_t& value, std::string path) -> const std::
     return value.text;
 }
 
-auto required_object(const json_value_t& value, std::string path) -> const json_value_t& {
+WORMEDIT_NO_DANGLING auto required_object(const json_value_t& value, std::string path) -> const json_value_t& {
     if (value.kind != json_value_t::kind_t::object) {
         fail(bmson_parse_diagnostic_code_t::invalid_type,
              "BMSON field must be an object", std::move(path), value.begin);
@@ -206,7 +207,7 @@ auto required_object(const json_value_t& value, std::string path) -> const json_
     return value;
 }
 
-auto required_array(const json_value_t& value, std::string path) -> const json_value_t& {
+WORMEDIT_NO_DANGLING auto required_array(const json_value_t& value, std::string path) -> const json_value_t& {
     if (value.kind != json_value_t::kind_t::array) {
         fail(bmson_parse_diagnostic_code_t::invalid_type,
              "BMSON field must be an array", std::move(path), value.begin);
@@ -643,7 +644,7 @@ struct raw_bmson_events_t {
                     visual_headers.push_back(std::move(parsed));
                 }
             }
-            for (const auto [field, kind] : {
+            for (const auto& [field, kind] : {
                      std::pair{std::string_view{"bga_events"}, visual_event_kind_t::background},
                      std::pair{std::string_view{"layer_events"}, visual_event_kind_t::layer},
                      std::pair{std::string_view{"poor_events"}, visual_event_kind_t::poor}}) {
@@ -881,7 +882,7 @@ class bmson_resource_catalog_t {
     }
 
     auto catalog_info(const json_value_t& info, std::string_view source) -> void {
-        for (const auto [field, kind, role] : {
+        for (const auto& [field, kind, role] : {
                  std::tuple{std::string_view{"back_image"}, asset_kind_t::image, resource_role_t::bga},
                  std::tuple{std::string_view{"eyecatch_image"}, asset_kind_t::image, resource_role_t::bga},
                  std::tuple{std::string_view{"title_image"}, asset_kind_t::image, resource_role_t::bga},

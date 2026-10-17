@@ -52,8 +52,8 @@ auto complete_project_resource_copy(const resource_copy_identity_t& request,
     -> resource_copy_feedback_t {
     using namespace wormedit;
     if (!request.document.is_current(history.document))
-        return {stale_action_message("Resource copy relink"),
-                notification_severity_t::warning};
+        return {.message = stale_action_message("Resource copy relink"),
+                .severity = notification_severity_t::warning};
     const auto audio = history.document.find_audio_asset(request.asset);
     const auto visual = std::ranges::find(history.document.visual_assets, request.asset,
                                           &visual_asset_t::id);
@@ -62,22 +62,23 @@ auto complete_project_resource_copy(const resource_copy_identity_t& request,
         : visual != history.document.visual_assets.end() ? visual->source_path
                                                          : std::filesystem::path{};
     if (current_path != request.source_path)
-        return {"Resource copy finished, but its source changed; it was not relinked.",
-                notification_severity_t::warning};
+        return {.message = "Resource copy finished, but its source changed; it was not relinked.",
+                .severity = notification_severity_t::warning};
     const auto relinked = apply_resource_asset_relink(
         history,
         {.asset = request.asset, .source_path = copied.relative_path});
     if (!relinked.diagnostics.empty())
-        return {relinked.diagnostics.front().message,
-                to_notification_severity(relinked.diagnostics.front().severity)};
+        return {.message = relinked.diagnostics.front().message,
+                .severity = to_notification_severity(relinked.diagnostics.front().severity)};
     if (const auto rebound = rebind_workspace(workspace, history);
         !rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        return {"Resource copied, but workspace rebinding failed.", notification_severity_t::error,
-                true, notification_source_t::document};
-    return {copied.status == project_asset_copy_phase_t::reused
+        return {.message = "Resource copied, but workspace rebinding failed.",
+                .severity = notification_severity_t::error, .publish = true,
+                .source = notification_source_t::document};
+    return {.message = copied.status == project_asset_copy_phase_t::reused
                 ? "Existing project copy linked to the resource."
                 : "Resource copied into the project and linked.",
-            notification_severity_t::success};
+            .severity = notification_severity_t::success};
 }
 
 auto complete_resource_copy(const resource_copy_identity_t& request,
@@ -90,12 +91,12 @@ auto complete_resource_copy(const resource_copy_identity_t& request,
         return complete_project_resource_copy(request, copied, history, workspace);
     const auto reference = export_asset_reference_path(request.output_path, copied.relative_path);
     if (!reference)
-        return {"Export copy finished, but its chart-relative path is invalid.",
-                notification_severity_t::warning};
-    return {copied.status == project_asset_copy_phase_t::reused
+        return {.message = "Export copy finished, but its chart-relative path is invalid.",
+                .severity = notification_severity_t::warning};
+    return {.message = copied.status == project_asset_copy_phase_t::reused
                 ? "Identical export resource is available; export will verify it."
                 : "Resource copied into the export folder; export will verify it.",
-            notification_severity_t::success};
+            .severity = notification_severity_t::success};
 }
 } // namespace
 

@@ -3643,7 +3643,6 @@ auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceActio
     auto& history = environment.document.history;
     auto& workspace = environment.document.workspace;
     auto& interaction_state = environment.editor.retained;
-    auto& application_state = environment.editor.commands;
     auto& metadata_drop = environment.resources->metadata.drop;
     auto& metadata_asset_runtime = environment.resources->metadata.runtime;
     auto& notifications = environment.document.notifications;

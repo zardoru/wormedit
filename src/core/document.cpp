@@ -1236,7 +1236,7 @@ auto validate_chart(const chart_document_t& chart,
     const auto profile_diagnostics = validate_input_profile(profile_layout, chart.input_profile);
     diagnostics.insert(diagnostics.end(), profile_diagnostics.begin(), profile_diagnostics.end());
 
-    auto sound_links = semantic_sound_links_t{resource_assets, diagnostics};
+    auto sound_links = semantic_sound_links_t{.resource_assets = resource_assets, .diagnostics = diagnostics};
     collect_retained_sound_events(chart, sound_links);
 
     auto objects = chart_object_validation_t{chart,      index,     resources,    diagnostics,
@@ -1494,7 +1494,7 @@ auto validate_input_profile(const lane_layout_t& layout, const input_profile_t& 
             lane_stages.emplace(lane.id.value, lane.stage);
         }
     }
-    auto context = input_profile_validation_t{profile, lane_stages, diagnostics};
+    auto context = input_profile_validation_t{.profile = profile, .lane_stages = lane_stages, .diagnostics = diagnostics};
     for (const auto& binding : profile.bindings) {
         validate_input_binding(context, binding);
     }
@@ -1803,7 +1803,7 @@ void contextualize_chart_diagnostics(const chart_document_t& chart,
 
 auto validate_document(const song_document_t& song) -> diagnostic_list_t {
     diagnostic_list_t diagnostics;
-    auto work = document_validation_work_t{song, diagnostics};
+    auto work = document_validation_work_t{.song = song, .diagnostics = diagnostics};
     validate_song_unique_ids(work);
     collect_song_assets(work);
     validate_song_resources(work);

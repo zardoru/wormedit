@@ -2,6 +2,7 @@
 #include "sys/project_open.h"
 #include "sys/project_view.h"
 
+#include <wormedit/core/compiler.h>
 #include <wormedit/core/bmson_layer_defaults.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bms.h>
@@ -168,7 +169,7 @@ auto resolved_asset_directory(const std::filesystem::path& source,
     return directory;
 }
 
-auto extension_matches(bms_asset_directory_cache_t& cache,
+WORMEDIT_NO_DANGLING auto extension_matches(bms_asset_directory_cache_t& cache,
                        const std::filesystem::path& directory, const std::string& stem,
                        const std::string& extension)
     -> const std::vector<std::filesystem::path>& {

@@ -292,7 +292,7 @@ auto insert_bmson_bgm_marker(document_history_t& history,
                              chart_id_t chart, object_id_t reference_bgm_event,
                              local_position_t target, bool restart)
     -> document_command_result_t {
-    const std::array markers{bmson_sound_marker_insertion_t{target, restart}};
+    const std::array markers{bmson_sound_marker_insertion_t{.position = target, .restart = restart}};
     return insert_bmson_sound_markers(history, chart, reference_bgm_event,
                                       markers);
 }

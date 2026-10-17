@@ -322,7 +322,7 @@ auto propose_bmson_bgm_marker(const wormedit::document_history_t& history,
                             application_command_state_t& application_state,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
                             bool restart, wormedit::notification_severity_t* severity) -> std::string {
-    const std::array markers{wormedit::bmson_sound_marker_insertion_t{position, restart}};
+    const std::array markers{wormedit::bmson_sound_marker_insertion_t{.position = position, .restart = restart}};
     return propose_bmson_bgm_markers(history, state, application_state, reference, markers, severity);
 }
 
@@ -1243,7 +1243,6 @@ auto move_compose_bga_event(const WormUiComposeInputAction& input,
         return stale_action_message("BGA event move");
     const auto y = std::clamp(input.y_pixels, 0.0,
                               std::max(0.0, view->viewport_height_pixels - 0.001));
-    const auto revision = context.ui_action.compose_input_document_revision;
     const auto snap = edit_snap_denominator(*chart, context.state);
     const auto position = context.position_at_compose_y_unrestricted(*chart, *view, y);
     const auto target_kind = input.bga_lane_kind_valid || input.bga_lane_kind != 0

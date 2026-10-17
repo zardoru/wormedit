@@ -202,7 +202,7 @@ TEST_CASE("applying a form updates the recipe in one undo step and rejects bad i
     auto invalid = recipe_form_from_recipe(stored);
     invalid.sampling_mode = WORM_UI_TIMING_RECIPE_SAMPLING_FIXED;
     std::snprintf(invalid.fixed_point_count, sizeof(invalid.fixed_point_count), "1");  // needs 2..4096
-    apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, invalid, applied);
+    CHECK_FALSE(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{20}, invalid, applied) == "SV recipe updated.");
     CHECK_FALSE(applied);
     CHECK(apply_recipe_form(history, chart_id_t{10}, recipe_id_t{99}, form, applied) ==
           "The SV recipe no longer exists.");

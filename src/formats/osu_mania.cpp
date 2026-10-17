@@ -575,8 +575,9 @@ auto parse_event_line(const source_line_t& line, fail_t&& fail)
              video ? visual_event_kind_t::video : visual_event_kind_t::background, line.order,
              event_offsets(*parts)});
     } else if (!indented && (kind == "Sprite" || kind == "Animation") && parts->size() >= 4) {
-        result.resources.push_back({(*parts)[3], asset_kind_t::image, resource_role_t::bga,
-                                    line.order, std::nullopt, false});
+        result.resources.push_back({.path = (*parts)[3], .kind = asset_kind_t::image,
+                                    .role = resource_role_t::bga, .order = line.order,
+                                    .time = std::nullopt, .sample_event = false});
         result.storyboard_lines.push_back(line);
     } else if (!indented && kind == "Sample" && parts->size() >= 4) {
         long double sample_time{};

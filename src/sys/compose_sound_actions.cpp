@@ -237,8 +237,7 @@ auto ungrouped_entry_indexes(std::size_t entry_count,
 
 } // namespace
 
-auto import_keysound_feedback(document_history_t& history, workspace_controller_t& workspace,
-                              chart_id_t chart, std::span<const std::string> paths,
+auto import_keysound_feedback(document_history_t& history, chart_id_t chart, std::span<const std::string> paths,
                               sound_kind_t kind = sound_kind_t::keysound)
     -> compose_action_outcome_t {
     const auto* target = history.document.find_chart(chart);
@@ -299,7 +298,7 @@ auto import_keysound_files(document_history_t& history, workspace_controller_t& 
                            chart_id_t chart, std::span<const std::string> paths,
                            notification_sink_t notifications) -> std::string {
     const document_edit_inputs_t document{history, workspace, notifications};
-    auto outcome = import_keysound_feedback(history, workspace, chart, paths);
+    auto outcome = import_keysound_feedback(history, chart, paths);
     outcome.source = notification_source_t::import_;
     auto finished = finish_compose_action(document, notifications, std::move(outcome));
     return std::move(finished.message);
@@ -685,7 +684,7 @@ struct audition_compose_sound_action_t {
         selected = &*found;
         return std::nullopt;
     }
-    auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
+    auto perform(const resource_action_context_t& /*context*/) const -> compose_action_outcome_t {
         application_state->project.sound_selection.pending_sound_audition = resource;
         return compose_action_outcome_t::from(
             "Playing " + (selected->name.empty() ? std::string{"sound"} : selected->name) + ".",
@@ -702,13 +701,12 @@ struct import_compose_sounds_action_t {
     auto perform(const resource_action_context_t& context) const -> compose_action_outcome_t {
         const auto& action = context.action;
         auto& history = context.document.history;
-        auto& workspace = context.document.workspace;
         const auto chart = context.chart;
         std::vector<std::string> paths;
         for (std::size_t index = 0; index < action.compose_import_path_count; ++index)
             if (action.compose_import_paths && action.compose_import_paths[index])
                 paths.emplace_back(action.compose_import_paths[index]);
-        return import_keysound_feedback(history, workspace, chart, paths,
+        return import_keysound_feedback(history, chart, paths,
                                         action.sound_import_kind ==
                                                 static_cast<std::uint8_t>(sound_kind_t::stem)
                                             ? sound_kind_t::stem
@@ -904,7 +902,7 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
         set_first_error(prepared.reason,
                         "Choose between 1 and 1295 audio files for the WAV slots.");
     if (first_slot > 0 && first_slot <= 1295 && !paths.empty() &&
-        (paths.size() > 1295 || paths.size() - 1 > 1295 - first_slot))
+        (paths.size() > 1295 || paths.size() - 1 > static_cast<std::size_t>(1295 - first_slot)))
         set_first_error(prepared.reason,
                         "The selected files exceed the remaining WAV slots through ZZ.");
     const auto sorted = sorted_slot_paths(paths);

@@ -201,7 +201,8 @@ constexpr std::size_t maximum_compose_field_frames = 8;
 struct nk_sdl {
     ComposeFieldFrame* field;
     ComposeFieldFrame* field_frames[maximum_compose_field_frames];
-    std::size_t field_frame_count{}, next_field_frame{};
+    // Zeroed with the rest of the struct by nk_sdl_init*, which allocate it raw.
+    std::size_t field_frame_count, next_field_frame;
     OverviewCache* overview;
     SDL_Window* win;
     SDL_Renderer* renderer;

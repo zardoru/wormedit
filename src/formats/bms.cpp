@@ -1401,7 +1401,7 @@ auto collect_branch_choices(const bms_parse_options_t& options,
         result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
             .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
             .message = "branch choice count exceeds the configured physical line limit; excess choices are ignored",
-            .location = {1, 1}});
+            .location = {.line = 1, .column = 1}});
     for (std::size_t index = 0; index < count; ++index) {
         const auto& choice = options.branch_choices[index];
         if (!choices.emplace(choice.control_source_order, choice.selected_value).second) {
@@ -1413,7 +1413,7 @@ auto collect_branch_choices(const bms_parse_options_t& options,
                 result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                     .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
                     .message = "duplicate choice for an unknown control source order; the first choice is used",
-                    .location = {choice.control_source_order + 1, 1}});
+                    .location = {.line = choice.control_source_order + 1, .column = 1}});
         }
     }
     return choices;
@@ -1428,7 +1428,7 @@ void validate_branch_choices(branch_choice_map_t& choices,
             result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                 .code = bms_parse_diagnostic_code_t::invalid_branch_selection,
                 .message = "branch choice does not identify a RANDOM or SWITCH opening line",
-                .location = {choice->first + 1, 1}});
+                .location = {.line = choice->first + 1, .column = 1}});
             choice = choices.erase(choice);
             continue;
         }
@@ -1565,7 +1565,7 @@ auto prepare_bms_source_lines(std::span<const std::byte> bytes, const bms_parse_
             .severity = diagnostic_severity_t::error,
             .code = bms_parse_diagnostic_code_t::invalid_measure,
             .message = "configured chart-resolution limit must be at least the default 960 rows",
-            .location = {1, 1},
+            .location = {.line = 1, .column = 1},
         });
         return std::nullopt;
     }
@@ -2055,7 +2055,7 @@ auto collect_resource_statement(active_statement_scan_context_t& context,
     return false;
 }
 
-using wide_t = unsigned __int128;
+__extension__ using wide_t = unsigned __int128;
 
 // The fraction with the smallest denominator in the closed interval [low, high] (both positive,
 // low <= high), by continued fractions.
@@ -2337,7 +2337,7 @@ void fallback_measure_length(chart_document_t& chart, std::size_t measure_index,
     result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                                   .code = bms_parse_diagnostic_code_t::invalid_measure,
                                   .message = std::move(message),
-                                  .location = {1, 1}});
+                                  .location = {.line = 1, .column = 1}});
 }
 
 void validate_measure_geometry(chart_document_t& chart, const bms_parse_options_t& options,
@@ -2391,7 +2391,7 @@ void report_unavailable_lane_profile(const bms_parse_options_t& options,
     result.diagnostics.push_back({.severity = diagnostic_severity_t::warning,
                                   .code = bms_parse_diagnostic_code_t::unsupported_channel,
                                   .message = std::move(message),
-                                  .location = {1, 1}});
+                                  .location = {.line = 1, .column = 1}});
     (void)options;
 }
 
@@ -2599,9 +2599,10 @@ auto parse_bms_bytes(std::span<const std::byte> bytes, bms_parse_options_t optio
 
     auto long_note_endpoints =
         std::map<std::uint64_t, std::vector<long_note_endpoint_t>>{};
-    auto channel_materializer = bms_channel_materializer_t{
-        chart, song, result, ids, resource_ids, extended_bpms, stop_definitions, selected_profile,
-        long_note_endpoints};
+    auto channel_materializer = bms_channel_materializer_t{.chart = chart, .song = song, .result = result,
+        .ids = ids, .resource_ids = resource_ids, .extended_bpms = extended_bpms,
+        .stop_definitions = stop_definitions, .selected_profile = selected_profile,
+        .long_note_endpoints = long_note_endpoints};
     auto incomplete_long_note_lanes = std::set<std::uint64_t>{};
     for (const auto& channel : unmaterialized_long_note_channels) {
         if (const auto* lane = channel_materializer.lane_for_channel(channel); lane != nullptr) {

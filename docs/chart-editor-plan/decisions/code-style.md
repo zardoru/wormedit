@@ -32,6 +32,12 @@ it in new code even before the card lands.
   when construction cannot fail; a static `T::from` returning a result over a private constructor
   only when it can fail (core code does not throw). A class never needs a `from` that always succeeds.
   Types with many factories (lane profiles) belong in a catalog instead.
+- **Name the members you set (owner, 2026-10-17).** Build aggregates with designated initializers
+  and leave the rest to their default member initializers (`{.diagnostics = d}`); the build does not
+  warn about the omitted members. A positional brace list (`{a, b}`) must set every member: clang
+  reports one that stops early, and warnings are errors on our targets (`cmake/warnings.cmake`,
+  T-669). Only clang tells the two forms apart, so build the `linux-clang` preset after adding
+  positional initializers.
 - **Members with rules are private.** When reaching a member has a rule (created lazily, finished once,
   resets something), the type is a class: the storage is private with a trailing `_` (`document_`) and
   the accessor that enforces the rule takes the plain name (`document()`), so code outside the type

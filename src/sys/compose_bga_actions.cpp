@@ -43,8 +43,7 @@ auto referenced_bga_resources(const song_document_t& document)
 }
 
 } // namespace
-auto import_bga_feedback(document_history_t& history, workspace_controller_t& workspace,
-                         chart_id_t chart_id, std::span<const std::string> paths)
+auto import_bga_feedback(document_history_t& history, chart_id_t chart_id, std::span<const std::string> paths)
     -> compose_action_outcome_t {
     const auto* chart = history.document.find_chart(chart_id);
     if (chart == nullptr)
@@ -125,7 +124,7 @@ struct import_bga_action_t {
             if (action.compose_import_paths && action.compose_import_paths[index])
                 paths.emplace_back(action.compose_import_paths[index]);
         auto outcome =
-            import_bga_feedback(history, context.document.workspace, context.chart, paths);
+            import_bga_feedback(history, context.chart, paths);
         outcome.source = notification_source_t::import_;
         return outcome;
     }
@@ -171,7 +170,7 @@ auto import_bga_files(document_history_t& history, workspace_controller_t& works
                       chart_id_t chart, std::span<const std::string> paths,
                       notification_sink_t notifications) -> std::string {
     const document_edit_inputs_t document{history, workspace, notifications};
-    auto outcome = import_bga_feedback(history, workspace, chart, paths);
+    auto outcome = import_bga_feedback(history, chart, paths);
     outcome.source = notification_source_t::import_;
     auto finished = finish_compose_action(document, notifications, std::move(outcome));
     return std::move(finished.message);

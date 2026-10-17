@@ -23,11 +23,11 @@ namespace {
 auto positioned_target(const chart_document_t& chart, local_position_t position)
     -> notification_history_target_t {
     const auto measure = chart.find_measure(position.measure);
-    if (measure == nullptr) return {WORM_UI_NOTIFICATION_TARGET_MISSING};
+    if (measure == nullptr) return {.availability = WORM_UI_NOTIFICATION_TARGET_MISSING};
     const auto capacity = measure_capacity_t::from(chart.divisions_per_standard_measure, measure->definition);
     if (!capacity || position.row >= capacity->row_capacity)
-        return {WORM_UI_NOTIFICATION_TARGET_MISSING};
-    return {WORM_UI_NOTIFICATION_TARGET_POSITION, chart.id, position};
+        return {.availability = WORM_UI_NOTIFICATION_TARGET_MISSING};
+    return {.availability = WORM_UI_NOTIFICATION_TARGET_POSITION, .chart = chart.id, .position = position};
 }
 
 template <typename Item>
@@ -46,7 +46,7 @@ auto find_object_target(const chart_document_t& chart, const Items& items, objec
     if (item == items.end()) return std::nullopt;
     const auto position = object_position(*item);
     return position ? positioned_target(chart, *position)
-                    : notification_history_target_t{WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL, chart.id};
+                    : notification_history_target_t{.availability = WORM_UI_NOTIFICATION_TARGET_NONPOSITIONAL, .chart = chart.id};
 }
 
 auto chart_object_target(const chart_document_t& chart, object_id_t id)
@@ -73,7 +73,7 @@ auto resolve_notification_target(const song_document_t& document,
     -> notification_history_target_t {
     if (const auto* exact = std::get_if<notification_chart_position_t>(&target)) {
         const auto chart = document.find_chart(exact->chart);
-        return chart == nullptr ? notification_history_target_t{WORM_UI_NOTIFICATION_TARGET_MISSING}
+        return chart == nullptr ? notification_history_target_t{.availability = WORM_UI_NOTIFICATION_TARGET_MISSING}
                                               : positioned_target(*chart, exact->position);
     }
     const auto* object = std::get_if<object_id_t>(&target);
@@ -81,7 +81,7 @@ auto resolve_notification_target(const song_document_t& document,
     for (const auto& chart : document.charts) {
         if (const auto found = chart_object_target(chart, *object)) return *found;
     }
-    return {WORM_UI_NOTIFICATION_TARGET_MISSING};
+    return {.availability = WORM_UI_NOTIFICATION_TARGET_MISSING};
 }
 
 

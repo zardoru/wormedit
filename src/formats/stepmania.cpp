@@ -2141,11 +2141,11 @@ auto note_map_text(const chart_document_t& chart,
                            : "Chart measure count exceeds the StepMania writer cap", "NOTES"});
         return std::nullopt;
     }
-    note_map_builder_t builder{chart, layout, diagnostics, max_rows_per_measure,
-        max_output_bytes, divisions,
-        std::vector<std::vector<note_map_builder_t::cell_event_t>>(
+    note_map_builder_t builder{.chart = chart, .layout = layout, .diagnostics = diagnostics,
+        .max_rows = max_rows_per_measure, .max_bytes = max_output_bytes, .divisions = divisions,
+        .by_measure = std::vector<std::vector<note_map_builder_t::cell_event_t>>(
             std::max<std::size_t>(1, chart.measures.size())),
-        keysounds};
+        .keysounds = keysounds};
     return builder.build();
 }
 

@@ -1367,7 +1367,7 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
     state.active_lane = lane;
     if (!stem) {
         const auto placed =
-            dispatch_editor_action(scratch, state, place_tap_action_t{target, sound});
+            dispatch_editor_action(scratch, state, place_tap_action_t{.position = target, .sound = sound});
         if (!placed)
             return placed.diagnostics;
         if (placed.created_note)

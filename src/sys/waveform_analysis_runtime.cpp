@@ -189,14 +189,14 @@ auto waveform_completion_notification(const audio::waveform_job_completion_outco
     if (!completed) {
         const auto& failure = completed.error().cause;
         if (failure.code == failure_code_t::cancelled) return std::nullopt;
-        return notification_post_t{notification_severity_t::error, notification_source_t::audio,
-                                   failure.message};
+        return notification_post_t{.severity = notification_severity_t::error,
+                                   .source = notification_source_t::audio, .message = failure.message};
     }
     const auto& analysis = completed->payload;
     if (!analysis || analysis->waveform ||
         analysis->status == audio::waveform_analysis_status_t::cancelled) return std::nullopt;
-    return notification_post_t{notification_severity_t::error, notification_source_t::audio,
-        failure_message ? failure_message : waveform_failure_message(analysis->status)};
+    return notification_post_t{.severity = notification_severity_t::error,
+        .source = notification_source_t::audio, .message = failure_message ? failure_message : waveform_failure_message(analysis->status)};
 }
 
 void waveform_analysis_t::report_waveform_completion(

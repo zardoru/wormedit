@@ -1341,14 +1341,14 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
     auto& diagnostics = composition.render.geometry.diagnostics;
     for (const auto& proposal : composition.duration.proposals) {
         const proposal_geometry_t geometry{
-            proposal.source->note,
-            proposal.source->lane,
-            proposal.source->sound,
-            proposal.preview->kind,
-            proposal.source->begin_row,
-            proposal.end_row,
-            composition.selected.contains(proposal.source->note.value),
-            proposal.source->semantic_color};
+            .note = proposal.source->note,
+            .lane = proposal.source->lane,
+            .sound = proposal.source->sound,
+            .kind = proposal.preview->kind,
+            .begin_row = proposal.source->begin_row,
+            .end_row = proposal.end_row,
+            .selected = composition.selected.contains(proposal.source->note.value),
+            .semantic_color = proposal.source->semantic_color};
         if (!append_proposal_geometry(composition.render, geometry, operate, consume, y_for_row,
                                       band_for_row)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,
@@ -1383,8 +1383,8 @@ auto compose_note_proposals(scene_proposal_composition_t& composition, Operate&&
             continue;
         }
         const auto kind = hold.tail_row ? note_kind_t::hold : note_kind_t::tap;
-        const proposal_geometry_t geometry{{}, hold.lane, {}, kind, hold.head_row, hold.tail_row,
-                                           false, {}};
+        const proposal_geometry_t geometry{.lane = hold.lane, .kind = kind, .begin_row = hold.head_row,
+                                           .end_row = hold.tail_row};
         if (!append_proposal_geometry(composition.render, geometry, operate, consume, y_for_row,
                                       band_for_row)) {
             diagnostics.push_back(error(diagnostic_code_t::invalid_resolution,

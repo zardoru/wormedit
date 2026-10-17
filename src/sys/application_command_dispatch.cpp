@@ -1082,10 +1082,10 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
             "No layer only assigns", notification_severity_t::warning, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
     if (app.project.semantic_layer.semantic_layer_target_none)
-        edit = clear_semantic_layer_membership_action_t{state->chart, state->selected_notes};
+        edit = clear_semantic_layer_membership_action_t{.chart = state->chart, .notes = state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_apply)
-        edit = replace_notes_semantic_layer_action_t{
-            state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes};
+        edit = replace_notes_semantic_layer_action_t{.chart = state->chart,
+            .layer = *app.project.semantic_layer.semantic_layer_target, .notes = state->selected_notes};
     else if (kind == command_kind_t::semantic_layer_remove)
         edit = semantic_layer_membership_edit_t{
             .chart = state->chart,
@@ -1093,9 +1093,9 @@ auto semantic_layer_membership_command(command_context_t& context) -> command_re
             .notes = state->selected_notes,
             .operation = wormedit::membership_operation_t::remove};
     else
-        edit = replace_notes_semantic_layer_action_t{
-            state->chart, *app.project.semantic_layer.semantic_layer_target, state->selected_notes,
-            true};
+        edit = replace_notes_semantic_layer_action_t{.chart = state->chart,
+            .layer = *app.project.semantic_layer.semantic_layer_target, .notes = state->selected_notes,
+            .toggle = true};
     return compose_action_outcome_t::from(
         apply_semantic_layer_edit(context.environment.document.history, edit),
         compose_action_description_t{.success = "Semantic-layer membership updated.",

@@ -110,8 +110,9 @@ auto append_timing(chart_clipboard_t& clipboard, const chart_document_t& chart,
         end = row;
     }
     if (!row || !end || *end < *row) return false;
-    clipboard.objects.push_back({rows_to_fraction(*row, chart.divisions_per_standard_measure),
-        rows_to_fraction(*end - *row, chart.divisions_per_standard_measure), 0, event});
+    clipboard.objects.push_back({.offset = rows_to_fraction(*row, chart.divisions_per_standard_measure),
+        .duration = rows_to_fraction(*end - *row, chart.divisions_per_standard_measure), .lane_index = 0,
+        .payload = event});
     return true;
 }
 
@@ -200,7 +201,7 @@ auto chart_clipboard_t::from(const song_document_t& document,
     const auto indexed = measure_index_t::from(*chart);
     if (!indexed || !chart->divisions_per_standard_measure)
         return std::unexpected(std::string{"The chart positions are invalid."});
-    chart_clipboard_t clipboard{document.id, chart->id, {}};
+    chart_clipboard_t clipboard{.source_song = document.id, .source_chart = chart->id};
     if (!collect(clipboard, *chart, *indexed, selected))
         return std::unexpected(
             std::string{"The selection contains unavailable or unsupported objects."});

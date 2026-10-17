@@ -566,7 +566,7 @@ auto append_selected_bgm_moves(const chart_document_t& chart, const measure_inde
         if (!position || (event->end && !end))
             return {error(diagnostic_code_t::row_out_of_range,
                           "Mixed move would place a BGM head or tail outside the chart", id)};
-        plan.bgm_moves.push_back({id, event->source_lane, *position, end, event->sound});
+        plan.bgm_moves.push_back({.note = id, .lane = event->source_lane, .position = *position, .end = end, .sound = event->sound});
     }
     return {};
 }
@@ -688,8 +688,8 @@ auto plan_single_bgm_move(const document_history_t& history,
     if (!built)
         return built.error();
     const auto& index = *built;
-    note_move_bgm_preview_t preview{event->id, event->source_lane, event->position, event->end,
-                                    event->sound};
+    note_move_bgm_preview_t preview{.note = event->id, .lane = event->source_lane,
+                                    .position = event->position, .end = event->end, .sound = event->sound};
     preview.canvas_begin_row = index.row_of(event->position);
     preview.canvas_end_row =
         event->end ? index.row_of(*event->end) : preview.canvas_begin_row;

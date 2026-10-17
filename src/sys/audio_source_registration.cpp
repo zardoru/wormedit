@@ -133,8 +133,8 @@ auto drain_audition_probe_failures(audio::decoded_source_registry_t& sources)
     auto line = std::to_string(failures.size()) + " audio asset(s) could not be opened (" +
                 failures.front().path.filename().string() +
                 (failures.size() > 1 ? ", ..." : "") + "): " + failures.front().message;
-    return notification_post_t{notification_severity_t::error,
-                               notification_source_t::audio, std::move(line)};
+    return notification_post_t{.severity = notification_severity_t::error,
+                               .source = notification_source_t::audio, .message = std::move(line)};
 }
 
 auto first_use_asset_order(const song_document_t& document) -> std::vector<asset_id_t> {
@@ -403,12 +403,14 @@ auto resident_sample_loader_t::drain_progress() -> std::optional<notification_po
     if (shown == last_progress_) return std::nullopt;
     last_progress_ = shown;
     if (current.running) {
-        return notification_post_t{notification_severity_t::hint, notification_source_t::audio,
-                                   "Loading keysounds " + grouped_count(current.done) + "/" +
+        return notification_post_t{.severity = notification_severity_t::hint,
+                                   .source = notification_source_t::audio,
+                                   .message = "Loading keysounds " + grouped_count(current.done) + "/" +
                                        grouped_count(current.total)};
     }
-    return notification_post_t{notification_severity_t::hint, notification_source_t::audio,
-                               "Loaded " + grouped_count(current.total) +
+    return notification_post_t{.severity = notification_severity_t::hint,
+                               .source = notification_source_t::audio,
+                               .message = "Loaded " + grouped_count(current.total) +
                                    " keysound(s) into memory."};
 }
 
@@ -431,8 +433,8 @@ auto resident_sample_loader_t::drain_report() -> std::optional<notification_post
         if (!line.empty()) line += " ";
         line += std::to_string(failed) + " keysound(s) could not be decoded and keep streaming.";
     }
-    return notification_post_t{notification_severity_t::warning,
-                               notification_source_t::audio, std::move(line)};
+    return notification_post_t{.severity = notification_severity_t::warning,
+                               .source = notification_source_t::audio, .message = std::move(line)};
 }
 
 void resident_sample_loader_t::start(const song_document_t& document,

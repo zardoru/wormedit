@@ -63,8 +63,8 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
         return false;
     result = wormedit::dispatch_editor_action(
         context.environment.document.history, context.state,
-        wormedit::place_virtual_bms_tap_action_t{virtual_hit->first, virtual_hit->second,
-                                                 spec.resource});
+        wormedit::place_virtual_bms_tap_action_t{.canvas_row = virtual_hit->first,
+                                                 .lane = virtual_hit->second, .sample = spec.resource});
     audition_created_note(
         context.environment.commands.preferences.editor_preferences.audition_on_click,
         context.environment.document.history, context.state, result);

@@ -76,14 +76,14 @@ void prepare_rejected_bgm_preview(const chart_document_t& chart, const note_move
         for (const auto& moved : plan.moved) {
             const auto* note = chart.find_note(moved.id);
             pending.bgm_preview.push_back(
-                {moved.id, lane, moved.position, moved.end_position, note->sound});
+                {.note = moved.id, .lane = lane, .position = moved.position, .end = moved.end_position, .sound = note->sound});
         }
         return;
     }
     for (const auto id : plan.occupants) {
         const auto* note = chart.find_note(id);
         if (note)
-            pending.bgm_preview.push_back({id, lane, note->position, note->end, note->sound});
+            pending.bgm_preview.push_back({.note = id, .lane = lane, .position = note->position, .end = note->end, .sound = note->sound});
     }
 }
 
@@ -139,7 +139,7 @@ auto prepare_bgm_move_preview(editor_edit_context_t& context, const note_move_pl
             if (std::ranges::find(ids, event.id) == ids.end())
                 continue;
             pending.bgm_preview.push_back(
-                {event.id, event.source_lane, event.position, event.end, event.sound});
+                {.note = event.id, .lane = event.source_lane, .position = event.position, .end = event.end, .sound = event.sound});
         }
     }
     pending.conflicting_notes = 0;

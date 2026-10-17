@@ -38,7 +38,7 @@ void refresh_action_items(worm_ui_sound_slot_batch_t& state) {
     state.action_items.clear();
     state.action_items.reserve(state.items.size());
     for (const auto& item : state.items)
-        state.action_items.push_back({item.path.c_str(), item.name.c_str(), 2});
+        state.action_items.push_back({.path = item.path.c_str(), .name = item.name.c_str(), .kind = 2});
 }
 
 void draw_batch_header(nk_context* context, chrome::Dialog& dialog,
@@ -119,7 +119,7 @@ void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,
         if (state.reason.empty()) state.reason = "Choose a valid WAV slot and at least one file.";
         return;
     }
-    if (item_count > 1295 || item_count - 1 > 1295 - first_slot) {
+    if (item_count > 1295 || item_count - 1 > static_cast<std::size_t>(1295 - first_slot)) {
         state.reason = "The selected files exceed the remaining WAV slots through ZZ.";
     }
     state.items.reserve(item_count);

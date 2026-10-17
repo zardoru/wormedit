@@ -1857,7 +1857,7 @@ auto reusable_scalar_source(const compose_scene_cache_t& cache, const WormUiComp
            source.grid.row.size() == retained.grid_lines.size();
 }
 auto build_reused_scalar_scene_view(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input, double field_left,
-                                 double field_width, double pixels_per_row, bool downscroll,
+                                 double field_width, bool downscroll,
                                  bool bindings_truncated) -> bool {
     auto& cache = input.frame.cache;
     auto& flattened = input.frame.flattened;
@@ -2065,8 +2065,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
         input.frame.comparison_rows.begin(), input.frame.comparison_rows.end());
     refresh_compose_static_scene_style(cache,view);
     const auto frame_scene_previous = frame_timing().enter(frame_phase_t::scene);
-    if (build_reused_scalar_scene_view(input, field_left_pixels, playable_field_width, pixels_per_row,
-                                    downscroll, lane_key_bindings_truncated)) {
+    if (build_reused_scalar_scene_view(input, field_left_pixels, playable_field_width, downscroll, lane_key_bindings_truncated)) {
         populate_quantize_ghost_geometry(cache, history.document, chart, application_state,
             *retained_state, interaction_view, view, pixels_per_row, downscroll);
         frame_timing().restore(frame_scene_previous);

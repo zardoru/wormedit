@@ -988,8 +988,8 @@ auto timing_index_t::from(const chart_document_t& chart, timing_build_options_t 
         return result;
     }
 
-    timing_build_context_t work{
-        chart, measures, options, result.diagnostics, {0, measures.total_rows}};
+    timing_build_context_t work{.chart = chart, .measures = measures, .options = options,
+                                .diagnostics = result.diagnostics, .boundaries = {0, measures.total_rows}};
     if (work.boundaries.size() > options.maximum_boundaries) {
         result.diagnostics.push_back(error(timing_error_code_t::capacity_exceeded,
                                            "timing boundary count exceeds the configured cap"));
@@ -2127,7 +2127,7 @@ auto scroll_speed_index_t::from(const chart_document_t& chart, const timing_inde
         return result;
     }
 
-    auto event_context = scroll_speed_event_context_t{chart, timing, measures, result.diagnostics};
+    auto event_context = scroll_speed_event_context_t{.chart = chart, .timing = timing, .measures = measures, .diagnostics = result.diagnostics};
     event_context.events.reserve(chart.scrolls.size() + chart.speeds.size());
     collect_scroll_events(event_context);
     collect_speed_events(event_context);
@@ -3273,8 +3273,8 @@ auto timing_index_t::seconds_at_approx(std::uint64_t row, chart_end_policy_t pol
 }
 
 namespace {
-using wide_unsigned_t = unsigned __int128;
-using wide_signed_t = __int128;
+__extension__ using wide_unsigned_t = unsigned __int128;
+__extension__ using wide_signed_t = __int128;
 
 auto gcd_wide(wide_unsigned_t left, wide_unsigned_t right) -> wide_unsigned_t {
     while (right != 0) {

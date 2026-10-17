@@ -234,7 +234,7 @@ inline auto packed_waveform_data_t::from(const song_document_t& document,
     }
     if (chart.source_family != format_family_t::bmson) return std::nullopt;
     packed_waveform_data_t index;
-    packed_geometry_builder_t builder{document, chart, timing, bindings};
+    packed_geometry_builder_t builder{.document = document, .chart = chart, .timing = timing, .bindings = bindings};
     prepare_packed_geometry(builder, *measures);
     std::unordered_map<std::uint64_t, std::vector<std::pair<std::uint64_t, std::uint64_t>>> column_rows;
     for (const auto& measure : chart.measures) for (const auto& event : measure.bgm_events) {

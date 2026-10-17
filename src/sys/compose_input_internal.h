@@ -1063,9 +1063,9 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
     if (input.kind == WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) {
         result = dispatch_editor_action(
             history, state,
-            update_note_move_gesture_action_t{
-                *position, target ? target->lane : lane_id_t{}, input.note_move_to_bgm,
-                input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
+            update_note_move_gesture_action_t{.reference_position = *position,
+                .reference_lane = target ? target->lane : lane_id_t{}, .to_bgm = input.note_move_to_bgm,
+                .preferred_bgm_lane = input.lane_id ? std::optional{object_id_t{input.lane_id}} : std::nullopt});
         accepted = "Selected-note move preview updated.";
     } else {
         result = dispatch_editor_action(

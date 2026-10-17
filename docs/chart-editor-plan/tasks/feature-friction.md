@@ -1,8 +1,8 @@
-# Feature friction: refactors found by the measure lane
+# Feature friction: refactors and tooling found by the measure lane
 
 [Back to task cards](../tasks.md).
 
-Building the measure lane ([T-654–T-657](measure-lane.md)) crossed core, sys and UI. T-657's card listed 5 files and its commit touched 22; T-656 listed 3 and touched 8. Most of the gap was finding the places to change. The [retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md) records each observation; these cards are its proposed fixes that no open card covers. Proposed fixes that fit an open card are recorded on that card instead: T-643, T-644, T-646 and T-653 in [state ownership](state-ownership.md).
+Building the measure lane ([T-654–T-657](measure-lane.md)) crossed core, sys and UI. T-657's card listed 5 files and its commit touched 22; T-656 listed 3 and touched 8. Most of the gap was finding the places to change. The [retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md) records each observation; these cards are its proposed fixes that no open card covers. Proposed fixes that fit an open card are recorded on that card instead: T-621, T-643, T-644, T-646 and T-653 in [state ownership](state-ownership.md). T-665–T-671 came from a second pass over how to make pending cards easier to land and problems easier to catch, in both tooling and code. One codebase question went to the owner as [open question 20](../decisions/open-questions.md).
 
 All of these are **proposed** (2026-10-17) and wait for owner approval; none is scheduled. Each card says plainly how much it is worth. Two constraints apply throughout:
 - The [Nuklear audit](../../audits/nuklear-2026-10-16.md) rejects stored callbacks, virtual dispatch and table-driven type erasure for canvas rendering. Sharing here means plain named functions over the view.
@@ -23,6 +23,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   5. `AGENTS.md`: build with `cmake --build build --parallel "$(nproc)"` (`build/` uses the Makefile generator, which is serial by default).
   6. `tasks.md` rules: before writing **Files owned**, grep how the nearest existing feature is wired (for a lane: the BGA lane and timing markers) and list those files.
   7. `code-style.md`: a frontend view of an object the user can select or edit carries the object's ID; display numbers are not keys (see the proposed addition on T-653).
+  8. "Adding an X" recipes in `docs/architecture.md`, each a short list of every touchpoint with file and symbol: a selection object kind, a Compose action, a toolbar button, a Compose view field, a selectable canvas lane. Write each by tracing a recent real addition (`bar_line`, `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE`, the measure-lane toggles and lane). Where a recipe step could instead be a compile error, note it for T-661/T-669 rather than relying on the recipe.
 - **Invariants:** No code change. Every symbol named in the docs exists (grep each).
 - **Reject/failure behavior:** A claim the code contradicts is corrected or dropped, not written.
 - **Verify:** `ctest --test-dir build -R '^documentation\.' --output-on-failure`; grep every symbol the new text names.
@@ -116,14 +117,131 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
 
 - **Status:** Proposed (2026-10-17; awaiting owner approval)
 - **Value:** Small. The default smoke project has one real measure, so bar-line or measure work needs a hand-picked project and trial clicks.
-- **Outcome:** `scripts/smoke-compose-virtual-x.sh` can open a checked-in multi-measure chart, and its header comment notes the field origin in the real window (x ≈ 49 at 1280×720, behind the tool column).
+- **Outcome:** `scripts/smoke-compose-virtual-x.sh` can open a checked-in multi-measure chart, takes an optional `STEPS=<file>` hook that replaces its final capture (so scripted interactions no longer need a `sed`-edited copy of the script), and its header comment notes the field origin in the real window (x ≈ 49 at 1280×720, behind the tool column) and two known traps: a steps file must end with `kill -9 $app_pid` or cleanup hangs, and Ctrl+Alt chords never reach the app under Xvfb (use the event harness for those).
 - **Read first:** `scripts/smoke-compose-virtual-x.sh`, `tests/fixtures/README.md`.
 - **Files owned:** `scripts/smoke-compose-virtual-x.sh`, one new fixture under `tests/fixtures/`, `tests/fixtures/README.md`, this card.
 - **Steps:**
   1. Stale-plan check: whether an existing fixture (for example under `tests/fixtures/osu/`) already has several measures and opens through the script's project argument; if one does, document it instead of adding a file.
   2. Otherwise add a small synthetic chart (about eight measures, a few notes, no audio) with its README row.
-  3. Note the field origin and the fixture in the script's header comment.
+  3. Add the `STEPS` hook: when set, source the file (with `click_at`, `$window_id`, `$output` and `$app_pid` available) instead of the final `import`.
+  4. Note the field origin, the fixture and the two traps in the script's header comment.
 - **Invariants:** Default script behavior unchanged; isolated Xvfb only.
 - **Reject/failure behavior:** If the script cannot open the fixture's format, use a native project fixture instead.
-- **Verify:** Run the script with the fixture and inspect the PNG: several measure labels and bar lines are visible.
+- **Verify:** Run the script with the fixture and inspect the PNG: several measure labels and bar lines are visible. Run it once with a two-line `STEPS` file (one click, one capture) and inspect that PNG too.
 - **Out of scope:** Scripted interaction steps beyond opening the chart.
+
+## T-665 Define GATE as one script
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** High. T-645–T-650 say "Verify: GATE", but nothing in the repository defines GATE. Every other card repeats a hand-run Verify block. During T-657 a static-initialization abort made ctest print "Error listing tests", which a search for "tests failed" did not catch, so a whole test binary silently did not run.
+- **Outcome:** `scripts/gate.sh` builds in parallel, runs ctest and fails on any test-listing error as well as on failures, runs the event-harness and documentation labels, runs `git diff --check`, runs the complexity comparison from T-666 on changed `.cpp` files once that exists, and prints one pass/fail summary with log paths. `docs/chart-editor-plan/tasks.md` defines GATE as this script.
+- **Read first:** `AGENTS.md` (Build and verify), `docs/chart-editor-plan/tasks.md` (rules), the Verify fields of T-641 and T-645, `scripts/check-staged-cpp.py` (existing script style).
+- **Files owned:** `scripts/gate.sh` (new), `docs/chart-editor-plan/tasks.md`, `AGENTS.md`, this card.
+- **Steps:**
+  1. Stale-plan check: `ls scripts/ | grep -i gate`; `grep -rn "GATE" docs AGENTS.md`.
+  2. Write the script: build directory as an argument (default `build`), `--parallel "$(nproc)"`, logs under a temporary directory it prints, nonzero exit on any failed stage. Treat "Error listing tests" and "Not Run" in ctest output as failures.
+  3. Define GATE in `tasks.md` and point `AGENTS.md` at the script.
+  4. Prove the listing-error detection: temporarily add a failing static initializer in a scratch test, run the script, see it fail, then remove it.
+- **Invariants:** No test, build flag or source change. The script only reads the tree and writes logs outside it.
+- **Reject/failure behavior:** Any stage failure fails the whole gate with that stage named; the script never reports success after a stage it could not run.
+- **Verify:** Run `scripts/gate.sh` on a clean tree (passes) and on the scratch listing failure from step 4 (fails, naming the stage); `ctest --test-dir build -R '^documentation\.'`.
+- **Out of scope:** Xvfb captures (they need a display and stay manual); the complexity baseline itself (T-666); CI configuration.
+
+## T-666 Check "no new or raised complexity" against a checked-in baseline
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** Medium-high. Every card requires "no new or increased clang-tidy complexity findings", and today the comparison is by memory. T-657 pushed three functions from at or below 25 to 26–28, which I noticed only because I happened to run the check; a function already over the limit getting worse would be easy to miss.
+- **Outcome:** `cmake/complexity_baseline.txt` lists every function currently above 25 with its score. A script runs clang-tidy's cognitive-complexity check on given (or changed) `.cpp` files and fails on a new function above 25 or an increase over the baseline; it prints decreases so the baseline can be lowered in the same commit, as the ceremony ratchet does.
+- **Read first:** `AGENTS.md` (C++ function complexity), `cmake/ceremony_ratchet.txt` and `cmake/check_ceremony_ratchet.cmake` (the ratchet convention), `docs/chart-editor-plan/decisions/code-style.md` ("Ratchets").
+- **Files owned:** `cmake/complexity_baseline.txt` (new), `scripts/check-complexity.py` (new), `AGENTS.md`, this card.
+- **Steps:**
+  1. Stale-plan check: `ls cmake scripts | grep -i complex`.
+  2. Generate the baseline from a full run over `src/` with the Threshold 25 configuration; key entries by file and function name, not line.
+  3. Write the comparison script (changed files from `git diff --name-only` by default) and document it in `AGENTS.md`.
+  4. Prove it: raise a scratch function's complexity, see the failure, revert.
+- **Invariants:** No source change; the baseline matches today's findings exactly.
+- **Reject/failure behavior:** A function the script cannot attribute (renamed or moved) is reported as new rather than skipped.
+- **Verify:** Run the script on a clean tree (passes) and on the step 4 change (fails); `ctest --test-dir build -R '^documentation\.'`.
+- **Out of scope:** Fixing existing violations; other clang-tidy checks.
+
+## T-667 Test the measure editor and row moves with random edit sequences
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** Medium. `measure_editor` and `time_shift` share one strong invariant: a keep-rows edit leaves every object's absolute row unchanged and the document valid. Example tests cover only the cases their author thought of; random sequences find the rest cheaply.
+- **Outcome:** A seeded property test applies random sequences of `add_bar_lines`, `remove_bar_lines`, `move_bar_lines` and `stage_shift_selection` (both bar-line time policies) to small generated charts, and checks after each step: `validate_document` is clean; under keep-song-time every non-bar-line object keeps its absolute row; a rejected edit leaves the chart unchanged. A failure prints its seed and step list.
+- **Read first:** `include/wormedit/core/measure_editor.h`, `include/wormedit/core/time_shift.h`, `tests/core/measure_editor_tests.cpp`, `tests/core/time_shift_tests.cpp`, `tests/slow_tests.cmake`.
+- **Files owned:** `tests/core/measure_geometry_property_tests.cpp` (new), `tests/CMakeLists.txt`, `tests/slow_tests.cmake`, this card.
+- **Steps:**
+  1. Stale-plan check: `grep -rln "seed" tests/core | head`.
+  2. Generator: 1–8 measures of mixed lengths, notes and holds across bar lines, a few timing events and a lane layout change; fixed seeds in the normal suite, a larger run labelled slow.
+  3. Write the invariants; fix any real bug found in a separate commit with its own regression test, and record it here.
+- **Invariants:** Deterministic for a seed; the normal-suite part stays under a second.
+- **Reject/failure behavior:** A failing seed becomes an ordinary example test once understood.
+- **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'`; the slow label once.
+- **Out of scope:** Propagation correctness beyond "valid and deterministic" (its expected rows need their own examples); other editors.
+
+## T-668 Let the documentation check catch stale references and statuses
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** Medium. Cards cite `file.cpp:1258` lines that drift, the task index's free-ID line had gone stale (it said "above T-628" while T-657 existed), and status values mix forms ("ready", "Ready (owner approved…)", "done (date)"), so nothing can list what is ready.
+- **Outcome:** `documentation.chart_editor_state` also fails on a backticked repository path in a card that does not exist, warns on `path:line` citations, checks that every Status begins with one word from a fixed set (`Proposed`, `Ready`, `In progress`, `Partial`, `Blocked`, `Done`), and checks the free-ID line against the highest card number. A small script lists Ready cards with their "after" constraints.
+- **Read first:** `cmake/check_chart_editor_docs.cmake`, `docs/chart-editor-plan/tasks.md`.
+- **Files owned:** `cmake/check_chart_editor_docs.cmake`, `docs/chart-editor-plan/tasks.md`, `scripts/list-ready-cards.py` (new), and the card files whose Status lines need the leading word normalized (wording after the first word unchanged), this card.
+- **Steps:**
+  1. Stale-plan check: read the current checker's card-field section.
+  2. Normalize existing Status lines to the fixed leading words, changing only case and the first word.
+  3. Add the path-existence check (skipping paths a card marks as new) and the `:line` warning.
+  4. Add the free-ID check and the ready-card script.
+- **Invariants:** No card content changes beyond the Status leading word.
+- **Reject/failure behavior:** A path that legitimately does not exist yet is written with "(new)" after it; the checker skips those.
+- **Verify:** `ctest --test-dir build -R '^documentation\.' --output-on-failure`; introduce a broken path in a scratch card and see the failure.
+- **Out of scope:** Rewriting `resume.md`; changing required card fields.
+
+## T-669 Reach zero compiler warnings, then make them errors on our targets
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** High for its cost. When an enum gains a value, `-Wswitch` is what points at every switch that must handle it. The current build already prints warnings (unused variables at `src/sys/application.cpp:3048`, `src/sys/compose_actions.cpp:3646`, `src/sys/compose_input.cpp:1246`, and missing-field-initializer warnings), so a new one scrolls past unseen.
+- **Outcome:** Wormedit's own targets build with zero warnings under GCC and the linux-clang preset, and `-Werror` (`/WX` for MSVC) is on for those targets only, never for dependencies.
+- **Read first:** `CMakeLists.txt` (the `target_compile_options` lines), `CMakePresets.json`, `AGENTS.md`.
+- **Files owned:** `CMakeLists.txt`, and every source file with a warning, recorded on this card after step 1's inventory, this card.
+- **Steps:**
+  1. Stale-plan check: `grep -n "Werror" CMakeLists.txt`. Inventory: a full clean build of `build/` and the linux-clang preset, saving every warning by kind and file.
+  2. Fix warnings one kind per commit. Behavior-neutral only: an unused variable that hides a real bug goes to the owner instead.
+  3. Turn on `-Werror` for the project's targets.
+- **Invariants:** No behavior change; the test suite passes after each commit.
+- **Reject/failure behavior:** A warning that cannot be fixed neutrally is suppressed locally with a comment naming why, never by a global flag.
+- **Verify:** Clean builds of both configurations with zero warnings; `ctest --test-dir build --output-on-failure`.
+- **Out of scope:** Warnings in dependencies; adding new warning flags beyond `-Wall -Wextra -Wpedantic`; the Windows cross build unless its toolchain is available.
+
+## T-670 Split `interaction.h` by role
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval; measure first)
+- **Value:** Uncertain until step 1. `include/wormedit/core/interaction.h` holds about 780 declarations with 46 includers, so most core header edits rebuild most of the tree and the header is hard to navigate. T-655 made it a little worse by including `time_shift.h` from it. The split pays off only if most includers need a small part.
+- **Outcome:** Separate headers for interaction types (selection objects, scope, state), actions, and queries/views, with `interaction.h` kept as an umbrella during migration; includers move to the narrowest header they need, and the umbrella's includer count drops.
+- **Read first:** `include/wormedit/core/interaction.h`, `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`.
+- **Files owned:** `include/wormedit/core/interaction.h`, new `include/wormedit/core/interaction_*.h` headers, and the includers changed in step 3, recorded on this card, this card.
+- **Steps:**
+  1. Stale-plan check, then measure: for each includer, which declaration groups it uses; time a rebuild after touching `interaction.h`. **STOP** and report to the owner if fewer than half the includers would avoid a group.
+  2. Move declarations into role headers without changing them; the umbrella includes all of them.
+  3. Point includers at the narrowest headers; re-time the rebuild and record both times here.
+- **Invariants:** No declaration changes; identical behavior and tests.
+- **Reject/failure behavior:** A cyclic dependency between the new headers stops the split at that boundary; keep those declarations together.
+- **Verify:** `cmake --build build --parallel "$(nproc)"`; `ctest --test-dir build --output-on-failure`; recorded before and after rebuild times.
+- **Out of scope:** Changing any type or action; T-621's folder moves.
+
+## T-671 Share test helpers and put new tests by feature
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval; after T-644's pruning in the same files)
+- **Value:** Medium, cheap. Event-harness helpers are copied across test files under different names (`button_event` and `mouse_button`, `motion_event` and `mouse_motion`, `click_at` and `click`). Test files are named by history rather than feature: T-657's sys tests landed in `compose_action_notification_tests.cpp` and `frame_timing_tests.cpp` only because those files had the fixtures and includes, and each of these files holds 100–250 test cases.
+- **Outcome:** One set of pointer and keyboard helpers in `tests/ui/nuklear_event_harness.h`, and one sys dispatch fixture in `tests/support/` (or the existing `tests/sys/*_fixture.h`), used by every test file. New feature tests go in a file named for the feature; the testing doc says so. Existing tests move only where a file holds a clearly separate feature, such as the measure-lane cases.
+- **Read first:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/sys/application_dispatch_fixture.h`, `docs/chart-editor-plan/testing.md`, T-644.
+- **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `tests/support/` (new fixture headers), the test files whose local helper copies are removed (listed on this card after step 1), `tests/CMakeLists.txt`, `docs/chart-editor-plan/testing.md`, this card.
+- **Steps:**
+  1. Stale-plan check and inventory: `grep -rn "auto button_event\|auto mouse_button\|auto motion_event\|auto mouse_motion\|auto click_at\|auto click(" tests`.
+  2. Move one helper family into the harness header per commit, deleting local copies.
+  3. Extract the sys dispatch fixture used by the BGA and measure-lane input tests.
+  4. Move the measure-lane sys and harness cases into `tests/sys/measure_lane_tests.cpp` and `tests/ui/measure_lane_event_harness_tests.cpp` as the example; document the rule.
+- **Invariants:** Same assertions and the same number of test cases; no production change.
+- **Reject/failure behavior:** Helpers that differ in behavior (for example click counts or timing) stay distinct under different names, with the difference recorded.
+- **Verify:** `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; compare case counts before and after.
+- **Out of scope:** Deleting tests (T-644); finding widgets by tooltip (T-662).

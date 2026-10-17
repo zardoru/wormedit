@@ -75,6 +75,10 @@
    - **Asked (user, 2026-10-17):** a measure lane that treats measure lines as natural notes, "with full copy/paste displace etc. support" (T-654–T-657).
    - **Provisional default (unconfirmed):** Other objects keep their song time (rows), as the Alt-drag bar-line gesture does; a placed or pasted bar line splits the measure it lands in; a deleted one merges its two measures; a bar line moving onto another merges with it. "Displace" means bar lines move with the rest of a selection under the same move and collision policy as notes; nothing ripples later measures.
    - **Answered (2026-10-17):** The provisional default stands: bar-line edits are generally presentational, so other objects keep their song time. Time propagation (later content riding with a moved bar line) is an explicit toggle, off by default and used only when requested (T-654–T-657).
+20. Does the C ABI between sys and the Nuklear frontend still earn its cost for Compose?
+   - **Asked (Claude, 2026-10-17, from the [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md)):** every Compose view datum travels core type → sys projection (`src/sys/compose_view.cpp`) → frame storage (`src/sys/workspace_view.h`) → C struct (`WormUiComposeView`, about 430 fields in one flat struct) → Nuklear. T-657 needed edits at each step. If the only consumer is the in-process Nuklear frontend, this boundary is the costliest layer in every UI feature; if it exists for WASM or other frontends, it should stay and only get cheaper.
+   - **Provisional default (unconfirmed):** keep the C ABI. A cheaper, separate improvement: group `WormUiComposeView` into per-feature sub-structs so a feature's fields sit together. That changes ABI layout but no lifetimes (D6 restricts lifetimes, not grouping).
+   - **Blocks:** any proposal to replace or bypass the C ABI, and the sub-struct grouping (an ABI layout change). T-653 proceeds either way.
 
 ## How to use this list
 

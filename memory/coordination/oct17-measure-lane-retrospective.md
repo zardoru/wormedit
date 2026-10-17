@@ -123,6 +123,8 @@ S12 → T-664, all in [feature friction](../../docs/chart-editor-plan/tasks/feat
 S2 → T-653 (inventory only; the fix changes ABI layout, which T-653 excludes),
 S7 → T-646, S10 → T-644, as proposed additions in
 [state ownership](../../docs/chart-editor-plan/tasks/state-ownership.md).
+A second pass (tooling and code) added T-665–T-671 to the same file, a
+file-split addition on T-621, and open question 20 on the C ABI's cost.
 
 Checked against the open refactoring cards (T-621, T-633, T-639, T-641–T-653) and
 the decisions they carry. Two constraints shape the drafts:

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <span>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_types.h>
 
 namespace wormedit {
 enum class sound_selection_key_kind_t { resource, asset, channel };

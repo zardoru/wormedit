@@ -7,6 +7,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <array>
 #include <bit>

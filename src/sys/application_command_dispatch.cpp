@@ -20,7 +20,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>

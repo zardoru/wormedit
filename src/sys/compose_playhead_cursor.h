@@ -3,7 +3,7 @@
 #include <wormedit/core/grid.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/snap.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 
 #include <algorithm>
 #include <cmath>

@@ -33,7 +33,7 @@
 #include <wormedit/core/command.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/grid.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/lane_layout_editor.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>

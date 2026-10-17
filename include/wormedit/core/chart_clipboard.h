@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/proposal.h>
 
 #include <optional>

@@ -3,6 +3,7 @@
 
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <algorithm>
 #include <map>

@@ -1,6 +1,8 @@
 #include "../support/stale_action_assertions.h"
 #include <wormedit/core/timing_lane_catalog.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/virtual_canvas.h>

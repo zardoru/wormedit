@@ -7,7 +7,7 @@ and seeks change the chart position by moving the field beneath the line.
 
 ## Shared implementation
 
-`include/wormedit/core/interaction.h` owns cursor mutations:
+`include/wormedit/core/interaction_cursor_pose.h` owns cursor mutations:
 
 - `place_cursor_at` and `place_cursor_on_picked_row` move the logical authored row
   and discard stale fractional offsets. Neither moves the screen anchor.

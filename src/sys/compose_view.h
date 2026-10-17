@@ -27,7 +27,7 @@
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/audio_offset_editor.h>
 #include <wormedit/core/tap_timing_apply.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/chart_clipboard.h>
 #include <wormedit/core/player_preview.h>

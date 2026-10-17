@@ -2,7 +2,7 @@
 
 #include "sys/metadata_commands.h"
 
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/semantic_layer_editor.h>
 #include <algorithm>
 

@@ -25,6 +25,9 @@
 #include <wormedit/core/command_registry.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>

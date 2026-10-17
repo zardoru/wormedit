@@ -4,7 +4,7 @@
 #include <chrono>
 #include <optional>
 #include <wormedit/core/command.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/workspace.h>
 namespace wormedit::sys {

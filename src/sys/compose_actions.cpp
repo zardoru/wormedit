@@ -24,7 +24,8 @@
 #include <wormedit/core/bms_branch_editor.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/command.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/lane_layout_editor.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/lane_profiles.h>

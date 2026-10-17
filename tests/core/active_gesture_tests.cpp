@@ -3,6 +3,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <array>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 using namespace wormedit;
 static_assert(editor_gesture<pending_note_duration_gesture_t, object_id_t, local_position_t>);

@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/result.h>
 
 #include <cstddef>

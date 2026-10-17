@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 
 namespace wormedit::sys {
 

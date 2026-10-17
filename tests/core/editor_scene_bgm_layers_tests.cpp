@@ -1,5 +1,5 @@
 #include <wormedit/core/editor_scene.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <catch2/catch_test_macros.hpp>
 

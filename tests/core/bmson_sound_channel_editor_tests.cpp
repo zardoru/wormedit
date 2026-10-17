@@ -1,5 +1,5 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <catch2/generators/catch_generators.hpp>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/resource_assignment.h>

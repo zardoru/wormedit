@@ -1,4 +1,6 @@
 #include "interaction_internal.h"
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/time_shift.h>
 namespace wormedit::interaction_detail {
 auto resolve_resize_parameters(const chart_document_t& chart, const measure_index_t& index,
                                std::vector<object_id_t>& targets, object_id_t reference_id,

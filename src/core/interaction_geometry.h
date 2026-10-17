@@ -1,5 +1,5 @@
 #pragma once
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_types.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <cmath>

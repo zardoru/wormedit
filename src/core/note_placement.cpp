@@ -1,6 +1,8 @@
 #include "interaction_gesture_runner.h"
 #include "chart_object_ids.h"
 #include "interaction_internal.h"
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
 namespace wormedit::interaction_detail {
 auto is_plain_editable_note(const note_t& note) -> bool {
     const auto plain_kind = (note.kind == note_kind_t::tap && !note.end.has_value()) ||

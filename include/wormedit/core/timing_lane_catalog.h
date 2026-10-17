@@ -1,7 +1,7 @@
 #pragma once
 
 #include <wormedit/core/catalogs.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_types.h>
 #include <wormedit/core/timing_lane_controller.h>
 
 namespace wormedit {

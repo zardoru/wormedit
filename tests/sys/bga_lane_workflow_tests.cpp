@@ -1,5 +1,6 @@
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/lane_profiles.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>

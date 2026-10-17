@@ -3,7 +3,7 @@
 #include "sys/sound_usage_view.h"
 
 #include <ui/frontend.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/workspace.h>
 
 #include <optional>

@@ -1,6 +1,8 @@
 #include "sys/compose_navigation.h"
 #include "sys/compose_playhead_skip.h"
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <algorithm>
 #include <variant>
 

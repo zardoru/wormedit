@@ -1,6 +1,6 @@
 #include "sys/project_open.h"
 
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/stepmania.h>

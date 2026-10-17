@@ -1,5 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 
 TEST_CASE("Cursor moves and temporary restoration preserve the screen anchor",
           "[unit][core][interaction][cursor]") {

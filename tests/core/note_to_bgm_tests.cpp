@@ -1,5 +1,5 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/formats/bmson.h>
 #include <wormedit/formats/bms.h>

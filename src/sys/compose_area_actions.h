@@ -3,7 +3,7 @@
 #include "ui/frontend.h"
 #include <optional>
 #include <string>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/notifications.h>
 namespace wormedit::sys {
 constexpr auto compose_area_pause_conversion(WormUiComposeActionKind kind) -> bool {

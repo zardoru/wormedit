@@ -1,7 +1,7 @@
 #include <wormedit/core/catalogs.h>
 #include "interaction_internal.h"
 #include "interaction_geometry.h"
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/snap.h>
 
 #include <wormedit/core/rational.h>

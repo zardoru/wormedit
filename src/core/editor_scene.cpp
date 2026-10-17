@@ -3,6 +3,7 @@
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/interaction_cursor_pose.h>
 
 #include <algorithm>
 #include <array>

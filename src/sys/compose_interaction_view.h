@@ -1,6 +1,6 @@
 #pragma once
 
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/timing.h>
 
 #include <optional>

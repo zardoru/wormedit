@@ -21,6 +21,9 @@
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/timing.h>
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <SDL3/SDL_scancode.h>
 

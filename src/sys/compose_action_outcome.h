@@ -2,7 +2,7 @@
 
 #include <wormedit/core/command.h>
 #include <wormedit/core/command_registry.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/workspace.h>
 

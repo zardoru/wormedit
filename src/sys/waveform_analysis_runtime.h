@@ -11,7 +11,7 @@
 #include <wormedit/audio/waveform_job.h>
 #include <wormedit/core/document.h>
 #include <wormedit/core/workspace.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/task_graph.h>
 

@@ -1,6 +1,7 @@
 #include <wormedit/audio/waveform.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/interaction_queries.h>
 
 #include <catch2/catch_test_macros.hpp>
 

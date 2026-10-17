@@ -5,7 +5,7 @@
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/conversion.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/resource_assignment.h>
 
 #include <catch2/catch_test_macros.hpp>

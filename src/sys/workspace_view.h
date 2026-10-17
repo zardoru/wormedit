@@ -7,7 +7,7 @@
 
 #include <wormedit/core/arena.h>
 #include <wormedit/core/grid.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/recovery_controller.h>
 #include <wormedit/core/workspace.h>

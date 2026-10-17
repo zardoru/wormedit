@@ -1,5 +1,6 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/timing.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include "sys/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
 

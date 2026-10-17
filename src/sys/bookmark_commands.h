@@ -4,7 +4,7 @@
 #include "sys/bookmark_navigation.h"
 
 #include <wormedit/core/command.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_types.h>
 #include <wormedit/core/marker_navigation.h>
 #include <wormedit/core/timing.h>
 

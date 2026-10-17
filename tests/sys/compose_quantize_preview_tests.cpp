@@ -3,6 +3,7 @@
 #include "sys/compose_quantize_preview.h"
 #include <wormedit/core/command.h>
 #include <wormedit/core/quantize.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <catch2/catch_test_macros.hpp>
 

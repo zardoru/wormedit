@@ -1,4 +1,7 @@
 #include "interaction_gesture_runner.h"
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/time_shift.h>
 namespace wormedit {
 using namespace interaction_detail;
 

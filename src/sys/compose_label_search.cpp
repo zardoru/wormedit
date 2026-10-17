@@ -4,6 +4,7 @@
 
 #include <wormedit/core/grid.h>
 #include <wormedit/core/note_label_editor.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <algorithm>
 #include <variant>

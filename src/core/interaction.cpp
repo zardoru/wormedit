@@ -2,7 +2,9 @@
 #include "interaction_geometry.h"
 #include "interaction_gesture_runner.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>

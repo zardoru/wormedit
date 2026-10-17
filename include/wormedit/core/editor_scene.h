@@ -3,7 +3,7 @@
 
 #include <wormedit/core/grid.h>
 #include <wormedit/core/result.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 
 #include <cstddef>
 #include <cstdint>

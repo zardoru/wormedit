@@ -10,6 +10,7 @@
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/timing_lane_controller.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 #include <algorithm>
 #include <numeric>

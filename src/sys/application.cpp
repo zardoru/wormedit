@@ -90,7 +90,7 @@
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/grid.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/lane_profile_switch.h>
 #include <wormedit/core/marker_editor.h>

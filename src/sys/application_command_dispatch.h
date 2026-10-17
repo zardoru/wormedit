@@ -6,7 +6,7 @@
 #include "sys/compose_view.h"
 
 #include <wormedit/core/command_registry.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_types.h>
 #include <wormedit/core/timing_lane_controller.h>
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>

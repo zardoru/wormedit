@@ -2,7 +2,7 @@
 #include "interaction_context.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/dead_span_rules.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_queries.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/snap.h>
@@ -14,6 +14,7 @@
 #include <wormedit/core/semantic_layer_editor.h>
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/time_shift.h>
 
 #include <algorithm>
 #include <array>

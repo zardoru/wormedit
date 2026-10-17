@@ -3,7 +3,7 @@
 #include <wormedit/core/notifications.h>
 
 #include <wormedit/core/document.h>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_state.h>
 #include <wormedit/core/lane_transform.h>
 
 #include <string>

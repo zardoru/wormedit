@@ -1,6 +1,7 @@
 #include "interaction_geometry.h"
 #include "interaction_internal.h"
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/interaction_queries.h>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/core/snap.h>
 
 #include <wormedit/core/virtual_canvas.h>

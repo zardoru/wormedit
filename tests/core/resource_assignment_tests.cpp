@@ -3,6 +3,7 @@
 #include <wormedit/formats/bms_writer.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/core/semantic_layer_editor.h>
+#include <wormedit/core/interaction_types.h>
 #include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>

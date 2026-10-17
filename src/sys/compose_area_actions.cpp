@@ -16,6 +16,8 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/virtual_canvas.h>
+#include <wormedit/core/interaction_cursor_pose.h>
+#include <wormedit/core/interaction_dispatch.h>
 
 namespace wormedit::sys {
 using namespace compose_action_detail;

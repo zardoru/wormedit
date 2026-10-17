@@ -62,7 +62,7 @@ it in new code even before the card lands.
 | `make_` / `T::from` | builds a new value, no side effects |
 | `build_` | computes a derived index or cache from existing data |
 | `<x>_view_t::from` | a read-only view of the document for the frontend, when the view is its own C++ type (never `project_`, which means the song project) |
-| `build_<x>_view` | the same, only when the view is a C ABI struct or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
+| `build_<x>_view` | the same, only when the view is a `WormUi*` C struct not yet migrated (see "Frontend boundary") or a plain container (`std::vector`, `std::array`), which cannot own a `from` |
 | `create_` / `open_` | has side effects (files, sessions, OS resources) |
 | `plan_` / `prepare_` | computes a proposal; changes nothing |
 | `validate_` | checks and returns diagnostics; changes nothing |
@@ -71,7 +71,7 @@ it in new code even before the card lands.
 | `is_` / `has_` / `can_` | yes/no checks (comparators keep `*_less`, `*_equal`) |
 | `scope.x()` | inside a scoped owner (a transaction, a staged editor), the unqualified accessor is that scope's own object: `transaction.document()` is the document of the transaction. Only the exception is qualified (`source_chart(id)` for the committed version) |
 | `owner.<x>_for(key)` | find-or-add accessor |
-| `ui_codec<WormUiX>::from` / `::into` | the C ABI boundary (owner, 2026-10-16): `from(core value…)` builds the ABI struct; `into(abi, …)` turns it into a core value (a result when parsing can fail). One specialization per ABI type, in sys next to its users, like `std::hash`/`std::formatter`: neither the flat C struct nor the core type changes. No `<x>_from_ui`/`<x>_to_ui`/`<x>_from_form` free names. Core-to-core construction stays `T::from` *(T-653)* |
+| `ui_codec<WormUiX>::from` / `::into` | the `WormUi*` C-struct surfaces still in place (owner, 2026-10-16; see "Frontend boundary" for the migration away from C structs): `from(core value…)` builds the ABI struct; `into(abi, …)` turns it into a core value (a result when parsing can fail). One specialization per ABI type, in sys next to its users, like `std::hash`/`std::formatter`: neither the flat C struct nor the core type changes. No `<x>_from_ui`/`<x>_to_ui`/`<x>_from_form` free names. Core-to-core construction stays `T::from` *(T-653)* |
 
 - Names must not lie: `folded_name` must fold; `fold` is reserved for real Unicode case folding
   (ASCII-only lowercasing is `ascii_lowercase`).
@@ -126,7 +126,7 @@ it in new code even before the card lands.
   of slightly different copies.
 - **One table per fact.** Lists of values and labels live in one core catalog with stable ids.
   The UI receives labels through the view; actions carry ids, never list positions across the
-  C ABI; `static_assert` enum counts against tables. Constants (object limits, default snap set)
+  frontend boundary; `static_assert` enum counts against tables. Constants (object limits, default snap set)
   are defined once.
 - **Use the dependency instead of hand-rolling:** FFmpeg, miniaudio, iconv, nlohmann::json,
   stb_image and SDL3 already cover their formats and utilities. A new hand-written binary or
@@ -162,6 +162,27 @@ it in new code even before the card lands.
 - **Size limits small.** Prove a bound at the smallest size that exercises it; anything over a
   second needs a reason in the test or the `slow` label.
 
+## Frontend boundary (owner, 2026-10-17)
+
+- **The goal is a replaceable frontend, not a C ABI.** The frontend reads view models and emits
+  actions; it never reaches core types, the document or history directly, and backend names stay
+  out of core (`cmake/check_ui_boundary.cmake`). That seam is what keeps a migration to another
+  frontend possible. C layout is not required for it: no consumer outside the C++ build reads the
+  `WormUi*` structs, and the planned alternative backends (ImGui, Clay) would be C++ adapters.
+- **Boundary types may be plain C++:** `std::span`, `std::string_view`, `enum class`, strong IDs
+  and owned containers, in headers that include no backend. They still carry only presentation data
+  and action payloads, never core document types.
+- **Migrate slowly, when touched ("good citizen").** No wholesale conversion card. A change that
+  adds a view surface or action payload writes it in C++ types. A change that substantially
+  reworks an existing `WormUi*` surface may convert that surface when the conversion is contained
+  in the files it already owns; record it on the card. Do not convert surfaces a change does not
+  otherwise touch, and do not break an in-flight card's promise of an unchanged layout.
+- **What a conversion removes:** fixed capacities and their truncation paths, the frame-storage
+  flattening that keeps pointer-plus-count arrays alive, raw integer kinds and IDs, and that
+  surface's `ui_codec` specialization once the frontend can read the view type directly.
+- **If a non-C++ frontend ever becomes real,** give it its own C or serialized layer outside the
+  C++ seam, shaped by that frontend's needs. Do not pre-build one without a consumer.
+
 ## Files and folders
 
 - Group files in folders by subsystem and keep the file-name prefix
@@ -183,5 +204,5 @@ it in new code even before the card lands.
 1. A helper copied under another name? 2. The same struct repeated per kind? 3. Parallel
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
-position crossing the ABI? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`?
+position crossing the frontend boundary? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")?

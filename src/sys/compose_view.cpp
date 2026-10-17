@@ -212,6 +212,8 @@ auto paste_geometry(const wormedit::chart_document_t& source,
     chart.active_branch_selection = source.active_branch_selection;
     for (const auto& measure : source.measures)
         chart.measures.push_back({.id = measure.id, .definition = measure.definition});
+    // The proposal split the same measures, so this gives its objects the measures they name.
+    if (!wormedit::add_bar_lines(chart, report.bar_line_rows).empty()) return chart;
     for (const auto& object : report.objects) {
         // Ghost previews draw notes and BGM events; pasted timing objects have no ghost.
         std::visit([&chart](const auto& value) {

@@ -122,6 +122,13 @@ struct measure_removal_proposal_t {
 [[nodiscard]] auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,
                                     measure_edit_limits_t limits = {}) -> diagnostic_list_t;
 
+// Adds a bar line at each listed row counted from the start of the song, splitting the measure it
+// lands in; every object keeps its row (the inverse of `remove_bar_lines`). A row that already
+// starts a measure or ends the chart is a no-op; a row past the end rejects. Diagnostics reject the
+// whole edit and leave the chart untouched.
+[[nodiscard]] auto add_bar_lines(chart_document_t& chart, std::span<const std::uint64_t> rows,
+                                 measure_edit_limits_t limits = {}) -> diagnostic_list_t;
+
 // Moves the bar line that starts each listed measure, and the chart's end when `move_end` is set,
 // by the same signed number of rows. Every object keeps its row from the start of the song; the
 // measures around a moved bar line absorb the change, and a lane layout change starting at a bar

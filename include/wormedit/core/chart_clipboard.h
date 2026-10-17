@@ -46,6 +46,9 @@ struct chart_clipboard_t {
     song_id_t source_song;
     chart_id_t source_chart;
     std::vector<chart_clipboard_object_t> objects;
+    // Copied bar lines, as offsets from the same anchor as the objects. Pasting splits the measure
+    // each lands in without moving any object; empty in older payloads and other editors' text.
+    std::vector<rational_t> bar_lines;
 };
 
 using chart_clipboard_outcome_t = result_t<chart_clipboard_t, std::string>;
@@ -74,6 +77,9 @@ struct chart_paste_stem_event_t {
 // Rejected candidates retain only read-only geometry/counts for the ghost preview.
 struct chart_paste_report_t {
     std::vector<chart_clipboard_payload_t> objects;
+    // Rows from the start of the song where the paste adds a bar line; object positions above
+    // already name the measures those splits create.
+    std::vector<std::uint64_t> bar_line_rows;
     std::size_t missing_lane_count{};
     auto operator==(const chart_paste_report_t&) const -> bool = default;
 };

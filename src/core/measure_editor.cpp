@@ -496,32 +496,6 @@ auto definition_for_rows(std::uint64_t rows, std::uint64_t resolution) -> measur
     return {length, meters.empty() ? std::nullopt : std::optional{meters.front()}};
 }
 
-auto split_measure_at(chart_document_t& chart, local_position_t position,
-                      const measure_edit_limits_t& limits) -> bool {
-    const auto old_index = measure_index_t::from(chart);
-    const auto target = chart.find_measure(position.measure);
-    if (!old_index || target == nullptr || !old_index->row_of(position)) return false;
-    const auto capacity = validate_measure(chart.divisions_per_standard_measure, target->definition);
-    if (!capacity || position.row == 0 || position.row >= *capacity.row_capacity ||
-        chart.measures.size() >= limits.maximum_measures ||
-        std::max(position.row, *capacity.row_capacity - position.row) > limits.maximum_rows_per_measure) return false;
-    const auto id = next_measure_id(chart);
-    if (!id) return false;
-    const auto at = static_cast<std::size_t>(target - chart.measures.data());
-    std::vector<rowed_note_t> notes;
-    std::vector<rowed_bgm_t> bgm;
-    std::vector<rowed_free_t> free_rows;
-    if (!lift_bucketed_objects(chart, *old_index, 0, notes, bgm) ||
-        !collect_free_rows(chart, *old_index, free_rows)) return false;
-    chart.measures[at].definition = definition_for_rows(position.row, chart.divisions_per_standard_measure);
-    chart.measures.insert(chart.measures.begin() + at + 1, measure_chunk_t{
-        .id = *id, .definition = definition_for_rows(*capacity.row_capacity - position.row,
-                                                    chart.divisions_per_standard_measure)});
-    shift_projections_for_insert(chart, at + 1);
-    const auto new_index = measure_index_t::from(chart);
-    return new_index && place_lifted_objects(chart, *new_index, 0, notes, bgm, free_rows);
-}
-
 auto has_conditional_measures(const bms_control_node_t& node) -> bool {
     if (node.kind != bms_control_kind_t::root && node.kind != bms_control_kind_t::raw_statement) return true;
     return std::ranges::any_of(node.children, has_conditional_measures);
@@ -662,6 +636,58 @@ auto set_measure_starts(chart_document_t& chart, const measure_index_t& before,
     }
     const auto after = measure_index_t::from(chart);
     return after && place_lifted_objects(chart, *after, 0, notes, bgm, free_rows);
+}
+
+// The positions where new bar lines go, latest first so splitting one never moves another. Rows
+// that already start a measure, or end the chart, need no split.
+auto plan_bar_line_splits(const measure_index_t& index, std::span<const std::uint64_t> rows)
+    -> std::optional<std::vector<local_position_t>> {
+    std::vector<local_position_t> splits;
+    for (const auto row : rows) {
+        if (row == index.total_rows) continue;
+        const auto position = index.position_at(row);
+        if (!position) return std::nullopt;
+        if (position->row != 0) splits.push_back(*position);
+    }
+    std::ranges::sort(splits, std::ranges::greater{}, [&](const auto& position) { return *index.row_of(position); });
+    const auto repeated = std::ranges::unique(splits);
+    splits.erase(repeated.begin(), repeated.end());
+    return splits;
+}
+
+// Splits each listed measure at its row, keeping every object's row.
+auto split_measures_at(chart_document_t& chart, const measure_index_t& before,
+                       std::span<const local_position_t> descending) -> bool {
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    if (!lift_bucketed_objects(chart, before, 0, notes, bgm) ||
+        !collect_free_rows(chart, before, free_rows)) return false;
+    for (const auto& position : descending) {
+        const auto id = next_measure_id(chart);
+        const auto* measure = chart.find_measure(position.measure);
+        if (!id || measure == nullptr) return false;
+        const auto at = static_cast<std::size_t>(measure - chart.measures.data());
+        const auto rows = measure_rows(chart, at);
+        chart.measures[at].definition = definition_for_rows(position.row, chart.divisions_per_standard_measure);
+        chart.measures.insert(chart.measures.begin() + static_cast<std::ptrdiff_t>(at) + 1, measure_chunk_t{
+            .id = *id, .definition = definition_for_rows(rows - position.row, chart.divisions_per_standard_measure)});
+        shift_projections_for_insert(chart, at + 1);
+    }
+    const auto after = measure_index_t::from(chart);
+    return after && place_lifted_objects(chart, *after, 0, notes, bgm, free_rows);
+}
+
+auto split_measure_at(chart_document_t& chart, local_position_t position,
+                      const measure_edit_limits_t& limits) -> bool {
+    const auto old_index = measure_index_t::from(chart);
+    const auto target = chart.find_measure(position.measure);
+    if (!old_index || target == nullptr || !old_index->row_of(position)) return false;
+    const auto capacity = validate_measure(chart.divisions_per_standard_measure, target->definition);
+    if (!capacity || position.row == 0 || position.row >= *capacity.row_capacity ||
+        chart.measures.size() >= limits.maximum_measures ||
+        std::max(position.row, *capacity.row_capacity - position.row) > limits.maximum_rows_per_measure) return false;
+    return split_measures_at(chart, *old_index, std::span{&position, 1});
 }
 
 auto merge_measures_at(chart_document_t& chart, std::span<const std::size_t> descending) -> bool {
@@ -1102,6 +1128,28 @@ auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> mea
     if (!merge_measures_at(chart, std::get<std::vector<std::size_t>>(planned)))
         return {error(diagnostic_code_t::invalid_measure,
                       "the bar lines could not be removed without moving an object")};
+    return {};
+}
+
+auto add_bar_lines(chart_document_t& chart, std::span<const std::uint64_t> rows,
+                   measure_edit_limits_t limits) -> diagnostic_list_t {
+    if (rows.empty()) return {};
+    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
+        return {error(diagnostic_code_t::unsupported_feature,
+                      "adding a bar line requires resolved BMS conditional branches")};
+    const auto before = measure_index_t::from(chart);
+    if (!before) return before.error();
+    const auto splits = plan_bar_line_splits(*before, rows);
+    if (!splits)
+        return {error(diagnostic_code_t::row_out_of_range, "a bar line would fall past the chart's end")};
+    if (splits->empty()) return {};
+    if (splits->size() > limits.maximum_measures - std::min(limits.maximum_measures, chart.measures.size()))
+        return {error(diagnostic_code_t::invalid_measure, "the chart would exceed the measure limit")};
+    auto working = chart;
+    if (!split_measures_at(working, *before, *splits))
+        return {error(diagnostic_code_t::invalid_measure,
+                      "the bar lines could not be added without moving an object")};
+    chart = std::move(working);
     return {};
 }
 

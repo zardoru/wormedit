@@ -7,6 +7,7 @@
 #include <wormedit/core/timing.h>
 #include <wormedit/core/kiai_spans.h>
 #include <wormedit/core/marker_editor.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/sv_recipe.h>
 #include <wormedit/core/timing_lane_controller.h>
 
@@ -167,6 +168,11 @@ auto collect(chart_clipboard_t& clipboard, const chart_document_t& chart,
                 !append_bgm(clipboard, chart, index, event)) return false;
         }
     }
+    for (const auto& entry : index.entries) {
+        if (selected.erase({editor_selection_object_kind_t::bar_line, object_id_t{entry.id.value}}))
+            clipboard.bar_lines.push_back(
+                rows_to_fraction(entry.absolute_begin_row, chart.divisions_per_standard_measure));
+    }
     return collect_timing(clipboard, chart, index, selected) && selected.empty();
 }
 } // namespace
@@ -187,7 +193,7 @@ auto chart_clipboard_t::from(const song_document_t& document,
         return std::unexpected(std::string{"The selected Kiai area no longer exists."});
     selected.insert(boundaries->begin(), boundaries->end());
     if (selected.empty())
-        return std::unexpected(std::string{"Select notes, BGM events or timing objects to copy."});
+        return std::unexpected(std::string{"Select notes, BGM events, timing objects or bar lines to copy."});
     if (selected.size() > maximum_objects)
         return std::unexpected(std::string{"The clipboard object limit was exceeded."});
     const auto indexed = measure_index_t::from(*chart);
@@ -199,15 +205,19 @@ auto chart_clipboard_t::from(const song_document_t& document,
             std::string{"The selection contains unavailable or unsupported objects."});
     // Every absolute offset originated as an integer row in this resolution.
     const auto resolution = chart->divisions_per_standard_measure;
-    const auto row_of = [resolution](const auto& object) {
-        return object.offset.numerator * (resolution / object.offset.denominator);
+    const auto row_of = [resolution](rational_t offset) {
+        return offset.numerator * (resolution / offset.denominator);
     };
-    std::stable_sort(
-        clipboard.objects.begin(), clipboard.objects.end(),
-        [&row_of](const auto& left, const auto& right) { return row_of(left) < row_of(right); });
-    const auto anchor = row_of(clipboard.objects.front());
+    std::ranges::stable_sort(clipboard.objects, {}, [&row_of](const auto& object) { return row_of(object.offset); });
+    std::ranges::sort(clipboard.bar_lines, {}, row_of);
+    std::optional<std::uint64_t> anchor;
+    if (!clipboard.objects.empty()) anchor = row_of(clipboard.objects.front().offset);
+    if (!clipboard.bar_lines.empty())
+        anchor = std::min(anchor.value_or(std::numeric_limits<std::uint64_t>::max()),
+                          row_of(clipboard.bar_lines.front()));
     for (auto& object : clipboard.objects)
-        object.offset = rows_to_fraction(row_of(object) - anchor, resolution);
+        object.offset = rows_to_fraction(row_of(object.offset) - *anchor, resolution);
+    for (auto& offset : clipboard.bar_lines) offset = rows_to_fraction(row_of(offset) - *anchor, resolution);
     return clipboard;
 }
 
@@ -653,6 +663,23 @@ auto missing_paste_lanes(const chart_clipboard_t& clipboard, const chart_documen
 }
 
 namespace {
+// Splits the target chart at every pasted bar line, keeping each object's row, and returns the
+// index the pasted objects are placed against.
+auto add_paste_bar_lines(chart_document_t& chart, const chart_clipboard_t& clipboard, std::uint64_t anchor,
+                         chart_paste_report_t& report) -> result_t<measure_index_t, std::string> {
+    for (const auto& offset : clipboard.bar_lines) {
+        const auto rows = exact_rows(offset, chart.divisions_per_standard_measure);
+        if (!rows || *rows > std::numeric_limits<std::uint64_t>::max() - anchor)
+            return std::unexpected(std::string{"A clipboard bar line cannot be represented exactly."});
+        report.bar_line_rows.push_back(anchor + *rows);
+    }
+    if (auto diagnostics = add_bar_lines(chart, report.bar_line_rows); !diagnostics.empty())
+        return std::unexpected(std::move(diagnostics.front().message));
+    auto index = measure_index_t::from(chart);
+    if (!index) return std::unexpected(std::string{"The chart positions are invalid."});
+    return std::move(*index);
+}
+
 auto place_paste_objects(chart_document_t& chart, const measure_index_t& index,
     const chart_clipboard_t& clipboard, std::uint64_t row, chart_paste_proposal_t& proposal)
     -> result_t<void, std::string> {
@@ -681,14 +708,18 @@ auto chart_paste_proposal_t::from(const proposal_read_scope_t<chart_stamp_t>& sc
     const auto stamp = chart_stamp_t::from(document, chart_id);
     chart_paste_proposal_t result;
     if (document.id != clipboard.source_song) return std::unexpected(chart_paste_diagnostic_t::from("Clipboard resources belong to another project.", stamp, std::move(result.report)));
-    if (clipboard.objects.empty() || clipboard.objects.size() > maximum_objects)
+    const auto count = clipboard.objects.size() + clipboard.bar_lines.size();
+    if (count == 0 || count > maximum_objects)
         return std::unexpected(chart_paste_diagnostic_t::from("The clipboard is empty or exceeds its object limit.", stamp, std::move(result.report)));
     auto proposed = document;
     const auto chart = proposed.find_chart(chart_id);
     if (chart == nullptr) return std::unexpected(chart_paste_diagnostic_t::from("The selected chart no longer exists.", stamp, std::move(result.report)));
-    const auto indexed = measure_index_t::from(*chart);
-    const auto row = indexed ? indexed->row_of(anchor) : std::nullopt;
+    const auto original = measure_index_t::from(*chart);
+    const auto row = original ? original->row_of(anchor) : std::nullopt;
     if (!row || !chart->divisions_per_standard_measure) return std::unexpected(chart_paste_diagnostic_t::from("The paste anchor is invalid.", stamp, std::move(result.report)));
+    auto indexed = add_paste_bar_lines(*chart, clipboard, *row, result.report);
+    if (!indexed)
+        return std::unexpected(chart_paste_diagnostic_t::from(std::move(indexed.error()), stamp, std::move(result.report)));
     result.report.missing_lane_count = missing_paste_lanes(clipboard, *chart, *indexed, *row);
     if (result.report.missing_lane_count)
         return std::unexpected(chart_paste_diagnostic_t::from(std::to_string(result.report.missing_lane_count) + " clipboard objects have unavailable target lanes.", stamp, std::move(result.report)));
@@ -738,11 +769,14 @@ auto chart_paste_proposal_t::apply(proposal_edit_scope_t<chart_stamp_t>& scope) 
     if (stamp.document.project != transaction.current_document().id)
         return {.diagnostics = {error(diagnostic_code_t::collision,
             "Clipboard resources belong to another project.")}};
-    if (report.objects.empty()) return {};
+    if (report.objects.empty() && report.bar_line_rows.empty()) return {};
     if (!transaction.source_chart(stamp.chart))
         return {.diagnostics = {error(diagnostic_code_t::collision, "The selected chart no longer exists.")}};
     auto& proposed = transaction.document();
     const auto chart = proposed.find_chart(stamp.chart);
+    // Same revision, same splits: the new measure IDs match the ones the objects name.
+    if (auto diagnostics = add_bar_lines(*chart, report.bar_line_rows); !diagnostics.empty())
+        return {.diagnostics = std::move(diagnostics)};
     for (auto& object : report.objects) append_paste_object(*chart, std::move(object));
     append_stem_events(*chart, stem_events);
     return {.value = "Paste chart objects"};

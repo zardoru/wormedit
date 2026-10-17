@@ -39,7 +39,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 ## T-656 Copy, cut and paste bar lines with the selection
 
-- **Status:** ready
+- **Status:** done (2026-10-17)
 - **Outcome:** Copying a selection that holds bar lines stores them relative to the copy anchor; paste splits measures at the pasted rows and cut merges the originals, each in one Undo step, without moving other objects in time.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`, `include/wormedit/core/measure_editor.h`, `docs/architecture.md`.
 - **Files owned:** `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`, `tests/core/chart_clipboard_tests.cpp`, this card.
@@ -51,6 +51,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 - **Reject/failure behavior:** A paste whose split would exceed limits or split inside retained BMS branches rejects without partial splits.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` (copy/paste round trip, cut, existing clipboard tests).
 - **Out of scope:** BMS-format clipboard interop for bar lines (`bms_clipboard.h`), the lane column (T-657).
+- **Done:** `chart_clipboard_t::bar_lines` holds offsets from the same anchor as the objects (the earliest of either), so a bar-line-only copy works and older payloads paste unchanged. Paste splits first through the measure editor's new keep-rows `add_bar_lines` (the inverse of `remove_bar_lines`; a row already on a bar line or at the chart's end is a no-op, a row past the end, the measure limit or BMS conditional branches reject the whole paste on a working copy), then places objects against the split geometry. The report carries `bar_line_rows`, so `apply` replays the same splits (same revision, same measure IDs) and the ghost preview splits its geometry the same way. The single-row `split_measure_action_t` now uses the same split helper. Cut needed no change: it already deletes through `delete_editor_selection`, which merges bar lines (T-654). Coordinator-approved supporting files: `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `tests/core/measure_editor_tests.cpp`, `src/sys/compose_view.cpp` (`paste_geometry`). Evidence: 4,032/4,032 CTest; new functions under the complexity limit; `git diff --check` clean.
 
 ## T-657 Show an optional measure lane in Compose
 

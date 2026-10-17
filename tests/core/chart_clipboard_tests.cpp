@@ -619,3 +619,106 @@ TEST_CASE("Stale paste revision diagnoses the current project with the captured 
     CHECK(revised.diagnostics.front().stamp.document.revision == initial.value->stamp.document.revision);
     CHECK(revised.diagnostics.front().code == diagnostic_code_t::collision);
 }
+
+namespace {
+auto bar_line_selection(const document_history_t& history) -> editor_interaction_state_t {
+    const std::array snaps{std::uint64_t{4}};
+    auto interaction = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4);
+    REQUIRE(interaction);
+    auto state = std::move(*interaction.state);
+    state.selected_objects = {{editor_selection_object_kind_t::bar_line, object_id_t{2}},
+                              {editor_selection_object_kind_t::note, object_id_t{2}}};
+    return state;
+}
+
+// The shared fixture names a sound the song does not have and reuses an object ID across types;
+// edits validate the whole document, so this one is valid.
+auto bar_line_song() -> song_document_t {
+    auto song = clipboard_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.front().sound.reset();
+    chart.measures[1].bgm_events.front().id = object_id_t{5};
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+auto bar_line_rows(const chart_document_t& chart) -> std::vector<std::uint64_t> {
+    std::vector<std::uint64_t> rows;
+    for (const auto& entry : measure_index_t::from(chart)->entries) rows.push_back(entry.absolute_begin_row);
+    return rows;
+}
+} // namespace
+
+TEST_CASE("Chart clipboard copies bar lines and pastes them as measure splits", "[core][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    const auto copied = chart_clipboard_t::from(history.document, bar_line_selection(history), 7);
+    INFO((copied ? "copied" : copied.error()));
+    REQUIRE(copied);
+    // The bar line at row 960 anchors the copy; the tap at 1080 sits an eighth after it.
+    REQUIRE(copied->bar_lines.size() == 1);
+    expect(copied->bar_lines.front() == rational_t{0, 1});
+    expect(copied->objects.front().offset == rational_t{1, 8});
+    const auto proposal = chart_paste_proposal_t::propose(history.document, chart_id_t{1}, *copied,
+        {measure_id_t{3}, 480}, 7);
+    for (const auto& diagnostic : proposal.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(proposal.value);
+    expect(proposal.value->payload.report.bar_line_rows == std::vector<std::uint64_t>{2400});
+    const auto result = paste_chart_clipboard(history, chart_id_t{1}, *copied, {measure_id_t{3}, 480});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result);
+    const auto& chart = history.document.charts.front();
+    expect(bar_line_rows(chart) == std::vector<std::uint64_t>{0, 960, 1920, 2400});
+    const auto index = measure_index_t::from(chart).value();
+    // The pasted tap lands in the measure the split created; nothing else moved.
+    expect(chart.measures[3].notes.size() == 1);
+    expect(index.row_of(chart.measures[3].notes.front().position) == 2520);
+    const auto& hold = chart.measures[0].notes.front();
+    expect(index.row_of(*hold.end) == 2160);
+    expect(index.row_of(chart.measures[1].bgm_events.front().position) == 1200);
+    expect(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
+}
+
+TEST_CASE("Pasting a bar line onto an existing one adds no measure", "[core][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    chart_clipboard_t clipboard{song_id_t{1}, chart_id_t{1}, {}, {rational_t{0, 1}, rational_t{1, 1}}};
+    const auto result = paste_chart_clipboard(history, chart_id_t{1}, clipboard, {measure_id_t{2}, 0});
+    for (const auto& diagnostic : result.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
+}
+
+TEST_CASE("A bar-line paste that cannot split rejects without partial splits", "[core][bar-line]") {
+    auto song = bar_line_song();
+    chart_clipboard_t clipboard{song_id_t{1}, chart_id_t{1}, {}, {rational_t{0, 1}, rational_t{1, 1}}};
+    // The second bar line would land past the chart's end.
+    auto history = document_history_t::from(song);
+    expect(!paste_chart_clipboard(history, chart_id_t{1}, clipboard, {measure_id_t{3}, 480}));
+    expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
+    expect(history.undo.empty());
+    song.charts.front().bms_control_tree = bms_control_node_t{
+        .id = branch_id_t{1}, .kind = bms_control_kind_t::root,
+        .children = {{.id = branch_id_t{2}, .kind = bms_control_kind_t::random}}};
+    history = document_history_t::from(std::move(song));
+    expect(!paste_chart_clipboard(history, chart_id_t{1}, clipboard, {measure_id_t{1}, 480}));
+    expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
+    expect(history.undo.empty());
+}
+
+TEST_CASE("Cutting bar lines merges their measures with the rest of the cut", "[core][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    auto state = bar_line_selection(history);
+    const auto cut = create_cut_chart_clipboard(history, state);
+    INFO((cut ? "cut" : cut.error()));
+    REQUIRE(cut);
+    expect(cut->bar_lines.size() == 1);
+    const auto& chart = history.document.charts.front();
+    expect(bar_line_rows(chart) == std::vector<std::uint64_t>{0, 1920});
+    const auto index = measure_index_t::from(chart).value();
+    expect(index.row_of(chart.measures[0].bgm_events.front().position) == 1200);
+    expect(chart.measures[0].notes.size() == 1);
+    expect(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
+}

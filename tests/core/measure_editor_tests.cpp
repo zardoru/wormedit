@@ -917,3 +917,57 @@ TEST_CASE("Removing a bar line rejects before changing the chart",
                                    .layout = original.lane_layouts.front().layout});
     rejects({measure_id_t{11}}, layout);
 }
+
+TEST_CASE("Adding bar lines splits measures and keeps every object row",
+          "[core][measure-editor][bar-line]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes = {{.id = object_id_t{40}, .position = {measure_id_t{10}, 600},
+        .lane = lane_id_t{20}, .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{11}, 300}}};
+    REQUIRE(validate_document(song).empty());
+    const auto before = measure_index_t::from(chart).value();
+    auto split = chart;
+    // 960 and 2880 already are bar lines; 480 and 1440 split the first two measures.
+    const std::array rows{std::uint64_t{1440}, std::uint64_t{960}, std::uint64_t{480},
+                          std::uint64_t{2880}, std::uint64_t{480}};
+    const auto diagnostics = add_bar_lines(split, rows);
+    for (const auto& diagnostic : diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(diagnostics.empty());
+    REQUIRE(split.measures.size() == 5);
+    const auto after = measure_index_t::from(split).value();
+    check_bar_line(after.total_rows == before.total_rows);
+    check_bar_line(after.entries[1].absolute_begin_row == 480);
+    check_bar_line(after.entries[3].absolute_begin_row == 1440);
+    check_bar_line(split.measures[0].id == measure_id_t{10});
+    check_bar_line(split.measures[2].id == measure_id_t{11});
+    const auto& hold = split.measures[1].notes.front();
+    check_bar_line(after.row_of(hold.position) == 600);
+    check_bar_line(after.row_of(*hold.end) == before.row_of({measure_id_t{11}, 300}));
+    check_bar_line(split.bms_measure_length_projections.front().measure_index == 4);
+    song.charts.front() = split;
+    check_bar_line(validate_document(song).empty());
+    const std::array added{split.measures[1].id, split.measures[3].id};
+    REQUIRE(remove_bar_lines(split, added).empty());
+    REQUIRE(split.measures.size() == 3);
+    check_bar_line(measure_index_t::from(split)->row_of(split.measures[0].notes.front().position) == 600);
+}
+
+TEST_CASE("Adding bar lines rejects before changing the chart", "[core][measure-editor][bar-line]") {
+    const auto original = measure_song().charts.front();
+    const auto rejects = [&](std::vector<std::uint64_t> rows, chart_document_t chart,
+                             measure_edit_limits_t limits = {}) {
+        const auto diagnostics = add_bar_lines(chart, rows, limits);
+        CAPTURE(rows.size());
+        check_bar_line(!diagnostics.empty());
+        REQUIRE(chart.measures.size() == original.measures.size());
+        for (std::size_t at = 0; at < chart.measures.size(); ++at)
+            check_bar_line(chart.measures[at].definition.length == original.measures[at].definition.length);
+    };
+    rejects({480, 2881}, original);
+    rejects({480, 1440}, original, {.maximum_measures = 4});
+    auto branched = original;
+    branched.bms_control_tree = bms_control_node_t{
+        .id = branch_id_t{1}, .kind = bms_control_kind_t::root,
+        .children = {{.id = branch_id_t{2}, .kind = bms_control_kind_t::random}}};
+    rejects({480}, branched);
+}

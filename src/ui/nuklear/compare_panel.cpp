@@ -1,4 +1,5 @@
 #include "ui/nuklear/compare_panel.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/theme.h"
@@ -63,10 +64,8 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
     nk_label(context, view->first_difficulty, NK_TEXT_CENTERED);
     nk_label(context, view->second_difficulty, NK_TEXT_CENTERED);
     struct nk_rect first{}, second{};
-    const auto content = nk_window_get_content_region(context);
-    const auto next = nk_widget_position(context);
-    const auto field_height = std::max(160.0f, content.y + content.h - next.y -
-                                               context->style.window.spacing.y);
+    const auto field_height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 160.0f, .include_spacing = true});
     nk_layout_row_dynamic(context, field_height, 2);
     (void)nk_widget(&first, context);
     (void)nk_widget(&second, context);

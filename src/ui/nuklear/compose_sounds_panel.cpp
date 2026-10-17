@@ -1,4 +1,5 @@
 #include "ui/nuklear/catalog_chrome.h"
+#include "ui/nuklear/content_layout.h"
 #include "core/text_util.h"
 #include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/catalog_confirmation.h"
@@ -1707,10 +1708,10 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     if (state->dock_layout.sounds_dock_bmson_tab) {
         // The dock window has no scrollbar, so the tools get a scrollable group of their own: in a
         // short window the lower staged-region actions stay reachable with the wheel.
-        const auto region = nk_window_get_content_region(context);
-        const auto remaining = region.y + region.h - nk_widget_position(context).y -
-                               context->style.window.spacing.y;
-        nk_layout_row_dynamic(context, std::max(remaining, 60.0f), 1);
+        const auto height = wormedit::ui::layout::remaining_content_height(context,
+            {.minimum = 60.0f, .include_spacing = true,
+             .clamp_order = wormedit::ui::layout::content_height_clamp_order_t::available_first});
+        nk_layout_row_dynamic(context, height, 1);
         if (nk_group_begin(context, "bmson-tools", 0)) {
             worm_ui_nuklear_render_compose_bmson_tab(context, view, action, state);
             nk_group_end(context);
@@ -1730,11 +1731,11 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     render_sound_panel_controls(panel);
     render_section_add_buttons(panel);
     if (state->dock_layout.sounds_layers_open) render_layer_section(panel);
-    const auto region = nk_window_get_content_region(context);
     const auto footer_height = (view->keysound_ids_available ? 44.0f : 0.0f) +
                                (state->keysound_slots.keysound_slot_feedback.empty() ? 0.0f : 24.0f);
-    const auto remaining = region.y + region.h - nk_widget_position(context).y - footer_height -
-                           context->style.window.spacing.y;
+    const auto height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 60.0f, .reserved = footer_height, .include_spacing = true,
+         .clamp_order = wormedit::ui::layout::content_height_clamp_order_t::available_first});
     const auto block_list_pointer = state->keysound_filters.is_popup_open() ||
                                     state->keysound_filters.keysound_filter_release_pending ||
                                     state->keysound_slots.keysound_renumber_confirmation_open ||
@@ -1743,9 +1744,9 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
                                     state->keysound_slots.keysound_slot_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);
     if (state->keysound_filters.keysound_slots_mode && view->sound_slots_mode)
-        render_sound_slot_list(panel, std::max(remaining, 60.0f));
+        render_sound_slot_list(panel, height);
     else
-        render_list(panel, std::max(remaining, 60.0f));
+        render_list(panel, height);
     if (block_list_pointer) nk_widget_disable_end(context);
     if (view->keysound_ids_available)
         wormedit::ui::nuklear::render_catalog_capacity(context,

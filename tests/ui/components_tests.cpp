@@ -1,4 +1,5 @@
 #include "ui/nuklear/catalog_chrome.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/ui_metrics.h"
@@ -7,6 +8,7 @@
 #include <catch2/generators/catch_generators.hpp>
 #include <string>
 
+#include <cmath>
 #include <cstring>
 #include <functional>
 #include <limits>
@@ -97,7 +99,76 @@ auto summarize(nk_context& context) -> command_summary_t {
 
 constexpr float button_y = 14.0f;
 
+void check_content_height(float actual, float expected) {
+    CHECK(actual == expected);
+}
+
 } // namespace
+
+TEST_CASE("Content height keeps reserve spacing and panel minima",
+          "[components][content-layout]") {
+    using namespace wormedit::ui::layout;
+    const auto minimum = GENERATE(48.0f, 60.0f, 80.0f, 160.0f);
+    const content_height_policy_t policy{
+        .minimum = minimum, .reserved = 44.0f, .include_spacing = true};
+    check_content_height(policy.height(400.0f, 120.0f, 6.0f), 230.0f);
+    check_content_height(policy.height(100.0f, 120.0f, 6.0f), minimum);
+    check_content_height(content_height_policy_t{.minimum = minimum, .reserved = 44.0f}
+        .height(400.0f, 120.0f, 6.0f), 236.0f);
+    check_content_height(content_height_policy_t{.minimum = minimum, .include_spacing = true}
+        .height(400.0f, 120.0f, 6.0f), 274.0f);
+}
+
+TEST_CASE("Content height applies caller cap before the minimum",
+          "[components][content-layout]") {
+    using namespace wormedit::ui::layout;
+    const content_height_policy_t capped{
+        .minimum = 48.0f, .reserved = 12.0f, .maximum = 180.0f};
+    check_content_height(capped.height(400.0f, 120.0f, 6.0f), 180.0f);
+    check_content_height(capped.height(250.0f, 120.0f, 6.0f), 118.0f);
+    check_content_height(capped.height(100.0f, 120.0f, 6.0f), 48.0f);
+    check_content_height(content_height_policy_t{.minimum = 48.0f, .maximum = 20.0f}
+        .height(400.0f, 120.0f, 6.0f), 48.0f);
+}
+
+TEST_CASE("Content height preserves operand order for invalid geometry",
+          "[components][content-layout]") {
+    using namespace wormedit::ui::layout;
+    const auto nan = std::numeric_limits<float>::quiet_NaN();
+    const content_height_policy_t minimum_first{.minimum = 60.0f};
+    const content_height_policy_t available_first{
+        .minimum = 60.0f, .clamp_order = content_height_clamp_order_t::available_first};
+    check_content_height(minimum_first.height(nan, 120.0f, 6.0f), 60.0f);
+    CHECK(std::isnan(available_first.height(nan, 120.0f, 6.0f)));
+    check_content_height(content_height_policy_t{.minimum = 48.0f, .maximum = 180.0f}
+        .height(nan, 120.0f, 6.0f), 180.0f);
+    check_content_height(content_height_policy_t{.minimum = 48.0f, .maximum = nan}
+        .height(400.0f, 120.0f, 6.0f), 48.0f);
+}
+
+TEST_CASE("Content height reads logical content origin and the next row without consuming it",
+          "[components][content-layout]") {
+    fixture_t fixture;
+    auto& context = fixture.context;
+    fixture.input({});
+    CHECK(nk_begin(&context, "Translated layout", nk_rect(43, 91, 400, 300),
+                   NK_WINDOW_NO_SCROLLBAR));
+    nk_layout_row_dynamic(&context, 30, 1);
+    nk_label(&context, "Previous row", NK_TEXT_LEFT);
+    const auto region = nk_window_get_content_region(&context);
+    const auto next = nk_widget_position(&context);
+    CHECK(region.y >= 91.0f);
+    CHECK(next.y > region.y);
+    const wormedit::ui::layout::content_height_policy_t policy{
+        .minimum = 60.0f, .reserved = 44.0f, .include_spacing = true};
+    const auto height = wormedit::ui::layout::remaining_content_height(&context, policy);
+    check_content_height(height, region.y + region.h - next.y - 44.0f - context.style.window.spacing.y);
+    check_content_height(nk_widget_position(&context).y, next.y);
+    nk_layout_row_dynamic(&context, height, 1);
+    check_content_height(nk_widget_bounds(&context).h, height);
+    nk_end(&context);
+    nk_clear(&context);
+}
 
 TEST_CASE("components tokens", "[components]") {
     CHECK(metrics::control_compact == 24.0f);

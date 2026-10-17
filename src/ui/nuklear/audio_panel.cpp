@@ -1,4 +1,5 @@
 #include "core/text_util.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
@@ -258,11 +259,6 @@ int worm_ui_nuklear_audio_slices_view_valid(const WormUiAudioSlicesView* view) {
 
 namespace {
 
-auto remaining_height(nk_context* context, float reserved) -> float {
-    const auto region = nk_window_get_content_region(context);
-    return std::max(80.0f, region.y + region.h - nk_widget_position(context).y - reserved);
-}
-
 void update_waveform_viewport(nk_context* context, const WormUiAudioSlicesView& view,
                               struct nk_rect bounds, bool wheel_zoom) {
     using namespace wormedit::audio;
@@ -304,7 +300,8 @@ auto waveform_navigation_hint(bool embedded) -> const char* {
 }
 
 auto waveform_height(nk_context* context, bool embedded) -> float {
-    return embedded ? 180.0f : remaining_height(context, 82.0f);
+    return embedded ? 180.0f : wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 80.0f, .reserved = 82.0f});
 }
 
 void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesView* view,
@@ -532,7 +529,8 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
     wormedit::ui::chrome::section_separator(context);
     const auto rows = filtered_sound_rows(view);
     (void)handle_sound_list_keys(context, view, rows, action);
-    nk_layout_row_dynamic(context, remaining_height(context, 28), 1);
+    nk_layout_row_dynamic(context, wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 80.0f, .reserved = 28.0f}), 1);
     const auto bounds = nk_widget_bounds(context);
     audio.sound_list_x = bounds.x; audio.sound_list_y = bounds.y;
     audio.sound_list_width = bounds.w; audio.sound_list_height = bounds.h;
@@ -769,7 +767,8 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
 
 void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesView& view,
                           WormUiWorkspaceAction& action) {
-    const auto height = remaining_height(context, 8.0f);
+    const auto height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 80.0f, .reserved = 8.0f});
     constexpr auto gutter = wormedit::ui::metrics::gap_large;
     const auto available = std::max(1.0f, nk_window_get_content_region(context).w -
         gutter * 2 - context->style.window.spacing.x * 4);

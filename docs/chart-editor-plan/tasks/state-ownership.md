@@ -1322,7 +1322,20 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 
 ## T-648 Put remaining-content-height arithmetic in one layout helper
 
-- **Status:** Ready (owner approved 2026-10-16; after T-645)
+- **Status:** Done (2026-10-17; parallel implementation with T-650, separate card commit)
+- **Completion / gate evidence:** Eight calculations in seven files now use `content_height_policy_t` and `remaining_content_height`; Audio's three helper callers retain their reserves. Coordinator reviewed both frozen lane diffs and verified their combined source tree: `scripts/gate.sh` default 8 jobs exit 0 (`pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4071`, `gate: passed`; 29.20 s CTest). Linux Clang configure/build exit 0; `ctest --preset linux-clang -j8 --output-on-failure` exit 0, `100% tests passed out of 4071` (56.35 s). GCC/Clang builds have zero compiler warnings. Focused component/Sounds/BGA/resource-table checks: `769 assertions in 54 test cases`; baseline components `537 assertions in 28 test cases`. Four helper tests cover reserve/spacing/minima, cap order, NaN order and translated real Nuklear origin/next row without consuming a row. Coordinator corrected a test-only assumption: zero-inset theme content may begin exactly at translated host origin. No production correction.
+- **Policy / stale-plan matrix:** All eight formula owners remained, with no existing shared calculation (`content_margin.h` concerns width). All use logical content y+h and next-widget y from the same window, without scaling.
+  | Consumer | Minimum and max operand order | Reserve / spacing / cap |
+  | --- | --- | --- |
+  | Audio helper, three callers | 80 first | waveform 82, sound list 28, columns 8; no spacing/cap; embedded waveform fixed 180 |
+  | Sounds BMSON tools | 60 second | no reserve subtraction; spacing yes |
+  | Sounds catalog/slots | 60 second | IDs 44 plus optional feedback 24; spacing yes |
+  | BGA | 60 first | IDs available 45, else 5; no spacing |
+  | Layers | 60 second | no reserve subtraction; spacing yes |
+  | Measures | 60 first | reserve 5; no spacing |
+  | Compare | 160 first | no reserve subtraction; spacing yes |
+  | Recent list | 48 first | reserve 12; min(caller cap, available) before floor; no spacing |
+- **Preserved edge cases / scope:** Available-first max propagates NaN; minimum-first falls back to the minimum. Recent min(cap, NaN) returns cap; NaN cap then floors to 48. Optional reserve preserves no-subtraction vs explicit-zero shape. No new sanitization, state, allocation, callbacks or scope extension. All affected .cpp clang-tidy checks exit 0 with no new/increased violations; existing draw_row 28 and test macro scores 52/60 unchanged. Frontend's escaped compile-db macro caused a clang-tidy lexer crash; a read-only `-UWORMEDIT_SOURCE_ROOT` and correctly quoted `-DWORMEDIT_SOURCE_ROOT` override checks both entries successfully, without source/CMake changes. Actual frontend compilation remains in both builds. Ratchet records original 8 local arithmetic expressions → 0. Final documentation checks run after completion; no T-648 resume line. Code-style checklist reviewed; Xvfb skipped as prescribed.
 - **Findings closed:** CEn5's eight calculations in seven files and Audio's local helper.
 - **Stale-plan audit:** Search bottom-minus-widget-Y arithmetic, not helper names. Save minimum/reserve/spacing/upper-cap matrix for Audio, Sounds (two), BGA, Layers, Measures, Compare and recent list.
 - **Outcome:** Each panel states its reserved height and clamp policy while a shared layout helper computes available logical content height.

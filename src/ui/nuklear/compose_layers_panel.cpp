@@ -1,4 +1,5 @@
 #include "ui/nuklear/color.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/compose_layers_panel.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_action_stamp.h"
@@ -450,9 +451,9 @@ void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
                 (row_height + context->style.window.spacing.y)));
     }
     state->pointer_capture.layer_chip_reveal_id = 0;
-    const auto region = nk_window_get_content_region(context);
-    const auto remaining = region.y + region.h - nk_widget_position(context).y -
-                           context->style.window.spacing.y;
-    render_list(panel, std::max(remaining, 60.0f));
+    const auto height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 60.0f, .include_spacing = true,
+         .clamp_order = wormedit::ui::layout::content_height_clamp_order_t::available_first});
+    render_list(panel, height);
     render_layer_menu(panel);
 }

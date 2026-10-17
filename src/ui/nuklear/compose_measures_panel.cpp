@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_measures_panel.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/compose_action_stamp.h"
 #include "ui/nuklear/compose_state.h"
@@ -105,8 +106,8 @@ void worm_ui_nuklear_render_compose_measures(nk_context* context, const WormUiCo
     worm_ui_keysound_prune(state->measures_dock.measure_selection, ids_of(*view));
     nk_layout_row_dynamic(context, 18, 1);
     nk_label(context, "No.   Meter   Length", NK_TEXT_LEFT);
-    const auto region = nk_window_get_content_region(context);
-    const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y - 5.0f);
+    const auto height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 60.0f, .reserved = 5.0f});
     nk_layout_row_dynamic(context, height, 1);
     struct nk_list_view list{};
     if (nk_list_view_begin(context, &list, "Compose measures list", NK_WINDOW_BORDER,

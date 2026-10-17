@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_input_queries.h"
+#include "ui/nuklear/content_layout.h"
 #include <wormedit/core/catalogs.h>
 #include "ui/field/rect.h"
 #include "ui/nuklear/modal_input.h"
@@ -2593,9 +2594,9 @@ static void render_recent_project_list(const WormUiWorkspaceView& view,
     if (!count) return;
     nk_layout_row_dynamic(g_context, 30, 1);
     nk_label(g_context, "Recent projects and charts", NK_TEXT_LEFT);
-    const auto area = nk_window_get_content_region(g_context);
-    const float remaining = area.y + area.h - nk_widget_position(g_context).y - 12.0f;
-    nk_layout_row_dynamic(g_context, std::max(48.0f, std::min(height, remaining)), 1);
+    const auto list_height = wormedit::ui::layout::remaining_content_height(g_context,
+        {.minimum = 48.0f, .reserved = 12.0f, .maximum = height});
+    nk_layout_row_dynamic(g_context, list_height, 1);
     if (!nk_group_begin(g_context, "recent-projects-list", NK_WINDOW_BORDER)) return;
     const bool blocked = project_dialog_active() || project_modal_active(view);
     for (std::size_t index = 0; index < count; ++index) {

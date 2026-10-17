@@ -44,3 +44,6 @@ ui_grouped_count_body | 1 | src | text[.]insert\(position - 3, ","\)
 # T-650: metadata state alone writes the rational action arrays.
 metadata_rational_numerator_writer | 1 | src | std::snprintf\(.*action_numerator_text[.]data\(\)
 metadata_rational_denominator_writer | 1 | src | std::snprintf\(.*action_denominator_text[.]data\(\)
+
+# T-648: content_layout.h owns bottom-minus-next-row arithmetic.
+local_content_height_arithmetic | 0 | src | (region|content|area)[.]y [+] (region|content|area)[.]h -

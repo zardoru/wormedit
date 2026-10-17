@@ -1,4 +1,5 @@
 #include "ui/nuklear/catalog_chrome.h"
+#include "ui/nuklear/content_layout.h"
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/catalog_confirmation.h"
 #include "ui/nuklear/chrome.h"
@@ -362,9 +363,8 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
                    state->bga_catalog.bga_renumber_release_pending);
     wormedit::ui::nuklear::render_catalog_header(context,
         wormedit::ui::nuklear::catalog_layout_t::bga);
-    const auto region = nk_window_get_content_region(context);
-    const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y -
-        (view->bga_ids_available ? 45.0f : 5.0f));
+    const auto height = wormedit::ui::layout::remaining_content_height(context,
+        {.minimum = 60.0f, .reserved = view->bga_ids_available ? 45.0f : 5.0f});
     const auto block_list_pointer = state->bga_catalog.bga_renumber_confirmation_open ||
                                     state->bga_catalog.bga_renumber_release_pending;
     if (block_list_pointer) nk_widget_disable_begin(context);

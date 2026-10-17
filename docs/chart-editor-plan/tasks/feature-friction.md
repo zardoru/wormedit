@@ -20,7 +20,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   2. Glossary, at least: bar line / measure line (`editor_grid_line_kind_t::measure`) / measure rail (`compose_measure_rail_width`) / measure labels (BMS) / split and merge (`measure_editor.h`); selection object / hit target / area geometry; proposal / report / ghost preview. Each entry names the type or file per layer.
   3. "Where to look" rows: area selection (projected rectangles from `cache_area_object_geometry` in `src/sys/compose_view.cpp` when a snapshot exists, otherwise the row-range index in `src/core/interaction_selection.cpp`; scope flags filter both); paste (proposal in `src/core/chart_clipboard.cpp`, ghost geometry in `paste_geometry`).
   4. Pointer sequence in `docs/frontend-event-harness.md`: a press starts an area-selection candidate unless `compose_pointer_start_hits_element` claims it; Nuklear's `pointer_clicked` is the *release*; the order in `process_compose_pointer_actions` decides which handler owns a click. Check each claim against the code before writing it.
-  5. `AGENTS.md`: build with `cmake --build build --parallel "$(nproc)"` (`build/` uses the Makefile generator, which is serial by default).
+  5. `AGENTS.md`: build with an explicit job count (`build/` uses the Makefile generator, which is serial by default). Default to a share of the machine, `min(8, nproc / concurrent agents)` and at least 1, and use every core only when the owner says the run may use the whole computer (owner, 2026-10-17). Point at T-665's script once it exists.
   6. `tasks.md` rules: before writing **Files owned**, grep how the nearest existing feature is wired (for a lane: the BGA lane and timing markers) and list those files.
   7. `code-style.md`: a frontend view of an object the user can select or edit carries the object's ID; display numbers are not keys (see the proposed addition on T-653).
   8. "Adding an X" recipes in `docs/architecture.md`, each a short list of every touchpoint with file and symbol: a selection object kind, a Compose action, a toolbar button, a Compose view field (written the C++ way under `code-style.md` "Frontend boundary", from T-672's worked example; the old C-struct path described only for touching existing fields), a selectable canvas lane. Write each by tracing a recent real addition (`bar_line`, `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE`, the measure-lane toggles and lane). Where a recipe step could instead be a compile error, note it for T-661/T-669 rather than relying on the recipe.
@@ -79,7 +79,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   4. Grep for other arrays sized by a named last enumerator and convert them.
 - **Invariants:** No enum value changes; same routes; same selections from Select All and area selection.
 - **Reject/failure behavior:** If the route table cannot be `constexpr` without restructuring the route modules, keep the runtime build and add only the `static_assert` on size; record why.
-- **Verify:** `cmake --build build --parallel "$(nproc)"`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -R '^documentation\.'`.
+- **Verify:** GATE (T-665), or by hand: `cmake --build build --parallel <jobs>`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -R '^documentation\.'`, with `<jobs>` chosen as in T-665.
 - **Out of scope:** Re-routing actions (T-636 is done); renaming scope fields.
 
 ## T-662 Let event-harness tests find widgets by tooltip
@@ -140,12 +140,13 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
 - **Files owned:** `scripts/gate.sh` (new), `docs/chart-editor-plan/tasks.md`, `AGENTS.md`, this card.
 - **Steps:**
   1. Stale-plan check: `ls scripts/ | grep -i gate`; `grep -rn "GATE" docs AGENTS.md`.
-  2. Write the script: build directory as an argument (default `build`), `--parallel "$(nproc)"`, logs under a temporary directory it prints, nonzero exit on any failed stage. Treat "Error listing tests" and "Not Run" in ctest output as failures.
+  2. Write the script: build directory as an argument (default `build`), logs under a temporary directory it prints, nonzero exit on any failed stage. Treat "Error listing tests" and "Not Run" in ctest output as failures.
+  2a. Job count (owner, 2026-10-17: the gate is often not allowed the whole computer). Default: `min(8, nproc / agents)`, at least 1, where `agents` is the number of concurrent runs sharing the machine (`--agents N` or `WORMEDIT_GATE_AGENTS`, default 1). `--jobs N` (or `WORMEDIT_GATE_JOBS`) overrides it; `--whole-machine` uses `nproc` and is only for runs the owner has said may use the whole computer. Use the same count for the build and for `ctest -j`, and print the chosen count and why in the summary.
   3. Define GATE in `tasks.md` and point `AGENTS.md` at the script.
   4. Prove the listing-error detection: temporarily add a failing static initializer in a scratch test, run the script, see it fail, then remove it.
-- **Invariants:** No test, build flag or source change. The script only reads the tree and writes logs outside it.
+- **Invariants:** No test, build flag or source change. The script only reads the tree and writes logs outside it. By default it never uses more than 8 jobs.
 - **Reject/failure behavior:** Any stage failure fails the whole gate with that stage named; the script never reports success after a stage it could not run.
-- **Verify:** Run `scripts/gate.sh` on a clean tree (passes) and on the scratch listing failure from step 4 (fails, naming the stage); `ctest --test-dir build -R '^documentation\.'`.
+- **Verify:** Run `scripts/gate.sh` on a clean tree (passes) and on the scratch listing failure from step 4 (fails, naming the stage); check the printed job count on this machine for the default, `--agents 4` and `--whole-machine`; `ctest --test-dir build -R '^documentation\.'`.
 - **Out of scope:** Xvfb captures (they need a display and stay manual); the complexity baseline itself (T-666); CI configuration.
 
 ## T-666 Check "no new or raised complexity" against a checked-in baseline
@@ -229,7 +230,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   3. Point includers at the narrowest headers; re-time the rebuild and record both times here.
 - **Invariants:** No declaration changes; identical behavior and tests.
 - **Reject/failure behavior:** A cyclic dependency between the new headers stops the split at that boundary; keep those declarations together.
-- **Verify:** `cmake --build build --parallel "$(nproc)"`; `ctest --test-dir build --output-on-failure`; recorded before and after rebuild times.
+- **Verify:** `cmake --build build --parallel <jobs>` (chosen as in T-665; use the same job count for both timings); `ctest --test-dir build --output-on-failure`; recorded before and after rebuild times.
 - **Out of scope:** Changing any type or action; T-621's folder moves.
 
 ## T-671 Share test helpers and put new tests by feature

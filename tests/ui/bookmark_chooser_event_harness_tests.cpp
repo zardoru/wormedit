@@ -243,3 +243,128 @@ TEST_CASE("bookmark chooser auto focused search requests matches and guards stal
     const auto chosen = harness.frame(std::span{&enter, 1});
     check_selected_action(chosen, 81, 7, 11);
 }
+
+namespace {
+void require_chooser_lifecycle(bool value) { REQUIRE(value); }
+void check_chooser_lifecycle(bool value) { CHECK(value); }
+
+auto chooser_glyph_width(nk_handle, float, const char*, int length) -> float {
+    return static_cast<float>(length) * 8.0f;
+}
+
+struct chooser_host_fixture_t {
+    nk_user_font font{};
+    nk_context context{};
+    bookmark_chooser_state_t state{};
+    WormUiBookmarkChooserView view{.project_id = 3, .chart_id = 7,
+                                  .document_revision = 11};
+    WormUiWorkspaceAction action{};
+    bool owned{};
+
+    chooser_host_fixture_t() {
+        font.height = 15.0f;
+        font.width = chooser_glyph_width;
+        require_chooser_lifecycle(nk_init_default(&context, &font));
+        worm_ui_nuklear_bookmark_chooser_open(state, 3, 7, 11);
+    }
+    ~chooser_host_fixture_t() { nk_free(&context); }
+    chooser_host_fixture_t(const chooser_host_fixture_t&) = delete;
+    auto operator=(const chooser_host_fixture_t&) -> chooser_host_fixture_t& = delete;
+
+    auto frame(struct nk_rect host_bounds, bool block_begin = false) -> struct nk_rect {
+        nk_input_begin(&context);
+        nk_input_end(&context);
+        nk_window_set_bounds(&context, "Chooser host", host_bounds);
+        require_chooser_lifecycle(nk_begin(&context, "Chooser host", host_bounds, NK_WINDOW_NO_SCROLLBAR));
+        auto* host = context.current;
+        if (block_begin) {
+            require_chooser_lifecycle(nk_popup_begin(&context, NK_POPUP_STATIC, "Other popup",
+                NK_WINDOW_BORDER, nk_rect(10, 10, 100, 100)));
+            nk_popup_end(&context);
+        }
+        owned = worm_ui_nuklear_render_compose_bookmark_chooser(
+            &context, view, &action, true, &state);
+        require_chooser_lifecycle(context.current == host);
+        require_chooser_lifecycle(host->popup.win != nullptr);
+        require_chooser_lifecycle(host->popup.active);
+        const auto popup_bounds = host->popup.win->bounds;
+        nk_end(&context);
+        nk_clear(&context);
+        return popup_bounds;
+    }
+};
+} // namespace
+
+TEST_CASE("bookmark chooser retains origin-based positioning when its host moves",
+          "[frontend-state][event-harness][bookmark-chooser][picker-lifecycle]") {
+    // Characterization requested by T-649, not a desired geometry contract:
+    // preserve this behavior until the owner decides whether it should change.
+    chooser_host_fixture_t fixture;
+    const auto origin = fixture.frame(nk_rect(0, 0, 1280, 800));
+    const auto moved = fixture.frame(nk_rect(120, 80, 1280, 800));
+    check_chooser_lifecycle(moved.x == origin.x);
+    check_chooser_lifecycle(moved.y == origin.y);
+    check_chooser_lifecycle(moved.w == origin.w);
+    check_chooser_lifecycle(moved.h == origin.h);
+    check_chooser_lifecycle(fixture.state.open);
+    check_chooser_lifecycle(fixture.owned);
+    check_chooser_lifecycle(fixture.action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+}
+
+TEST_CASE("bookmark chooser begin failure preserves focus and reports prior release ownership",
+          "[frontend-state][event-harness][bookmark-chooser][picker-lifecycle]") {
+    for (const bool guarded : {false, true}) {
+        chooser_host_fixture_t fixture;
+        fixture.state.release_pending = guarded;
+        static_cast<void>(fixture.frame(nk_rect(0, 0, 1280, 800), true));
+        check_chooser_lifecycle(fixture.state.open);
+        check_chooser_lifecycle(fixture.state.focus_pending);
+        check_chooser_lifecycle(!fixture.state.close_pending);
+        check_chooser_lifecycle(!fixture.state.release_pending);
+        check_chooser_lifecycle(fixture.owned == guarded);
+    }
+}
+
+TEST_CASE("bookmark chooser retains its Enter routing during synthetic IME composition",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    // Characterize existing frontend wiring; this does not exercise an OS IME.
+    nuklear_event_harness_t harness{1280, 800};
+    require_chooser_lifecycle(harness.ready());
+    std::array<WormUiBookmarkChooserRowView, 2> rows{};
+    prepare_view(harness, rows);
+    open_chooser(harness);
+    SDL_Event editing{};
+    editing.type = SDL_EVENT_TEXT_EDITING;
+    editing.edit.text = "bridge";
+    static_cast<void>(harness.frame(std::span{&editing, 1}));
+    const auto enter = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
+    const auto selected = harness.frame(std::span{&enter, 1});
+    check_selected_action(selected, 80, 7, 11);
+    check_chooser_lifecycle(selected.get().shortcut_event_count == 0);
+    check_chooser_lifecycle(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser.open);
+}
+
+TEST_CASE("bookmark chooser context loss cancels without navigation or shortcut leakage",
+          "[frontend-state][event-harness][bookmark-chooser]") {
+    for (int cause = 0; cause < 3; ++cause) {
+        nuklear_event_harness_t harness{1280, 800};
+        require_chooser_lifecycle(harness.ready());
+        std::array<WormUiBookmarkChooserRowView, 2> rows{};
+        prepare_view(harness, rows);
+        open_chooser(harness);
+        SDL_Event event{};
+        if (cause == 0) {
+            event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        } else {
+            if (cause == 1) ++harness.view().compose.bookmark_chooser.project_id;
+            else ++harness.view().compose.bookmark_chooser.chart_id;
+            event = key_event(SDLK_RETURN, SDL_SCANCODE_RETURN, SDL_KMOD_NONE);
+        }
+        const auto canceled = harness.frame(std::span{&event, 1});
+        const auto& state = worm_ui_nuklear_compose_state().bookmark_ui.bookmark_chooser;
+        check_chooser_lifecycle(!state.open);
+        check_chooser_lifecycle(state.release_pending);
+        check_chooser_lifecycle(canceled.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
+        check_chooser_lifecycle(canceled.get().shortcut_event_count == 0);
+    }
+}

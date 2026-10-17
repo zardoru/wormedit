@@ -216,3 +216,52 @@ TEST_CASE("Go to sound IME confirmation cannot arm an old result", "[frontend-st
     const auto selected = press(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_source(selected.get(), 41);
 }
+
+namespace {
+auto sound_picker_glyph_width(nk_handle, float, const char*, int length) -> float {
+    return static_cast<float>(length) * 8.0f;
+}
+
+struct sound_picker_host_fixture_t {
+    nk_user_font font{};
+    nk_context context{};
+    worm_ui_nuklear_compose_state_t compose{};
+    WormUiComposeView view{.project_id = 1, .chart_id = 1, .document_revision = 1};
+    WormUiWorkspaceAction action{};
+
+    sound_picker_host_fixture_t() {
+        font.height = 15.0f;
+        font.width = sound_picker_glyph_width;
+        require_picker(nk_init_default(&context, &font));
+        nk_input_begin(&context);
+        nk_input_end(&context);
+        require_picker(nk_begin(&context, "Sound picker host", nk_rect(0, 0, 1280, 800),
+                                NK_WINDOW_NO_SCROLLBAR));
+        require_picker(nk_popup_begin(&context, NK_POPUP_STATIC, "Other popup",
+            NK_WINDOW_BORDER, nk_rect(10, 10, 100, 100)));
+        nk_popup_end(&context);
+    }
+    ~sound_picker_host_fixture_t() { nk_end(&context); nk_free(&context); }
+    sound_picker_host_fixture_t(const sound_picker_host_fixture_t&) = delete;
+    auto operator=(const sound_picker_host_fixture_t&) -> sound_picker_host_fixture_t& = delete;
+};
+} // namespace
+
+TEST_CASE("Go to sound begin failure clears focus only when it cancels an open picker",
+          "[frontend-state][event-harness][sound-picker][picker-lifecycle]") {
+    for (const bool open : {false, true}) {
+        sound_picker_host_fixture_t fixture;
+        auto& state = fixture.compose.sound_picker_ui.sound_picker;
+        open_compose_sound_picker(state, 1, 1, 1);
+        state.open = open;
+        state.close_pending = true;
+        auto* host = fixture.context.current;
+        render_compose_sound_picker(&fixture.context, fixture.view,
+                                    fixture.action, fixture.compose, true);
+        check_picker(!state.open);
+        check_picker(!state.close_pending);
+        check_picker(state.release_pending == open);
+        check_picker(state.focus_pending == !open);
+        check_picker(fixture.context.current == host);
+    }
+}

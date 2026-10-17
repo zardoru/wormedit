@@ -27,6 +27,11 @@ struct retained_popup_t {
     bool release_pending{};
     bool close_pending{};
     auto owns_input() const -> bool { return open || release_pending; }
+    void cancel() {
+        if (!open) return;
+        open = false;
+        release_pending = close_pending = true;
+    }
 };
 
 // Window fills saved while a menu surface hides them (see chrome::menu_surface_begin).
@@ -101,6 +106,57 @@ inline auto popup_update_release_pending(const nk_context* context, bool& releas
                                          PopupReleaseKeys keys = PopupReleaseKeys::escape) -> bool {
     if (release_pending && popup_input_is_quiet(context, keys)) release_pending = false;
     return release_pending;
+}
+
+
+// Return ownership for this frame before quiet input can retire the release guard.
+inline auto release_retained_popup(const nk_context* context, retained_popup_t& state,
+                                   PopupReleaseKeys keys) -> bool {
+    const bool guarded = state.release_pending;
+    (void)popup_update_release_pending(context, state.release_pending, keys);
+    return guarded;
+}
+
+enum class retained_popup_begin_failure_t { cancel, retain };
+enum class retained_popup_edit_focus_t { preserve, unfocus_on_close };
+enum class retained_popup_close_trigger_t { closed, closed_or_pending };
+
+struct retained_popup_frame_t {
+    bool began{};
+    bool guarded{};
+
+    auto has_contents() const -> bool { return began; }
+    auto owns_input() const -> bool { return began || guarded; }
+    auto operator==(const retained_popup_frame_t&) const -> bool = default;
+};
+
+inline auto begin_retained_popup(nk_context* context, retained_popup_t& state,
+                                const char* title, nk_flags flags, struct nk_rect bounds,
+                                retained_popup_begin_failure_t failure)
+    -> retained_popup_frame_t {
+    if (nk_popup_begin(context, NK_POPUP_STATIC, title, flags, bounds))
+        return {.began = true};
+    if (failure == retained_popup_begin_failure_t::cancel) state.cancel();
+    state.close_pending = false;
+    const bool guarded = state.release_pending;
+    if (failure == retained_popup_begin_failure_t::retain)
+        (void)release_retained_popup(context, state, PopupReleaseKeys::all);
+    return {.guarded = guarded};
+}
+
+inline void end_retained_popup(nk_context* context, retained_popup_t& state,
+                               retained_popup_frame_t& popup,
+                               retained_popup_edit_focus_t focus,
+                               retained_popup_close_trigger_t trigger) {
+    if (!popup.began) return;
+    if (!state.open || (trigger == retained_popup_close_trigger_t::closed_or_pending &&
+                        state.close_pending)) {
+        if (focus == retained_popup_edit_focus_t::unfocus_on_close) nk_edit_unfocus(context);
+        nk_popup_close(context);
+        state.close_pending = false;
+    }
+    nk_popup_end(context);
+    popup.began = false;
 }
 
 

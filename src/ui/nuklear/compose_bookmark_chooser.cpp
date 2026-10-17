@@ -15,13 +15,6 @@ void set_status(bookmark_chooser_state_t& state, const char* message) {
     std::snprintf(state.status.data(), state.status.size(), "%s", message);
 }
 
-void close_chooser(nk_context* context, bookmark_chooser_state_t& state, bool guard_release) {
-    static_cast<void>(context);
-    state.open = false;
-    state.release_pending = guard_release;
-    state.close_pending = true;
-}
-
 auto current_row(const bookmark_chooser_state_t& state,
                  const WormUiBookmarkChooserView& view) -> const WormUiBookmarkChooserRowView* {
     if (state.selected_row < view.first_row) return nullptr;
@@ -42,7 +35,7 @@ auto activate_row(const WormUiBookmarkChooserView& view, const WormUiBookmarkCho
     action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
-    close_chooser(context, state, true);
+    worm_ui_nuklear_bookmark_chooser_cancel(context, state);
     return true;
 }
 
@@ -155,8 +148,8 @@ void worm_ui_nuklear_bookmark_chooser_open(bookmark_chooser_state_t& state,
 
 void worm_ui_nuklear_bookmark_chooser_cancel(nk_context* context,
                                             bookmark_chooser_state_t& state) {
-    if (!state.open) return;
-    close_chooser(context, state, true);
+    (void)context;
+    state.cancel();
 }
 
 auto worm_ui_nuklear_bookmark_chooser_owns_input(
@@ -171,8 +164,8 @@ auto worm_ui_nuklear_bookmark_chooser_release_pending(
 
 void worm_ui_nuklear_bookmark_chooser_release_delivered(nk_context* context,
                                                        bookmark_chooser_state_t& state) {
-    (void)wormedit::ui::chrome::popup_update_release_pending(
-        context, state.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all);
+    (void)wormedit::ui::chrome::release_retained_popup(
+        context, state, wormedit::ui::chrome::PopupReleaseKeys::all);
 }
 
 auto worm_ui_nuklear_render_compose_bookmark_chooser(
@@ -181,13 +174,12 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     bookmark_chooser_state_t* state) -> bool {
     if (!context || !action || !state) return false;
     if (!state->open && !state->close_pending) {
-        const bool guarded = state->release_pending;
-        worm_ui_nuklear_bookmark_chooser_release_delivered(context, *state);
-        return guarded;
+        return wormedit::ui::chrome::release_retained_popup(
+            context, *state, wormedit::ui::chrome::PopupReleaseKeys::all);
     }
     if (state->open && (!window_focused || state->project_id != view.project_id ||
         state->chart_id != view.chart_id)) {
-        close_chooser(context, *state, true);
+        worm_ui_nuklear_bookmark_chooser_cancel(context, *state);
     }
     const auto parent = nk_window_get_bounds(context);
     const auto region = nk_window_get_content_region(context);
@@ -195,16 +187,14 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const auto height = std::min(480.0f, std::max(260.0f, parent.h - 24.0f));
     const auto bounds = nk_rect((parent.w - width) * 0.5f - region.x,
                                 (parent.h - height) * 0.5f - region.y, width, height);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Go to bookmark", NK_WINDOW_BORDER, bounds)) {
-        state->close_pending = false;
-        const bool guarded = state->release_pending;
-        worm_ui_nuklear_bookmark_chooser_release_delivered(context, *state);
-        return guarded;
-    }
+    auto popup = wormedit::ui::chrome::begin_retained_popup(context, *state,
+        "Go to bookmark", NK_WINDOW_BORDER, bounds,
+        wormedit::ui::chrome::retained_popup_begin_failure_t::retain);
+    if (!popup.has_contents()) return popup.owns_input();
     if (!state->open) {
-        nk_popup_close(context);
-        nk_popup_end(context);
-        state->close_pending = false;
+        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+            wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
+            wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
     }
     if (state->document_revision != view.document_revision) {
@@ -217,9 +207,9 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
     const bool results_current = render_search(context, view, *state);
     if (results_current) handle_keyboard(context, view, *action, *state);
     if (!state->open || state->close_pending) {
-        nk_popup_close(context);
-        nk_popup_end(context);
-        state->close_pending = false;
+        wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+            wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
+            wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
         return true;
     }
     nk_layout_row_dynamic(context, 26, 1);
@@ -234,10 +224,8 @@ auto worm_ui_nuklear_render_compose_bookmark_chooser(
         nk_layout_row_dynamic(context, 30, 1);
         nk_label(context, "Searching…", NK_TEXT_LEFT);
     }
-    if (state->close_pending) {
-        nk_popup_close(context);
-        state->close_pending = false;
-    }
-    nk_popup_end(context);
+    wormedit::ui::chrome::end_retained_popup(context, *state, popup,
+        wormedit::ui::chrome::retained_popup_edit_focus_t::preserve,
+        wormedit::ui::chrome::retained_popup_close_trigger_t::closed_or_pending);
     return true;
 }

@@ -101,8 +101,7 @@ void open_compose_sound_picker(sound_picker_state_t& state, std::uint64_t projec
 }
 void cancel_compose_sound_picker(sound_picker_state_t& state) {
     if (!state.open) return;
-    state.open = false;
-    state.release_pending = state.close_pending = true;
+    state.cancel();
     state.focus_pending = false;
 }
 auto compose_sound_picker_owns_input(const sound_picker_state_t& state) -> bool {
@@ -113,8 +112,8 @@ void render_compose_sound_picker(nk_context* context, const WormUiComposeView& v
     auto& state = compose.sound_picker_ui.sound_picker;
     if (!context) return;
     if (!state.open && !state.close_pending) {
-        (void)wormedit::ui::chrome::popup_update_release_pending(
-            context, state.release_pending, wormedit::ui::chrome::PopupReleaseKeys::all);
+        (void)wormedit::ui::chrome::release_retained_popup(
+            context, state, wormedit::ui::chrome::PopupReleaseKeys::all);
         return;
     }
     if (!focused || state.project != view.project_id || state.chart != view.chart_id ||
@@ -128,10 +127,12 @@ void render_compose_sound_picker(nk_context* context, const WormUiComposeView& v
         parent.y + (parent.h - height) * 0.5f - region.y, width, height);
     if (state.open && wormedit::ui::chrome::popup_dismiss_requested(context,
         wormedit::ui::chrome::popup_screen_bounds(context, bounds))) cancel_compose_sound_picker(state);
-    if (!nk_popup_begin(context, NK_POPUP_STATIC, "Go to sound",
-                        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds)) {
-        cancel_compose_sound_picker(state);
-        state.close_pending = false;
+    const bool was_open = state.open;
+    auto popup = wormedit::ui::chrome::begin_retained_popup(context, state, "Go to sound",
+        NK_WINDOW_BORDER | NK_WINDOW_NO_SCROLLBAR, bounds,
+        wormedit::ui::chrome::retained_popup_begin_failure_t::cancel);
+    if (!popup.has_contents()) {
+        if (was_open) state.focus_pending = false;
         return;
     }
     if (state.open) {
@@ -140,10 +141,7 @@ void render_compose_sound_picker(nk_context* context, const WormUiComposeView& v
         if (state.open && nk_input_is_key_pressed(&context->input, NK_KEY_ENTER))
             state.focus_pending = true;
     }
-    if (!state.open) {
-        nk_edit_unfocus(context);
-        nk_popup_close(context);
-        state.close_pending = false;
-    }
-    nk_popup_end(context);
+    wormedit::ui::chrome::end_retained_popup(context, state, popup,
+        wormedit::ui::chrome::retained_popup_edit_focus_t::unfocus_on_close,
+        wormedit::ui::chrome::retained_popup_close_trigger_t::closed);
 }

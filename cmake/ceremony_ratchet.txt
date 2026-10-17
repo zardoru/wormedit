@@ -47,3 +47,6 @@ metadata_rational_denominator_writer | 1 | src | std::snprintf\(.*action_denomin
 
 # T-648: content_layout.h owns bottom-minus-next-row arithmetic.
 local_content_height_arithmetic | 0 | src | (region|content|area)[.]y [+] (region|content|area)[.]h -
+
+# T-649: the two retained picker titles use shared native lifecycle operations.
+retained_picker_native_begin | 0 | src | nk_popup_begin\(context, NK_POPUP_STATIC, "Go to (sound|bookmark)"

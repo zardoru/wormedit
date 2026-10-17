@@ -127,3 +127,130 @@ TEST_CASE("SDL rectangle helpers preserve inclusive half-open and clipped-empty 
     check_lifecycle(overlap.w == 20);
     check_lifecycle(overlap.h == 30);
 }
+
+namespace {
+void require_lifecycle(bool value) { REQUIRE(value); }
+
+auto popup_glyph_width(nk_handle, float, const char*, int length) -> float {
+    return static_cast<float>(length) * 8.0f;
+}
+
+struct retained_popup_fixture_t {
+    nk_user_font font{};
+    nk_context context{};
+    wormedit::ui::chrome::retained_popup_t state{.open = true};
+    nk_window* host{};
+
+    retained_popup_fixture_t() {
+        font.height = 15.0f;
+        font.width = popup_glyph_width;
+        require_lifecycle(nk_init_default(&context, &font));
+        nk_input_begin(&context);
+        nk_input_end(&context);
+        require_lifecycle(nk_begin(&context, "Retained host", nk_rect(0, 0, 800, 600),
+                                   NK_WINDOW_NO_SCROLLBAR));
+        host = context.current;
+    }
+    ~retained_popup_fixture_t() { nk_end(&context); nk_free(&context); }
+    retained_popup_fixture_t(const retained_popup_fixture_t&) = delete;
+    auto operator=(const retained_popup_fixture_t&) -> retained_popup_fixture_t& = delete;
+
+    auto begin(wormedit::ui::chrome::retained_popup_begin_failure_t failure)
+        -> wormedit::ui::chrome::retained_popup_frame_t {
+        return wormedit::ui::chrome::begin_retained_popup(&context, state, "Retained picker",
+            NK_WINDOW_BORDER, nk_rect(100, 100, 400, 300), failure);
+    }
+    void block_begin() {
+        require_lifecycle(nk_popup_begin(&context, NK_POPUP_STATIC, "Other popup",
+            NK_WINDOW_BORDER, nk_rect(50, 50, 200, 200)));
+        nk_popup_end(&context);
+    }
+};
+} // namespace
+
+TEST_CASE("Retained picker release returns frame ownership before all-key quietness retires it",
+          "[frontend-state][popup-lifecycle]") {
+    using namespace wormedit::ui::chrome;
+    nk_context context{};
+    retained_popup_t state{.release_pending = true};
+    context.input.keyboard.keys[NK_KEY_SHIFT].down = true;
+    check_lifecycle(release_retained_popup(&context, state, PopupReleaseKeys::all));
+    check_lifecycle(state.release_pending);
+    context.input.keyboard.keys[NK_KEY_SHIFT].down = false;
+    context.input.keyboard.keys[NK_KEY_SHIFT].clicked = 1;
+    check_lifecycle(release_retained_popup(&context, state, PopupReleaseKeys::all));
+    check_lifecycle(state.release_pending);
+    context.input.keyboard.keys[NK_KEY_SHIFT].clicked = 0;
+    check_lifecycle(release_retained_popup(&context, state, PopupReleaseKeys::all));
+    check_lifecycle(!state.owns_input());
+    check_lifecycle(!release_retained_popup(&context, state, PopupReleaseKeys::all));
+}
+
+TEST_CASE("Retained picker begin failures preserve their explicit cancel and retain policies",
+          "[frontend-state][popup-lifecycle]") {
+    using namespace wormedit::ui::chrome;
+    for (const auto failure : {retained_popup_begin_failure_t::cancel,
+                               retained_popup_begin_failure_t::retain}) {
+        for (const bool guarded : {false, true}) {
+            retained_popup_fixture_t fixture;
+            fixture.state.release_pending = guarded;
+            fixture.state.close_pending = true;
+            fixture.block_begin();
+            auto popup = fixture.begin(failure);
+            const bool canceled = failure == retained_popup_begin_failure_t::cancel;
+            check_lifecycle(!popup.has_contents());
+            check_lifecycle(popup.owns_input() == (canceled || guarded));
+            check_lifecycle(fixture.state.open == !canceled);
+            check_lifecycle(fixture.state.release_pending == canceled);
+            check_lifecycle(!fixture.state.close_pending);
+            end_retained_popup(&fixture.context, fixture.state, popup,
+                               retained_popup_edit_focus_t::unfocus_on_close,
+                               retained_popup_close_trigger_t::closed);
+            check_lifecycle(fixture.context.current == fixture.host);
+        }
+    }
+}
+
+TEST_CASE("Retained picker terminal frames close and end once with explicit edit focus policy",
+          "[frontend-state][popup-lifecycle]") {
+    using namespace wormedit::ui::chrome;
+    for (const auto focus : {retained_popup_edit_focus_t::preserve,
+                             retained_popup_edit_focus_t::unfocus_on_close}) {
+        retained_popup_fixture_t fixture;
+        auto popup = fixture.begin(retained_popup_begin_failure_t::retain);
+        require_lifecycle(popup.has_contents());
+        check_lifecycle(popup.owns_input());
+        auto* native_popup = fixture.context.current;
+        native_popup->edit.active = 1;
+        fixture.state.cancel();
+        end_retained_popup(&fixture.context, fixture.state, popup, focus,
+                           retained_popup_close_trigger_t::closed_or_pending);
+        check_lifecycle(fixture.context.current == fixture.host);
+        check_lifecycle(!fixture.state.open && fixture.state.release_pending);
+        check_lifecycle(!fixture.state.close_pending);
+        check_lifecycle(native_popup->edit.active ==
+            (focus == retained_popup_edit_focus_t::preserve ? 1 : 0));
+        end_retained_popup(&fixture.context, fixture.state, popup, focus,
+                           retained_popup_close_trigger_t::closed_or_pending);
+        check_lifecycle(fixture.context.current == fixture.host);
+    }
+}
+
+TEST_CASE("Retained picker close triggers distinguish pending native retirement from closed state",
+          "[frontend-state][popup-lifecycle]") {
+    using namespace wormedit::ui::chrome;
+    for (const auto trigger : {retained_popup_close_trigger_t::closed,
+                               retained_popup_close_trigger_t::closed_or_pending}) {
+        retained_popup_fixture_t fixture;
+        auto popup = fixture.begin(retained_popup_begin_failure_t::retain);
+        require_lifecycle(popup.has_contents());
+        fixture.state.close_pending = true;
+        end_retained_popup(&fixture.context, fixture.state, popup,
+                           retained_popup_edit_focus_t::preserve, trigger);
+        const bool closed = trigger == retained_popup_close_trigger_t::closed_or_pending;
+        check_lifecycle(fixture.state.open);
+        check_lifecycle(fixture.state.close_pending == !closed);
+        check_lifecycle((fixture.host->popup.active != 0) == !closed);
+        check_lifecycle(fixture.context.current == fixture.host);
+    }
+}

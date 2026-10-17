@@ -2161,3 +2161,39 @@ TEST_CASE("osu shared write warnings retain text", "[unit][osu-mania][results]")
     CHECK(legacy.value == "text");
     CHECK(legacy.diagnostics.front().message == "warning");
 }
+
+TEST_CASE("osu!mania import aligns a millisecond-rounded red line with its notes",
+          "[unit][format][osu-mania][writer]") {
+    // The red line's true phase is -1518.5 ms; stable osu! stored it and every note
+    // in whole milliseconds, which left the notes a row off the editor grid.
+    constexpr std::array<int, 24> times{0,    95,   190,  285,  380,  475,  570,  665,
+                                        760,  855,  950,  1045, 1140, 1235, 1330, 1425,
+                                        1519, 1614, 1709, 1804, 1899, 1994, 2089, 2184};
+    std::string source = "osu file format v14\n[General]\nMode: 3\n[Metadata]\nTitle:Phase\n"
+                         "Artist:A\nCreator:C\nVersion:4K\n[Difficulty]\nCircleSize:4\n"
+                         "[TimingPoints]\n-1518,379.74683544304,4,2,0,10,1,0\n[HitObjects]\n";
+    for (std::size_t index = 0; index < times.size(); ++index)
+        source += std::to_string(64 + 128 * (index % 4)) + ",192," + std::to_string(times[index]) +
+                  ",1,0,0:0:0:0:\n";
+
+    const auto imported = parse_inline(source);
+    REQUIRE(imported.value.has_value());
+    const auto& chart = imported.value->charts.front();
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes) {
+            CAPTURE(note.provenance.source_spelling, note.position.row);
+            CHECK(note.position.row % 60 == 0);
+        }
+    const auto downbeat = position_for_source(chart, "64,192,0,");
+    REQUIRE(downbeat.has_value());
+    CHECK(downbeat->measure == chart.measures[1].id);
+    CHECK(downbeat->row == 0);
+
+    const auto written = write_inline(*imported.value);
+    REQUIRE(written.value.has_value());
+    for (std::size_t index = 0; index < times.size(); ++index) {
+        const auto line = "," + std::to_string(times[index]) + ",1,0,";
+        CAPTURE(times[index]);
+        CHECK(written.value->find(line) != std::string::npos);
+    }
+}

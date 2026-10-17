@@ -18,6 +18,7 @@
 #include <numeric>
 #include <ranges>
 #include <set>
+#include <span>
 #include <string_view>
 #include <system_error>
 #include <tuple>
@@ -828,6 +829,89 @@ void add_timeline_line(std::vector<timeline_line_t>& timeline, long double time,
     timeline.push_back({time, point.beat_length, point.meter, 4, anchor});
 }
 
+// Stable osu! stores red lines in whole milliseconds, so a red line can sit up to a
+// millisecond off its song's beat grid and every note after it then rounds one row off
+// that grid. A phase scores how many hit times it explains within their own rounding.
+struct osu_phase_score_t {
+    std::size_t aligned{};
+    long double residual{};
+
+    [[nodiscard]] auto is_better_than(const osu_phase_score_t& other) const -> bool {
+        return aligned != other.aligned ? aligned > other.aligned : residual < other.residual;
+    }
+};
+
+auto score_osu_phase(std::span<const long double> times, long double anchor, long double grid)
+    -> osu_phase_score_t {
+    constexpr auto rounding_ms = 0.5L + 1.0e-9L;
+    osu_phase_score_t score;
+    for (const auto time : times) {
+        const auto steps = (time - anchor) / grid;
+        const auto residual = std::fabs(steps - std::round(steps)) * grid;
+        if (residual > rounding_ms) continue;
+        ++score.aligned;
+        score.residual += residual;
+    }
+    return score;
+}
+
+// The red line moves at most one millisecond, and only when a well-populated span then
+// sits almost entirely on the 1/48-beat grid; aligned charts keep their source times.
+auto refined_osu_anchor_time(const timing_point_t& anchor, std::span<const long double> times)
+    -> long double {
+    constexpr int steps = 100;
+    constexpr std::size_t minimum_times = 16;
+    const auto grid = anchor.beat_length / 48.0L;
+    if (times.size() < minimum_times || std::floor(anchor.time) != anchor.time) return anchor.time;
+    const auto unchanged = score_osu_phase(times, anchor.time, grid);
+    auto best = unchanged;
+    auto best_time = anchor.time;
+    for (int step = -steps; step <= steps; ++step) {
+        const auto time = anchor.time + static_cast<long double>(step) / steps;
+        const auto score = score_osu_phase(times, time, grid);
+        if (score.is_better_than(best)) {
+            best = score;
+            best_time = time;
+        }
+    }
+    const bool confident = best.aligned * 10 >= times.size() * 9;
+    return confident && best.aligned > unchanged.aligned ? best_time : anchor.time;
+}
+
+auto osu_hit_times_between(const std::vector<hit_object_t>& objects, long double begin,
+                           long double end) -> std::vector<long double> {
+    std::vector<long double> times;
+    for (const auto& object : objects) {
+        if (object.time >= begin && object.time < end) times.push_back(object.time);
+        if (object.end_time && *object.end_time >= begin && *object.end_time < end)
+            times.push_back(*object.end_time);
+    }
+    return times;
+}
+
+// Moves each red line, and every green line sharing its millisecond, onto the phase
+// its own span's hit objects imply.
+void refine_osu_anchor_phases(std::vector<timing_point_t>& points,
+                              const std::vector<hit_object_t>& objects) {
+    std::vector<const timing_point_t*> anchors;
+    for (const auto& point : points)
+        if (point.uninherited && point.beat_length > 0.0L) anchors.push_back(&point);
+    std::ranges::stable_sort(anchors, {}, &timing_point_t::time);
+    std::vector<std::pair<long double, long double>> moves;
+    for (std::size_t index = 0; index < anchors.size(); ++index) {
+        const auto begin = anchors[index]->time;
+        const auto end = index + 1 < anchors.size() ? anchors[index + 1]->time
+                                                    : std::numeric_limits<long double>::infinity();
+        if (begin == end) continue;
+        const auto times = osu_hit_times_between(objects, begin, end);
+        const auto refined = refined_osu_anchor_time(*anchors[index], times);
+        if (refined != begin) moves.emplace_back(begin, refined);
+    }
+    for (const auto& [source, refined] : moves)
+        for (auto& point : points)
+            if (point.time == source) point.time = refined;
+}
+
 template <typename fail_t>
 auto effective_timing_anchors(const std::vector<timing_point_t>& points, fail_t&& fail)
     -> std::vector<timing_point_t> {
@@ -1115,6 +1199,9 @@ auto position_at_time(long double time, const std::vector<measure_geometry_t>& g
     auto row = static_cast<std::uint64_t>(
         std::llround(fraction * static_cast<long double>(right->second - left->second))) +
         left->second;
+    // A time that rounds onto the next bar line belongs on that downbeat.
+    if (row >= geometries[index].capacity && index + 1 < measures.size())
+        return local_position_t{measures[index + 1].id, 0};
     if (row >= geometries[index].capacity) row = geometries[index].capacity - 1;
     return local_position_t{measures[index].id, row};
 }
@@ -1628,6 +1715,7 @@ auto parse_osu_mania_bytes(std::span<const std::byte> bytes, osu_mania_parse_opt
         hit_objects.reserve(hit_lines.size());
         for (const auto& line : hit_lines)
             hit_objects.push_back(parse_hit_object_line(line, *format_version, fail));
+        refine_osu_anchor_phases(timing_points, hit_objects);
 
         auto parsed_events = parse_event_lines(event_lines, fail);
         auto visuals = std::move(parsed_events.visuals);
@@ -2980,6 +3068,19 @@ struct osu_note_sample_t {
     std::string field;
 };
 
+// An imported whole millisecond still names an unmoved note when its row is the
+// nearest to it. Recomputing would round the row's exact time, which can land a
+// millisecond away from the source.
+template <typename timestamp_t>
+auto is_retained_time_on_row(std::uint64_t row, const retained_osu_time_t& retained,
+                             timestamp_t&& timestamp_at_row) -> bool {
+    if (std::floor(retained.value) != retained.value) return false;
+    const auto distance = std::fabs(timestamp_at_row(row) - retained.value);
+    if (distance >= 1.0L) return false;
+    if (row > 0 && std::fabs(timestamp_at_row(row - 1) - retained.value) <= distance) return false;
+    return std::fabs(timestamp_at_row(row + 1) - retained.value) > distance;
+}
+
 template <typename timestamp_t, typename fail_t>
 auto serialize_osu_note_time(std::uint64_t row,
                              std::optional<retained_osu_time_t> retained, bool lazer_profile,
@@ -2998,6 +3099,8 @@ auto serialize_osu_note_time(std::uint64_t row,
                  "hit-object time cannot be serialized as a finite decimal", "HitObjects.time");
         return {exact, std::move(text)};
     }
+    if (retained && is_retained_time_on_row(row, *retained, timestamp_at_row))
+        return {retained->value, retained->spelling};
     const auto rounded = writer_round_ms(exact);
     if (!rounded)
         fail(osu_mania_write_diagnostic_code_t::unrepresentable_position,

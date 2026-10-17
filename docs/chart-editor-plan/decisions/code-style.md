@@ -176,8 +176,8 @@ it in new code even before the card lands.
   strong IDs, `rational_t`, and small pure queries over them such as `editor_bga_lane_index`) may be
   used on both sides; reuse it instead of a parallel raw integer. Documents, history, indices and
   editor state may not. Today's frontend follows this in what it uses, but four Nuklear files
-  include all of `document.h` or `interaction.h` for a few enums; T-670 gives the vocabulary a light
-  header.
+  included all of `document.h` or `interaction.h` for a few enums until T-670 gave the vocabulary a
+  light header, `core/vocabulary.h`.
 - **Migrate slowly, when touched ("good citizen").** No wholesale conversion card. A change that
   adds a view surface or action payload writes it in C++ types. A change that substantially
   reworks an existing `WormUi*` surface may convert that surface when the conversion is contained
@@ -186,6 +186,13 @@ it in new code even before the card lands.
 - **What a conversion removes:** fixed capacities and their truncation paths, the frame-storage
   flattening that keeps pointer-plus-count arrays alive, raw integer kinds and IDs, and that
   surface's `ui_codec` specialization once the frontend can read the view type directly.
+- **Worked example (T-672):** `compose_measure_lane_view_t` in `src/ui/frontend/compose_measure_lane.h`
+  is a C++ member of the C struct `WormUiComposeView`, so the surface converts without touching
+  frame ownership. It uses core vocabulary (`bar_line_time_t`, `measure_id_t` from
+  `core/vocabulary.h`), owns its list instead of a pointer and count into side storage, and puts
+  its query on the type (`view.measure_lane.is_selected(id)`). Sys refills it in place while
+  building the view. A member with an owned container makes the enclosing struct non-trivially
+  copyable; check that nothing copies that view per frame.
 - **If a non-C++ frontend ever becomes real,** give it its own C or serialized layer outside the
   C++ seam, shaped by that frontend's needs. Do not pre-build one without a consumer.
 

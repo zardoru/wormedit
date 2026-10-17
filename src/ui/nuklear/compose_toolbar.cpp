@@ -147,16 +147,17 @@ static void render_measure_lane_toggles(const ComposeToolbarContext& toolbar) {
         if (action->compose_action == WORM_UI_COMPOSE_ACTION_NONE) action->compose_action = kind;
     };
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::measure_lane,
-            view->measure_lane_visible ? "Hide measure lane"
+            view->measure_lane.visible ? "Hide measure lane"
                                        : "Show measure lane: select, place and move bar lines",
-            view->measure_lane_visible}.render(toolbar.context))
+            view->measure_lane.visible}.render(toolbar.context))
         request(WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
-    if (!view->measure_lane_visible) return;
+    if (!view->measure_lane.visible) return;
+    const bool propagates = view->measure_lane.bar_line_time == wormedit::bar_line_time_t::propagate;
     if (wormedit::ui::chrome::DrawnIconButton{wormedit::ui::vector_icons::bar_line_time,
-            view->bar_line_time_propagates
+            propagates
                 ? "Moved bar lines carry the content after them (click to keep it in place)"
                 : "Moved bar lines keep other objects in place (click to carry later content)",
-            view->bar_line_time_propagates}.render(toolbar.context))
+            propagates}.render(toolbar.context))
         request(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }
 
@@ -625,7 +626,7 @@ void render_compose_toolbar(const ComposeToolbarContext& toolbar) {
     const auto spacing = context->style.window.spacing;
     const bool spacing_pushed = nk_style_push_vec2(context, &context->style.window.spacing,
                                                   nk_vec2(3.0f, spacing.y)) != 0;
-    layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane_visible ? 1 : 0),
+    layout_compose_toolbar(context, 9 + (toolbar.view->measure_lane.visible ? 1 : 0),
                            6 + (worm_ui_nuklear_bms_branch_panel_visible(toolbar.view) ? 1 : 0),
                            toolbar.view->timing_focus);
     render_navigation_group(toolbar);

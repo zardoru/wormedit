@@ -65,12 +65,12 @@ auto compose_measure_local_row(const wormedit::measure_index_t& measures, std::u
 
 // The measure a real measure line starts; virtual BMS measures and other lines have none.
 auto grid_line_measure_id(const wormedit::editor_field_grid_geometry_t& line, std::uint32_t measure_number,
-                          const wormedit::measure_index_t& measures) -> std::uint64_t {
+                          const wormedit::measure_index_t& measures) -> wormedit::measure_id_t {
     if (line.kind != wormedit::editor_grid_line_kind_t::measure || measure_number == 0 ||
         measure_number > measures.entries.size() ||
         measures.entries[measure_number - 1].absolute_begin_row != line.chart_row.whole_rows)
-        return 0;
-    return measures.entries[measure_number - 1].id.value;
+        return {};
+    return measures.entries[measure_number - 1].id;
 }
 
 void build_compose_grid_lines_view(const compose_scene_projection_context_t& projection) {

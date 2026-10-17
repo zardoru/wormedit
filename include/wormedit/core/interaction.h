@@ -6,6 +6,7 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/vocabulary.h>
 
 #include <array>
 #include <compare>
@@ -33,10 +34,6 @@ enum class editor_gesture_kind_t {
     hold, duration, move, paint, semantic_paint, area, range
 };
 
-// Four editor lanes: background (including video), layer, layer 2, poor.
-inline constexpr std::uint8_t editor_bga_lane_mask_all = 15;
-[[nodiscard]] auto editor_bga_lane_index(visual_event_kind_t kind)
-    -> std::optional<std::size_t>;
 [[nodiscard]] auto editor_bga_visible_lane_mask(const chart_document_t& chart,
                                                std::uint8_t revealed) -> std::uint8_t;
 
@@ -251,24 +248,6 @@ struct editor_selection_scope_t {
     }
 
     auto operator==(const editor_selection_scope_t&) const -> bool = default;
-};
-
-enum class editor_selection_object_kind_t {
-    note,
-    bgm_event,
-    bpm_event,
-    stop_event,
-    delay_event,
-    warp_event,
-    scroll_event,
-    speed_event,
-    kiai_event,
-    timing_anchor,
-    bga_event,
-    bookmark,
-    section,
-    // The bar line that starts a measure, keyed by that measure's ID. The first measure has none.
-    bar_line,
 };
 
 // IDs are only unique within a chart object family; retaining the family in

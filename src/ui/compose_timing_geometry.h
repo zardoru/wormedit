@@ -84,7 +84,7 @@ inline auto compose_timing_marker_bounds(const WormUiComposeView& view,
 // use this rectangle; a hidden lane has none.
 inline auto compose_bar_line_bounds(const WormUiComposeView& view, const WormUiComposeGridLineView& line)
     -> std::optional<WormUiComposeRect> {
-    if (!view.measure_lane_visible || line.measure_id == 0 || line.measure_number < 2 ||
+    if (!view.measure_lane.visible || !line.measure_id || line.measure_number < 2 ||
         !std::isfinite(line.y_pixels))
         return std::nullopt;
     return WormUiComposeRect{0.0, line.y_pixels - 4.0, compose_measure_rail_width, line.y_pixels + 4.0};
@@ -103,14 +103,9 @@ inline auto compose_bar_line_at(const WormUiComposeView& view, double x, double 
 
 // A press the measure lane takes for itself: on a bar line, or anywhere in the lane while drawing.
 inline auto is_compose_measure_lane_press(const WormUiComposeView& view, double x, double y) -> bool {
-    if (!view.measure_lane_visible || !std::isfinite(x) || x < 0.0 || x >= compose_measure_rail_width)
+    if (!view.measure_lane.visible || !std::isfinite(x) || x < 0.0 || x >= compose_measure_rail_width)
         return false;
     return view.note_paint_mode_active || compose_bar_line_at(view, x, y) != nullptr;
-}
-
-inline auto is_compose_bar_line_selected(const WormUiComposeView& view, std::uint64_t measure_id) -> bool {
-    return std::find(view.selected_bar_lines, view.selected_bar_lines + view.selected_bar_line_count,
-                     measure_id) != view.selected_bar_lines + view.selected_bar_line_count;
 }
 
 } // namespace wormedit::ui

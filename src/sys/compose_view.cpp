@@ -1429,15 +1429,13 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
     view.area_snap_denominator = retained_state->active_snap_denominator;
     view.edit_snap_enabled = retained_state->snap_enabled;
     view.y_lock = retained_state->y_lock;
-    view.measure_lane_visible = application_state.project.compose_view.measure_lane_visible;
-    view.bar_line_time_propagates =
-        application_state.project.compose_view.bar_line_time == wormedit::bar_line_time_t::propagate;
-    flattened.compose.selected_bar_line.clear();
+    auto& measure_lane = view.measure_lane;
+    measure_lane.visible = application_state.project.compose_view.measure_lane_visible;
+    measure_lane.bar_line_time = application_state.project.compose_view.bar_line_time;
+    measure_lane.selected_bar_lines.clear();
     for (const auto& object : retained_state->selected_objects)
         if (object.kind == wormedit::editor_selection_object_kind_t::bar_line)
-            flattened.compose.selected_bar_line.push_back(object.id.value);
-    view.selected_bar_lines = flattened.compose.selected_bar_line.data();
-    view.selected_bar_line_count = flattened.compose.selected_bar_line.size();
+            measure_lane.selected_bar_lines.push_back(wormedit::measure_id_t{object.id.value});
     view.area_scroll_pixels = interaction_view.viewport_scroll_pixels;
     if (view.area_range_available) {
         retained_state->retained_canvas_selection_range = wormedit::canvas_row_span_t{
@@ -2181,7 +2179,7 @@ void append_area_bar_line_geometry(wormedit::editor_area_geometry_snapshot_t& sn
         const auto bounds = wormedit::ui::compose_bar_line_bounds(view, line);
         if (!bounds) continue;
         append_area_object_geometry(snapshot,
-            {wormedit::editor_selection_object_kind_t::bar_line, wormedit::object_id_t{line.measure_id}},
+            {wormedit::editor_selection_object_kind_t::bar_line, wormedit::object_id_t{line.measure_id.value}},
             *bounds, view, downscroll);
     }
 }

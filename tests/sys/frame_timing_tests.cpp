@@ -7513,8 +7513,8 @@ TEST_CASE("Compose measure geometry is shared with the committed snapshot",
 TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
           "[frame-timing][measure-lane]") {
     std::array<WormUiComposeGridLineView, 3> lines{{
-        {.y_pixels = 100, .kind = 3, .measure_number = 1, .measure_id = 10},
-        {.y_pixels = 300, .kind = 3, .measure_number = 2, .measure_id = 11},
+        {.y_pixels = 100, .kind = 3, .measure_number = 1, .measure_id = {10}},
+        {.y_pixels = 300, .kind = 3, .measure_number = 2, .measure_id = {11}},
         {.y_pixels = 400, .kind = 1}}};
     WormUiComposeView view{};
     view.viewport_height_pixels = 600;
@@ -7523,7 +7523,7 @@ TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
     editor_area_geometry_snapshot_t hidden;
     compose_projection_detail::append_area_bar_line_geometry(hidden, view, false);
     CHECK(hidden.objects.empty());
-    view.measure_lane_visible = true;
+    view.measure_lane.visible = true;
     editor_area_geometry_snapshot_t shown;
     compose_projection_detail::append_area_bar_line_geometry(shown, view, false);
     // Only measure 11's bar line: the chart's first is fixed and beat lines have none.

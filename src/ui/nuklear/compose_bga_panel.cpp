@@ -21,7 +21,7 @@
 #include <span>
 #include <string>
 #include <unordered_map>
-#include <wormedit/core/interaction.h>
+#include <wormedit/core/vocabulary.h>
 namespace {
 using wormedit::ui::chrome::IconButton;
 using wormedit::ui::chrome::DrawnIconButton;

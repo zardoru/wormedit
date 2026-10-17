@@ -15,7 +15,7 @@
 
 #include "wormedit/nuklear_config.h"
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/vocabulary.h>
 
 #include <SDL3/SDL_keyboard.h>
 #include <SDL3/SDL_timer.h>
@@ -1017,7 +1017,7 @@ static auto handle_compose_measure_lane_click(const ComposePointerEventContext& 
     if (const auto* line = wormedit::ui::compose_bar_line_at(view, input.pointer_started_x, input.pointer_started_y))
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT, input.pointer_x,
                              input.pointer_y, 0, false, compose_selection_mode(input.pointer_modifiers),
-                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, line->measure_id);
+                             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, line->measure_id.value);
     else
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BAR_LINE_PLACE, input.pointer_x,
                              input.pointer_y);

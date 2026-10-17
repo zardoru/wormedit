@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include <wormedit/core/document.h>
+#include <wormedit/core/vocabulary.h>
 #include <wormedit/core/sound_group_proposal.h>
 #include <wormedit/core/sound_import.h>
 

@@ -4,6 +4,7 @@
 #include <wormedit/core/result.h>
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
+#include <wormedit/core/vocabulary.h>
 
 #include <algorithm>
 #include <compare>
@@ -25,13 +26,6 @@ namespace wormedit {
 struct chart_document_t;
 
 inline constexpr std::size_t default_maximum_chart_objects = 1'000'000;
-
-struct signed_rational_t {
-    std::int64_t numerator{};
-    std::uint64_t denominator{1};
-
-    auto operator==(const signed_rational_t&) const -> bool = default;
-};
 
 struct color_rgba_t {
     std::uint8_t red{};
@@ -259,16 +253,6 @@ struct semantic_layer_t {
     color_rgba_t color;
     bool visible{true};
     bool locked{false};
-};
-
-enum class note_kind_t {
-    tap,
-    hold,
-    roll,
-    invisible,
-    mine,
-    lift,
-    fake,
 };
 
 struct note_t {
@@ -515,15 +499,6 @@ struct section_t {
     std::optional<std::pair<std::int64_t, std::int64_t>> audio_millisecond_span;
 };
 
-enum class visual_event_kind_t {
-    background,
-    poor,
-    layer,
-    video,
-    storyboard,
-    layer2,
-};
-
 struct bga_event_t {
     object_id_t id;
     local_position_t position;
@@ -576,15 +551,6 @@ struct target_resource_identity_t {
     // Format-specific namespace, required for BMS WAV versus BMP IDs.
     std::string namespace_name;
     auto operator==(const target_resource_identity_t&) const -> bool = default;
-};
-
-// How the user classifies a sound in the Sounds tab. Unspecified keeps the
-// kind implied by the resource roles; it never affects exported files.
-enum class sound_kind_t : std::uint8_t {
-    unspecified,
-    stem,
-    keysound,
-    sample,
 };
 
 inline constexpr std::size_t maximum_sound_tags = 32;

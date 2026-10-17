@@ -2,6 +2,8 @@
 
 Next: [State ownership batch T-601–T-628](../../docs/chart-editor-plan/tasks/state-ownership.md), coordinated by Claude. Wave 1 lanes: wyrm T-601–T-605; drake T-607–T-608; wyvern T-625 (core/formats/audio/visual scope), then T-613; hydra T-622, then T-628 (src/ui scope). Later waves are scheduled by Claude, respecting card dependencies and the T-614 D12 test-first STOP. Claude records implementation evidence on the cards when merging. Type consolidation T-591–T-600 is complete; preserve its recorded behavior differences and owner verification follow-ups.
 
+Completed **T-672 and T-670 step 1a** (2026-10-17): measure-lane view fields became the first C++ boundary view (`compose_measure_lane_view_t`) over the new `core/vocabulary.h`; GATE 4,038/4,038 and isolated Xvfb checked. T-670 steps 2–3 wait for the owner's choice recorded on the [card](../../docs/chart-editor-plan/tasks/feature-friction.md#t-670-split-interactionh-by-role).
+
 Completed **T-582** (2026-10-12): stamped menu commands and shared Quantize/bookmark/same-sound/BGM/loop/measure paths; orphan BGM and workspace loop paths retired. Build, **3,457/3,457** full serial CTest, **444/444** event checks, default clang-tidy with no new/increased complexity, documentation and whitespace gates pass. Isolated Xvfb Compose screenshot inspected. [Card and evidence](../../docs/chart-editor-plan/tasks/gesture-consolidation.md#t-582-route-menu-verbs-through-registered-commands).
 
 Completed **T-574 follow-up, T-578 and T-579** (2026-10-11; committed with implementation):

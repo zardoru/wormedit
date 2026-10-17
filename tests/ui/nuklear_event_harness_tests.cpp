@@ -8381,9 +8381,9 @@ void check_measure_lane(bool condition, const std::source_location location = st
 struct measure_lane_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
     std::array<WormUiComposeGridLineView, 3> lines{{
-        {.y_pixels = 100, .kind = 3, .measure_number = 1, .chart_row = 0, .measure_id = 10},
-        {.y_pixels = 300, .kind = 3, .measure_number = 2, .chart_row = 960, .measure_id = 11},
-        {.y_pixels = 500, .kind = 3, .measure_number = 3, .chart_row = 1920, .measure_id = 12}}};
+        {.y_pixels = 100, .kind = 3, .measure_number = 1, .chart_row = 0, .measure_id = {10}},
+        {.y_pixels = 300, .kind = 3, .measure_number = 2, .chart_row = 960, .measure_id = {11}},
+        {.y_pixels = 500, .kind = 3, .measure_number = 3, .chart_row = 1920, .measure_id = {12}}}};
     WormUiTestingRect viewport{};
 
     measure_lane_fixture_t() {
@@ -8411,7 +8411,7 @@ TEST_CASE("The measure lane selects bar lines and places them in Draw mode",
     auto& view = fixture.harness.view().compose;
     // Hidden, the rail takes no bar-line input.
     check_measure_lane(find_compose_input(fixture.click_rail(300), WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT) == nullptr);
-    view.measure_lane_visible = true;
+    view.measure_lane.visible = true;
     const auto selected = fixture.click_rail(301);
     const auto* select = find_compose_input(selected, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT);
     REQUIRE(select != nullptr);
@@ -8441,7 +8441,7 @@ TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propa
     // The measure lane icon follows the BGA lane icon at x=303.
     const auto lane = click_at(harness, 330.0f, 122.0f);
     check_measure_lane(lane.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
-    harness.view().compose.measure_lane_visible = true;
+    harness.view().compose.measure_lane.visible = true;
     (void)harness.frame();
     const auto time = click_at(harness, 357.0f, 122.0f);
     check_measure_lane(time.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);

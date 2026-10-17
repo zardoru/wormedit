@@ -1,4 +1,5 @@
 #pragma once
+#include "compose_measure_lane.h"
 #include "metadata_audio.h"
 
 typedef struct WormUiComposeRect {
@@ -36,8 +37,8 @@ typedef struct WormUiComposeGridLineView {
     uint32_t measure_number;
     uint64_t chart_row;
     uint8_t snap_class; // Exact standard-measure subdivision; 0 = other.
-    // The measure a real (not virtual) measure line starts; 0 for every other line.
-    uint64_t measure_id;
+    // The measure a real (not virtual) measure line starts; none for every other line.
+    wormedit::measure_id_t measure_id;
 } WormUiComposeGridLineView;
 
 typedef struct WormUiComposeLaneLayoutSegmentView {
@@ -951,13 +952,7 @@ typedef struct WormUiComposeView {
     bool edit_snap_enabled;
     /* Y-lock: dragging notes changes lanes only, never rows. */
     bool y_lock;
-    /* The measure rail is a lane of selectable bar lines (grid lines with a measure_id). */
-    bool measure_lane_visible;
-    /* Moving a bar line also moves the content after it. */
-    bool bar_line_time_propagates;
-    /* Measure IDs of the selected bar lines, for the measure lane. */
-    const uint64_t* selected_bar_lines;
-    size_t selected_bar_line_count;
+    wormedit::ui::compose_measure_lane_view_t measure_lane;
     double area_scroll_pixels;
     bool beat_section_selection_span_available;
     uint64_t beat_section_selection_begin_measure_number;

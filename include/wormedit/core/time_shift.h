@@ -1,6 +1,7 @@
 #pragma once
 
 #include <wormedit/core/command.h>
+#include <wormedit/core/vocabulary.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -11,10 +12,6 @@ namespace wormedit {
 struct time_shift_limits_t {
     std::size_t maximum_selected_objects{100'000};
 };
-
-// What moving a bar line does to the content after it. Bar-line edits are presentational by
-// default, so everything keeps its song time; propagation is an explicit choice (open question 19).
-enum class bar_line_time_t { keep_song_time, propagate };
 
 // Moves the named notes and BGM events by an exact signed number of chart rows
 // (the chart's own division grid, counted across measure boundaries). Hold

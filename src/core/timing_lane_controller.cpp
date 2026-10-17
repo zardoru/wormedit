@@ -2,6 +2,7 @@
 #include "position_validation.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_controller.h>
+#include <wormedit/core/timing_event_access.h>
 
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/marker_editor.h>
@@ -41,130 +42,29 @@ auto is_fixed_initial_bpm(const chart_document_t& chart, object_id_t event) -> b
 
 auto load_existing_event(const chart_document_t& chart, timing_lane_kind_t kind, object_id_t event,
                          local_position_t& position, timing_lane_value_t& value) -> bool {
-    switch (kind) {
-    case timing_lane_kind_t::bpm: {
-        const auto found = std::ranges::find(chart.bpms, event, &bpm_event_t::id);
-        if (found == chart.bpms.end()) {
-            return false;
-        }
-        position = found->position;
-        value = timing_bpm_value_t::from(*found);
+    return visit_timing_events(kind, [&](auto access) {
+        const auto* found = access.find(chart, kind, event);
+        if (!found) return false;
+        position = access.position(*found);
+        value = decltype(access)::value_type::from(*found);
         return true;
-    }
-    case timing_lane_kind_t::scroll: {
-        const auto found = std::ranges::find(chart.scrolls, event, &scroll_event_t::id);
-        if (found == chart.scrolls.end()) {
-            return false;
-        }
-        position = found->position;
-        value = timing_scroll_value_t::from(*found);
-        return true;
-    }
-    case timing_lane_kind_t::speed: {
-        const auto found = std::ranges::find(chart.speeds, event, &speed_event_t::id);
-        if (found == chart.speeds.end()) {
-            return false;
-        }
-        position = found->position;
-        value = timing_speed_value_t::from(*found);
-        return true;
-    }
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay: {
-        const auto found = std::ranges::find(chart.pauses, event, &pause_event_t::id);
-        const auto requested_kind =
-            kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
-        if (found == chart.pauses.end() || found->kind != requested_kind) {
-            return false;
-        }
-        position = found->position;
-        value = timing_pause_value_t::from(*found);
-        return true;
-    }
-    case timing_lane_kind_t::warp: {
-        const auto found = std::ranges::find(chart.warps, event, &warp_event_t::id);
-        if (found == chart.warps.end()) {
-            return false;
-        }
-        position = found->span.begin;
-        value = timing_warp_value_t::from(*found);
-        return true;
-    }
-    case timing_lane_kind_t::kiai: {
-        const auto found = std::ranges::find(chart.kiai, event, &kiai_event_t::id);
-        if (found == chart.kiai.end()) {
-            return false;
-        }
-        position = found->position;
-        value = timing_kiai_value_t::from(*found);
-        return true;
-    }
-    case timing_lane_kind_t::anchor: {
-        const auto found = std::ranges::find(chart.timing_anchors, event, &timing_anchor_t::id);
-        if (found == chart.timing_anchors.end()) {
-            return false;
-        }
-        position = found->position;
-        value = timing_anchor_value_t::from(*found);
-        return true;
-    }
-    }
-    return false;
+    }, false);
 }
 
 auto is_value_of_kind(timing_lane_kind_t kind, const timing_lane_value_t& value) -> bool {
-    switch (kind) {
-    case timing_lane_kind_t::bpm:
-        return std::holds_alternative<timing_bpm_value_t>(value);
-    case timing_lane_kind_t::scroll:
-        return std::holds_alternative<timing_scroll_value_t>(value);
-    case timing_lane_kind_t::speed:
-        return std::holds_alternative<timing_speed_value_t>(value);
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay:
-        return std::holds_alternative<timing_pause_value_t>(value);
-    case timing_lane_kind_t::warp:
-        return std::holds_alternative<timing_warp_value_t>(value);
-    case timing_lane_kind_t::kiai:
-        return std::holds_alternative<timing_kiai_value_t>(value);
-    case timing_lane_kind_t::anchor:
-        return std::holds_alternative<timing_anchor_value_t>(value);
-    }
-    return false;
+    return visit_timing_events(kind, [&](auto access) {
+        return std::holds_alternative<typename decltype(access)::value_type>(value);
+    }, false);
 }
 
 auto is_same_row_is_occupied(const chart_document_t& chart, timing_lane_kind_t kind,
-                          local_position_t position) -> bool {
-    switch (kind) {
-    case timing_lane_kind_t::bpm:
-        return std::ranges::any_of(
-            chart.bpms, [position](const auto& item) { return item.position == position; });
-    case timing_lane_kind_t::scroll:
-        return std::ranges::any_of(
-            chart.scrolls, [position](const auto& item) { return item.position == position; });
-    case timing_lane_kind_t::speed:
-        return std::ranges::any_of(
-            chart.speeds, [position](const auto& item) { return item.position == position; });
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay: {
-        const auto requested_kind =
-            kind == timing_lane_kind_t::stop ? pause_kind_t::stop : pause_kind_t::delay;
-        return std::ranges::any_of(chart.pauses, [position, requested_kind](const auto& item) {
-            return item.position == position && item.kind == requested_kind;
+                            local_position_t position) -> bool {
+    return visit_timing_events(kind, [&](auto access) {
+        return std::ranges::any_of(access.events(chart), [&](const auto& item) {
+            return access.is_kind(item, kind, timing_pause_match_policy_t::exact_kind) &&
+                   access.position(item) == position;
         });
-    }
-    case timing_lane_kind_t::warp:
-        return std::ranges::any_of(
-            chart.warps, [position](const auto& item) { return item.span.begin == position; });
-    case timing_lane_kind_t::kiai:
-        return std::ranges::any_of(
-            chart.kiai, [position](const auto& item) { return item.position == position; });
-    case timing_lane_kind_t::anchor:
-        return std::ranges::any_of(chart.timing_anchors, [position](const auto& item) {
-            return item.position == position;
-        });
-    }
-    return true;
+    }, true);
 }
 
 auto selected_event(std::span<const timing_lane_event_ref_t> events, timing_lane_kind_t kind,
@@ -177,36 +77,12 @@ auto selected_event(std::span<const timing_lane_event_ref_t> events, timing_lane
 auto is_target_occupied_by_unselected(const chart_document_t& chart, timing_lane_kind_t kind,
                                    local_position_t position,
                                    std::span<const timing_lane_event_ref_t> events) -> bool {
-    const auto occupied = [&](const auto& values) {
-        return std::ranges::any_of(values, [&](const auto& item) {
-            return item.position == position && !selected_event(events, kind, item.id);
+    return visit_timing_events(kind, [&](auto access) {
+        return std::ranges::any_of(access.events(chart), [&](const auto& item) {
+            return access.is_kind(item, kind, timing_pause_match_policy_t::stop_or_other) &&
+                   access.position(item) == position && !selected_event(events, kind, item.id);
         });
-    };
-    switch (kind) {
-    case timing_lane_kind_t::bpm:
-        return occupied(chart.bpms);
-    case timing_lane_kind_t::scroll:
-        return occupied(chart.scrolls);
-    case timing_lane_kind_t::speed:
-        return occupied(chart.speeds);
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay:
-        return std::ranges::any_of(chart.pauses, [&](const auto& pause) {
-            const auto matches_kind = (kind == timing_lane_kind_t::stop) ==
-                                      (pause.kind == pause_kind_t::stop);
-            return matches_kind && pause.position == position &&
-                   !selected_event(events, kind, pause.id);
-        });
-    case timing_lane_kind_t::warp:
-        return std::ranges::any_of(chart.warps, [&](const auto& warp) {
-            return warp.span.begin == position && !selected_event(events, kind, warp.id);
-        });
-    case timing_lane_kind_t::kiai:
-        return occupied(chart.kiai);
-    case timing_lane_kind_t::anchor:
-        return occupied(chart.timing_anchors);
-    }
-    return true;
+    }, true);
 }
 
 auto shifted_row(std::uint64_t row, std::int64_t delta, std::uint64_t total)
@@ -671,137 +547,16 @@ auto timing_lane_pseudonote_preview_t::apply(proposal_edit_scope_t<chart_stamp_t
         scope.invalidate_preparation();
         return result;
     }
-    const auto& preview = report;
-    switch (preview.kind) {
-    case timing_lane_kind_t::bpm: {
-        const auto& value = std::get<timing_bpm_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_bpm_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::bpm_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_bpm_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::bpm_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::bpm_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::scroll: {
-        const auto& value = std::get<timing_scroll_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_scroll_speed_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::scroll_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_scroll_speed_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::scroll_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::scroll_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::speed: {
-        const auto& value = std::get<timing_speed_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_scroll_speed_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::speed_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_scroll_speed_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::speed_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::speed_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay: {
-        const auto& value = std::get<timing_pause_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_pause_warp_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::pause_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_pause_warp_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::pause_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::pause_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::warp: {
-        const auto& value = std::get<timing_warp_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_pause_warp_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::warp_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_pause_warp_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::warp_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::warp_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::kiai: {
-        const auto& value = std::get<timing_kiai_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_marker_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::kiai_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_marker_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::kiai_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::kiai_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    case timing_lane_kind_t::anchor: {
-        const auto& value = std::get<timing_anchor_value_t>(preview.value);
-        if (preview.existing_event) {
-            result = apply_timing_anchor_edit(
-                transaction,
-                wormedit::update_edit_t<wormedit::timing_anchor_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .id = *preview.existing_event,
-                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
-        } else {
-            result = apply_timing_anchor_edit(
-                transaction,
-                wormedit::insert_edit_t<wormedit::timing_anchor_edit_value_t>{
-                    .chart = scope.captured_stamp().chart,
-                    .value = wormedit::timing_anchor_edit_value_t::from(preview.position, value)});
-        }
-        break;
-    }
-    }
-    return result;
+    return visit_timing_events(report.kind, [&](auto access) {
+        using value_type = typename decltype(access)::value_type;
+        using edit_type = typename decltype(access)::edit_type;
+        const auto value = edit_type::from(report.position, std::get<value_type>(report.value));
+        if (report.existing_event)
+            return access.apply(transaction, update_edit_t<edit_type>{
+                .chart = scope.captured_stamp().chart, .id = *report.existing_event, .value = value});
+        return access.apply(transaction, insert_edit_t<edit_type>{
+            .chart = scope.captured_stamp().chart, .value = value});
+    }, result);
 }
 
 auto apply_proposal(document_history_t& history,
@@ -847,34 +602,10 @@ auto delete_existing_timing_lane_event(document_history_t& history, chart_id_t c
                                     "the initial BPM cannot be deleted")};
         return result;
     }
-    switch (kind) {
-    case timing_lane_kind_t::bpm:
-        return apply_bpm_edit(history, wormedit::delete_edit_t<wormedit::bpm_edit_value_t>{
-                                           .chart = chart, .id = event});
-    case timing_lane_kind_t::scroll:
-        return apply_scroll_speed_edit(
-            history,
-            wormedit::delete_edit_t<wormedit::scroll_edit_value_t>{.chart = chart, .id = event});
-    case timing_lane_kind_t::speed:
-        return apply_scroll_speed_edit(
-            history,
-            wormedit::delete_edit_t<wormedit::speed_edit_value_t>{.chart = chart, .id = event});
-    case timing_lane_kind_t::stop:
-    case timing_lane_kind_t::delay:
-        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::pause_edit_value_t>{
-                                                  .chart = chart, .id = event});
-    case timing_lane_kind_t::warp:
-        return apply_pause_warp_edit(history, wormedit::delete_edit_t<wormedit::warp_edit_value_t>{
-                                                  .chart = chart, .id = event});
-    case timing_lane_kind_t::kiai:
-        return apply_marker_edit(history, wormedit::delete_edit_t<wormedit::kiai_edit_value_t>{
-                                              .chart = chart, .id = event});
-    case timing_lane_kind_t::anchor:
-        return apply_timing_anchor_edit(
-            history, wormedit::delete_edit_t<wormedit::timing_anchor_edit_value_t>{.chart = chart,
-                                                                                   .id = event});
-    }
-    return result;
+    return visit_timing_events(kind, [&](auto access) {
+        return access.apply(history, delete_edit_t<typename decltype(access)::edit_type>{
+            .chart = chart, .id = event});
+    }, result);
 }
 
 auto edit_speed_event_span(document_history_t& history, chart_id_t chart, object_id_t event,

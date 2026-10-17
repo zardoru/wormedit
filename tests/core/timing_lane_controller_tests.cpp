@@ -1148,3 +1148,113 @@ TEST_CASE("Timing retained insertion reports reject Apply even without diagnosti
     CHECK_FALSE(preview.value);
     CHECK(history.undo.empty());
 }
+
+TEST_CASE("Stop and delay occupancy stays independent at the same row",
+          "[unit][core][timing-lane-controller]") {
+    auto history = document_history_t::from(timing_edit_song());
+    auto delay = begin(history, timing_lane_kind_t::delay, 240, timing_pause_value_t{{1, 4}});
+    REQUIRE((delay.value && apply_proposal(history, delay, false)));
+    auto stop = begin(history, timing_lane_kind_t::stop, 300, timing_pause_value_t{{1, 4}});
+    REQUIRE((stop.value && apply_proposal(history, stop, false)));
+    auto occupied = begin(history, timing_lane_kind_t::delay, 240, timing_pause_value_t{{1, 4}});
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}}};
+    const auto revision = history.document.revision;
+    const auto moved = move_timing_lane_event_group(history, chart_id_t{2}, events, 60, false);
+    CHECK((has_code(occupied, diagnostic_code_t::collision) && !moved));
+    CHECK((history.document.revision == revision &&
+           history.document.charts.front().pauses.front().position == pos(240)));
+}
+
+TEST_CASE("Warp occupancy uses only its head rather than its tail or interior",
+          "[unit][core][timing-lane-controller]") {
+    auto history = document_history_t::from(timing_edit_song());
+    auto occupied = begin(history, timing_lane_kind_t::warp, 360,
+                          timing_warp_value_t{.end = pos(600)});
+    CHECK(has_code(occupied, diagnostic_code_t::collision));
+    for (const auto row : {390u, 420u}) {
+        auto preview = begin(history, timing_lane_kind_t::warp, row,
+                             timing_warp_value_t{.end = pos(600)});
+        CHECK(preview.value.has_value());
+    }
+}
+
+TEST_CASE("Timing group occupancy excludes selected IDs in the same lane",
+          "[unit][core][timing-lane-controller][group-move]") {
+    auto history = document_history_t::from(timing_edit_song());
+    auto& chart = history.document.charts.front();
+    chart.scrolls[1].position = pos(180);
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{21}}};
+    REQUIRE(move_timing_lane_event_group(history, chart_id_t{2}, events, 60, false));
+    CHECK(history.document.charts.front().scrolls[0].position == pos(180));
+    CHECK(history.document.charts.front().scrolls[1].position == pos(240));
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("Unknown timing lanes cannot load insert or delete events",
+          "[unit][core][timing-lane-controller][negative]") {
+    auto history = document_history_t::from(timing_edit_song());
+    const auto invalid = static_cast<timing_lane_kind_t>(999);
+    const auto revision = history.document.revision;
+    auto loaded = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2},
+        timing_lane_event_ref_t{invalid, object_id_t{40}}, false);
+    CHECK_FALSE(loaded.value);
+    auto inserted = begin(history, invalid, 600, timing_bpm_value_t{});
+    CHECK_FALSE(inserted.value);
+    CHECK(has_code(inserted, diagnostic_code_t::invalid_resolution));
+    CHECK_FALSE(delete_existing_timing_lane_event(history, chart_id_t{2}, invalid, object_id_t{40}, false));
+    CHECK((history.document.revision == revision && history.undo.empty() &&
+           history.document.charts.front().pauses.front().position == pos(240)));
+}
+
+TEST_CASE("Every timing lane deletes through its existing typed editor",
+          "[unit][core][timing-lane-controller][delete]") {
+    const std::array events{
+        timing_lane_event_ref_t{timing_lane_kind_t::bpm, object_id_t{10}},
+        timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}},
+        timing_lane_event_ref_t{timing_lane_kind_t::speed, object_id_t{30}},
+        timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{40}},
+        timing_lane_event_ref_t{timing_lane_kind_t::delay, object_id_t{41}},
+        timing_lane_event_ref_t{timing_lane_kind_t::warp, object_id_t{50}},
+        timing_lane_event_ref_t{timing_lane_kind_t::kiai, object_id_t{60}},
+        timing_lane_event_ref_t{timing_lane_kind_t::anchor, object_id_t{70}}};
+    for (const auto event : events) {
+        CAPTURE(event.kind);
+        auto history = document_history_t::from(timing_edit_song());
+        REQUIRE(delete_existing_timing_lane_event(history, chart_id_t{2}, event.kind, event.event, false));
+        CHECK_FALSE(timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, event, false).value);
+        REQUIRE(undo_document_command(history));
+        CHECK(timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, event, false).value.has_value());
+    }
+}
+
+TEST_CASE("A missing timing group target discards earlier staged deletions",
+          "[unit][core][timing-lane-controller][delete][negative]") {
+    auto history = document_history_t::from(timing_edit_song());
+    const auto revision = history.document.revision;
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::scroll, object_id_t{20}},
+                            timing_lane_event_ref_t{timing_lane_kind_t::stop, object_id_t{999}}};
+    CHECK_FALSE(delete_timing_lane_event_group(history, chart_id_t{2}, events, false));
+    CHECK(history.document.revision == revision);
+    CHECK(history.undo.empty());
+    CHECK(timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2}, events[0], false).value.has_value());
+}
+
+TEST_CASE("Malformed non-stop pauses keep the group-move occupancy policy",
+          "[unit][core][timing-lane-controller][negative]") {
+    auto history = document_history_t::from(timing_edit_song());
+    history.document.charts.front().pauses.push_back({
+        .id = object_id_t{80}, .position = pos(600),
+        .kind = static_cast<pause_kind_t>(999), .duration = {1, 4}});
+    // Insertion and lookup require an exact kind, unlike group occupancy.
+    auto insertion = begin(history, timing_lane_kind_t::delay, 600, timing_pause_value_t{{1, 4}});
+    CHECK(insertion.value.has_value());
+    auto lookup = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{2},
+        timing_lane_event_ref_t{timing_lane_kind_t::delay, object_id_t{80}}, false);
+    CHECK_FALSE(lookup.value);
+    const std::array events{timing_lane_event_ref_t{timing_lane_kind_t::delay, object_id_t{41}}};
+    const auto result = move_timing_lane_event_group(history, chart_id_t{2}, events, 300, false);
+    CHECK_FALSE(result);
+    CHECK(has_code(result, diagnostic_code_t::collision));
+    CHECK(history.undo.empty());
+}

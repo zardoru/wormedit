@@ -7535,3 +7535,35 @@ TEST_CASE("Area selection reaches bar lines only through a shown measure lane",
     CHECK(handle.top_pixels < 300.0);
     CHECK(handle.bottom_pixels > 300.0);
 }
+
+TEST_CASE("Pasted timing ghosts retain all eight lane identities",
+          "[sys][clipboard][paste-preview]") {
+    using lane_case = std::pair<chart_clipboard_payload_t, WormUiTimingLaneKind>;
+    const local_position_t position{measure_id_t{1}, 0};
+    const std::array cases{
+        lane_case{bpm_event_t{.position = position, .beats_per_minute = {150, 1}}, WORM_UI_TIMING_LANE_BPM},
+        lane_case{scroll_event_t{.position = position, .multiplier = {2, 1}}, WORM_UI_TIMING_LANE_SCROLL},
+        lane_case{speed_event_t{.position = position, .multiplier = {2, 1}}, WORM_UI_TIMING_LANE_SPEED},
+        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::stop, .duration = {1, 4}}, WORM_UI_TIMING_LANE_STOP},
+        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}, WORM_UI_TIMING_LANE_DELAY},
+        lane_case{warp_event_t{.span = {position, {measure_id_t{1}, 60}}}, WORM_UI_TIMING_LANE_WARP},
+        lane_case{kiai_event_t{.position = position, .enabled = true}, WORM_UI_TIMING_LANE_KIAI},
+        lane_case{timing_anchor_t{.position = position}, WORM_UI_TIMING_LANE_ANCHOR}};
+    for (const auto& [payload, lane] : cases) {
+        CAPTURE(lane);
+        compose_test_fixture_t fixture{paste_preview_song()};
+        fixture.project();
+        fixture.application.project.clipboard.chart_clipboard = chart_clipboard_t{
+            .source_song = fixture.history.document.id, .source_chart = chart_id_t{1},
+            .objects = {{.offset = {}, .duration = std::holds_alternative<warp_event_t>(payload)
+                ? rational_t{1, 16} : rational_t{}, .payload = payload}}};
+        fixture.interaction->cursor.row = 240;
+        std::string status;
+        REQUIRE(begin_compose_paste(fixture.application, fixture.history, *fixture.interaction, status));
+        fixture.project();
+        const auto& view = fixture.flattened.view.compose;
+        REQUIRE(view.paste_ghost_count == 1);
+        CHECK(view.paste_ghosts[0].kind == 3);
+        CHECK(view.paste_ghosts[0].glyph == lane);
+    }
+}

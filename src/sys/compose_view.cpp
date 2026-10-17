@@ -1,3 +1,4 @@
+#include <wormedit/core/timing_event_access.h>
 #include "sys/compose_view.h"
 #include "sys/compose_area_actions.h"
 #include "sys/compose_draw_source_view.h"
@@ -2216,17 +2217,12 @@ void cache_area_object_geometry(const compose_projection_context_t<wormedit::edi
 // Pasted timing objects have no scene geometry; they are projected straight onto their lane.
 auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
     -> std::optional<WormUiTimingLaneKind> {
-    using namespace wormedit;
-    if (std::holds_alternative<bpm_event_t>(object)) return WORM_UI_TIMING_LANE_BPM;
-    if (const auto* pause = std::get_if<pause_event_t>(&object))
-        return pause->kind == pause_kind_t::stop ? WORM_UI_TIMING_LANE_STOP
-                                                 : WORM_UI_TIMING_LANE_DELAY;
-    if (std::holds_alternative<warp_event_t>(object)) return WORM_UI_TIMING_LANE_WARP;
-    if (std::holds_alternative<scroll_event_t>(object)) return WORM_UI_TIMING_LANE_SCROLL;
-    if (std::holds_alternative<speed_event_t>(object)) return WORM_UI_TIMING_LANE_SPEED;
-    if (std::holds_alternative<kiai_event_t>(object)) return WORM_UI_TIMING_LANE_KIAI;
-    if (std::holds_alternative<timing_anchor_t>(object)) return WORM_UI_TIMING_LANE_ANCHOR;
-    return std::nullopt;
+    return std::visit([](const auto& event) -> std::optional<WormUiTimingLaneKind> {
+        using access = wormedit::timing_event_access_t<std::remove_cvref_t<decltype(event)>>;
+        if constexpr (requires { access::kind(event); })
+            return timing_lane_kind_to_ui(access::kind(event));
+        else return std::nullopt;
+    }, object);
 }
 
 auto paste_timing_ghost_span(const wormedit::chart_clipboard_payload_t& object)

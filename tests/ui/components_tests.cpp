@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_chrome.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/ui_gallery.h"
 #include "ui/nuklear/ui_metrics.h"
@@ -8,6 +9,8 @@
 
 #include <cstring>
 #include <functional>
+#include <limits>
+#include <optional>
 #include <vector>
 
 namespace chrome = wormedit::ui::chrome;
@@ -676,4 +679,113 @@ TEST_CASE("Native icon invalid cells never activate",
     check_native_icon(!probe.clicked);
     check_native_icon(probe.style_preserved);
     check_native_icon(!probe.parent_still_disabled);
+}
+
+namespace {
+namespace catalog = wormedit::ui::nuklear;
+void check_catalog(bool value) { CHECK(value); }
+void require_catalog(bool value) { REQUIRE(value); }
+
+struct catalog_label_t {
+    std::string text;
+    nk_uint foreground{};
+    short y{};
+    auto operator==(const catalog_label_t&) const -> bool = default;
+};
+auto catalog_labels(nk_context& context) -> std::vector<catalog_label_t> {
+    std::vector<catalog_label_t> labels;
+    const nk_command* command{};
+    nk_foreach(command, &context) {
+        if (command->type != NK_COMMAND_TEXT) continue;
+        const auto& text = *reinterpret_cast<const nk_command_text*>(command);
+        labels.push_back({.text = std::string(text.string, static_cast<std::size_t>(text.length)),
+            .foreground = nk_color_u32(text.foreground), .y = text.y});
+    }
+    return labels;
+}
+} // namespace
+
+TEST_CASE("Catalog header geometry preserves domain reservations and narrow clamps",
+          "[components][catalog-chrome]") {
+    using catalog::catalog_columns_t;
+    using catalog::catalog_layout_t;
+    check_catalog(catalog_columns_t::from(400, 4, catalog_layout_t::sounds) ==
+        catalog_columns_t{.body_width = 348, .id_offset = 6, .name_offset = 42, .name_width = 214});
+    check_catalog(catalog_columns_t::from(400, 4, catalog_layout_t::bga) ==
+        catalog_columns_t{.body_width = 374, .id_offset = 4, .name_offset = 64, .name_width = 216});
+    check_catalog(catalog_columns_t::from(80, 4, catalog_layout_t::sounds) ==
+        catalog_columns_t{.body_width = 28, .id_offset = 6, .name_offset = 42, .name_width = 24});
+    check_catalog(catalog_columns_t::from(80, 4, catalog_layout_t::bga) ==
+        catalog_columns_t{.body_width = 54, .id_offset = 4, .name_offset = 64, .name_width = 12});
+    check_catalog(catalog_columns_t::from(20, 8, catalog_layout_t::sounds).body_width == -40);
+}
+
+TEST_CASE("Catalog header renders the shared facts in order and muted color",
+          "[components][catalog-chrome]") {
+    fixture_t fixture;
+    const auto layout = GENERATE(catalog::catalog_layout_t::sounds, catalog::catalog_layout_t::bga);
+    std::vector<catalog_label_t> labels;
+    fixture.frame({}, [&] {
+        catalog::render_catalog_header(&fixture.context, layout);
+        labels = catalog_labels(fixture.context);
+    });
+    require_catalog(labels.size() == 4);
+    const std::array expected{"ID", "Name", "Uses", "State"};
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        check_catalog(labels[index].text == expected[index]);
+        check_catalog(labels[index].foreground ==
+            nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::text_muted)));
+    }
+}
+
+TEST_CASE("Catalog use filter reports selected clicks and respects disabled input",
+          "[components][catalog-chrome]") {
+    fixture_t fixture;
+    const bool blocked = GENERATE(false, true);
+    std::optional<std::uint8_t> chosen;
+    const auto body = [&] {
+        chosen = catalog::render_catalog_use_filter(&fixture.context, 2, blocked);
+    };
+    fixture.frame({250, 18, 0, -1, -1}, body);
+    check_catalog(!chosen);
+    fixture.frame({250, 18, 1, -1, -1}, body);
+    check_catalog(blocked ? !chosen : chosen == 2);
+    fixture.frame({250, 18, 0, -1, -1}, body);
+    check_catalog(!chosen);
+}
+
+TEST_CASE("Catalog counts and capacity keep formatting and the strict warning threshold",
+          "[components][catalog-chrome]") {
+    check_catalog(catalog::grouped_catalog_count(0) == "0");
+    check_catalog(catalog::grouped_catalog_count(999) == "999");
+    check_catalog(catalog::grouped_catalog_count(1000) == "1,000");
+    check_catalog(catalog::grouped_catalog_count(1'234'567) == "1,234,567");
+    constexpr auto maximum = std::numeric_limits<std::size_t>::max();
+    if constexpr (sizeof(std::size_t) == 8)
+        check_catalog(catalog::grouped_catalog_count(maximum) == "18,446,744,073,709,551,615");
+    else
+        check_catalog(catalog::grouped_catalog_count(maximum) == "4,294,967,295");
+    check_catalog(!catalog::catalog_capacity_t{.used = 0, .total = 0}.is_near_capacity());
+    check_catalog(!catalog::catalog_capacity_t{.used = 90, .total = 100}.is_near_capacity());
+    check_catalog(catalog::catalog_capacity_t{.used = 91, .total = 100}.is_near_capacity());
+    check_catalog(!catalog::catalog_capacity_t{.used = maximum, .total = maximum}.is_near_capacity());
+}
+
+TEST_CASE("Catalog capacity footer keeps two rows text and colors",
+          "[components][catalog-chrome]") {
+    fixture_t fixture;
+    const bool amber = GENERATE(false, true);
+    std::vector<catalog_label_t> labels;
+    fixture.frame({}, [&] {
+        catalog::render_catalog_capacity(&fixture.context,
+            {.used = amber ? 1000U : 900U, .total = 1000, .largest_free_run = 1234});
+        labels = catalog_labels(fixture.context);
+    });
+    require_catalog(labels.size() == 2);
+    check_catalog(labels[0].text == (amber ? "1,000 / 1,000 IDs" : "900 / 1,000 IDs"));
+    check_catalog(labels[1].text == "Largest free run: 1234");
+    check_catalog(labels[1].y - labels[0].y == 20 + fixture.context.style.window.spacing.y);
+    check_catalog(labels[0].foreground == nk_color_u32(amber ? nk_rgb(226, 166, 64)
+        : fixture.context.style.text.color));
+    check_catalog(labels[1].foreground == nk_color_u32(fixture.context.style.text.color));
 }

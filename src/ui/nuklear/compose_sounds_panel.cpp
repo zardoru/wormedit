@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_chrome.h"
 #include "core/text_util.h"
 #include "ui/nuklear/compose_sounds_panel.h"
 #include "ui/nuklear/catalog_confirmation.h"
@@ -119,13 +120,6 @@ auto take_picker_result(std::vector<std::string>& destination, picker_target_t& 
     state.target = {};
     state.callback_ready = false;
     return true;
-}
-
-auto grouped_count(std::size_t value) -> std::string {
-    auto text = std::to_string(value);
-    for (auto position = text.size(); position > 3; position -= 3)
-        text.insert(position - 3, ",");
-    return text;
 }
 
 auto bms_slot_label(std::uint16_t number) -> std::string {
@@ -1088,19 +1082,15 @@ void clear_sound_filters(const SoundsPanel& panel) {
 void render_use_filter(const SoundsPanel& panel) {
     auto* context = panel.context;
     auto& state = *panel.state;
-    constexpr std::array labels{"All", "Used", "Unused", "Missing"};
     const bool blocked = state.keysound_filters.is_popup_open() || state.keysound_filters.keysound_filter_release_pending ||
         state.keysound_slots.keysound_renumber_confirmation_open || state.keysound_slots.keysound_renumber_release_pending ||
         state.keysound_slots.keysound_slot_confirmation_open || state.keysound_slots.keysound_slot_release_pending || panel.view->input_occluded;
-    if (blocked) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 24, 4);
-    for (std::size_t index = 0; index < labels.size(); ++index) {
-        if (!wormedit::ui::chrome::mode_button(context, labels[index], nullptr,
-                                               state.keysound_filters.keysound_filters.use_filter == index)) continue;
-        state.keysound_filters.keysound_filters.use_filter = static_cast<std::uint8_t>(index);
+    const auto chosen = wormedit::ui::nuklear::render_catalog_use_filter(context,
+        state.keysound_filters.keysound_filters.use_filter, blocked);
+    if (chosen) {
+        state.keysound_filters.keysound_filters.use_filter = *chosen;
         reset_automatic_window(panel);
     }
-    if (blocked) nk_widget_disable_end(context);
 }
 
 void render_group_filter(const SoundsPanel& panel) {
@@ -1608,26 +1598,11 @@ void reveal_sound_primary(const SoundsPanel& panel) {
     }
 }
 
-void render_resource_header(nk_context* context) {
-    nk_layout_row_dynamic(context, row_height, 1);
-    struct nk_rect bounds{};
-    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
-    auto* canvas = nk_window_get_canvas(context);
-    nk_fill_rect(canvas, bounds, 0, color(UiColor::surface_hover));
-    constexpr std::array labels{"ID", "Name", "Uses", "State"};
-    const auto body_width = bounds.w - 44 - 2 * context->style.window.spacing.x;
-    const std::array offsets{6.0f, 42.0f, body_width - 86, body_width - 48};
-    const std::array widths{30.0f, std::max(24.0f, body_width - 134), 32.0f, 48.0f};
-    for (std::size_t index = 0; index < labels.size(); ++index)
-        nk_draw_text(canvas, nk_rect(bounds.x + offsets[index], bounds.y + 3, widths[index], bounds.h - 6),
-            labels[index], static_cast<int>(std::strlen(labels[index])), context->style.font,
-            nk_rgba(0, 0, 0, 0), color(UiColor::text_muted));
-}
-
 void render_list(const SoundsPanel& panel, float height) {
     auto* context = panel.context;
-    render_resource_header(context);
-    height = std::max(40.0f, height - row_height - context->style.window.spacing.y);
+    wormedit::ui::nuklear::render_catalog_header(context,
+        wormedit::ui::nuklear::catalog_layout_t::sounds);
+    height = std::max(40.0f, height - wormedit::ui::nuklear::catalog_header_height - context->style.window.spacing.y);
     // Before rows: they open the group menu, and the opening press must survive to its first begin.
     (void)wormedit::ui::chrome::context_menu_update(panel.state->keysound_catalog.keysound_group_menu, context);
     const auto automatic_sections = !panel.state->keysound_filters.keysound_slots_mode &&
@@ -1772,22 +1747,10 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     else
         render_list(panel, std::max(remaining, 60.0f));
     if (block_list_pointer) nk_widget_disable_end(context);
-    if (view->keysound_ids_available) {
-        nk_layout_row_dynamic(context, 20, 1);
-        char capacity[64];
-        const auto used = grouped_count(view->keysound_ids_used);
-        const auto total = grouped_count(view->keysound_ids_total);
-        std::snprintf(capacity, sizeof(capacity), "%s / %s IDs", used.c_str(), total.c_str());
-        const auto amber = view->keysound_ids_total != 0 &&
-            view->keysound_ids_used * 10 > view->keysound_ids_total * 9;
-        nk_label_colored(context, capacity, NK_TEXT_LEFT,
-                         amber ? nk_rgb(226, 166, 64) : context->style.text.color);
-        nk_layout_row_dynamic(context, 20, 1);
-        char free_run[64];
-        std::snprintf(free_run, sizeof(free_run), "Largest free run: %zu",
-                      view->keysound_largest_free_run);
-        nk_label(context, free_run, NK_TEXT_LEFT);
-    }
+    if (view->keysound_ids_available)
+        wormedit::ui::nuklear::render_catalog_capacity(context,
+            {.used = view->keysound_ids_used, .total = view->keysound_ids_total,
+             .largest_free_run = view->keysound_largest_free_run});
     render_sound_layer_confirmation(panel);
     render_sound_renumber_confirmation(panel);
     render_sound_slot_confirmation(panel);

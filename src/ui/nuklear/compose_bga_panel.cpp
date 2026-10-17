@@ -1,3 +1,4 @@
+#include "ui/nuklear/catalog_chrome.h"
 #include "ui/nuklear/compose_bga_panel.h"
 #include "ui/nuklear/catalog_confirmation.h"
 #include "ui/nuklear/chrome.h"
@@ -31,12 +32,7 @@ namespace icons = wormedit::ui::vector_icons;
 struct Texture { SDL_Texture* value{}; std::uint64_t content{}, project{}; };
 SDL_Renderer* renderer{};
 std::unordered_map<std::uint64_t, Texture> textures;
-auto grouped_count(std::size_t value) -> std::string {
-    auto text = std::to_string(value);
-    for (auto position = text.size(); position > 3; position -= 3)
-        text.insert(position - 3, ",");
-    return text;
-}
+
 struct Picker { std::mutex mutex; bool open{}; wormedit::ui::chrome::PopupContextStamp origin; std::vector<std::string> paths; };
 Picker picker;
 auto advance_eligible(const WormUiComposeView& view, std::uint64_t resource_id) -> bool {
@@ -267,32 +263,13 @@ void row(nk_context* context, const WormUiComposeView& view, worm_ui_nuklear_com
 }
 
 void bga_use_filter(nk_context* context, worm_ui_nuklear_compose_state_t& state, bool blocked) {
-    constexpr std::array labels{"All", "Used", "Unused", "Missing"};
-    if (blocked) nk_widget_disable_begin(context);
-    nk_layout_row_dynamic(context, 24, 4);
-    for (std::size_t index = 0; index < labels.size(); ++index) {
-        if (!wormedit::ui::chrome::mode_button(context, labels[index], nullptr, state.bga_catalog.bga_use_filter == index)) continue;
-        state.bga_catalog.bga_use_filter = static_cast<std::uint8_t>(index);
+    const auto chosen = wormedit::ui::nuklear::render_catalog_use_filter(context,
+        state.bga_catalog.bga_use_filter, blocked);
+    if (chosen) {
+        state.bga_catalog.bga_use_filter = *chosen;
         state.bga_catalog.bga_first_row = 0;
         nk_group_set_scroll(context, "Compose BGA list", 0, 0);
     }
-    if (blocked) nk_widget_disable_end(context);
-}
-
-void bga_resource_header(nk_context* context) {
-    nk_layout_row_dynamic(context, bga_row_height, 1);
-    struct nk_rect bounds{};
-    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
-    auto* canvas = nk_window_get_canvas(context);
-    nk_fill_rect(canvas, bounds, 0, wormedit::ui::chrome::color(UiColor::surface_hover));
-    constexpr std::array labels{"ID", "Name", "Uses", "State"};
-    const auto width = bounds.w - 22 - context->style.window.spacing.x;
-    const std::array offsets{4.0f, 64.0f, width - 86, width - 48};
-    const std::array widths{30.0f, std::max(12.0f, width - 158), 32.0f, 48.0f};
-    for (std::size_t index = 0; index < labels.size(); ++index)
-        nk_draw_text(canvas, nk_rect(bounds.x + offsets[index], bounds.y + 3, widths[index], bounds.h - 6),
-            labels[index], static_cast<int>(std::strlen(labels[index])), context->style.font,
-            nk_rgba(0, 0, 0, 0), wormedit::ui::chrome::color(UiColor::text_muted));
 }
 
 void sync_advance_ids(const WormUiComposeView& view, worm_ui_nuklear_compose_state_t& state) {
@@ -383,7 +360,8 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         static_cast<int>(state->bga_catalog.bga_search.size()), nk_filter_default);
     bga_use_filter(context, *state, view->input_occluded || state->bga_catalog.bga_renumber_confirmation_open ||
                    state->bga_catalog.bga_renumber_release_pending);
-    bga_resource_header(context);
+    wormedit::ui::nuklear::render_catalog_header(context,
+        wormedit::ui::nuklear::catalog_layout_t::bga);
     const auto region = nk_window_get_content_region(context);
     const auto height = std::max(60.0f, region.y + region.h - nk_widget_position(context).y -
         (view->bga_ids_available ? 45.0f : 5.0f));
@@ -406,21 +384,10 @@ void worm_ui_nuklear_render_compose_bga(nk_context* context, const WormUiCompose
         nk_list_view_end(&list);
     }
     if (block_list_pointer) nk_widget_disable_end(context);
-    if (view->bga_ids_available) {
-        nk_layout_row_dynamic(context, 20, 1);
-        char capacity[64];
-        const auto used = grouped_count(view->bga_ids_used);
-        const auto total = grouped_count(view->bga_ids_total);
-        std::snprintf(capacity, sizeof(capacity), "%s / %s IDs", used.c_str(), total.c_str());
-        const auto amber = view->bga_ids_total != 0 && view->bga_ids_used * 10 > view->bga_ids_total * 9;
-        nk_label_colored(context, capacity, NK_TEXT_LEFT,
-                         amber ? nk_rgb(226, 166, 64) : context->style.text.color);
-        nk_layout_row_dynamic(context, 20, 1);
-        char free_run[64];
-        std::snprintf(free_run, sizeof(free_run), "Largest free run: %zu",
-                      view->bga_largest_free_run);
-        nk_label(context, free_run, NK_TEXT_LEFT);
-    }
+    if (view->bga_ids_available)
+        wormedit::ui::nuklear::render_catalog_capacity(context,
+            {.used = view->bga_ids_used, .total = view->bga_ids_total,
+             .largest_free_run = view->bga_largest_free_run});
     renumber_confirmation(context, *view, *state, *action);
 }
 

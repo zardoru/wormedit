@@ -168,6 +168,56 @@ TEST_CASE("Metadata rational formatting preserves the exact numerator and denomi
     CHECK(worm_ui_nuklear_format_metadata_rational({2, 4}) == "2/4");
 }
 
+TEST_CASE("Metadata rational action text keeps signed and unsigned wire integers exactly",
+          "[unit][frontend][metadata]") {
+    worm_ui_nuklear_metadata_state_t state;
+    struct example_t {
+        std::int64_t numerator;
+        std::uint64_t denominator;
+        std::string_view numerator_text;
+        std::string_view denominator_text;
+    };
+    const std::array examples{
+        example_t{0, 1, "0", "1"},
+        example_t{-125, 1000, "-125", "1000"},
+        example_t{2, 4, "2", "4"},
+        example_t{std::numeric_limits<std::int64_t>::min(),
+                  std::numeric_limits<std::uint64_t>::max(),
+                  "-9223372036854775808", "18446744073709551615"},
+        example_t{std::numeric_limits<std::int64_t>::max(), 1,
+                  "9223372036854775807", "1"},
+    };
+    for (const auto& example : examples) {
+        const auto wire = state.rational_action_text(example.numerator, example.denominator);
+        CHECK(std::string_view{wire.numerator} == example.numerator_text);
+        CHECK(std::string_view{wire.denominator} == example.denominator_text);
+    }
+}
+
+TEST_CASE("Metadata rational action text borrows state arrays after its pointer pair leaves scope",
+          "[unit][frontend][metadata]") {
+    worm_ui_nuklear_reset_metadata_state();
+    auto& state = worm_ui_nuklear_metadata_state();
+    WormUiWorkspaceAction action{};
+    {
+        const auto wire = state.rational_action_text(-125, 1000);
+        action.metadata_audio_offset_numerator_text = wire.numerator;
+        action.metadata_audio_offset_denominator_text = wire.denominator;
+    }
+    // The stack pointer pair is gone; other metadata edits do not replace its storage.
+    state.chart_name[0] = 'x';
+    CHECK(action.metadata_audio_offset_numerator_text == state.action_numerator_text.data());
+    CHECK(action.metadata_audio_offset_denominator_text == state.action_denominator_text.data());
+    CHECK(std::string_view{action.metadata_audio_offset_numerator_text} == "-125");
+    CHECK(std::string_view{action.metadata_audio_offset_denominator_text} == "1000");
+
+    // A later action reuses the arrays and terminates even a shorter replacement.
+    const auto next = state.rational_action_text(0, 1);
+    CHECK(std::string_view{next.numerator} == "0");
+    CHECK(std::string_view{next.denominator} == "1");
+    worm_ui_nuklear_reset_metadata_state();
+}
+
 TEST_CASE("Tag grip insertion moves draft strings without losing duplicate or hidden tags",
           "[unit][frontend-state][metadata][tag-grips]") {
     worm_ui_nuklear_reset_metadata_state();

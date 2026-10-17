@@ -61,12 +61,9 @@ static void set_metadata_chart_action(WormUiWorkspaceAction* action,
     action->metadata_chart_author = state.chart_author.data();
     action->metadata_has_chart_rating = !unset_rating && rating->has_rating;
     if (action->metadata_has_chart_rating) {
-        std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
-                      static_cast<long long>(rating->numerator));
-        std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(),
-                      "%llu", static_cast<unsigned long long>(rating->denominator));
-        action->metadata_chart_rating_numerator_text = state.action_numerator_text.data();
-        action->metadata_chart_rating_denominator_text = state.action_denominator_text.data();
+        const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
+        action->metadata_chart_rating_numerator_text = wire.numerator;
+        action->metadata_chart_rating_denominator_text = wire.denominator;
     }
 }
 
@@ -362,12 +359,9 @@ static void set_batch_chart_action(const MetadataPanel& panel, bool rating_edit)
     action->metadata_chart_author = state.chart_author.data();
     action->metadata_has_chart_rating = rating_edit && rating->has_rating;
     if (!action->metadata_has_chart_rating) return;
-    std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
-                  static_cast<long long>(rating->numerator));
-    std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(), "%llu",
-                  static_cast<unsigned long long>(rating->denominator));
-    action->metadata_chart_rating_numerator_text = state.action_numerator_text.data();
-    action->metadata_chart_rating_denominator_text = state.action_denominator_text.data();
+    const auto wire = state.rational_action_text(rating->numerator, rating->denominator);
+    action->metadata_chart_rating_numerator_text = wire.numerator;
+    action->metadata_chart_rating_denominator_text = wire.denominator;
 }
 
 // Checkbox per difficulty plus buttons that write the Mapper or Rating draft to all checked ones.

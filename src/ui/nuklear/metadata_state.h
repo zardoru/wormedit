@@ -34,6 +34,15 @@ struct worm_ui_nuklear_metadata_state_t {
     // Scratch text for action payloads, which still carry numerator/denominator strings.
     std::array<char, 32> action_numerator_text{};
     std::array<char, 32> action_denominator_text{};
+    struct rational_action_text_t {
+        const char* numerator{};
+        const char* denominator{};
+        friend auto operator==(const rational_action_text_t&, const rational_action_text_t&)
+            -> bool = default;
+    };
+    // Borrows the action arrays until the next serialization or metadata-state reset.
+    [[nodiscard]] auto rational_action_text(std::int64_t numerator, std::uint64_t denominator)
+        -> rational_action_text_t;
     // Channel-map table text, four per lane (visible, invisible, long_note, mine). Reloaded from
     // the view when the document revision or layout segment changes.
     static constexpr std::size_t channel_map_text_bytes = 64;

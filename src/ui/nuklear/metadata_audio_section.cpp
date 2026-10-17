@@ -43,12 +43,9 @@ static void set_metadata_audio_offset_action(WormUiWorkspaceAction* action,
     action->metadata_document_revision = metadata->document_revision;
     action->metadata_chart_id = metadata->chart_id;
     const auto value = *metadata_audio_offset_value();
-    std::snprintf(state.action_numerator_text.data(), state.action_numerator_text.size(), "%lld",
-                  static_cast<long long>(value.numerator));
-    std::snprintf(state.action_denominator_text.data(), state.action_denominator_text.size(),
-                  "%llu", static_cast<unsigned long long>(value.denominator));
-    action->metadata_audio_offset_numerator_text = state.action_numerator_text.data();
-    action->metadata_audio_offset_denominator_text = state.action_denominator_text.data();
+    const auto wire = state.rational_action_text(value.numerator, value.denominator);
+    action->metadata_audio_offset_numerator_text = wire.numerator;
+    action->metadata_audio_offset_denominator_text = wire.denominator;
 }
 
 void render_audio_waveform(const MetadataPanel& panel) {

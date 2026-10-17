@@ -5,6 +5,7 @@
 #include "core/text_util.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <mutex>
 #include <string_view>
 #include <utility>
@@ -151,6 +152,17 @@ auto metadata_file_dialog_state() -> wormedit::ui::file_dialog_slot_t& {
 }
 
 } // namespace
+
+auto worm_ui_nuklear_metadata_state_t::rational_action_text(std::int64_t numerator,
+                                                          std::uint64_t denominator)
+    -> rational_action_text_t {
+    std::snprintf(action_numerator_text.data(), action_numerator_text.size(), "%lld",
+                  static_cast<long long>(numerator));
+    std::snprintf(action_denominator_text.data(), action_denominator_text.size(), "%llu",
+                  static_cast<unsigned long long>(denominator));
+    return {.numerator = action_numerator_text.data(),
+            .denominator = action_denominator_text.data()};
+}
 
 auto worm_ui_nuklear_parse_metadata_rational(std::string_view text, bool allow_milliseconds)
     -> std::optional<worm_ui_nuklear_metadata_rational_t> {

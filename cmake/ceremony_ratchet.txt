@@ -40,3 +40,7 @@ catalog_use_filter_fact | 1 | src | std::array labels\{"All", "Used", "Unused", 
 catalog_capacity_label | 1 | src | "%s / %s IDs"
 catalog_free_run_label | 1 | src | "Largest free run: %zu"
 ui_grouped_count_body | 1 | src | text[.]insert\(position - 3, ","\)
+
+# T-650: metadata state alone writes the rational action arrays.
+metadata_rational_numerator_writer | 1 | src | std::snprintf\(.*action_numerator_text[.]data\(\)
+metadata_rational_denominator_writer | 1 | src | std::snprintf\(.*action_denominator_text[.]data\(\)

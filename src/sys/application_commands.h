@@ -47,6 +47,7 @@ enum class application_command_kind_t {
     selection_select_same_sound_chart,
     selection_invert,
     selection_select_all_after_cursor,
+    selection_select_all_objects_after_cursor,
     navigation_previous_snap,
     navigation_next_snap,
     navigation_previous_marker,

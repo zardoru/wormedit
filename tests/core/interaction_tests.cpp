@@ -3875,6 +3875,27 @@ TEST_CASE("Select All After Cursor selects playable notes from the cursor row on
     CHECK_FALSE(select_editor_scope(history, state, {}, false, local_position_t{measure_id_t{9}, 0}));
 }
 
+TEST_CASE("Select All Objects After Cursor also takes timing events from the cursor onward",
+          "[unit][core][interaction][selection]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures[1].notes = {{.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}}};
+    chart.bpms = {{.id = object_id_t{201}, .position = {measure_id_t{1}, 0}, .beats_per_minute = {120, 1}},
+                  {.id = object_id_t{202}, .position = {measure_id_t{2}, 480}, .beats_per_minute = {150, 1}}};
+    REQUIRE(validate_document(song).empty());
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(select_editor_scope(history, state, {true, true, true, true}, false,
+                                local_position_t{measure_id_t{1}, 480}));
+    const auto targets = editor_selection_targets(state);
+    const auto has = [&](editor_selection_object_kind_t kind, std::uint64_t id) {
+        return std::ranges::find(targets, editor_selection_object_t{kind, object_id_t{id}}) != targets.end();
+    };
+    CHECK(has(editor_selection_object_kind_t::note, 103));
+    CHECK(has(editor_selection_object_kind_t::bpm_event, 202));
+    CHECK_FALSE(has(editor_selection_object_kind_t::bpm_event, 201));
+}
+
 TEST_CASE("selected note moves preview and commit one snapped translation",
           "[unit][core][interaction][gesture][selection][move]") {
     auto song = make_song();

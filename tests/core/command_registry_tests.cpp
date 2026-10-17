@@ -988,6 +988,28 @@ TEST_CASE("Select All Objects uses Primary Alt A independently from note selecti
     CHECK(dispatch_shortcut(registry, event, focus, primary).value.status == command_dispatch_status_t::focus_consumed);
 }
 
+TEST_CASE("Select All After Cursor uses Primary Shift E and its objects variant Primary Alt E",
+          "[unit][core][command_registry][selection-consolidation]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = command_registry_t::from(make_invoker(calls));
+    const auto primary = GENERATE(shortcut_primary_modifier_t::control, shortcut_primary_modifier_t::meta);
+    const auto actual = primary == shortcut_primary_modifier_t::control
+        ? shortcut_modifier_t::control : shortcut_modifier_t::meta;
+    const auto with = [&](shortcut_modifier_t extra) {
+        return shortcut_event_t{.chord = {.key = shortcut_key_t::e,
+            .modifiers = static_cast<shortcut_modifiers_t>(static_cast<shortcut_modifiers_t>(actual) |
+                                                           static_cast<shortcut_modifiers_t>(extra))}};
+    };
+    auto focus = focus_for_compose();
+    CHECK(dispatch_shortcut(registry, with(shortcut_modifier_t::shift), focus, primary).value.command ==
+          command_id_t{"selection.select_all_after_cursor"});
+    CHECK(dispatch_shortcut(registry, with(shortcut_modifier_t::alt), focus, primary).value.command ==
+          command_id_t{"selection.select_all_objects_after_cursor"});
+    focus.text_entry_active = true;
+    CHECK(dispatch_shortcut(registry, with(shortcut_modifier_t::alt), focus, primary).value.status ==
+          command_dispatch_status_t::focus_consumed);
+}
+
 TEST_CASE("Workspace project command uses the shared Project vocabulary", "[core][catalog][D15]") {
     const auto registry = command_registry_t::from({});
     const auto* project = find_command(registry, {"workspace.open_setup"});

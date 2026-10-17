@@ -7038,6 +7038,16 @@ TEST_CASE("Registered selection scopes preserve mixed objects and expose Select 
     expect_compose_test(invoke_compose_registered_command(f, "selection.select_all").value.is_invoked());
     expect_compose_test(std::ranges::is_permutation(f.interaction->selected_objects, all));
     expect_compose_test(f.history.document.revision == revision && f.history.undo.empty());
+    // From the cursor onward: the BGM event at row 240 lies before it.
+    f.interaction->selected_objects.clear();
+    f.interaction->selected_notes.clear();
+    place_cursor_at(*f.interaction, {measure_id_t{1}, 241});
+    for (const auto* command : {"selection.select_all_after_cursor", "selection.select_all_objects_after_cursor"}) {
+        expect_compose_test(invoke_compose_registered_command(f, command).value.is_invoked());
+        expect_compose_test(std::ranges::none_of(f.interaction->selected_objects, [](auto object) {
+            return object.kind == editor_selection_object_kind_t::bgm_event && object.id == object_id_t{9003};
+        }));
+    }
 }
 
 TEST_CASE("Registered note selection respects active editable lanes",

@@ -29,6 +29,7 @@
 
 #include <limits>
 #include <string>
+#include <array>
 #include <string_view>
 #include <unordered_set>
 #include <utility>
@@ -468,6 +469,38 @@ auto same_sound_command(command_context_t& context) -> command_result_t {
         notification_source_t::edit);
 }
 
+// The scoped selection commands: which families each selects, and from where.
+struct scoped_selection_command_t {
+    wormedit::sys::application_command_kind_t kind;
+    wormedit::editor_selection_scope_t scope;
+    bool invert{};
+    bool from_cursor{};
+    std::string_view message;
+
+    [[nodiscard]] static auto from(wormedit::sys::application_command_kind_t kind)
+        -> const scoped_selection_command_t&;
+};
+
+constexpr wormedit::editor_selection_scope_t every_object{true, true, true, true};
+constexpr std::array scoped_selection_commands{
+    scoped_selection_command_t{command_kind_t::selection_select_all, {}, false, false,
+                               "All playable notes selected."},
+    scoped_selection_command_t{command_kind_t::selection_select_all_objects, every_object, false, false,
+                               "All selectable chart objects selected."},
+    scoped_selection_command_t{command_kind_t::selection_invert, {}, true, false,
+                               "Playable-note selection inverted."},
+    scoped_selection_command_t{command_kind_t::selection_select_all_after_cursor, {}, false, true,
+                               "Playable notes from the cursor onward selected."},
+    scoped_selection_command_t{command_kind_t::selection_select_all_objects_after_cursor, every_object,
+                               false, true, "Chart objects from the cursor onward selected."},
+};
+
+auto scoped_selection_command_t::from(wormedit::sys::application_command_kind_t kind)
+    -> const scoped_selection_command_t& {
+    const auto found = std::ranges::find(scoped_selection_commands, kind, &scoped_selection_command_t::kind);
+    return found == scoped_selection_commands.end() ? scoped_selection_commands.front() : *found;
+}
+
 auto selection_commands(command_context_t& context) -> command_result_t {
     using namespace wormedit;
     const auto kind = context.command.kind;
@@ -479,19 +512,12 @@ auto selection_commands(command_context_t& context) -> command_result_t {
             "Selection command requires the active Compose chart.",
             notification_severity_t::warning, notification_source_t::edit,
             diagnostic_code_t::unsupported_feature);
-    const auto all_objects = kind == command_kind_t::selection_select_all_objects;
-    const auto invert = kind == command_kind_t::selection_invert;
-    const auto after_cursor = kind == command_kind_t::selection_select_all_after_cursor;
+    const auto& selection = scoped_selection_command_t::from(kind);
     return compose_action_outcome_t::from(
-        select_editor_scope(context.environment.document.history, *state,
-                            all_objects ? editor_selection_scope_t{true, true, true, true}
-                                        : editor_selection_scope_t{},
-                            invert, after_cursor ? std::optional{state->cursor} : std::nullopt),
-        all_objects    ? "All selectable chart objects selected."
-        : invert       ? "Playable-note selection inverted."
-        : after_cursor ? "Playable notes from the cursor onward selected."
-                       : "All playable notes selected.",
-        notification_severity_t::success, notification_source_t::edit);
+        select_editor_scope(context.environment.document.history, *state, selection.scope,
+                            selection.invert,
+                            selection.from_cursor ? std::optional{state->cursor} : std::nullopt),
+        std::string(selection.message), notification_severity_t::success, notification_source_t::edit);
 }
 
 // Audio-time markers need the chart's timing index. A failed build is reported
@@ -1163,6 +1189,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::selection_select_all_objects:
     case command_kind_t::selection_invert:
     case command_kind_t::selection_select_all_after_cursor:
+    case command_kind_t::selection_select_all_objects_after_cursor:
         return {.operation = selection_commands};
     case command_kind_t::navigation_previous_snap:
     case command_kind_t::navigation_next_snap:

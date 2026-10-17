@@ -7,6 +7,7 @@
 #include <wormedit/core/rational.h>
 #include <wormedit/core/catalogs.h>
 #include "ui/nuklear/audio_state.h"
+#include "ui/nuklear/compose_drag_capture.h"
 #include "ui/nuklear/chrome.h"
 
 #include "wormedit/nuklear_config.h"
@@ -148,10 +149,17 @@ void update_offset_pointer_drag(struct nk_context* context, const WormUiAudioSli
     if (audio.offset_drag_active) {
         const auto delta = offset_pointer_delta(context->input.mouse.pos.x);
         audio.offset_drag_delta_frames = delta;
-        if (left_released) {
+        // Source/runtime/focus validity is checked by cancel_stale_offset_drag
+        // before rendering. This channel commits even a zero-distance release.
+        const compose_drag_capture_t anchor{.anchor_x = audio.offset_drag_anchor_x};
+        const auto& pointer = context->input.mouse.pos;
+        const auto continuation = anchor.advance(
+            {.down = left_button.down != 0, .released = left_released, .x = pointer.x, .y = pointer.y},
+            true, compose_drag_release_policy_t::commit_on_release);
+        if (continuation.phase == compose_drag_phase_t::commit) {
             set_offset_drag_action(&action, WORM_UI_AUDIO_OFFSET_DRAG_COMMIT, delta);
             cancel_offset_pointer_drag();
-        } else if (!left_button.down) {
+        } else if (continuation.phase == compose_drag_phase_t::cancel) {
             set_offset_drag_action(&action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL, delta);
             cancel_offset_pointer_drag();
         } else if (nk_input_is_mouse_moved(&context->input)) {

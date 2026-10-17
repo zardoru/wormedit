@@ -794,15 +794,19 @@ static auto timing_marker_capture_matches(const ComposePointerEventContext& inpu
 
 static auto update_compose_timing_marker_drag(const ComposePointerEventContext& input) -> bool {
     if (!state.timing_marker.timing_marker_candidate_active) return false;
-    if (!timing_marker_capture_matches(input) || (!input.left_down && !input.left_released)) {
+    const auto& pointer = input.context->input.mouse.pos;
+    const auto continuation = state.timing_drag.timing_marker_capture.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        timing_marker_capture_matches(input), compose_drag_release_policy_t::latched_vertical,
+        state.timing_marker.timing_marker_drag_active);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
         reset_timing_marker_drag_capture();
         return true;
     }
     state.timing_marker.timing_marker_current_y_pixels = input.pointer_y;
-    state.timing_marker.timing_marker_drag_active |= state.timing_drag.timing_marker_capture.moved_past_threshold(
-        input.context->input.mouse.pos.x, input.context->input.mouse.pos.y);
-    if (input.left_released) {
-        if (state.timing_marker.timing_marker_drag_active) {
+    state.timing_marker.timing_marker_drag_active = continuation.moved;
+    if (continuation.phase != compose_drag_phase_t::update) {
+        if (continuation.phase == compose_drag_phase_t::commit) {
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE,
                                  input.pointer_x, input.pointer_y, 0, false,
                                  WORM_UI_COMPOSE_SELECTION_REPLACE,
@@ -912,27 +916,30 @@ static void replay_bookmark_press_as_paint(const ComposePointerEventContext& inp
 // (false) so it still works as an ordinary field click.
 static auto update_bookmark_move_capture(const ComposePointerEventContext& input) -> bool {
     if (!state.bookmark_ui.bookmark_move_candidate_active) return false;
-    if (!bookmark_move_capture_matches(input) || (!input.left_down && !input.left_released)) {
+    const auto& pointer = input.context->input.mouse.pos;
+    const compose_drag_capture_t anchor{.anchor_y = state.bookmark_ui.bookmark_move_anchor_screen_y};
+    // A bookmark latches only on held frames; motion arriving with release is a click.
+    const auto continuation = anchor.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        bookmark_move_capture_matches(input), compose_drag_release_policy_t::held_vertical,
+        state.bookmark_ui.bookmark_move_active);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
         reset_bookmark_move_capture();
         return true;
     }
     state.bookmark_ui.bookmark_move_current_y_pixels = input.pointer_y;
-    if (input.left_released) {
-        const auto moved = state.bookmark_ui.bookmark_move_active;
-        if (moved)
-            append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE,
-                input.pointer_x, input.pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
-                WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bookmark_ui.bookmark_move_id, 0, false,
-                WORM_UI_TIMING_LANE_BPM, state.bookmark_ui.bookmark_move_chart_id,
-                state.bookmark_ui.bookmark_move_revision);
-        reset_bookmark_move_capture();
-        if (!moved) replay_bookmark_press_as_paint(input);
-        return moved || input.view->note_paint_mode_active;
-    }
-    if (!state.bookmark_ui.bookmark_move_active && std::abs(input.context->input.mouse.pos.y -
-                                                 state.bookmark_ui.bookmark_move_anchor_screen_y) >= 4.0f)
-        state.bookmark_ui.bookmark_move_active = true;
-    return true;
+    state.bookmark_ui.bookmark_move_active = continuation.moved;
+    if (continuation.phase == compose_drag_phase_t::update) return true;
+    const auto moved = continuation.phase == compose_drag_phase_t::commit;
+    if (moved)
+        append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE,
+            input.pointer_x, input.pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
+            WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bookmark_ui.bookmark_move_id, 0, false,
+            WORM_UI_TIMING_LANE_BPM, state.bookmark_ui.bookmark_move_chart_id,
+            state.bookmark_ui.bookmark_move_revision);
+    reset_bookmark_move_capture();
+    if (!moved) replay_bookmark_press_as_paint(input);
+    return moved || input.view->note_paint_mode_active;
 }
 
 static auto is_beat_bookmark(const WormUiComposeView& view, std::uint64_t id) -> bool {
@@ -1118,16 +1125,19 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
     const bool valid = input.window_focused && state.timing_drag.bga_capture.matches(*input.view) &&
         state.resource_picker.resource_pointer_mode == worm_ui_nuklear_compose_resource_pointer_mode_t::off &&
         !state.input_queue.action_overflowed;
-    if (!valid || (!input.left_down && !input.left_released)) {
+    const auto& pointer = input.context->input.mouse.pos;
+    const auto continuation = state.timing_drag.bga_capture.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        valid, compose_drag_release_policy_t::latched_planar, state.bga_interaction.bga_event_move_active);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
         reset_bga_event_move_capture();
         return true;
     }
     state.bga_interaction.bga_event_move_current_y_pixels = input.pointer_y;
-    state.bga_interaction.bga_event_move_active |= state.timing_drag.bga_capture.moved_past_threshold(
-        input.context->input.mouse.pos.x, input.context->input.mouse.pos.y, true);
+    state.bga_interaction.bga_event_move_active = continuation.moved;
     state.bga_interaction.bga_event_move_current_x_pixels = input.pointer_x;
-    if (input.left_released) {
-        if (!state.bga_interaction.bga_event_move_active) {
+    if (continuation.phase != compose_drag_phase_t::update) {
+        if (continuation.phase == compose_drag_phase_t::click) {
             const auto events = std::span(input.view->bga_events, input.view->bga_event_count);
             const auto selected = std::ranges::find(events, state.bga_interaction.bga_event_move_object_id,
                 &WormUiComposeBgaEventView::event_id);
@@ -1142,7 +1152,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 state.bga_interaction.bga_stack_kind = selected->kind;
             }
         }
-        if (state.bga_interaction.bga_event_move_active) {
+        if (continuation.phase == compose_drag_phase_t::commit) {
             append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE,
                 input.pointer_x, input.pointer_y, 0, false,
                 WORM_UI_COMPOSE_SELECTION_REPLACE,

@@ -46,17 +46,18 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
     const auto& view = *input.view;
     const auto& timing = *input.timing_view;
     auto& action = *input.action;
-    if (!input.window_focused || !state.timing_drag.timing_stage_capture.matches(view, view.waveform_timing_locked) ||
-        !timing.stage_active ||
-        timing.stage_existing_object_id == 0 || (!input.left_down && !input.left_released)) {
+    const auto& pointer = input.context->input.mouse.pos;
+    const auto continuation = state.timing_drag.timing_stage_capture.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        input.window_focused && state.timing_drag.timing_stage_capture.matches(view, view.waveform_timing_locked) &&
+            timing.stage_active && timing.stage_existing_object_id != 0,
+        compose_drag_release_policy_t::clear_on_release);
+    // Overflow still cancels through the outer registry; release clears only the
+    // UI capture, leaving the staged edit available for explicit confirmation.
+    if (continuation.phase != compose_drag_phase_t::update) {
         state.timing_drag.timing_stage_drag_active = false;
         state.timing_drag.timing_stage_capture.cancel();
-    } else if (input.left_released) {
-        state.timing_drag.timing_stage_drag_active = false;
-        state.timing_drag.timing_stage_capture.cancel();
-    } else if (input.left_down && state.timing_drag.timing_stage_capture.moved_past_threshold(
-                   input.context->input.mouse.pos.x, input.context->input.mouse.pos.y) &&
-               nk_input_is_mouse_moved(&input.context->input) &&
+    } else if (continuation.moved && nk_input_is_mouse_moved(&input.context->input) &&
                action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
         action.timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
         action.timing_chart_id = state.timing_drag.timing_stage_capture.chart;
@@ -120,19 +121,22 @@ static auto begin_span_capture(const ComposePointerEventContext& input, compose_
 // Shared continuation policy; each verb only supplies its commit payload.
 static auto continue_span_capture(const ComposePointerEventContext& input, compose_drag_capture_t& capture,
                                   bool& active, bool& moved, double& current_y) -> bool {
-    if (!input.window_focused || state.input_queue.action_overflowed ||
-        !capture.matches(*input.view, input.view->waveform_timing_locked) ||
-        (!input.left_down && !input.left_released)) {
+    const auto& pointer = input.context->input.mouse.pos;
+    const auto continuation = capture.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        input.window_focused && !state.input_queue.action_overflowed &&
+            capture.matches(*input.view, input.view->waveform_timing_locked),
+        compose_drag_release_policy_t::latched_vertical, moved);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
         active = moved = false;
         capture.cancel();
         return false;
     }
     current_y = std::clamp(input.pointer_y, 0.0, input.view->viewport_height_pixels);
-    moved |= capture.moved_past_threshold(input.context->input.mouse.pos.x,
-                                           input.context->input.mouse.pos.y);
-    if (!input.left_released) return false;
+    moved = continuation.moved;
+    if (continuation.phase == compose_drag_phase_t::update) return false;
     active = false;
-    return moved;
+    return continuation.phase == compose_drag_phase_t::commit;
 }
 
 static void begin_kiai_drag(const ComposePointerEventContext& input) {

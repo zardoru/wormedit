@@ -240,3 +240,20 @@ TEST_CASE("Sounds waveform instructions remain visible at narrow workspace size"
     expect(align->second>pan->second);
     expect(worm_ui_nuklear_audio_state().waveform_viewport.pixel_width>0);
 }
+
+TEST_CASE("Sounds alignment release commits without a movement threshold",
+          "[event-harness][sounds-workflow][capture-continuation]") {
+    fixture_t fixture;
+    const auto plus = fixture.harness.drawn_text_center("+"); expect(plus);
+    const auto down = pointer(plus->first, plus->second + 100, true);
+    const std::array press{key(SDLK_LSHIFT, SDL_SCANCODE_LSHIFT, true), down};
+    const auto started = fixture.harness.frame(press, SDL_KMOD_SHIFT);
+    expect(started.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_BEGIN);
+    fixture.harness.view().audio_slices.offset_drag_active = true;
+    fixture.harness.view().audio_slices.proposed_offset_denominator = 1;
+    const auto up = pointer(plus->first, plus->second + 100, false);
+    const auto released = fixture.harness.frame(std::span{&up, 1}, SDL_KMOD_SHIFT);
+    expect(released.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_COMMIT);
+    expect(released.get().audio_offset_drag_delta_frames == 0);
+    expect(!worm_ui_nuklear_audio_state().offset_drag_active);
+}

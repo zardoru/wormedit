@@ -22,3 +22,6 @@ raw_cursor_write | 18 | src,include | (^|[^A-Za-z0-9_])([A-Za-z0-9_]*state|tempo
 # Native dropdown calls belong to chrome.h; popup callers use its safe guard.
 native_dropdown_call | 2 | src | (^|[^A-Za-z0-9_])nk_(combo(_begin(_[A-Za-z0-9]+)?|_end|_string|_separator|_callback)?|combobox(_[A-Za-z0-9]+)?)[ 	]*\(
 positional_selection_scope | 0 | src,include,tests | editor_selection_scope_t[ a-z_]*\{(true|false)
+
+# T-641: capture continuation owns lost-button guards; remaining object/resize paths are separate domains.
+local_capture_button_guard | 12 | src | !input[.]left_down && !input[.]left_released

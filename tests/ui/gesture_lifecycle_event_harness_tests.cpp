@@ -456,3 +456,112 @@ TEST_CASE("Bookmark drag capture cannot continue in another project with equal c
     lifecycle_check(!f.active());
     lifecycle_check(!worm_ui_nuklear_compose_state().bookmark_ui.bookmark_move_candidate_active);
 }
+
+TEST_CASE("Marker release movement counts while bookmark release movement does not",
+          "[frontend-state][event-harness][capture-continuation]") {
+    const auto family = GENERATE(lifecycle_family::timing_marker, lifecycle_family::bookmark);
+    lifecycle_fixture_t f{family};
+    f.choose_pointer();
+    const std::array press{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, true)};
+    (void)f.harness.frame(press);
+    const std::array release{lifecycle_motion(f.x, f.y + 30), lifecycle_button(f.x, f.y + 30, false)};
+    const auto result = f.harness.frame(release);
+    lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_TIMING_GROUP_MOVE) ==
+                    (family == lifecycle_family::timing_marker));
+    lifecycle_check(!lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE));
+    lifecycle_check(!f.active());
+}
+
+TEST_CASE("Fit release near its anchor cancels even after a held excursion",
+          "[frontend-state][event-harness][capture-continuation]") {
+    const auto offset = GENERATE(false, true);
+    lifecycle_fixture_t f{offset ? lifecycle_family::offset_fit : lifecycle_family::beat_fit};
+    (void)f.begin();
+    auto& view = f.harness.view().compose;
+    view.beat_fit_drag_active = !offset;
+    view.offset_fit_drag_active = offset;
+    view.beat_fit_chart_row = 480;
+    view.beat_fit_original_bpm_denominator = view.beat_fit_proposed_bpm_denominator = 1;
+    view.waveform_overview_total_frames = 441000;
+    const auto motion = lifecycle_motion(f.x, f.y + 30);
+    (void)f.harness.frame(std::span{&motion, 1}, f.modifiers);
+    const std::array release{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, false)};
+    const auto result = f.harness.frame(release, f.modifiers);
+    lifecycle_check(lifecycle_has(result.get(), offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL
+                                                     : WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL));
+    lifecycle_check(!lifecycle_has(result.get(), offset ? WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE
+                                                      : WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE));
+    lifecycle_check(!f.active());
+}
+
+TEST_CASE("Timing stage release clears its pointer capture and retains the staged edit",
+          "[frontend-state][event-harness][capture-continuation]") {
+    lifecycle_fixture_t f{lifecycle_family::timing_stage};
+    (void)f.begin();
+    const auto motion = lifecycle_motion(f.x, f.y + 30);
+    const auto moved = f.harness.frame(std::span{&motion, 1});
+    lifecycle_check(moved.get().timing_stage_action == WORM_UI_TIMING_STAGE_MOVE);
+    const auto release = lifecycle_button(f.x, f.y + 40, false);
+    const auto result = f.harness.frame(std::span{&release, 1});
+    lifecycle_check(result.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    lifecycle_check(!f.active());
+    lifecycle_check(f.harness.view().timing.stage_active);
+}
+
+TEST_CASE("Beat-zero continuation rejects changed audio source geometry",
+          "[frontend-state][event-harness][capture-continuation]") {
+    const auto changed = GENERATE(0, 1, 2);
+    lifecycle_fixture_t f{lifecycle_family::beat_zero};
+    (void)f.begin();
+    auto& view = f.harness.view().compose;
+    if (changed == 0) ++view.selected_audio_asset_id;
+    if (changed == 1) ++view.waveform_overview_total_frames;
+    if (changed == 2) ++view.waveform_overview_sample_rate;
+    const auto release = lifecycle_button(f.x + 30, f.y, false);
+    const auto result = f.harness.frame(std::span{&release, 1});
+    lifecycle_check(result.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    lifecycle_check(!f.active());
+}
+
+TEST_CASE("Capture continuation owns threshold release and invalid-source decisions",
+          "[frontend-state][event-harness][capture-continuation]") {
+    using policy = compose_drag_release_policy_t;
+    using phase = compose_drag_phase_t;
+    struct release_case_t {
+        policy release;
+        compose_drag_pointer_t pointer;
+        bool was_moved;
+        compose_drag_continuation_t expected;
+    };
+    const std::array cases{
+        release_case_t{policy::latched_vertical, {.released = true}, true, {phase::commit, true}},
+        release_case_t{policy::latched_vertical, {.released = true, .y = 4}, false, {phase::commit, true}},
+        release_case_t{policy::latched_planar, {.released = true, .x = 4}, false, {phase::commit, true}},
+        release_case_t{policy::held_vertical, {.released = true, .y = 4}, false, {phase::click, false}},
+        release_case_t{policy::vertical_at_release, {.released = true}, true, {phase::cancel, false}},
+        release_case_t{policy::horizontal_at_release, {.released = true, .y = 4}, true, {phase::cancel, false}},
+        release_case_t{policy::clear_on_release, {.released = true, .y = 4}, false, {phase::click, true}},
+        release_case_t{policy::commit_on_release, {.released = true}, false, {phase::commit, true}}};
+    const compose_drag_capture_t capture;
+    for (const auto& test : cases) {
+        CAPTURE(test.release);
+        lifecycle_check(capture.advance(test.pointer, true, test.release, test.was_moved) == test.expected);
+        lifecycle_check(capture.advance(test.pointer, false, test.release, test.was_moved).phase == phase::cancel);
+        lifecycle_check(capture.advance({}, true, test.release, test.was_moved).phase == phase::cancel);
+    }
+    lifecycle_check(capture.advance({.down = true, .y = 4}, true, policy::held_vertical) ==
+                    compose_drag_continuation_t{phase::update, true});
+}
+
+TEST_CASE("A bookmark click replays painting without emitting a bookmark move",
+          "[frontend-state][event-harness][capture-continuation]") {
+    lifecycle_fixture_t f{lifecycle_family::bookmark};
+    f.harness.view().compose.note_paint_mode_active = true;
+    const std::array press{lifecycle_motion(f.x, f.y), lifecycle_button(f.x, f.y, true)};
+    (void)f.harness.frame(press);
+    const auto release = lifecycle_button(f.x, f.y, false);
+    const auto result = f.harness.frame(std::span{&release, 1});
+    lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
+    lifecycle_check(lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
+    lifecycle_check(!lifecycle_has(result.get(), WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE));
+}

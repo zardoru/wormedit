@@ -330,18 +330,22 @@ static void update_active_fit_drag(const ComposeBeatFitInput& input, bool offset
     const auto matches = input.window_focused && runtime_active && !state.input_queue.action_overflowed &&
         state.timing_drag.fit_capture.matches(view, view.waveform_timing_locked || (offset && view.audio_offset_locked));
     const auto& pointer = input.context->input.mouse.pos;
-    if (!matches || (!input.left_down && !input.left_released) ||
-        (input.left_released && !state.timing_drag.fit_capture.moved_past_threshold(pointer.x, pointer.y))) {
+    // Fits use the release position rather than a movement latch; returning to
+    // the anchor cancels even after an earlier excursion.
+    const auto continuation = state.timing_drag.fit_capture.advance(
+        {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
+        matches, compose_drag_release_policy_t::vertical_at_release);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
         if (offset) cancel_offset_fit_drag(input.action);
         else cancel_beat_fit_drag(input.action);
         return;
     }
     const auto ctrl = !offset && (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
     const auto onset = ctrl && (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
-    if (input.left_released || nk_input_is_mouse_moved(&input.context->input) ||
+    if (continuation.phase == compose_drag_phase_t::commit || nk_input_is_mouse_moved(&input.context->input) ||
         ctrl != state.waveform_drag.beat_fit_ctrl_held || onset != state.waveform_drag.beat_fit_onset_snap_held)
-        emit_fit_motion(input, offset, input.left_released);
-    if (input.left_released) {
+        emit_fit_motion(input, offset, continuation.phase == compose_drag_phase_t::commit);
+    if (continuation.phase == compose_drag_phase_t::commit) {
         state.waveform_drag.beat_fit_drag_active = state.waveform_drag.offset_fit_drag_active = false;
         state.timing_drag.fit_capture.cancel();
     }
@@ -424,18 +428,22 @@ static void update_waveform_beat_zero_drag(const ComposeOverviewInput& input) {
         input.overview.w == state.waveform_drag.waveform_beat_zero_drag_width &&
         input.overview.x == state.waveform_drag.waveform_beat_zero_drag_left &&
         (view.waveform_offset_drag_active || input.pressed);
-    if (!matches || (!left_button.down && !released)) {
-        set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
-                                        state.waveform_drag.waveform_beat_zero_drag_delta_frames);
+    const auto& pointer = input.context->input.mouse.pos;
+    const auto continuation = state.timing_drag.beat_zero_capture.advance(
+        {.down = left_button.down != 0, .released = released != 0, .x = pointer.x, .y = pointer.y},
+        matches, compose_drag_release_policy_t::horizontal_at_release);
+    if (continuation.phase == compose_drag_phase_t::cancel) {
+        // A valid click cancels with the current release delta. Invalid source or
+        // a lost button cancels with the last published delta instead.
+        const auto delta = matches && released ? waveform_offset_drag_delta(input)
+                                               : state.waveform_drag.waveform_beat_zero_drag_delta_frames;
+        set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_CANCEL, delta);
         reset_waveform_offset_drag();
-    } else if (released) {
-        const auto moved = state.timing_drag.beat_zero_capture.moved_past_threshold(
-            input.context->input.mouse.pos.x, state.timing_drag.beat_zero_capture.anchor_y, true);
-        set_waveform_offset_drag_action(input.action, moved ? WORM_UI_AUDIO_OFFSET_DRAG_COMMIT
-                                                           : WORM_UI_AUDIO_OFFSET_DRAG_CANCEL,
+    } else if (continuation.phase == compose_drag_phase_t::commit) {
+        set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_COMMIT,
                                         waveform_offset_drag_delta(input));
         reset_waveform_offset_drag();
-    } else if (left_button.down && nk_input_is_mouse_moved(&input.context->input)) {
+    } else if (nk_input_is_mouse_moved(&input.context->input)) {
         const auto delta = waveform_offset_drag_delta(input);
         state.waveform_drag.waveform_beat_zero_drag_delta_frames = delta;
         set_waveform_offset_drag_action(input.action, WORM_UI_AUDIO_OFFSET_DRAG_UPDATE, delta);

@@ -3,6 +3,8 @@
 #include "sys/metadata_commands.h"
 #include "sys/resource_action_context.h"
 #include <algorithm>
+#include <array>
+#include <cstddef>
 #include <span>
 
 namespace wormedit::sys::compose_action_detail {
@@ -34,6 +36,20 @@ struct compose_action_route_t {
     static constexpr auto from(WormUiComposeActionKind kind, bool is_standalone_only = false)
         -> compose_action_route_t;
 };
+
+inline constexpr std::size_t compose_action_kind_count = WORM_UI_COMPOSE_ACTION_COUNT;
+
+// A module table names only real action kinds, each once. Every module checks itself with
+// static_assert; the combined index still checks for the same kind in two modules at startup.
+template <std::size_t Count>
+constexpr auto is_valid_route_module(const std::array<compose_action_route_t, Count>& routes) -> bool {
+    for (std::size_t at = 0; at < Count; ++at) {
+        if (static_cast<std::size_t>(routes[at].kind) >= compose_action_kind_count) return false;
+        for (std::size_t later = at + 1; later < Count; ++later)
+            if (routes[at].kind == routes[later].kind) return false;
+    }
+    return true;
+}
 
 template <class Action, auto... Parameters>
 auto run_routed_compose_action(compose_action_context_t& context) -> compose_action_outcome_t {

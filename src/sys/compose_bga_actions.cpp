@@ -201,6 +201,7 @@ constexpr auto bga_route_entries = std::array{
         WORM_UI_COMPOSE_ACTION_REMOVE_UNUSED_BGA),
 };
 } // namespace
+static_assert(is_valid_route_module(bga_route_entries));
 constinit const std::span<const compose_action_route_t> compose_bga_routes{bga_route_entries};
 } // namespace compose_action_detail
 } // namespace wormedit::sys

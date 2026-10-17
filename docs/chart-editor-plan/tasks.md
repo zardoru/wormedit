@@ -133,7 +133,7 @@ every number above T-672.
 1. Read this file, the card, and only the files the card lists under **Read first**. Do not explore the whole plan.
 2. **File ownership and scope extensions:** Subagents edit only **Files owned**. If another file is required, report the exact paths and reason to the coordinator and wait for its approval before editing them. Coordinator agents may approve necessary supporting-file extensions within the card's intended outcome without asking the user; record the added paths and rationale on the card, update **Files owned**, and communicate the revised ownership to affected subagents before edits. Coordinate overlapping ownership. This authority does not override **Out of scope**, explicit **STOP** steps or unanswered user decisions.
 3. Do everything under **Steps** in order. Do not reorder, merge, or skip steps.
-4. Run every command under **Verify** and paste the real output tail. A card is not done until each one passes. Never claim a test passed without running it.
+4. Run every command under **Verify** and paste the real output tail. **GATE** in a Verify field means `scripts/gate.sh` (build, every test, test-listing errors, whitespace), run with the default job count unless the owner allows the whole computer. A card is not done until each one passes. Never claim a test passed without running it.
 5. Do not touch anything under **Out of scope**, even if it looks broken.
 6. If a step says **STOP**, or an **Open question** is linked and unanswered, stop and ask the user. Do not pick a default unless the card names one.
 7. Follow [`AGENTS.md`](../../AGENTS.md): no new function above cognitive complexity 25, no `NOLINT` to silence it.

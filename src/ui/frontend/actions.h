@@ -211,6 +211,8 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE,
     /* Session-only: moved bar lines carry the content after them (off by default). */
     WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME,
+    /* Not an action: the number of action kinds, for tables indexed by kind. Keep it last. */
+    WORM_UI_COMPOSE_ACTION_COUNT,
 } WormUiComposeActionKind;
 
 typedef enum WormUiComposeInputKind {

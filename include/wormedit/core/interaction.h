@@ -244,6 +244,12 @@ struct editor_selection_scope_t {
     // Bar lines are selectable only where a measure lane shows them.
     bool bar_lines{};
 
+    // Every object kind, bar lines included. Build other scopes with designated initializers;
+    // positional construction silently leaves a newly added kind out.
+    [[nodiscard]] static constexpr auto every_object() -> editor_selection_scope_t {
+        return {.notes = true, .bgm = true, .timing = true, .bga = true, .bar_lines = true};
+    }
+
     auto operator==(const editor_selection_scope_t&) const -> bool = default;
 };
 

@@ -887,6 +887,7 @@ constexpr auto resource_route_entries = std::array{
                            .operation = run_routed_compose_action<place_compose_resource_action_t>},
 };
 } // namespace
+static_assert(is_valid_route_module(resource_route_entries));
 constinit const std::span<const compose_action_route_t> compose_resource_routes{
     resource_route_entries};
 } // namespace wormedit::sys::compose_action_detail

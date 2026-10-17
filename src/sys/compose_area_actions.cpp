@@ -532,6 +532,7 @@ constexpr auto area_route_entries = std::array{
     },
 };
 } // namespace
+static_assert(is_valid_route_module(area_route_entries));
 constinit const std::span<const compose_action_route_t> compose_area_routes{area_route_entries};
 } // namespace compose_action_detail
 } // namespace wormedit::sys

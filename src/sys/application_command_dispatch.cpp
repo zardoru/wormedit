@@ -481,18 +481,20 @@ struct scoped_selection_command_t {
         -> const scoped_selection_command_t&;
 };
 
-constexpr wormedit::editor_selection_scope_t every_object{true, true, true, true};
+// Select All reaches every kind except bar lines, which are selectable only through the measure lane.
+constexpr wormedit::editor_selection_scope_t every_object_but_bar_lines{
+    .notes = true, .bgm = true, .timing = true, .bga = true};
 constexpr std::array scoped_selection_commands{
     scoped_selection_command_t{command_kind_t::selection_select_all, {}, false, false,
                                "All playable notes selected."},
-    scoped_selection_command_t{command_kind_t::selection_select_all_objects, every_object, false, false,
+    scoped_selection_command_t{command_kind_t::selection_select_all_objects, every_object_but_bar_lines, false, false,
                                "All selectable chart objects selected."},
     scoped_selection_command_t{command_kind_t::selection_invert, {}, true, false,
                                "Playable-note selection inverted."},
     scoped_selection_command_t{command_kind_t::selection_select_all_after_cursor, {}, false, true,
                                "Playable notes from the cursor onward selected."},
-    scoped_selection_command_t{command_kind_t::selection_select_all_objects_after_cursor, every_object,
-                               false, true, "Chart objects from the cursor onward selected."},
+    scoped_selection_command_t{command_kind_t::selection_select_all_objects_after_cursor,
+                               every_object_but_bar_lines, false, true, "Chart objects from the cursor onward selected."},
 };
 
 auto scoped_selection_command_t::from(wormedit::sys::application_command_kind_t kind)

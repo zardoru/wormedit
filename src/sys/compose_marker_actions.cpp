@@ -62,5 +62,6 @@ constexpr auto marker_route_entries = std::array{
                                                          selection_transform_t::shift_later>},
 };
 } // namespace
+static_assert(is_valid_route_module(marker_route_entries));
 constinit const std::span<const compose_action_route_t> compose_marker_routes{marker_route_entries};
 } // namespace wormedit::sys::compose_action_detail

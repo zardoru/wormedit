@@ -420,6 +420,7 @@ constexpr auto bookmark_route_entries = std::array{
                            .operation = run_routed_compose_action<edit_beat_bookmark_action_t>},
 };
 } // namespace
+static_assert(is_valid_route_module(bookmark_route_entries));
 constinit const std::span<const compose_action_route_t> compose_bookmark_routes{
     bookmark_route_entries};
 } // namespace wormedit::sys::compose_action_detail

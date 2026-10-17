@@ -3416,13 +3416,12 @@ constexpr auto local_route_entries = std::array{
                            .has_bms_statement_feedback = true},
 };
 } // namespace
+static_assert(is_valid_route_module(local_route_entries));
 constinit const std::span<const compose_action_route_t> compose_local_routes{local_route_entries};
 
 namespace {
-constexpr auto compose_kind_count =
-    static_cast<std::size_t>(WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME) + 1;
-auto build_compose_action_routes() -> std::array<compose_action_route_t, compose_kind_count> {
-    std::array<compose_action_route_t, compose_kind_count> routes{};
+auto build_compose_action_routes() -> std::array<compose_action_route_t, compose_action_kind_count> {
+    std::array<compose_action_route_t, compose_action_kind_count> routes{};
     for (const auto module :
          {compose_local_routes, compose_resource_routes, compose_marker_routes,
           compose_bookmark_routes, compose_area_routes, compose_bga_routes, compose_sound_routes}) {

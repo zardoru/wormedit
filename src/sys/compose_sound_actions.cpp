@@ -1029,6 +1029,7 @@ constexpr auto sound_route_entries = std::array{
         WORM_UI_COMPOSE_ACTION_RENUMBER_BMS_IDS),
 };
 } // namespace
+static_assert(is_valid_route_module(sound_route_entries));
 constinit const std::span<const compose_action_route_t> compose_sound_routes{sound_route_entries};
 } // namespace compose_action_detail
 } // namespace wormedit::sys

@@ -16,7 +16,9 @@
 ## Build and verify
 
 - Application build directory: `build` (contains `compile_commands.json`, `build/wormedit`, and the frontend tests). Headless-only: `cmake --preset headless`.
-- Build: `cmake --build build`. Run everything: `ctest --test-dir build --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`.
+- **GATE:** `scripts/gate.sh` builds, runs every test, fails if any test binary cannot list its tests, checks whitespace, and prints one summary. Cards that say "Verify: GATE" mean this script.
+- Job count: `build/` uses Make, which is serial unless told otherwise, so always pass a count. Default to `min(8, nproc / concurrent agents)`; use every core only when the owner says the run may use the whole computer. The gate does this (`--agents N`, `--jobs N`, `--whole-machine`; `--print-jobs` shows its choice).
+- Build by hand: `cmake --build build --parallel <jobs>`. Run everything: `ctest --test-dir build -j <jobs> --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`. A ctest line "Error listing tests" means a test binary never ran; treat it as a failure.
 - Visual check of the real window: `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG.
 - Keep automated visual checks inside isolated Xvfb; do not open test windows on the user's Niri desktop.
 - Input-routing and UI workflow checks without a window: use the [frontend event harness](docs/frontend-event-harness.md) (`ctest --preset headless-events -L event-harness`, or `-L event-harness` in the app build), not Xvfb.

@@ -172,6 +172,12 @@ it in new code even before the card lands.
 - **Boundary types may be plain C++:** `std::span`, `std::string_view`, `enum class`, strong IDs
   and owned containers, in headers that include no backend. They still carry only presentation data
   and action payloads, never core document types.
+- **What may cross:** core *vocabulary* (enums such as `note_kind_t` or `visual_event_kind_t`,
+  strong IDs, `rational_t`, and small pure queries over them such as `editor_bga_lane_index`) may be
+  used on both sides; reuse it instead of a parallel raw integer. Documents, history, indices and
+  editor state may not. Today's frontend follows this in what it uses, but four Nuklear files
+  include all of `document.h` or `interaction.h` for a few enums; T-670 gives the vocabulary a light
+  header.
 - **Migrate slowly, when touched ("good citizen").** No wholesale conversion card. A change that
   adds a view surface or action payload writes it in C++ types. A change that substantially
   reworks an existing `WormUi*` surface may convert that surface when the conversion is contained

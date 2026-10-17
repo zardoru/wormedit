@@ -2,7 +2,7 @@
 
 [Back to task cards](../tasks.md).
 
-Building the measure lane ([T-654–T-657](measure-lane.md)) crossed core, sys and UI. T-657's card listed 5 files and its commit touched 22; T-656 listed 3 and touched 8. Most of the gap was finding the places to change. The [retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md) records each observation; these cards are its proposed fixes that no open card covers. Proposed fixes that fit an open card are recorded on that card instead: T-621, T-643, T-644, T-646 and T-653 in [state ownership](state-ownership.md). T-665–T-671 came from a second pass over how to make pending cards easier to land and problems easier to catch, in both tooling and code. One codebase question went to the owner as [open question 20](../decisions/open-questions.md), answered 2026-10-17: the C ABI requirement is relaxed in favor of a slow C++ migration when touched ([code-style.md, "Frontend boundary"](../decisions/code-style.md)).
+Building the measure lane ([T-654–T-657](measure-lane.md)) crossed core, sys and UI. T-657's card listed 5 files and its commit touched 22; T-656 listed 3 and touched 8. Most of the gap was finding the places to change. The [retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md) records each observation; these cards are its proposed fixes that no open card covers. Proposed fixes that fit an open card are recorded on that card instead: T-621, T-643, T-644, T-646 and T-653 in [state ownership](state-ownership.md). T-665–T-672 came from a second pass over how to make pending cards easier to land and problems easier to catch, in both tooling and code. One codebase question went to the owner as [open question 20](../decisions/open-questions.md), answered 2026-10-17: the C ABI requirement is relaxed in favor of a slow C++ migration when touched ([code-style.md, "Frontend boundary"](../decisions/code-style.md)).
 
 All of these are **proposed** (2026-10-17) and wait for owner approval; none is scheduled. Each card says plainly how much it is worth. Two constraints apply throughout:
 - The [Nuklear audit](../../audits/nuklear-2026-10-16.md) rejects stored callbacks, virtual dispatch and table-driven type erasure for canvas rendering. Sharing here means plain named functions over the view.
@@ -23,7 +23,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   5. `AGENTS.md`: build with `cmake --build build --parallel "$(nproc)"` (`build/` uses the Makefile generator, which is serial by default).
   6. `tasks.md` rules: before writing **Files owned**, grep how the nearest existing feature is wired (for a lane: the BGA lane and timing markers) and list those files.
   7. `code-style.md`: a frontend view of an object the user can select or edit carries the object's ID; display numbers are not keys (see the proposed addition on T-653).
-  8. "Adding an X" recipes in `docs/architecture.md`, each a short list of every touchpoint with file and symbol: a selection object kind, a Compose action, a toolbar button, a Compose view field, a selectable canvas lane. Write each by tracing a recent real addition (`bar_line`, `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE`, the measure-lane toggles and lane). Where a recipe step could instead be a compile error, note it for T-661/T-669 rather than relying on the recipe.
+  8. "Adding an X" recipes in `docs/architecture.md`, each a short list of every touchpoint with file and symbol: a selection object kind, a Compose action, a toolbar button, a Compose view field (written the C++ way under `code-style.md` "Frontend boundary", from T-672's worked example; the old C-struct path described only for touching existing fields), a selectable canvas lane. Write each by tracing a recent real addition (`bar_line`, `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE`, the measure-lane toggles and lane). Where a recipe step could instead be a compile error, note it for T-661/T-669 rather than relying on the recipe.
 - **Invariants:** No code change. Every symbol named in the docs exists (grep each).
 - **Reject/failure behavior:** A claim the code contradicts is corrected or dropped, not written.
 - **Verify:** `ctest --test-dir build -R '^documentation\.' --output-on-failure`; grep every symbol the new text names.
@@ -60,6 +60,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
   5. Build sys area geometry from the same bounds functions where it does not already.
   6. Replace the literal rail values (`42.0`, `22.0` in `compose_viewport_input.cpp` and `compose_area_menu.cpp`) with named constants.
 - **Invariants:** Same action kinds, counts and order for every existing event-harness case; same overlap priority; notes keep their core hit index. No stored callbacks, virtual dispatch or per-frame allocation (Nuklear audit).
+- **Frontend boundary (2026-10-17):** write the bounds functions against what they need (a rectangle source and the view geometry), not the whole `WormUiComposeView`, so a surface converted to C++ types (T-672 and later) can call them unchanged.
 - **Reject/failure behavior:** Any change in which object a press or click selects stops the card and goes to the owner with a failing-before harness test.
 - **Verify:** `ctest --test-dir build -L event-harness`; `ctest --test-dir build --output-on-failure`; `clang-tidy -p build` on each touched `.cpp` with no new or raised findings; isolated Xvfb capture via `scripts/smoke-compose-virtual-x.sh`.
 - **Out of scope:** Note hit testing; capture continuation (T-641); hover/paint gate queries (T-645); drawing code beyond calling the shared bounds.
@@ -90,7 +91,7 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
 - **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `src/ui/nuklear/chrome.h` (testing hook only), `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `docs/frontend-event-harness.md`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rn "click_widget" tests/ui`.
-  2. Add the recording hook, compiled only for tests or behind the existing testing hooks; no production allocation.
+  2. Add the recording hook, compiled only for tests or behind the existing testing hooks; no production allocation. It is a new frontend surface, so write it in C++ types (`code-style.md` "Frontend boundary"), not as a `WormUi*` C struct.
   3. Add `click_widget` and migrate every toolbar click by x position (`grep -rn ", 122" tests/ui`).
 - **Invariants:** No production behavior or per-frame allocation change; same assertions in migrated tests.
 - **Reject/failure behavior:** A tooltip that is not unique fails the lookup loudly rather than picking one.
@@ -216,12 +217,14 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
 ## T-670 Split `interaction.h` by role
 
 - **Status:** Proposed (2026-10-17; awaiting owner approval; measure first)
-- **Value:** Uncertain until step 1. `include/wormedit/core/interaction.h` holds about 780 declarations with 46 includers, so most core header edits rebuild most of the tree and the header is hard to navigate. T-655 made it a little worse by including `time_shift.h` from it. The split pays off only if most includers need a small part.
-- **Outcome:** Separate headers for interaction types (selection objects, scope, state), actions, and queries/views, with `interaction.h` kept as an umbrella during migration; includers move to the narrowest header they need, and the umbrella's includer count drops.
+- **Frontend tie-in (2026-10-17):** under the relaxed boundary rule, C++ view types should reuse core enums rather than raw integers, so they need vocabulary without the editor state. Four Nuklear files already include all of `document.h` or `interaction.h` only for enums, IDs, rationals and `editor_bga_lane_index`: `src/ui/nuklear/sound_import_state.h`, `compose_object_input.cpp`, `compose_bga_panel.cpp` and `compose_canvas.cpp`. The vocabulary header is worth doing even if step 1's measurement stops the wider split.
+- **Value:** Uncertain until step 1 for the full split; the vocabulary header alone is clearly useful. `include/wormedit/core/interaction.h` holds about 780 declarations with 46 includers, so most core header edits rebuild most of the tree and the header is hard to navigate. T-655 made it a little worse by including `time_shift.h` from it. The split pays off only if most includers need a small part.
+- **Outcome:** Separate headers for interaction types (selection objects, scope, state), actions, and queries/views, with `interaction.h` kept as an umbrella during migration; includers move to the narrowest header they need, and the umbrella's includer count drops. Among them, a light **vocabulary header** (enums such as `note_kind_t`, `visual_event_kind_t`, `editor_selection_object_kind_t`, strong IDs, and small pure queries such as `editor_bga_lane_index`) that the frontend and C++ boundary types may include under the "Frontend boundary" rule in `code-style.md`, without pulling in documents or editor state.
 - **Read first:** `include/wormedit/core/interaction.h`, `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`.
-- **Files owned:** `include/wormedit/core/interaction.h`, new `include/wormedit/core/interaction_*.h` headers, and the includers changed in step 3, recorded on this card, this card.
+- **Files owned:** `include/wormedit/core/interaction.h`, `include/wormedit/core/document.h` (moving vocabulary out only), new `include/wormedit/core/interaction_*.h` headers and the vocabulary header (new), the frontend files named above, and the includers changed in step 3, recorded on this card, this card.
 - **Steps:**
-  1. Stale-plan check, then measure: for each includer, which declaration groups it uses; time a rebuild after touching `interaction.h`. **STOP** and report to the owner if fewer than half the includers would avoid a group.
+  1. Stale-plan check, then measure: for each includer, which declaration groups it uses; time a rebuild after touching `interaction.h`. Count frontend includers (`src/ui`) separately. **STOP** and report to the owner if fewer than half the includers would avoid a group; in that case still do step 1a.
+  1a. Extract the vocabulary header (from `interaction.h` and `document.h`), keeping both as includers of it so nothing else changes; point the frontend files listed above at it.
   2. Move declarations into role headers without changing them; the umbrella includes all of them.
   3. Point includers at the narrowest headers; re-time the rebuild and record both times here.
 - **Invariants:** No declaration changes; identical behavior and tests.
@@ -245,3 +248,20 @@ All of these are **proposed** (2026-10-17) and wait for owner approval; none is 
 - **Reject/failure behavior:** Helpers that differ in behavior (for example click counts or timing) stay distinct under different names, with the difference recorded.
 - **Verify:** `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; compare case counts before and after.
 - **Out of scope:** Deleting tests (T-644); finding widgets by tooltip (T-662).
+
+## T-672 Convert the measure-lane view fields to C++ types as the worked example
+
+- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Value:** Medium. The "Frontend boundary" rule says new and reworked surfaces use C++ types, but nobody has done one yet; without an example, the first person to follow the rule designs the pattern in the middle of other work. These fields are recent, contained and read only by measure-lane code.
+- **Outcome:** The measure-lane data the frontend reads (`measure_lane_visible`, `bar_line_time_propagates`, `selected_bar_lines`/`selected_bar_line_count`, and the bar-line identity now carried as `measure_id` on `WormUiComposeGridLineView`) comes from a C++ view type, using core vocabulary (`measure_id_t`, `bar_line_time_t`) instead of raw integers. The card records the pattern: where the type lives, how sys builds it, how Nuklear receives it each frame, and what it removed.
+- **Read first:** `docs/chart-editor-plan/decisions/code-style.md` ("Frontend boundary"); T-657's Done note in [measure-lane.md](measure-lane.md); `src/ui/frontend/compose.h`; `src/sys/compose_view.cpp` (where the measure-lane fields are set); `src/sys/workspace_view.h` (`selected_bar_line` frame storage); `src/sys/compose_scene_view.cpp` (`grid_line_measure_id`); `src/ui/compose_timing_geometry.h` (`compose_bar_line_bounds`, `is_compose_bar_line_selected`); `src/ui/nuklear/compose_canvas.cpp` (static scene cache).
+- **Files owned:** `src/ui/frontend/compose.h`, a new C++ boundary header under `src/ui/frontend/`, `src/sys/compose_view.cpp`, `src/sys/workspace_view.h`, `src/sys/compose_scene_view.cpp`, `src/ui/compose_timing_geometry.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_toolbar.cpp`, `src/ui/nuklear/compose_object_input.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/sys/frame_timing_tests.cpp`, `docs/chart-editor-plan/decisions/code-style.md` (the pattern, once proven), this card.
+- **Steps:**
+  1. Stale-plan check: `grep -rn "measure_lane_visible" src/ui/frontend`.
+  2. Inventory, and record the answers here before any edit: how `WormUiComposeView` reaches Nuklear each frame and who owns its storage; whether the static scene cache (`static_scene`) copies views and would need the new type; how the event harness builds a view; whether the Windows/MSVC build depends on C layout anywhere on this path. **STOP** and report to the owner if any answer makes the conversion larger than these files.
+  3. Add the C++ view type with core vocabulary and point the measure-lane readers at it; remove the C fields and the `selected_bar_line` frame storage.
+  4. Write the pattern into `code-style.md` "Frontend boundary" as a short example, and record on this card what the conversion removed (fields, storage, conversions).
+- **Invariants:** Same measure-lane behavior, drawing, hit testing and area selection; all existing measure-lane tests pass unchanged in what they assert; no per-frame allocation added.
+- **Reject/failure behavior:** If the frontend cannot hold a C++ view without restructuring frame ownership, stop at step 2 with the findings; the rule stays, and this card becomes the design question for the owner.
+- **Verify:** `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `clang-tidy -p build` on each touched `.cpp`; isolated Xvfb capture of the lane shown with a selected bar line.
+- **Out of scope:** Converting any other surface; the rectangle-function work (T-660); the vocabulary header (T-670), though this card may use it if it exists.

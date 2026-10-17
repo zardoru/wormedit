@@ -3791,6 +3791,69 @@ TEST_CASE("duration gestures reject collisions and stale revisions without parti
     CHECK_FALSE(state.gesture<pending_note_duration_gesture_t>() != nullptr);
 }
 
+namespace {
+auto absolute_row(const document_history_t& history, std::uint64_t note) -> std::uint64_t {
+    const auto& chart = history.document.charts.front();
+    const auto index = measure_index_t::from(chart).value();
+    return index.row_of(chart.find_note(object_id_t{note})->position).value();
+}
+} // namespace
+
+TEST_CASE("Dragging notes carries selected bar lines under the session's time policy",
+          "[unit][core][interaction][gesture][move][bar-line]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{3}});
+    chart.measures[0].notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
+    chart.measures[1].notes = {{.id = object_id_t{103}, .position = {measure_id_t{2}, 100}, .lane = lane_id_t{2}}};
+    REQUIRE(validate_document(song).empty());
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    const bool propagate = GENERATE(false, true);
+    if (propagate) state.bar_line_time = bar_line_time_t::propagate;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::note, object_id_t{101}},
+                                        {editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
+    REQUIRE(dispatch_editor_action(history, state, begin_note_move_gesture_action_t{object_id_t{101}}));
+    const auto committed = dispatch_editor_action(
+        history, state,
+        update_note_move_gesture_action_t{.reference_position = {measure_id_t{1}, 480},
+                                          .operation = wormedit::proposal_operation_t::apply});
+    for (const auto& diagnostic : committed.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(committed);
+    CHECK(committed.document_changed);
+    const auto index = measure_index_t::from(history.document.charts.front()).value();
+    CHECK(index.entries[1].absolute_begin_row == 1200);
+    CHECK(absolute_row(history, 101) == 480);
+    CHECK(absolute_row(history, 103) == (propagate ? 1300 : 1060));
+    CHECK(index.total_rows == (propagate ? 3120 : 2880));
+    CHECK(std::ranges::find(state.selected_objects,
+              editor_selection_object_t{editor_selection_object_kind_t::bar_line, object_id_t{2}}) !=
+          state.selected_objects.end());
+    CHECK(history.undo.size() == 1);
+    CHECK(validate_document(history.document).empty());
+}
+
+TEST_CASE("The step-move request carries selected notes and bar lines with the session policy",
+          "[unit][core][interaction][move][bar-line]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes = {
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}}};
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.bar_line_time = bar_line_time_t::propagate;
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::note, object_id_t{101}},
+                                        {editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
+    const auto action = editor_shift_selection(state, -120);
+    CHECK(action.notes == std::vector{object_id_t{101}});
+    CHECK(action.bar_lines == std::vector{measure_id_t{2}});
+    CHECK(action.rows == -120);
+    CHECK(action.bar_line_time == bar_line_time_t::propagate);
+}
+
 TEST_CASE("selected note moves preview and commit one snapped translation",
           "[unit][core][interaction][gesture][selection][move]") {
     auto song = make_song();

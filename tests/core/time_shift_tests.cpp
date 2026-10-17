@@ -176,3 +176,132 @@ TEST_CASE("time shift refuses charts that retain BMS control flow",
     CHECK_FALSE(result.command.applied);
     CHECK(has_code(result, diagnostic_code_t::unsupported_feature));
 }
+
+namespace {
+
+constexpr auto bar_a = measure_id_t{5};
+constexpr auto bar_b = measure_id_t{6};
+constexpr auto bar_c = measure_id_t{7};
+
+// Three 4/4 measures of 960 rows: notes at absolute rows 120, 1000 and 1920, a BPM change at 1500.
+auto bar_line_song() -> song_document_t {
+    song_document_t song{
+        .id = song_id_t{1},
+        .revision = 4,
+        .charts = {{
+            .id = chart_id_t{2},
+            .divisions_per_standard_measure = 960,
+            .measures = {{.id = bar_a, .notes = {tap(40, 1, bar_a, 120)}},
+                         {.id = bar_b, .notes = {tap(41, 1, bar_b, 40)}},
+                         {.id = bar_c, .notes = {tap(42, 2, bar_c, 0)}}},
+            .lane_layouts = {{.id = object_id_t{20},
+                              .position = {bar_a, 0},
+                              .layout = {.profile_id = "two",
+                                         .lanes = {{.id = lane_id_t{1}, .name = "A"},
+                                                   {.id = lane_id_t{2}, .name = "B"}}}}},
+            .bpms = {{.id = object_id_t{21}, .position = {bar_a, 0}, .beats_per_minute = {120, 1}},
+                     {.id = object_id_t{22}, .position = {bar_b, 540}, .beats_per_minute = {150, 1}}},
+        }},
+    };
+    REQUIRE(validate_document(song).empty());
+    return song;
+}
+
+struct bar_line_rows_t {
+    std::vector<std::uint64_t> measure_rows;
+    std::uint64_t total{};
+    std::vector<std::uint64_t> notes;
+    std::uint64_t bpm{};
+};
+
+auto bar_line_rows(const document_history_t& history) -> bar_line_rows_t {
+    const auto& chart = chart_of(history);
+    const auto index = measure_index_t::from(chart).value();
+    bar_line_rows_t rows{.measure_rows = {}, .total = index.total_rows, .notes = {}, .bpm = 0};
+    for (const auto& entry : index.entries) rows.measure_rows.push_back(entry.row_capacity);
+    for (const auto id : {40, 41, 42})
+        rows.notes.push_back(index.row_of(find_note(history, id)->second.position).value());
+    rows.bpm = index.row_of(chart.bpms.back().position).value();
+    return rows;
+}
+
+auto bar_line_shift(std::int64_t rows, bar_line_time_t time = bar_line_time_t::keep_song_time)
+    -> shift_selection_action_t {
+    return {.chart = chart_id_t{2}, .notes = {}, .bgm_events = {}, .rows = rows,
+            .bar_lines = {bar_b}, .bar_line_time = time};
+}
+
+} // namespace
+
+TEST_CASE("Moving a bar line keeps every object's song time by default",
+          "[unit][core][time-shift][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    const auto result = apply_shift_selection(history, bar_line_shift(240));
+    for (const auto& diagnostic : result.command.diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(result.command.applied);
+    const auto rows = bar_line_rows(history);
+    CHECK(rows.measure_rows == std::vector<std::uint64_t>{1200, 720, 960});
+    CHECK(rows.total == 2880);
+    CHECK(rows.notes == std::vector<std::uint64_t>{120, 1000, 1920});
+    CHECK(rows.bpm == 1500);
+    CHECK(validate_document(history.document).empty());
+    CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("A propagated bar-line move carries everything after it",
+          "[unit][core][time-shift][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    auto action = bar_line_shift(240, bar_line_time_t::propagate);
+    SECTION("timing rides along by default") {
+        REQUIRE(apply_shift_selection(history, action).command.applied);
+        const auto rows = bar_line_rows(history);
+        CHECK(rows.measure_rows == std::vector<std::uint64_t>{1200, 960, 960});
+        CHECK(rows.total == 3120);
+        CHECK(rows.notes == std::vector<std::uint64_t>{120, 1240, 2160});
+        CHECK(rows.bpm == 1740);
+    }
+    SECTION("timing can stay put") {
+        action.include_timing = false;
+        REQUIRE(apply_shift_selection(history, action).command.applied);
+        CHECK(bar_line_rows(history).bpm == 1500);
+    }
+    SECTION("a selected note after the bar line moves once") {
+        action.notes = {object_id_t{41}};
+        REQUIRE(apply_shift_selection(history, action).command.applied);
+        CHECK(bar_line_rows(history).notes == std::vector<std::uint64_t>{120, 1240, 2160});
+    }
+    SECTION("an earlier move shrinks the measure before it") {
+        action.rows = -240;
+        REQUIRE(apply_shift_selection(history, action).command.applied);
+        const auto rows = bar_line_rows(history);
+        CHECK(rows.measure_rows == std::vector<std::uint64_t>{720, 960, 960});
+        CHECK(rows.notes == std::vector<std::uint64_t>{120, 760, 1680});
+    }
+    CHECK(validate_document(history.document).empty());
+}
+
+TEST_CASE("Staged bar-line moves leave notes the caller already moved",
+          "[unit][core][time-shift][bar-line]") {
+    auto document = bar_line_song();
+    auto action = bar_line_shift(240, bar_line_time_t::propagate);
+    action.already_moved_notes = {object_id_t{41}};
+    const auto result = stage_shift_selection(document, action);
+    REQUIRE(result.command.diagnostics.empty());
+    const auto staged = document_history_t::from(document);
+    CHECK(bar_line_rows(staged).notes == std::vector<std::uint64_t>{120, 1000, 2160});
+}
+
+TEST_CASE("Invalid bar-line moves reject without changing history",
+          "[unit][core][time-shift][bar-line]") {
+    auto history = document_history_t::from(bar_line_song());
+    CHECK_FALSE(apply_shift_selection(history, bar_line_shift(960)).command.applied);
+    CHECK_FALSE(apply_shift_selection(history, bar_line_shift(-960)).command.applied);
+    auto first = bar_line_shift(240);
+    first.bar_lines = {bar_a};
+    CHECK_FALSE(apply_shift_selection(history, first).command.applied);
+    auto empty = bar_line_shift(240, bar_line_time_t::propagate);
+    empty.bar_lines.clear();
+    CHECK_FALSE(apply_shift_selection(history, empty).command.applied);
+    CHECK(history.undo.empty());
+    CHECK(history.document.revision == 4);
+}

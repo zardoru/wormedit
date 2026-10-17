@@ -539,11 +539,37 @@ auto bar_line_index(const chart_document_t& chart, measure_id_t id)
         return error(diagnostic_code_t::invalid_id, "bar line refers to an unknown measure");
     const auto index = static_cast<std::size_t>(measure - chart.measures.data());
     if (index == 0)
-        return error(diagnostic_code_t::invalid_measure, "the chart's first bar line cannot be removed");
+        return error(diagnostic_code_t::invalid_measure, "the chart's first bar line is fixed");
+    return index;
+}
+
+// A lane layout change belongs to the measure it starts, so removing that bar line would leave it
+// mid-measure. A moved bar line takes its layout change along instead.
+auto removable_bar_line_index(const chart_document_t& chart, measure_id_t id)
+    -> std::variant<std::size_t, diagnostic_t> {
     const local_position_t start{id, 0};
     if (std::ranges::any_of(chart.lane_layouts, [&](const auto& segment) { return segment.position == start; }))
         return error(diagnostic_code_t::invalid_measure, "a lane layout change starts at this bar line");
-    return index;
+    return bar_line_index(chart, id);
+}
+
+// The chart positions of the listed bar lines in ascending order; duplicates reject.
+template <typename index_of_t>
+auto bar_line_indices(const chart_document_t& chart, std::span<const measure_id_t> measures,
+                      index_of_t index_of) -> std::variant<std::vector<std::size_t>, diagnostic_list_t> {
+    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
+        return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
+                                       "editing a bar line requires resolved BMS conditional branches")};
+    std::vector<std::size_t> indices;
+    for (const auto id : measures) {
+        auto index = index_of(chart, id);
+        if (const auto* failure = std::get_if<diagnostic_t>(&index)) return diagnostic_list_t{*failure};
+        indices.push_back(std::get<std::size_t>(index));
+    }
+    std::ranges::sort(indices);
+    if (std::ranges::adjacent_find(indices) != indices.end())
+        return diagnostic_list_t{error(diagnostic_code_t::duplicate_id, "bar line selection names a measure twice")};
+    return indices;
 }
 
 // Each run of merged measures must still fit one measure's row bound.
@@ -567,23 +593,75 @@ auto has_oversized_merge(const chart_document_t& chart, std::span<const std::siz
 auto plan_bar_line_removal(const chart_document_t& chart, std::span<const measure_id_t> measures,
                            const measure_edit_limits_t& limits)
     -> std::variant<std::vector<std::size_t>, diagnostic_list_t> {
-    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
-        return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
-                                       "removing a bar line requires resolved BMS conditional branches")};
-    std::vector<std::size_t> indices;
-    for (const auto id : measures) {
-        auto index = bar_line_index(chart, id);
-        if (const auto* failure = std::get_if<diagnostic_t>(&index)) return diagnostic_list_t{*failure};
-        indices.push_back(std::get<std::size_t>(index));
-    }
-    std::ranges::sort(indices);
-    if (std::ranges::adjacent_find(indices) != indices.end())
-        return diagnostic_list_t{error(diagnostic_code_t::duplicate_id, "bar line selection names a measure twice")};
+    auto planned = bar_line_indices(chart, measures, removable_bar_line_index);
+    if (std::holds_alternative<diagnostic_list_t>(planned)) return planned;
+    auto& indices = std::get<std::vector<std::size_t>>(planned);
     if (has_oversized_merge(chart, indices, limits))
         return diagnostic_list_t{error(diagnostic_code_t::invalid_measure,
                                        "the merged measure would exceed the measure row limit")};
     std::ranges::reverse(indices);
-    return indices;
+    return planned;
+}
+
+// Measure-start rows (and the chart end) after the listed starts move by `rows`.
+struct measure_starts_t {
+    std::vector<std::uint64_t> begins;
+    std::uint64_t total{};
+};
+
+auto moved_row(std::uint64_t row, std::int64_t rows) -> std::optional<std::uint64_t> {
+    if (rows >= 0) {
+        const auto delta = static_cast<std::uint64_t>(rows);
+        return row > std::numeric_limits<std::uint64_t>::max() - delta ? std::nullopt : std::optional{row + delta};
+    }
+    const auto magnitude = static_cast<std::uint64_t>(-(rows + 1)) + 1U;
+    return magnitude > row ? std::nullopt : std::optional{row - magnitude};
+}
+
+auto plan_measure_starts(const measure_index_t& index, std::span<const std::size_t> moved,
+                         std::int64_t rows, bool move_end) -> std::optional<measure_starts_t> {
+    measure_starts_t starts{.begins = {}, .total = index.total_rows};
+    for (const auto& entry : index.entries) starts.begins.push_back(entry.absolute_begin_row);
+    for (const auto at : moved) {
+        const auto row = moved_row(starts.begins[at], rows);
+        if (!row) return std::nullopt;
+        starts.begins[at] = *row;
+    }
+    if (move_end) {
+        const auto total = moved_row(starts.total, rows);
+        if (!total) return std::nullopt;
+        starts.total = *total;
+    }
+    for (std::size_t at = 1; at < starts.begins.size(); ++at)
+        if (starts.begins[at] <= starts.begins[at - 1]) return std::nullopt;
+    if (starts.begins.empty() || starts.begins.back() >= starts.total) return std::nullopt;
+    return starts;
+}
+
+auto starts_exceed_limit(const measure_starts_t& starts, const measure_edit_limits_t& limits) -> bool {
+    for (std::size_t at = 0; at < starts.begins.size(); ++at) {
+        const auto end = at + 1 < starts.begins.size() ? starts.begins[at + 1] : starts.total;
+        if (end - starts.begins[at] > limits.maximum_rows_per_measure) return true;
+    }
+    return false;
+}
+
+// Gives every measure the length its new start rows imply, keeping each object's row.
+auto set_measure_starts(chart_document_t& chart, const measure_index_t& before,
+                        const measure_starts_t& starts) -> bool {
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    if (!lift_bucketed_objects(chart, before, 0, notes, bgm) ||
+        !collect_free_rows(chart, before, free_rows)) return false;
+    for (std::size_t at = 0; at < chart.measures.size(); ++at) {
+        const auto end = at + 1 < starts.begins.size() ? starts.begins[at + 1] : starts.total;
+        const auto rows = end - starts.begins[at];
+        if (rows != before.entries[at].row_capacity)
+            chart.measures[at].definition = definition_for_rows(rows, chart.divisions_per_standard_measure);
+    }
+    const auto after = measure_index_t::from(chart);
+    return after && place_lifted_objects(chart, *after, 0, notes, bgm, free_rows);
 }
 
 auto merge_measures_at(chart_document_t& chart, std::span<const std::size_t> descending) -> bool {
@@ -1024,6 +1102,25 @@ auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> mea
     if (!merge_measures_at(chart, std::get<std::vector<std::size_t>>(planned)))
         return {error(diagnostic_code_t::invalid_measure,
                       "the bar lines could not be removed without moving an object")};
+    return {};
+}
+
+auto move_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures, std::int64_t rows,
+                    bool move_end, measure_edit_limits_t limits) -> diagnostic_list_t {
+    if (rows == 0 || (measures.empty() && !move_end)) return {};
+    auto planned = bar_line_indices(chart, measures, bar_line_index);
+    if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) return std::move(*diagnostics);
+    const auto before = measure_index_t::from(chart);
+    if (!before) return before.error();
+    const auto starts = plan_measure_starts(*before, std::get<std::vector<std::size_t>>(planned), rows, move_end);
+    if (!starts)
+        return {error(diagnostic_code_t::invalid_measure,
+                      "a bar line cannot cross another bar line or the chart's start or end")};
+    if (starts_exceed_limit(*starts, limits))
+        return {error(diagnostic_code_t::invalid_measure, "a measure would exceed the measure row limit")};
+    if (!set_measure_starts(chart, *before, *starts))
+        return {error(diagnostic_code_t::row_out_of_range,
+                      "moving the bar lines would leave an object outside the chart")};
     return {};
 }
 

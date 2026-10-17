@@ -176,7 +176,35 @@ auto pending_note_move_gesture_t::begin(editor_edit_context_t& context, object_i
         .occupants = plan.occupants,
         .conflicting_notes = move_conflict_count(plan),
         .displace_to_bgm = displace_to_bgm,
+        .bar_lines = editor_shift_selection(state, 0).bar_lines,
+        .bar_line_time = state.bar_line_time,
     }};
+}
+
+// The drag's row component for its bar lines, measured from the reference object's original row.
+// Objects the drag relocated itself are named so the row shift never moves them twice.
+auto drag_bar_line_shift(const editor_edit_context_t& context, const pending_note_move_gesture_t& pending,
+                         const note_move_plan_t& plan) -> std::optional<shift_selection_action_t> {
+    if (pending.bar_lines.empty()) return std::nullopt;
+    const auto& chart = context.scope.chart;
+    const auto* note = chart.find_note(pending.reference_note);
+    const auto* event = note ? nullptr : chart.find_bgm_event(pending.reference_note);
+    const auto from = note ? context.scope.measures.row_of(note->position)
+        : event ? context.scope.measures.row_of(event->position) : std::nullopt;
+    const auto to = context.scope.measures.row_of(plan.reference_position);
+    if (!from || !to) return std::nullopt;
+    shift_selection_action_t action{.chart = context.state.chart, .notes = {}, .bgm_events = {},
+        .rows = static_cast<std::int64_t>(*to) - static_cast<std::int64_t>(*from),
+        .bar_lines = pending.bar_lines, .bar_line_time = pending.bar_line_time,
+        .include_timing = true, .already_moved_notes = plan.notes, .already_moved_bgm_events = {}};
+    for (const auto& moved : plan.bgm_moves) action.already_moved_bgm_events.push_back(moved.note);
+    return action;
+}
+
+auto stage_drag_bar_lines(song_document_t& document, const std::optional<shift_selection_action_t>& shift)
+    -> diagnostic_list_t {
+    if (!shift) return {};
+    return stage_shift_selection(document, *shift).command.diagnostics;
 }
 auto pending_note_move_gesture_t::revise(editor_edit_context_t& context, local_position_t requested_position,
                               lane_id_t requested_lane, bool requested_to_bgm,
@@ -206,6 +234,37 @@ auto pending_note_move_gesture_t::revise(editor_edit_context_t& context, local_p
     prepare_bgm_move_preview(context, plan, *this);
     return {};
 }
+// Moves notes into BGM (or displaces their occupants there) in one commit, carrying the
+// selection's bar lines with the drag's rows.
+auto commit_bgm_note_move(editor_edit_context_t& context, const pending_note_move_gesture_t& pending,
+                          const note_move_plan_t& plan,
+                          const std::optional<shift_selection_action_t>& bar_line_shift)
+    -> editor_interaction_result_t {
+    auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
+    if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
+        return diagnostic_result(context.history, context.state, *failures);
+    if (auto failures = stage_drag_bar_lines(std::get<song_document_t>(staged), bar_line_shift);
+        !failures.empty())
+        return diagnostic_result(context.history, context.state, std::move(failures));
+    auto transaction = document_command_transaction_t(context.history);
+    transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
+    auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
+    if (!committed)
+        return diagnostic_result(context.history, context.state, std::move(committed.diagnostics));
+    set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
+    for (const auto& moved : plan.bgm_moves)
+        context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
+    if (pending.to_bgm) {
+        for (const auto id : plan.notes)
+            context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
+    }
+    reselect_bar_lines(context.state, bar_line_shift ? &*bar_line_shift : nullptr);
+    place_cursor_at(context.state, plan.reference_position);
+    auto result = editor_interaction_result_t::from(context.history, context.state, true);
+    result.accepted = true;
+    return result;
+}
+
 auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     const auto& pending = *this;
@@ -216,29 +275,9 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
         return diagnostic_result(context.history, context.state, std::move(*diagnostics));
     const auto& plan = std::get<note_move_plan_t>(planned);
-    if (pending.to_bgm || (pending.displace_to_bgm && !plan.occupants.empty())) {
-        auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
-        if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
-            return diagnostic_result(context.history, context.state, *failures);
-        auto transaction = document_command_transaction_t(context.history);
-        transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
-        auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
-        if (!committed)
-            return diagnostic_result(context.history, context.state, std::move(committed.diagnostics));
-        set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
-        for (const auto& moved : plan.bgm_moves)
-            context.state.selected_objects.push_back(
-                {editor_selection_object_kind_t::bgm_event, moved.note});
-        if (pending.to_bgm) {
-            for (const auto id : plan.notes)
-                context.state.selected_objects.push_back(
-                    {editor_selection_object_kind_t::bgm_event, id});
-        }
-        place_cursor_at(context.state, plan.reference_position);
-        auto result = editor_interaction_result_t::from(context.history, context.state, true);
-        result.accepted = true;
-        return result;
-    }
+    const auto bar_line_shift = drag_bar_line_shift(context, pending, plan);
+    if (pending.to_bgm || (pending.displace_to_bgm && !plan.occupants.empty()))
+        return commit_bgm_note_move(context, pending, plan, bar_line_shift);
     const auto conflicts = move_conflict_count(plan);
     if (conflicts != 0) {
         auto warning =
@@ -246,7 +285,8 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
         warning.severity = diagnostic_severity_t::warning;
         return diagnostic_result(context.history, context.state, {std::move(warning)});
     }
-    return apply_note_move_plan(context.history, context.state, plan);
+    return apply_note_move_plan(context.history, context.state, plan,
+                                bar_line_shift ? &*bar_line_shift : nullptr);
 }
 
 auto add_paint_path_cell(const editor_edit_context_t& context, lane_id_t lane, std::uint64_t row,

@@ -23,7 +23,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 ## T-655 Move and nudge selected bar lines, with an optional time-propagation toggle
 
-- **Status:** ready
+- **Status:** done (2026-10-17)
 - **Outcome:** Dragging or nudging a selection that holds bar lines moves them with the other objects; by default every other object keeps its song time, and only with the time-propagation toggle on does content after a moved bar line move with it.
 - **Read first:** `docs/architecture.md`, `src/core/interaction_gesture_runner.h`, `include/wormedit/core/measure_editor.h` (`move_bar_line_action_t`), the note move gesture in `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/command.h`.
 - **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `src/core/interaction.cpp`, `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `tests/core/measure_editor_tests.cpp`, `tests/core/interaction_tests.cpp`, this card.
@@ -35,6 +35,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 - **Reject/failure behavior:** Crossing or zero-length measures, the first bar line, or rows past the measure limit reject the whole move.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` (toggle off and on, mixed selection, nudge, Undo); `clang-tidy -p build <changed .cpp>`.
 - **Out of scope:** clipboard (T-656), the lane column (T-657), the Alt-drag gestures (T-398).
+- **Done:** Owner direction (2026-10-17): one row-move path, with drag kept distinct but using it. `time_shift` is that executor: `shift_selection_action_t` carries bar lines, `bar_line_time_t` and `include_timing` (timing rides along by default under propagation), and `stage_shift_selection` runs it on a working copy. Geometry is the measure editor's keep-rows `move_bar_lines`; a lane layout change rides with its bar line. Order is geometry first for later moves and objects first for earlier ones, and each object moves at most once. The step move (Transform shift) builds its request with `editor_shift_selection`; the drag stages its row delta for selected bar lines inside its own commit, naming the objects it already moved. Scope change: the toggle is session state (`editor_interaction_state_t::bar_line_time`, never persisted) instead of a preference, so propagation is always an explicit request; `preferences.{h,cpp}` were not touched. Limitation kept from `time_shift`: charts with retained BMS control flow or measure-length lines reject row moves. Evidence: 4,023/4,023 CTest; new functions at most cognitive complexity 10, and the move gesture's `apply` fell from 26 to 7 after extracting `commit_bgm_note_move`.
 
 ## T-656 Copy, cut and paste bar lines with the selection
 

@@ -2206,6 +2206,17 @@ auto editor_quantize_selection(const editor_interaction_state_t& state) -> quant
     return result;
 }
 
+auto editor_shift_selection(const editor_interaction_state_t& state, std::int64_t rows)
+    -> shift_selection_action_t {
+    shift_selection_action_t action{.chart = state.chart, .notes = editor_quantize_selection(state).notes,
+                                    .bgm_events = {}, .rows = rows, .bar_lines = {},
+                                    .bar_line_time = state.bar_line_time};
+    for (const auto& object : editor_selection_targets(state))
+        if (object.kind == editor_selection_object_kind_t::bar_line)
+            action.bar_lines.push_back(measure_id_t{object.id.value});
+    return action;
+}
+
 } // namespace wormedit
 
 namespace wormedit {

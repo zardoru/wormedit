@@ -5,6 +5,7 @@
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
+#include <wormedit/core/time_shift.h>
 
 #include <array>
 #include <compare>
@@ -686,6 +687,9 @@ struct pending_note_move_gesture_t {
     std::vector<note_move_bgm_lane_preview_t> new_bgm_lanes;
     std::vector<std::string> bgm_diagnostics;
     std::optional<std::uint64_t> virtual_bgm_row;
+    // Bar lines selected with the moved objects follow the drag's row delta through the row shift.
+    std::vector<measure_id_t> bar_lines;
+    bar_line_time_t bar_line_time{bar_line_time_t::keep_song_time};
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, object_id_t, bool displace_to_bgm = false)
         -> diagnosed_t<std::optional<pending_note_move_gesture_t>>;
@@ -915,6 +919,9 @@ struct editor_interaction_state_t {
     note_kind_t armed_note_kind{note_kind_t::tap};
     // An explicit palette target overrides sound defaults; an empty vector means No layer.
     std::optional<std::vector<layer_id_t>> armed_note_layers;
+    // How a moved bar line treats the content after it. Never persisted: propagation is only ever
+    // an explicit request, so every new editing session starts by keeping song time.
+    bar_line_time_t bar_line_time{bar_line_time_t::keep_song_time};
     local_position_t cursor;
     std::optional<std::uint64_t> virtual_bms_cursor_row;
     // Non-authoring signed offset, in chart rows, from `cursor` to where it is drawn: set while
@@ -1489,6 +1496,11 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
 // may coincide; unrelated selected object families do not participate.
 [[nodiscard]] auto editor_quantize_selection(const editor_interaction_state_t& state)
     -> quantize_selection_t;
+
+// The step-move request for the current selection: selected notes and bar lines move by `rows`
+// under the session's bar-line time policy.
+[[nodiscard]] auto editor_shift_selection(const editor_interaction_state_t& state, std::int64_t rows)
+    -> shift_selection_action_t;
 
 // Shared ownership predicate for commands that require a completed canvas edit.
 

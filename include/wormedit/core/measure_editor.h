@@ -122,6 +122,16 @@ struct measure_removal_proposal_t {
 [[nodiscard]] auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,
                                     measure_edit_limits_t limits = {}) -> diagnostic_list_t;
 
+// Moves the bar line that starts each listed measure, and the chart's end when `move_end` is set,
+// by the same signed number of rows. Every object keeps its row from the start of the song; the
+// measures around a moved bar line absorb the change, and a lane layout change starting at a bar
+// line moves with it. Bar lines may not cross each other or the chart's start or end. Diagnostics
+// reject the edit; run it on a transaction's working copy. Row moves that also carry objects go
+// through `time_shift.h`, which uses this for the geometry.
+[[nodiscard]] auto move_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,
+                                  std::int64_t rows, bool move_end = false,
+                                  measure_edit_limits_t limits = {}) -> diagnostic_list_t;
+
 // Counts what `remove_measure_with_contents_action_t` would do without
 // mutating the chart; diagnostics explain why the removal would be rejected.
 [[nodiscard]] auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure)

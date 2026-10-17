@@ -23,16 +23,17 @@ auto command_status(const document_command_result_t& result, const char* applied
 }
 
 auto shift_selection(document_history_t& history, const editor_interaction_state_t& state,
-                     const chart_document_t& chart, const std::vector<object_id_t>& notes,
-                     bool later, notification_severity_t* severity) -> std::string {
+                     const chart_document_t& chart, bool later,
+                     notification_severity_t* severity) -> std::string {
     if (state.active_snap_denominator == 0 ||
         chart.divisions_per_standard_measure % state.active_snap_denominator != 0)
         return "The active snap does not divide the chart's rows.";
     const auto step = static_cast<std::int64_t>(chart.divisions_per_standard_measure /
                                                 state.active_snap_denominator);
-    const auto result = apply_shift_selection(
-        history,
-        {.chart = state.chart, .notes = notes, .rows = later ? step : -step});
+    const auto action = editor_shift_selection(state, later ? step : -step);
+    if (action.notes.empty() && action.bar_lines.empty())
+        return "Select notes or bar lines before shifting them.";
+    const auto result = apply_shift_selection(history, action);
     return command_status(result.command, "Selection shifted by one snap step.",
                           "Selection did not move.", severity);
 }
@@ -59,10 +60,12 @@ auto rotate_lane_permutation(const lane_layout_t& layout, bool left)
 auto apply_selection_transform(document_history_t& history, const editor_interaction_state_t& state,
                                selection_transform_t transform, notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
-    const auto notes = editor_quantize_selection(state).notes;
-    if (notes.empty()) return "Select notes before transforming them.";
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return "The selected difficulty is no longer available.";
+    if (transform == selection_transform_t::shift_earlier || transform == selection_transform_t::shift_later)
+        return shift_selection(history, state, *chart, transform == selection_transform_t::shift_later, severity);
+    const auto notes = editor_quantize_selection(state).notes;
+    if (notes.empty()) return "Select notes before transforming them.";
     const auto revision = history.document.revision;
     switch (transform) {
     case selection_transform_t::mirror:
@@ -82,7 +85,7 @@ auto apply_selection_transform(document_history_t& history, const editor_interac
     }
     case selection_transform_t::shift_earlier:
     case selection_transform_t::shift_later:
-        return shift_selection(history, state, *chart, notes, transform == selection_transform_t::shift_later, severity);
+        break;
     }
     return "Unknown transform.";
 }

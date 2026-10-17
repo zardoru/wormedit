@@ -73,6 +73,7 @@ every edit gets it.
 | A proposal | `proposal_t<`, `apply_proposal` in `include/wormedit/core/proposal.h`, and the payload's type |
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
+| A row move | `stage_shift_selection` in `include/wormedit/core/time_shift.h` is the one executor for moving objects and bar lines by chart rows (step moves, shift from cursor, bar-line moves with or without time propagation). The drag gesture keeps its own lane and collision planning and runs its row component through it inside its commit; bar-line geometry itself is `move_bar_lines` in `measure_editor.h`. |
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).

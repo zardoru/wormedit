@@ -939,13 +939,21 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
 
 namespace wormedit {
 using namespace interaction_detail;
+void reselect_bar_lines(editor_interaction_state_t& state, const shift_selection_action_t* bar_line_shift) {
+    if (bar_line_shift == nullptr) return;
+    for (const auto measure : bar_line_shift->bar_lines)
+        state.selected_objects.push_back({editor_selection_object_kind_t::bar_line, object_id_t{measure.value}});
+}
+
 auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
-                          const note_move_plan_t& plan) -> editor_interaction_result_t {
+                          const note_move_plan_t& plan, const shift_selection_action_t* bar_line_shift)
+    -> editor_interaction_result_t {
     auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
     const auto changed = plan.staged_bgm_document.has_value() || has_note_move_changes(*chart, plan) ||
+                         (bar_line_shift != nullptr && bar_line_shift->rows != 0) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
                              const auto* source = (*chart).find_bgm_event(move.note);
                              return !source || source->position != move.position ||
@@ -960,6 +968,11 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
         if (!failures.empty()) {
             return diagnostic_result(history, state, std::move(failures));
         }
+        if (bar_line_shift != nullptr) {
+            auto shifted = stage_shift_selection(proposed, *bar_line_shift);
+            if (!shifted.command.diagnostics.empty())
+                return diagnostic_result(history, state, std::move(shifted.command.diagnostics));
+        }
         auto command = transaction.commit(plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
                                    : "Move selected chart objects");
         if (!command)
@@ -968,6 +981,7 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     set_selected_notes(state, plan.notes);
     for (const auto& moved : plan.bgm_moves)
         state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
+    reselect_bar_lines(state, bar_line_shift);
     state.active_lane = plan.reference_lane;
     place_cursor_at(state, plan.reference_position);
     auto result = editor_interaction_result_t::from(history, state, changed);

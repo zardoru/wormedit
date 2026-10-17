@@ -1198,8 +1198,13 @@ auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
 auto stage_bgm_note_move(const document_history_t& history, editor_interaction_state_t& state,
                          const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
     -> std::variant<song_document_t, diagnostic_list_t>;
+// `bar_line_shift`, when set, moves the selection's bar lines by the drag's rows in the same commit.
 auto apply_note_move_plan(document_history_t& history, editor_interaction_state_t& state,
-                          const note_move_plan_t& plan) -> editor_interaction_result_t;
+                          const note_move_plan_t& plan,
+                          const shift_selection_action_t* bar_line_shift = nullptr)
+    -> editor_interaction_result_t;
+// Keeps the moved bar lines selected after a commit replaced the selection.
+void reselect_bar_lines(editor_interaction_state_t& state, const shift_selection_action_t* bar_line_shift);
 auto select_editor_notes(editor_edit_context_t& context, const select_editor_notes_action_t& action)
     -> editor_interaction_result_t;
 auto select_editor_lane(document_history_t& history, editor_interaction_state_t& state,

@@ -62,13 +62,13 @@ static void render_compose_bgm_bar_toggle(const ComposeToolbarContext& toolbar) 
     auto* context = toolbar.context;
     const auto* view = toolbar.view;
     auto* action = toolbar.action;
-    if (!view->bgm_bar_available) nk_widget_disable_begin(context);
     const bool clicked = wormedit::ui::chrome::IconButton{
-        Glyph::audio_lines, !view->bgm_bar_available ? "Song audio is unavailable"
+        .glyph = Glyph::audio_lines,
+        .tooltip = !view->bgm_bar_available ? "Song audio is unavailable"
             : view->bgm_bar_reserved ? "Hide song bar" : "Show song bar",
-        view->bgm_bar_reserved}.render(context);
-    if (!view->bgm_bar_available) nk_widget_disable_end(context);
-    if (!clicked || !view->bgm_bar_available ||
+        .selected = view->bgm_bar_reserved,
+        .enabled = view->bgm_bar_available}.render(context);
+    if (!clicked ||
         action->compose_input_count >= WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY)
         return;
     auto& input = action->compose_inputs[action->compose_input_count++];
@@ -86,11 +86,11 @@ static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
           view.area_range_begin_row < view.area_range_end_row));
     const auto* tooltip = view.transport_loop_selection_enabled
         ? "Disable selection loop" : "Loop the committed selection";
-    if (!can_toggle) nk_widget_disable_begin(toolbar.context);
-    const auto clicked = wormedit::ui::chrome::IconButton{Glyph::rotate_ccw, tooltip,
-            view.transport_loop_selection_enabled}.render(toolbar.context) && can_toggle &&
+    const auto clicked = wormedit::ui::chrome::IconButton{
+            .glyph = Glyph::rotate_ccw, .tooltip = tooltip,
+            .selected = view.transport_loop_selection_enabled,
+            .enabled = can_toggle}.render(toolbar.context) &&
         action->kind == WORM_UI_WORKSPACE_ACTION_NONE;
-    if (!can_toggle) nk_widget_disable_end(toolbar.context);
     if (clicked) {
         emit_compose_menu_command(*action, view, "transport.toggle_loop_selection");
     }
@@ -98,13 +98,12 @@ static void render_loop_selection_button(const ComposeToolbarContext& toolbar) {
 
 static void render_scroll_direction_toggle(const ComposeToolbarContext& toolbar) {
     const auto& view = *toolbar.view;
-    if (!view.scene_available) nk_widget_disable_begin(toolbar.context);
     const auto glyph = view.downscroll ? Glyph::chevron_down : Glyph::chevron_up;
-    const bool clicked = wormedit::ui::chrome::IconButton{glyph,
-        view.downscroll ? "Downscroll · switch to upscroll" : "Upscroll · switch to downscroll",
-        view.downscroll}.render(toolbar.context);
-    if (!view.scene_available) nk_widget_disable_end(toolbar.context);
-    if (clicked && view.scene_available && toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
+    const bool clicked = wormedit::ui::chrome::IconButton{
+        .glyph = glyph,
+        .tooltip = view.downscroll ? "Downscroll · switch to upscroll" : "Upscroll · switch to downscroll",
+        .selected = view.downscroll, .enabled = view.scene_available}.render(toolbar.context);
+    if (clicked && toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_SCROLL_DIRECTION;
 }
 

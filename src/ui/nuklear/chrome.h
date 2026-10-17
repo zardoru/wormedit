@@ -278,10 +278,35 @@ inline void section_separator(nk_context* context) {
                    bounds.x + bounds.w, y, 1.0f, color(UiColor::border));
 }
 
+// Owns one native cell through glyph drawing and feedback. Its scope preserves an
+// enclosing disable flag; disabled color factors stay in the cell's local style.
+class NativeIconCell {
+public:
+    NativeIconCell(nk_context* context, bool selected, bool enabled, const char* tooltip);
+    ~NativeIconCell();
+    NativeIconCell(const NativeIconCell&) = delete;
+    auto operator=(const NativeIconCell&) -> NativeIconCell& = delete;
+
+    auto bounds() const -> struct nk_rect { return bounds_; }
+    auto tint() const -> nk_color { return tint_; }
+    auto is_clicked() const -> bool { return clicked_; }
+
+private:
+    nk_context* context_;
+    nk_window* window_;
+    struct nk_rect bounds_;
+    nk_color tint_;
+    bool selected_;
+    const char* tooltip_;
+    nk_bool was_disabled_;
+    bool clicked_;
+};
+
 struct IconButton {
     lucide::Glyph glyph;
     const char* tooltip;
     bool selected{false};
+    bool enabled{true};
 
     static constexpr float width = 34.0f;
 
@@ -291,15 +316,9 @@ struct IconButton {
     }
 
     auto render(nk_context* context) const -> bool {
-        const auto bounds = nk_widget_bounds(context);
-        auto style = button_style(context, selected);
-        const bool clicked = nk_button_label_styled(context, &style, "") != 0;
-        const auto tint = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
-                              ? color(UiColor::text_bright)
-                              : selected ? color(UiColor::selected_text) : color(UiColor::text);
-        lucide::draw(context, bounds, glyph, tint);
-        button_feedback(context, bounds, selected, tooltip);
-        return clicked;
+        const NativeIconCell cell{context, selected, enabled, tooltip};
+        lucide::draw(context, cell.bounds(), glyph, cell.tint());
+        return cell.is_clicked();
     }
 };
 
@@ -308,17 +327,12 @@ struct DrawnIconButton {
     void (*draw)(struct nk_command_buffer*, struct nk_rect, struct nk_color);
     const char* tooltip;
     bool selected{false};
+    bool enabled{true};
 
     auto render(nk_context* context) const -> bool {
-        const auto bounds = nk_widget_bounds(context);
-        auto style = button_style(context, selected);
-        const bool clicked = nk_button_label_styled(context, &style, "") != 0;
-        const auto tint = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
-                              ? color(UiColor::text_bright)
-                              : selected ? color(UiColor::selected_text) : color(UiColor::text);
-        draw(nk_window_get_canvas(context), bounds, tint);
-        button_feedback(context, bounds, selected, tooltip);
-        return clicked;
+        const NativeIconCell cell{context, selected, enabled, tooltip};
+        draw(nk_window_get_canvas(context), cell.bounds(), cell.tint());
+        return cell.is_clicked();
     }
 };
 

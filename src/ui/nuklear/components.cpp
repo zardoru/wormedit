@@ -156,6 +156,32 @@ auto chip_look(bool chosen, ControlState state) -> ControlLook {
             raised ? color(UiColor::text_bright) : color(UiColor::text)};
 }
 
+NativeIconCell::NativeIconCell(nk_context* context, bool selected, bool enabled, const char* tooltip)
+    : context_(context), window_(context->current), bounds_(nk_widget_bounds(context)),
+      selected_(selected), tooltip_(tooltip), was_disabled_(window_->widgets_disabled) {
+    window_->widgets_disabled = was_disabled_ || !enabled;
+    auto style = button_style(context, selected);
+    if (!enabled && !was_disabled_) {
+        style.color_factor_text = style.disabled_factor;
+        style.color_factor_background = style.disabled_factor;
+    }
+    clicked_ = nk_button_label_styled(context, &style, "") != 0 && enabled;
+    tint_ = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
+        ? color(UiColor::text_bright)
+        : selected ? color(UiColor::selected_text) : color(UiColor::text);
+}
+
+NativeIconCell::~NativeIconCell() {
+    // A caller-owned native disable scope also dims tooltip text. Preserve that
+    // feedback without changing the surrounding widgets' style factors.
+    const auto text_factor = context_->style.text.color_factor;
+    if (!was_disabled_ && window_->widgets_disabled)
+        context_->style.text.color_factor = context_->style.text.disabled_factor;
+    button_feedback(context_, bounds_, selected_, tooltip_);
+    context_->style.text.color_factor = text_factor;
+    window_->widgets_disabled = was_disabled_;
+}
+
 auto Button::render(nk_context* context) const -> bool {
     struct nk_rect bounds{};
     const auto cell = nk_widget(&bounds, context);

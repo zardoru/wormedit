@@ -3,6 +3,8 @@
 #include "ui/nuklear/ui_metrics.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
+#include <string>
 
 #include <cstring>
 #include <functional>
@@ -525,4 +527,153 @@ TEST_CASE("dropdown surface fallback covers the popup without a viewport",
     nk_popup_end(&fixture.context);
     nk_end(&fixture.context);
     CHECK(popup_paint(fixture.context, bounds).opaque_fill);
+}
+
+namespace {
+void check_native_icon(bool value) { CHECK(value); }
+
+void native_test_glyph(nk_command_buffer* canvas, struct nk_rect bounds, nk_color tint) {
+    nk_fill_circle(canvas, bounds, tint);
+}
+
+struct native_icon_options_t {
+    bool selected{};
+    bool disabled{};
+    bool parent_disabled{};
+    nk_button_behavior behavior{NK_BUTTON_DEFAULT};
+    bool enabled{true};
+    bool clipped{};
+};
+
+struct native_icon_probe_t {
+    fixture_t fixture;
+    bool drawn{};
+    bool clicked{};
+    bool parent_still_disabled{};
+    bool style_preserved{};
+    bool hovered{};
+    nk_color tint{};
+    nk_color tooltip_tint{};
+    std::string text;
+
+    void frame(frame_input_t input, native_icon_options_t options = {}) {
+        text.clear();
+        wormedit::ui::nuklear::tooltip::set_viewport(nk_rect(0, 0, 400, 300));
+        fixture.frame(input, [&] {
+            auto* context = &fixture.context;
+            nk_layout_row_dynamic(context, metrics::control_default, 1);
+            nk_button_set_behavior(context, options.behavior);
+            if (options.clipped) context->current->layout->clip = nk_rect(0, 250, 400, 20);
+            if (options.parent_disabled) nk_widget_disable_begin(context);
+            const auto before = context->style.button.color_factor_background;
+            const auto text_before = context->style.text.color_factor;
+            if (options.disabled && !options.parent_disabled) nk_widget_disable_begin(context);
+            if (drawn)
+                clicked = chrome::DrawnIconButton{.draw = native_test_glyph,
+                    .tooltip = "Native icon reason", .selected = options.selected,
+                    .enabled = options.enabled}.render(context);
+            else
+                clicked = chrome::IconButton{.glyph = wormedit::ui::lucide::Glyph::audio_lines,
+                    .tooltip = "Native icon reason", .selected = options.selected,
+                    .enabled = options.enabled}.render(context);
+            hovered = chrome::button_hovered(context, nk_rect(8, 8, 384, 28));
+            if (options.disabled && !options.parent_disabled) nk_widget_disable_end(context);
+            parent_still_disabled = context->current->widgets_disabled != 0;
+            style_preserved = before == context->style.button.color_factor_background &&
+                text_before == context->style.text.color_factor;
+            if (options.parent_disabled) nk_widget_disable_end(context);
+            const nk_command* command{};
+            nk_foreach(command, context) {
+                if (command->type == NK_COMMAND_CIRCLE_FILLED)
+                    tint = reinterpret_cast<const nk_command_circle_filled*>(command)->color;
+                if (command->type == NK_COMMAND_TEXT) {
+                    const auto* label = reinterpret_cast<const nk_command_text*>(command);
+                    text.append(label->string, static_cast<std::size_t>(label->length));
+                    tooltip_tint = label->foreground;
+                }
+            }
+        });
+    }
+};
+} // namespace
+
+TEST_CASE("Native icon widgets keep native press repeat and release behavior",
+          "[components][native-icon]") {
+    native_icon_probe_t probe;
+    probe.drawn = GENERATE(false, true);
+    probe.frame({100, 18, 0, -1, -1});
+    check_native_icon(!probe.clicked);
+    probe.frame({100, 18, 1, -1, -1});
+    check_native_icon(probe.clicked);
+    probe.frame({100, 18, -1, -1, -1});
+    check_native_icon(!probe.clicked);
+    probe.frame({100, 18, -1, -1, -1}, {.behavior = NK_BUTTON_REPEATER});
+    check_native_icon(probe.clicked);
+    probe.frame({100, 18, 0, -1, -1});
+    check_native_icon(!probe.clicked);
+}
+
+TEST_CASE("Native icon disabled scopes keep feedback and parent ownership",
+          "[components][native-icon]") {
+    native_icon_probe_t probe;
+    probe.drawn = GENERATE(false, true);
+    const bool parent = GENERATE(false, true);
+    const native_icon_options_t options{.selected = true, .disabled = true, .parent_disabled = parent};
+    probe.frame({100, 18, 0, -1, -1}, options);
+    probe.frame({100, 18, 1, -1, -1}, options);
+    check_native_icon(!probe.clicked);
+    check_native_icon(probe.parent_still_disabled == parent);
+    check_native_icon(probe.style_preserved);
+    check_native_icon(probe.hovered);
+    check_native_icon(probe.text.find("Native icon reason") != std::string::npos);
+    const auto& text_style = probe.fixture.context.style.text;
+    check_native_icon(nk_color_u32(probe.tooltip_tint) ==
+                      nk_color_u32(nk_rgb_factor(text_style.color, text_style.disabled_factor)));
+    if (probe.drawn)
+        check_native_icon(probe.tint.r == chrome::color(wormedit::ui::theme::UiColor::selected_text).r);
+}
+
+TEST_CASE("Native icon availability restores parent input and untouched style factors",
+          "[components][native-icon]") {
+    native_icon_probe_t probe;
+    probe.drawn = GENERATE(false, true);
+    const bool parent = GENERATE(false, true);
+    const native_icon_options_t options{.selected = true, .parent_disabled = parent, .enabled = false};
+    probe.frame({100, 18, 0, -1, -1}, options);
+    probe.frame({100, 18, 1, -1, -1}, options);
+    check_native_icon(!probe.clicked);
+    check_native_icon(probe.parent_still_disabled == parent);
+    check_native_icon(probe.style_preserved);
+    check_native_icon(probe.text.find("Native icon reason") != std::string::npos);
+    const auto& text_style = probe.fixture.context.style.text;
+    check_native_icon(nk_color_u32(probe.tooltip_tint) ==
+                      nk_color_u32(nk_rgb_factor(text_style.color, text_style.disabled_factor)));
+    probe.frame({100, 18, 0, -1, -1});
+    probe.frame({100, 18, 1, -1, -1});
+    check_native_icon(probe.clicked);
+}
+
+TEST_CASE("Native icon glyph tint keeps selected and hover precedence",
+          "[components][native-icon]") {
+    native_icon_probe_t probe;
+    probe.drawn = true;
+    const bool selected = GENERATE(false, true);
+    probe.frame({-1, -1, 0, -1, -1}, {.selected = selected});
+    const auto normal = chrome::color(selected ? wormedit::ui::theme::UiColor::selected_text
+                                               : wormedit::ui::theme::UiColor::text);
+    check_native_icon(nk_color_u32(probe.tint) == nk_color_u32(normal));
+    probe.frame({100, 18, 0, -1, -1}, {.selected = selected});
+    check_native_icon(nk_color_u32(probe.tint) ==
+                      nk_color_u32(chrome::color(wormedit::ui::theme::UiColor::text_bright)));
+}
+
+TEST_CASE("Native icon invalid cells never activate",
+          "[components][native-icon]") {
+    native_icon_probe_t probe;
+    probe.drawn = GENERATE(false, true);
+    probe.frame({100, 18, 0, -1, -1}, {.clipped = true});
+    probe.frame({100, 18, 1, -1, -1}, {.clipped = true});
+    check_native_icon(!probe.clicked);
+    check_native_icon(probe.style_preserved);
+    check_native_icon(!probe.parent_still_disabled);
 }

@@ -29,3 +29,7 @@ local_capture_button_guard | 12 | src | !input[.]left_down && !input[.]left_rele
 # T-645: overlapping Compose input inventories belong to the borrowed query owner.
 local_compose_editor_inventory | 1 | src | compose[.]inline_timing[.]inline_timing_open.*compose[.]inline_offset[.]inline_offset_open.*compose[.]dialogs[.]go_to_measure_open
 local_compose_canvas_inventory | 0 | src | state[.]inline_timing[.]inline_timing_open.*state[.]bookmark_ui[.]bookmark_rename
+
+# T-646: both native icon glyph sources share one empty-label cell.
+native_icon_cell_shell | 1 | src | nk_button_label_styled\(context, &style, ""\)
+standalone_toolbar_icon_disable | 0 | src | if \(!(view->bgm_bar_available|can_toggle|view[.]scene_available)\) nk_widget_disable_(begin|end)\((toolbar[.]context|context)\)

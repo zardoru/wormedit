@@ -854,6 +854,7 @@ void refresh_application_command_states(
     refresh_same_sound_command(registry, history, chart, compose_state, compose_ready, application_state);
     set("selection.select_all", compose_ready);
     set("selection.select_all_objects", compose_ready);
+    set("selection.select_all_after_cursor", compose_ready);
     set("selection.invert", compose_ready);
     const bool marker_navigation_available =
         compose_ready && wormedit::has_marker_navigation_targets(*chart);

@@ -3854,6 +3854,27 @@ TEST_CASE("The step-move request carries selected notes and bar lines with the s
     CHECK(action.bar_line_time == bar_line_time_t::propagate);
 }
 
+TEST_CASE("Select All After Cursor selects playable notes from the cursor row onward",
+          "[unit][core][interaction][selection]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes = {{.id = object_id_t{101}, .position = {measure_id_t{1}, 240}, .lane = lane_id_t{1}},
+                               {.id = object_id_t{102}, .position = {measure_id_t{1}, 480}, .lane = lane_id_t{1}}};
+    chart.measures[1].notes = {{.id = object_id_t{103}, .position = {measure_id_t{2}, 0}, .lane = lane_id_t{2}}};
+    REQUIRE(validate_document(song).empty());
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bar_line, object_id_t{2}}}}));
+    const auto selected = select_editor_scope(history, state, {}, false, local_position_t{measure_id_t{1}, 480});
+    REQUIRE(selected);
+    CHECK(editor_quantize_selection(state).notes == std::vector{object_id_t{102}, object_id_t{103}});
+    CHECK(std::ranges::find(state.selected_objects,
+              editor_selection_object_t{editor_selection_object_kind_t::bar_line, object_id_t{2}}) !=
+          state.selected_objects.end());
+    CHECK_FALSE(select_editor_scope(history, state, {}, false, local_position_t{measure_id_t{9}, 0}));
+}
+
 TEST_CASE("selected note moves preview and commit one snapped translation",
           "[unit][core][interaction][gesture][selection][move]") {
     auto song = make_song();

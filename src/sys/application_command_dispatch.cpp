@@ -481,14 +481,16 @@ auto selection_commands(command_context_t& context) -> command_result_t {
             diagnostic_code_t::unsupported_feature);
     const auto all_objects = kind == command_kind_t::selection_select_all_objects;
     const auto invert = kind == command_kind_t::selection_invert;
+    const auto after_cursor = kind == command_kind_t::selection_select_all_after_cursor;
     return compose_action_outcome_t::from(
         select_editor_scope(context.environment.document.history, *state,
                             all_objects ? editor_selection_scope_t{true, true, true, true}
                                         : editor_selection_scope_t{},
-                            invert),
-        all_objects ? "All selectable chart objects selected."
-        : invert    ? "Playable-note selection inverted."
-                    : "All playable notes selected.",
+                            invert, after_cursor ? std::optional{state->cursor} : std::nullopt),
+        all_objects    ? "All selectable chart objects selected."
+        : invert       ? "Playable-note selection inverted."
+        : after_cursor ? "Playable notes from the cursor onward selected."
+                       : "All playable notes selected.",
         notification_severity_t::success, notification_source_t::edit);
 }
 
@@ -1160,6 +1162,7 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
     case command_kind_t::selection_select_all:
     case command_kind_t::selection_select_all_objects:
     case command_kind_t::selection_invert:
+    case command_kind_t::selection_select_all_after_cursor:
         return {.operation = selection_commands};
     case command_kind_t::navigation_previous_snap:
     case command_kind_t::navigation_next_snap:

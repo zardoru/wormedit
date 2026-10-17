@@ -48,6 +48,7 @@ constexpr command_name_t command_names[]{
     {"selection.select_all", application_command_kind_t::selection_select_all},
     {"selection.select_all_objects", application_command_kind_t::selection_select_all_objects},
     {"selection.invert", application_command_kind_t::selection_invert},
+    {"selection.select_all_after_cursor", application_command_kind_t::selection_select_all_after_cursor},
     {"navigation.previous_snap", application_command_kind_t::navigation_previous_snap},
     {"navigation.next_snap", application_command_kind_t::navigation_next_snap},
     {"navigation.previous_marker", application_command_kind_t::navigation_previous_marker},

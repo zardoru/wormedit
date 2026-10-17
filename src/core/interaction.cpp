@@ -2174,7 +2174,8 @@ auto scoped_selection(const editor_interaction_state_t& state,
 } // namespace
 
 auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
-    editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t {
+    editor_selection_scope_t scope, bool invert, std::optional<local_position_t> from)
+    -> editor_interaction_result_t {
     const auto* chart = history.document.find_chart(state.chart);
     if (!chart) return diagnostic_result(history, state,
         {error(diagnostic_code_t::invalid_id, "Selection chart is unavailable")});
@@ -2184,7 +2185,10 @@ auto select_editor_scope(document_history_t& history, editor_interaction_state_t
     const auto& index = std::get<editor_hit_test_index_t>(built);
     if (index.measures.total_rows == 0) return diagnostic_result(history, state,
         {error(diagnostic_code_t::row_out_of_range, "Selection chart has no rows")});
-    const auto queried = editor_objects_in_row_range(*chart, index, 0, index.measures.total_rows - 1, scope);
+    const auto first_row = from ? index.measures.row_of(*from) : std::optional<std::uint64_t>{0};
+    if (!first_row) return diagnostic_result(history, state,
+        {error(diagnostic_code_t::row_out_of_range, "Selection start is outside the chart")});
+    const auto queried = editor_objects_in_row_range(*chart, index, *first_row, index.measures.total_rows - 1, scope);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&queried))
         return diagnostic_result(history, state, *diagnostics);
     return dispatch_editor_action(history, state, select_editor_objects_action_t{

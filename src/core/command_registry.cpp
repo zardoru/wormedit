@@ -816,6 +816,9 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     add_builtin(registry, invoker, "selection.select_same_sound_chart", "Select Same Sound (Whole Chart)",
                 command_category_t::selection, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::a, modified(shortcut_modifier_t::shift))}, false, compose);
+    add_builtin(registry, invoker, "selection.select_all_after_cursor", "Select All After Cursor",
+                command_category_t::selection, command_focus_scope_t::tab,
+                {chord(shortcut_key_t::e, modified(shortcut_modifier_t::shift))}, false, compose);
     add_builtin(registry, invoker, "selection.invert", "Invert Selection",
                 command_category_t::selection, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::i, modified(shortcut_modifier_t::shift))}, false, compose);

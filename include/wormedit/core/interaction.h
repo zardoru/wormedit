@@ -1488,9 +1488,12 @@ auto clear_editor_double_click_state(editor_double_click_state_t& state) -> void
     editor_selection_object_kind_t kind) -> bool;
 
 
-// Select/invert only the requested families; selections outside that scope survive.
+// Select/invert only the requested families; selections outside that scope survive. With `from`,
+// only objects at or after that position count (an object spanning it counts when it ends there or
+// later).
 [[nodiscard]] auto select_editor_scope(document_history_t& history, editor_interaction_state_t& state,
-    editor_selection_scope_t scope, bool invert) -> editor_interaction_result_t;
+    editor_selection_scope_t scope, bool invert,
+    std::optional<local_position_t> from = std::nullopt) -> editor_interaction_result_t;
 
 // Canonical typed selection for Quantize preview and Apply. Existing BGM and note IDs
 // may coincide; unrelated selected object families do not participate.

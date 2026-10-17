@@ -9,7 +9,8 @@ enum class workspace_menu_action_t {
     none, new_project, open, save, save_as, close, options, quit,
     copy, cut, paste, select_same_sound, move_to_bgm, reset_view, frame_timing, tap_timing, timing_settings,
     notifications, preview, external_preferences, external_start, external_here, external_stop,
-    undo, redo, delete_selection, select_all, select_all_objects, invert_selection, clear_selection,
+    undo, redo, delete_selection, select_all, select_all_objects, select_all_after_cursor,
+    invert_selection, clear_selection,
     new_chart, timing_lock, insert_bpm, insert_sv, play_stop, play_pause, play_start, stop, metronome,
     sounds, layers, about, shortcuts, export_output_group,
     recent_first = 1000, recent_last = 1099
@@ -43,7 +44,8 @@ inline constexpr std::array workspace_menu_titles{"File", "Edit", "View", "Chart
 inline constexpr std::array workspace_menu_command_ids{
     "document.new_project", "document.save_project", "document.export_output_group", "workspace.options",
     "history.undo", "history.redo", "edit.copy", "edit.cut", "edit.paste", "edit.delete",
-    "edit.move_to_bgm", "selection.select_all", "selection.select_all_objects", "selection.invert", "selection.clear",
+    "edit.move_to_bgm", "selection.select_all", "selection.select_all_objects",
+    "selection.select_all_after_cursor", "selection.invert", "selection.clear",
     "selection.select_same_sound_chart", "view.notifications", "view.toggle_sounds", "view.open_layers",
     "timing.tap_assistant", "document.new_chart", "timing.toggle_lock", "timing.insert_bpm",
     "timing.insert_sv", "transport.play_stop", "transport.play_pause", "transport.play_from_start",

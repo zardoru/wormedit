@@ -34,6 +34,8 @@ void append_edit(workspace_menu_t& menu, bool enabled) {
     menu.push_back({"Edit", "Delete", Action::delete_selection, "edit.delete", enabled});
     menu.push_back({"Edit", "Select all", Action::select_all, "selection.select_all", enabled});
     menu.push_back({"Edit", "Select all objects", Action::select_all_objects, "selection.select_all_objects", enabled});
+    menu.push_back({"Edit", "Select all after cursor", Action::select_all_after_cursor,
+                    "selection.select_all_after_cursor", enabled});
     menu.push_back({"Edit", "Invert selection", Action::invert_selection, "selection.invert", enabled});
     menu.push_back({"Edit", "Clear selection", Action::clear_selection, "selection.clear", enabled});
     menu.push_back({"Edit", "Select Same Sound (Whole Chart)", Action::select_same_sound,

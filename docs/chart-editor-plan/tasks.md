@@ -56,6 +56,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Semantic layout identity and osu classes](tasks/semantic-layout-identity.md)
 - [Measure-local snapping and navigation](tasks/measure-local-snapping.md)
 - [Measure lane: bar lines as editable objects](tasks/measure-lane.md)
+- [Feature friction: refactors found by the measure lane](tasks/feature-friction.md)
 - [Selected sounds to semantic layers](tasks/selected-sound-layers.md)
 - [Keyboard context menus](tasks/keyboard-context-menus.md)
 - [Metadata tag drag grips](tasks/tag-grips.md)
@@ -125,7 +126,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-628.
+every number above T-664.
 
 ## Rules for whoever executes a card
 

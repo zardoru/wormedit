@@ -166,3 +166,24 @@ TEST_CASE("Measure resize equality does not wrap 64 bit cross products",
     check_resize(std::string(action.get().timing_meter_numerator_text) == "9");
     check_resize(std::string(action.get().timing_meter_denominator_text) == "4");
 }
+
+TEST_CASE("A bar line drag starts when it is the only bar line on screen",
+          "[frontend-state][event-harness][measure-resize]") {
+    // At a deep zoom the neighboring bar lines are off screen; the view's scroll direction
+    // still tells which way the measure grows.
+    resize_fixture_t f;
+    f.lines[0] = f.lines[1];
+    auto& view = f.harness.view().compose;
+    view.grid_line_count = 1;
+    const auto both = static_cast<SDL_Keymod>(SDL_KMOD_LALT | SDL_KMOD_LSHIFT);
+    const std::array press{resize_motion(f.x, f.y_line), resize_button(f.x, f.y_line, true)};
+    (void)f.harness.frame(press, both);
+    auto& state = worm_ui_nuklear_compose_state();
+    require_resize(state.measure_resize.measure_resize_active);
+    const std::array drag{resize_motion(f.x, f.screen_y(-50))};
+    (void)f.harness.frame(drag, both);
+    check_resize(std::string(state.measure_resize.measure_resize_label.data()) == "7/8 | 9/8");
+    const std::array release{resize_motion(f.x, f.screen_y(-50)), resize_button(f.x, f.screen_y(-50), false)};
+    const auto action = f.harness.frame(release, both);
+    check_resize(action.get().compose_action == WORM_UI_COMPOSE_ACTION_MOVE_BAR_LINE);
+}

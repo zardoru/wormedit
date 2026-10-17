@@ -23,23 +23,10 @@ struct line_hit_t {
     double direction{1.0};
 };
 
-auto find_line(const WormUiComposeView& view, std::uint32_t number) -> const WormUiComposeGridLineView* {
-    const auto lines = std::span(view.grid_lines, view.grid_line_count);
-    const auto found = std::ranges::find_if(lines, [number](const auto& line) {
-        return line.measure_number == number;
-    });
-    return found == lines.end() ? nullptr : &*found;
-}
-
-// Which way time grows on screen, read off two neighboring bar lines.
-auto line_direction(const WormUiComposeView& view, const WormUiComposeGridLineView& end_line)
-    -> std::optional<double> {
-    if (const auto* before = find_line(view, end_line.measure_number - 1))
-        return end_line.y_pixels >= before->y_pixels ? 1.0 : -1.0;
-    if (const auto* after = find_line(view, end_line.measure_number + 1))
-        return after->y_pixels >= end_line.y_pixels ? 1.0 : -1.0;
-    return std::nullopt;
-}
+// Which way time grows on screen. Downscroll projects later rows higher, so y falls as time
+// grows. Taken from the view rather than from a neighboring bar line, which a deep zoom can
+// push off screen.
+auto time_direction(const WormUiComposeView& view) -> double { return view.downscroll ? -1.0 : 1.0; }
 
 // The measure whose end line lies under the press, if any: end lines are numbered measure + 2.
 auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optional<line_hit_t> {
@@ -53,10 +40,8 @@ auto bar_line_at(const ComposeBeatFitInput& input, bool move_line) -> std::optio
         if (distance > best_distance) continue;
         // Moving only the line needs the next measure on the list as well.
         if (move_line && line.measure_number - 1 >= view.measure_row_count) continue;
-        const auto direction = line_direction(view, line);
-        if (!direction) continue;
         const auto row = static_cast<std::size_t>(line.measure_number - 2);
-        best = line_hit_t{view.measure_rows[row].measure_id, row, line.y_pixels, *direction};
+        best = line_hit_t{view.measure_rows[row].measure_id, row, line.y_pixels, time_direction(view)};
         best_distance = distance;
     }
     return best;

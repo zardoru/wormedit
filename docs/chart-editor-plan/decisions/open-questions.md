@@ -71,6 +71,10 @@
    - **Provisional default (unconfirmed):** Keep the pinned StepMania 5.1/Etterna 0.75.1 native-SSC subsets only.
    - **Answered (2026-09-30):** Keep StepMania 5.1 and Etterna 0.75.1; a modern AMX profile is a much later addition. osu!mania: pin the latest lazer format (T-291).
    - **Blocks:** new StepMania export profiles. Do not start it until the user answers.
+19. When bar lines are edited as objects in a measure lane, what happens to everything else, and what does "displace" mean for them?
+   - **Asked (user, 2026-10-17):** a measure lane that treats measure lines as natural notes, "with full copy/paste displace etc. support" (T-654–T-657).
+   - **Provisional default (unconfirmed):** Other objects keep their song time (rows), as the Alt-drag bar-line gesture does; a placed or pasted bar line splits the measure it lands in; a deleted one merges its two measures; a bar line moving onto another merges with it. "Displace" means bar lines move with the rest of a selection under the same move and collision policy as notes; nothing ripples later measures.
+   - **Answered (2026-10-17):** The provisional default stands: bar-line edits are generally presentational, so other objects keep their song time. Time propagation (later content riding with a moved bar line) is an explicit toggle, off by default and used only when requested (T-654–T-657).
 
 ## How to use this list
 

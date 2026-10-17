@@ -55,6 +55,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Per-layout skin preferences](tasks/layout-skin-preferences.md)
 - [Semantic layout identity and osu classes](tasks/semantic-layout-identity.md)
 - [Measure-local snapping and navigation](tasks/measure-local-snapping.md)
+- [Measure lane: bar lines as editable objects](tasks/measure-lane.md)
 - [Selected sounds to semantic layers](tasks/selected-sound-layers.md)
 - [Keyboard context menus](tasks/keyboard-context-menus.md)
 - [Metadata tag drag grips](tasks/tag-grips.md)

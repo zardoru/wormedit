@@ -527,6 +527,82 @@ auto has_conditional_measures(const bms_control_node_t& node) -> bool {
     return std::ranges::any_of(node.children, has_conditional_measures);
 }
 
+auto measure_rows(const chart_document_t& chart, std::size_t index) -> std::uint64_t {
+    return validate_measure(chart.divisions_per_standard_measure, chart.measures[index].definition)
+        .row_capacity.value_or(0);
+}
+
+auto bar_line_index(const chart_document_t& chart, measure_id_t id)
+    -> std::variant<std::size_t, diagnostic_t> {
+    const auto* measure = chart.find_measure(id);
+    if (measure == nullptr)
+        return error(diagnostic_code_t::invalid_id, "bar line refers to an unknown measure");
+    const auto index = static_cast<std::size_t>(measure - chart.measures.data());
+    if (index == 0)
+        return error(diagnostic_code_t::invalid_measure, "the chart's first bar line cannot be removed");
+    const local_position_t start{id, 0};
+    if (std::ranges::any_of(chart.lane_layouts, [&](const auto& segment) { return segment.position == start; }))
+        return error(diagnostic_code_t::invalid_measure, "a lane layout change starts at this bar line");
+    return index;
+}
+
+// Each run of merged measures must still fit one measure's row bound.
+auto has_oversized_merge(const chart_document_t& chart, std::span<const std::size_t> ascending,
+                         const measure_edit_limits_t& limits) -> bool {
+    std::uint64_t rows{};
+    for (std::size_t at = 0; at < ascending.size(); ++at) {
+        const auto index = ascending[at];
+        const bool continues = at != 0 && ascending[at - 1] + 1 == index;
+        if (!continues) rows = measure_rows(chart, index - 1);
+        const auto added = measure_rows(chart, index);
+        if (added > limits.maximum_rows_per_measure - std::min(rows, limits.maximum_rows_per_measure))
+            return true;
+        rows += added;
+    }
+    return false;
+}
+
+// The chart positions of the measures whose bar lines go, highest first so merging one never
+// shifts the index of another.
+auto plan_bar_line_removal(const chart_document_t& chart, std::span<const measure_id_t> measures,
+                           const measure_edit_limits_t& limits)
+    -> std::variant<std::vector<std::size_t>, diagnostic_list_t> {
+    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
+        return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
+                                       "removing a bar line requires resolved BMS conditional branches")};
+    std::vector<std::size_t> indices;
+    for (const auto id : measures) {
+        auto index = bar_line_index(chart, id);
+        if (const auto* failure = std::get_if<diagnostic_t>(&index)) return diagnostic_list_t{*failure};
+        indices.push_back(std::get<std::size_t>(index));
+    }
+    std::ranges::sort(indices);
+    if (std::ranges::adjacent_find(indices) != indices.end())
+        return diagnostic_list_t{error(diagnostic_code_t::duplicate_id, "bar line selection names a measure twice")};
+    if (has_oversized_merge(chart, indices, limits))
+        return diagnostic_list_t{error(diagnostic_code_t::invalid_measure,
+                                       "the merged measure would exceed the measure row limit")};
+    std::ranges::reverse(indices);
+    return indices;
+}
+
+auto merge_measures_at(chart_document_t& chart, std::span<const std::size_t> descending) -> bool {
+    const auto before = measure_index_t::from(chart);
+    std::vector<rowed_note_t> notes;
+    std::vector<rowed_bgm_t> bgm;
+    std::vector<rowed_free_t> free_rows;
+    if (!before || !lift_bucketed_objects(chart, *before, 0, notes, bgm) ||
+        !collect_free_rows(chart, *before, free_rows)) return false;
+    for (const auto at : descending) {
+        const auto rows = measure_rows(chart, at - 1) + measure_rows(chart, at);
+        chart.measures[at - 1].definition = definition_for_rows(rows, chart.divisions_per_standard_measure);
+        chart.measures.erase(chart.measures.begin() + static_cast<std::ptrdiff_t>(at));
+        shift_projections_for_delete(chart, at);
+    }
+    const auto after = measure_index_t::from(chart);
+    return after && place_lifted_objects(chart, *after, 0, notes, bgm, free_rows);
+}
+
 void apply_measure_action(measure_edit_context_t& context, const split_measure_action_t& edit) {
     auto* chart = target_measure_chart(context, edit.chart);
     if (!chart) return;
@@ -939,6 +1015,16 @@ auto has_measure_positioned_objects(const chart_document_t& chart, measure_id_t 
         found = found || position.measure == measure;
     });
     return found;
+}
+
+auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,
+                      measure_edit_limits_t limits) -> diagnostic_list_t {
+    auto planned = plan_bar_line_removal(chart, measures, limits);
+    if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned)) return std::move(*diagnostics);
+    if (!merge_measures_at(chart, std::get<std::vector<std::size_t>>(planned)))
+        return {error(diagnostic_code_t::invalid_measure,
+                      "the bar lines could not be removed without moving an object")};
+    return {};
 }
 
 auto propose_measure_removal(const chart_document_t& chart, measure_id_t measure)

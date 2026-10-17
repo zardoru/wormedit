@@ -1397,7 +1397,7 @@ TEST_CASE("hover lookup stays row-indexed for fifty thousand typed events",
     const auto built = build_editor_hit_test_index(history.document.charts.front(), 1);
     REQUIRE(std::holds_alternative<editor_hit_test_index_t>(built));
     const auto& index = std::get<editor_hit_test_index_t>(built);
-    REQUIRE(index.hover_objects_by_id.size() == event_count);
+    REQUIRE(index.hover_objects_by_id.size() == event_count + measure_count - 1); // plus one bar line per later measure
     REQUIRE(std::ranges::is_sorted(index.selection_spans, [](const auto& left, const auto& right) {
         if (left.begin_row != right.begin_row)
             return left.begin_row < right.begin_row;
@@ -4154,6 +4154,59 @@ TEST_CASE("Delete removes selected bookmarks and sections together with notes",
     REQUIRE(undo_document_command(history));
     CHECK(history.document.charts.front().bookmarks.size() == 1);
     CHECK(history.document.charts.front().sections.size() == 1);
+}
+
+TEST_CASE("Delete merges selected bar lines with the other selected objects in one step",
+          "[unit][core][interaction][selection][delete][bar-line]") {
+    auto song = make_song();
+    auto& chart = song.charts.front();
+    chart.measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 840}, .lane = lane_id_t{1}});
+    chart.measures.back().notes.push_back(
+        {.id = object_id_t{102}, .position = {measure_id_t{2}, 100}, .lane = lane_id_t{1}});
+    REQUIRE(validate_document(song).empty());
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    REQUIRE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bar_line, object_id_t{2}},
+                                        {editor_selection_object_kind_t::note, object_id_t{101}}}}));
+    const auto deleted = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    REQUIRE(deleted);
+    CHECK(deleted.document_changed);
+    const auto& merged = history.document.charts.front();
+    REQUIRE(merged.measures.size() == 1);
+    REQUIRE(merged.measures.front().notes.size() == 1);
+    CHECK(merged.measures.front().notes.front().id == object_id_t{102});
+    CHECK(merged.measures.front().notes.front().position.row == 1060);
+    CHECK(state.selected_objects.empty());
+    CHECK(history.undo.size() == 1);
+    REQUIRE(undo_document_command(history));
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(note_count(history) == 2);
+}
+
+TEST_CASE("Selection refuses the first bar line and Delete rejects a stale one",
+          "[unit][core][interaction][selection][delete][bar-line]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 840}, .lane = lane_id_t{1}});
+    REQUIRE(validate_document(song).empty());
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    CHECK_FALSE(dispatch_editor_action(
+        history, state,
+        select_editor_objects_action_t{{{editor_selection_object_kind_t::bar_line, object_id_t{1}}}}));
+    // A selection made before an earlier merge can name what is now the first measure.
+    state.selected_objects = {{editor_selection_object_kind_t::bar_line, object_id_t{1}},
+                              {editor_selection_object_kind_t::note, object_id_t{101}}};
+    state.selected_notes = {object_id_t{101}};
+    const auto deleted = dispatch_editor_action(history, state, delete_editor_selection_action_t{});
+    CHECK_FALSE(deleted.document_changed);
+    CHECK_FALSE(deleted.diagnostics.empty());
+    CHECK(note_count(history) == 1);
+    CHECK(history.document.charts.front().measures.size() == 2);
+    CHECK(history.undo.empty());
 }
 
 TEST_CASE("Delete uses typed BGM selection instead of removing a cursor note",
@@ -7306,7 +7359,7 @@ TEST_CASE("Timing lane catalog maps every selection kind explicitly", "[core][ca
     }
     const std::array non_timing{editor_selection_object_kind_t::note, editor_selection_object_kind_t::bgm_event,
         editor_selection_object_kind_t::bga_event, editor_selection_object_kind_t::bookmark,
-        editor_selection_object_kind_t::section};
+        editor_selection_object_kind_t::section, editor_selection_object_kind_t::bar_line};
     check_timing_catalog(non_timing.size() + timing_lanes.size() == editor_selection_object_kind_count);
     for (const auto kind : non_timing) check_timing_catalog(!timing_lane_for_selection(kind));
     check_timing_catalog(!timing_lane_for_selection(static_cast<editor_selection_object_kind_t>(100)));

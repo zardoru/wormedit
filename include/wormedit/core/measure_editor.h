@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <variant>
 #include <vector>
 
@@ -113,6 +114,13 @@ struct measure_removal_proposal_t {
         return diagnostics.empty();
     }
 };
+
+// Removes the bar line that starts each listed measure: it merges into the measure before it,
+// and every object keeps its row from the start of the song (the inverse of a split). The chart's
+// first measure has no removable bar line. Diagnostics reject the edit; run it on a transaction's
+// working copy.
+[[nodiscard]] auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> measures,
+                                    measure_edit_limits_t limits = {}) -> diagnostic_list_t;
 
 // Counts what `remove_measure_with_contents_action_t` would do without
 // mutating the chart; diagnostics explain why the removal would be rejected.

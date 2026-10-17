@@ -3,6 +3,7 @@
 #include "interaction_gesture_runner.h"
 #include <wormedit/core/dead_span_rules.h>
 #include <wormedit/core/interaction.h>
+#include <wormedit/core/measure_editor.h>
 #include <wormedit/core/note_to_bgm.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/snap.h>
@@ -136,6 +137,9 @@ auto existing_ids(const chart_document_t& chart, editor_selection_object_kind_t 
     case kind_t::bga_event: add_ids(ids, chart.bga_events); break;
     case kind_t::bookmark: add_ids(ids, chart.bookmarks); break;
     case kind_t::section: add_ids(ids, chart.sections); break;
+    case kind_t::bar_line:
+        for (std::size_t at = 1; at < chart.measures.size(); ++at) ids.insert(chart.measures[at].id.value);
+        break;
     }
     return ids;
 }
@@ -855,6 +859,18 @@ auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_conte
     return stems.size();
 }
 
+// Deleted bar lines merge their measures after the other objects are gone, so every remaining
+// object keeps its row.
+auto stage_delete_bar_lines(chart_document_t& chart, const editor_delete_ids_t& ids)
+    -> std::variant<std::size_t, diagnostic_list_t> {
+    if (ids.bar_lines.empty()) return std::size_t{0};
+    std::vector<measure_id_t> measures;
+    measures.reserve(ids.bar_lines.size());
+    for (const auto id : ids.bar_lines) measures.push_back(measure_id_t{id});
+    if (auto diagnostics = remove_bar_lines(chart, measures); !diagnostics.empty()) return diagnostics;
+    return measures.size();
+}
+
 auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t {
     auto collected = collect_delete_ids(context.state);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
@@ -908,6 +924,10 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
             });
         }
     }
+    auto merged = stage_delete_bar_lines(*chart, ids);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&merged))
+        return diagnostic_result(context.history, context.state, *diagnostics);
+    removed += std::get<std::size_t>(merged);
     if (removed == 0)
         return complete_editor_delete(context, false);
     if (selected && removed != ids.total()) {

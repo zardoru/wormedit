@@ -6,7 +6,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 ## T-654 Select bar lines and delete them by merging measures
 
-- **Status:** ready
+- **Status:** done (2026-10-17)
 - **Outcome:** A bar line is a selection object (`editor_selection_object_kind_t::bar_line`, keyed by the ID of the measure it starts); Delete with bar lines selected merges each with the measure before it, together with any other selected objects, in one Undo step, and no object changes its row.
 - **Read first:** `docs/architecture.md`, `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp` (`split_measure_at`, `resize_keeping_rows`), `src/core/interaction.cpp` (`delete_editor_selection`, `existing_ids`), `include/wormedit/core/timing_lane_catalog.h`.
 - **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `include/wormedit/core/interaction.h`, `src/core/interaction.cpp`, `src/core/interaction_internal.h`, `src/core/interaction_selection.cpp`, `src/core/interaction_hit_test.cpp`, `include/wormedit/core/timing_lane_catalog.h`, `tests/core/measure_editor_tests.cpp`, `tests/core/interaction_tests.cpp`, this card.
@@ -19,10 +19,11 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 - **Reject/failure behavior:** Merging away the first measure, a bar line that starts a lane-layout segment, a merge past the measure row limit, or one inside resolved BMS conditional branches rejects the whole Delete without changing the document or selection.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^core\.'` (merge keeps rows, mixed note+bar-line Delete, Undo, each rejection); `clang-tidy -p build src/core/measure_editor.cpp src/core/interaction.cpp`; `ctest --test-dir build -R '^documentation\.'`.
 - **Out of scope:** moving bar lines (T-655), clipboard (T-656), the lane column and its hit testing (T-657).
+- **Done:** `remove_bar_lines` in `src/core/measure_editor.cpp` validates every bar line first, then lifts each object's row, merges lengths and re-places. Delete stages it after its other removals (`stage_delete_bar_lines`). Bar lines are registered in the hit-test index so selection validates them; the new `editor_selection_scope_t::bar_lines` flag (off by default) keeps them out of hover, row and area selection until T-657 shows the lane. The 50,000-event hover scale test now counts the 52 bar lines its chart has. Evidence: 4,017/4,017 CTest pass; new functions score at most 7 cognitive complexity and `delete_editor_selection` rose from 17 to 18; `git diff --check` clean.
 
 ## T-655 Move and nudge selected bar lines, with an optional time-propagation toggle
 
-- **Status:** blocked-on T-654
+- **Status:** ready
 - **Outcome:** Dragging or nudging a selection that holds bar lines moves them with the other objects; by default every other object keeps its song time, and only with the time-propagation toggle on does content after a moved bar line move with it.
 - **Read first:** `docs/architecture.md`, `src/core/interaction_gesture_runner.h`, `include/wormedit/core/measure_editor.h` (`move_bar_line_action_t`), the note move gesture in `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/command.h`.
 - **Files owned:** `include/wormedit/core/measure_editor.h`, `src/core/measure_editor.cpp`, `src/core/interaction.cpp`, `src/core/interaction_gesture_lifecycle.cpp`, `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `tests/core/measure_editor_tests.cpp`, `tests/core/interaction_tests.cpp`, this card.
@@ -37,7 +38,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 ## T-656 Copy, cut and paste bar lines with the selection
 
-- **Status:** blocked-on T-654
+- **Status:** ready
 - **Outcome:** Copying a selection that holds bar lines stores them relative to the copy anchor; paste splits measures at the pasted rows and cut merges the originals, each in one Undo step, without moving other objects in time.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`, `include/wormedit/core/measure_editor.h`, `docs/architecture.md`.
 - **Files owned:** `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp`, `tests/core/chart_clipboard_tests.cpp`, this card.
@@ -52,7 +53,7 @@ User request (2026-10-17): add a "measure lane" that treats measure lines as nat
 
 ## T-657 Show an optional measure lane in Compose
 
-- **Status:** blocked-on T-654
+- **Status:** ready
 - **Outcome:** A Compose view option shows a measure lane where each bar line is a hit-testable object: click selects, area selection includes it, Draw places one (split), Delete removes it, and the selection gestures from T-655 and T-656 work on it.
 - **Read first:** `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `docs/frontend-event-harness.md`.
 - **Files owned:** `src/ui/frontend.h`, `src/sys/compose_view.cpp`, `src/ui/nuklear/compose_canvas.cpp`, `src/core/interaction_hit_test.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card.

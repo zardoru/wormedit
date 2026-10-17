@@ -164,6 +164,8 @@ auto hover_tooltip(const chart_document_t& chart, const editor_hover_index_entry
         return source_tooltip(chart.bookmarks, index, id, bookmark_tooltip);
     case editor_selection_object_kind_t::section:
         return source_tooltip(chart.sections, index, id, section_tooltip);
+    case editor_selection_object_kind_t::bar_line:
+        return {};
     }
     return {};
 }
@@ -241,7 +243,7 @@ struct hit_test_index_builder_t {
         spans += chart.bpms.size() + chart.scrolls.size() + chart.speeds.size() +
                  chart.kiai.size() + chart.timing_anchors.size() + chart.bga_events.size() +
                  chart.pauses.size() + chart.warps.size() + chart.bookmarks.size() +
-                 chart.sections.size();
+                 chart.sections.size() + chart.measures.size();
         index.note_spans.reserve(notes);
         index.selection_spans.reserve(spans);
         index.hover_objects_by_id.reserve(spans);
@@ -397,6 +399,17 @@ struct hit_test_index_builder_t {
         return std::nullopt;
     }
 
+    // A bar line sits on the head of the measure it starts; the first measure has none.
+    auto add_bar_lines() -> std::optional<diagnostic_t> {
+        for (std::size_t at = 1; at < chart.measures.size(); ++at) {
+            const local_position_t head{chart.measures[at].id, 0};
+            if (auto invalid = add_object(editor_selection_object_kind_t::bar_line,
+                    object_id_t{head.measure.value}, head, head,
+                    editor_inline_editor_kind_t::bar_line, {.index = at})) return invalid;
+        }
+        return std::nullopt;
+    }
+
     auto finalize_note_index() -> std::optional<diagnostic_t> {
         for (auto& bucket : index.measure_buckets)
             sort_mostly_sorted(bucket, [](const auto& a, const auto& b) {
@@ -506,6 +519,7 @@ auto build_editor_hit_test_index(const chart_document_t& chart, std::uint64_t do
     if (auto failure = fail_if(builder.add_timing_objects())) return *failure;
     if (auto failure = fail_if(builder.add_pauses_and_warps())) return *failure;
     if (auto failure = fail_if(builder.add_markers())) return *failure;
+    if (auto failure = fail_if(builder.add_bar_lines())) return *failure;
     if (auto failure = fail_if(builder.finalize_note_index())) return *failure;
     if (auto failure = fail_if(builder.finalize_selection_index())) return *failure;
     return std::move(builder.index);

@@ -7,7 +7,7 @@
 namespace wormedit {
 
 inline constexpr std::size_t timing_lane_kind_count = static_cast<std::size_t>(timing_lane_kind_t::anchor) + 1;
-inline constexpr std::size_t editor_selection_object_kind_count = static_cast<std::size_t>(editor_selection_object_kind_t::section) + 1;
+inline constexpr std::size_t editor_selection_object_kind_count = static_cast<std::size_t>(editor_selection_object_kind_t::bar_line) + 1;
 struct timing_lane_descriptor_t {
     timing_lane_kind_t kind;
     std::string_view short_label;
@@ -25,7 +25,7 @@ inline constexpr std::array timing_lanes{
     timing_lane_descriptor_t{timing_lane_kind_t::anchor, "ANC", "Anchor · timing references", editor_selection_object_kind_t::timing_anchor},
 };
 static_assert(is_catalog_exhaustive(timing_lanes, timing_lane_kind_count));
-static_assert(editor_selection_object_kind_count == timing_lane_kind_count + 5);
+static_assert(editor_selection_object_kind_count == timing_lane_kind_count + 6);
 
 constexpr auto timing_lane_for_selection(editor_selection_object_kind_t kind) -> std::optional<timing_lane_kind_t> {
     using selection_t = editor_selection_object_kind_t;
@@ -35,7 +35,8 @@ constexpr auto timing_lane_for_selection(editor_selection_object_kind_t kind) ->
     case selection_t::bgm_event:
     case selection_t::bga_event:
     case selection_t::bookmark:
-    case selection_t::section: return std::nullopt;
+    case selection_t::section:
+    case selection_t::bar_line: return std::nullopt;
     case selection_t::bpm_event:
     case selection_t::scroll_event:
     case selection_t::speed_event:

@@ -240,6 +240,8 @@ struct editor_selection_scope_t {
     bool bgm{};
     bool timing{};
     bool bga{};
+    // Bar lines are selectable only where a measure lane shows them.
+    bool bar_lines{};
 
     auto operator==(const editor_selection_scope_t&) const -> bool = default;
 };
@@ -258,6 +260,8 @@ enum class editor_selection_object_kind_t {
     bga_event,
     bookmark,
     section,
+    // The bar line that starts a measure, keyed by that measure's ID. The first measure has none.
+    bar_line,
 };
 
 // IDs are only unique within a chart object family; retaining the family in
@@ -1302,6 +1306,7 @@ enum class editor_inline_editor_kind_t {
     bga_event,
     bookmark,
     section,
+    bar_line,
 };
 
 struct editor_hover_index_entry_t {

@@ -36,6 +36,7 @@ auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_k
     case editor_selection_object_kind_t::timing_anchor:
     case editor_selection_object_kind_t::bookmark:
     case editor_selection_object_kind_t::section: return scope.timing;
+    case editor_selection_object_kind_t::bar_line: return scope.bar_lines;
     }
     return false;
 }

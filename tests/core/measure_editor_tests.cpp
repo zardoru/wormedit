@@ -849,3 +849,71 @@ auto pause_conversion_whole_measure() -> bool {
 TEST_CASE("Range pause conversion can remove a whole measure without losing surviving IDs or endpoints", "[core][range-pause][T560]") {
     check_audio_extent(pause_conversion_whole_measure());
 }
+
+namespace {
+void check_bar_line(bool value) { CHECK(value); }
+}
+
+TEST_CASE("Removing bar lines merges measures and keeps every object row",
+          "[core][measure-editor][bar-line]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.measures[0].notes = {{.id = object_id_t{40}, .position = {measure_id_t{10}, 120},
+        .lane = lane_id_t{20}, .kind = note_kind_t::hold, .end = local_position_t{measure_id_t{11}, 300}}};
+    chart.bpms.push_back({.id = object_id_t{42}, .position = {measure_id_t{11}, 600},
+                          .beats_per_minute = {150, 1}});
+    REQUIRE(validate_document(song).empty());
+    const auto before = measure_index_t::from(chart).value();
+    const auto before_timing = timing_index_t::from(chart);
+    auto merged = chart;
+    const std::array bar_lines{measure_id_t{12}, measure_id_t{11}};
+    const auto diagnostics = remove_bar_lines(merged, bar_lines);
+    for (const auto& diagnostic : diagnostics) UNSCOPED_INFO(diagnostic.message);
+    REQUIRE(diagnostics.empty());
+    REQUIRE(merged.measures.size() == 1);
+    check_bar_line(merged.measures[0].id == measure_id_t{10});
+    check_bar_line((merged.measures[0].definition.length == rational_t{3, 1}));
+    const auto after = measure_index_t::from(merged).value();
+    check_bar_line(after.total_rows == before.total_rows);
+    const auto& notes = merged.measures[0].notes;
+    REQUIRE(notes.size() == 2);
+    check_bar_line(after.row_of(notes[0].position) == 120);
+    check_bar_line(after.row_of(*notes[0].end) == before.row_of({measure_id_t{11}, 300}));
+    check_bar_line(after.row_of(notes[1].position) == before.row_of({measure_id_t{12}, 0}));
+    check_bar_line(after.row_of(merged.bpms.back().position) == before.row_of({measure_id_t{11}, 600}));
+    check_bar_line(merged.bms_measure_length_projections.empty());
+    const auto timing = timing_index_t::from(merged);
+    REQUIRE(timing.value);
+    REQUIRE(before_timing.value);
+    check_bar_line(timing.value->rows.back().after_stops_seconds ==
+                   before_timing.value->rows.back().after_stops_seconds);
+    song.charts.front() = merged;
+    check_bar_line(validate_document(song).empty());
+}
+
+TEST_CASE("Removing a bar line rejects before changing the chart",
+          "[core][measure-editor][bar-line]") {
+    const auto song = measure_song();
+    const auto& original = song.charts.front();
+    const auto rejects = [&](std::vector<measure_id_t> measures, chart_document_t chart,
+                             measure_edit_limits_t limits = {}) {
+        const auto before = chart;
+        const auto diagnostics = remove_bar_lines(chart, measures, limits);
+        CAPTURE(measures.size());
+        check_bar_line(!diagnostics.empty());
+        REQUIRE(chart.measures.size() == before.measures.size());
+        for (std::size_t at = 0; at < chart.measures.size(); ++at) {
+            check_bar_line(chart.measures[at].id == before.measures[at].id);
+            check_bar_line(chart.measures[at].definition.length == before.measures[at].definition.length);
+            check_bar_line(chart.measures[at].notes.size() == before.measures[at].notes.size());
+        }
+    };
+    rejects({measure_id_t{10}}, original);
+    rejects({measure_id_t{99}}, original);
+    rejects({measure_id_t{11}, measure_id_t{11}}, original);
+    rejects({measure_id_t{11}, measure_id_t{12}}, original, {.maximum_rows_per_measure = 2000});
+    auto layout = original;
+    layout.lane_layouts.push_back({.id = object_id_t{23}, .position = {measure_id_t{11}, 0},
+                                   .layout = original.lane_layouts.front().layout});
+    rejects({measure_id_t{11}}, layout);
+}

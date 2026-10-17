@@ -943,10 +943,12 @@ struct editor_delete_ids_t {
     std::unordered_set<std::uint64_t> bookmarks;
     std::unordered_set<std::uint64_t> sections;
     std::unordered_set<std::uint64_t> bga_events;
+    // Measures whose starting bar line is removed by merging them into the measure before.
+    std::unordered_set<std::uint64_t> bar_lines;
 
     [[nodiscard]] auto total() const -> std::size_t {
         return notes.size() + bgm_events.size() + bookmarks.size() + sections.size() +
-               bga_events.size();
+               bga_events.size() + bar_lines.size();
     }
     [[nodiscard]] auto family(editor_selection_object_kind_t kind)
         -> std::unordered_set<std::uint64_t>* {
@@ -961,6 +963,8 @@ struct editor_delete_ids_t {
             return &sections;
         case editor_selection_object_kind_t::bga_event:
             return &bga_events;
+        case editor_selection_object_kind_t::bar_line:
+            return &bar_lines;
         default:
             return nullptr;
         }

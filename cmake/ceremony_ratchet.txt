@@ -67,7 +67,7 @@ audition_mailbox_drain | 0 | src,include | (process_compose_audition_requests|pr
 # edits go through one finisher, edits are reused through staging functions, and sys rebinds the
 # workspace in one place. Counts frozen 2026-10-18; each card lowers its rows to the stated target.
 interaction_failure_view | 0 | src/core | (^|[^a-z_])(cursor_)?diagnostic_result\(
-core_committed_result | 2 | src/core | editor_interaction_result_t::from\([^)]*, *(true|changed)\)|document_changed = true|revision != context[.]history[.]document[.]revision|[A-Za-z_][A-Za-z0-9_]*[.]document_changed[ ]*=
+core_committed_result | 1 | src/core | editor_interaction_result_t::from\([^)]*, *(true|changed)\)|document_changed = true|revision != context[.]history[.]document[.]revision|[A-Za-z_][A-Za-z0-9_]*[.]document_changed[ ]*=
 scratch_dispatch | 4 | src/core | dispatch_editor_action\((scratch|staged)
 manual_gesture_restamp | 0 | src/core | refresh_gesture_stamp<
 sys_workspace_rebind | 4 | src/sys | = (wormedit::)?rebind_workspace\(

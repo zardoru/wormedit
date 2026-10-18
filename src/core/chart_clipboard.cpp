@@ -1,3 +1,4 @@
+#include "interaction_edit_commit.h"
 #include "chart_object_ids.h"
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
@@ -299,12 +300,15 @@ static auto delete_selection_all_impl(document_history_t& history,
     if (staged.undo.empty()) return {.accepted = true};
     auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged.document));
-    const auto committed = transaction.commit(options.label);
-    if (!committed) return {.diagnostics = committed.diagnostics};
-    proposed_state.selected_notes.clear();
-    proposed_state.selected_objects.clear();
-    state = std::move(proposed_state);
-    return {.accepted = true, .document_changed = true, .diagnostics = committed.diagnostics};
+    return commit_editor_edit(history, state, transaction,
+                              {.label = options.label,
+                               .retain_commit_diagnostics = true,
+                               .view_policy = editor_edit_view_policy_t::omit},
+                              [&](editor_interaction_state_t& published) {
+                                  proposed_state.selected_notes.clear();
+                                  proposed_state.selected_objects.clear();
+                                  published = std::move(proposed_state);
+                              });
 }
 
 auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state,

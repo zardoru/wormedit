@@ -7,6 +7,7 @@ namespace wormedit {
 
 struct clear_editor_selection_t {};
 enum class editor_command_noop_policy_t { reject, accept_without_diagnostics };
+enum class editor_edit_view_policy_t { build, omit };
 
 struct editor_edit_effect_t {
     std::string label;
@@ -20,6 +21,7 @@ struct editor_edit_effect_t {
     bool consume_primary_hold{};
     bool retain_commit_diagnostics{};
     editor_command_noop_policy_t noop_policy{editor_command_noop_policy_t::reject};
+    editor_edit_view_policy_t view_policy{editor_edit_view_policy_t::build};
 
     void apply_capture(editor_interaction_state_t& state, std::uint64_t revision,
                        bool changed) const {
@@ -74,7 +76,9 @@ finish_editor_edit(document_history_t& history, editor_interaction_state_t& stat
     effect.apply_cursor(state);
     if (effect.audition)
         effect.audition->document_revision = history.document.revision;
-    auto result = editor_interaction_result_t::from(history, state, changed);
+    auto result = effect.view_policy == editor_edit_view_policy_t::omit
+                      ? editor_interaction_result_t{.accepted = true, .document_changed = changed}
+                      : editor_interaction_result_t::from(history, state, changed);
     result.created_note = effect.created_note;
     result.audition = effect.audition;
     if (effect.retain_commit_diagnostics)

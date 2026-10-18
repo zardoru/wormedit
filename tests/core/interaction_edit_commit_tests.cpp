@@ -179,3 +179,18 @@ TEST_CASE("Editor command finisher accepts declared empty-diagnostic no-ops",
     CHECK_FALSE(result.document_changed);
     CHECK(fixture.history.undo.empty());
 }
+
+TEST_CASE("Editor command publication can retain its no-view contract", "[core][edit-commit]") {
+    auto fixture = edit_fixture_t::from();
+    auto context = fixture.context();
+    fixture.state.active_lane = lane_id_t{};
+    auto transaction = document_command_transaction_t(fixture.history);
+    transaction.document().charts.front().measures.front().notes.front().label = "Changed";
+    const auto result = commit_editor_edit(
+        context, transaction,
+        {.label = "Command only", .view_policy = editor_edit_view_policy_t::omit});
+    REQUIRE(result);
+    CHECK(result.document_changed);
+    CHECK_FALSE(result.view);
+    CHECK(result.diagnostics.empty());
+}

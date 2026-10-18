@@ -764,7 +764,7 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
     if (changed) {
         auto command = transaction.commit(plan.notes.size() == 1 ? "Resize note duration" : "Resize selected note durations");
         if (!command)
-            return diagnostic_result(history, state, std::move(command.diagnostics));
+            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
     }
     set_selected_notes(state, plan.notes);
     state.active_lane = plan.reference_lane;
@@ -881,22 +881,23 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
                          });
     if (changed) {
         if (auto failure = relocate_moved_notes(*chart, plan, history, state))
-            return diagnostic_result(history, state, {*failure});
+            return editor_interaction_result_t{.diagnostics = {*failure}};
         auto failures = plan.staged_bgm_document
                             ? diagnostic_list_t{}
                             : relocate_selected_bgm(proposed, state.chart, plan);
         if (!failures.empty()) {
-            return diagnostic_result(history, state, std::move(failures));
+            return editor_interaction_result_t{.diagnostics = std::move(failures)};
         }
         if (bar_line_shift != nullptr) {
             auto shifted = stage_shift_selection(proposed, *bar_line_shift);
             if (!shifted.command.diagnostics.empty())
-                return diagnostic_result(history, state, std::move(shifted.command.diagnostics));
+                return editor_interaction_result_t{.diagnostics =
+                                                       std::move(shifted.command.diagnostics)};
         }
         auto command = transaction.commit(plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
                                    : "Move selected chart objects");
         if (!command)
-            return diagnostic_result(history, state, std::move(command.diagnostics));
+            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
     }
     set_selected_notes(state, plan.notes);
     for (const auto& moved : plan.bgm_moves)

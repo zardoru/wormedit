@@ -780,9 +780,9 @@ auto pending_editor_area_selection_t::apply(editor_edit_context_t& context) cons
     -> editor_interaction_result_t {
     const auto& pending = *this;
     if (!pending.objects)
-        return diagnostic_result(context.history, context.state,
-                                 {error(diagnostic_code_t::invalid_hold,
-                                        "area selection gesture is stale after a document edit")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_hold,
+                                  "area selection gesture is stale after a document edit")}};
     set_selected_objects(context.state, *pending.objects);
     retain_area_selection_range(context, pending);
     return editor_interaction_result_t::from(context.history, context.state);

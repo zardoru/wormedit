@@ -60,7 +60,7 @@ auto pending_note_duration_gesture_t::apply(editor_edit_context_t& context) cons
     -> editor_interaction_result_t {
     auto planned = make_duration_plan(context, notes, reference_note, preview_end, true);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, context.state, *diagnostics);
+        return editor_interaction_result_t{.diagnostics = *diagnostics};
     return apply_duration_resize_plan(context.history, context.state, std::get<duration_resize_plan_t>(planned));
 }
 
@@ -245,15 +245,15 @@ auto commit_bgm_note_move(editor_edit_context_t& context, const pending_note_mov
     -> editor_interaction_result_t {
     auto staged = stage_bgm_note_move(context.history, context.state, plan, pending);
     if (auto* failures = std::get_if<diagnostic_list_t>(&staged))
-        return diagnostic_result(context.history, context.state, *failures);
+        return editor_interaction_result_t{.diagnostics = *failures};
     if (auto failures = stage_drag_bar_lines(std::get<song_document_t>(staged), bar_line_shift);
         !failures.empty())
-        return diagnostic_result(context.history, context.state, std::move(failures));
+        return editor_interaction_result_t{.diagnostics = std::move(failures)};
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
     auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
     if (!committed)
-        return diagnostic_result(context.history, context.state, std::move(committed.diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(committed.diagnostics)};
     set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
     for (const auto& moved : plan.bgm_moves)
         context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
@@ -276,7 +276,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
                        to_bgm ? lane_id_t{} : pending.preview_lane, !virtual_bgm_row.has_value(),
                        preferred_bgm_lane, virtual_bgm_row);
     if (auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, context.state, std::move(*diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(*diagnostics)};
     const auto& plan = std::get<note_move_plan_t>(planned);
     const auto bar_line_shift = drag_bar_line_shift(context, pending, plan);
     if (pending.to_bgm || (pending.displace_to_bgm && !plan.occupants.empty()))
@@ -286,7 +286,7 @@ auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
         auto warning =
             error(diagnostic_code_t::collision, std::to_string(conflicts) + " notes would overlap");
         warning.severity = diagnostic_severity_t::warning;
-        return diagnostic_result(context.history, context.state, {std::move(warning)});
+        return editor_interaction_result_t{.diagnostics = {std::move(warning)}};
     }
     return apply_note_move_plan(context.history, context.state, plan,
                                 bar_line_shift ? &*bar_line_shift : nullptr);
@@ -569,27 +569,27 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     auto planned = plan_note_paint(context.scope.chart, context.scope.measures, *pending.targets,
                                    pending.note_kind, pending.intent);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return editor_interaction_result_t{.diagnostics = *diagnostics};
     const auto& plan = std::get<note_paint_plan_t>(planned);
     if (plan.additions.empty() && plan.removals.empty() &&
         pending.intent == note_paint_intent_t::toggle)
-        return diagnostic_result(
-            context.history, state,
-            {error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")});
+        return editor_interaction_result_t{
+            .diagnostics = {
+                error(diagnostic_code_t::invalid_id, "paint gesture contains no note changes")}};
     if (plan.additions.empty() && plan.removals.empty())
         return editor_interaction_result_t::from(context.history, state);
     auto prepared = prepare_note_paint_document(
         context.history, state.chart, plan, pending.note_kind, pending.sound, pending.layers,
         pending.source_geometry);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
-        return diagnostic_result(context.history, state, *diagnostics);
+        return editor_interaction_result_t{.diagnostics = *diagnostics};
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(result.document));
     auto command =
         transaction.commit("Paint notes");
     if (!command)
-        return diagnostic_result(context.history, state, std::move(command.diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
     set_selected_notes(state, std::move(result.painted_notes));
     state.active_lane = pending.last_lane;
     place_cursor_at(state, pending.last_position);
@@ -903,10 +903,9 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
         return editor_interaction_result_t{.diagnostics = std::get<diagnostic_list_t>(resolved)};
     if (*snapped == pending.position &&
         (pending.kind == note_kind_t::hold || pending.kind == note_kind_t::roll))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_hold,
-                   "Move to a different row to finish the Hold or Roll gesture.")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_hold,
+                                  "Move to a different row to finish the Hold or Roll gesture.")}};
     if (pending.sound && !is_paint_sample_resource(history.document, *pending.sound))
         return editor_interaction_result_t{.diagnostics = {error(diagnostic_code_t::invalid_id,
                                         "paint sound is not an existing sample resource")}};
@@ -924,9 +923,9 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     if (placement.adds_note) {
         id = next_object_id(*chart);
         if (!id)
-            return diagnostic_result(
-                history, state,
-                {error(diagnostic_code_t::invalid_id, "chart object ID sequence is exhausted")});
+            return editor_interaction_result_t{
+                .diagnostics = {
+                    error(diagnostic_code_t::invalid_id, "chart object ID sequence is exhausted")}};
     }
     erase_notes(*chart, placement.removals);
     if (placement.adds_note) {
@@ -970,9 +969,9 @@ auto handle_editor_cancellation(document_history_t& history, editor_interaction_
         case editor_gesture_cancel_reason_t::pointer_capture_lost:
             break;
         default:
-            return diagnostic_result(history, state,
-                                     {error(diagnostic_code_t::invalid_id,
-                                            "unknown editor gesture cancellation reason")});
+            return editor_interaction_result_t{
+                .diagnostics = {error(diagnostic_code_t::invalid_id,
+                                      "unknown editor gesture cancellation reason")}};
         }
         return cancel_gesture(history, state);
     }
@@ -1049,14 +1048,13 @@ auto gesture_finish_message(editor_gesture_kind_t kind) -> const char* {
     return "finish or cancel the active gesture first";
 }
 
-auto validate_active_gesture_action(const document_history_t& history,
-                                    const editor_interaction_state_t& state,
+auto validate_active_gesture_action(const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t> {
     const auto blocked = state.gesture_kind();
     if (!blocked || is_gesture_action_allowed(*blocked, state, action)) return std::nullopt;
-    return diagnostic_result(
-        history, state, {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))});
+    return editor_interaction_result_t{
+        .diagnostics = {error(diagnostic_code_t::invalid_hold, gesture_finish_message(*blocked))}};
 }
 template <class Action> auto is_applying_action(const editor_interaction_action_t& action) -> bool {
     const auto* request = std::get_if<Action>(&action);
@@ -1076,17 +1074,27 @@ auto is_terminal_editor_gesture_action(const editor_interaction_state_t& state,
             is_gesture_action<space_range_selection_action_t>(action));
 }
 
-auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
-                            const editor_interaction_action_t& action) -> editor_interaction_result_t {
+static auto dispatch_gesture_action(document_history_t& history, editor_interaction_state_t& state,
+                                    const editor_interaction_action_t& action)
+    -> editor_interaction_result_t {
     if (auto canceled = handle_editor_cancellation(history, state, action))
         return *canceled;
     if (auto stale = validate_gesture_capture(history, state)) return std::move(*stale);
-    if (auto rejected = validate_active_gesture_action(history, state, action)) return std::move(*rejected);
+    if (auto rejected = validate_active_gesture_action(state, action))
+        return std::move(*rejected);
     auto result = dispatch_editor_action_impl(history, state, action);
     if (!result && is_terminal_editor_gesture_action(state, action)) {
         (state).clear();
-        return diagnostic_result(history, state, std::move(result.diagnostics));
+        result.view.reset();
     }
+    return result;
+}
+
+auto dispatch_editor_action(document_history_t& history, editor_interaction_state_t& state,
+                            const editor_interaction_action_t& action)
+    -> editor_interaction_result_t {
+    auto result = dispatch_gesture_action(history, state, action);
+    result.ensure_view(history, state);
     return result;
 }
 

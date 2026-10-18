@@ -274,7 +274,9 @@ auto stage_selection_timing(document_history_t& staged, editor_interaction_state
 }
 } // namespace
 
-auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state, const selection_delete_options_t& options)
+static auto delete_selection_all_impl(document_history_t& history,
+                                      editor_interaction_state_t& state,
+                                      const selection_delete_options_t& options)
     -> editor_interaction_result_t {
     if ((state).is_pending()) return selection_error("Finish or cancel the active gesture first.");
     const auto boundaries = selected_kiai_boundaries(history.document, state, options.kiai_head);
@@ -291,7 +293,8 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
     if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     if (!explicit_selection || !proposed_state.selected_objects.empty()) {
         const auto deleted = dispatch_editor_action(staged, proposed_state, delete_editor_selection_action_t{});
-        if (!deleted) return deleted;
+        if (!deleted)
+            return {.diagnostics = deleted.diagnostics};
     }
     if (staged.undo.empty()) return {.accepted = true};
     auto transaction = document_command_transaction_t(history);
@@ -302,6 +305,14 @@ auto delete_selection_all(document_history_t& history, editor_interaction_state_
     proposed_state.selected_objects.clear();
     state = std::move(proposed_state);
     return {.accepted = true, .document_changed = true, .diagnostics = committed.diagnostics};
+}
+
+auto delete_selection_all(document_history_t& history, editor_interaction_state_t& state,
+                          const selection_delete_options_t& options)
+    -> editor_interaction_result_t {
+    auto result = delete_selection_all_impl(history, state, options);
+    result.ensure_view(history, state);
+    return result;
 }
 
 auto create_cut_chart_clipboard(document_history_t& history, editor_interaction_state_t& state,

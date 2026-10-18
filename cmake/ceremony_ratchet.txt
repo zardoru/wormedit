@@ -66,7 +66,7 @@ audition_mailbox_drain | 0 | src,include | (process_compose_audition_requests|pr
 # T-686 to T-689 (edit-publication.md): failure views attach at the public boundary, committed note
 # edits go through one finisher, edits are reused through staging functions, and sys rebinds the
 # workspace in one place. Counts frozen 2026-10-18; each card lowers its rows to the stated target.
-interaction_failure_view | 111 | src/core | (^|[^a-z_])(cursor_)?diagnostic_result\(
+interaction_failure_view | 0 | src/core | (^|[^a-z_])(cursor_)?diagnostic_result\(
 core_committed_result | 12 | src/core | editor_interaction_result_t::from\([^)]*, *(true|changed)\)|document_changed = true
 scratch_dispatch | 4 | src/core | dispatch_editor_action\((scratch|staged)
 manual_gesture_restamp | 1 | src/core | refresh_gesture_stamp<

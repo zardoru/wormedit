@@ -19,8 +19,9 @@ inline auto validate_gesture_capture(document_history_t& history, editor_interac
     -> std::optional<editor_interaction_result_t> {
     if (!state.is_stale(history.document.revision)) return std::nullopt;
     state.clear();
-    return interaction_detail::diagnostic_result(history, state,
-        {error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))});
+    return editor_interaction_result_t{
+        .diagnostics = {
+            error(diagnostic_code_t::invalid_hold, stale_action_message("Editor gesture"))}};
 }
 
 template<class Gesture>
@@ -31,8 +32,9 @@ inline auto validate_gesture_capture(editor_edit_context_t& context)
     }
     if constexpr (requires { Gesture::needs_initial_view; }) {
         if (Gesture::needs_initial_view && !context.initial_view)
-            return interaction_detail::diagnostic_result(context.history, context.state,
-                {error(diagnostic_code_t::invalid_resolution, "editor gesture requires a field view")});
+            return editor_interaction_result_t{
+                .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                      "editor gesture requires a field view")}};
     }
     return std::nullopt;
 }
@@ -54,8 +56,7 @@ public:
     [[nodiscard]] auto finish(editor_interaction_result_t result) -> editor_interaction_result_t {
         if (!result && before_) {
             rollback();
-            auto refreshed = editor_interaction_result_t::from(context_.history, context_.state);
-            result.view = std::move(refreshed.view);
+            result.view.reset();
         } else accept();
         return result;
     }
@@ -94,8 +95,9 @@ template<class Gesture, class... Arguments>
         return std::unexpected{std::move(*stale)};
     auto* gesture = context.state.gesture<Gesture>();
     if (!gesture)
-        return std::unexpected{interaction_detail::diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, std::string(gesture_revision_message<Gesture>(arguments...)))})};
+        return std::unexpected{editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_hold,
+                                  std::string(gesture_revision_message<Gesture>(arguments...)))}}};
     return gesture;
 }
 
@@ -104,13 +106,11 @@ template<class Gesture>
                                   diagnostic_list_t diagnostics) -> editor_interaction_result_t {
     if (!is_valid) {
         context.state.clear();
-        return interaction_detail::diagnostic_result(context.history, context.state, std::move(diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(diagnostics)};
     }
     auto gesture = std::move(*context.state.gesture<Gesture>());
     context.state.clear();
     auto result = gesture.apply(context);
-    if (!result && !result.view)
-        return interaction_detail::diagnostic_result(context.history, context.state, std::move(result.diagnostics));
     if constexpr (requires { gesture.has_pending(); }) {
         if (result && gesture.has_pending()) {
             capture_gesture(context, std::move(gesture));
@@ -130,13 +130,14 @@ template<class Gesture>
     return editor_interaction_result_t::from(context.history, context.state);
 }
 
-template<class Gesture, class... Arguments>
-[[nodiscard]] auto begin_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+template <class Gesture, class... Arguments>
+[[nodiscard]] auto begin_gesture_impl(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
     if (auto stale = validate_gesture_capture<Gesture>(context)) return std::move(*stale);
     if (context.state.is_pending())
-        return interaction_detail::diagnostic_result(context.history, context.state,
-            {error(diagnostic_code_t::invalid_hold, "another editor gesture is already active")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_hold,
+                                  "another editor gesture is already active")}};
     bool can_restore{};
     if constexpr (requires { Gesture::can_restore_begin(arguments...); })
         can_restore = Gesture::can_restore_begin(arguments...);
@@ -144,17 +145,26 @@ template<class Gesture, class... Arguments>
     auto planned = Gesture::begin(context, std::forward<Arguments>(arguments)...);
     if (!planned.ok() || !planned.value) {
         transaction.rollback();
-        return interaction_detail::diagnostic_result(context.history, context.state, std::move(planned.diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(planned.diagnostics)};
     }
     capture_gesture(context, std::move(*planned.value));
     return transaction.finish(publish_gesture<Gesture>(context));
 }
 
-template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
-    { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
-    { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
+template <class Gesture, class... Arguments>
+[[nodiscard]] auto begin_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+    -> editor_interaction_result_t {
+    auto result = begin_gesture_impl<Gesture>(context, std::forward<Arguments>(arguments)...);
+    context.ensure_failure_view(result);
+    return result;
 }
-[[nodiscard]] auto revise_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+
+template <class Gesture, class... Arguments>
+    requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
+        { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+        { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
+    }
+[[nodiscard]] auto revise_gesture_impl(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
     auto active = require_active_gesture<Gesture>(context, arguments...);
     if (!active) return std::move(active.error());
@@ -165,9 +175,21 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
     auto diagnostics = (*active)->revise(context, std::forward<Arguments>(arguments)...);
     if (diagnostic_queries::has_errors(diagnostics)) {
         transaction.rollback();
-        return interaction_detail::diagnostic_result(context.history, context.state, std::move(diagnostics));
+        return editor_interaction_result_t{.diagnostics = std::move(diagnostics)};
     }
     return transaction.finish(publish_gesture<Gesture>(context));
+}
+
+template <class Gesture, class... Arguments>
+    requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
+        { gesture.revise(context, arguments...) } -> std::same_as<diagnostic_list_t>;
+        { gesture.apply(context) } -> std::same_as<editor_interaction_result_t>;
+    }
+[[nodiscard]] auto revise_gesture(editor_edit_context_t& context, Arguments&&... arguments)
+    -> editor_interaction_result_t {
+    auto result = revise_gesture_impl<Gesture>(context, std::forward<Arguments>(arguments)...);
+    context.ensure_failure_view(result);
+    return result;
 }
 
 template<class Gesture, class... Arguments> requires requires(Gesture& gesture, editor_edit_context_t& context, Arguments... arguments) {
@@ -176,8 +198,11 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
 }
 [[nodiscard]] auto apply_gesture(editor_edit_context_t& context, Arguments&&... arguments)
     -> editor_interaction_result_t {
-    auto revised = revise_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
-    return finish_gesture<Gesture>(context, static_cast<bool>(revised), std::move(revised.diagnostics));
+    auto revised = revise_gesture_impl<Gesture>(context, std::forward<Arguments>(arguments)...);
+    auto result = finish_gesture<Gesture>(context, static_cast<bool>(revised),
+                                          std::move(revised.diagnostics));
+    context.ensure_failure_view(result);
+    return result;
 }
 
 enum class editor_gesture_apply_view_policy_t { rebuild, captured };
@@ -191,11 +216,12 @@ template<class Gesture, class... Arguments> requires requires(Gesture& gesture, 
     if (policy == editor_gesture_apply_view_policy_t::rebuild)
         return apply_gesture<Gesture>(context, std::forward<Arguments>(arguments)...);
     auto active = require_active_gesture<Gesture>(context, arguments...);
-    if (!active)
-        return finish_gesture<Gesture>(context, false, std::move(active.error().diagnostics));
-    auto diagnostics = (*active)->revise(context, std::forward<Arguments>(arguments)...);
-    const auto is_valid = !diagnostic_queries::has_errors(diagnostics);
-    return finish_gesture<Gesture>(context, is_valid, std::move(diagnostics));
+    auto diagnostics = active ? (*active)->revise(context, std::forward<Arguments>(arguments)...)
+                              : std::move(active.error().diagnostics);
+    const auto is_valid = active && !diagnostic_queries::has_errors(diagnostics);
+    auto result = finish_gesture<Gesture>(context, is_valid, std::move(diagnostics));
+    context.ensure_failure_view(result);
+    return result;
 }
 
 inline auto cancel_gesture(document_history_t& history, editor_interaction_state_t& state)

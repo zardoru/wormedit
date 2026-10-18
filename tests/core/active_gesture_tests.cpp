@@ -38,6 +38,11 @@ struct gesture_fixture_t {
         return {history, state, {history.document.charts.front(), measures}};
     }
 
+    void check_capture_view(const editor_interaction_result_t& result) const {
+        REQUIRE(result.view);
+        CHECK(result.view->active_gesture.has_value() == state.is_pending());
+    }
+
     void check_capture_ended(std::size_t undo_count) const {
         CHECK_FALSE((state).is_pending());
         REQUIRE(history.undo.size() == undo_count);
@@ -57,6 +62,7 @@ TEST_CASE("Duration begin rejects every existing live capture at its core bounda
     }
     const auto rejected = begin_gesture<pending_note_duration_gesture_t>(context, object_id_t{101});
     CHECK_FALSE(rejected);
+    fixture.check_capture_view(rejected);
     CHECK((fixture.state).is_pending());
 }
 
@@ -67,6 +73,7 @@ TEST_CASE("Duration core update retires stale captures", "[core][active-gesture]
     ++fixture.history.document.revision;
     const auto stale = revise_gesture<pending_note_duration_gesture_t>(context, local_position_t{measure_id_t{1}, 480});
     CHECK_FALSE(stale);
+    fixture.check_capture_view(stale);
     test::check_stale_action_message(stale.diagnostics, "Editor gesture");
     fixture.check_capture_ended(0);
 }
@@ -110,7 +117,9 @@ TEST_CASE("Gesture terminal errors clear captures and ordinary update errors ret
     const auto invalid_end = local_position_t{measure_id_t{99}, 0};
     CHECK_FALSE(revise_gesture<pending_note_duration_gesture_t>(context, invalid_end));
     CHECK((fixture.state).is_pending());
-    CHECK_FALSE(apply_gesture<pending_note_duration_gesture_t>(context, invalid_end));
+    const auto rejected = apply_gesture<pending_note_duration_gesture_t>(context, invalid_end);
+    CHECK_FALSE(rejected);
+    fixture.check_capture_view(rejected);
     fixture.check_capture_ended(0);
 }
 

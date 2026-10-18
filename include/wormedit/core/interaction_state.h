@@ -194,6 +194,9 @@ struct editor_interaction_result_t {
         std::variant<editor_interaction_view_model_t, diagnostic_list_t> view,
         bool document_changed = false) -> editor_interaction_result_t;
 
+    // Attach failure feedback only after state rollback and terminal cleanup.
+    void ensure_view(const document_history_t& history, const editor_interaction_state_t& state);
+
     bool accepted{};
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;

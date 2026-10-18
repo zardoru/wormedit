@@ -33,6 +33,9 @@ There are two paths in and one way to change the document.
   direct command's operation, *is* the edit.
 - **Core edit:** a plain function or `apply(transaction&)` in `src/core` that changes chart data.
   This is where domain logic lives.
+- **Failure views:** edit code returns diagnostics only. The public action and gesture boundaries
+  attach a missing failure view through `editor_interaction_result_t::ensure_view`, after rollback
+  and terminal gesture cleanup, using the caller’s history and state.
 - **Results going up:** the transaction returns `document_command_result_t` (applied, revision
   and diagnostics); `command_result_with_t<Payload>` adds domain data when an edit needs it.
   The gesture path carries its result in `editor_interaction_result_t`, and direct commands in

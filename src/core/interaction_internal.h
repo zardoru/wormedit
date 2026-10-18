@@ -876,9 +876,6 @@ auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_previe
 
 auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t;
 
-auto diagnostic_result(const document_history_t& history, const editor_interaction_state_t& state,
-                       diagnostic_list_t diagnostics) -> editor_interaction_result_t;
-
 auto proposed_playhead_cursor(const document_history_t& history, const chart_document_t& chart,
                               const measure_index_t& index, const editor_interaction_state_t& state,
                               local_position_t position)
@@ -1165,8 +1162,7 @@ auto is_hold_gesture_action_allowed(const editor_interaction_state_t& state,
 auto is_gesture_action_allowed(editor_gesture_kind_t kind, const editor_interaction_state_t& state,
                             const editor_interaction_action_t& action) -> bool;
 auto gesture_finish_message(editor_gesture_kind_t kind) -> const char*;
-auto validate_active_gesture_action(const document_history_t& history,
-                                    const editor_interaction_state_t& state,
+auto validate_active_gesture_action(const editor_interaction_state_t& state,
                                     const editor_interaction_action_t& action)
     -> std::optional<editor_interaction_result_t>;
 auto apply_duration_resize_plan(document_history_t& history, editor_interaction_state_t& state,

@@ -245,10 +245,9 @@ auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_
             0) {
         return std::nullopt;
     }
-    return diagnostic_result(
-        context.history, context.state,
-        {error(diagnostic_code_t::invalid_resolution,
-               std::string(description) + " requires a BMS chart and valid snap")});
+    return editor_interaction_result_t{
+        .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                              std::string(description) + " requires a BMS chart and valid snap")}};
 }
 
 auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
@@ -302,12 +301,12 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
                            const editor_interaction_state_t& staged,
                            editor_interaction_result_t result) -> editor_interaction_result_t {
     if (!result)
-        return diagnostic_result(context.history, context.state, result.diagnostics);
+        return result;
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(scratch.document));
     const auto command = transaction.commit("Place note in virtual BMS measure");
     if (!command)
-        return diagnostic_result(context.history, context.state, command.diagnostics);
+        return editor_interaction_result_t{.diagnostics = command.diagnostics};
     if (auto* holds = context.state.gesture<hold_gesture_t>()) {
         holds->discard_primary();
         if (holds->has_pending()) refresh_gesture_stamp<hold_gesture_t>(context);
@@ -334,9 +333,9 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     const auto anchor = position_at(index, rows.anchor);
     const auto end = position_at(index, rows.end);
     if (!anchor || !end)
-        return diagnostic_result(
-            context.history, context.state,
-            {error(diagnostic_code_t::row_out_of_range, "virtual hold endpoints are unavailable")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                  "virtual hold endpoints are unavailable")}};
     auto staged = context.state;
     staged.virtual_bms_cursor_row.reset();
     if (!captured) captured = context.state.hold();
@@ -361,10 +360,8 @@ auto place_virtual_bms_hold(editor_edit_context_t& context,
         return *invalid;
     auto rows = resolve_virtual_hold_rows(context, action);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&rows))
-        return diagnostic_result(context.history, context.state, *diagnostics);
-    auto result = commit_virtual_hold(context, action, std::get<virtual_hold_rows_t>(rows));
-    if (!result) return diagnostic_result(context.history, context.state, std::move(result.diagnostics));
-    return result;
+        return editor_interaction_result_t{.diagnostics = *diagnostics};
+    return commit_virtual_hold(context, action, std::get<virtual_hold_rows_t>(rows));
 }
 
 auto resolve_virtual_tap_target(const editor_edit_context_t& context,
@@ -406,9 +403,8 @@ auto validate_virtual_tap_sample(const editor_edit_context_t& context,
     if (resource != context.history.document.resources.end() &&
         std::ranges::find(resource->roles, resource_role_t::sample) != resource->roles.end())
         return std::nullopt;
-    return diagnostic_result(
-        context.history, context.state,
-        {error(diagnostic_code_t::invalid_id, "virtual tap sample is unavailable")});
+    return editor_interaction_result_t{
+        .diagnostics = {error(diagnostic_code_t::invalid_id, "virtual tap sample is unavailable")}};
 }
 
 auto place_virtual_bms_tap(editor_edit_context_t& context,
@@ -420,21 +416,23 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         return *invalid;
     const auto target = resolve_virtual_tap_target(context, action);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&target))
-        return diagnostic_result(context.history, context.state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     const auto resolved = std::get<virtual_tap_target_t>(target);
     auto scratch = document_history_t::from(context.history.document);
     auto* chart = scratch.document.find_chart(context.state.chart);
     if (const auto failure = extend_virtual_chart(*chart, resolved.measure + 1))
-        return diagnostic_result(context.history, context.state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     auto staged = context.state;
     staged.active_lane = action.lane;
     staged.virtual_bms_cursor_row.reset();
     const local_position_t position{chart->measures[resolved.measure].id,
                                     resolved.row - resolved.measure_begin_row};
-    const auto result = dispatch_editor_action(
+    auto result = dispatch_editor_action(
         scratch, staged, place_tap_action_t{position, action.sample, action.source_geometry});
-    if (!result)
-        return diagnostic_result(context.history, context.state, result.diagnostics);
+    if (!result) {
+        result.view.reset();
+        return result;
+    }
     if (staged.hold()) {
         auto holds = std::move(*staged.gesture<hold_gesture_t>());
         auto& pending = *holds.primary();
@@ -452,14 +450,14 @@ auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& 
                        const cycle_edit_snap_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
         action.direction != interaction_direction_t::forward)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_id, "unknown snap direction")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_id, "unknown snap direction")}};
     const auto found =
         std::ranges::find(state.supported_snap_denominators, state.active_snap_denominator);
     if (found == state.supported_snap_denominators.end())
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_resolution,
-                                        "active editor snap is not in the supported snap list")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                  "active editor snap is not in the supported snap list")}};
     if (!state.supported_snap_denominators.empty()) {
         const auto size = static_cast<std::ptrdiff_t>(state.supported_snap_denominators.size());
         const auto position = std::distance(state.supported_snap_denominators.begin(), found);
@@ -490,9 +488,9 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
                         std::uint64_t absolute, const adjust_editor_zoom_action_t& action)
     -> editor_interaction_result_t {
     if (!std::isfinite(action.factor) || action.factor <= 0.0)
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_resolution,
-                                        "editor zoom factor must be finite and positive")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                  "editor zoom factor must be finite and positive")}};
     const auto current = state.pixels_per_standard_measure;
     const auto next = std::clamp(current * action.factor, minimum_pixels_per_standard_measure,
                                  maximum_pixels_per_standard_measure);
@@ -506,9 +504,9 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     if (action.anchor_screen_y_pixels) {
         anchor_y = *action.anchor_screen_y_pixels;
         if (!std::isfinite(anchor_y) || anchor_y < 0.0 || anchor_y > state.viewport_height_pixels)
-            return diagnostic_result(history, state,
-                                     {error(diagnostic_code_t::invalid_resolution,
-                                            "zoom anchor lies outside the editor viewport")});
+            return editor_interaction_result_t{
+                .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                      "zoom anchor lies outside the editor viewport")}};
     }
     const auto absolute_rows = (state.viewport_scroll_pixels + anchor_y) *
                                static_cast<double>(chart.divisions_per_standard_measure) / current;
@@ -520,16 +518,16 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
             ? std::clamp(unclamped, minimum_viewport_scroll(state.viewport_height_pixels), *maximum)
             : std::numeric_limits<double>::quiet_NaN();
     if (!std::isfinite(scroll))
-        return diagnostic_result(history, state,
-                                 {error(diagnostic_code_t::invalid_resolution,
-                                        "editor zoom would overflow viewport coordinates")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                  "editor zoom would overflow viewport coordinates")}};
     auto proposed = state;
     set_cursor_scale(proposed, next);
     set_viewport_scroll_pixels(proposed, scroll);
     if (!synchronize_editor_cursor_to_viewport(chart, index, proposed))
-        return diagnostic_result(
-            history, state,
-            {error(diagnostic_code_t::invalid_resolution, "zoom cannot resolve the fixed cursor")});
+        return editor_interaction_result_t{
+            .diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                  "zoom cannot resolve the fixed cursor")}};
     state = std::move(proposed);
     return editor_interaction_result_t::from(history, state, false);
 }
@@ -541,18 +539,18 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
                                                 state.active_lane, action.position);
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
-        return diagnostic_result(context.history, state, std::get<diagnostic_list_t>(resolved));
+        return editor_interaction_result_t{.diagnostics = std::get<diagnostic_list_t>(resolved)};
     const std::array targets{note_paint_target_t{state.active_lane, *target}};
     const auto planned = plan_note_paint(context.scope.chart, context.scope.measures, targets,
                                          state.armed_note_kind, note_paint_intent_t::toggle);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&planned))
-        return diagnostic_result(context.history, state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     const auto& plan = std::get<note_paint_plan_t>(planned);
     auto prepared =
         prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
                                     action.sound, state.armed_note_layers, action.source_geometry);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
-        return diagnostic_result(context.history, state, *failure);
+        return editor_interaction_result_t{.diagnostics = *failure};
     auto document = std::get<prepared_note_paint_t>(std::move(prepared));
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
@@ -561,7 +559,7 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     transaction.adopt_document(std::move(document.document));
     const auto command = transaction.commit(created ? "Place note" : "Remove note");
     if (!command)
-        return diagnostic_result(context.history, state, command.diagnostics);
+        return editor_interaction_result_t{.diagnostics = command.diagnostics};
     place_cursor_at(state, *target);
     auto result = editor_interaction_result_t::from(context.history, state, true);
     result.created_note = created;

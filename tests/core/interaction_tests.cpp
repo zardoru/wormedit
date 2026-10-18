@@ -7592,3 +7592,57 @@ TEST_CASE("virtual cursor delete permits either selection representation",
     feedback_check(history.undo.size() == 1);
     feedback_check(state.virtual_bms_cursor_row == 1920);
 }
+
+TEST_CASE("Failure view attachment preserves diagnostics and existing results",
+          "[core][interaction][failure-view]") {
+    auto history = document_history_t::from(make_song());
+    auto state = make_state(history);
+    const diagnostic_list_t diagnostics{error(diagnostic_code_t::invalid_id, "first failure"),
+                                        error(diagnostic_code_t::collision, "second failure")};
+    editor_interaction_result_t result{.diagnostics = diagnostics};
+    result.ensure_view(history, state);
+    feedback_require(result.view);
+    feedback_check(!(result.accepted));
+    feedback_check(result.diagnostics == diagnostics);
+    feedback_check(result.view->cursor == state.cursor);
+    const auto original_cursor = state.cursor;
+    place_cursor_at(state, {measure_id_t{1}, 0});
+    result.ensure_view(history, state);
+    feedback_check(result.view->cursor == original_cursor);
+
+    editor_interaction_result_t accepted{.accepted = true};
+    accepted.ensure_view(history, state);
+    feedback_check(!(accepted.view));
+    state.chart = chart_id_t{999};
+    editor_interaction_result_t unavailable{.diagnostics = diagnostics};
+    unavailable.ensure_view(history, state);
+    feedback_check(!(unavailable.view));
+    feedback_check(unavailable.diagnostics == diagnostics);
+}
+
+TEST_CASE("A rejected keyboard hold scroll shows the restored cursor and viewport",
+          "[core][interaction][failure-view]") {
+    auto song = make_song();
+    song.charts.front().measures.front().notes.push_back(
+        {.id = object_id_t{101}, .position = {measure_id_t{1}, 480},
+         .lane = lane_id_t{1}, .kind = note_kind_t::mine});
+    auto history = document_history_t::from(std::move(song));
+    auto state = make_state(history);
+    state.viewport_height_pixels = 192.0;
+    place_cursor_at(state, {measure_id_t{1}, 240});
+    state.armed_note_kind = note_kind_t::hold;
+    feedback_require(dispatch_editor_action(history, state,
+        begin_lane_key_hold_gesture_action_t{.lane = lane_id_t{1}}));
+    const auto before = capture_cursor_pose(state);
+    const auto rejected = dispatch_editor_action(history, state,
+        scroll_editor_view_action_t{.vertical_pixels = 48.0,
+                                   .fixed_cursor_screen_y_pixels = 48.0});
+    feedback_require(!(rejected));
+    feedback_require(rejected.view);
+    feedback_check(has_code(rejected.diagnostics, diagnostic_code_t::collision));
+    feedback_check(capture_cursor_pose(state) == before);
+    feedback_check(rejected.view->cursor == before.cursor);
+    feedback_check(rejected.view->viewport_scroll_pixels == before.viewport_scroll_pixels);
+    feedback_check(rejected.view->active_gesture.has_value());
+    feedback_check(history.undo.empty());
+}

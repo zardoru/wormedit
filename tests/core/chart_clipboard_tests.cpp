@@ -706,3 +706,32 @@ TEST_CASE("Cutting bar lines merges their measures with the rest of the cut", "[
     REQUIRE(undo_document_command(history));
     expect(bar_line_rows(history.document.charts.front()) == std::vector<std::uint64_t>{0, 960, 1920});
 }
+
+TEST_CASE("Mixed deletion failure shows real history after discarded timing staging",
+          "[core][clipboard][failure-view]") {
+    auto song = clipboard_song();
+    song.charts.front().measures.front().notes.front().sound.reset();
+    song.charts.front().measures[1].bgm_events.front().id = object_id_t{3};
+    song.charts.front().bpms.push_back(
+        {.id = object_id_t{200}, .position = {measure_id_t{1}, 240}, .beats_per_minute = {150, 1}});
+    auto history = document_history_t::from(std::move(song));
+    const std::array snaps{std::uint64_t{4}};
+    auto setup = editor_interaction_state_t::from(history, chart_id_t{1}, lane_id_t{1},
+        {measure_id_t{1}, 0}, snaps, 4);
+    expect(static_cast<bool>(setup));
+    auto state = std::move(*setup.state);
+    state.selected_objects = {{editor_selection_object_kind_t::bpm_event, object_id_t{200}},
+                              {editor_selection_object_kind_t::note, object_id_t{999}}};
+    const auto selection = state.selected_objects;
+    const auto revision = history.document.revision;
+    const auto rejected = delete_selection_all(history, state);
+    expect(static_cast<bool>(!(rejected)));
+    expect(static_cast<bool>(rejected.view));
+    expect(static_cast<bool>(rejected.diagnostics.size() == 1));
+    expect(static_cast<bool>(rejected.diagnostics.front().code == diagnostic_code_t::invalid_id));
+    expect(static_cast<bool>(rejected.view->document_revision == revision));
+    expect(static_cast<bool>(rejected.view->selected_objects == selection));
+    expect(static_cast<bool>(state.selected_objects == selection));
+    expect(static_cast<bool>(history.document.charts.front().bpms.size() == 1));
+    expect(static_cast<bool>(history.undo.empty()));
+}

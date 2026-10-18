@@ -94,6 +94,7 @@ Release reference (2026-10-02, GCC 14.2, AMD EPYC 9V74 cloud VM, five vCPUs, no 
 - **Status:** ready
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** Project opening is synchronous (`src/sys/project_open.cpp:427` and `src/sys/main.cpp:2381`); the existing Cancel only dismisses BMS encoding selection. Worker and frontend changes fit their owned files, but the owned main slice permits only status wiring. Actual progress/cancel needs job submission, persistent per-open state, cancel dispatch, frame polling, and success-only document publication in main/application services. Do not hide lifecycle/publication changes behind a global callback to evade that qualifier.
+- **Preparation checkpoint (T-684, 2026-10-18):** `application.cpp` now separates `open_project_session` (synchronous read), `finish_project_open` (encoding retry/error completion), and `publish_opened_project` (successful UI-thread session replacement and feedback). Put current-generation/cancellation admission before completion when adding asynchronous opening; no job or progress UI was added here. Historical main.cpp references below are superseded by these application methods.
 - **Outcome:** opening a large chart shows a progress bar and a Cancel button; cancel leaves the previous document open.
 - **Read first:** `src/sys/project_open.cpp`, `include/wormedit/core/async_job.h`, `docs/async-task-scheduling.md`.
 - **Files owned:** `src/sys/project_open.cpp/.h`, `src/sys/main.cpp` (status wiring), `src/ui/frontend.h`, `src/ui/nuklear/frontend.cpp`, `tests/sys/project_open_tests.cpp`. User-approved supporting scope (2026-10-03): `src/sys/project_open.cpp`, `src/sys/main.cpp`; `src/sys/main.cpp` and application services for job lifecycle, cancel dispatch, frame polling and success-only publication.
@@ -106,8 +107,9 @@ Release reference (2026-10-02, GCC 14.2, AMD EPYC 9V74 cloud VM, five vCPUs, no 
 ## T-147 Report progress and allow cancel for export
 
 - **Status:** blocked-on T-146
+- **Preparation checkpoint (T-685, 2026-10-18):** `output_group_export_t` in `src/sys/resource_job_state.h/.cpp` owns admission, snapshot capture, task submission and terminal polling; cancellation retains busy state and a domain receipt until collection. `src/sys/output_group_export.h/.cpp` owns shared request policy and the worker. Preserve that receipt: the scheduler replaces task outcomes on cancellation even when files were published. Artifact-level stop checks and progress/cancel UI remain undone.
 - **Outcome:** Export and Preview export (T-110) show progress per artifact and can be cancelled without leaving partial output.
-- **Read first:** `src/sys/compose_actions.cpp` (export worker), `include/wormedit/formats/conversion_publication.h`.
+- **Read first:** `src/sys/output_group_export.h/.cpp` (plan and export worker), `src/sys/resource_job_state.h/.cpp` (runtime), `include/wormedit/formats/conversion_publication.h`.
 - **Files owned:** `src/sys/compose_actions.cpp`, `src/ui/frontend.h`, the Nuklear unit rendering the export button.
 - **Steps:** 1. Thread a stop token through conversion and publication (check between artifacts). 2. UI progress/cancel.
 - **Invariants:** publication stays atomic; cancel before swap leaves the destination unchanged.

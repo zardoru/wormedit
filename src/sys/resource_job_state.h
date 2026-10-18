@@ -7,6 +7,7 @@
 #include <wormedit/core/workspace.h>
 
 #include "sys/thread_priority.h"
+#include "sys/output_group_export.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -31,20 +32,6 @@ struct resource_copy_request_t {
 using resource_copy_job_t =
     wormedit::async_job_t<resource_copy_request_t, wormedit::project_asset_copy_outcome_t,
                           resource_copy_identity_t>;
-
-struct output_group_export_task_result_t {
-    bool published{};
-    std::string message;
-    wormedit::notification_severity_t severity{wormedit::notification_severity_t::error};
-    std::string detail;
-};
-
-struct pending_output_group_export_t {
-    wormedit::task_graph_handle_t graph;
-    wormedit::task_id_t task;
-    wormedit::song_id_t song;
-    std::uint64_t revision{};
-};
 
 namespace runtime {
 
@@ -71,7 +58,8 @@ private:
   resource_copy_job_t job_;
 };
 
-struct output_group_export_t {
+class output_group_export_t {
+public:
     explicit output_group_export_t(
         wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
     ~output_group_export_t() noexcept;
@@ -79,22 +67,32 @@ struct output_group_export_t {
     output_group_export_t(const output_group_export_t&) = delete;
     auto operator=(const output_group_export_t&) -> output_group_export_t& = delete;
 
-private:
-  wormedit::notification_sink_t notifications_{wormedit::notification_sink_t::muted()};
+    using work_function_t = output_group_export_task_result_t (*)(
+        const output_group_export_request_t&, std::stop_token);
+    using start_outcome_t = result_t<void, error_t<failure_code_t>>;
 
-public:
-    wormedit::task_scheduler_t scheduler{1, 1, wormedit::background_scheduler_options()};
-    std::optional<pending_output_group_export_t> pending;
-
-    [[nodiscard]] auto is_busy() const noexcept -> bool { return pending.has_value(); }
-
-    auto start(pending_output_group_export_t&& pending) -> bool;
-    auto poll(const wormedit::document_history_t& history) -> std::optional<std::string>;
+    [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
+    [[nodiscard]] auto scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
+    auto start(const song_document_t& document, output_group_export_plan_t plan,
+               std::filesystem::path asset_base,
+               work_function_t work = run_output_group_export) -> start_outcome_t;
+    auto poll(const document_history_t& history) -> std::optional<std::string>;
     void cancel();
     void shutdown();
+
+private:
+    struct pending_t {
+        task_graph_handle_t graph;
+        task_id_t task;
+        async_job_project_identity_t identity;
+        // The scheduler replaces task results when cancelled, even after publication.
+        // Read this domain receipt only after graph.outcome establishes completion.
+        std::shared_ptr<std::optional<output_group_export_task_result_t>> receipt;
+    };
+    notification_sink_t notifications_;
+    task_scheduler_t scheduler_{1, 1, background_scheduler_options()};
+    std::optional<pending_t> pending_;
 };
 
 } // namespace runtime
-
-
 } // namespace wormedit::sys

@@ -525,6 +525,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp
         src/sys/resource_job_state.cpp
+        src/sys/output_group_export.cpp
         src/sys/player_preview_presenter.cpp
         src/sys/workspace_view.cpp
         src/sys/workspace_frame_view.cpp

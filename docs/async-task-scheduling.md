@@ -83,8 +83,13 @@ These existing services retain explicit scheduler orchestration and domain polic
 
 - Playing waveform detail (`waveform_analysis_runtime.cpp`) remains busy after
   cancellation until terminal collection, with its existing null-payload failure handling.
-- Published output export (`output_group_export_t`) reports files even if the
-  editor document changes after publication.
+- Published output export (`output_group_export_t`) owns request capture/submission
+  and stays busy after cancellation until terminal polling. It reports files even
+  if the editor document changes after publication. Scheduler cancellation replaces
+  even a successful worker result; the export owner therefore keeps a domain receipt
+  outside that result and reads it only after `graph.outcome` observes terminal state.
+  This also preserves publication evidence when a stop races with directory exchange.
+  Shutdown joins the scheduler before dropping the receipt.
 - Metadata import-copy (`metadata_asset_t`) retains receipts for orphan cleanup
   after the shared copy scheduler joins.
 - Autosave (`native_project_autosave_loop_t`) serializes coordinator progress,

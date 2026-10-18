@@ -13,7 +13,7 @@ struct metadata_drop_state_t;
 struct project_identity_t;
 namespace runtime {
 struct resource_copy_t;
-struct output_group_export_t;
+class output_group_export_t;
 class metadata_asset_t;
 } // namespace runtime
 

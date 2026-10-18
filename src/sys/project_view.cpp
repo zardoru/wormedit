@@ -1,4 +1,5 @@
 #include "sys/project_view.h"
+#include "sys/output_group_export.h"
 #include "core/text_util.h"
 #include "sys/metadata_commands.h"
 #include <wormedit/core/rational.h>
@@ -259,14 +260,8 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
 }
 auto output_preview(const song_document_t& doc, const output_group_t& group) -> std::string {
     if (group.charts.empty()) return "Add at least one chart before exporting.";
-    conversion_request_t request;
-    request.target = group.family;
-    if (group.family != format_family_t::native_project) request.charts = group.charts;
-    request.loss_policy = loss_policy_t::warn;
-    if (group.family == format_family_t::stepmania)
-        request.stepmania = stepmania_export_policy_t{.file_profile =
-            group.relative_output_path.extension() == ".sm" ? stepmania_profile_t::sm : stepmania_profile_t::ssc};
-    const auto result = convert_document(doc, request);
+    const auto plan = output_group_export_plan_t::from(doc, group);
+    const auto result = convert_document(doc, plan.request);
     const auto error = std::ranges::find(result.diagnostics, diagnostic_severity_t::error,
         &conversion_diagnostic_t::severity);
     if (error != result.diagnostics.end()) return "Cannot convert: " + error->message;

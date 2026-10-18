@@ -14,6 +14,7 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <stdexcept>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -123,18 +124,53 @@ auto cancelled_copy_worker(const resource_copy_request_t&, std::stop_token)
                            failure_code_t::cancelled, {}})};
 }
 
-auto make_export_task(runtime::output_group_export_t& runtime,
-                      output_group_export_task_result_t result) -> pending_output_group_export_t {
-    task_graph_t graph{1};
-    const auto value = std::make_shared<const output_group_export_task_result_t>(std::move(result));
-    const auto added = graph.create_task({}, [value](std::span<const task_outcome_t>, std::stop_token) {
-        return task_value_t::from(value);
-    });
-    REQUIRE(added);
-    auto submitted = runtime.scheduler.begin(std::move(graph));
-    REQUIRE(submitted);
-    return {.graph = std::move(submitted.value()), .task = *added,
-            .song = song_id_t{1}, .revision = 0};
+struct export_worker_control_t {
+    std::atomic<bool> entered{};
+    std::atomic<int> publications{};
+    std::atomic<std::uint64_t> observed_revision{};
+};
+export_worker_control_t export_worker_control;
+
+auto export_test_worker(const output_group_export_request_t& request, std::stop_token stop)
+    -> output_group_export_task_result_t {
+    const auto& mode = request.plan.group.name;
+    if (mode == "throw")
+        throw std::runtime_error("Injected export worker exception.");
+    if (mode == "failure")
+        return {.message = "Injected publication failure."};
+    const bool before = mode == "cancel-before";
+    const bool after = mode == "cancel-after";
+    if (!before)
+        ++export_worker_control.publications;
+    export_worker_control.entered = true;
+    if (before || after) {
+        while (!stop.stop_requested())
+            std::this_thread::yield();
+    }
+    export_worker_control.observed_revision = request.document.revision;
+    if (before)
+        return {.message = "Export cancelled before publication.",
+                .severity = notification_severity_t::info};
+    return {.published = true,
+            .message = "Output group published from the selected revision.",
+            .severity = notification_severity_t::success};
+}
+
+auto start_test_export(runtime::output_group_export_t& runtime,
+                       const document_history_t& history, std::string mode = {})
+    -> runtime::output_group_export_t::start_outcome_t {
+    return runtime.start(history.document,
+        output_group_export_plan_t::from(history.document, {.name = std::move(mode)}),
+        {}, export_test_worker);
+}
+
+auto wait_for_export_worker() -> bool {
+    for (int attempt = 0; attempt < 1000; ++attempt) {
+        if (export_worker_control.entered)
+            return true;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    return false;
 }
 } // namespace
 
@@ -317,10 +353,7 @@ TEST_CASE("output export publishes typed success and terminal failure once",
           "[unit][sys][resource-notification]") {
     resource_notification_fixture_t fixture;
     runtime::output_group_export_t exports{fixture.sink};
-    auto pending = make_export_task(exports, {.published = true,
-        .message = "Output group published from the selected revision.",
-        .severity = notification_severity_t::success});
-    require_resource_notification(exports.start(std::move(pending)));
+    require_resource_notification(static_cast<bool>(start_test_export(exports, fixture.history)));
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 1);
     expect_notification(entries[0], notification_severity_t::info,
@@ -335,9 +368,8 @@ TEST_CASE("output export publishes typed success and terminal failure once",
     check_resource_notification(!exports.poll(fixture.history));
     check_resource_notification(fixture.entries().size() == 2);
 
-    pending = make_export_task(exports, {.message = "Injected publication failure.",
-        .severity = notification_severity_t::error});
-    require_resource_notification(exports.start(std::move(pending)));
+    require_resource_notification(static_cast<bool>(
+        start_test_export(exports, fixture.history, "failure")));
     (void)wait_for_export_result(exports, fixture.history);
     entries = fixture.entries();
     require_resource_notification(entries.size() == 4);
@@ -370,4 +402,89 @@ TEST_CASE("resource copy links a real successful copy and canceled fallback rema
     entries = fixture.entries();
     expect_notification(entries[0], notification_severity_t::info, notification_source_t::import_, "Resource copy failed.");
     check_resource_notification(fixture.history.undo.size() == 1);
+}
+
+TEST_CASE("export cancellation retains publication receipts and busy admission",
+          "[unit][sys][resource-notification]") {
+    const auto mode = GENERATE(std::string{"cancel-before"}, std::string{"cancel-after"});
+    resource_notification_fixture_t fixture;
+    runtime::output_group_export_t exports{fixture.sink};
+    export_worker_control.entered = false;
+    export_worker_control.publications = 0;
+    require_resource_notification(static_cast<bool>(start_test_export(exports, fixture.history, mode)));
+    const bool entered = wait_for_export_worker();
+    // Always unblock the worker before any fatal assertion.
+    exports.cancel();
+    require_resource_notification(entered);
+    check_resource_notification(exports.is_busy());
+    check_resource_notification(!start_test_export(exports, fixture.history));
+    const auto completed = wait_for_export_result(exports, fixture.history);
+    require_resource_notification(completed.has_value());
+    check_resource_notification(!exports.is_busy());
+    check_resource_notification(!exports.poll(fixture.history));
+    const bool published = mode == "cancel-after";
+    check_resource_notification(export_worker_control.publications == (published ? 1 : 0));
+    check_resource_notification(*completed == (published ? "Output group published from the selected revision."
+                                  : "Export cancelled before publication."));
+    const auto entries = fixture.entries();
+    require_resource_notification(entries.size() == 2);
+    expect_notification(entries[0], published ? notification_severity_t::success
+                                              : notification_severity_t::info,
+                        notification_source_t::export_, *completed);
+}
+
+TEST_CASE("export keeps its captured identity and reports exceptions once",
+          "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    runtime::output_group_export_t exports{fixture.sink};
+    export_worker_control.entered = false;
+    require_resource_notification(static_cast<bool>(start_test_export(exports, fixture.history, "cancel-after")));
+    const bool entered = wait_for_export_worker();
+    const auto captured_revision = fixture.history.document.revision;
+    ++fixture.history.document.revision;
+    exports.cancel();
+    require_resource_notification(entered);
+    const auto completed = wait_for_export_result(exports, fixture.history);
+    require_resource_notification(completed.has_value());
+    check_resource_notification(export_worker_control.observed_revision == captured_revision);
+    check_resource_notification(completed->find("editor session changed") != std::string::npos);
+    check_resource_notification(fixture.entries()[0].severity == notification_severity_t::warning);
+    require_resource_notification(static_cast<bool>(start_test_export(exports, fixture.history, "throw")));
+    const auto failed = wait_for_export_result(exports, fixture.history);
+    require_resource_notification(failed.has_value());
+    check_resource_notification(failed->find("Injected export worker exception.") != std::string::npos);
+    check_resource_notification(fixture.entries()[0].severity == notification_severity_t::error);
+    check_resource_notification(!exports.poll(fixture.history));
+}
+
+TEST_CASE("output preview and publication share format request policy",
+          "[unit][sys][resource-notification]") {
+    song_document_t document;
+    output_group_t group{.family = format_family_t::stepmania,
+                         .charts = {chart_id_t{42}}, .relative_output_path = "sm"};
+    auto plan = output_group_export_plan_t::from(document, group, true);
+    require_resource_notification(plan.request.stepmania.has_value());
+    check_resource_notification(plan.request.stepmania->file_profile == stepmania_profile_t::sm);
+    check_resource_notification(plan.request.charts == group.charts);
+    check_resource_notification(plan.request.overwrite);
+    group.relative_output_path = "chart.ssc";
+    plan = output_group_export_plan_t::from(document, group);
+    require_resource_notification(plan.request.stepmania.has_value());
+    check_resource_notification(plan.request.stepmania->file_profile == stepmania_profile_t::ssc);
+    check_resource_notification(!plan.request.overwrite);
+    group.family = format_family_t::native_project;
+    plan = output_group_export_plan_t::from(document, group);
+    check_resource_notification(plan.request.charts.empty());
+
+    group.family = format_family_t::bms;
+    for (const auto* profile : {"bme", "bml", "pms"}) {
+        group.relative_output_path = std::string{"chart."} + profile;
+        plan = output_group_export_plan_t::from(document, group);
+        check_resource_notification(plan.request.target_profile == profile);
+        document.charts.push_back({.id = chart_id_t{42},
+                                   .source_family = format_family_t::bmson});
+        plan = output_group_export_plan_t::from(document, group);
+        check_resource_notification(plan.request.target_profile.empty());
+        document.charts.clear();
+    }
 }

@@ -151,3 +151,24 @@ checks above. Lua execution and stored post-processing stages remain separate fe
 The [extension checkpoints](chart-editor-plan/tasks/extension-friction.md) record the current
 SV capability references, cross-cycle state direction, bounded lane/gesture findings,
 the T-681–T-683 implementation scopes and their bounded verification evidence.
+
+## File preparation and publication
+
+Opening a project reads/parses/normalizes into a detached `project_open_result_t`
+through `open_project_file` (`sys/project_open.cpp`). The application currently calls
+it synchronously. `finish_project_open` owns encoding retry/error feedback and only
+passes successful results to `publish_opened_project`. That UI-thread method owns
+session replacement, imported session identity, recent-file updates and aggregated
+warnings. T-146 can put the read behind a worker; its generation/cancellation admission
+must precede this completion boundary, keeping the previous document until replacement.
+
+`output_group_export_plan_t::from` (`sys/output_group_export.h`) owns format request
+policy shared by preview and publication, including StepMania filename/profile and
+BMS sliced-layout rules. `output_group_export_t::start` admits the request before
+copying its document, owns task submission and captures all worker inputs.
+`run_output_group_export` (`sys/output_group_export.cpp`) owns staging/conversion and
+calls the existing atomic publisher. The runtime owns completion and notification.
+Cancelling retains busy state until terminal polling, and a separate domain receipt
+preserves publication evidence when scheduler cancellation replaces the task outcome.
+Artifact-level progress/stop checks remain T-147; this does not promise interruptible
+conversion or retract output already published. Preview audio encoding remains T-107.

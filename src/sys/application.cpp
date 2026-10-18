@@ -197,9 +197,6 @@ using wormedit::sys::timing_scene_cache_t;
 using wormedit::sys::runtime::timing_edit_t;
 using wormedit::sys::metadata_drop_state_t;
 using wormedit::sys::dispatch_compose_view_action;
-using wormedit::sys::runtime::output_group_export_t;
-using wormedit::sys::output_group_export_task_result_t;
-using wormedit::sys::pending_output_group_export_t;
 using wormedit::sys::runtime::resource_copy_t;
 using wormedit::sys::application_command_state_t;
 using wormedit::sys::chart_snap_preferences;
@@ -2206,7 +2203,7 @@ struct application_t::implementation_t {
     std::array<task_scheduler_t*, worker_count> worker_schedulers{
         &session.autosave_scheduler,
         &jobs.resource_copy_scheduler,
-        &jobs.export_runtime.scheduler,
+        &jobs.export_runtime.scheduler(),
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         &jobs.player_image_scheduler,
 #endif
@@ -2988,17 +2985,28 @@ struct application_t::implementation_t {
                                   ? std::optional<wormedit::text_encoding_t>{}
                                   : std::optional{kind};
         auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
+        finish_project_open(std::move(opened), action.project_path, encoding.has_value());
+    }
+
+    void finish_project_open(wormedit::sys::project_open_result_t opened,
+                             const std::filesystem::path& requested_path, bool encoding_retry) {
         if (!opened.is_success()) {
             post_project_feedback(opened.needs_encoding_choice
                                       ? wormedit::notification_severity_t::warning
                                       : wormedit::notification_severity_t::error,
                                   wormedit::notification_source_t::import_, opened.error);
             if (opened.needs_encoding_choice)
-                session.project_identity.pending_import.bms_encoding_path = action.project_path;
-            else if (encoding)
+                session.project_identity.pending_import.bms_encoding_path = requested_path.string();
+            else if (encoding_retry)
                 session.project_identity.pending_import.bms_encoding_path.clear();
             return;
         }
+        publish_opened_project(std::move(opened));
+    }
+
+    // UI-thread publication boundary. T-146 must admit only current-generation,
+    // uncancelled completions before entering this method.
+    void publish_opened_project(wormedit::sys::project_open_result_t opened) {
         auto document = std::move(*opened.document);
         if (!opened.native_project)
             document.id = wormedit::sys::create_session_project_id();

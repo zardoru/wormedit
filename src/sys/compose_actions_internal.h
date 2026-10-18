@@ -96,39 +96,6 @@ std::optional<compose_action_outcome_t>
 materialize_layout_measure(compose_action_context_t& context,
                            const wormedit::chart_document_t*& chart, bool& materialized);
 
-auto stage_output_music(const wormedit::song_document_t& snapshot,
-                        const wormedit::output_group_t& group,
-                        const std::filesystem::path& asset_base, std::stop_token stop)
-    -> std::optional<std::string>;
-
-void report_output_conversion_losses(const wormedit::conversion_result_t& converted,
-                                     output_group_export_task_result_t& completed);
-
-auto sliced_bms_destination_error(const wormedit::song_document_t& snapshot,
-                                  const wormedit::output_group_t& group,
-                                  const wormedit::conversion_request_t& request,
-                                  const wormedit::conversion_result_t& converted)
-    -> std::optional<std::string>;
-
-void complete_output_group_conversion(const wormedit::song_document_t& snapshot,
-                                      const wormedit::output_group_t& group,
-                                      wormedit::conversion_request_t& request,
-                                      const std::filesystem::path& asset_base, std::stop_token stop,
-                                      output_group_export_task_result_t& completed);
-
-void complete_sliced_output_group_conversion(const wormedit::song_document_t& snapshot,
-                                             const wormedit::output_group_t& group,
-                                             wormedit::conversion_request_t& request,
-                                             const std::filesystem::path& asset_base,
-                                             std::stop_token stop,
-                                             output_group_export_task_result_t& completed);
-
-task_outcome_t run_output_group_export_task(const wormedit::song_document_t& snapshot,
-                                           const wormedit::output_group_t& group,
-                                           wormedit::conversion_request_t& request,
-                                           const std::filesystem::path& asset_base,
-                                           std::stop_token stop);
-
 struct imported_resource_metadata_t {
     std::optional<wormedit::audio_stream_info_t> audio;
     std::optional<std::pair<std::uint32_t, std::uint32_t>> image;
@@ -159,13 +126,8 @@ struct resource_copy_plan_t {
 compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
                                              resource_copy_plan_t plan);
 
-struct output_export_plan_t {
-    wormedit::output_group_t group;
-    wormedit::conversion_request_t request;
-};
-
 compose_action_outcome_t start_output_export(compose_action_context_t& context,
-                                             output_export_plan_t plan);
+                                             output_group_export_plan_t plan);
 
 auto compose_placement_kind(const WormUiWorkspaceAction& action)
     -> std::optional<wormedit::resource_placement_kind_t>;

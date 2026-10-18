@@ -1541,7 +1541,7 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 
 ## T-676 Return SDL preview start reports directly
 
-- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Status:** Done (2026-10-18; verified parallel T-675/T-676/T-678 batch)
 - **Outcome:** SDL preview start/seek returns the existing start report directly instead of `result_t<X,X>` with the same report in both arms.
 - **Read first:** `src/sys/sdl_preview_output.h`; `src/sys/sdl_preview_output.cpp`; `src/sys/sdl_session_results.h`; `src/sys/chart_preview_state.cpp`; shrink-wrap sys reports finding.
 - **Files owned:** `src/sys/sdl_preview_output.h`, `src/sys/sdl_preview_output.cpp`, `src/sys/chart_preview_state.cpp`, `tests/sys/sdl_preview_output_tests.cpp`.
@@ -1554,6 +1554,8 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 - **Reject/failure behavior:** Preserve device failure before/after session work and session failure while an existing source tail remains. Never discard partial session evidence merely because outer failure wrapping disappears.
 - **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing SDL preview/session and transport behavior tests.
 - **Out of scope:** Shared SDL report redesign, audition resolver migration, locking/worker changes, timing success-policy changes and T-644 pruning.
+- **Completion (2026-10-18):** The existing SDL start report is returned directly; its optional underlying session attempt and complete errors/details remain. Removed only outer expected wrapping/unwrapping and redundant arm selection. Three chart-preview callers read the same messages directly; bool-only callers unchanged. Independent complete-file comparison confirms stream pause/lock/session/clear/publication/unlock/resume and refill/generation ordering unchanged, including retained source-tail failures and device failure after session work. All 39 existing test cases/names retained; strengthened the existing failed-drain-seek helper to assert session_failed and the engaged failed session while retaining playing/tail assertions. Device failure after session work remains source-path evidence, not injected runtime coverage. Baseline/after clang-tidy all three affected .cpp files exit 0: production clean, existing test-macro complexity 60/40 unchanged. `/tmp/t676-implementation-report.md`, `/tmp/t676-{before,after}-*.log`.
+- **Integrated verification:** Shared final-source T-675/T-676/T-678 batch: `scripts/gate.sh --jobs 4` and `scripts/gate.sh build-clang --jobs 4` both report `pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4103`, `gate: passed`. Logs `/tmp/wormedit-gate.bwox5z` (GCC, 71.66 s CTest) and `/tmp/wormedit-gate.YqeZUI` (Clang, 69.29 s CTest); `cmake --preset linux-clang` exit 0. Gates include the existing event harness and project/import/SDL tests; no discovery errors, aborted or unrun binaries. App and converter targets build in both trees. Coordinator reviewed complete-file comparisons and the code-style checklist. Final documentation check recorded in the commit body.
 
 ## T-677 Put Compose input entry points at their implementations
 

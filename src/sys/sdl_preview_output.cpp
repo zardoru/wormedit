@@ -209,11 +209,11 @@ auto sdl_preview_output_t::resume_device() noexcept -> bool {
     return resume_audio_stream_device(stream_);
 }
 
-auto sdl_preview_output_t::finish_start(sdl_preview_start_result_t::value_type result)
+auto sdl_preview_output_t::finish_start(sdl_preview_start_result_t result)
     -> sdl_preview_start_result_t {
     if (result.has_failure(failure_code_t::session_failed) && !playing()) {
         set_refill_enabled(false);
-        return sdl_preview_start_result_t{std::unexpect, std::move(result)};
+        return result;
     }
     if (result.has_failure(failure_code_t::device_failed) || !resume_device()) {
         if (!result.has_failure(failure_code_t::device_failed)) {
@@ -222,11 +222,9 @@ auto sdl_preview_output_t::finish_start(sdl_preview_start_result_t::value_type r
                         sdl_error("could not reset and resume the chart-preview audio stream")};
         }
         static_cast<void>(stop());
-        return sdl_preview_start_result_t{std::unexpect, std::move(result)};
+        return result;
     }
     set_refill_enabled(playing() && session_.is_active());
-    if (!result)
-        return sdl_preview_start_result_t{std::unexpect, std::move(result)};
     return result;
 }
 
@@ -237,20 +235,16 @@ auto sdl_preview_output_t::start(
     std::uint64_t minimum_end_frame) -> sdl_preview_start_result_t {
     if (stream_ == nullptr) {
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error = error_t{failure_code_t::unavailable,
-                                 "default chart-preview audio output is unavailable"},
-                .session = std::nullopt}};
+            .error = error_t{failure_code_t::unavailable,
+                             "default chart-preview audio output is unavailable"},
+            .session = std::nullopt};
     }
     if (!pause_device()) {
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error =
-                    error_t{failure_code_t::device_failed,
-                            sdl_error("could not reset and resume the chart-preview audio stream")},
-                .session = std::nullopt}};
+            .error =
+                error_t{failure_code_t::device_failed,
+                        sdl_error("could not reset and resume the chart-preview audio stream")},
+            .session = std::nullopt};
     }
     audio_stream_lock_t stream_lock{stream_};
     if (!stream_lock) {
@@ -258,9 +252,7 @@ auto sdl_preview_output_t::start(
         if (playing())
             static_cast<void>(resume_device());
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error = error_t{failure_code_t::device_failed, message}, .session = std::nullopt}};
+            .error = error_t{failure_code_t::device_failed, message}, .session = std::nullopt};
     }
     set_refill_enabled(false);
     silenced_voices_.store(0, std::memory_order_release);
@@ -276,7 +268,7 @@ auto sdl_preview_output_t::start(
         source_end_frame_ = schedule_end(schedule, objects, metronome, minimum_end_frame);
         reset_output(start_frame);
     }
-    auto result = sdl_preview_start_result_t::value_type{.session = started};
+    auto result = sdl_preview_start_result_t{.session = started};
     const bool preserved = !started && session_.is_active();
     const auto cleared = preserved || SDL_ClearAudioStream(stream_);
     if (!preserved)
@@ -300,20 +292,16 @@ auto sdl_preview_output_t::start(
 auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start_result_t {
     if (stream_ == nullptr) {
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error = error_t{failure_code_t::unavailable,
-                                 "default chart-preview audio output is unavailable"},
-                .session = std::nullopt}};
+            .error = error_t{failure_code_t::unavailable,
+                             "default chart-preview audio output is unavailable"},
+            .session = std::nullopt};
     }
     if (!pause_device()) {
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error =
-                    error_t{failure_code_t::device_failed,
-                            sdl_error("could not reset and resume the chart-preview audio stream")},
-                .session = std::nullopt}};
+            .error =
+                error_t{failure_code_t::device_failed,
+                        sdl_error("could not reset and resume the chart-preview audio stream")},
+            .session = std::nullopt};
     }
     audio_stream_lock_t stream_lock{stream_};
     if (!stream_lock) {
@@ -321,9 +309,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
         if (playing())
             static_cast<void>(resume_device());
         return sdl_preview_start_result_t{
-            std::unexpect,
-            sdl_preview_start_result_t::value_type{
-                .error = error_t{failure_code_t::device_failed, message}, .session = std::nullopt}};
+            .error = error_t{failure_code_t::device_failed, message}, .session = std::nullopt};
     }
     set_refill_enabled(false);
     silenced_voices_.store(0, std::memory_order_release);
@@ -334,7 +320,7 @@ auto sdl_preview_output_t::seek(std::uint64_t sample_frame) -> sdl_preview_start
             ? session_.start_session(*retained_schedule_, retained_objects_, retained_metronome_,
                                      sample_frame, {}, source_end_frame_)
             : session_.seek_session(sample_frame);
-    auto result = sdl_preview_start_result_t::value_type{.session = started};
+    auto result = sdl_preview_start_result_t{.session = started};
     if (!started) {
         result.error = error_t{failure_code_t::session_failed,
                                "chart-preview seek could not be materialized and primed"};

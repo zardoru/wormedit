@@ -61,9 +61,9 @@ auto silent_preview_advances() -> bool {
     schedule.playable = {
         {.sample_frame = 0, .object = object_id_t{1}, .resource = resource_id_t{1}}};
     const auto started = output.start(schedule, {}, {}, 0, output_sample_rate * 60U);
-    if (!started || !started->session || !started->session->value().detail.materialize)
+    if (!started || !started.session || !started.session->value().detail.materialize)
         return false;
-    const bool advanced = started->session->value().detail.materialize->missing_sources == 1 &&
+    const bool advanced = started.session->value().detail.materialize->missing_sources == 1 &&
                           wait_for_silent_preview_frame(session, output);
     static_cast<void>(output.stop());
     output.close();
@@ -106,8 +106,8 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
     };
     const auto started = output.start(schedule, std::span{&binding, 1});
     REQUIRE(started);
-    REQUIRE(started->session.has_value());
-    const auto first_token = started->session->value().token;
+    REQUIRE(started.session.has_value());
+    const auto first_token = started.session->value().token;
 
     const auto deadline = SDL_GetTicks() + 2'000;
     while (session.timeline_frame() == 0 && session.is_active() && SDL_GetTicks() < deadline) {
@@ -120,8 +120,8 @@ TEST_CASE("SDL dummy output drives seeks and hard-stops a chart preview session"
 
     const auto sought = output.seek(0);
     REQUIRE(sought);
-    REQUIRE(sought->session.has_value());
-    CHECK(sought->session->value().token != first_token);
+    REQUIRE(sought.session.has_value());
+    CHECK(sought.session->value().token != first_token);
     CHECK_FALSE(transport.is_current(first_token));
 
     const auto stopped = output.stop();
@@ -568,7 +568,11 @@ void exercise_failed_drain_seek(wormedit::sys::sdl_preview_output_t& output,
     const auto previous = output.timeline_frame();
     const auto duration = binding.voices.front().frame_count;
     binding.voices.front().frame_count = 0;
-    expect_pitch(!output.seek(0));
+    const auto sought = output.seek(0);
+    expect_pitch(!sought);
+    expect_pitch(sought.has_failure(wormedit::failure_code_t::session_failed));
+    expect_pitch(sought.session.has_value());
+    expect_pitch(!sought.session->has_value());
     expect_pitch(output.playing());
     expect_pitch(output.timeline_frame() >= previous);
     binding.voices.front().frame_count = duration;
@@ -783,14 +787,13 @@ void exercise_background_refill() {
 void check_preview_seek_refill(wormedit::sys::sdl_preview_output_t& output, std::uint64_t seek) {
     using namespace wormedit::audio;
     const auto sought = output.seek((seek % 4) * 4096);
-    const auto& sought_data = sought ? *sought : sought.error();
-    INFO("seek iteration " << seek << " status " << (sought_data.error ? static_cast<int>(sought_data.error->code) : -1)
-         << " message " << sought_data.message());
-    const auto* detail = sought_data.session
-        ? (*sought_data.session ? &sought_data.session->value().detail : &sought_data.session->error().detail)
+    INFO("seek iteration " << seek << " status " << (sought.error ? static_cast<int>(sought.error->code) : -1)
+         << " message " << sought.message());
+    const auto* detail = sought.session
+        ? (*sought.session ? &sought.session->value().detail : &sought.session->error().detail)
         : nullptr;
-    const auto session_status = sought_data.session
-        ? (*sought_data.session ? -1 : static_cast<int>(sought_data.session->error().code))
+    const auto session_status = sought.session
+        ? (*sought.session ? -1 : static_cast<int>(sought.session->error().code))
         : -1;
     const auto bridge_status = detail && detail->bridge
         ? (*detail->bridge ? -1 : static_cast<int>(detail->bridge->error()))
@@ -1329,12 +1332,12 @@ auto t276_seek_snapshot_matches(wormedit::sys::sdl_preview_output_t& output,
                                 std::uint64_t frame) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto sought = output.seek(frame);
-    if (!sought || !sought->session || !sought->session->has_value() || !access::lock_stream(output))
+    if (!sought || !sought.session || !sought.session->has_value() || !access::lock_stream(output))
         return false;
     const auto state = access::snapshot(output);
     access::unlock_stream(output);
     return state.active && state.start_frame == frame && state.timeline_frame >= frame &&
-        state.transport_generation == sought->session->value().token.generation;
+        state.transport_generation == sought.session->value().token.generation;
 }
 
 auto t276_stop_snapshot_is_inactive_zero(wormedit::sys::sdl_preview_output_t& output,
@@ -1352,12 +1355,12 @@ auto t276_start_snapshot_is_coherent(t276_output_fixture_t& fixture) -> bool {
     using access = wormedit::sys::sdl_preview_output_test_access_t;
     const auto started = fixture.output.start(fixture.schedule,
         std::span{&fixture.binding, 1}, {}, 0, fixture.source_frames);
-    if (!started || !started->session || !started->session->has_value() ||
+    if (!started || !started.session || !started.session->has_value() ||
         !access::lock_stream(fixture.output)) return false;
     const auto state = access::snapshot(fixture.output);
     access::unlock_stream(fixture.output);
     return state.active && state.timeline_frame >= state.start_frame &&
-        state.transport_generation == started->session->value().token.generation;
+        state.transport_generation == started.session->value().token.generation;
 }
 
 auto t276_mutate_seek_stop(t276_output_fixture_t& fixture, std::size_t iterations) -> bool {

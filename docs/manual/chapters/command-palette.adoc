@@ -17,8 +17,11 @@ that cannot run right now, which are shown dimmed.
 . kbd:[Enter] runs the highlighted command; clicking a match does the same. kbd:[Escape] closes the
 palette without running anything.
 
+Each match shows its key on the right, so the palette also teaches the shortcuts: run a command
+by name a few times and its key sticks.
+
 .The command palette searching for "measure" (captured at {shot-command-palette-revision})
-image::command-palette.png[The Command menu with the query measure and four matching commands]
+image::command-palette.png[The Command menu with the query measure, four matching commands and Ctrl+M beside Toggle Measure Line at Cursor]
 
 A command runs on the tab and chart that were active when you opened the palette, so the palette
 works on the chart you were editing even though it is a separate box.

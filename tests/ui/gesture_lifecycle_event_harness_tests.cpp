@@ -2,6 +2,7 @@
 #include "ui/nuklear/compose_canvas.h"
 #include "nuklear_event_harness.h"
 #include "ui/nuklear/compose_state.h"
+#include "ui/nuklear/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
@@ -342,6 +343,11 @@ auto interrupt_lifecycle(lifecycle_fixture_t& f, int transition) -> workspace_ac
         const std::vector<SDL_Event> overflow(worm_ui_nuklear_compose_state().input_queue.wheel_events.size() + 1, wheel);
         return h.frame(overflow);
     }
+    if (transition == 7) {
+        const auto key = lifecycle_key(SDLK_F24, SDL_SCANCODE_F24, false);
+        const std::vector<SDL_Event> overflow(worm_ui_nuklear_compose_state().input_queue.key_events.size() + 1, key);
+        return h.frame(overflow, f.modifiers);
+    }
     const auto go = lifecycle_key(SDLK_G, SDL_SCANCODE_G);
     return h.frame(std::span{&go, 1}, SDL_KMOD_CTRL);
 }
@@ -358,7 +364,7 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
         lifecycle_family::measure, lifecycle_family::stem, lifecycle_family::bga,
         lifecycle_family::bookmark, lifecycle_family::bmson, lifecycle_family::beat_zero,
         lifecycle_family::chip, lifecycle_family::mix, lifecycle_family::razor, lifecycle_family::navigation);
-    const auto transition = GENERATE(0, 1, 2, 3, 4, 5, 6);
+    const auto transition = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
     INFO("family=" << static_cast<int>(family) << " transition=" << transition);
     lifecycle_fixture_t f{family};
     (void)f.begin();
@@ -389,8 +395,60 @@ TEST_CASE("Registered Compose gestures cancel through production interruption em
          WORM_UI_COMPOSE_INPUT_BEAT_FIT_RELEASE, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_RELEASE,
          WORM_UI_COMPOSE_INPUT_BGA_EVENT_MOVE, WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE,
          WORM_UI_COMPOSE_INPUT_BMSON_BGM_MOVE_RELEASE, WORM_UI_COMPOSE_INPUT_BMSON_RAZOR_CONTINUE,
-         WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK})
+         WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK}) {
+        CAPTURE(kind);
         lifecycle_check(!lifecycle_has(late.get(), kind));
+    }
+}
+
+TEST_CASE("Keyboard queue overflow fences held paint until release and permits a fresh stroke",
+          "[frontend-state][event-harness][keyboard-overflow]") {
+    lifecycle_fixture_t f{lifecycle_family::paint};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    const auto interrupted = interrupt_lifecycle(f, 7);
+    lifecycle_check(lifecycle_has(interrupted.get(), WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE));
+    lifecycle_check(!lifecycle_has(interrupted.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
+    lifecycle_check(!f.active());
+    const auto held = f.harness.frame();
+    lifecycle_check(!lifecycle_has(held.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
+    lifecycle_check(!f.active());
+    const auto release = lifecycle_button(f.x, f.y, false);
+    const auto released = f.harness.frame(std::span{&release, 1});
+    INFO("late physical release must not publish a paint release");
+    lifecycle_check(!lifecycle_has(released.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE));
+    const auto fresh = f.begin();
+    lifecycle_check(lifecycle_has(fresh.get(), WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN));
+    lifecycle_check(f.active());
+}
+
+TEST_CASE("Keyboard queue overflow drains frame input and defers stamped audio cancellation",
+          "[frontend-state][event-harness][keyboard-overflow]") {
+    lifecycle_fixture_t f{lifecycle_family::beat_zero};
+    (void)f.begin();
+    lifecycle_require(f.active());
+    auto& state = worm_ui_nuklear_compose_state();
+    const auto capture = state.timing_drag.beat_zero_capture;
+    worm_ui_nuklear_queue_compose_wheel(0, 1, f.x, f.y, 0, true);
+    worm_ui_nuklear_queue_compose_middle_click(f.x, f.y);
+    for (std::size_t index = 0; index <= state.input_queue.key_events.size(); ++index)
+        worm_ui_nuklear_queue_compose_key(SDLK_F24, SDL_SCANCODE_F24, 0, false, false);
+    lifecycle_check(state.input_queue.cancel_pending);
+    lifecycle_check(state.input_queue.key_event_count == 0);
+    lifecycle_check(!state.input_queue.keyboard_focus);
+    const auto cancelled = f.harness.frame();
+    lifecycle_check(cancelled.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_CANCEL);
+    lifecycle_check(cancelled.get().audio_offset_drag_chart_id == capture.chart);
+    lifecycle_check(cancelled.get().audio_offset_drag_document_revision == capture.revision);
+    lifecycle_check(cancelled.get().audio_offset_drag_sample_rate == capture.sample_rate);
+    lifecycle_check(cancelled.get().compose_viewport_input_count == 0);
+    lifecycle_check(!lifecycle_has(cancelled.get(), WORM_UI_COMPOSE_INPUT_NAVIGATION_PRESS));
+    lifecycle_check(!state.input_queue.waveform_offset_cancel_pending);
+    // The next view acknowledges cancellation, as the application dispatcher does.
+    f.harness.view().compose.waveform_offset_drag_active = false;
+    const auto following = f.harness.frame();
+    lifecycle_check(following.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
+    lifecycle_check(following.get().compose_viewport_input_count == 0);
 }
 
 TEST_CASE("Go-to-measure drains queued production wheel middle-click and pinch input",

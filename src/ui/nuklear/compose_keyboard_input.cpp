@@ -47,28 +47,8 @@ void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scan
         state.range_selection.alt_wheel_last_event_ms.reset();
     if (state.input_queue.key_event_count == state.input_queue.key_events.size()) {
         state.input_queue.key_event_count = 0;
-        state.input_queue.cancel_pending = true;
-        state.keyboard_navigation.tab_navigation.cancel();
-        state.keyboard_navigation.raw_tab_down = false;
-        state.pinch.pinch = {};
-        state.pointer_capture.pointer_hold_active = false;
-        state.pointer_capture.note_paint_pointer_active = false;
-        state.bmson_input.bmson_razor_pointer_active = false;
-        reset_bmson_marker_move_capture();
-        state.pointer_capture.semantic_layer_paint_pointer_active = false;
-        state.range_selection.lane_hold_active = false;
-        state.range_selection.space_range_hold_active = false;
-        state.range_selection.space_range_latched = false;
-        state.range_selection.space_range_hold_moved = false;
-        state.note_move.note_move_candidate_active = false;
-        state.note_move.note_move_active = false;
-        state.timing_drag.timing_stage_drag_active = false;
-        state.timing_drag.kiai_drag_active = false;
-        state.timing_drag.recipe_drag_active = false;
-        state.area_selection.area_selection_candidate_active = false;
-        state.area_selection.area_selection_active = false;
+        cancel_compose_gestures(nullptr);
         state.input_queue.keyboard_focus = false;
-        state.keyboard_navigation.lane_hold_count = 0;
         return;
     }
     if (keycode == static_cast<std::uint32_t>(SDLK_TAB) && !repeat)

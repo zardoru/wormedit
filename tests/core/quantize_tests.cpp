@@ -198,6 +198,39 @@ TEST_CASE("quantization collision and hold policies reject atomically",
     CHECK(hold_chart.measures[0].notes[0].position.row == 130);
 }
 
+TEST_CASE("quantization rejects a selected tap snapped into a hold body",
+          "[unit][core][quantize][lane-occupancy][negative]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 0, note_kind_t::hold,
+             local_position_t{measure_id_t{1}, 800});
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 810);
+
+    const auto result = quantization_plan_t::from(chart, {
+        .divisions = 4,
+        .objects = {object_id_t{3}},
+    });
+    CHECK_FALSE(result.value.chart.has_value());
+    CHECK(has_code(result.diagnostics, diagnostic_code_t::collision));
+    REQUIRE(result.value.quantized_moves.size() == 1);
+    CHECK(result.value.quantized_moves.front().before.row == 810);
+    CHECK(result.value.quantized_moves.front().after.row == 720);
+    CHECK(find_note(chart, object_id_t{3}).position.row == 810);
+}
+
+TEST_CASE("quantization head collisions retain their first original-head representative",
+          "[unit][core][quantize][lane-occupancy][representative]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 0);
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 10);
+    add_note(chart, object_id_t{4}, measure_id_t{1}, 0);
+
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4});
+    CHECK_FALSE(result.value.chart.has_value());
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK(result.diagnostics.front().code == diagnostic_code_t::collision);
+    CHECK(result.diagnostics.front().object == object_id_t{3});
+}
+
 TEST_CASE("quantization selection is explicit and validated", "[unit][core][quantize]") {
     auto chart = make_chart();
     add_note(chart, object_id_t{2}, measure_id_t{1}, 130);
@@ -358,4 +391,54 @@ auto quantization_publication_rule_stays_independent_of_diagnostics() -> bool {
 TEST_CASE("quantization outcome preserves its chart-presence publication rule",
           "[unit][core][quantize][result]") {
     CHECK(quantization_publication_rule_stays_independent_of_diagnostics());
+}
+
+TEST_CASE("quantization allow policy keeps a tap snapped into a hold body",
+          "[unit][core][quantize][lane-occupancy]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 0, note_kind_t::hold,
+             local_position_t{measure_id_t{1}, 800});
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 810);
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4,
+        .collisions = quantization_collision_t::allow, .objects = {object_id_t{3}}});
+    REQUIRE(result.value.chart.has_value());
+    CHECK(find_note(*result.value.chart, object_id_t{3}).position.row == 720);
+    CHECK(find_note(*result.value.chart, object_id_t{2}).end->row == 800);
+}
+
+TEST_CASE("quantization preserves untouched body overlaps during unrelated edits",
+          "[unit][core][quantize][lane-occupancy]") {
+    auto chart = make_chart();
+    chart.lane_layouts.front().layout.lanes.push_back({.id = lane_id_t{2}, .name = "Lane 2"});
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 0, note_kind_t::hold,
+             local_position_t{measure_id_t{1}, 800});
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 720);
+    add_note(chart, object_id_t{4}, measure_id_t{1}, 130);
+    chart.measures.front().notes.back().lane = lane_id_t{2};
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4, .objects = {object_id_t{4}}});
+    REQUIRE(result.value.chart.has_value());
+    CHECK(find_note(*result.value.chart, object_id_t{4}).position.row == 240);
+    CHECK(find_note(*result.value.chart, object_id_t{3}).position.row == 720);
+}
+
+TEST_CASE("quantization rejects a changed tap that remains inside a hold body",
+          "[unit][core][quantize][lane-occupancy]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 0, note_kind_t::hold,
+             local_position_t{measure_id_t{1}, 800});
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 710);
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4, .objects = {object_id_t{3}}});
+    CHECK_FALSE(result.value.chart.has_value());
+    CHECK(has_code(result.diagnostics, diagnostic_code_t::collision));
+}
+
+TEST_CASE("quantization body collisions preserve the original-head exemption",
+          "[unit][core][quantize][lane-occupancy]") {
+    auto chart = make_chart();
+    add_note(chart, object_id_t{2}, measure_id_t{1}, 130, note_kind_t::hold,
+             local_position_t{measure_id_t{1}, 800});
+    add_note(chart, object_id_t{3}, measure_id_t{1}, 130);
+    const auto result = quantization_plan_t::from(chart, {.divisions = 4, .objects = {object_id_t{3}}});
+    REQUIRE(result.value.chart.has_value());
+    CHECK(find_note(*result.value.chart, object_id_t{3}).position.row == 240);
 }

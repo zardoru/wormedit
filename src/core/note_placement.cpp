@@ -165,36 +165,6 @@ void erase_notes(chart_document_t& chart, std::span<const object_id_t> ids) {
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto paint_note_intervals(const chart_document_t& chart, const measure_index_t& index)
-    -> std::vector<paint_note_interval_t> {
-    std::size_t count{};
-    for (const auto& measure : chart.measures)
-        count += measure.notes.size();
-    std::vector<paint_note_interval_t> intervals;
-    intervals.reserve(count);
-    for (const auto& measure : chart.measures) {
-        for (const auto& note : measure.notes) {
-            const auto begin = index.row_of(note.position);
-            const auto end = note.end ? index.row_of(*note.end) : begin;
-            if (begin && end)
-                intervals.push_back(
-                    {note.lane, *begin, *end, note.id, note.kind, note.end.has_value()});
-        }
-    }
-    std::ranges::sort(intervals, [](const auto& left, const auto& right) {
-        if (left.lane != right.lane)
-            return left.lane.value < right.lane.value;
-        if (left.begin != right.begin)
-            return left.begin < right.begin;
-        if (left.end != right.end)
-            return left.end < right.end;
-        return left.note.value < right.note.value;
-    });
-    return intervals;
-}
-} // namespace wormedit::interaction_detail
-
-namespace wormedit::interaction_detail {
 auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_t> targets)
     -> std::variant<std::vector<paint_row_t>, diagnostic_list_t> {
     std::vector<paint_row_t> rows;
@@ -214,7 +184,7 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto erase_active_paint_notes(std::map<std::uint64_t, paint_note_interval_t>& active,
+auto erase_active_paint_notes(std::map<std::uint64_t, lane_occupant_t>& active,
                               note_paint_plan_t& plan) -> void {
     while (!active.empty()) {
         const auto id = active.begin()->first;
@@ -226,7 +196,7 @@ auto erase_active_paint_notes(std::map<std::uint64_t, paint_note_interval_t>& ac
 
 namespace wormedit::interaction_detail {
 auto process_draw_paint_row(const paint_row_t& row, note_paint_plan_t& plan,
-                            const std::map<std::uint64_t, paint_note_interval_t>& active,
+                            const std::map<std::uint64_t, lane_occupant_t>& active,
                             note_kind_t kind) -> std::optional<diagnostic_t> {
     if (active.empty()) {
         plan.additions.push_back(row.target);
@@ -249,7 +219,8 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
                      std::span<const note_paint_target_t> targets, note_kind_t kind,
                      note_paint_intent_t intent)
     -> std::variant<note_paint_plan_t, diagnostic_list_t> {
-    auto intervals = paint_note_intervals(chart, index);
+    const auto occupancy = lane_occupancy_t::from(chart, index);
+    const auto& intervals = occupancy.entries();
     auto rows_result = paint_rows(index, targets);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&rows_result))
         return *diagnostics;

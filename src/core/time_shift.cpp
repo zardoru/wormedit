@@ -1,4 +1,5 @@
 #include <wormedit/core/time_shift.h>
+#include "lane_occupancy.h"
 
 #include <wormedit/core/measure_editor.h>
 
@@ -120,32 +121,21 @@ void rehome(chart_document_t& chart, member_t member) {
         });
 }
 
-struct note_interval_t {
-    std::uint64_t head{};
-    std::uint64_t tail{};
-    object_id_t note;
-};
-
 auto is_lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t& rows,
                            time_shift_result_t& result) -> bool {
-    std::map<std::uint64_t, std::vector<note_interval_t>> lanes;
+    std::vector<lane_occupant_t> entries;
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes) {
-            const auto head = rows.row_of(note.position);
-            const auto tail = note.end ? rows.row_of(*note.end) : head;
-            if (head && tail)
-                lanes[note.lane.value].push_back({*head, *tail, note.id});
+            const auto begin = rows.row_of(note.position);
+            if (auto entry = lane_occupant_t::from(note, begin, note.end ? rows.row_of(*note.end) : begin))
+                entries.push_back(*entry);
         }
     }
-    for (auto& [lane, intervals] : lanes) {
-        std::ranges::sort(intervals, {}, &note_interval_t::head);
-        for (std::size_t i = 1; i < intervals.size(); ++i) {
-            if (intervals[i].head <= intervals[i - 1].tail) {
-                reject(result.command, diagnostic_code_t::collision,
-                       "time shift would overlap two notes on one lane", intervals[i].note);
-                return false;
-            }
-        }
+    const auto occupancy = lane_occupancy_t::from(std::move(entries), lane_occupancy_order_t::head);
+    if (const auto* collision = occupancy.first_collision(lane_occupancy_pairs_t::all)) {
+        reject(result.command, diagnostic_code_t::collision,
+               "time shift would overlap two notes on one lane", collision->note);
+        return false;
     }
     return true;
 }

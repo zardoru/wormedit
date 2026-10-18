@@ -1,4 +1,5 @@
 #pragma once
+#include "lane_occupancy.h"
 #include "interaction_context.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/dead_span_rules.h>
@@ -339,42 +340,30 @@ struct note_paint_plan_t {
     std::vector<object_id_t> removals;
 };
 
-struct paint_note_interval_t {
-    lane_id_t lane;
-    std::uint64_t begin{};
-    std::uint64_t end{};
-    object_id_t note;
-    note_kind_t kind{note_kind_t::tap};
-    bool has_end{};
-};
-
 struct paint_row_t {
     lane_id_t lane;
     std::uint64_t row{};
     note_paint_target_t target;
 };
 
-auto paint_note_intervals(const chart_document_t& chart, const measure_index_t& index)
-    -> std::vector<paint_note_interval_t>;
-
 auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_t> targets)
     -> std::variant<std::vector<paint_row_t>, diagnostic_list_t>;
 
-auto erase_active_paint_notes(std::map<std::uint64_t, paint_note_interval_t>& active,
+auto erase_active_paint_notes(std::map<std::uint64_t, lane_occupant_t>& active,
                               note_paint_plan_t& plan) -> void;
 
 auto process_draw_paint_row(const paint_row_t& row, note_paint_plan_t& plan,
-                            const std::map<std::uint64_t, paint_note_interval_t>& active,
+                            const std::map<std::uint64_t, lane_occupant_t>& active,
                             note_kind_t kind) -> std::optional<diagnostic_t>;
 
 struct paint_overlap_sweep_t {
-    const std::vector<paint_note_interval_t>& intervals;
+    const std::vector<lane_occupant_t>& intervals;
     std::size_t next_interval{};
     std::optional<lane_id_t> lane;
     std::priority_queue<std::pair<std::uint64_t, std::uint64_t>,
                         std::vector<std::pair<std::uint64_t, std::uint64_t>>, std::greater<>>
         ending;
-    std::map<std::uint64_t, paint_note_interval_t> active;
+    std::map<std::uint64_t, lane_occupant_t> active;
     note_paint_intent_t current_intent{note_paint_intent_t::toggle};
 
     auto process(const paint_row_t& row, note_paint_plan_t& plan, note_kind_t kind)
@@ -387,13 +376,13 @@ struct paint_overlap_sweep_t {
             active.clear();
             lane = row.lane;
         }
-        while (next_interval < intervals.size() && intervals[next_interval].lane == row.lane &&
+        while (next_interval < intervals.size() && intervals[next_interval].lane == lane_occupancy_key_t::from(row.lane) &&
                intervals[next_interval].begin <= row.row) {
             const auto& interval = intervals[next_interval++];
             ending.emplace(interval.end, interval.note.value);
             active.emplace(interval.note.value, interval);
         }
-        while (!ending.empty() && ending.top().first < row.row) {
+        while (!ending.empty() && lane_occupant_t::is_expired(ending.top().first, row.row)) {
             active.erase(ending.top().second);
             ending.pop();
         }
@@ -439,14 +428,6 @@ struct resized_note_t {
     std::optional<local_position_t> end_position;
 };
 
-struct duration_collision_interval_t {
-    lane_id_t lane;
-    std::uint64_t begin{};
-    std::uint64_t end{};
-    object_id_t note;
-    bool resizing{};
-};
-
 struct active_duration_collision_t {
     std::uint64_t end{};
     object_id_t note;
@@ -479,7 +460,7 @@ struct duration_resize_context_t {
     const measure_index_t& index;
     measure_lookup_t measures;
     std::unordered_map<std::uint64_t, const note_t*> target_notes;
-    std::vector<duration_collision_interval_t> collisions;
+    std::vector<lane_occupant_t> collisions;
 
     auto row_for(local_position_t position) const -> std::optional<std::uint64_t> {
         const auto row = measures.row_of(position);
@@ -503,7 +484,7 @@ struct duration_resize_context_t {
                 if (!begin || !end)
                     return error(diagnostic_code_t::row_out_of_range,
                                  "existing note lies outside chart geometry", note.id);
-                collisions.push_back({note.lane, *begin, *end, note.id, false});
+                collisions.push_back({.lane = lane_occupancy_key_t::from(note.lane), .begin = *begin, .end = *end, .note = note.id});
             }
         }
         return std::nullopt;
@@ -531,26 +512,26 @@ struct duration_collision_sweep_t {
                             earliest_duration_collision_t>;
     queue_t resized;
     queue_t existing;
-    lane_id_t lane{};
+    lane_occupancy_key_t lane{};
     bool has_lane{};
 
-    auto process(const duration_collision_interval_t& interval) -> std::optional<diagnostic_t> {
+    auto process(const lane_occupant_t& interval) -> std::optional<diagnostic_t> {
         if (!has_lane || interval.lane != lane) {
             resized = queue_t{};
             existing = queue_t{};
             lane = interval.lane;
             has_lane = true;
         }
-        while (!resized.empty() && resized.top().end < interval.begin)
+        while (!resized.empty() && lane_occupant_t::is_expired(resized.top().end, interval.begin))
             resized.pop();
-        while (!existing.empty() && existing.top().end < interval.begin)
+        while (!existing.empty() && lane_occupant_t::is_expired(existing.top().end, interval.begin))
             existing.pop();
-        if (interval.resizing)
+        if (interval.proposed)
             return process_resized(interval);
         return process_existing(interval);
     }
 
-    auto process_resized(const duration_collision_interval_t& interval)
+    auto process_resized(const lane_occupant_t& interval)
         -> std::optional<diagnostic_t> {
         if (!resized.empty())
             return error(diagnostic_code_t::collision, "resized selected notes overlap on one lane",
@@ -562,7 +543,7 @@ struct duration_collision_sweep_t {
         return std::nullopt;
     }
 
-    auto process_existing(const duration_collision_interval_t& interval)
+    auto process_existing(const lane_occupant_t& interval)
         -> std::optional<diagnostic_t> {
         if (!resized.empty())
             return error(diagnostic_code_t::collision,
@@ -572,7 +553,7 @@ struct duration_collision_sweep_t {
     }
 };
 
-auto validate_resize_collisions(std::vector<duration_collision_interval_t>& collisions)
+auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
     -> std::optional<diagnostic_t>;
 
 auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& index,
@@ -665,7 +646,7 @@ struct note_move_context_t {
     const measure_index_t& index;
     const note_move_parameters_t& parameters;
     const std::unordered_map<std::uint64_t, const note_t*>& targets;
-    std::vector<duration_collision_interval_t>& collisions;
+    std::vector<lane_occupant_t>& collisions;
 
     auto display_columns(local_position_t position, local_position_t source) const -> std::size_t {
         const auto count = [](const lane_layout_t* layout) -> std::size_t {
@@ -746,7 +727,7 @@ struct active_move_intervals_t {
 
     void expire(std::uint64_t begin) {
         // Holds occupy both endpoints; an equal end remains active.
-        while (!endings.empty() && endings.top().end < begin) {
+        while (!endings.empty() && lane_occupant_t::is_expired(endings.top().end, begin)) {
             const auto id = endings.top().note.value;
             active.erase(id);
             unmarked.erase(id);
@@ -754,7 +735,7 @@ struct active_move_intervals_t {
             endings.pop();
         }
     }
-    void insert(const duration_collision_interval_t& interval, bool track_outline = false) {
+    void insert(const lane_occupant_t& interval, bool track_outline = false) {
         endings.push({interval.end, interval.note});
         active.insert(interval.note.value);
         unmarked.insert(interval.note.value);
@@ -769,7 +750,7 @@ struct note_move_collision_sweep_t {
     std::set<std::uint64_t> occupants;
     active_move_intervals_t moved;
     active_move_intervals_t existing;
-    lane_id_t lane{};
+    lane_occupancy_key_t lane{};
     bool has_lane{};
 
     explicit note_move_collision_sweep_t(note_move_plan_t& proposed) : plan(proposed) {
@@ -795,7 +776,7 @@ struct note_move_collision_sweep_t {
         occupants.insert(existing.unmarked.begin(), existing.unmarked.end());
         existing.unmarked.clear();
     }
-    void process_moved(const duration_collision_interval_t& interval) {
+    void process_moved(const lane_occupant_t& interval) {
         if (!existing.active.empty()) {
             mark_moved(interval.note.value, *existing.active.begin());
             mark_active_existing();
@@ -813,7 +794,7 @@ struct note_move_collision_sweep_t {
         if (occupants.contains(interval.note.value))
             moved.unoutlined.erase(interval.note.value);
     }
-    void process_existing(const duration_collision_interval_t& interval) {
+    void process_existing(const lane_occupant_t& interval) {
         existing.insert(interval);
         if (!moved.active.empty()) {
             occupants.insert(interval.note.value);
@@ -821,7 +802,7 @@ struct note_move_collision_sweep_t {
             mark_active_moved(interval.note.value);
         }
     }
-    void process(const duration_collision_interval_t& interval) {
+    void process(const lane_occupant_t& interval) {
         if (!has_lane || interval.lane != lane) {
             moved = {};
             existing = {};
@@ -830,20 +811,20 @@ struct note_move_collision_sweep_t {
         }
         moved.expire(interval.begin);
         existing.expire(interval.begin);
-        if (interval.resizing)
+        if (interval.proposed)
             process_moved(interval);
         else
             process_existing(interval);
     }
 };
 
-auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collisions,
-                        std::size_t moved_count) -> std::vector<duration_collision_interval_t>;
+auto merged_move_ranges(const std::vector<lane_occupant_t>& collisions,
+                        std::size_t moved_count) -> std::vector<lane_occupant_t>;
 
-auto is_overlapping_move_range(const duration_collision_interval_t& interval,
-                         const std::vector<duration_collision_interval_t>& ranges) -> bool;
+auto is_overlapping_move_range(const lane_occupant_t& interval,
+                         const std::vector<lane_occupant_t>& ranges) -> bool;
 
-void mark_move_collisions(std::vector<duration_collision_interval_t>& collisions,
+void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
                           note_move_plan_t& plan);
 
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
@@ -906,7 +887,6 @@ auto proposed_playhead_cursor(const document_history_t& history, const chart_doc
 using interaction_detail::active_duration_collision_t;
 using interaction_detail::active_move_intervals_t;
 using interaction_detail::canvas_cursor_t;
-using interaction_detail::duration_collision_interval_t;
 using interaction_detail::duration_collision_sweep_t;
 using interaction_detail::duration_resize_context_t;
 using interaction_detail::duration_resize_plan_t;
@@ -923,7 +903,6 @@ using interaction_detail::note_move_context_t;
 using interaction_detail::note_move_parameters_t;
 using interaction_detail::note_move_plan_t;
 using interaction_detail::note_paint_plan_t;
-using interaction_detail::paint_note_interval_t;
 using interaction_detail::paint_overlap_sweep_t;
 using interaction_detail::paint_row_t;
 using interaction_detail::resize_parameters_t;

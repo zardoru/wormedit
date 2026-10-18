@@ -1,5 +1,6 @@
 #include <wormedit/core/rational.h>
 #include "interaction_geometry.h"
+#include "lane_occupancy.h"
 #include <wormedit/core/editor_scene.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/virtual_canvas.h>
@@ -183,15 +184,14 @@ template <typename ColorForNote>
 auto append_scene_note(const measure_chunk_t& measure, const note_t& note,
                        scene_note_index_context_t& context, ColorForNote&& semantic_color_for_note)
     -> void {
-    const auto begin = context.index.measures.row_of(note.position);
-    const auto end = note.end ? context.index.measures.row_of(*note.end) : begin;
+    const auto occupied = lane_occupant_t::from(note, context.index.measures);
     if (!note.id || !context.note_ids.insert(note.id.value).second) {
         context.diagnostics.push_back(error(diagnostic_code_t::duplicate_id,
                                             "field-scene note identity is missing or duplicated",
                                             note.id));
         return;
     }
-    if (!begin || !end || *end < *begin) {
+    if (!occupied || occupied->end < occupied->begin) {
         context.diagnostics.push_back(error(diagnostic_code_t::invalid_hold,
                                             "field-scene note span is outside chart geometry",
                                             note.id));
@@ -203,8 +203,8 @@ auto append_scene_note(const measure_chunk_t& measure, const note_t& note,
                   "field-scene note is stored outside its position's measure", note.id));
         return;
     }
-    if (!has_lane(layout_at_row(context.index, *begin), note.lane) ||
-        !has_lane(layout_at_row(context.index, *end), note.lane)) {
+    if (!has_lane(layout_at_row(context.index, occupied->begin), note.lane) ||
+        !has_lane(layout_at_row(context.index, occupied->end), note.lane)) {
         context.diagnostics.push_back(error(diagnostic_code_t::unknown_lane,
                                             "field-scene note endpoint has no active lane",
                                             note.id));
@@ -214,8 +214,8 @@ auto append_scene_note(const measure_chunk_t& measure, const note_t& note,
                                    .lane = note.lane,
                                    .sound = note.sound,
                                    .kind = note.kind,
-                                   .begin_row = *begin,
-                                   .end_row = *end,
+                                   .begin_row = occupied->begin,
+                                   .end_row = occupied->end,
                                    .semantic_color = semantic_color_for_note(note),
                                    .semantic_layers = note.semantic_layers});
 }
@@ -1427,15 +1427,14 @@ auto record_paint_overlaps(const editor_field_scene_note_source_t& note,
     if (target_rows == paint.visible_rows_by_lane.end()) {
         return true;
     }
-    const auto first = std::ranges::lower_bound(target_rows->second, note.begin_row);
-    const auto after = std::ranges::upper_bound(first, target_rows->second.end(), note.end_row);
-    for (auto target = first; target != after; ++target) {
+    const lane_occupant_t occupied{.begin = note.begin_row, .end = note.end_row};
+    for (const auto target : occupied.covered_rows(target_rows->second)) {
         if (!operate()) {
             return false;
         }
         const auto removable_tap = note.kind == note_kind_t::tap &&
-                                   note.begin_row == note.end_row && note.begin_row == *target;
-        const paint_cell_key_t cell{note.lane, *target};
+                                   note.begin_row == note.end_row && note.begin_row == target;
+        const paint_cell_key_t cell{note.lane, target};
         const auto overlap_count = ++paint.overlap_counts[cell];
         if (!removable_tap || overlap_count > 1) {
             paint.invalid_cells.insert(cell);

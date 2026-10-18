@@ -1,3 +1,6 @@
+#include "lane_occupancy.h"
+#include <array>
+#include <queue>
 #include "../core/checked_math.h"
 #include "interaction_geometry.h"
 #include <wormedit/core/quantize.h>
@@ -165,9 +168,99 @@ auto quantized_position(quantization_position_context_t& context, local_position
     return result;
 }
 
-auto note_collision_key(const detail::quantize_geometry_t& index, const note_t& note) -> std::string {
-    const auto row = index.absolute(note.position).value_or(maximum);
-    return std::to_string(row) + ":" + std::to_string(note.lane.value);
+auto quantize_occupancy(const chart_document_t& chart, const detail::quantize_geometry_t& index)
+    -> lane_occupancy_t {
+    std::size_t count{};
+    for (const auto& measure : chart.measures) count += measure.notes.size();
+    std::vector<lane_occupant_t> entries;
+    entries.reserve(count);
+    for (const auto& measure : chart.measures) {
+        for (const auto& note : measure.notes) {
+            const auto begin = index.absolute(note.position).value_or(maximum);
+            const auto end = note.end ? index.absolute(*note.end).value_or(maximum) : begin;
+            entries.push_back({.lane = lane_occupancy_key_t::from(note.lane), .begin = begin, .end = end,
+                .note = note.id, .kind = note.kind, .has_end = note.end.has_value()});
+        }
+    }
+    return lane_occupancy_t::from(std::move(entries));
+}
+
+// Original head groups preserve the legacy exemption without enumerating overlap pairs.
+struct quantize_body_sweep_t {
+    using ending_t = std::tuple<std::uint64_t, std::size_t, bool>;
+    std::vector<std::array<std::size_t, 2>> counts;
+    std::priority_queue<ending_t, std::vector<ending_t>, std::greater<>> ending;
+    std::set<std::size_t> active, changed;
+
+    void remove_first() {
+        const auto [end, group, was_changed] = ending.top();
+        ending.pop();
+        if (--counts[group][0] == 0) active.erase(group);
+        if (was_changed && --counts[group][1] == 0) changed.erase(group);
+    }
+    void reset() {
+        while (!ending.empty()) remove_first();
+    }
+    void advance(std::uint64_t row) {
+        while (!ending.empty() && lane_occupant_t::is_expired(std::get<0>(ending.top()), row))
+            remove_first();
+    }
+    auto collides(std::size_t group, bool span_changed) const -> bool {
+        const auto& eligible = span_changed ? active : changed;
+        return !eligible.empty() && (*eligible.begin() != group || eligible.size() > 1);
+    }
+    void insert(const lane_occupant_t& entry, std::size_t group, bool span_changed) {
+        if (counts[group][0]++ == 0) active.insert(group);
+        if (span_changed && counts[group][1]++ == 0) changed.insert(group);
+        ending.emplace(entry.end, group, span_changed);
+    }
+};
+
+struct quantize_body_source_t {
+    std::size_t group{};
+    bool changed{};
+    auto operator==(const quantize_body_source_t&) const -> bool = default;
+};
+
+auto quantize_body_source(const lane_occupant_t& entry, const lane_occupancy_t& original)
+    -> std::optional<quantize_body_source_t> {
+    const auto* source = original.find(entry.note);
+    if (!source || entry.begin == maximum || entry.end < entry.begin ||
+        (entry.has_end && entry.begin == entry.end)) return std::nullopt;
+    const auto* first = original.first_at_head(source->lane, source->begin);
+    return quantize_body_source_t{.group = first->ordinal, .changed = entry.row_span() != source->row_span()};
+}
+
+auto quantize_body_collisions(const lane_occupancy_t& original, const lane_occupancy_t& after)
+    -> std::vector<bool> {
+    std::vector<bool> collisions(after.entries().size());
+    quantize_body_sweep_t sweep{.counts = std::vector<std::array<std::size_t, 2>>(original.entries().size()),
+        .ending = {}, .active = {}, .changed = {}};
+    const auto& entries = after.entries();
+    lane_occupancy_key_t lane{};
+    for (std::size_t first = 0; first < entries.size();) {
+        const auto& head = entries[first];
+        if (lane != head.lane) { sweep.reset(); lane = head.lane; }
+        sweep.advance(head.begin);
+        auto end = first + 1;
+        while (end < entries.size() && entries[end].head_key() == head.head_key()) ++end;
+        for (auto current = first; current < end; ++current)
+            if (const auto source = quantize_body_source(entries[current], original))
+                collisions[entries[current].ordinal] = sweep.collides(source->group, source->changed);
+        // Equal resulting heads belong solely to the first-representative head policy.
+        for (auto current = first; current < end; ++current)
+            if (const auto source = quantize_body_source(entries[current], original))
+                sweep.insert(entries[current], source->group, source->changed);
+        first = end;
+    }
+    return collisions;
+}
+
+auto has_quantize_head_collision(const lane_occupant_t& entry, const lane_occupancy_t& original,
+                                 const lane_occupancy_t& after) -> bool {
+    const auto* first = after.first_at_head(entry.lane, entry.begin);
+    if (!first || first->note == entry.note) return false;
+    return original.find(first->note)->head_key() != original.find(entry.note)->head_key();
 }
 
 auto validate_note_intervals_and_collisions(const chart_document_t& before,
@@ -175,14 +268,10 @@ auto validate_note_intervals_and_collisions(const chart_document_t& before,
                                             const detail::quantize_geometry_t& index,
                                             quantization_collision_t collision_policy,
                                             diagnostic_list_t& diagnostics) -> void {
-    std::unordered_map<std::uint64_t, std::string> original_keys;
-    for (const auto& measure : before.measures) {
-        for (const auto& note : measure.notes) {
-            original_keys.emplace(note.id.value, note_collision_key(index, note));
-        }
-    }
-
-    std::unordered_map<std::string, object_id_t> occupied;
+    const auto original = quantize_occupancy(before, index);
+    const auto occupied = quantize_occupancy(after, index);
+    const auto body_collisions = collision_policy == quantization_collision_t::allow
+        ? std::vector<bool>{} : quantize_body_collisions(original, occupied);
     for (const auto& measure : after.measures) {
         for (const auto& note : measure.notes) {
             if (note.end.has_value()) {
@@ -193,16 +282,11 @@ auto validate_note_intervals_and_collisions(const chart_document_t& before,
                           "quantization would reverse or collapse a hold", note.id);
                 }
             }
-            if (collision_policy == quantization_collision_t::allow) {
-                continue;
-            }
-            const auto key = note_collision_key(index, note);
-            const auto [entry, inserted] = occupied.emplace(key, note.id);
-            if (!inserted && entry->second != note.id &&
-                original_keys[entry->second.value] != original_keys[note.id.value]) {
+            if (collision_policy == quantization_collision_t::allow) continue;
+            const auto* entry = occupied.find(note.id);
+            if (has_quantize_head_collision(*entry, original, occupied) || body_collisions[entry->ordinal])
                 error(diagnostics, diagnostic_code_t::collision,
                       "quantization would collide notes in one lane", note.id);
-            }
         }
     }
 }

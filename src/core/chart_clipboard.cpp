@@ -2,6 +2,7 @@
 #include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_clipboard.h>
+#include "lane_occupancy.h"
 
 #include <wormedit/core/sound_slice.h>
 #include <wormedit/core/timing.h>
@@ -423,16 +424,8 @@ auto place_object(const chart_clipboard_object_t& object, const chart_document_t
     return place_timing_object(object, chart, index, *position, row);
 }
 
-struct paste_interval_t {
-    bool bgm{};
-    std::uint64_t lane{};
-    std::uint64_t begin{};
-    std::uint64_t end{};
-    bool proposed{};
-};
-
 template <typename Payload>
-auto append_interval(std::vector<paste_interval_t>& intervals, const Payload& payload,
+auto append_interval(std::vector<lane_occupant_t>& intervals, const Payload& payload,
                      const measure_index_t& index, bool proposed) -> bool {
     // Timing objects are checked by whole-document validation, not by lane intervals.
     if constexpr (!std::is_same_v<Payload, note_t> && !std::is_same_v<Payload, bgm_event_t>) {
@@ -440,24 +433,23 @@ auto append_interval(std::vector<paste_interval_t>& intervals, const Payload& pa
     } else {
     const auto row = index.row_of(payload.position);
     if (!row) return false;
-    paste_interval_t interval{.begin = *row, .end = *row, .proposed = proposed};
+    lane_occupant_t interval{.begin = *row, .end = *row, .proposed = proposed};
     if constexpr (std::is_same_v<Payload, note_t>) {
-        interval.lane = payload.lane.value;
+        interval.lane = lane_occupancy_key_t::from(payload.lane);
         if (payload.end) {
             const auto end = index.row_of(*payload.end);
             if (!end || *end < *row) return false;
             interval.end = *end;
         }
     } else {
-        interval.bgm = true;
-        interval.lane = payload.source_lane.value;
+        interval.lane = lane_occupancy_key_t::from(payload.source_lane);
     }
     intervals.push_back(interval);
     return true;
     }
 }
 
-auto collect_existing_intervals(std::vector<paste_interval_t>& intervals,
+auto collect_existing_intervals(std::vector<lane_occupant_t>& intervals,
     const chart_document_t& chart, const measure_index_t& index) -> bool {
     for (const auto& measure : chart.measures) {
         for (const auto& note : measure.notes)
@@ -468,31 +460,10 @@ auto collect_existing_intervals(std::vector<paste_interval_t>& intervals,
     return true;
 }
 
-auto has_overlapping_paste_intervals(std::vector<paste_interval_t> intervals) -> bool {
-    std::ranges::sort(intervals, {}, [](const auto& interval) {
-        return std::tuple{interval.bgm, interval.lane, interval.begin, interval.proposed};
-    });
-    std::optional<std::pair<bool, std::uint64_t>> lane;
-    std::optional<std::uint64_t> existing_end;
-    std::optional<std::uint64_t> proposed_end;
-    for (const auto& interval : intervals) {
-        const auto next_lane = std::pair{interval.bgm, interval.lane};
-        if (lane != next_lane) {
-            lane = next_lane;
-            existing_end.reset();
-            proposed_end.reset();
-        }
-        if (proposed_end && *proposed_end >= interval.begin) return true;
-        if (interval.proposed && existing_end && *existing_end >= interval.begin) return true;
-        auto& end = interval.proposed ? proposed_end : existing_end;
-        end = std::max(end.value_or(0), interval.end);
-    }
-    return false;
-}
 
 auto has_paste_collision(const chart_document_t& chart, const chart_paste_proposal_t& proposal,
                    const measure_index_t& index) -> bool {
-    std::vector<paste_interval_t> intervals;
+    std::vector<lane_occupant_t> intervals;
     if (!collect_existing_intervals(intervals, chart, index)) return true;
     for (const auto& object : proposal.report.objects) {
         const auto appended = std::visit([&](const auto& payload) {
@@ -500,7 +471,8 @@ auto has_paste_collision(const chart_document_t& chart, const chart_paste_propos
         }, object);
         if (!appended) return true;
     }
-    return has_overlapping_paste_intervals(std::move(intervals));
+    const auto occupancy = lane_occupancy_t::from(std::move(intervals), lane_occupancy_order_t::paste);
+    return occupancy.first_collision(lane_occupancy_pairs_t::proposed) != nullptr;
 }
 
 void append_paste_object(chart_document_t& chart, chart_clipboard_payload_t object) {

@@ -56,3 +56,6 @@ duplicate_command_outcome | 0 | src,include | (document_command_outcome_t|comman
 
 # T-643: typed declaration ceilings share id_ceiling_t; format-local and lane IDs remain distinct.
 local_declared_id_maximum | 9 | src | std::max\([^,]+, ([A-Za-z_][A-Za-z0-9_]*[.])+id[.]value( *[+] *1)?\)
+
+# T-651: closed note ranges belong to lane_occupancy.h.
+local_note_occupancy_interval | 0 | src,include | ^struct [a-z_]*(note|paste|collision)_interval_t[ ]*[{]

@@ -84,7 +84,7 @@ auto resize_one_note(duration_resize_context_t& context, const resize_parameters
         return error(diagnostic_code_t::unknown_lane,
                      "selected note lane is unavailable at its resized tail", id);
     plan.resized.push_back({id, note->lane, *begin, end, end_position});
-    context.collisions.push_back({note->lane, *begin, end, id, true});
+    context.collisions.push_back({.lane = lane_occupancy_key_t::from(note->lane), .begin = *begin, .end = end, .note = id, .proposed = true});
     return std::nullopt;
 }
 } // namespace wormedit::interaction_detail
@@ -102,19 +102,11 @@ auto resize_selected_notes(duration_resize_context_t& context,
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto validate_resize_collisions(std::vector<duration_collision_interval_t>& collisions)
+auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
     -> std::optional<diagnostic_t> {
-    std::ranges::sort(collisions, [](const auto& left, const auto& right) {
-        if (left.lane != right.lane)
-            return left.lane.value < right.lane.value;
-        if (left.begin != right.begin)
-            return left.begin < right.begin;
-        if (left.end != right.end)
-            return left.end < right.end;
-        return left.resizing < right.resizing;
-    });
+    const auto occupancy = lane_occupancy_t::from(std::move(collisions), lane_occupancy_order_t::resize);
     duration_collision_sweep_t sweep;
-    for (const auto& interval : collisions)
+    for (const auto& interval : occupancy.entries())
         if (auto failure = sweep.process(interval))
             return failure;
     return std::nullopt;
@@ -400,18 +392,18 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
                               : std::nullopt});
     // Partially visible invalid holds still occupy their safely clipped interval.
     if (target.available && !shifted_begin.after_chart && !shifted_end.before_chart)
-        context.collisions.push_back({target.lane, moved_begin, moved_end, id, true});
+        context.collisions.push_back({.lane = lane_occupancy_key_t::from(target.lane), .begin = moved_begin, .end = moved_end, .note = id, .proposed = true});
     return std::nullopt;
 }
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collisions,
-                        std::size_t moved_count) -> std::vector<duration_collision_interval_t> {
-    std::vector<duration_collision_interval_t> ranges;
+auto merged_move_ranges(const std::vector<lane_occupant_t>& collisions,
+                        std::size_t moved_count) -> std::vector<lane_occupant_t> {
+    std::vector<lane_occupant_t> ranges;
     ranges.reserve(moved_count);
     for (const auto& interval : collisions)
-        if (interval.resizing)
+        if (interval.proposed)
             ranges.push_back(interval);
     std::ranges::sort(ranges, [](const auto& left, const auto& right) {
         return std::tie(left.lane.value, left.begin, left.end) <
@@ -419,8 +411,7 @@ auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collis
     });
     std::size_t merged = 0;
     for (const auto& range : ranges) {
-        if (merged != 0 && ranges[merged - 1].lane == range.lane &&
-            range.begin <= ranges[merged - 1].end) {
+        if (merged != 0 && ranges[merged - 1].overlaps(range)) {
             ranges[merged - 1].end = std::max(ranges[merged - 1].end, range.end);
         } else {
             ranges[merged++] = range;
@@ -432,31 +423,28 @@ auto merged_move_ranges(const std::vector<duration_collision_interval_t>& collis
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-auto is_overlapping_move_range(const duration_collision_interval_t& interval,
-                         const std::vector<duration_collision_interval_t>& ranges) -> bool {
+auto is_overlapping_move_range(const lane_occupant_t& interval,
+                         const std::vector<lane_occupant_t>& ranges) -> bool {
     const auto key = std::pair{interval.lane.value, interval.begin};
     const auto found = std::ranges::lower_bound(
         ranges, key, {}, [](const auto& range) { return std::pair{range.lane.value, range.end}; });
-    return found != ranges.end() && found->lane == interval.lane && found->begin <= interval.end;
+    return found != ranges.end() && found->overlaps(interval);
 }
 } // namespace wormedit::interaction_detail
 
 namespace wormedit::interaction_detail {
-void mark_move_collisions(std::vector<duration_collision_interval_t>& collisions,
+void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
                           note_move_plan_t& plan) {
     const auto ranges = merged_move_ranges(collisions, plan.moved.size());
     // Only intervals intersecting a proposed closed range can be occupants.
     // Keeping all moved intervals preserves selected-selected conflicts,
     // including clipped invalid hold portions.
     std::erase_if(collisions, [&](const auto& interval) {
-        return !interval.resizing && !is_overlapping_move_range(interval, ranges);
+        return !interval.proposed && !is_overlapping_move_range(interval, ranges);
     });
-    std::ranges::sort(collisions, [](const auto& left, const auto& right) {
-        return std::tie(left.lane.value, left.begin, left.end, left.resizing, left.note.value) <
-               std::tie(right.lane.value, right.begin, right.end, right.resizing, right.note.value);
-    });
+    const auto occupancy = lane_occupancy_t::from(std::move(collisions), lane_occupancy_order_t::move);
     note_move_collision_sweep_t sweep{plan};
-    for (const auto& interval : collisions)
+    for (const auto& interval : occupancy.entries())
         sweep.process(interval);
     for (const auto id : sweep.occupants)
         plan.occupants.push_back(object_id_t{id});

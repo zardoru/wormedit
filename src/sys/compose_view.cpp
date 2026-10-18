@@ -841,85 +841,37 @@ auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> boo
 }
 
 
-auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
+// SDL scancodes are USB HID usages; check every key against SDL's own constants.
+static_assert([] {
     using wormedit::physical_key_t;
-    switch (key) {
-    case physical_key_t::digit_1:
-        return SDL_SCANCODE_1;
-    case physical_key_t::digit_2:
-        return SDL_SCANCODE_2;
-    case physical_key_t::digit_3:
-        return SDL_SCANCODE_3;
-    case physical_key_t::digit_4:
-        return SDL_SCANCODE_4;
-    case physical_key_t::digit_5:
-        return SDL_SCANCODE_5;
-    case physical_key_t::digit_6:
-        return SDL_SCANCODE_6;
-    case physical_key_t::digit_7:
-        return SDL_SCANCODE_7;
-    case physical_key_t::digit_8:
-        return SDL_SCANCODE_8;
-    case physical_key_t::digit_9:
-        return SDL_SCANCODE_9;
-    case physical_key_t::digit_0:
-        return SDL_SCANCODE_0;
-    case physical_key_t::key_q:
-        return SDL_SCANCODE_Q;
-    case physical_key_t::key_w:
-        return SDL_SCANCODE_W;
-    case physical_key_t::key_e:
-        return SDL_SCANCODE_E;
-    case physical_key_t::key_r:
-        return SDL_SCANCODE_R;
-    case physical_key_t::key_t:
-        return SDL_SCANCODE_T;
-    case physical_key_t::key_y:
-        return SDL_SCANCODE_Y;
-    case physical_key_t::key_u:
-        return SDL_SCANCODE_U;
-    case physical_key_t::key_i:
-        return SDL_SCANCODE_I;
-    case physical_key_t::key_o:
-        return SDL_SCANCODE_O;
-    case physical_key_t::key_p:
-        return SDL_SCANCODE_P;
-    case physical_key_t::key_a:
-        return SDL_SCANCODE_A;
-    case physical_key_t::key_s:
-        return SDL_SCANCODE_S;
-    case physical_key_t::key_d:
-        return SDL_SCANCODE_D;
-    case physical_key_t::key_f:
-        return SDL_SCANCODE_F;
-    case physical_key_t::key_g:
-        return SDL_SCANCODE_G;
-    case physical_key_t::key_h:
-        return SDL_SCANCODE_H;
-    case physical_key_t::key_j:
-        return SDL_SCANCODE_J;
-    case physical_key_t::key_k:
-        return SDL_SCANCODE_K;
-    case physical_key_t::key_l:
-        return SDL_SCANCODE_L;
-    case physical_key_t::key_z:
-        return SDL_SCANCODE_Z;
-    case physical_key_t::key_x:
-        return SDL_SCANCODE_X;
-    case physical_key_t::key_c:
-        return SDL_SCANCODE_C;
-    case physical_key_t::key_v:
-        return SDL_SCANCODE_V;
-    case physical_key_t::key_b:
-        return SDL_SCANCODE_B;
-    case physical_key_t::key_n:
-        return SDL_SCANCODE_N;
-    case physical_key_t::key_m:
-        return SDL_SCANCODE_M;
-    case physical_key_t::unknown:
-        return 0;
-    }
-    return 0;
+    constexpr std::array<std::pair<physical_key_t, SDL_Scancode>, 37> keys{{
+        {physical_key_t::unknown, SDL_SCANCODE_UNKNOWN},
+        {physical_key_t::digit_1, SDL_SCANCODE_1}, {physical_key_t::digit_2, SDL_SCANCODE_2},
+        {physical_key_t::digit_3, SDL_SCANCODE_3}, {physical_key_t::digit_4, SDL_SCANCODE_4},
+        {physical_key_t::digit_5, SDL_SCANCODE_5}, {physical_key_t::digit_6, SDL_SCANCODE_6},
+        {physical_key_t::digit_7, SDL_SCANCODE_7}, {physical_key_t::digit_8, SDL_SCANCODE_8},
+        {physical_key_t::digit_9, SDL_SCANCODE_9}, {physical_key_t::digit_0, SDL_SCANCODE_0},
+        {physical_key_t::key_q, SDL_SCANCODE_Q}, {physical_key_t::key_w, SDL_SCANCODE_W},
+        {physical_key_t::key_e, SDL_SCANCODE_E}, {physical_key_t::key_r, SDL_SCANCODE_R},
+        {physical_key_t::key_t, SDL_SCANCODE_T}, {physical_key_t::key_y, SDL_SCANCODE_Y},
+        {physical_key_t::key_u, SDL_SCANCODE_U}, {physical_key_t::key_i, SDL_SCANCODE_I},
+        {physical_key_t::key_o, SDL_SCANCODE_O}, {physical_key_t::key_p, SDL_SCANCODE_P},
+        {physical_key_t::key_a, SDL_SCANCODE_A}, {physical_key_t::key_s, SDL_SCANCODE_S},
+        {physical_key_t::key_d, SDL_SCANCODE_D}, {physical_key_t::key_f, SDL_SCANCODE_F},
+        {physical_key_t::key_g, SDL_SCANCODE_G}, {physical_key_t::key_h, SDL_SCANCODE_H},
+        {physical_key_t::key_j, SDL_SCANCODE_J}, {physical_key_t::key_k, SDL_SCANCODE_K},
+        {physical_key_t::key_l, SDL_SCANCODE_L}, {physical_key_t::key_z, SDL_SCANCODE_Z},
+        {physical_key_t::key_x, SDL_SCANCODE_X}, {physical_key_t::key_c, SDL_SCANCODE_C},
+        {physical_key_t::key_v, SDL_SCANCODE_V}, {physical_key_t::key_b, SDL_SCANCODE_B},
+        {physical_key_t::key_n, SDL_SCANCODE_N}, {physical_key_t::key_m, SDL_SCANCODE_M},
+    }};
+    return std::ranges::all_of(keys, [](const auto& key) {
+        return wormedit::physical_key_hid_usage(key.first) == static_cast<std::uint16_t>(key.second);
+    });
+}());
+
+auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
+    return wormedit::physical_key_hid_usage(key);
 }
 
 auto requested_snap_denominator(const application_command_state_t& application_state,

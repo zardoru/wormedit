@@ -73,12 +73,13 @@ auto key_name(std::uint16_t usage) -> std::string {
     }
 }
 
-auto chord_list_text(const std::vector<shortcut_chord_t>& chords) -> std::string {
+auto chord_list_text(const std::vector<shortcut_chord_t>& chords,
+                     shortcut_primary_modifier_t primary) -> std::string {
     if (chords.empty()) return "Unbound";
     std::string text;
     for (std::size_t index = 0; index < chords.size() && index < max_chords_shown; ++index) {
         if (index != 0) text += ", ";
-        text += shortcut_chord_text(chords[index]);
+        text += shortcut_chord_text(chords[index], primary);
     }
     return text;
 }
@@ -110,7 +111,7 @@ void build_shortcut_rows_view(const command_registry_t& registry,
         out.labels.push_back(command.definition.display_name.empty()
                                  ? command.definition.id.value
                                  : command.definition.display_name);
-        out.chords.push_back(chord_list_text(command.current_shortcuts));
+        out.chords.push_back(chord_list_text(command.current_shortcuts, primary));
     }
     for (std::size_t index = 0; index < count; ++index) {
         out.rows.push_back({.label = out.labels[index].c_str(), .chord = out.chords[index].c_str(),
@@ -131,6 +132,21 @@ auto shortcut_chord_text(const shortcut_chord_t& chord) -> std::string {
         text += std::string(name) + "+";
     }
     return text + key;
+}
+
+auto shortcut_chord_text(shortcut_chord_t chord, shortcut_primary_modifier_t primary) -> std::string {
+    const auto bit = static_cast<shortcut_modifiers_t>(shortcut_modifier_t::primary);
+    if (chord.modifiers & bit) {
+        chord.modifiers &= ~bit;
+        chord.modifiers |= static_cast<shortcut_modifiers_t>(primary == shortcut_primary_modifier_t::meta
+            ? shortcut_modifier_t::meta : shortcut_modifier_t::control);
+    }
+    auto text = shortcut_chord_text(chord);
+    if (primary == shortcut_primary_modifier_t::meta) {
+        const auto at = text.find("Meta+");
+        if (at != std::string::npos) text.replace(at, 5, "⌘+");
+    }
+    return text;
 }
 
 auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events) -> shortcut_capture_t {

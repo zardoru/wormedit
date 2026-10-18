@@ -7,6 +7,7 @@
 #include <wormedit/core/vocabulary.h>
 
 #include <algorithm>
+#include <array>
 #include <compare>
 #include <cstddef>
 #include <cstdint>
@@ -227,6 +228,21 @@ enum class physical_key_t {
     key_n,
     key_m,
 };
+
+// USB HID keyboard usage of each physical key (SDL scancodes use the same numbers), indexed by
+// physical_key_t; unknown is 0.
+inline constexpr std::array<std::uint16_t, 37> physical_key_hid_usages{
+    0x00, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27,      // digits 1-9, 0
+    0x14, 0x1a, 0x08, 0x15, 0x17, 0x1c, 0x18, 0x0c, 0x12, 0x13,            // Q W E R T Y U I O P
+    0x04, 0x16, 0x07, 0x09, 0x0a, 0x0b, 0x0d, 0x0e, 0x0f,                  // A S D F G H J K L
+    0x1d, 0x1b, 0x06, 0x19, 0x05, 0x11, 0x10,                              // Z X C V B N M
+};
+static_assert(physical_key_hid_usages.size() == static_cast<std::size_t>(physical_key_t::key_m) + 1);
+
+[[nodiscard]] constexpr auto physical_key_hid_usage(physical_key_t key) noexcept -> std::uint16_t {
+    const auto index = static_cast<std::size_t>(key);
+    return index < physical_key_hid_usages.size() ? physical_key_hid_usages[index] : 0;
+}
 
 struct lane_binding_t {
     physical_key_t key{physical_key_t::unknown};

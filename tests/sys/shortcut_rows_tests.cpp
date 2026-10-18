@@ -185,3 +185,15 @@ TEST_CASE("capture accepts a punctuation key press", "[sys][shortcut-rows]") {
     REQUIRE(captured.chord.has_value());
     CHECK(captured.chord->key == static_cast<shortcut_key_t>(0x36));
 }
+
+TEST_CASE("projection shows the primary modifier as the platform key", "[sys][shortcut-rows]") {
+    command_registry_t registry;
+    REQUIRE(register_command(registry, command("test.redo",
+        {shortcut_chord_t{.key = shortcut_key_t::z,
+                          .modifiers = static_cast<shortcut_modifiers_t>(primary_modifier() | shift_modifier())}})).value);
+    shortcut_rows_projection_t projection;
+    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
+    CHECK(std::string(projection.rows[0].chord) == "Ctrl+Shift+Z");
+    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::meta, projection);
+    CHECK(std::string(projection.rows[0].chord) == "Shift+⌘+Z");
+}

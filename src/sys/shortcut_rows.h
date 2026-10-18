@@ -26,6 +26,9 @@ void build_shortcut_rows_view(const command_registry_t& registry,
 
 // Human-readable chord, for example "Ctrl+Shift+Z"; empty for an unbindable key.
 [[nodiscard]] auto shortcut_chord_text(const shortcut_chord_t& chord) -> std::string;
+// The same, with the primary modifier shown as the platform's key: "Ctrl+S", or "⌘+S" on macOS.
+[[nodiscard]] auto shortcut_chord_text(shortcut_chord_t chord, shortcut_primary_modifier_t primary)
+    -> std::string;
 
 // Result of one frame's key batch while a capture is waiting. Escape without modifiers cancels.
 struct shortcut_capture_t {

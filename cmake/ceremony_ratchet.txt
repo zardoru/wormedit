@@ -70,4 +70,4 @@ interaction_failure_view | 111 | src/core | (^|[^a-z_])(cursor_)?diagnostic_resu
 core_committed_result | 12 | src/core | editor_interaction_result_t::from\([^)]*, *(true|changed)\)|document_changed = true
 scratch_dispatch | 4 | src/core | dispatch_editor_action\((scratch|staged)
 manual_gesture_restamp | 1 | src/core | refresh_gesture_stamp<
-sys_workspace_rebind | 4 | src/sys | = (wormedit::)?rebind_workspace\(
+sys_workspace_rebind | 1 | src/sys | = (wormedit::)?rebind_workspace\(

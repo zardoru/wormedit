@@ -1,4 +1,5 @@
 #include "sys/metadata_commands.h"
+#include "sys/document_edit_feedback.h"
 #include "sys/metadata_actions.h"
 #include "sys/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
@@ -45,12 +46,13 @@ auto publish_metadata_edit(document_command_result_t result,
         if (!result.diagnostics.empty()) return diagnostic_feedback(result.diagnostics.front());
         return {notification_severity_t::info, "No metadata changes."};
     }
-    const auto rebound = rebind_workspace(workspace, history);
-    if (!rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty)) {
-        if (!rebound.diagnostics.empty()) return diagnostic_feedback(rebound.diagnostics.front());
-        return {notification_severity_t::error, "Metadata changed, but workspace rebinding failed."};
-    }
-    return {notification_severity_t::success, "Metadata updated."};
+    auto feedback = rebind_document_edit(
+        workspace, history,
+        {.success = "Metadata updated.",
+         .rebind_failure = "Metadata changed, but workspace rebinding failed.",
+         .unknown_severity = notification_severity_t::info,
+         .source = notification_source_t::edit});
+    return {feedback.severity, std::string{feedback.message_text()}};
 }
 
 auto dispatch_song_edit(const WormUiWorkspaceAction& action, document_history_t& history,

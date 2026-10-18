@@ -483,6 +483,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_note_to_bgm.cpp
         src/sys/compose_area_actions.cpp
         src/sys/compose_action_outcome.cpp
+        src/sys/document_edit_feedback.cpp
         src/sys/compose_actions.cpp
         src/sys/compose_resource_actions.cpp
         src/sys/compose_marker_actions.cpp

@@ -64,7 +64,8 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 
 ## T-689 Rebind the workspace after an edit in one place
 
-- **Status:** ready
+- **Status:** done (2026-10-18, Codex lane drake; reviewed and gated by Claude)
+- **Done:** `rebind_document_edit` and `document_edit_feedback_t` (`src/sys/document_edit_feedback.{h,cpp}`) own rebind plus feedback mapping; `finish_compose_outcome`, `publish_metadata_edit`, `complete_project_resource_copy` and `link_imported_metadata_audio` pass only their messages, severity policy and sources. Every site's message, severity and source mapping was compared and kept, including Compose's action-only source policy and the resource copy's fixed failure text. Supporting edit: `tests/CMakeLists.txt` (new test, and the new source in the test binaries that link `compose_action_outcome.cpp`). Ratchet `sys_workspace_rebind` 4 → 1. Evidence: `scripts/gate.sh --agents 2` passed, 4,120/4,120 tests, complexity and whitespace pass.
 - **Value:** Modest. Three copies today; the risk is new commands adding a fourth with different failure messages.
 - **Outcome:** `publish_metadata_edit` (`src/sys/metadata_actions.cpp`), resource-copy relink completion (`src/sys/resource_job_state.cpp`) and audio import (`src/sys/metadata_asset_runtime.cpp`) rebind through the same function that `finish_compose_outcome` uses, passing only their own success and failure messages. Ratchet `sys_workspace_rebind` 1.
 - **Read first:** `src/sys/compose_action_outcome.cpp` (`finish_compose_outcome`), `src/sys/metadata_actions.cpp`, `src/sys/resource_job_state.cpp`, `src/sys/metadata_asset_runtime.cpp`, `src/core/workspace.cpp` (`rebind_workspace`).

@@ -1,4 +1,5 @@
 #include "sys/compose_action_context.h"
+#include "sys/document_edit_feedback.h"
 #include "sys/compose_audition_requests.h"
 #include <cassert>
 #include <utility>
@@ -188,28 +189,14 @@ void post_compose_mutation_before_failure(const notification_sink_t& feedback,
 }
 
 void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
-                                   dispatch_outcome_t&& rebound) {
+                                   document_edit_feedback_t&& rebound) {
     outcome.accepted = false;
     outcome.has_rebind_failed = true;
     outcome.borrowed_message = {};
-    if (outcome.rebind_feedback_policy != compose_rebind_feedback_policy_t::action_only)
-        outcome.source = notification_source_t::document;
     outcome.delivery = compose_feedback_delivery_t::message;
-    if (outcome.rebind_failure_policy == compose_rebind_failure_policy_t::diagnostic_or_message &&
-        !rebound.diagnostics.empty()) {
-        outcome.message = rebound.diagnostics.front().message;
-        outcome.severity = outcome.is_rebind_severity_diagnostic
-                               ? to_notification_severity(rebound.diagnostics.front().severity,
-                                                          outcome.unknown_severity)
-                               : notification_severity_t::error;
-    } else {
-        outcome.message = outcome.rebind_failure;
-        outcome.severity = notification_severity_t::error;
-    }
-    if (outcome.rebind_failure_severity)
-        outcome.severity = *outcome.rebind_failure_severity;
-    if (outcome.rebind_failure_source)
-        outcome.source = *outcome.rebind_failure_source;
+    outcome.message = rebound.message_text();
+    outcome.severity = rebound.severity;
+    outcome.source = rebound.source;
     outcome.diagnostics = std::move(rebound.diagnostics);
 }
 
@@ -227,8 +214,19 @@ auto finish_compose_outcome(const document_edit_inputs_t& document,
     if (posted_before_rebind)
         post_compose_outcome(feedback, outcome);
     if (outcome.mutated || outcome.is_workspace_refresh_required) {
-        auto rebound = rebind_workspace(document.workspace, document.history);
-        if (!rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty)) {
+        auto rebound = rebind_document_edit(
+            document.workspace, document.history,
+            {.rebind_failure = outcome.rebind_failure,
+             .is_message_diagnostic = outcome.rebind_failure_policy ==
+                                      compose_rebind_failure_policy_t::diagnostic_or_message,
+             .is_severity_diagnostic = outcome.is_rebind_severity_diagnostic,
+             .unknown_severity = outcome.unknown_severity,
+             .failure_severity = outcome.rebind_failure_severity,
+             .source = outcome.source,
+             .failure_source = outcome.rebind_failure_source.value_or(
+                 outcome.rebind_feedback_policy == compose_rebind_feedback_policy_t::action_only
+                     ? outcome.source : notification_source_t::document)});
+        if (!rebound.accepted) {
             if (!posted_before_rebind)
                 post_compose_mutation_before_failure(feedback, outcome);
             auto retained_message = outcome.is_message_retained_on_rebind_failure

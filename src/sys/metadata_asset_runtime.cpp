@@ -1,4 +1,5 @@
 #include "sys/metadata_asset_runtime.h"
+#include "sys/document_edit_feedback.h"
 #include "sys/thread_priority.h"
 #include <wormedit/core/async_job.h>
 
@@ -133,17 +134,18 @@ auto link_imported_metadata_audio(
         severity = wormedit::notification_severity_t::error;
         return false;
     }
-    const auto rebound = wormedit::rebind_workspace(workspace, history);
-    if (!rebound.is_accepted(wormedit::diagnostic_acceptance_policy_t::require_empty)) {
-        source = wormedit::notification_source_t::document;
-        severity = rebound.diagnostics.empty()
-                       ? wormedit::notification_severity_t::error
-                       : to_notification_severity(rebound.diagnostics.front().severity);
-        status = rebound.diagnostics.empty()
-                     ? "Audio imported, but workspace rebinding failed."
-                     : rebound.diagnostics.front().message;
-    } else {
-        severity = wormedit::notification_severity_t::success;
+    auto feedback = rebind_document_edit(
+        workspace, history,
+        {.success = request.export_copy
+                        ? "Audio staged in export assets and set as the song audio."
+                        : "Audio copied into project assets and set as the song audio.",
+         .rebind_failure = "Audio imported, but workspace rebinding failed.",
+         .source = source,
+         .failure_source = wormedit::notification_source_t::document});
+    severity = feedback.severity;
+    status = feedback.message_text();
+    source = feedback.source;
+    if (feedback.accepted) {
         const auto& resources = history.document.resources;
         const auto music = std::ranges::find_if(resources, [](const auto& resource) {
             return std::ranges::find(resource.roles, wormedit::resource_role_t::music) !=
@@ -154,9 +156,6 @@ auto link_imported_metadata_audio(
             wormedit::workspace_select_asset_action_t{
                 .asset = music != resources.end() ? music->asset : request.asset,
                 .slot = wormedit::workspace_asset_slot_t::audio});
-        status = request.export_copy
-                     ? "Audio staged in export assets and set as the song audio."
-                     : "Audio copied into project assets and set as the song audio.";
     }
     return true;
 }

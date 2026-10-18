@@ -1,4 +1,5 @@
 #include "sys/resource_job_state.h"
+#include "sys/document_edit_feedback.h"
 
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/core/resource_assignment.h>
@@ -70,15 +71,18 @@ auto complete_project_resource_copy(const resource_copy_identity_t& request,
     if (!relinked.diagnostics.empty())
         return {.message = relinked.diagnostics.front().message,
                 .severity = to_notification_severity(relinked.diagnostics.front().severity)};
-    if (const auto rebound = rebind_workspace(workspace, history);
-        !rebound.is_accepted(diagnostic_acceptance_policy_t::require_empty))
-        return {.message = "Resource copied, but workspace rebinding failed.",
-                .severity = notification_severity_t::error, .publish = true,
-                .source = notification_source_t::document};
-    return {.message = copied.status == project_asset_copy_phase_t::reused
-                ? "Existing project copy linked to the resource."
-                : "Resource copied into the project and linked.",
-            .severity = notification_severity_t::success};
+    auto feedback = rebind_document_edit(
+        workspace, history,
+        {.success = copied.status == project_asset_copy_phase_t::reused
+                        ? "Existing project copy linked to the resource."
+                        : "Resource copied into the project and linked.",
+         .rebind_failure = "Resource copied, but workspace rebinding failed.",
+         .is_message_diagnostic = false,
+         .source = notification_source_t::import_,
+         .failure_source = notification_source_t::document});
+    return {.message = std::string{feedback.message_text()},
+            .severity = feedback.severity,
+            .source = feedback.source};
 }
 
 auto complete_resource_copy(const resource_copy_identity_t& request,

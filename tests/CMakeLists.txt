@@ -29,8 +29,10 @@ add_executable(wormedit_core_tests
     ../src/common/static_interval_index.cpp
     sys/bga_lane_workflow_tests.cpp
     sys/stem_window_tests.cpp
+    sys/document_edit_feedback_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
+    ../src/sys/document_edit_feedback.cpp
     ../src/sys/compose_action_outcome.cpp
     ../src/sys/compose_audition_requests.cpp
     ../src/sys/application_commands.cpp
@@ -646,6 +648,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmark_chooser_view.cpp
         ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_bgm_bar.cpp
@@ -722,6 +725,7 @@ endif()
 if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
+            ../src/sys/document_edit_feedback.cpp
             ../src/sys/compose_action_outcome.cpp
             ../src/sys/compose_audition_requests.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
@@ -750,6 +754,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_view.cpp
@@ -856,6 +861,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/external_player.cpp
         sys/frame_projection_arena_tests.cpp
         sys/resource_notification_tests.cpp
+        ../src/sys/document_edit_feedback.cpp
         ../src/sys/resource_job_state.cpp
         ../src/sys/output_group_export.cpp
         sys/metadata_notification_tests.cpp

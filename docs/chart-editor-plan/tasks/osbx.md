@@ -131,16 +131,17 @@ document, and a failed run keeps the last materialized result.
 ## T-189 Evaluate Lua curve functions in SV recipes
 
 - **Status:** blocked-on T-156 (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
-- **Outcome:** an SV/`SCROLLS`/`SPEEDS` recipe can use `values(function(p, ctx) … end)` (or a module entry point returning such a function); preview and export evaluate it in a fresh sandbox with the recipe's sampling policy and store only source reference, API version, entry point, named parameters, input hashes, and seed.
+- **Outcome:** an SV/`SCROLLS`/`SPEEDS` recipe can use `values(function(p, ctx) … end)` (or a module entry point returning such a function); preview and export evaluate it in a fresh sandbox with the recipe's sampling policy and store only source reference, API version, entry point, named parameters, input hashes, seed, execution mode and declared emission/cycle plan.
 - **Read first:** `docs/osbx-draft-spec.md` (Parametric scroll and speed generation), `include/wormedit/core/sv_recipe.h` (`sample_sv_recipe`, `compile_sv_recipes`), `include/wormedit/scripting/lua_sandbox.h`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, new `src/scripting/lua_curve.cpp/.h`, new `tests/lua/lua_curve_tests.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Owner direction (2026-10-18):** Cross-cycle state is desired, based on the [pinned SV references and proposed prepared-evaluation checkpoint](extension-friction.md). Pure curves remain supported; ordered stateful sessions replace the old blanket stateful-closure rejection. T-681 must define prepared composition semantics before this evaluator integration; recheck the current native schema version before selecting its additive migration.
 - **Steps:**
-  1. The curve kind already exists as `sv_recipe_curve_t::lua_expression` with an inline `expression_source` (native schema 2, T-319; stored, validated and round-tripped, but sampling rejects it as unsupported). Extend it with the remaining stored fields above (API version, entry point, named parameters, input hashes, seed, optional project-relative source reference) as an additive schema 3 migration, and replace the unsupported rejection in `sample_sv_recipe` with the sampler callback (no bytecode).
-  2. A sampler callback interface in core; the Lua implementation lives in `src/scripting` so core stays Lua-free.
-  3. Referential transparency check: sample every point twice in different orders; any difference rejects with "stateful curve".
-  4. `ctx` is read-only: interval endpoints, baseline effective scroll at `p`, parameters, seed-derived RNG.
-  5. Tests: `function(p) return 1 + p end` matches `curve.linear{1,2}`; a counter closure is rejected; non-finite output rejects; instruction budget stops an infinite loop.
-- **Invariants:** identical inputs → identical samples on all platforms; save/load never stores sampled points.
+  1. The curve kind already exists as `sv_recipe_curve_t::lua_expression` with an inline `expression_source` (native schema 2, T-319; stored, validated and round-tripped, but sampling rejects it as unsupported). Extend it with the remaining stored fields above (API version, entry point, named parameters, input hashes, seed, optional project-relative source reference, execution mode and declared emission/cycle plan) using the next additive native schema migration selected from the executing tree. Replace the unsupported rejection in `sample_sv_recipe` with the prepared evaluation backend (no bytecode).
+  2. A prepared evaluation/session interface in core; Lua implementation lives in `src/scripting` so core stays Lua-free. Instantiate once per recipe build, retain closure state across its cycles, and restart from declared inputs/seed on each independent preview/export build.
+  3. Pure mode retains order-independence checks. Stateful mode requires a declared stable cycle/emission sequence and replay determinism from a fresh session; do not double-evaluate an emission or advance its state during composition. Initially reject incompatible adaptive probing clearly.
+  4. `ctx` exposes read-only interval/baseline/parameters and cycle/emission indices; seeded RNG and mutable closure state belong to the bounded evaluation session. Document index bases, evaluation order and endpoint ownership.
+  5. Tests: `function(p) return 1 + p end` matches `curve.linear{1,2}`; a counter closure persists across cycles but resets on a fresh build; identical emission plans/seeds reproduce preview/export; post-processing and composition do not advance state; non-finite output rejects; instruction budget stops an infinite loop.
+- **Invariants:** identical inputs/seed/ordered emission plan → identical samples and diagnostics; pure built-ins retain existing behavior; save/load stores recipes and execution metadata, never sampled points or opaque VM state.
 - **Reject/failure behavior:** any failure rejects the preview/export batch and keeps the recipe unchanged.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^lua\.|sv_recipe'`.
 - **Out of scope:** editor UI (T-191).
@@ -151,6 +152,7 @@ document, and a failed run keeps the last materialized result.
 - **Outcome:** recipes carry an ordered `postprocess` list with `multiply { value }`, `normalize { mode = preserve_displacement | preserve_distance | preserve_average, value }`, and `balance_bump { solve = x | y }`, applied to a copy of the sampled batch exactly as the draft's formulas say.
 - **Read first:** `docs/osbx-draft-spec.md` (Post-process pipeline, Finite bumps), `include/wormedit/core/sv_recipe.h`, `tests/core/sv_recipe_tests.cpp`.
 - **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/formats/native_project.cpp`, `tests/formats/native_project_tests.cpp`.
+- **Prepared-output dependency:** Review T-681 in [extension friction](extension-friction.md) before implementation. Transform the prepared raw batch once; effective preview, overlap composition and export must consume the transformed semantics rather than call the original curve again. Keep existing built-in numerical behavior characterized first.
 - **Steps:**
   1. Tests first: linear 0.75→2.0 normalized to displacement 1 integrates to the baseline; bump with `L_A = L/4`, `X = 2` solves `Y = 2/3`; zero denominator rejects.
   2. Implement stages; persist the list; older projects load with an empty list.

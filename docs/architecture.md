@@ -89,3 +89,21 @@ every edit gets it.
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).
+
+## Extension direction
+
+New specialized lanes should add their domain data/projection, named drawing and targeting,
+and edit/gesture payloads through the existing transaction. Common lane metadata and input
+participation facts need one owner; point/span/handle geometry, musical versus audio coordinates,
+resource requirements, snapping and lock policies remain explicit.
+
+New UI gestures reuse `compose_drag_capture_t`, live `compose_input_queries_t`, the shared
+cancellation inventory and the core gesture/proposal runner. Declare capture participation once
+where facts coincide, preserve named input priority and per-domain release rules, and add the
+production-emitter interruption/late-release case with the gesture. Audio-offset cancellation
+keeps its separate stamp and deferred action.
+
+The [extension checkpoints](chart-editor-plan/tasks/extension-friction.md) record the current
+SV capability references, cross-cycle state direction, bounded lane/gesture findings and proposed
+T-681–T-683 scopes. These are extension goals; the existing owners above remain the implemented
+architecture until each checkpoint lands.

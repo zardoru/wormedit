@@ -11,6 +11,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 
 - [State ownership and lifetime consolidation](tasks/state-ownership.md)
 - [Canvas geometry and input-loss ownership](tasks/canvas-input-ownership.md)
+- [SV, specialized-lane and gesture extension friction](tasks/extension-friction.md)
 
 - [Type and signature consolidation](tasks/type-consolidation.md)
 
@@ -127,7 +128,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-680.
+every number above T-683.
 
 ## Rules for whoever executes a card
 

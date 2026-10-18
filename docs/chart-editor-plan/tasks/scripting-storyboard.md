@@ -88,6 +88,7 @@ Stage 7 from [later work](../stages/later.md) and the
 - **Read first:** `tests/lua/lua_runtime_tests.cpp`, `cmake/dependencies/lua.cmake`, `tests/CMakeLists.txt` (`wormedit_lua_tests`).
 - **Files owned:** new `include/wormedit/scripting/lua_sandbox.h`, new `src/scripting/lua_sandbox.cpp`, new `tests/lua/lua_sandbox_tests.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
 - **Steps:** 1. Custom allocator with a byte cap. 2. `lua_sethook` count hook for the instruction budget. 3. Tests: `io`/`os` absent, infinite loop stops with budget error, 100 MB allocation fails cleanly, `math.random` replaced by a seeded deterministic generator.
+- **Session direction (owner, 2026-10-18):** T-189 may retain closure state across cycles of one recipe build. Sandbox memory/instruction/cancellation bounds cover that complete evaluation session; independent builds start fresh. See [extension checkpoints](extension-friction.md).
 - **Invariants:** deterministic across platforms for a fixed seed.
 - **Reject/failure behavior:** every failure closes the state and returns an error; no longjmp across C++ frames outside `lua_pcall`.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^lua\.'`.

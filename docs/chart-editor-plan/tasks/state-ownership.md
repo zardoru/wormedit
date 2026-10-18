@@ -1508,7 +1508,7 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 
 ## T-674 Delete duplicate sys parsing and row-query algorithms
 
-- **Status:** In progress (2026-10-18; owner approved the parallel T-673/T-674/T-677 implementation batch)
+- **Status:** Done (2026-10-18; verified parallel T-673/T-674/T-677 batch)
 - **Outcome:** Sys consumers use `parse_integer<std::int64_t>` and `measure_index_t::position_at`; the misc `application_edit_helpers` owner and source-list entries are gone.
 - **Read first:** `docs/architecture.md`; `src/sys/application_edit_helpers.cpp`; `include/wormedit/core/numeric_text.h`; `src/core/document.cpp` position query; shrink-wrap audit above.
 - **Files owned:** `src/sys/application_edit_helpers.h`, `src/sys/application_edit_helpers.cpp`, `src/sys/metadata_actions.cpp`, `src/sys/compose_bookmark_actions.cpp`, `src/sys/compose_resource_actions.cpp`, `src/sys/application_timing_stage.cpp`, `src/sys/compose_actions_internal.h`, `src/sys/application.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -1521,6 +1521,8 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 - **Reject/failure behavior:** If any current caller supplies an unvalidated index, stop that replacement and record the necessary policy decision; do not quietly change its rejection behavior.
 - **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing document query, bookmark, resource, metadata and timing-stage behavior tests.
 - **Out of scope:** Numeric grammar changes, measure-index redesign, export/publication refactors, T-644 pruning and T-653.
+- **Completion (2026-10-18):** Deleted the two helper files and replaced six parser calls with the existing strict integer parser, plus five row lookups with the index member. All row callers borrow history chart indices constructed via `chart_indices_t::from`/`measure_index_t::from`; original range guards and default reject-chart-end policy remain. No equivalence is asserted for malformed public aggregate indices. Removed four includes, two stale using declarations and four app/test source entries. Old helper names and source-list references are absent. No new helper, index validation, grammar, diagnostics or API. Baseline tidy covered six .cpp files; final tidy covered the five retained sources, all exit 0. Existing `refresh_application_command_states` complexity 27 and `build_speed_graph` complexity 29 warnings are unchanged; no new/increased warning. Logs `/tmp/t674-{before,after}/*.log`; provenance report `/tmp/t674-implementation-report.md`.
+- **Integrated verification:** Shared final-source batch GATE: GCC `/tmp/wormedit-gate.EjgYv7` and linux-clang `/tmp/wormedit-gate.5rs6OK` both report `pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4103`, `gate: passed` (CTest 69.12 s / 69.97 s respectively). `cmake --preset linux-clang` exit 0. No discovery errors, aborted or unrun test binaries. Separate event harness: `100% tests passed out of 526` (17.38 s), `/tmp/shrink-batch-events.log`. Coordinator reviewed the final diff and code-style checklist. Final card documentation check is recorded in the commit body; no source-shape tests added.
 
 ## T-675 Remove obsolete action index channels
 

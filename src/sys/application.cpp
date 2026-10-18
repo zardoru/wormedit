@@ -31,7 +31,6 @@
 #include "sys/compose_timing_target.h"
 #include "sys/compose_input.h"
 #include "sys/compose_actions.h"
-#include "sys/application_edit_helpers.h"
 #include "sys/recipe_form.h"
 #include "sys/workspace_view.h"
 #include "sys/workspace_frame_view.h"
@@ -202,8 +201,6 @@ using wormedit::sys::runtime::output_group_export_t;
 using wormedit::sys::output_group_export_task_result_t;
 using wormedit::sys::pending_output_group_export_t;
 using wormedit::sys::runtime::resource_copy_t;
-using wormedit::sys::parse_timing_signed;
-using wormedit::sys::timing_position_at_row;
 using wormedit::sys::application_command_state_t;
 using wormedit::sys::chart_snap_preferences;
 using wormedit::sys::compose_bgm_lane_width_pixels;

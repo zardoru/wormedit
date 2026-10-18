@@ -584,7 +584,6 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/resource_drop_router.cpp
         ../src/sys/metadata_actions.cpp
         ../src/sys/metadata_asset_runtime.cpp
-        ../src/sys/application_edit_helpers.cpp
         ../src/sys/sound_drop_transaction.cpp
         ../src/sys/compose_sound_actions.cpp
         ui/gesture_lifecycle_event_harness_tests.cpp
@@ -792,7 +791,6 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_selection_transform.cpp
             ../src/sys/compose_label_search.cpp
             ../src/sys/bookmark_rename_commands.cpp
-            ../src/sys/application_edit_helpers.cpp
             ../src/sys/resource_job_state.cpp
             ../src/sys/metadata_asset_runtime.cpp
             ../src/sys/metadata_drop_state.cpp
@@ -863,8 +861,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/metadata_view.cpp
         ../src/sys/metadata_drop_state.cpp
         ../src/sys/metadata_asset_runtime.cpp
-        ../src/sys/metadata_actions.cpp
-        ../src/sys/application_edit_helpers.cpp)
+        ../src/sys/metadata_actions.cpp)
     target_include_directories(wormedit_frame_projection_arena_tests PRIVATE
         "${CMAKE_SOURCE_DIR}/src" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frame_projection_arena_tests PRIVATE

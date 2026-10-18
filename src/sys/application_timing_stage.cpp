@@ -7,12 +7,12 @@
 #endif
 
 #include "sys/application_defaults.h"
-#include "sys/application_edit_helpers.h"
 #include "sys/compose_timing_target.h"
 #include "sys/timing_view.h"
 #include "ui/frontend.h"
 #include <SDL3/SDL_clipboard.h>
 #include <wormedit/core/snap.h>
+#include <wormedit/core/numeric_text.h>
 
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
@@ -81,7 +81,7 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
     const auto snapped_row = wormedit::snap_canvas_row(chart, *measures, raw_row,
                                                        usable_denominator, measures->total_rows)
                                  .value_or(raw_row);
-    return timing_position_at_row(*measures, snapped_row);
+    return measures->position_at(snapped_row);
 }
 
 auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
@@ -153,7 +153,7 @@ auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart
             *start + step >= measures->total_rows) {
             return std::nullopt;
         }
-        const auto end = timing_position_at_row(*measures, *start + step);
+        const auto end = measures->position_at(*start + step);
         if (!end) {
             return std::nullopt;
         }
@@ -391,7 +391,7 @@ auto timing_stage_warp_value(const TimingStageInput& input, const wormedit::char
     if (end_row >= index->total_rows) {
         return std::nullopt;
     }
-    const auto end = timing_position_at_row(*index, end_row);
+    const auto end = index->position_at(end_row);
     return end ? std::optional<timing_lane_value_t>{timing_warp_value_t{*end,
                                                                         warp_provenance_t::native}}
                : std::nullopt;
@@ -423,10 +423,10 @@ auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
     const TimingStageInput input{
         preview,
         action,
-        parse_timing_signed(action.timing_primary_numerator_text),
+        parse_integer<std::int64_t>(action.timing_primary_numerator_text),
         parse_timing_unsigned(action.timing_primary_numerator_text),
         parse_timing_unsigned(action.timing_primary_denominator_text),
-        parse_timing_signed(action.timing_secondary_numerator_text),
+        parse_integer<std::int64_t>(action.timing_secondary_numerator_text),
         parse_timing_unsigned(action.timing_secondary_denominator_text),
     };
     switch (preview.kind) {

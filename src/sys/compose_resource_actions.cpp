@@ -618,7 +618,7 @@ finish_compose_resource_placement(compose_action_context_t& context,
         if (chart) {
             const auto& measures = context.environment.document.history.indices(chart->id)->measures;
             if (measures)
-                position = timing_position_at_row(*measures, *state.virtual_bms_cursor_row);
+                position = measures->position_at(*state.virtual_bms_cursor_row);
         }
         place_cursor_at(state, position.value_or(state.cursor));
     }

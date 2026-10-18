@@ -3,7 +3,6 @@
 #include "sys/application_edit_inputs.h"
 #include "wormedit/core/numeric_text.h"
 
-#include "sys/application_edit_helpers.h"
 #include "ui/frontend.h"
 
 #include <wormedit/core/audio_offset_editor.h>
@@ -145,7 +144,7 @@ auto dispatch_audio_offset_edit(const WormUiWorkspaceAction& action,
     if (action.metadata_chart_id == 0 || !action.metadata_audio_offset_numerator_text ||
         !action.metadata_audio_offset_denominator_text)
         return {notification_severity_t::warning, "Audio offset edit payload is incomplete."};
-    const auto numerator = parse_timing_signed(action.metadata_audio_offset_numerator_text);
+    const auto numerator = parse_integer<std::int64_t>(action.metadata_audio_offset_numerator_text);
     const auto denominator = parse_unsigned(action.metadata_audio_offset_denominator_text);
     if (!numerator || !denominator || *denominator == 0) {
         return {notification_severity_t::warning, "Audio offset must use a signed 64-bit numerator and positive 64-bit denominator."};

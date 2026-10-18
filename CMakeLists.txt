@@ -501,7 +501,6 @@ if(WORMEDIT_BUILD_APP)
         src/sys/audio_source_registration.cpp
         src/sys/project_audio_sources.cpp
         src/sys/metronome.cpp
-        src/sys/application_edit_helpers.cpp
         src/sys/application_frame_view.cpp
         src/sys/application_frame_services.cpp
         src/sys/resource_drop_router.cpp

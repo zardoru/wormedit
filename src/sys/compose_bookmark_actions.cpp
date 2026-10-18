@@ -1,4 +1,5 @@
 #include <wormedit/core/timing.h>
+#include <wormedit/core/numeric_text.h>
 #include "sys/compose_actions_internal.h"
 #include "sys/native_chart_edit_action.h"
 #include "sys/projection_notification_feedback.h"
@@ -29,7 +30,7 @@ beat_section_edit_t make_beat_section_insertion(compose_action_context_t& contex
         const auto step = chart.divisions_per_standard_measure / denominator;
         if (step == 0 || *begin >= measures->total_rows || step >= measures->total_rows - *begin)
             return {.error = "Move the cursor earlier to create a one-snap section."};
-        const auto end = timing_position_at_row(*measures, *begin + step);
+        const auto end = measures->position_at(*begin + step);
         if (!end)
             return {.error = "The next active-snap row is outside the chart."};
         span = {context.state.cursor, *end};
@@ -141,7 +142,7 @@ auto make_audio_bookmark_edit(compose_action_context_t& context,
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_BOOKMARK;
     const auto milliseconds = deleting
                                   ? std::optional<std::int64_t>{}
-                                  : parse_timing_signed(context.action.compose_marker_audio_begin);
+                                  : parse_integer<std::int64_t>(context.action.compose_marker_audio_begin);
     if (!deleting && !milliseconds)
         return "Enter the audio bookmark position as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK)
@@ -212,9 +213,9 @@ auto make_audio_section_edit(compose_action_context_t& context,
     const auto deleting =
         context.action.compose_action == WORM_UI_COMPOSE_ACTION_DELETE_AUDIO_SECTION;
     const auto begin = deleting ? std::optional<std::int64_t>{}
-                                : parse_timing_signed(context.action.compose_marker_audio_begin);
+                                : parse_integer<std::int64_t>(context.action.compose_marker_audio_begin);
     const auto end = deleting ? std::optional<std::int64_t>{}
-                              : parse_timing_signed(context.action.compose_marker_audio_end);
+                              : parse_integer<std::int64_t>(context.action.compose_marker_audio_end);
     if (!deleting && (!begin || !end))
         return "Enter both audio section bounds as exact signed milliseconds.";
     if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_ADD_AUDIO_SECTION)

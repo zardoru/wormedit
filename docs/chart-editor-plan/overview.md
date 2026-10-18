@@ -32,7 +32,9 @@ Import alone is not considered format support. Every advertised BMS/BME/BML/PMS,
 
 Metadata coverage is symmetric and exhaustive within each advertised profile. Maintain a checked field inventory for every format/version that records spelling, song/chart/file scope, multiplicity, source order, duplicate/default behavior, normalized mapping, and writer capability. Every field accepted by a reader must be emitted by the paired writer, retained losslessly as format-specific source data, or produce an explicit policy-controlled loss diagnostic; it may never disappear merely because no common normalized field exists. Writers must likewise bound and validate every metadata field they emit. Unknown but syntactically valid fields remain source-addressable for stable saves, and edited/new documents receive deterministic ordering without falsely claiming byte-exact preservation.
 
-## Current state
+## Initial scaffold (historical)
+
+The following describes the original scaffold, not the current application. T-678 (2026-10-18) removed the unused legacy Chart and Field files. The current document/import pipeline is described in [the architecture](../architecture.md); `libotoworm` remains a dependency.
 
 `src/common/Chart.h` contains a small normalized chart model. `src/common/chart.cpp` currently imports through `libotoworm`, converts charts to seconds, and copies notes, BPM, warps, stops, and interpolated speed multipliers. BMSON loading is routed through `libotoworm`, but its slice data, sound list, BGM events, measure lengths, source metadata, and most format-specific information are discarded during conversion. This dependency is temporary scaffold code. Wormedit will own its format codecs, timing model, and conversion pipeline; `libotoworm` is source and behavior reference only and should leave the application link once the replacement fixture coverage is in place.
 

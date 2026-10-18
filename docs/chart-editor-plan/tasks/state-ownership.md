@@ -492,20 +492,20 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 ## T-621 Move subsystem files into folders
 
 - **Status:** Ready
-- **Shrink-wrap dependency (2026-10-18):** proposed T-678 would delete the unused legacy `Chart.h` model instead of lowercasing it. If accepted and completed, drop those deleted paths from this card's move inventory. Do not rename or delete it merely on this proposal; keep the unrelated interval-index owner.
+- **Shrink-wrap dependency (2026-10-18):** T-678 removed the unused legacy Chart and Field models. Their deleted paths and the obsolete lowercase-header step are removed from this card; the unrelated interval-index owner remains.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/application.cpp` (about 4,800 lines), `src/sys/compose_actions.cpp` (3,700), `src/ui/nuklear/compose_canvas.cpp` (3,400), `src/sys/compose_view.cpp` (2,700) and `src/sys/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
 - **Findings closed:** FL1–FL5 (targets; not yet closed).
-- **Stale-plan audit:** Search by behavior: prefix clusters, include paths, CMake source entries and capitalized header consumers. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
-- **Outcome:** Folders: move `src/sys` and `src/ui/nuklear` into subsystem folders (FL2), keeping file-name prefixes (FL3). Pure `git mv` plus include and CMake path edits, one commit per folder, each listed in `.git-blame-ignore-revs`. Lowercase `src/common/Chart.h`. Runs last.
-- **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`, `src/common/Chart.h`.
-- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`, `src/common/Chart.h`, `src/common/chart.h`, `src/common/chart.cpp`. Supporting caller/test/CMake extensions require exact paths and coordinator approval before editing.
+- **Stale-plan audit:** Search by behavior: prefix clusters, include paths, CMake source entries. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
+- **Outcome:** Folders: move `src/sys` and `src/ui/nuklear` into subsystem folders (FL2), keeping file-name prefixes (FL3). Pure `git mv` plus include and CMake path edits, one commit per folder, each listed in `.git-blame-ignore-revs`. Runs last.
+- **Read first:** `docs/audits/state-ownership-2026-10-12.md`, `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`.
+- **Files owned:** `CMakeLists.txt`, `tests/CMakeLists.txt`, `.git-blame-ignore-revs`. Supporting caller/test/CMake extensions require exact paths and coordinator approval before editing.
 - **Runs after/before:** Runs last, after every earlier card, including T-619 and T-620.
 - **Decisions applied:**
   - D13 — A: In T-612, projections become `build_<x>_view`.
 - **Steps:**
   1. Schedule last after all earlier cards; inventory exact per-folder moves from FL2 and coordinate all old/new path ownership.
   2. Use git mv plus only include/CMake path edits, keeping filename prefixes; make one gated commit per folder.
-  3. Lowercase Chart.h and update consumers; list each move commit in .git-blame-ignore-revs without rewriting commits.
+  3. List each move commit in .git-blame-ignore-revs without rewriting commits.
   4. Run every Verify command; record search evidence, preserved/approved differences, actual output tails and supporting ownership in the commit body; commit only this card or its numbered part. Claude transfers evidence on merge.
 - **Invariants:** Preserve diagnostics, ordering, Undo, atomic publication and current rejection/no-change rules except copied owner decisions. Follow Execution performance/type/ABI/complexity rules and the audit’s Necessary complexity. Keep genuine variant contracts explicit; record all changed call sites for an approved unification.
 - **Reject/failure behavior:** Preserve cancellation, stale-work rejection, missing-target errors and no partial document/cache publication. A failed gate stops completion.
@@ -1577,10 +1577,11 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 
 ## T-678 Remove unused legacy Chart and Field models
 
-- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling; before T-621)
+- **Status:** Done (2026-10-18; verified parallel T-675/T-676/T-678 batch)
 - **Outcome:** The unused legacy Chart loader and empty Field scaffolding no longer present parallel models or application source entries; T-621 no longer plans a rename for a deleted header.
 - **Read first:** `src/common/Chart.h`; `src/common/chart.cpp`; `src/editor/field.h`; `src/editor/field.cpp`; T-621 and shrink-wrap dead-architecture findings.
-- **Files owned:** `src/common/Chart.h`, `src/common/chart.cpp`, `src/editor/field.h`, `src/editor/field.cpp`, `CMakeLists.txt`; supporting `docs/chart-editor-plan/tasks/state-ownership.md` to remove superseded T-621 paths after deletion, and `docs/chart-editor-plan/decisions/code-style.md` only if a naming example references the deleted header.
+- **Files owned:** `src/common/Chart.h`, `src/common/chart.cpp`, `src/editor/field.h`, `src/editor/field.cpp`, `CMakeLists.txt`; supporting `docs/chart-editor-plan/overview.md`, `memory/chart-editor-status/code-constraints.md`, `docs/chart-editor-plan/tasks/state-ownership.md` to remove superseded T-621 paths after deletion, and `docs/chart-editor-plan/decisions/code-style.md` only if a naming example references the deleted header.
+- **Supporting ownership (coordinator, 2026-10-18):** `docs/chart-editor-plan/overview.md` marks its deleted-model description as historical; `memory/chart-editor-status/code-constraints.md` removes stale live constraints attributed to those models. These documentation corrections are part of retiring the same dead architecture.
 - **Steps:**
   1. Recheck complete loader/model bodies, exact type/include/call references, configured targets and any export/plugin registration. Record absence of repository consumers, not hypothetical external compatibility guarantees.
   2. Delete only the four unused files and their application source entries. Leave the current import pipeline, libotoworm dependency and interval-index owner intact.
@@ -1590,3 +1591,5 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 - **Reject/failure behavior:** Any actual consumer/registration stops the relevant deletion for a separate migration decision. Do not replace these models with new wrappers.
 - **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; confirm app and converter targets still build. Documentation and whitespace checks cover deleted plan paths. No tests solely for dead-file absence.
 - **Out of scope:** libotoworm purge, common interval index, actual frontend field renderer, import redesign and folder moves.
+- **Completion (2026-10-18):** Deleted only four unused legacy model/loader/scaffold files and two app source entries. Both configured compile-command inventories placed the sources only in the app; no repository caller, legacy header install/export or registration/dynamic lookup consumer found. No external compatibility guarantee is inferred. Current import codecs, libotoworm dependency, interval index and actual UI field renderer remain. Removed T-621 deleted-path ownership and lowercase-header instructions. Marked the initial overview scaffold historical and removed stale current constraints attributed to deleted models; no code-style reference required changing. No retained/new C++ function or test changed. `/tmp/t678-implementation-report.txt`.
+- **Integrated verification:** Shared final-source T-675/T-676/T-678 batch: `scripts/gate.sh --jobs 4` and `scripts/gate.sh build-clang --jobs 4` both report `pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4103`, `gate: passed`. Logs `/tmp/wormedit-gate.bwox5z` (GCC, 71.66 s CTest) and `/tmp/wormedit-gate.YqeZUI` (Clang, 69.29 s CTest); `cmake --preset linux-clang` exit 0. Gates include the existing event harness and project/import/SDL tests; no discovery errors, aborted or unrun binaries. App and converter targets build in both trees. Coordinator reviewed complete-file comparisons and the code-style checklist. Final documentation check recorded in the commit body.

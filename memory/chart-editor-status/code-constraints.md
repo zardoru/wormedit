@@ -10,8 +10,5 @@ The player-like preview is a separate backend-neutral scene rather than Nuklear-
 
 The earlier Compose constraint about horizontal BGM routing is resolved: BGM wheel/autoscroll routing, stable-ID tile selection, revision-bound click-audition intent, startup decoder binding, exact clip preparation, bounded generation-aware decode lookahead, headless session/timeline ownership, and SDL device/callback/stream-flush output are wired. The enabled `transport.stop` command now hard-stops an active click preview and clears queued device samples. Recovery/session replacement reconciles the project-scoped audio-asset inventory, hard-stops playback before removing stale decoders, assigns fresh immutable binding identities, and reports assets that cannot be reopened. Property editing, pane-specific drag geometry, and smooth trackpad gesture lifecycle remain unwired.
 
-- `src/common/chart.cpp` imports through `libotoworm` and converts most event positions to seconds.
-- `src/common/Chart.h` uses chart-wide time-keyed maps and a fixed `MAX_CHANNELS` constant.
-- BMSON slice data, source sound channels, BGM events, measure lengths, and much source metadata are currently discarded by wormedit's conversion.
-- `src/editor/field.cpp` has no implementation yet.
+- T-678 (2026-10-18) removed the unused legacy Chart loader/model and empty Field scaffolding. Their seconds-only conversion and fixed channel maps are no longer application constraints. The live import pipeline and `libotoworm` dependency remain unchanged.
 - `src/sys/audio.cpp` still only owns SDL audio subsystem lifetime; private one-shot and chart-preview adapters own their playback streams. The first Audio/Slices waveform overview is wired through the task scheduler and Nuklear draw boundary, while timing-aligned waveform navigation, slice markers, and SDL GPU rendering remain separate.

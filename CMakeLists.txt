@@ -440,9 +440,7 @@ endif()
 
 if(WORMEDIT_BUILD_APP)
     add_executable(wormedit
-        src/common/chart.cpp
         src/common/static_interval_index.cpp
-        src/editor/field.cpp
         src/sys/audio.cpp
         src/sys/application_defaults.cpp
         src/sys/application_commands.cpp

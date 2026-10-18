@@ -163,6 +163,10 @@ it in new code even before the card lands.
 
 ## Tests (owner, 2026-10-15)
 
+- **Review test value in bounded checkpoints** (owner, 2026-10-18). Name the family/shared owner,
+  baseline, reviewed scope, evidence and remaining work. Distinguish bodies reviewed from tests
+  merely indexed or retained conservatively. Limit conclusions to the reviewed cases; passing
+  counts or a sample's removal rate do not establish the value or nonredundancy of the whole suite.
 - **Test a safeguard where it lives.** A shared runner's checks (exclusivity, stale, not-ready,
   no-op, single commit, routing, completion) are tested once, at the runner. An owner tests its
   domain behavior plus one wiring test that it goes through the runner; it does not re-test the

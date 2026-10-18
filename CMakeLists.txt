@@ -178,6 +178,22 @@ target_include_directories(wormedit-convert PRIVATE "${CMAKE_SOURCE_DIR}/src")
 target_link_libraries(wormedit-convert PRIVATE wormedit::core nlohmann_json::nlohmann_json)
 wormedit_enable_warnings(wormedit-convert)
 
+# Manual reference tables generated from the command registry and layout catalog.
+add_executable(wormedit-manual-reference
+    src/tools/wormedit_manual_reference.cpp
+    src/sys/shortcut_rows.cpp
+)
+target_include_directories(wormedit-manual-reference PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit-manual-reference PRIVATE wormedit::core)
+wormedit_enable_warnings(wormedit-manual-reference)
+add_custom_target(manual-reference
+    COMMAND "${CMAKE_COMMAND}" -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+        -DWORMEDIT_MANUAL_REFERENCE=$<TARGET_FILE:wormedit-manual-reference> -DWORMEDIT_WRITE=ON
+        -P "${CMAKE_SOURCE_DIR}/cmake/check_manual_reference.cmake"
+    DEPENDS wormedit-manual-reference
+    COMMENT "Regenerating docs/manual/generated"
+)
+
 find_package(Iconv QUIET)
 if(Iconv_FOUND)
     target_link_libraries(wormedit_core PRIVATE Iconv::Iconv)
@@ -690,6 +706,21 @@ if(BUILD_TESTING)
             -P "${CMAKE_SOURCE_DIR}/cmake/check_architecture_names.cmake"
     )
     set_tests_properties(documentation.architecture_names PROPERTIES LABELS "unit;documentation")
+    add_test(
+        NAME documentation.manual_reference
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -DWORMEDIT_MANUAL_REFERENCE=$<TARGET_FILE:wormedit-manual-reference>
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_manual_reference.cmake"
+    )
+    set_tests_properties(documentation.manual_reference PROPERTIES LABELS "unit;documentation")
+    add_test(
+        NAME documentation.manual_links
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_manual_docs.cmake"
+    )
+    set_tests_properties(documentation.manual_links PROPERTIES LABELS "unit;documentation")
 endif()
 
 if(WORMEDIT_BUILD_APP AND WORMEDIT_ENABLE_AUDIO_DECODER)

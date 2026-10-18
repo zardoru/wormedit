@@ -12,6 +12,7 @@ set -euo pipefail
 # do not reach the app under Xvfb; check those in the frontend event harness.
 # For edits that leave an unsaved dialog, end steps with kill -9 "$app_pid" so
 # cleanup cannot wait on that dialog. This only stops this isolated test app.
+# WORMEDIT_SMOKE_SCREEN (default 1280x1024) sets the virtual screen for larger windows.
 # Xvfb uses an authenticated loopback listener because this machine's shared
 # /tmp/.X11-unix directory is not owned by root and rejects new Unix sockets.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -63,7 +64,7 @@ for display_number in {140..159}; do
         continue
     fi
     xauth -f "$XAUTHORITY" add "$DISPLAY" . "$(mcookie)" >/dev/null
-    Xvfb ":$display_number" -screen 0 1280x1024x24 -nolisten unix -listen tcp \
+    Xvfb ":$display_number" -screen 0 "${WORMEDIT_SMOKE_SCREEN:-1280x1024}x24" -nolisten unix -listen tcp \
         -auth "$XAUTHORITY" >"$temp_dir/Xvfb.log" 2>&1 &
     xvfb_pid=$!
     for attempt in {1..20}; do

@@ -167,8 +167,8 @@ it in new code even before the card lands.
   remaining legitimate count. A migration too large for that may go gradually only if a ratchet
   row can detect the old form: new code cannot add it, and the count only falls. A migration no
   regex can detect is not ready to be gradual; sharpen the old form's definition or schedule a
-  closing card. The "Frontend boundary" migration below is the gradual
-  kind and has its rows.
+  closing card. The "Frontend boundary" migration below has its rows
+  and a closing lane.
 
 ## Tests (owner, 2026-10-15)
 
@@ -201,8 +201,9 @@ it in new code even before the card lands.
   editor state may not. Today's frontend follows this in what it uses, but four Nuklear files
   included all of `document.h` or the old `interaction.h` for a few enums until T-670 gave the vocabulary a
   light header, `core/vocabulary.h`.
-- **Migrate gradually, under a ratchet** (owner, 2026-10-17; ratchet added 2026-10-18). No
-  wholesale conversion card. A change that adds a view surface or action payload writes it in C++
+- **Migrate under a ratchet, closed by a lane** (owner, 2026-10-17; ratchet and closing lane
+  [T-690–T-699](../tasks/frontend-cxx-views.md) added 2026-10-18). The lane converts every
+  remaining surface; until a surface's card lands, other changes follow this rule. A change that adds a view surface or action payload writes it in C++
   types. A change that substantially reworks an existing `WormUi*` surface may convert that surface
   when the conversion is contained in the files it already owns; record it on the card. Do not
   convert surfaces a change does not otherwise touch, and do not break an in-flight card's promise

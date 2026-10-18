@@ -127,9 +127,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [StepMania keysounds: import, export and conversion](tasks/stepmania-keysounds.md)
 - [Bookmark rename harness gesture alignment](tasks/bookmark-rename-harness.md)
 - [Edit publication: one commit tail, one failure shape](tasks/edit-publication.md)
+- [Frontend C++ views: close the boundary migration](tasks/frontend-cxx-views.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-689.
+every number above T-699.
 
 ## Rules for whoever executes a card
 

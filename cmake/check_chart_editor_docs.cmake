@@ -292,6 +292,7 @@ set(task_card_files
     docs/chart-editor-plan/tasks/canvas-input-ownership.md
     docs/chart-editor-plan/tasks/extension-friction.md
     docs/chart-editor-plan/tasks/edit-publication.md
+    docs/chart-editor-plan/tasks/frontend-cxx-views.md
 )
 set(task_card_fields Status Outcome "Read first" "Files owned" Steps Invariants
     "Reject/failure behavior" Verify "Out of scope")

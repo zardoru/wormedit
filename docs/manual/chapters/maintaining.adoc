@@ -1,0 +1,16 @@
+[appendix]
+[#maintaining]
+= Maintaining this manual
+
+This appendix is for people editing the manual.
+
+* *Reference tables* in `docs/manual/generated/` come from the editor's code. Regenerate them
+with `cmake --build build --target manual-reference`; the `documentation.manual_reference` test
+fails when they are out of date.
+* *Screenshots* are captured by `scripts/manual-captures.sh` in an isolated X server from the shot
+scripts in `docs/manual/shots/`, using the projects in `docs/manual/fixtures/`. Each capture
+records the commit it shows in `docs/manual/images/revisions.adoc` and in the PNG's comment;
+captions print it. `scripts/manual-captures.sh --check-stale` lists shots whose interface code
+has changed since they were taken.
+* *Links, includes and images* are checked by the `documentation.manual_links` test.
+* Build the book with `asciidoctor docs/manual/index.adoc`.

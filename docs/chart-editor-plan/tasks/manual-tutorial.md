@@ -19,7 +19,8 @@ scripts so they can be regenerated after UI changes, never by hand.
 
 ## T-430 Set up the manual skeleton and its link check
 
-- **Status:** blocked-on the docs milestone
+- **Status:** done (2026-10-18; owner started the manual ahead of the docs milestone)
+- **Decision (owner, 2026-10-18):** AsciiDoc, in `docs/manual/` (`index.adoc` plus `chapters/`), built with `asciidoctor docs/manual/index.adoc`. Chapters follow the owner's emphasis instead of the outline below: the hybrid "Wormedit way" first, then getting started, navigation, placing notes, sounds and layers, two walkthroughs (BMS from a new project with BMSE/iBMSC paste; osu!mania and StepMania from a new project), and generated keyboard and layout references. The check is `documentation.manual_links` (`cmake/check_manual_docs.cmake`): includes, images, `<<id>>` anchors and screenshot revision attributes.
 - **Outcome:** `docs/manual/` holds an outline and empty chapter files, and a `documentation.manual` CTest checks that every link and image in the manual resolves.
 - **Read first:** `cmake/check_chart_editor_docs.cmake` (the link-check pattern), `docs/building.md`, `docs/frontend-event-harness.md`.
 - **Files owned:** new `docs/manual/README.md`, new `docs/manual/*.md` chapter stubs, new `cmake/check_manual_docs.cmake`, `CMakeLists.txt` (test registration), this card.
@@ -42,7 +43,8 @@ scripts so they can be regenerated after UI changes, never by hand.
 
 ## T-431 Generate manual screenshots from scripted Xvfb runs
 
-- **Status:** blocked-on T-430
+- **Status:** done (2026-10-18)
+- **Done:** `scripts/manual-captures.sh` runs each `docs/manual/shots/<id>.sh` (a STEPS file with `# mode:` and `# project:` headers) through the smoke script in a 1600×900 window, writes `docs/manual/images/<id>.png`, and stamps the commit (with `+dirty` for uncommitted UI changes) into the PNG comment and `docs/manual/images/revisions.adoc`; captions print it (owner request: stamp shots with a revision). `--check-stale` lists shots whose UI sources changed after their stamp, replacing the pixel comparison planned below. Fixture projects live in `docs/manual/fixtures/`.
 - **Outcome:** `scripts/manual-captures.sh` opens fixture projects in isolated Xvfb, drives each shot listed in `docs/manual/shots.txt` with xdotool steps, and writes `docs/manual/images/<shot>.png`. With `--check`, it compares fresh captures against the checked-in ones using `scripts/compare-ui-captures.py`, and lists the shots that drifted.
 - **Read first:** `scripts/smoke-compose-virtual-x.sh`, `scripts/compare-ui-captures.py`, `docs/fixtures/`.
 - **Files owned:** new `scripts/manual-captures.sh`, new `docs/manual/shots.txt`, new `docs/manual/images/`, this card.
@@ -57,7 +59,9 @@ scripts so they can be regenerated after UI changes, never by hand.
 
 ## T-432 Write the Getting started and Compose basics chapters
 
-- **Status:** blocked-on T-431
+- **Status:** partial (2026-10-18)
+- **Done so far:** chapters the-wormedit-way, getting-started, navigating, placing-notes (with Alt-drag lengthening), sounds-and-layers, measures (bar lines as objects in the measure lane; owner emphasis 2026-10-18 on lengthening, page keys with Tab acceleration and bar-line editing); keyboard reference generated from the command registry by `wormedit-manual-reference` (`documentation.manual_reference` keeps it current), with a hand-written table of non-command keys. Gestures were checked against the code, and the keyboard loop, keyboard hold and paste in isolated Xvfb.
+- **Remaining:** step 4 (a reader unfamiliar with Wormedit follows the chapters); screenshots of the Select/Layer tools, the Layers dock and the sound import review.
 - **Outcome:** the Getting started and Compose basics chapters let a new user create a project, import a chart, place, select and move notes, change snaps, and play back, using only the manual. Every screenshot comes from `shots.txt`.
 - **Read first:** `docs/manual/README.md`, the task cards for the features described (Draw tool, quantize, docks), `docs/chart-editor-plan/editing/interactions.md`.
 - **Files owned:** `docs/manual/getting-started.md`, `docs/manual/compose-basics.md`, `docs/manual/keyboard.md`, `docs/manual/shots.txt`, `docs/manual/images/`, this card.
@@ -73,7 +77,9 @@ scripts so they can be regenerated after UI changes, never by hand.
 
 ## T-433 Write the workflow chapters
 
-- **Status:** blocked-on T-432
+- **Status:** partial (2026-10-18)
+- **Done so far:** the BMS walkthrough (with BMSE/iBMSC paste, wired in T-700) and the osu!mania/StepMania walkthrough.
+- **Remaining:** timing chapter, Troubleshooting from notification texts, "try it" exercises, and walkthrough screenshots of the Project tab output groups and export.
 - **Outcome:** the remaining chapters are written: Keysounding BMS charts (Sounds dock, groups, armed sounds with lane keys, move-and-deselect, Move to BGM, select same sound), osu!mania and hitsounds, Timing, Exporting and converting, and Troubleshooting. Each one ends with a short "try it" exercise on a bundled fixture.
 - **Read first:** `docs/manual/README.md`, [BMS editing cards](bms-editing.md), the export cards, and the timing cards.
 - **Files owned:** `docs/manual/keysounding.md`, `docs/manual/osu-mania.md`, `docs/manual/timing.md`, `docs/manual/export.md`, `docs/manual/troubleshooting.md`, `docs/manual/shots.txt`, `docs/manual/images/`, this card.

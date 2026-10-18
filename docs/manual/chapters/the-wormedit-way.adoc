@@ -1,0 +1,98 @@
+[#the-wormedit-way]
+= The Wormedit way
+
+Most chart editors make you choose. In a BMS editor you pick a sound, then click notes onto a grid
+with the mouse. In the StepMania editor you move a cursor through the song with the arrow keys and
+press a lane key to drop a note under it. Wormedit does both on one canvas, and the quickest way to
+chart is to keep one hand on each: the keyboard for _where_ and _what_, the mouse for fixing,
+selecting and drawing shapes.
+
+== The charting loop
+
+Once a chart is open in Compose (kbd:[F4]), almost all charting is this loop:
+
+. *Pick the tool.* kbd:[Alt+2] selects the Draw tool. Lane keys only enter notes with the Draw
+tool active (or while notes are selected, where they move them instead).
+. *Arm a sound.* Double-click a sound in the Sounds dock, or press kbd:[Ctrl+K] and type part of
+its name. The armed sound is outlined and marked _armed_; every note you place uses it.
+. *Pick the snap.* kbd:[Left] and kbd:[Right] step through the snap list; the status bar shows
+the current one.
+. *Walk and play.* kbd:[Up] and kbd:[Down] move the cursor one snap. Press a lane key to place
+the armed sound on that lane at the cursor; press it again on an existing note to remove it. Hold
+a lane key while you move the cursor to draw a hold.
+. *Listen.* kbd:[Space] plays from the cursor and stops. kbd:[Ctrl+Shift+Space] plays from the
+start.
+. *Fix with the mouse.* Drag notes to move them, drag across empty space to select, right-drag
+with the Draw tool to erase. kbd:[Alt]-drag on a note to lengthen or shorten it: a tap you just
+typed becomes a hold without retyping it.
+
+.The charting loop: Draw tool, an armed sound, lane keys and kbd:[Up] between them (captured at {shot-keyboard-entry-revision})
+image::keyboard-entry.png[Five notes placed with lane keys 2, 3, 4, 3, 2 while stepping the cursor]
+
+The yellow line is the edit cursor. It stays still on the screen; the chart scrolls under it. Notes
+you place with the mouse never move the cursor, so you can fix something higher up and keep typing
+where you were.
+
+[#speed-keys]
+== Keys worth learning first
+
+These are the keys that make the loop fast. The <<keyboard-reference,keyboard reference>> lists
+every command.
+
+[cols="2,3",options="header"]
+|===
+|Keys |What they do
+
+|kbd:[Alt+1] / kbd:[Alt+2] / kbd:[Alt+3]
+|Select, Draw and Layer tools.
+
+|kbd:[Alt+4] … kbd:[Alt+8]
+|Arm a special note kind: mine, invisible, lift, fake, roll. Only kinds the chart's format
+supports are offered.
+
+|kbd:[Ctrl+K]
+|Go to sound: find a sound by name and arm it without touching the mouse.
+
+|kbd:[Left] / kbd:[Right]
+|Coarser or finer snap.
+
+|kbd:[Up] / kbd:[Down]
+|Move the cursor one snap. Holding repeats.
+
+|kbd:[PgUp] / kbd:[PgDn] (RePág / AvPág)
+|Skip a measure (at least two beats). On macOS, kbd:[Option+Up] and kbd:[Option+Down].
+
+|kbd:[Tab] held
+|Accelerate: while kbd:[Tab] is down, kbd:[Up]/kbd:[Down] and kbd:[Left]/kbd:[Right] move a whole
+measure, and kbd:[PgUp]/kbd:[PgDn] move two. Keep holding to keep moving.
+
+|kbd:[Alt]-drag a note
+|Lengthen or shorten it (Select tool). With several notes selected, all of them change by the same
+amount.
+
+|kbd:[Ctrl+G]
+|Go to measure by number.
+
+|lane keys
+|Place or remove the armed note at the cursor. Hold one while moving the cursor to make a hold.
+With notes selected, move the selection to that lane instead.
+
+|kbd:[Shift] + lane key
+|Move the first selected note to that lane and deselect it; press again for the next one. This
+reassigns a run of notes lane by lane without the mouse.
+
+|kbd:[`]
+|Move the selected notes to the BGM (background) lanes. kbd:[Shift+`] moves only the next one.
+
+|kbd:[Ctrl+Shift+A]
+|Select every note in the chart that uses the same sound as the selection.
+
+|kbd:[Ctrl+1] … kbd:[Ctrl+9]
+|Target a layer from the Layers dock; new notes are placed on it.
+
+|kbd:[Space]
+|Play from the cursor, or stop.
+|===
+
+TIP: Lane keys are physical keys: they stay in the same place on the keyboard whatever its
+language layout. The defaults for each layout are in the <<layout-reference,layout reference>>.

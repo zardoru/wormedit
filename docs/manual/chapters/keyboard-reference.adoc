@@ -1,0 +1,59 @@
+[#keyboard-reference]
+= Keyboard reference
+
+== Commands
+
+Every command below can be rebound in *Options* (kbd:[Ctrl+,]); the tables list the defaults.
+Commands marked _unbound_ have no default key and can be run from the command menu
+(kbd:[Ctrl+Shift+P]) or given one.
+
+include::../generated/shortcuts.adoc[]
+
+== Keys that are not commands
+
+These keys are part of Compose itself and cannot be rebound.
+
+[cols="2,3",options="header"]
+|===
+|Keys |Action
+
+|lane keys
+|Place or remove the armed note at the cursor (Draw tool), or move the selection to that lane.
+See the <<layout-reference,layout reference>> for each layout's keys.
+
+|kbd:[Shift] + lane key
+|Move the first selected note to that lane and deselect it.
+
+|lane key held + cursor movement
+|Draw a hold.
+
+|kbd:[Up] / kbd:[Down]
+|Move the cursor one snap.
+
+|kbd:[PgUp] / kbd:[PgDn] (RePág / AvPág; macOS: kbd:[Option+Up] / kbd:[Option+Down])
+|Skip one measure.
+
+|kbd:[Tab] held + arrows / kbd:[PgUp] / kbd:[PgDn]
+|Accelerate: one measure (arrows) or two (page keys) per press.
+
+|kbd:[Alt]-drag a note (Select tool)
+|Lengthen or shorten it; with a selection, every selected note.
+
+|kbd:[Shift] + cursor movement
+|Select the range the cursor passes over.
+
+|kbd:[Ctrl+Space]
+|Start or finish a range selection that stays open without holding a key.
+
+|kbd:[Ctrl+G]
+|Go to measure.
+
+|kbd:[Enter] / kbd:[Escape] during a paste
+|Place or cancel the paste.
+
+|kbd:[Alt] + wheel
+|Step the cursor to the next snap.
+
+|kbd:[Ctrl] + wheel
+|Zoom around the pointer.
+|===

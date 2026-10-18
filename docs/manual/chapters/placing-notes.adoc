@@ -1,0 +1,130 @@
+[#placing-notes]
+= Placing and editing notes
+
+== The three tools
+
+The tool column at the left of Compose, and kbd:[Alt+1] to kbd:[Alt+3], choose what the mouse does
+on the canvas:
+
+[cols="1,2,4",options="header"]
+|===
+|Tool |Keys |Mouse
+
+|Select
+|kbd:[Alt+1]
+|Click a note to select it; drag a note to move it; drag across empty space to select an area.
+kbd:[Shift] adds to the selection, kbd:[Ctrl] toggles. kbd:[Alt]-drag on an empty lane draws a
+hold; kbd:[Alt]-drag on a note changes its length.
+
+|Draw
+|kbd:[Alt+2]
+|Click or drag to place the armed note with the armed sound; right-drag erases. A label near the
+top of the canvas names what you are drawing, for example `Draw · 01 keysound-c4.ogg · right-drag
+erases`.
+
+|Layer
+|kbd:[Alt+3]
+|Click or drag over notes to add them to the targeted layer; kbd:[Alt]-drag removes them (see
+<<layers>>).
+|===
+
+[#lane-keys]
+== Lane keys
+
+Each lane has a key, shown on its header. With the *Draw* tool active and nothing selected, a lane
+key places the armed note at the cursor; on an occupied cell it removes that note instead (a whole
+hold is removed if the cursor is anywhere on it). With notes selected, the same key moves every
+selected note to that lane and keeps them selected.
+
+kbd:[Shift] + lane key moves only the _first_ selected note to that lane, then deselects it. Press
+again for the next one. To spread a selected run across lanes, press kbd:[Shift] with the lane
+keys in the order you want, one note at a time.
+
+Lane keys never repeat when held, so holding one cannot fill a lane by accident.
+
+[#holds]
+== Holds
+
+From the keyboard::
+Press and keep holding a lane key, move the cursor with kbd:[Up], kbd:[Down] or the page keys,
+then release. Moving later stretches the tail; moving earlier moves the head. Releasing where you
+started places an ordinary note. Several lane keys can be held at once for chords of holds.
+
+With the mouse::
+kbd:[Alt]-drag on an empty lane, or arm the *Hold* kind and draw. A new hold removes the taps it
+covers and merges with holds it touches, all in one Undo step.
+
+[#lengthening]
+=== Lengthening and shortening notes
+
+With the Select tool, kbd:[Alt]-drag an existing note along its lane. A tap becomes a hold
+reaching the point where you release; a hold's end follows the pointer, and dragging it back to
+the head makes it a tap again. The preview shows the result before you release, and the change is
+one Undo step.
+
+When several notes are selected and you kbd:[Alt]-drag one of them, every selected note changes by
+the same amount, keeping its own start. If any of them would end up with a negative length, or
+would run into another note, nothing changes.
+
+This is the quick fix for the keyboard loop: type taps in rhythm, then kbd:[Alt]-drag the ones that
+should be held.
+
+.Lengthening a tap: kbd:[Alt]-drag from the note up the lane (captured at {shot-lengthen-note-revision})
+image::lengthen-note.png[A tap on lane 3 stretched into a hold three beats long]
+
+.A keyboard hold: lane key 4 held while the cursor moved three beats (captured at {shot-keyboard-hold-revision})
+image::keyboard-hold.png[A hold three beats long on lane 4 with sound 01]
+
+== Note kinds
+
+The note-kind palette in the toolbar arms what new notes become (*Options › Show note-kind
+palette* hides it). Shortcuts arm the special
+kinds directly: kbd:[Alt+4] mine, kbd:[Alt+5] invisible, kbd:[Alt+6] lift, kbd:[Alt+7] fake,
+kbd:[Alt+8] roll. Only the kinds the chart's format supports are available; choosing one the format
+cannot store falls back to a tap.
+
+== Moving, copying and deleting
+
+* *Move*: drag selected notes with the Select tool, or use lane keys and kbd:[Shift] + lane key as
+above. The *Y-lock* button in the toolbar keeps dragged notes on their rows.
+* *Copy and paste*: kbd:[Ctrl+C], kbd:[Ctrl+X], kbd:[Ctrl+V]. Paste shows a preview that follows
+the pointer; click or press kbd:[Enter] to place it, kbd:[Escape] to cancel. Paste also accepts
+notes copied in iBMSC or BMSE (see <<pasting-from-bms-editors>>).
+* *Delete*: kbd:[Delete] or kbd:[Backspace] removes the selection, or with nothing selected, the
+note on the active lane at the cursor.
+* *Undo*: kbd:[Ctrl+Z]; *Redo*: kbd:[Ctrl+Shift+Z].
+
+== Selecting
+
+[cols="2,3",options="header"]
+|===
+|Keys |Selects
+
+|kbd:[Ctrl+A]
+|All notes. kbd:[Ctrl+Alt+A] selects every kind of object (notes, BGM, timing, BGA…).
+
+|kbd:[Ctrl+Shift+E]
+|All notes after the cursor. kbd:[Ctrl+Alt+E] does the same for every kind of object.
+
+|kbd:[Ctrl+Shift+I]
+|Inverts the note selection.
+
+|kbd:[Ctrl+Shift+A]
+|Every note in the chart with the same sound as the selection.
+
+|kbd:[Ctrl+Shift] + click
+|Every note with that note's sound in the visible part of the chart. kbd:[Ctrl+Alt] + click does
+it for the whole chart.
+
+|kbd:[Escape]
+|Clears the selection, or cancels the gesture in progress.
+|===
+
+You can also select a range from the keyboard: see <<keyboard-ranges>>.
+
+== Background (BGM) lanes
+
+Sounds that play without a note to hit live in the BGM columns to the right of the playable lanes.
+Set how many there are with *BGM columns* in the toolbar. kbd:[`] moves the selected notes into
+BGM, keeping their timing and sounds; kbd:[Shift+`] moves just the next selected note. Draw on a
+BGM column with the Draw tool to place a sound there directly.

@@ -1,0 +1,64 @@
+[#measures]
+= Measures and bar lines
+
+In Wormedit a bar line is an object you can select, place, move, copy and delete, much like a note.
+Splitting a long measure or merging two short ones is a drawing operation, not a dialog.
+
+Bar lines are about how the chart is _notated_. By default, editing them never moves a note in
+time: notes keep playing at the same moment, and only the measure they are written in changes.
+
+[#measure-lane]
+== The measure lane
+
+Turn on the measure lane with its button in the toolbar (_Show measure lane: select, place and
+move bar lines_). The measure numbers at the left of the canvas become a lane with a handle on
+each bar line.
+
+* *Select*: click a handle. kbd:[Shift] adds to the selection and kbd:[Ctrl] toggles, as with
+notes. An area selection that crosses the lane picks up the bar lines inside it. Selected handles
+are gold.
+* *Place*: with the Draw tool, click the lane to split the measure at the snapped row. The new bar
+line is selected, and later measures are renumbered. From the keyboard, kbd:[Ctrl+M] (*Add Measure
+Line at Cursor*) does the same at the cursor.
+* *Delete*: select bar lines and press kbd:[Delete]. Each one merges its measure into the one
+before it; notes stay where they are.
+
+.A bar line placed with the Draw tool in the measure lane, selected (captured at {shot-measure-lane-revision})
+image::measure-lane.png[The measure lane with a new gold bar line splitting a measure, and Bar line placed in the status bar]
+
+Hiding the measure lane drops bar lines from the selection, so ordinary editing never moves them
+by accident.
+
+== Moving bar lines
+
+Bar lines move with the rest of the selection. Select them together with notes (an area selection
+does both) and drag one of the selected notes, or step-move the selection. A bar line handle is
+not dragged directly.
+
+While the measure lane is shown, a second toolbar button decides what moving a bar line does to the
+music after it:
+
+[cols="1,3",options="header"]
+|===
+|Setting |Effect
+
+|Keep in place (default)
+|_Moved bar lines keep other objects in place._ Only the measure boundaries change; every other
+object keeps its time.
+
+|Carry
+|_Moved bar lines carry the content after them._ Everything after a moved bar line moves with it,
+timing changes included.
+|===
+
+== Copying and pasting bar lines
+
+Copy, cut and paste include selected bar lines. Pasting splits measures where the copied bar lines
+fall, so a copied phrase brings its measure structure along; cutting merges the originals back.
+Each is one Undo step, and no other object moves in time.
+
+== Other measure commands
+
+The command menu (kbd:[Ctrl+Shift+P]) has *Insert Measure Before*, *Insert Measure After* and
+*Remove Empty Measure* for the measure at the cursor, and the inspector's *Measure at cursor*
+section shows that measure's details.

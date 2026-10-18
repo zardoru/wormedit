@@ -1,0 +1,1120 @@
+{
+  "document": {
+    "audio_assets": [
+      {
+        "id": 33,
+        "source_path": "keysound-c4.ogg",
+        "stream": {
+          "channels": 0,
+          "frame_count": null,
+          "sample_rate": 0,
+          "seekable": false
+        },
+        "waveform_cache_path": null
+      },
+      {
+        "id": 35,
+        "source_path": "keysound-e4.ogg",
+        "stream": {
+          "channels": 0,
+          "frame_count": null,
+          "sample_rate": 0,
+          "seekable": false
+        },
+        "waveform_cache_path": null
+      },
+      {
+        "id": 37,
+        "source_path": "keysound-g4.ogg",
+        "stream": {
+          "channels": 0,
+          "frame_count": null,
+          "sample_rate": 0,
+          "seekable": false
+        },
+        "waveform_cache_path": null
+      },
+      {
+        "id": 39,
+        "source_path": "chord.ogg",
+        "stream": {
+          "channels": 0,
+          "frame_count": null,
+          "sample_rate": 0,
+          "seekable": false
+        },
+        "waveform_cache_path": null
+      }
+    ],
+    "charts": [
+      {
+        "active_branch_selection": [],
+        "beat_zero_audio_offset_seconds": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bga_events": [],
+        "bgm_source_lanes": [],
+        "bms_bpm_projections": [
+          {
+            "event": 42,
+            "imported_beats_per_minute": {
+              "denominator": 1,
+              "numerator": 140
+            },
+            "imported_position": {
+              "measure": 16,
+              "row": 0
+            },
+            "source_order": 4
+          }
+        ],
+        "bms_control_tree": {
+          "children": [
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "PLAYER",
+              "id": 4,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#PLAYER 1",
+              "raw_value": "1",
+              "source_order": 0,
+              "source_span": {
+                "byte_begin": 0,
+                "byte_end": 10
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "GENRE",
+              "id": 5,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#GENRE Manual",
+              "raw_value": "Manual",
+              "source_order": 1,
+              "source_span": {
+                "byte_begin": 10,
+                "byte_end": 24
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "TITLE",
+              "id": 6,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#TITLE Manual tutorial",
+              "raw_value": "Manual tutorial",
+              "source_order": 2,
+              "source_span": {
+                "byte_begin": 24,
+                "byte_end": 47
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "ARTIST",
+              "id": 7,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#ARTIST Wormedit manual",
+              "raw_value": "Wormedit manual",
+              "source_order": 3,
+              "source_span": {
+                "byte_begin": 47,
+                "byte_end": 71
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "BPM",
+              "id": 8,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#BPM 140",
+              "raw_value": "140",
+              "source_order": 4,
+              "source_span": {
+                "byte_begin": 71,
+                "byte_end": 80
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "PLAYLEVEL",
+              "id": 9,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#PLAYLEVEL 1",
+              "raw_value": "1",
+              "source_order": 5,
+              "source_span": {
+                "byte_begin": 80,
+                "byte_end": 93
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "RANK",
+              "id": 10,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#RANK 2",
+              "raw_value": "2",
+              "source_order": 6,
+              "source_span": {
+                "byte_begin": 93,
+                "byte_end": 101
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "WAV01",
+              "id": 11,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#WAV01 keysound-c4.ogg",
+              "raw_value": "keysound-c4.ogg",
+              "source_order": 7,
+              "source_span": {
+                "byte_begin": 101,
+                "byte_end": 124
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "WAV02",
+              "id": 12,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#WAV02 keysound-e4.ogg",
+              "raw_value": "keysound-e4.ogg",
+              "source_order": 8,
+              "source_span": {
+                "byte_begin": 124,
+                "byte_end": 147
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "WAV03",
+              "id": 13,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#WAV03 keysound-g4.ogg",
+              "raw_value": "keysound-g4.ogg",
+              "source_order": 9,
+              "source_span": {
+                "byte_begin": 147,
+                "byte_end": 170
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "WAV04",
+              "id": 14,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#WAV04 chord.ogg",
+              "raw_value": "chord.ogg",
+              "source_order": 10,
+              "source_span": {
+                "byte_begin": 170,
+                "byte_end": 187
+              },
+              "value": null
+            },
+            {
+              "children": [],
+              "close_line_ending": null,
+              "close_source_order": null,
+              "close_source_span": null,
+              "close_text": null,
+              "command_token": "01602",
+              "id": 15,
+              "kind": 1,
+              "line_ending": 1,
+              "original_text": "#01602:1",
+              "raw_value": "1",
+              "source_order": 11,
+              "source_span": {
+                "byte_begin": 187,
+                "byte_end": 196
+              },
+              "value": null
+            }
+          ],
+          "close_line_ending": null,
+          "close_source_order": null,
+          "close_source_span": null,
+          "close_text": null,
+          "command_token": "",
+          "id": 3,
+          "kind": 0,
+          "line_ending": 0,
+          "original_text": "",
+          "raw_value": "",
+          "source_order": 0,
+          "source_span": {
+            "byte_begin": 0,
+            "byte_end": 196
+          },
+          "value": null
+        },
+        "bms_measure_length_projections": [
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 0,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 1,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 2,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 3,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 4,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 5,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 6,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 7,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 8,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 9,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 10,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 11,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 12,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 13,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 14,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 15,
+            "source_order": 18446744073709551615
+          },
+          {
+            "imported_length": {
+              "denominator": 1,
+              "numerator": 1
+            },
+            "measure_index": 16,
+            "source_order": 11
+          }
+        ],
+        "bms_pause_projections": [],
+        "bookmarks": [],
+        "bpms": [
+          {
+            "beats_per_minute": {
+              "denominator": 1,
+              "numerator": 140
+            },
+            "id": 42,
+            "position": {
+              "measure": 16,
+              "row": 0
+            },
+            "provenance": {
+              "family": 1,
+              "profile": "bms-byte-parser",
+              "source_field": "BPM",
+              "source_order": 4,
+              "source_spelling": "#BPM 140"
+            }
+          }
+        ],
+        "divisions_per_standard_measure": 960,
+        "id": 2,
+        "input_profile": {
+          "bindings": [
+            {
+              "focused_stage": null,
+              "key": 1,
+              "lane": 108
+            },
+            {
+              "focused_stage": null,
+              "key": 2,
+              "lane": 101
+            },
+            {
+              "focused_stage": null,
+              "key": 3,
+              "lane": 102
+            },
+            {
+              "focused_stage": null,
+              "key": 4,
+              "lane": 103
+            },
+            {
+              "focused_stage": null,
+              "key": 5,
+              "lane": 104
+            },
+            {
+              "focused_stage": null,
+              "key": 6,
+              "lane": 105
+            },
+            {
+              "focused_stage": null,
+              "key": 7,
+              "lane": 106
+            },
+            {
+              "focused_stage": null,
+              "key": 8,
+              "lane": 107
+            }
+          ],
+          "profile_id": "number-row-single-stage",
+          "requires_focused_stage": false,
+          "stage_count": 1
+        },
+        "kiai": [],
+        "lane_layouts": [
+          {
+            "id": 41,
+            "layout": {
+              "bmson_generic_keys_only": false,
+              "display_name": "BME 7K (outside scratch)",
+              "lanes": [
+                {
+                  "bms_channels": {
+                    "invisible": "36",
+                    "long_note": "56",
+                    "mine": "D6",
+                    "visible": "16"
+                  },
+                  "display_order": 0,
+                  "glyph": 0,
+                  "id": 108,
+                  "key_color": 3,
+                  "midi_destination": null,
+                  "name": "P1 Scratch",
+                  "role": 1,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "31",
+                    "long_note": "51",
+                    "mine": "D1",
+                    "visible": "11"
+                  },
+                  "display_order": 1,
+                  "glyph": 0,
+                  "id": 101,
+                  "key_color": 1,
+                  "midi_destination": null,
+                  "name": "P1 Key 1",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "32",
+                    "long_note": "52",
+                    "mine": "D2",
+                    "visible": "12"
+                  },
+                  "display_order": 2,
+                  "glyph": 0,
+                  "id": 102,
+                  "key_color": 2,
+                  "midi_destination": null,
+                  "name": "P1 Key 2",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "33",
+                    "long_note": "53",
+                    "mine": "D3",
+                    "visible": "13"
+                  },
+                  "display_order": 3,
+                  "glyph": 0,
+                  "id": 103,
+                  "key_color": 1,
+                  "midi_destination": null,
+                  "name": "P1 Key 3",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "34",
+                    "long_note": "54",
+                    "mine": "D4",
+                    "visible": "14"
+                  },
+                  "display_order": 4,
+                  "glyph": 0,
+                  "id": 104,
+                  "key_color": 2,
+                  "midi_destination": null,
+                  "name": "P1 Key 4",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "35",
+                    "long_note": "55",
+                    "mine": "D5",
+                    "visible": "15"
+                  },
+                  "display_order": 5,
+                  "glyph": 0,
+                  "id": 105,
+                  "key_color": 1,
+                  "midi_destination": null,
+                  "name": "P1 Key 5",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "38",
+                    "long_note": "58",
+                    "mine": "D8",
+                    "visible": "18"
+                  },
+                  "display_order": 6,
+                  "glyph": 0,
+                  "id": 106,
+                  "key_color": 2,
+                  "midi_destination": null,
+                  "name": "P1 Key 6",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": "39",
+                    "long_note": "59",
+                    "mine": "D9",
+                    "visible": "19"
+                  },
+                  "display_order": 7,
+                  "glyph": 0,
+                  "id": 107,
+                  "key_color": 1,
+                  "midi_destination": null,
+                  "name": "P1 Key 7",
+                  "role": 0,
+                  "stage": 1
+                }
+              ],
+              "profile_id": "bme-7k-outside-scratch",
+              "split_after_column": null,
+              "split_stage": false
+            },
+            "position": {
+              "measure": 16,
+              "row": 0
+            }
+          }
+        ],
+        "measures": [
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 16,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 17,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 18,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 19,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 20,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 21,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 22,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 23,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 24,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 25,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 26,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 27,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 28,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 29,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 30,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 31,
+            "notes": []
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": null
+            },
+            "id": 32,
+            "notes": []
+          }
+        ],
+        "metadata": {
+          "author": "Wormedit manual",
+          "format_groups": [
+            {
+              "encoding": {
+                "detected": 1,
+                "original_bytes_hex": "23504c4159455220310a2347454e5245204d616e75616c0a235449544c45204d616e75616c207475746f7269616c0a2341525449535420576f726d65646974206d616e75616c0a2342504d203134300a23504c41594c4556454c20310a2352414e4b20320a235741563031206b6579736f756e642d63342e6f67670a235741563032206b6579736f756e642d65342e6f67670a235741563033206b6579736f756e642d67342e6f67670a2357415630342063686f72642e6f67670a2330313630323a310a",
+                "unchanged_since_import": true,
+                "user_override": null
+              },
+              "family": 1,
+              "ordered_field_source_orders": [],
+              "ordered_fields": []
+            }
+          ],
+          "name": "Manual tutorial",
+          "rating": null
+        },
+        "pauses": [],
+        "scrolls": [],
+        "sections": [],
+        "semantic_layers": [],
+        "sound_channels": [],
+        "source_family": 1,
+        "speeds": [],
+        "sv_recipes": [],
+        "timing_anchors": [],
+        "warps": []
+      }
+    ],
+    "generator_recipes": [],
+    "id": 1,
+    "metadata": {
+      "artist": "Wormedit manual",
+      "format_groups": [
+        {
+          "encoding": {
+            "detected": 1,
+            "original_bytes_hex": "23504c4159455220310a2347454e5245204d616e75616c0a235449544c45204d616e75616c207475746f7269616c0a2341525449535420576f726d65646974206d616e75616c0a2342504d203134300a23504c41594c4556454c20310a2352414e4b20320a235741563031206b6579736f756e642d63342e6f67670a235741563032206b6579736f756e642d65342e6f67670a235741563033206b6579736f756e642d67342e6f67670a2357415630342063686f72642e6f67670a2330313630323a310a",
+            "unchanged_since_import": true,
+            "user_override": null
+          },
+          "family": 1,
+          "ordered_field_source_orders": [
+            0,
+            1,
+            2,
+            3,
+            5,
+            6
+          ],
+          "ordered_fields": [
+            [
+              "PLAYER",
+              "1"
+            ],
+            [
+              "GENRE",
+              "Manual"
+            ],
+            [
+              "TITLE",
+              "Manual tutorial"
+            ],
+            [
+              "ARTIST",
+              "Wormedit manual"
+            ],
+            [
+              "PLAYLEVEL",
+              "1"
+            ],
+            [
+              "RANK",
+              "2"
+            ]
+          ]
+        }
+      ],
+      "ordered_search_tags": [],
+      "title": "Manual tutorial"
+    },
+    "midi_assets": [],
+    "output_groups": [],
+    "quantization_presets": [],
+    "resources": [
+      {
+        "asset": 33,
+        "id": 34,
+        "missing": false,
+        "name": "keysound-c4.ogg",
+        "provenance": {
+          "family": 1,
+          "profile": "bms-byte-parser",
+          "source_field": "WAV01",
+          "source_order": 7,
+          "source_spelling": "#WAV01 keysound-c4.ogg"
+        },
+        "roles": [
+          0,
+          1
+        ],
+        "target_identities": [
+          {
+            "family": 1,
+            "identifier": "01",
+            "namespace_name": "WAV"
+          }
+        ]
+      },
+      {
+        "asset": 35,
+        "id": 36,
+        "missing": false,
+        "name": "keysound-e4.ogg",
+        "provenance": {
+          "family": 1,
+          "profile": "bms-byte-parser",
+          "source_field": "WAV02",
+          "source_order": 8,
+          "source_spelling": "#WAV02 keysound-e4.ogg"
+        },
+        "roles": [
+          0,
+          1
+        ],
+        "target_identities": [
+          {
+            "family": 1,
+            "identifier": "02",
+            "namespace_name": "WAV"
+          }
+        ]
+      },
+      {
+        "asset": 37,
+        "id": 38,
+        "missing": false,
+        "name": "keysound-g4.ogg",
+        "provenance": {
+          "family": 1,
+          "profile": "bms-byte-parser",
+          "source_field": "WAV03",
+          "source_order": 9,
+          "source_spelling": "#WAV03 keysound-g4.ogg"
+        },
+        "roles": [
+          0,
+          1
+        ],
+        "target_identities": [
+          {
+            "family": 1,
+            "identifier": "03",
+            "namespace_name": "WAV"
+          }
+        ]
+      },
+      {
+        "asset": 39,
+        "id": 40,
+        "missing": false,
+        "name": "chord.ogg",
+        "provenance": {
+          "family": 1,
+          "profile": "bms-byte-parser",
+          "source_field": "WAV04",
+          "source_order": 10,
+          "source_spelling": "#WAV04 chord.ogg"
+        },
+        "roles": [
+          0,
+          1
+        ],
+        "target_identities": [
+          {
+            "family": 1,
+            "identifier": "04",
+            "namespace_name": "WAV"
+          }
+        ]
+      }
+    ],
+    "revision": 0,
+    "schema_version": 6,
+    "storyboards": [],
+    "visual_assets": []
+  },
+  "format": "wormedit-project",
+  "format_version": 1
+}

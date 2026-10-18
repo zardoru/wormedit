@@ -1,0 +1,105 @@
+[#navigating]
+= Moving around a chart
+
+.Compose with the tutorial chart: timing lanes on the left, the playable lanes, BGM columns and the Sounds dock (captured at {shot-compose-overview-revision})
+image::compose-overview.png[Compose showing the timing lanes, eight playable lanes with keysounded notes, a BGM column and the Sounds dock]
+
+The yellow horizontal line is the *edit cursor*. Keyboard navigation moves the chart under it; the
+line itself stays at the same place on screen. Lane keys, keyboard holds and range selections all
+act at the cursor.
+
+The arrow keys move in the direction you see on screen, so kbd:[Up] means "up the screen" whether
+the chart scrolls up or down (the scroll direction button in the toolbar switches between the two).
+
+== Snaps and the cursor
+
+[cols="2,3",options="header"]
+|===
+|Keys |Movement
+
+|kbd:[Up] / kbd:[Down]
+|One snap. Hold the key to keep moving.
+
+|kbd:[Left] / kbd:[Right]
+|Coarser or finer snap. The list skips snaps the chart's resolution cannot represent exactly;
+the current snap shows in the status bar (for example `1/4`).
+
+|kbd:[PgUp] / kbd:[PgDn] (RePág / AvPág; macOS: kbd:[Option+Up] / kbd:[Option+Down])
+|Skip one measure, and at least two beats. Holding repeats after a short delay.
+
+|kbd:[Tab] held, then kbd:[Up] / kbd:[Down] or kbd:[Left] / kbd:[Right]
+|Tab accelerates: each press moves a whole measure instead of a snap, repeating while held.
+
+|kbd:[Tab] held, then kbd:[PgUp] / kbd:[PgDn]
+|Two measures (at least four beats) per press.
+
+|kbd:[Ctrl+G]
+|Go to a measure by number.
+|===
+
+The *Quantize / Snap* section of the inspector shows every grid (1/4 to 1/80, and *custom…* for
+any other division). The snap button in the toolbar turns snapping off, so mouse edits land on the
+finest row instead.
+
+== Bookmarks and sections
+
+[cols="2,3",options="header"]
+|===
+|Keys |Action
+
+|kbd:[Ctrl+B]
+|Add a bookmark at the cursor.
+
+|kbd:[Ctrl+Up] / kbd:[Ctrl+Down]
+|Previous or next bookmark.
+
+|kbd:[Alt+Left] / kbd:[Alt+Right]
+|Previous or next bookmark or section boundary.
+
+|kbd:[Ctrl+Shift+G]
+|Choose a bookmark by name.
+|===
+
+Double-click a bookmark's line or label to rename it.
+
+== Mouse wheel and zoom
+
+* The wheel scrolls the chart without moving notes or snapping the cursor.
+* kbd:[Alt] + wheel moves the cursor to the next snap, one step per burst of scrolling.
+* kbd:[Ctrl] + wheel zooms around the pointer. The zoom buttons and *Reset view* are at the left
+of the toolbar.
+
+== Playback
+
+[cols="2,3",options="header"]
+|===
+|Keys |Action
+
+|kbd:[Space]
+|Play from the cursor; press again to stop.
+
+|kbd:[Ctrl+Shift+Space]
+|Play from the start of the chart.
+
+|kbd:[Shift+Space]
+|Play the selection in a loop.
+
+|kbd:[Ctrl+F11] / kbd:[Ctrl+F12]
+|Slower or faster playback.
+|===
+
+While the preview plays, the navigation keys move the playhead instead of the edit cursor, so you
+can skip around without stopping.
+
+[#keyboard-ranges]
+== Selecting a range from the keyboard
+
+* Hold kbd:[Shift] and move with kbd:[Up], kbd:[Down] or the page keys: the range grows from where
+you started. Releasing kbd:[Shift] selects everything in it.
+* kbd:[Ctrl+Space] starts a range that stays open without holding a key. Move the cursor (or
+scroll), then press kbd:[Ctrl+Space] again to select it, or kbd:[Escape] to cancel.
+
+== Workspace tabs
+
+kbd:[F1] Project, kbd:[F2] Metadata, kbd:[F3] Timing focus (Compose with only timing editable),
+kbd:[F4] Compose, kbd:[F5] Storyboard, kbd:[F6] Audio Slices, kbd:[F7] Compare / Validate.

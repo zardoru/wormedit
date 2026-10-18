@@ -1,0 +1,65 @@
+[#walkthrough-osu-stepmania]
+= Walkthrough: an osu!mania and StepMania chart
+
+One Wormedit project can export the same chart to osu!mania and to StepMania. This chapter makes a
+7K chart from a song file and exports `.osu`, `.sm` and `.ssc` files from it.
+
+== 1. Start from the song
+
+With no project open, drop the song's MP3 or Ogg file onto the window. Wormedit asks *Import audio
+as a new project?* with the layout list: choose *7K* (or *4K*, …) and click *Create project*. The
+file becomes the song audio.
+
+You can also create the project with kbd:[Ctrl+N] and drop the song onto the audio field of the
+*Metadata* tab (kbd:[F2]) afterwards.
+
+Layouts 3K to 8K and 10K start with three output groups, *osu!mania*, *StepMania SM* and *StepMania
+SSC*, all including the new chart. Other key counts start with osu!mania only (see the
+<<layout-reference,layout reference>>).
+
+== 2. Find the tempo
+
+* Set the starting BPM by double-clicking the BPM marker at the bottom of the BPM lane and typing
+the value.
+* If you do not know it, run *Tap Timing* from the command menu (kbd:[Ctrl+Shift+P]) and press
+kbd:[T] on the beat while the song plays.
+* In Timing focus (kbd:[F3]), kbd:[Ctrl]-drag a beat line onto the waveform to fit the tempo to
+the audio; the BPM snap buttons in the toolbar set the step (kbd:[Ctrl] + wheel while dragging
+changes it).
+
+Lock the timing with kbd:[Ctrl+Shift+T] once it is right, so later edits cannot move it.
+
+== 3. Chart
+
+For osu!mania and StepMania you usually do not need sounds on notes: with nothing armed, lane keys
+and the Draw tool place plain notes.
+
+. kbd:[Alt+2] for the Draw tool.
+. kbd:[Left]/kbd:[Right] to pick the snap; the status bar shows it.
+. Walk with kbd:[Up]/kbd:[Down] and press lane keys kbd:[1] to kbd:[7] to place notes. Hold a lane
+key while walking for a hold note.
+. kbd:[Space] to listen from the cursor; kbd:[Ctrl+F11]/kbd:[Ctrl+F12] to slow down or speed up
+playback while you check a dense part.
+. Fix with the mouse: drag to move, right-drag with Draw to erase, kbd:[Alt]-drag for holds.
+
+StepMania mines, lifts, fakes and rolls are on kbd:[Alt+4] to kbd:[Alt+8] when the chart's formats
+support them.
+
+== 4. More difficulties
+
+On the *Project* tab (kbd:[F1]), *Duplicate* copies a chart as a starting point for another
+difficulty, and *New chart* (kbd:[Ctrl+Shift+N]) adds an empty one. Add each chart to the output
+groups that should export it.
+
+== 5. Save and export
+
+. kbd:[Ctrl+S] saves the `.wormedit` project; exporting needs a saved project.
+. On the *Project* tab, under *Groups*, edit each group's *Output path*, relative to the project:
+for example `osu/song.osu` and `sm/song.sm`, or a folder when a group exports several osu!mania
+charts.
+. For the StepMania groups, the *StepMania export policy* chooses the target (StepMania 5.1 or
+Etterna 0.75.1) and how timing is written (*Timing syntax*).
+. Select a group and click *Export…*; *Preview* shows what will be written first.
+
+osu!mania and StepMania exports copy the song audio next to the chart file. A project with more
+than one music file cannot be exported to them; Wormedit says so when you export.

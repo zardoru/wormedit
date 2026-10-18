@@ -1,0 +1,75 @@
+[#sounds-and-layers]
+= Sounds and layers
+
+Every note you place carries two choices made in advance: the *armed sound* and the *layer
+target*. Arming them once and then placing notes from the keyboard is what keeps keysounded
+charting quick.
+
+[#arming-sounds]
+== Arming a sound
+
+The Sounds dock (kbd:[Ctrl+Shift+K] shows or hides it) lists the project's sounds with their BMS
+ID, name, how many notes use them and their state.
+
+* *Double-click* a row to arm it. The row is outlined and marked _armed_, and the Draw label names
+it. A single click only selects the row; with preview-on-click turned on it also plays it.
+* *kbd:[Ctrl+K]* (Go to sound) opens a search box: type part of a name and press kbd:[Enter] to
+arm that sound without leaving the keyboard.
+* In *BMS slots* mode the dock lists `#WAV` slots instead; clicking a filled slot arms its sound.
+
+The armed sound goes on every note you place: lane keys, keyboard holds, Draw clicks and drags,
+and kbd:[Alt]-drag holds. A missing sound (its file was not found) cannot be armed.
+
+The dock's filters (*All*, *Used*, *Unused*, *Missing*, the group and layer lists, and the search
+box) narrow long lists, and the play button on each row previews a sound.
+
+== Working with existing keysounds
+
+* kbd:[Ctrl+Shift+A] selects every note in the chart that uses the selected note's sound.
+* kbd:[Ctrl+Shift] + click a note selects the notes with its sound in the visible part of the
+chart; kbd:[Ctrl+Alt] + click does it for the whole chart.
+* *Play sound on click* (in the command menu, kbd:[Ctrl+Shift+P]) plays each note's sound when you
+click it.
+
+[#layers]
+== Layers
+
+Layers are named, colored tags on notes, for example _drums_, _melody_ or _left hand_. They help
+you find, hide and edit parts of a dense chart. The *Layer view*
+button in the toolbar colors notes by layer.
+
+Open the Layers dock with kbd:[Ctrl+L] and create a layer with kbd:[Ctrl+Shift+L]. Each layer can
+be hidden, locked or soloed, and the *Require* and *Exclude* filters show only notes with (or
+without) a layer.
+
+=== Targeting a layer
+
+Click a layer in the dock to make it the *target*, or press kbd:[Ctrl+1] to kbd:[Ctrl+9] for the
+first nine layers in the dock. kbd:[Ctrl+0] clears the target.
+
+What new notes get depends on the target:
+
+[cols="2,3",options="header"]
+|===
+|Target |New notes get
+
+|A layer
+|That layer (a locked layer is skipped).
+
+|*No layer*
+|No layers at all, even if their sound has default layers.
+
+|Nothing targeted
+|Their sound's default layers.
+|===
+
+=== Default layers for a sound
+
+Select one or more sounds in the Sounds dock and use its *Sound layers* box to add or remove
+layers. Notes placed with those sounds afterwards start on those layers when nothing is targeted.
+
+=== Painting layers onto notes
+
+* The *Layer* tool (kbd:[Alt+3]): click or drag over notes to add them to the target layer;
+kbd:[Alt]-drag removes them. The target must be visible and unlocked.
+* With notes selected, the dock's *Add/remove selected notes* button changes them all at once.

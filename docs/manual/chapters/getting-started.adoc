@@ -1,0 +1,96 @@
+[#getting-started]
+= Getting started
+
+== The start screen
+
+With no project open, Wormedit offers two buttons: *New project* and *Open chart or project…*.
+Recently opened files are listed under them.
+
+.The start screen (captured at {shot-start-screen-revision})
+image::start-screen.png[Start screen with New project and Open chart or project buttons]
+
+[#new-project]
+== Creating a project
+
+Click *New project*, choose *File › New project*, or press kbd:[Ctrl+N]. The wizard asks one
+question: the *chart layout*. Pick it and click *Create project*; kbd:[Escape] cancels.
+
+.Creating a project (captured at {shot-new-project-wizard-revision})
+image::new-project-wizard.png[The Create a new project dialog with its Chart layout list]
+
+The layout decides the lanes, the default lane keys and which output formats the project starts
+with:
+
+* *1K–18K* are osu!mania layouts. 3K–8K and 10K also start with StepMania `.sm` and `.ssc`
+outputs, because StepMania has a matching game type.
+* *BMS 5K*, *BME 7K* and the *DP* (double play) variants are BMS layouts. Scratch can sit outside
+or inside each stage; _free zone_ and _foot pedal_ variants add those lanes.
+* *PMS* layouts are pop'n music (9 or 5 buttons, or BME-style channel numbering).
+* *Pump*, *Solo* are StepMania-only layouts.
+* *BMSON generic 24K / 48K* are keyboard-style BMSON layouts.
+
+The <<layout-reference,layout reference>> lists every layout with its lanes, lane keys and
+outputs. Layouts with more than ten lanes, including the BMS double-play layouts, start without
+lane keys: place their notes with the mouse.
+
+You can add more charts to the project later from the *Project* tab (kbd:[F1]): *New chart*
+(kbd:[Ctrl+Shift+N]), *Import chart…* to bring in difficulties from another file, *Duplicate* and
+*Delete*.
+
+=== Changing the layout later
+
+In Compose, the inspector's *Lane profile* section switches the chart between layouts with the same
+number of lanes, for example BME 7K with the scratch outside or inside. The *Lane layout segment*
+section changes the layout from the measure at the cursor onward, for charts that change key count
+partway through.
+
+[#opening]
+== Opening charts and projects
+
+*Open chart or project…* opens:
+
+* Wormedit projects (`.wormedit`);
+* BMS family charts (`.bms`, `.bme`, `.bml`, `.pms`) and BMSON (`.bmson`);
+* StepMania (`.sm`, `.ssc`) and osu!mania (`.osu`) charts.
+
+You can also drop any of these files onto the window. A BMS file with non-ASCII text and no UTF-8
+marker asks which text encoding it uses (Shift-JIS is the usual answer for older Japanese charts).
+
+An opened chart becomes a new, unsaved project that keeps reading its sounds from the chart's
+folder. Save it with kbd:[Ctrl+S] to get a `.wormedit` project; exporting needs a saved project
+(see <<walkthrough-bms>>).
+
+NOTE: Starting Wormedit from a command line only opens a `.wormedit` project. Open other chart
+formats from inside the editor.
+
+[#importing-assets]
+== Importing sounds, images and song audio
+
+=== Sounds (keysounds)
+
+Drop audio files onto the *Sounds* list in Compose or Audio Slices, or click the *+* button at the
+top of the Sounds dock. Wormedit shows a *Review sound import* dialog before anything changes:
+
+* It suggests *sound groups* for the new files. Edit the group names, move sounds between
+groups, add one with *Create new group*, or choose *Leave all ungrouped*.
+* *Confirm import* adds everything in one step that a single Undo reverses.
+
+Sounds can be grouped later too: select them in the Sounds dock and click *Group…*. Its *Keep IDs
+together* option keeps the group's BMS `#WAV` numbers next to each other.
+
+Sounds dropped while the Sounds dock is in *BMS slots* mode fill the slots starting at the selected
+one.
+
+=== BGA images
+
+Drop images onto the *BGA* list in Compose (show it with the BGA list button at the right
+end of the toolbar).
+
+=== Song audio
+
+The song's main audio is set on the *Metadata* tab (kbd:[F2]): drop the file onto its audio field.
+Once the project is saved, Wormedit copies the file into the project's assets.
+
+TIP: With no project open, dropping an MP3 or Ogg file onto the window offers to start a new
+project from it: the same wizard opens, titled *Import audio as a new project?*, and the file
+becomes the song audio.

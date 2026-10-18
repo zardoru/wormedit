@@ -10,13 +10,16 @@
 
 - Keep each new C++ function at or below a cognitive complexity score of 25, as measured by clang-tidy's `readability-function-cognitive-complexity` check.
 - Check affected files with `clang-tidy -p build <source-file>` (or point `-p` to the directory containing `compile_commands.json`).
+- Compare with `scripts/check-complexity.py [--build-dir build] [file.cpp ...]`. With no files it checks changed tracked and untracked first-party `.cpp` files against HEAD; `--base-ref REF` selects another base. Header changes need explicit consuming `.cpp` files or `--all`; the changed-file scan does not infer header dependencies.
+- `cmake/complexity_baseline.txt` records the existing per-function limits. The checker rejects new/increased violations and ambiguous attribution, and prints decreases for review. It uses Clang USRs for overloads, Catch macro literals instead of generated counters, and named variable/call contexts for lambdas. File moves and renames require a reviewed baseline change, never a skipped finding.
+- Full check: `scripts/check-complexity.py --all --jobs 8`. It needs Python 3.9+, PyYAML, the Python `clang.cindex` bindings, `libclang`, and matching `clang`/`clang-tidy` (the measured version is in the baseline). Compiler errors and missing compile commands fail the check. `--all --write-baseline /tmp/candidate.txt` writes a candidate for review without accepting increases or overwriting the tracked limits. Do not regenerate allowances to hide an increase.
 - When a function exceeds the threshold, extract cohesive helper functions that clarify responsibilities. Do not add `NOLINT` solely to silence a complexity warning.
 - Existing violations may be addressed incrementally; avoid increasing their complexity while working nearby.
 
 ## Build and verify
 
 - Application build directory: `build` (contains `compile_commands.json`, `build/wormedit`, and the frontend tests). Headless-only: `cmake --preset headless`.
-- **GATE:** `scripts/gate.sh` builds, runs every test, fails if any test binary cannot list its tests, checks whitespace, and prints one summary. Cards that say "Verify: GATE" mean this script.
+- **GATE:** `scripts/gate.sh` builds, runs every test, fails if any test binary cannot list its tests, checks changed-C++ complexity and whitespace, and prints one summary. `--complexity-base REF` chooses the comparison base (default HEAD). Cards that say "Verify: GATE" mean this script.
 - Job count: `build/` uses Make, which is serial unless told otherwise, so always pass a count. Default to `min(8, nproc / concurrent agents)`; use every core only when the owner says the run may use the whole computer. The gate does this (`--agents N`, `--jobs N`, `--whole-machine`; `--print-jobs` shows its choice).
 - Build by hand: `cmake --build build --parallel <jobs>`. Run everything: `ctest --test-dir build -j <jobs> --output-on-failure`. Filter by prefix: `-R '^core\.'`, `'^frontend-state\.'`, `'^audio\.'`, `'^documentation\.'`. A ctest line "Error listing tests" means a test binary never ran; treat it as a failure.
 - Visual check of the real window: `scripts/smoke-compose-virtual-x.sh /tmp/out.png compose`, then open the PNG.

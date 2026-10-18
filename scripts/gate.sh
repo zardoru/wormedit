@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # GATE: the standard verification for a change (docs/chart-editor-plan/tasks.md).
 #
-#   scripts/gate.sh [build-dir] [--agents N] [--jobs N] [--whole-machine] [--print-jobs]
+#   scripts/gate.sh [build-dir] [--agents N] [--jobs N] [--whole-machine] [--print-jobs] [--complexity-base REF]
 #
-# Builds, runs every CTest test (event-harness and documentation labels included), and checks
-# whitespace. A test binary that fails to list its tests counts as a failure: ctest reports it as
-# "Error listing tests", which a search for failed tests misses.
+# Builds, runs every CTest test (event-harness and documentation labels included), checks changed
+# C++ complexity and whitespace. A test binary that fails to list its tests counts as a failure:
+# ctest reports "Error listing tests", which a search for failed tests misses.
 #
 # Job count: the machine is often shared, so the default leaves slack (owner, 2026-10-17):
 # min(8, nproc / agents), at least 1, where agents is how many runs share the machine
@@ -21,12 +21,14 @@ agents=${WORMEDIT_GATE_AGENTS:-1}
 jobs=${WORMEDIT_GATE_JOBS:-}
 whole_machine=false
 print_jobs=false
+complexity_base=HEAD
 while [[ $# -gt 0 ]]; do
     case $1 in
         --agents) agents=${2:?--agents needs a number}; shift 2 ;;
         --jobs) jobs=${2:?--jobs needs a number}; shift 2 ;;
         --whole-machine) whole_machine=true; shift ;;
         --print-jobs) print_jobs=true; shift ;;
+        --complexity-base) complexity_base=${2:?--complexity-base needs a git reference}; shift 2 ;;
         -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
         -*) echo "gate: unknown option $1" >&2; exit 2 ;;
         *) build_dir=$1; shift ;;
@@ -99,6 +101,8 @@ else
     summary+=("skip  ctest  (build failed)")
 fi
 stage whitespace git -C "$root_dir" diff --check HEAD
+stage complexity "$root_dir/scripts/check-complexity.py" --build-dir "$build_dir" \
+    --jobs "$jobs" --base-ref "$complexity_base"
 
 echo "gate: $jobs job(s), $reason; logs in $log_dir"
 printf '  %s\n' "${summary[@]}"

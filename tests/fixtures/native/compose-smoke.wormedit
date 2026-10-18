@@ -1,0 +1,561 @@
+{
+  "document": {
+    "audio_assets": [],
+    "charts": [
+      {
+        "active_branch_selection": [],
+        "beat_zero_audio_offset_seconds": {
+          "denominator": 1,
+          "numerator": 0
+        },
+        "bga_events": [],
+        "bgm_source_lanes": [],
+        "bms_bpm_projections": [],
+        "bms_control_tree": null,
+        "bms_measure_length_projections": [],
+        "bms_pause_projections": [],
+        "bookmarks": [],
+        "bpms": [
+          {
+            "beats_per_minute": {
+              "denominator": 1,
+              "numerator": 120
+            },
+            "id": 1,
+            "position": {
+              "measure": 1,
+              "row": 0
+            },
+            "provenance": {
+              "family": 2,
+              "profile": "sm",
+              "source_field": "BPMS",
+              "source_order": 2,
+              "source_spelling": ""
+            }
+          }
+        ],
+        "divisions_per_standard_measure": 960,
+        "id": 1,
+        "input_profile": {
+          "bindings": [
+            {
+              "focused_stage": null,
+              "key": 1,
+              "lane": 2
+            },
+            {
+              "focused_stage": null,
+              "key": 2,
+              "lane": 3
+            },
+            {
+              "focused_stage": null,
+              "key": 3,
+              "lane": 4
+            },
+            {
+              "focused_stage": null,
+              "key": 4,
+              "lane": 5
+            }
+          ],
+          "profile_id": "number-row-default",
+          "requires_focused_stage": false,
+          "stage_count": 1
+        },
+        "kiai": [],
+        "lane_layouts": [
+          {
+            "id": 6,
+            "layout": {
+              "bmson_generic_keys_only": false,
+              "display_name": "dance-single",
+              "lanes": [
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 0,
+                  "glyph": 2,
+                  "id": 2,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Left",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 1,
+                  "glyph": 3,
+                  "id": 3,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Down",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 2,
+                  "glyph": 4,
+                  "id": 4,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Up",
+                  "role": 0,
+                  "stage": 1
+                },
+                {
+                  "bms_channels": {
+                    "invisible": null,
+                    "long_note": null,
+                    "mine": null,
+                    "visible": null
+                  },
+                  "display_order": 3,
+                  "glyph": 5,
+                  "id": 5,
+                  "key_color": 0,
+                  "midi_destination": null,
+                  "name": "Right",
+                  "role": 0,
+                  "stage": 1
+                }
+              ],
+              "profile_id": "stepmania:dance-single",
+              "split_after_column": null,
+              "split_stage": false
+            },
+            "position": {
+              "measure": 1,
+              "row": 0
+            }
+          }
+        ],
+        "measures": [
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 1,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 7,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 1,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 2,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 8,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 2,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 3,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 9,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 3,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 4,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 10,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 4,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 5,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 11,
+                "kind": 0,
+                "label": null,
+                "lane": 2,
+                "position": {
+                  "measure": 5,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 6,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 12,
+                "kind": 0,
+                "label": null,
+                "lane": 3,
+                "position": {
+                  "measure": 6,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 7,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 13,
+                "kind": 0,
+                "label": null,
+                "lane": 4,
+                "position": {
+                  "measure": 7,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          },
+          {
+            "bgm_events": [],
+            "definition": {
+              "length": {
+                "denominator": 1,
+                "numerator": 1
+              },
+              "meter": {
+                "denominator": 4,
+                "numerator": 4
+              }
+            },
+            "id": 8,
+            "notes": [
+              {
+                "branch": null,
+                "end": null,
+                "id": 14,
+                "kind": 0,
+                "label": null,
+                "lane": 5,
+                "position": {
+                  "measure": 8,
+                  "row": 0
+                },
+                "provenance": {
+                  "family": 2,
+                  "profile": "sm",
+                  "source_field": "NOTES",
+                  "source_order": 3,
+                  "source_spelling": "1"
+                },
+                "semantic_layers": [],
+                "sound": null
+              }
+            ]
+          }
+        ],
+        "metadata": {
+          "author": "",
+          "format_groups": [
+            {
+              "encoding": {
+                "detected": 2,
+                "original_bytes_hex": "235449544c453a436f6d706f736520736d6f6b653a206569676874206d656173757265733b0a234152544953543a576f726d65646974206669787475726520617574686f72733b0a2342504d533a303d3132303b0a234e4f5445533a64616e63652d73696e676c653a536d6f6b653a456173793a313a302c302c302c302c303a0a313030300a303030300a303030300a303030302c0a303130300a303030300a303030300a303030302c0a303031300a303030300a303030300a303030302c0a303030310a303030300a303030300a303030302c0a313030300a303030300a303030300a303030302c0a303130300a303030300a303030300a303030302c0a303031300a303030300a303030300a303030302c0a303030310a303030300a303030300a303030303b0a",
+                "unchanged_since_import": true,
+                "user_override": null
+              },
+              "family": 2,
+              "ordered_field_source_orders": [
+                18,
+                19,
+                20,
+                21,
+                22,
+                23
+              ],
+              "ordered_fields": [
+                [
+                  "NOTES",
+                  "dance-single:Smoke:Easy:1:0,0,0,0,0:\n1000\n0000\n0000\n0000,\n0100\n0000\n0000\n0000,\n0010\n0000\n0000\n0000,\n0001\n0000\n0000\n0000,\n1000\n0000\n0000\n0000,\n0100\n0000\n0000\n0000,\n0010\n0000\n0000\n0000,\n0001\n0000\n0000\n0000"
+                ],
+                [
+                  "STEPSTYPE",
+                  "dance-single"
+                ],
+                [
+                  "DESCRIPTION",
+                  "Smoke"
+                ],
+                [
+                  "DIFFICULTY",
+                  "Easy"
+                ],
+                [
+                  "METER",
+                  "1"
+                ],
+                [
+                  "RADARVALUES",
+                  "0,0,0,0,0"
+                ]
+              ]
+            }
+          ],
+          "name": "Smoke",
+          "rating": {
+            "denominator": 1,
+            "numerator": 1
+          }
+        },
+        "pauses": [],
+        "scrolls": [],
+        "sections": [],
+        "semantic_layers": [],
+        "sound_channels": [],
+        "source_family": 2,
+        "speeds": [],
+        "sv_recipes": [],
+        "timing_anchors": [],
+        "warps": []
+      }
+    ],
+    "generator_recipes": [],
+    "id": 1,
+    "metadata": {
+      "artist": "Wormedit fixture authors",
+      "format_groups": [
+        {
+          "encoding": {
+            "detected": 2,
+            "original_bytes_hex": "235449544c453a436f6d706f736520736d6f6b653a206569676874206d656173757265733b0a234152544953543a576f726d65646974206669787475726520617574686f72733b0a2342504d533a303d3132303b0a234e4f5445533a64616e63652d73696e676c653a536d6f6b653a456173793a313a302c302c302c302c303a0a313030300a303030300a303030300a303030302c0a303130300a303030300a303030300a303030302c0a303031300a303030300a303030300a303030302c0a303030310a303030300a303030300a303030302c0a313030300a303030300a303030300a303030302c0a303130300a303030300a303030300a303030302c0a303031300a303030300a303030300a303030302c0a303030310a303030300a303030300a303030303b0a",
+            "unchanged_since_import": true,
+            "user_override": null
+          },
+          "family": 2,
+          "ordered_field_source_orders": [
+            0,
+            6,
+            12
+          ],
+          "ordered_fields": [
+            [
+              "TITLE",
+              "Compose smoke: eight measures"
+            ],
+            [
+              "ARTIST",
+              "Wormedit fixture authors"
+            ],
+            [
+              "BPMS",
+              "0=120"
+            ]
+          ]
+        }
+      ],
+      "ordered_search_tags": [],
+      "title": "Compose smoke: eight measures"
+    },
+    "midi_assets": [],
+    "output_groups": [],
+    "quantization_presets": [],
+    "resources": [],
+    "revision": 0,
+    "schema_version": 6,
+    "storyboards": [],
+    "visual_assets": []
+  },
+  "format": "wormedit-project",
+  "format_version": 1
+}

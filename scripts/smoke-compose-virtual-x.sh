@@ -2,6 +2,16 @@
 set -euo pipefail
 
 # Exercise the real SDL/Nuklear window without taking focus from the desktop.
+# Multi-measure layout check:
+#   scripts/smoke-compose-virtual-x.sh /tmp/measures.png compose \
+#       tests/fixtures/native/compose-smoke.wormedit
+# STEPS=/absolute/path/steps.sh sources that file instead of the final capture.
+# It can use click_at, window_id, output and app_pid. Capture with:
+#   import -window "$window_id" "$output"
+# The field starts near x=49 at 1280x720, behind the tool column. Ctrl+Alt chords
+# do not reach the app under Xvfb; check those in the frontend event harness.
+# For edits that leave an unsaved dialog, end steps with kill -9 "$app_pid" so
+# cleanup cannot wait on that dialog. This only stops this isolated test app.
 # Xvfb uses an authenticated loopback listener because this machine's shared
 # /tmp/.X11-unix directory is not owned by root and rejects new Unix sockets.
 root_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
@@ -153,5 +163,9 @@ if ! kill -0 "$app_pid" 2>/dev/null; then
     echo "Wormedit exited while rendering the selected tab." >&2
     exit 1
 fi
-import -window "$window_id" "$output"
+if [[ -n ${STEPS:-} ]]; then
+    source "$STEPS"
+else
+    import -window "$window_id" "$output"
+fi
 echo "$output"

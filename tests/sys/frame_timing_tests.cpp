@@ -194,7 +194,8 @@ TEST_CASE("Frame timing hidden collection allocates no C++ heap storage", "[sys]
 }
 
 namespace {
-auto dense_song() -> song_document_t {
+auto dense_song(std::uint64_t measure_count = 1000,
+                std::uint64_t notes_per_measure = 50) -> song_document_t {
     song_document_t song;
     song.id = song_id_t{1};
     song.revision = 1;
@@ -206,11 +207,11 @@ auto dense_song() -> song_document_t {
                    .lanes = {{.id = lane_id_t{1}, .name = "Key", .role = lane_role_t::playable}}}}};
     chart.bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
                    .beats_per_minute = {120, 1}}};
-    for (std::uint64_t measure = 0; measure < 1000; ++measure) {
+    for (std::uint64_t measure = 0; measure < measure_count; ++measure) {
         measure_chunk_t value;
         value.id = measure_id_t{measure + 1};
-        for (std::uint64_t note = 0; note < 50; ++note)
-            value.notes.push_back({.id = object_id_t{3 + measure * 50 + note},
+        for (std::uint64_t note = 0; note < notes_per_measure; ++note)
+            value.notes.push_back({.id = object_id_t{3 + measure * notes_per_measure + note},
                                    .position = {value.id, note * 18}, .lane = lane_id_t{1}});
         chart.measures.push_back(std::move(value));
     }
@@ -223,10 +224,7 @@ void expect_compose_test(bool condition,
     REQUIRE(condition);
 }
 auto compose_test_song() -> song_document_t {
-    auto song = dense_song();
-    song.charts.front().measures.resize(1);
-    song.charts.front().measures.front().notes.resize(8);
-    return song;
+    return dense_song(1, 8);
 }
 struct compose_test_fixture_t {
     document_history_t history;
@@ -3795,7 +3793,7 @@ void start_pinch_test_motion(viewport_input_controller_t& controller, bool autos
 TEST_CASE("Compose pinch dispatch preserves anchor and cancels prior viewport motion",
           "[sys][compose-pinch]") {
     for (const bool autoscroll : {false, true}) {
-        compose_test_fixture_t fixture(dense_song());
+        compose_test_fixture_t fixture(dense_song(8, 2));
         fixture.project();
         fixture.interaction->viewport_scroll_pixels = 800;
         const auto before = *fixture.interaction;
@@ -3838,7 +3836,7 @@ TEST_CASE("Compose pinch rejects invalid ratios and anchors before motion cancel
         {1.25, std::numeric_limits<double>::quiet_NaN()}, {1.25, 1e9}}};
     for (const auto& [factor, anchor] : inputs) {
         for (const bool autoscroll : {false, true}) {
-            compose_test_fixture_t fixture(dense_song());
+            compose_test_fixture_t fixture(dense_song(8, 2));
             fixture.project();
             fixture.interaction->viewport_scroll_pixels = 800;
             const auto before = *fixture.interaction;

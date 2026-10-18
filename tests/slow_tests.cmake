@@ -33,11 +33,6 @@ wormedit_label_slow_tests(wormedit_frame_timing_tests_TESTS
     "frame-timing.Compose BGM arena rows preserve fresh and retained projection labels and clipping"
     "frame-timing.Compose BGM arena storage remains stable across 1000 reused frames"
     "frame-timing.Compose controls retain measure geometry until the document revision changes"
-    "frame-timing.Compose grid arena exhaustion publishes only complete paired units"
-    "frame-timing.Compose marker arena exhaustion publishes complete per-anchor prefixes"
-    "frame-timing.Compose pinch dispatch preserves anchor and cancels prior viewport motion"
-    "frame-timing.Compose pinch rejects invalid ratios and anchors before motion cancellation"
-    "frame-timing.Compose semantic arena exhaustion publishes only complete named rows"
     "frame-timing.Frame timing projects real play follow on a 50000 note chart"
     "frame-timing.Indexed retained scalar publication matches full composition while following and reversing"
 )

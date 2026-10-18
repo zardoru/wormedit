@@ -956,8 +956,7 @@ auto validate_delete_note_ids(const chart_document_t& chart,
     -> std::optional<diagnostic_t>;
 auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delete_ids_t& ids)
     -> std::variant<std::optional<object_id_t>, diagnostic_list_t>;
-auto complete_editor_delete(editor_edit_context_t& context, bool changed)
-    -> editor_interaction_result_t;
+
 auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_context_t& context,
                               const editor_delete_ids_t& ids)
     -> std::variant<std::size_t, diagnostic_list_t>;

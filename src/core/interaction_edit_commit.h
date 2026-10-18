@@ -5,10 +5,13 @@
 
 namespace wormedit {
 
+struct clear_editor_selection_t {};
+enum class editor_command_noop_policy_t { reject, accept_without_diagnostics };
+
 struct editor_edit_effect_t {
     std::string label;
     bool has_document_changes{true};
-    std::optional<std::vector<object_id_t>> selection;
+    std::variant<std::monostate, clear_editor_selection_t, std::vector<object_id_t>> selection;
     std::optional<cursor_pose_t> cursor_pose;
     std::optional<local_position_t> cursor;
     std::optional<lane_id_t> lane;
@@ -16,6 +19,7 @@ struct editor_edit_effect_t {
     std::optional<editor_object_audition_request_t> audition;
     bool consume_primary_hold{};
     bool retain_commit_diagnostics{};
+    editor_command_noop_policy_t noop_policy{editor_command_noop_policy_t::reject};
 
     void apply_capture(editor_interaction_state_t& state, std::uint64_t revision,
                        bool changed) const {
@@ -58,8 +62,13 @@ finish_editor_edit(document_history_t& history, editor_interaction_state_t& stat
         diagnostic_queries::has_errors(command.diagnostics))
         return {.diagnostics = std::move(command.diagnostics)};
     const auto changed = history.document.revision != before_revision;
-    if (effect.selection)
-        interaction_detail::set_selected_notes(state, std::move(*effect.selection));
+    if (auto* notes = std::get_if<std::vector<object_id_t>>(&effect.selection))
+        interaction_detail::set_selected_notes(state, std::move(*notes));
+    else if (std::holds_alternative<clear_editor_selection_t>(effect.selection)) {
+        // Deletion retains the selected canvas measure and selection storage capacity.
+        state.selected_notes.clear();
+        state.selected_objects.clear();
+    }
     select(state);
     effect.apply_capture(state, history.document.revision, changed);
     effect.apply_cursor(state);
@@ -103,7 +112,12 @@ template <class Command, class SelectionEffect = preserve_editor_selection_t>
                                       Command command, SelectionEffect select = {})
     -> editor_interaction_result_t {
     const auto before_revision = context.history.document.revision;
-    auto committed = command();
+    auto committed = effect.has_document_changes
+                         ? command()
+                         : document_command_result_t{.revision = before_revision};
+    if (effect.noop_policy == editor_command_noop_policy_t::accept_without_diagnostics &&
+        !committed.applied && committed.diagnostics.empty())
+        effect.has_document_changes = false;
     return finish_editor_edit(context.history, context.state, before_revision, std::move(committed),
                               std::move(effect), std::move(select));
 }

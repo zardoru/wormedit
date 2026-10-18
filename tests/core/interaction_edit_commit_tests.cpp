@@ -1,5 +1,6 @@
 #include "core/interaction_edit_commit.h"
 #include "core/interaction_gesture_runner.h"
+#include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
 #include <wormedit/formats/native_project.h>
@@ -48,7 +49,9 @@ struct edit_fixture_t {
     }
 
     auto context() -> editor_edit_context_t {
-        return {history, state, {history.document.charts.front(), measures}};
+        return {.history = history,
+                .state = state,
+                .scope = {.chart = history.document.charts.front(), .measures = measures}};
     }
 };
 } // namespace
@@ -143,4 +146,36 @@ TEST_CASE("Editor edit finisher restamps a surviving capture", "[core][edit-comm
           fixture.history.document.revision);
     REQUIRE(result.view);
     CHECK(result.view->active_gesture.has_value());
+}
+
+TEST_CASE("Editor deletion effects retain canvas selection", "[core][edit-commit]") {
+    auto fixture = edit_fixture_t::from();
+    auto context = fixture.context();
+    fixture.state.selected_notes = {object_id_t{101}};
+    fixture.state.selected_objects = {{editor_selection_object_kind_t::note, object_id_t{101}}};
+    fixture.state.selected_canvas_measure = 0;
+    auto transaction = document_command_transaction_t(fixture.history);
+    transaction.document().charts.front().measures.front().notes.front().label = "Changed";
+    const auto result = commit_editor_edit(
+        context, transaction, {.label = "Clear objects", .selection = clear_editor_selection_t{}});
+    REQUIRE(result);
+    CHECK(fixture.state.selected_notes.empty());
+    CHECK(fixture.state.selected_objects.empty());
+    CHECK(fixture.state.selected_canvas_measure == 0);
+}
+
+TEST_CASE("Editor command finisher accepts declared empty-diagnostic no-ops",
+          "[core][edit-commit]") {
+    auto fixture = edit_fixture_t::from();
+    auto context = fixture.context();
+    bool called{};
+    const auto result = commit_editor_edit(
+        context, {.noop_policy = editor_command_noop_policy_t::accept_without_diagnostics}, [&] {
+            called = true;
+            return document_command_result_t{.revision = fixture.history.document.revision};
+        });
+    REQUIRE(result);
+    CHECK(called);
+    CHECK_FALSE(result.document_changed);
+    CHECK(fixture.history.undo.empty());
 }

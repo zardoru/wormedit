@@ -1,3 +1,4 @@
+#include "interaction_edit_commit.h"
 #include "interaction_context.h"
 #include "interaction_geometry.h"
 #include "interaction_gesture_runner.h"
@@ -838,17 +839,6 @@ auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delet
     return linked_bmson_event;
 }
 
-auto complete_editor_delete(editor_edit_context_t& context, bool changed)
-    -> editor_interaction_result_t {
-    if (changed) {
-        context.state.selected_notes.clear();
-        context.state.selected_objects.clear();
-    }
-    auto result = editor_interaction_result_t::from(context.history, context.state, changed);
-    result.accepted = true;
-    return result;
-}
-
 // Delete removes playable stem points from the keys without cutting them out of the audio stem.
 // Stage this conversion alongside ordinary deletion, so a later guard cannot leave a partial edit.
 auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_context_t& context,
@@ -894,11 +884,9 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
     if (linked_event) {
-        auto command = delete_bmson_bgm_marker(context.history,
-                                              context.state.chart, *linked_event);
-        if (!command)
-            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-        return complete_editor_delete(context, true);
+        return commit_editor_edit(context, {.selection = clear_editor_selection_t{}}, [&] {
+            return delete_bmson_bgm_marker(context.history, context.state.chart, *linked_event);
+        });
     }
 
     auto transaction = document_command_transaction_t(context.history);
@@ -939,16 +927,15 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     removed += std::get<std::size_t>(merged);
     if (removed == 0)
-        return complete_editor_delete(context, false);
+        return commit_editor_edit(context, transaction, {.has_document_changes = false});
     if (selected && removed != ids.total()) {
         return editor_interaction_result_t{
             .diagnostics = {error(diagnostic_code_t::invalid_id,
                                   "selected deletion did not resolve every object")}};
     }
-    auto command = transaction.commit(selected ? "Delete selected chart objects" : "Delete note");
-    if (!command)
-        return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-    return complete_editor_delete(context, true);
+    return commit_editor_edit(context, transaction,
+                              {.label = selected ? "Delete selected chart objects" : "Delete note",
+                               .selection = clear_editor_selection_t{}});
 }
 
 
@@ -1123,27 +1110,24 @@ auto assign_selected_notes_to_lane(editor_edit_context_t& context,
     const auto changed = std::ranges::any_of(candidates, [&](const auto& candidate) {
         return candidate.note->lane != action.lane;
     });
-    if (changed) {
-        auto command = apply_note_lane_assignment_document(context.history, context.state.chart,
-            candidates, action.lane, action.successive ? "Assign next selected note to lane"
-                                                     : "Assign selected notes to lane");
-        if (!command)
-            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-    }
-    if (audition)
-        audition->document_revision = context.history.document.revision;
-    if (action.successive) {
-        const auto assigned = audition->object.id;
-        std::erase(context.state.selected_notes, assigned);
-        std::erase_if(context.state.selected_objects, [&](const auto& object) {
-            return object.kind == editor_selection_object_kind_t::note &&
-                   object.id == assigned;
+    return commit_editor_edit(
+        context, {.has_document_changes = changed, .lane = action.lane, .audition = audition},
+        [&] {
+            return apply_note_lane_assignment_document(
+                context.history, context.state.chart, candidates, action.lane,
+                action.successive ? "Assign next selected note to lane"
+                                  : "Assign selected notes to lane");
+        },
+        [&](editor_interaction_state_t& selected) {
+            if (action.successive) {
+                const auto assigned = audition->object.id;
+                std::erase(selected.selected_notes, assigned);
+                std::erase_if(selected.selected_objects, [&](const auto& object) {
+                    return object.kind == editor_selection_object_kind_t::note &&
+                           object.id == assigned;
+                });
+            }
         });
-    }
-    context.state.active_lane = action.lane;
-    auto result = editor_interaction_result_t::from(context.history, context.state, changed);
-    result.audition = audition;
-    return result;
 }
 
 
@@ -1184,52 +1168,59 @@ auto selected_lane_assignment_ids(const editor_interaction_state_t& state)
     return {std::move(targets.notes), std::move(targets.bgm_events)};
 }
 
-auto assign_selected_objects_to_lane(editor_edit_context_t& context,
-                                     const assign_selected_objects_to_lane_action_t& action)
-    -> editor_interaction_result_t {
-    auto [notes, events] = selected_lane_assignment_ids(context.state);
-    const auto first = action.successive ? first_selected_lane_object(context.scope.chart, notes, events)
-                                         : std::nullopt;
-    if (action.successive && first) {
-        notes = first->kind == editor_selection_object_kind_t::note
-                    ? std::vector{first->id} : std::vector<object_id_t>{};
-        events = first->kind == editor_selection_object_kind_t::bgm_event
-                    ? std::vector{first->id} : std::vector<object_id_t>{};
-    }
-    const auto revision = context.history.document.revision;
-    const auto command = move_selected_objects_to_lane(
-        context.history, context.state, notes, events, action.lane);
-    if (!command.applied)
-        return editor_interaction_result_t{.diagnostics = command.diagnostics};
+auto select_assigned_lane_objects(editor_interaction_state_t& selected,
+                                  std::span<const object_id_t> notes,
+                                  std::span<const object_id_t> events, bool successive) -> void {
     std::unordered_set<std::uint64_t> assigned_ids;
     for (const auto id : notes) assigned_ids.insert(id.value);
     for (const auto id : events) assigned_ids.insert(id.value);
     const auto assigned = [&](object_id_t id) { return assigned_ids.contains(id.value); };
-    if (action.successive) {
-        std::erase_if(context.state.selected_notes, assigned);
-        std::erase_if(context.state.selected_objects, [&](const auto& object) {
+    if (successive) {
+        std::erase_if(selected.selected_notes, assigned);
+        std::erase_if(selected.selected_objects, [&](const auto& object) {
             return (object.kind == editor_selection_object_kind_t::note ||
                     object.kind == editor_selection_object_kind_t::bgm_event) && assigned(object.id);
         });
     } else {
-        std::erase_if(context.state.selected_objects, [&](const auto& object) {
+        std::erase_if(selected.selected_objects, [&](const auto& object) {
             return object.kind == editor_selection_object_kind_t::bgm_event && assigned(object.id);
         });
         for (const auto id : events) {
-            context.state.selected_notes.push_back(id);
-            context.state.selected_objects.push_back({editor_selection_object_kind_t::note, id});
+            selected.selected_notes.push_back(id);
+            selected.selected_objects.push_back({editor_selection_object_kind_t::note, id});
         }
     }
-    context.state.active_lane = action.lane;
-    auto result = editor_interaction_result_t::from(context.history, context.state,
-                                          revision != context.history.document.revision);
-    if (action.successive && first)
-        result.audition = editor_object_audition_request_t{
-            .document_revision = context.history.document.revision, .chart = context.state.chart,
-            .object = {editor_selection_object_kind_t::note, first->id}};
-    return result;
 }
 
+auto assign_selected_objects_to_lane(editor_edit_context_t& context,
+                                     const assign_selected_objects_to_lane_action_t& action)
+    -> editor_interaction_result_t {
+    auto [notes, events] = selected_lane_assignment_ids(context.state);
+    const auto first = action.successive
+                           ? first_selected_lane_object(context.scope.chart, notes, events)
+                           : std::nullopt;
+    if (action.successive && first) {
+        notes = first->kind == editor_selection_object_kind_t::note ? std::vector{first->id}
+                                                                    : std::vector<object_id_t>{};
+        events = first->kind == editor_selection_object_kind_t::bgm_event
+                     ? std::vector{first->id}
+                     : std::vector<object_id_t>{};
+    }
+    std::optional<editor_object_audition_request_t> audition;
+    if (action.successive && first)
+        audition = editor_object_audition_request_t{
+            .chart = context.state.chart,
+            .object = {editor_selection_object_kind_t::note, first->id}};
+    return commit_editor_edit(
+        context, {.lane = action.lane, .audition = audition},
+        [&] {
+            return move_selected_objects_to_lane(context.history, context.state, notes, events,
+                                                 action.lane);
+        },
+        [&](editor_interaction_state_t& selected) {
+            select_assigned_lane_objects(selected, notes, events, action.successive);
+        });
+}
 
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
@@ -1450,13 +1441,11 @@ auto keyboard_entry_plan_t::apply(editor_edit_context_t& context) const -> edito
     auto prepared = std::get<prepared_keyboard_entry_t>(std::move(staged));
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(prepared.document));
-    auto command = transaction.commit("Enter note from lane key");
-    if (!command) return {.diagnostics = std::move(command.diagnostics)};
-    place_cursor_at(context.state, position);
-    context.state.active_lane = lane;
-    auto result = editor_interaction_result_t::from(context.history, context.state, true);
-    result.created_note = prepared.created;
-    return result;
+    return commit_editor_edit(context, transaction,
+                              {.label = "Enter note from lane key",
+                               .cursor = position,
+                               .lane = lane,
+                               .created_note = prepared.created});
 }
 
 
@@ -1562,12 +1551,9 @@ auto pending_semantic_layer_paint_gesture_t::apply(editor_edit_context_t& contex
             .diagnostics = {error(diagnostic_code_t::invalid_id,
                                   "semantic-layer paint requires an unlocked visible layer")}};
     const auto edit = semantic_paint_edit(state.chart, pending);
-    const auto applied = apply_semantic_layer_edit(history, edit);
-    if (!applied && !applied.diagnostics.empty())
-        return editor_interaction_result_t{.diagnostics = applied.diagnostics};
-    auto result = editor_interaction_result_t::from(history, state);
-    result.document_changed = applied.applied;
-    return result;
+    return commit_editor_edit(
+        context, {.noop_policy = editor_command_noop_policy_t::accept_without_diagnostics},
+        [&] { return apply_semantic_layer_edit(history, edit); });
 }
 
 auto audition_selected_object(bool requested,

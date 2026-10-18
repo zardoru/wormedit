@@ -8,7 +8,8 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 
 ## T-686 Attach the failure view once, at the public boundary
 
-- **Status:** ready
+- **Status:** done (2026-10-18, Codex lane wyrm, commit `cba8ce7`; reviewed and gated by Claude)
+- **Done:** 108 helper calls rewritten (the 111 count included two definitions and a declaration). `editor_interaction_result_t::ensure_view` attaches the view at `dispatch_editor_action`, the gesture runner's public functions and five bypass APIs; gestures dispatched inside an action defer to the outer boundary (`editor_edit_context_t::ensure_failure_view`). STOP did not apply: no failure view deliberately showed a discarded state. **Recorded differences**, each with a regression test: a rejected keyboard-hold scroll (`preserve_keyboard_hold_after_scroll`) now shows the restored cursor and viewport instead of the abandoned one; a mixed clipboard deletion failure shows the real history, not the scratch copy. Supporting edit: `docs/architecture.md` (boundary contract). Ratchet `interaction_failure_view` 111 → 0.
 - **Value:** High. It removes about 110 view-building calls and every rewrap, and T-687 and T-688 rely on a failure being only diagnostics.
 - **Outcome:** Edit code returns a failed `editor_interaction_result_t` with diagnostics only. `dispatch_editor_action`, the public gesture runner functions and every other public entry point found in step 3 attach one view, built from the real history and state, to a failed result that has none. `diagnostic_result` and `cursor_diagnostic_result` no longer exist (ratchet `interaction_failure_view` at 0).
 - **Read first:** `docs/architecture.md`, `src/core/interaction_gesture_runner.h`, `src/core/interaction_gesture_lifecycle.cpp` (`dispatch_editor_action`), `src/core/interaction.cpp` (`diagnostic_result`, `editor_action_dispatch_t`), `cmake/check_ceremony_ratchet.cmake`.
@@ -28,7 +29,8 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 
 ## T-687 Commit note edits through one finisher
 
-- **Status:** blocked-on T-686
+- **Status:** done (2026-10-18, Codex lane wyrm, commits `477258f`…`4023873`; reviewed and gated by Claude)
+- **Done:** `editor_edit_effect_t` and `commit_editor_edit` / `run_editor_edit` in `src/core/interaction_edit_commit.h`; fourteen tails migrated (two more than the detector counted). A gesture still captured after a commit is re-stamped generically. Policies kept from the old sites: no-op resize/move, domain-command no-ops, the clipboard's view-less result, mixed canvas selections. **Recorded difference:** the removed forced `accepted = true` means a committed edit whose view then fails to build reports `accepted = false` with the view diagnostics; `document_changed` stays true, so sys still rebinds. Supporting edit: obsolete declarations in `src/core/interaction_internal.h`. Ratchets `core_committed_result` 12 → 1, `manual_gesture_restamp` 1 → 0. Seven finisher tests.
 - **Value:** High. It is the drift the review found: twelve hand-written tails, each a little different.
 - **Outcome:** Each committing note gesture and editor action stages its document and returns an `editor_edit_effect_t` (Undo label, selection, cursor, active lane, created note, audition). One `commit_editor_edit(context, transaction, effect)` commits, applies the effect only on success, re-stamps any gesture still captured after the commit, and builds the result. Ratchets: `core_committed_result` ≤ 1, `manual_gesture_restamp` 0.
 - **Read first:** this file's introduction, `docs/architecture.md` ("Adding a chart edit"), `src/core/interaction_gesture_runner.h`, `src/core/note_placement.cpp` (`publish_row_placement`), `include/wormedit/core/command.h` (`document_command_transaction_t`).
@@ -47,7 +49,8 @@ These cards follow the code-style rule "A migration finishes in its card, or it 
 
 ## T-688 Reuse delete and tap placement through staging functions
 
-- **Status:** blocked-on T-687
+- **Status:** done (2026-10-18, Codex lane wyrm, commit `3c6a51f`; reviewed and gated by Claude)
+- **Done:** delete-selection and tap placement stage into a working document and return their effect; the five scratch callers use them and the four real-history forwards are unchanged. Supporting edits: shared staging in `interaction_edit_commit.h`, linked BMSON deletion extracted in `src/core/bmson_sound_channel_editor.cpp` with `src/core/bmson_sound_channel_editor_internal.h` (new), `docs/architecture.md`. Ratchet `scratch_dispatch` 4 → 0. Lane evidence: `scripts/gate.sh` (Claude, 8 jobs) passed 4,142/4,142 with complexity and whitespace; isolated Xvfb Compose screenshot normal.
 - **Value:** Medium. It removes the last nested results and a double commit into throwaway histories.
 - **Outcome:** Deleting a selection and placing a tap each have a staging function that changes a working document and returns its effect; their action handlers and the five internal callers use it. No core code runs `dispatch_editor_action` on a scratch history (ratchet `scratch_dispatch` 0).
 - **Read first:** this file's introduction, `src/core/interaction.cpp` (delete handler, `stage_keyboard_occupant`, `place_keyboard_entry`), `src/core/note_placement.cpp` (place-or-remove, `place_virtual_bms_tap`), `src/core/interaction_gesture_lifecycle.cpp` (`prepare_stem_note_paint`), `src/core/chart_clipboard.cpp`.

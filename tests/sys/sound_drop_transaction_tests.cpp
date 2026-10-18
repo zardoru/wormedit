@@ -101,7 +101,8 @@ auto rejects_changed_origin(wormedit::sys::sound_drop_origin_t changed) -> bool 
     (void)start_drop(transaction, current, true);
     (void)send_file(transaction, current, "/tmp/origin.wav");
     const auto result = finish_drop(transaction, changed);
-    return result.completed && !result.completed->is_success();
+    return result.completed && !result.completed->is_success() &&
+           result.completed->paths == std::vector<std::string>{"/tmp/origin.wav"};
 }
 
 auto rejects_every_origin_change() -> bool {
@@ -222,22 +223,6 @@ TEST_CASE("sound drop retains duplicate paths but rejects the whole batch",
     REQUIRE(completed.completed);
     REQUIRE_FALSE(completed.completed->is_success());
     CHECK(completed.completed->paths.size() == 2);
-}
-
-TEST_CASE("sound drop rejects a stale revision before completion",
-          "[unit][sys][sound-drop]") {
-    using namespace wormedit::sys;
-    sound_drop_transaction_t stale_transaction;
-    const auto current = origin();
-    REQUIRE(start_drop(stale_transaction, current, true));
-    std::string path{"/tmp/stale.wav"};
-    REQUIRE(send_file(stale_transaction, current, path));
-    auto changed = current;
-    ++changed.revision;
-    const auto stale = finish_drop(stale_transaction, changed);
-    REQUIRE(stale.completed);
-    REQUIRE_FALSE(stale.completed->is_success());
-    CHECK(stale.completed->paths == std::vector<std::string>{path});
 }
 
 TEST_CASE("sound drop rejects project chart revision tab and mode changes",

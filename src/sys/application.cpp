@@ -1264,9 +1264,7 @@ struct pending_close_t {
     std::uint64_t revision{};
     bool save_requested{};
     std::string project_path;
-    std::uint8_t layout_index{};
     std::array<char, sizeof(WormUiWorkspaceAction::new_project_layout_id)> layout_id{};
-    std::uint8_t encoding_index{};
     std::uint32_t encoding_id{};
     bool awaiting_encoding{};
     // Shown in the confirmation only when a save started from it failed.
@@ -2926,7 +2924,6 @@ struct application_t::implementation_t {
             pending.project != session.history.document.id ||
             pending.revision != session.history.document.revision)
             return false;
-        pending.encoding_index = action.bms_encoding_index;
         pending.encoding_id = action.bms_encoding_id;
         pending.awaiting_encoding = false;
         (void)finish_confirmed_close(pending);
@@ -3351,10 +3348,8 @@ struct application_t::implementation_t {
 
     void finish_confirmed_project_replacement(pending_close_t& pending) {
         WormUiWorkspaceAction action{};
-        action.new_project_layout_index = pending.layout_index;
         std::copy(pending.layout_id.begin(), pending.layout_id.end(),
                   std::begin(action.new_project_layout_id));
-        action.bms_encoding_index = pending.encoding_index;
         action.bms_encoding_id = pending.encoding_id;
         std::snprintf(action.project_path, sizeof(action.project_path), "%s",
                       pending.project_path.c_str());
@@ -3497,10 +3492,8 @@ struct application_t::implementation_t {
                    .revision = session.history.document.revision};
         if (replacement) {
             pending.project_path = replacement->project_path;
-            pending.layout_index = replacement->new_project_layout_index;
             std::copy(std::begin(replacement->new_project_layout_id),
                       std::end(replacement->new_project_layout_id), pending.layout_id.begin());
-            pending.encoding_index = replacement->bms_encoding_index;
             pending.encoding_id = replacement->bms_encoding_id;
         }
         if (!confirm || !session.project_identity.session_loaded ||

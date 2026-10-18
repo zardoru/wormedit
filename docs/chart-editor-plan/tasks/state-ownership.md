@@ -4,7 +4,7 @@
 
 ## Execution
 
-Shrink-wrap audit completed on 2026-10-18 at `6fb21cd`: see [bounded findings and proposed checkpoints](#shrink-wrap-audit-2026-10-18), T-673–T-678. The owner approved T-673/T-674/T-677 as the first parallel implementation batch on 2026-10-18; T-675/T-676/T-678 remain proposed. T-653 remains pending revision; further T-644 review waits for a later scheduled checkpoint; T-621 remains last.
+Shrink-wrap audit completed on 2026-10-18 at `6fb21cd`: see [bounded findings and proposed checkpoints](#shrink-wrap-audit-2026-10-18), T-673–T-678. The owner approved T-673/T-674/T-677 as the first parallel implementation batch on 2026-10-18. The owner approved T-675/T-676/T-678 as the second parallel implementation batch on 2026-10-18. T-653 remains pending revision; further T-644 review waits for a later scheduled checkpoint; T-621 remains last.
 
 Cards run in coordinated parallel lanes. Wave 1: **wyrm T-601–T-605**; **drake T-607–T-608**; **wyvern T-625 (core/formats/audio/visual scope), then T-613**; **hydra T-622, then T-628 (src/ui scope)**. Later waves are scheduled by Claude. Ready means available for scheduling; dependencies and explicit STOP steps still apply.
 
@@ -680,7 +680,6 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations. Let stale build configuration reconfigure. Read actual output and record command exit statuses/tails; run failing-before regressions for approved changes and existing production-path tests. Add the Linux clang gate after T-622 as specified in Execution. Skip Xvfb in the sandbox.
 - **Out of scope:** No D6 UI state lifetime split; no edits outside src/ui and its tests/build wiring without coordination. Rejected/downgraded audit claims, unapproved behavior changes and unrelated work.
 
-
 ## T-629 Stop the streamed SDL audition hang
 
 - **Status:** Done
@@ -1152,7 +1151,6 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 - **Verify:** `cmake --build build -j4`; `ctest --test-dir build -j2 --output-on-failure`; `ctest --test-dir build -L event-harness`; `ctest --test-dir build -R '^documentation\.' --output-on-failure`; `clang-tidy -p build <source-file>` for every touched .cpp, with no new/increased violations; the linux-clang preset. Skip Xvfb in the sandbox.
 - **Out of scope:** Production refactors, new coverage for untested behavior (list gaps instead), changing test frameworks.
 
-
 ## T-651 Give lane occupancy one owner
 
 - **Status:** Done (2026-10-17; verified parallel batch)
@@ -1526,7 +1524,7 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 
 ## T-675 Remove obsolete action index channels
 
-- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Status:** Done (2026-10-18; verified parallel T-675/T-676/T-678 batch)
 - **Outcome:** BMS import encoding and new-project layout actions carry their stable IDs without unused index fields or pending-close mirrors.
 - **Read first:** `src/ui/frontend/actions.h`; `src/ui/nuklear/frontend.cpp`; `src/sys/application.cpp`; shrink-wrap UI/state findings; frontend-boundary style rule.
 - **Files owned:** `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/application.cpp`. Existing tests are read as contract evidence; supporting test edits need an exact extension if compilation requires adaptation.
@@ -1538,6 +1536,8 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 - **Reject/failure behavior:** A discovered semantic index reader stops deletion pending an explicit compatibility decision. Preserve existing bad/missing ID rejection.
 - **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on both affected .cpp files. Existing stable-ID event-harness and project/import tests; no member-absence test.
 - **Out of scope:** Whole action/view conversion, new codecs, unrelated field cleanup, local wizard-index removal and UI state lifetime regrouping.
+- **Completion (2026-10-18):** Removed two unused action fields, two pending-close mirrors, one frontend emission and five capture/replay assignments. Full-file comparisons confirm no other application/frontend behavior changes. Stable encoding/layout IDs, local wizard row selection, validation, cancellation, stamp guards and replay are unchanged. No semantic index reader or external repository consumer found. Reviewed existing stable-ID/reordered-catalog, modal cancellation, close-stamp, import and defaults tests; private pending-close replay preservation is source-reviewed, not claimed as dedicated end-to-end coverage. Baseline/after clang-tidy both affected .cpp files exit 0, identical diagnostics: frontend clean; existing application complexity 27 and included speed-graph 29 unchanged. `/tmp/t675-implementation-report.md`, `/tmp/t675-{before,after}/*.log`. No test or supporting source edits.
+- **Integrated verification:** Shared final-source T-675/T-676/T-678 batch: `scripts/gate.sh --jobs 4` and `scripts/gate.sh build-clang --jobs 4` both report `pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4103`, `gate: passed`. Logs `/tmp/wormedit-gate.bwox5z` (GCC, 71.66 s CTest) and `/tmp/wormedit-gate.YqeZUI` (Clang, 69.29 s CTest); `cmake --preset linux-clang` exit 0. Gates include the existing event harness and project/import/SDL tests; no discovery errors, aborted or unrun binaries. App and converter targets build in both trees. Coordinator reviewed complete-file comparisons and the code-style checklist. Final documentation check recorded in the commit body.
 
 ## T-676 Return SDL preview start reports directly
 

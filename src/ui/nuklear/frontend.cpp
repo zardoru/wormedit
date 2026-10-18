@@ -2673,7 +2673,6 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
     const auto& audio_path = g_new_project_wizard.audio_path;
     if (g_new_project_wizard.audio && audio_path.size() >= sizeof(action.project_path)) return;
     action.kind = WORM_UI_WORKSPACE_ACTION_NEW_PROJECT;
-    action.new_project_layout_index = g_new_project_wizard.layout_index;
     std::snprintf(action.new_project_layout_id, sizeof(action.new_project_layout_id), "%s",
                   g_new_project_wizard.layout_id);
     if (g_new_project_wizard.audio)

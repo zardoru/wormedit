@@ -25,26 +25,8 @@ void check_bga(bool condition, const std::source_location location =
     CHECK(condition);
 }
 
-auto mouse_button(bool down, float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.down = down;
-    event.button.clicks = 1;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
-auto mouse_motion(float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.x = x;
-    event.motion.y = y;
-    return event;
-}
+using wormedit::test::mouse_button;
+using wormedit::test::mouse_motion;
 
 auto mouse_wheel(float amount, float x, float y) -> SDL_Event {
     SDL_Event event{};
@@ -73,6 +55,7 @@ void hide_compose_docks() {
     state.dock_layout.bga_panel_visible = false;
 }
 
+// This driver retains its fixed-array result for the BGA input queries.
 auto click(nuklear_event_harness_t& harness, float x, float y)
     -> std::array<workspace_action_snapshot_t, 2> {
     const auto down = std::array{mouse_motion(x, y), mouse_button(true, x, y)};
@@ -1545,7 +1528,7 @@ TEST_CASE("Toolbar BGA visibility is actionable while no lane is projected",
     harness.view().compose.bga_lane_visible = false;
     harness.view().compose.bga_lane_count = 0;
     (void)harness.frame();
-    const auto actions = click(harness, 303.0f, 122.0f);
+    const auto actions = harness.click_widget("Show BGA event lane");
     check_bga(actions.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BGA_LANE_VISIBILITY);
     check_bga(actions.front().get().compose_input_count == 0);
     check_bga(actions.back().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);

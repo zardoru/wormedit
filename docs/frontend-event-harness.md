@@ -45,6 +45,9 @@ shortcut event (`shortcut_events[0].hid_usage`, `repeat`, focus flags), not as a
 | `h.view()` | The `WormUiWorkspaceView` fed to every frame. Edit it to set up state (a Compose project is preloaded). |
 | `h.frame(events, modifiers = SDL_KMOD_NONE)` | One frame with explicit modifier state. Returns `workspace_action_snapshot_t`. |
 | `h.run_script(steps)` | One frame per `event_step_t`. Returns one owning snapshot per step; each step has `events` and `modifiers` (default none). |
+| `h.widget_center(tooltip)` | Center of exactly one visible native icon from the last frame, using its full tooltip. Throws on missing or ambiguous matches. Disabled icons remain addressable. |
+| `h.hover_widget(tooltip)` | Find the icon, then send one motion frame. |
+| `h.click_widget(tooltip)` | Find the icon, then send motion plus press and motion plus release in separate frames; returns both owning snapshots. |
 
 `snapshot.get()` returns a const action reference. All eleven borrowed metadata
 strings, the nested `project_chart.author`, `project_chart.rating_numerator`,
@@ -76,9 +79,33 @@ Rules:
   (it calls `worm_ui_frontend_shutdown`) before the next test. Do not overlap
   fixtures or run them concurrently in one process. SDL events initialization is
   reference-counted with `SDL_QuitSubSystem`, without quitting unrelated subsystems.
-- Coordinates are window pixels. Hard-coded widget positions (tab at 80,54;
-  wizard buttons at y=406) are brittle: when a layout changes, update the
-  numbers and the comment explaining them.
+- Coordinates are window pixels. Native icon controls should use `widget_center`,
+  `hover_widget` or `click_widget` with the full current tooltip after laying out a
+  frame. Records come from the real `NativeIconCell`, shared by `IconButton` and
+  `DrawnIconButton`; they use clipped visible bounds and reset every frame. The
+  `WORMEDIT_TEST_ICON_WIDGETS` define enables this only in the event-harness target,
+  with no application recorder or allocations. Conditional controls need a fresh
+  frame after view changes. Hidden/nonexistent and ambiguous controls throw rather
+  than selecting a stale or arbitrary location. Disabled controls can still be
+  hovered/clicked to check production rejection.
+- Keep coordinate-based input for canvas geometry and controls outside native icon
+  recording. State the geometry being tested; do not migrate field coordinates to
+  widget lookup merely to remove numbers.
+
+## Shared pointer helpers
+
+`wormedit::test::mouse_button(down, x, y)` and `mouse_motion(x, y)` construct
+zero-initialized, window-zero SDL events. `click_at(harness, x, y, twice = false)`
+runs two frames, each with motion and one button edge; both frames carry click count
+1 (or 2 for `twice`) and explicit `SDL_KMOD_NONE`. Use `frame`/`run_script` directly
+for modifier, timing or release-event variants. BGA's local `click` intentionally
+retains its fixed-array result for existing typed input queries. Wheel/keyboard
+helpers outside this bounded consolidation remain local.
+
+New cases belong in a file named for their feature, such as
+`widget_lookup_event_harness_tests.cpp`. Reuse the harness helpers instead of
+copying event constructors from the historical general test file. Existing cases
+move only in a separately scoped checkpoint.
 
 ## Writing a test
 

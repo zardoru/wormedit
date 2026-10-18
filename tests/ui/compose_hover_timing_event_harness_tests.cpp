@@ -10,30 +10,12 @@
 
 namespace {
 
-auto pointer_motion(float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.x = x;
-    event.motion.y = y;
-    return event;
-}
-
-auto left_button(bool down, float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.down = down;
-    event.button.clicks = 1;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
+using wormedit::test::mouse_button;
+using wormedit::test::mouse_motion;
 
 auto hover(nuklear_event_harness_t& harness, float x, float y)
     -> workspace_action_snapshot_t {
-    const std::array events{pointer_motion(x, y)};
+    const std::array events{mouse_motion(x, y)};
     return harness.frame(events);
 }
 
@@ -64,7 +46,7 @@ TEST_CASE("Seek bar reports the clicked source frame without seeking and accepts
                   "Measure 12 · beat 3 · 1:23.456");
     const auto matched = hover(harness, 640, 88);
     CHECK(harness.drawn_text().find("Measure 12 · beat 3 · 1:23.456") != std::string::npos);
-    const std::array down{pointer_motion(640, 88), left_button(true, 640, 88)};
+    const std::array down{mouse_motion(640, 88), mouse_button(true, 640, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
     CHECK(clicked.get().transport_seek_frame == first.get().hover_source_frame);
@@ -130,7 +112,7 @@ TEST_CASE("Seek bar hover uses Nuklear's padded one-third click position",
     constexpr float x = 430.0f;
     const auto hovered = hover(harness, x, 88);
     REQUIRE(hovered.get().hover_source_frame_valid);
-    const std::array down{pointer_motion(x, 88), left_button(true, x, 88)};
+    const std::array down{mouse_motion(x, 88), mouse_button(true, x, 88)};
     const auto clicked = harness.frame(down);
     CHECK(clicked.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
     CHECK(clicked.get().transport_seek_frame == hovered.get().hover_source_frame);
@@ -150,10 +132,12 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
     const bool available = GENERATE(false, true);
     harness.view().compose.bgm_bar_available = available;
     (void)harness.frame();
-    (void)hover(harness, 1231, 122);
+    const auto* tooltip = available ? "Show song bar" : "Song audio is unavailable";
+    (void)harness.hover_widget(tooltip);
+    const auto [x, y] = harness.widget_center(tooltip);
     if (!available)
         check_native_toolbar(harness.drawn_text().find("Song audio is unavailable") != std::string::npos);
-    const std::array down{pointer_motion(1231, 122), left_button(true, 1231, 122)};
+    const std::array down{mouse_motion(x, y), mouse_button(true, x, y)};
     const auto clicked = harness.frame(down);
     const auto& action = clicked.get();
     check_native_toolbar(action.compose_input_count == (available ? 1 : 0));
@@ -161,7 +145,7 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
         check_native_toolbar(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
     check_native_toolbar(action.compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     check_native_toolbar(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
-    const std::array up{left_button(false, 1231, 122)};
+    const std::array up{mouse_button(false, x, y)};
     const auto released = harness.frame(up);
     check_native_toolbar(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     for (std::size_t index = 0; index < released.get().compose_input_count; ++index)

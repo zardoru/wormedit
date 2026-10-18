@@ -86,3 +86,14 @@ Use a controllable sample-frame clock for preview and transport tests. Keep rend
 For note rendering, test mode-profile-to-glyph/orientation mappings directly for every 4K, 5K, and 6K profile. Keep a small set of image snapshots for arrow heads, holds, mines/special notes where supported, snap-color mode, semantic layer colors, yellow comparison rows, hidden/solo layers, split-stage gutters, independently scrolled BGM panes, column transitions, and mixed arrow/square skins at standard and high-DPI scales.
 
 For the modeless live player preview, use a controllable sample-frame clock and snapshot the neutral, mania-style, and arrow presentations at known timing/scroll discontinuities. Assert that dock/overlay visibility and focus survive tab changes, that opening or resizing the preview does not alter edit mode/selection/cursor/snap, that one shared transport drives audio, BGA, receptors, and note motion, and that document publication swaps immutable visual schedules only at frame boundaries. Tests must also prove the initial preview exposes no implicit judgement, score, life, failure, or gameplay-input state. Much later, offline-video tests render an exact area-selected interval twice and compare deterministic frame/audio timestamps, cancellation cleanup, stale-selection rejection, and atomic destination replacement.
+
+
+## Frontend test extension
+
+Use the [event harness](../frontend-event-harness.md) shared pointer constructors
+and two-frame click script. Find native toolbar icons by their full tooltip after
+a layout frame; keep coordinate input when testing canvas geometry or a distinct
+press/release policy. New test files are named for their feature (for example
+`tests/ui/widget_lookup_event_harness_tests.cpp`), rather than added to a historical
+large file to gain its local helpers. Keyboard/sys-fixture consolidation and moves
+of existing measure-lane cases remain later T-671 checkpoints.

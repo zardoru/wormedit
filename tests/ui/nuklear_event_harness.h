@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "ui/nuklear/icon_widget_recording.h"
 
 #include <SDL3/SDL.h>
 
@@ -49,6 +50,12 @@ class nuklear_event_harness_t {
     }
     [[nodiscard]] auto drawn_text_center(std::string_view text) const
         -> std::optional<std::pair<float, float>>;
+    // Last frame's visible native icon cells, keyed by their complete tooltip.
+    // Missing/ambiguous matches throw; disabled icons remain addressable.
+    [[nodiscard]] auto widget_center(std::string_view tooltip) const -> std::pair<float, float>;
+    [[nodiscard]] auto hover_widget(std::string_view tooltip) -> workspace_action_snapshot_t;
+    [[nodiscard]] auto click_widget(std::string_view tooltip)
+        -> std::vector<workspace_action_snapshot_t>;
     // Event objects are consumed synchronously and never retained. Any pointer
     // payload inside an SDL_Event must remain valid for this call. The explicit
     // modifier state overrides key.mod and SDL state, then restores SDL state.
@@ -66,6 +73,15 @@ class nuklear_event_harness_t {
     bool initialized_{};
     bool view_valid_{};
     WormUiWorkspaceView view_{};
+    wormedit::ui::testing::icon_widget_snapshot_t icon_widgets_;
     std::string drawn_text_;
     std::vector<WormUiTestingDrawnText> drawn_text_bounds_;
 };
+
+namespace wormedit::test {
+[[nodiscard]] auto mouse_button(bool down, float x, float y) -> SDL_Event;
+[[nodiscard]] auto mouse_motion(float x, float y) -> SDL_Event;
+// Two separate frames, each with motion and a button edge; modifiers are NONE.
+[[nodiscard]] auto click_at(nuklear_event_harness_t& harness, float x, float y,
+                            bool twice = false) -> std::vector<workspace_action_snapshot_t>;
+} // namespace wormedit::test

@@ -161,38 +161,9 @@ void check_number_key_placement(bool paint_mode, int selection = 0) {
     }
 }
 
-auto button_event(bool down, float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.windowID = 0;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.down = down;
-    event.button.clicks = 1;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
-auto motion_event(float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.windowID = 0;
-    event.motion.x = x;
-    event.motion.y = y;
-    return event;
-}
-
-auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
-    -> std::vector<workspace_action_snapshot_t> {
-    std::array<event_step_t, 2> script{};
-    script[0].events = {motion_event(x, y), button_event(true, x, y)};
-    script[1].events = {motion_event(x, y), button_event(false, x, y)};
-    script[0].events[1].button.clicks = twice ? 2 : 1;
-    script[1].events[1].button.clicks = twice ? 2 : 1;
-    return harness.run_script(script);
-}
+using wormedit::test::mouse_button;
+using wormedit::test::mouse_motion;
+using wormedit::test::click_at;
 
 void check_sound_layer_confirmation_choice(bool overwrite) {
     nuklear_event_harness_t harness{1280, 900};
@@ -403,10 +374,10 @@ TEST_CASE("Headless frontend tab click emits a workspace tab action",
     constexpr float tab_x = 80.0f;
     constexpr float tab_y = 54.0f;
     std::array<event_step_t, 2> script{};
-    script[0].events.push_back(motion_event(tab_x, tab_y));
-    script[0].events.push_back(button_event(true, tab_x, tab_y));
-    script[1].events.push_back(motion_event(tab_x, tab_y));
-    script[1].events.push_back(button_event(false, tab_x, tab_y));
+    script[0].events.push_back(mouse_motion(tab_x, tab_y));
+    script[0].events.push_back(mouse_button(true, tab_x, tab_y));
+    script[1].events.push_back(mouse_motion(tab_x, tab_y));
+    script[1].events.push_back(mouse_button(false, tab_x, tab_y));
     const auto actions = harness.run_script(script);
 
     REQUIRE(actions.size() == script.size());
@@ -769,18 +740,18 @@ TEST_CASE("Action snapshots own nested project chart text through source destruc
 
 TEST_CASE("Compose toolbar color views change frontend state without document actions",
           "[unit][frontend-state][frontend][event-harness]") {
-    nuklear_event_harness_t harness{1280, 900};
+    const auto width = GENERATE(900, 1280);
+    nuklear_event_harness_t harness{width, 900};
+    harness.view().compose.measure_lane.visible = GENERATE(false, true);
     REQUIRE(harness.ready());
     (void)harness.frame();
     using View = worm_ui_nuklear_compose_color_view_t;
     const auto revision = harness.view().compose.document_revision;
-    // 24 px toolbar icons: navigation, separator, six tools, separator, views.
     constexpr std::array views{View::snap, View::layer, View::normal};
-    // The BGA lane visibility, Y-lock and measure lane icons add three 27 px cells before the
-    // color group.
-    constexpr std::array positions{423.0f, 450.0f, 396.0f};
+    constexpr std::array tips{"Snap view: beat snap colors",
+                              "Layer view: semantic layer colors", "Normal view: layout colors"};
     for (std::size_t index = 0; index < views.size(); ++index) {
-        const auto clicks = click_at(harness, positions[index], 122.0f);
+        const auto clicks = harness.click_widget(tips[index]);
         CHECK(worm_ui_nuklear_compose_state().input_queue.color_view == views[index]);
         check_no_toolbar_document_actions(clicks);
         CHECK(harness.view().compose.document_revision == revision);
@@ -861,13 +832,13 @@ namespace {
 
 auto right_click_at(nuklear_event_harness_t& harness, float x, float y)
     -> std::vector<workspace_action_snapshot_t> {
-    auto down = button_event(true, x, y);
-    auto up = button_event(false, x, y);
+    auto down = mouse_button(true, x, y);
+    auto up = mouse_button(false, x, y);
     down.button.button = SDL_BUTTON_RIGHT;
     up.button.button = SDL_BUTTON_RIGHT;
     std::array<event_step_t, 2> script{};
-    script[0].events = {motion_event(x, y), down};
-    script[1].events = {motion_event(x, y), up};
+    script[0].events = {mouse_motion(x, y), down};
+    script[1].events = {mouse_motion(x, y), up};
     return harness.run_script(script);
 }
 
@@ -1043,7 +1014,7 @@ TEST_CASE("Layer row menu releases its popup after a stale revision or hidden pa
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.open);
     check_layer_menu(!worm_ui_nuklear_compose_state().layer_editor.layers_menu.close_pending);
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 423, 122);
+    (void)fixture.harness.click_widget("Snap view: beat snap colors");
     check_layer_menu(worm_ui_nuklear_compose_state().input_queue.color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
@@ -1263,7 +1234,7 @@ TEST_CASE("Note submenu requests a bounded scrolling window independent of hidde
     wheel.wheel.y = -8;
     wheel.wheel.mouse_x = 490;
     wheel.wheel.mouse_y = 500;
-    const std::array events{motion_event(490, 500), wheel};
+    const std::array events{mouse_motion(490, 500), wheel};
     (void)fixture.harness.frame(events);
     const auto request = fixture.harness.frame();
     check_layer_menu(request.get().compose_action == WORM_UI_COMPOSE_ACTION_SET_NOTE_LAYER_MENU_WINDOW);
@@ -1330,14 +1301,14 @@ TEST_CASE("Note menu retires chart and project changes without a lingering popup
     (void)fixture.harness.frame();
     check_layer_menu(!compose_note_menu_open());
     (void)fixture.harness.frame();
-    (void)click_at(fixture.harness, 423, 122);
+    (void)fixture.harness.click_widget("Snap view: beat snap colors");
     check_layer_menu(worm_ui_nuklear_compose_state().input_queue.color_view ==
                      worm_ui_nuklear_compose_color_view_t::snap);
 }
 
 namespace {
 void hover_at(nuklear_event_harness_t& harness, float x, float y) {
-    const std::array events{motion_event(x, y)};
+    const std::array events{mouse_motion(x, y)};
     (void)harness.frame(events);
 }
 void check_tooltip_text(const nuklear_event_harness_t& harness, const char* text) {
@@ -1358,11 +1329,10 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     compose.bgm_bar_reserved = true;
     compose.bgm_bar_available = false;
     (void)harness.frame();
-    // The dock toggles sit at the right edge of the toolbar (T-401); the T-268 toggle shifts them left.
-    hover_at(harness, 1123, 174);
+    (void)harness.hover_widget("Hide sounds list");
     check_tooltip_text(harness, "Hide sounds list");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
-    hover_at(harness, 1177, 174);
+    (void)harness.hover_widget("Show layers");
     check_tooltip_text(harness, "Show layers");
     check_no_tooltip_text(harness, "Audio is unavailable for this chart overview.");
     hover_at(harness, 351, 120);
@@ -1381,9 +1351,9 @@ TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",
     CHECK(clicked.front().get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
     CHECK(clicked.front().get().transport_seek_frame > 2'000'000);
     CHECK(clicked.front().get().transport_seek_frame < 2'400'000);
-    const std::array down{motion_event(320, 88), button_event(true, 320, 88)};
+    const std::array down{mouse_motion(320, 88), mouse_button(true, 320, 88)};
     (void)harness.frame(down);
-    const std::array moved{motion_event(960, 88)};
+    const std::array moved{mouse_motion(960, 88)};
     const auto dragged = harness.frame(moved);
     CHECK(dragged.get().kind == WORM_UI_WORKSPACE_ACTION_TRANSPORT_SEEK);
     CHECK(dragged.get().transport_seek_frame > 3'000'000);
@@ -1393,7 +1363,7 @@ namespace {
 void check_note_click_emitted_once(bool selected) {
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
-    const std::array motion{motion_event(300, 400)};
+    const std::array motion{mouse_motion(300, 400)};
     const auto hovered = harness.frame(motion);
     REQUIRE(hovered.get().compose_has_pointer_hover);
     const auto x = hovered.get().compose_pointer_hover_x_pixels;
@@ -1747,7 +1717,7 @@ TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
     REQUIRE(harness.ready());
     auto& workspace = harness.view();
     auto& view = workspace.compose;
-    const std::array hover_motion{motion_event(300, 400)};
+    const std::array hover_motion{mouse_motion(300, 400)};
     const auto hover = harness.frame(hover_motion);
     REQUIRE(hover.get().compose_has_pointer_hover);
     WormUiComposeNoteView note{};
@@ -1900,7 +1870,7 @@ TEST_CASE("Compare fields route wheel input as one shared read-only scroll actio
     wheel.wheel.y = -1.0f;
     wheel.wheel.mouse_x = 320.0f;
     wheel.wheel.mouse_y = 420.0f;
-    const std::array<SDL_Event, 2> wheel_script{motion_event(320.0f, 420.0f), wheel};
+    const std::array<SDL_Event, 2> wheel_script{mouse_motion(320.0f, 420.0f), wheel};
     const auto action = harness.frame(wheel_script);
     CHECK(action.get().kind == WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL);
     CHECK(action.get().compare_scroll_delta != 0.0);
@@ -2418,7 +2388,7 @@ TEST_CASE("Lane keys carry the clicked Sounds dock source and leave selected not
     (void)harness.frame();
     require_lane_key_sound(harness.drawn_text().find("armed") != std::string::npos);
     // Return the pointer to the field so the dock does not own keyboard input.
-    const auto motion = motion_event(300, 400);
+    const auto motion = mouse_motion(300, 400);
     (void)harness.frame(std::span{&motion, 1});
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_1, SDL_SCANCODE_1);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_1, SDL_SCANCODE_1);
@@ -2464,15 +2434,15 @@ TEST_CASE("Selecting a converted BMSON stem arms lane-key entry without a double
     (void)harness.frame();
     const auto center = harness.drawn_text_center("converted.wav");
     require_lane_key_sound(center);
-    const std::array down{motion_event(center->first, center->second),
-                          button_event(true, center->first, center->second)};
+    const std::array down{mouse_motion(center->first, center->second),
+                          mouse_button(true, center->first, center->second)};
     (void)harness.frame(down, modifiers);
-    const auto up = button_event(false, center->first, center->second);
+    const auto up = mouse_button(false, center->first, center->second);
     (void)harness.frame(std::span{&up, 1}, modifiers);
     const bool armed = !missing && modifiers == SDL_KMOD_NONE;
     expect_lane_key(state.resource_picker.armed_resource_id == (armed ? 1400 : 0));
     expect_lane_key(state.keysound_catalog.armed_from_sounds_dock == armed);
-    const auto motion = motion_event(300, 400);
+    const auto motion = mouse_motion(300, 400);
     (void)harness.frame(std::span{&motion, 1});
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_2, SDL_SCANCODE_2);
     const auto action = harness.frame(std::span{&press, 1});
@@ -3355,7 +3325,7 @@ auto has_draw_input(const std::vector<workspace_action_snapshot_t>& frames,
 }
 
 auto draw_right_event(bool down, float x, float y) -> SDL_Event {
-    auto event = button_event(down, x, y);
+    auto event = mouse_button(down, x, y);
     event.button.button = SDL_BUTTON_RIGHT;
     return event;
 }
@@ -3363,12 +3333,12 @@ auto draw_right_event(bool down, float x, float y) -> SDL_Event {
 auto right_draw_script(nuklear_event_harness_t& harness, float x, float y,
                        float end_x, float end_y) -> std::vector<workspace_action_snapshot_t> {
     const auto press = draw_right_event(true, x, y);
-    const auto motion = motion_event(end_x, end_y);
+    const auto motion = mouse_motion(end_x, end_y);
     const auto release = draw_right_event(false, end_x, end_y);
     std::array<event_step_t, 3> steps{};
-    steps[0].events = {motion_event(x, y), press};
+    steps[0].events = {mouse_motion(x, y), press};
     steps[1].events = {motion};
-    steps[2].events = {motion_event(end_x, end_y), release};
+    steps[2].events = {mouse_motion(end_x, end_y), release};
     return harness.run_script(steps);
 }
 
@@ -3490,7 +3460,7 @@ TEST_CASE("Right drag threshold uses screen pixels with fractional scene dimensi
     (void)fixture.harness.frame();
     const auto press = draw_right_event(true, 300, 300);
     (void)fixture.harness.frame(std::span{&press, 1});
-    const auto small_motion = motion_event(302.5f, 300);
+    const auto small_motion = mouse_motion(302.5f, 300);
     const auto under_threshold = fixture.harness.frame(std::span{&small_motion, 1});
     expect_draw(find_compose_input(std::vector<workspace_action_snapshot_t>{under_threshold},
                                    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN) == nullptr);
@@ -3520,7 +3490,7 @@ TEST_CASE("Draw rejects Timing focus and cancels a stroke on focus, tab, or occl
         auto& workspace = harness.view();
         workspace.compose.note_paint_mode_active = true;
         (void)harness.frame();
-        const auto down = button_event(true, 300, 400);
+        const auto down = mouse_button(true, 300, 400);
         const auto started = harness.frame(std::span{&down, 1});
         expect_draw(has_draw_input(std::vector<workspace_action_snapshot_t>{started},
                                    WORM_UI_COMPOSE_INPUT_NOTE_PAINT_BEGIN, 1));
@@ -3540,7 +3510,7 @@ TEST_CASE("Draw rejects Timing focus and cancels a stroke on focus, tab, or occl
         }
         expect_draw(!worm_ui_nuklear_compose_state().pointer_capture.note_paint_pointer_active);
         expect_draw(!worm_ui_nuklear_compose_state().pointer_capture.draw_erase_pointer_active);
-        const auto up = button_event(false, 300, 400);
+        const auto up = mouse_button(false, 300, 400);
         const auto finished = harness.frame(std::span{&up, 1});
         expect_draw(find_compose_input(std::vector<workspace_action_snapshot_t>{finished},
                                        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE) == nullptr);
@@ -3556,7 +3526,7 @@ TEST_CASE("Batched right press motion and release erases from the original press
     view.viewport_width_pixels = 1600.5;
     view.viewport_height_pixels = 1100.25;
     (void)fixture.harness.frame();
-    const std::array events{draw_right_event(true, 300, 300), motion_event(304, 340),
+    const std::array events{draw_right_event(true, 300, 300), mouse_motion(304, 340),
         draw_right_event(false, 304, 340)};
     const auto frame = fixture.harness.frame(events);
     const auto& action = frame.get();
@@ -3777,7 +3747,7 @@ void wheel_compose_inspector(nuklear_event_harness_t& harness, float x, float y,
     wheel.wheel.mouse_x = static_cast<int>(x);
     wheel.wheel.mouse_y = static_cast<int>(y);
     wheel.wheel.y = direction;
-    const std::array events{motion_event(x, y), wheel};
+    const std::array events{mouse_motion(x, y), wheel};
     (void)harness.frame(events);
 }
 
@@ -4173,7 +4143,7 @@ struct move_event_fixture_t {
             state.dock_layout.bga_panel_visible = false;
         }
         expect_lane_key(harness.ready());
-        const std::array motion{motion_event(300, 400)};
+        const std::array motion{mouse_motion(300, 400)};
         const auto hover = harness.frame(motion);
         expect_lane_key(hover.get().compose_has_pointer_hover);
         const auto x = hover.get().compose_pointer_hover_x_pixels;
@@ -4190,16 +4160,16 @@ struct move_event_fixture_t {
         (void)harness.frame();
     }
     auto start() -> workspace_action_snapshot_t {
-        const std::array down{motion_event(300, 400), button_event(true, 300, 400)};
+        const std::array down{mouse_motion(300, 400), mouse_button(true, 300, 400)};
         (void)harness.frame(down);
         return move(420);
     }
     auto move(float y) -> workspace_action_snapshot_t {
-        const std::array motion{motion_event(300, y)};
+        const std::array motion{mouse_motion(300, y)};
         return harness.frame(motion);
     }
     auto release(float y) -> workspace_action_snapshot_t {
-        const std::array up{motion_event(300, y), button_event(false, 300, y)};
+        const std::array up{mouse_motion(300, y), mouse_button(false, 300, y)};
         return harness.frame(up);
     }
     void project(const workspace_action_snapshot_t& frame, bool conflict) {
@@ -4324,9 +4294,9 @@ auto bgm_draw_drag(bgm_draw_fixture_t& f, float start_dx, float end_dx)
     const auto mid = f.point(start_dx, 140);
     const auto to = f.point(end_dx, 180);
     std::array<event_step_t, 3> steps{};
-    steps[0].events = {motion_event(from.first, from.second), button_event(true, from.first, from.second)};
-    steps[1].events = {motion_event(mid.first, mid.second)};
-    steps[2].events = {motion_event(to.first, to.second), button_event(false, to.first, to.second)};
+    steps[0].events = {mouse_motion(from.first, from.second), mouse_button(true, from.first, from.second)};
+    steps[1].events = {mouse_motion(mid.first, mid.second)};
+    steps[2].events = {mouse_motion(to.first, to.second), mouse_button(false, to.first, to.second)};
     return f.harness.run_script(steps);
 }
 
@@ -4489,22 +4459,22 @@ struct stem_edge_fixture_t {
     }
     void hover(float x, float y) {
         const auto p = point(x, y);
-        const auto move = motion_event(p.first, p.second);
+        const auto move = mouse_motion(p.first, p.second);
         (void)harness.frame(std::span{&move, 1});
     }
     auto press(float x, float y) {
         const auto p = point(x, y);
-        const std::array events{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+        const std::array events{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
         return harness.frame(events);
     }
     void drag_to(float x, float y) {
         const auto p = point(x, y);
-        const auto move = motion_event(p.first, p.second);
+        const auto move = mouse_motion(p.first, p.second);
         (void)harness.frame(std::span{&move, 1});
     }
     void release(float x, float y) {
         const auto p = point(x, y);
-        const std::array events{motion_event(p.first, p.second), button_event(false, p.first, p.second)};
+        const std::array events{mouse_motion(p.first, p.second), mouse_button(false, p.first, p.second)};
         (void)harness.frame(events);
         sync_lane();
     }
@@ -4545,8 +4515,8 @@ TEST_CASE("Stem lane edge band leaves stem point presses inside the lane alone",
     f.harness.view().compose.note_paint_mode_active = true;
     (void)f.harness.frame();
     const auto from = f.point(f.edge_x - 12, 300);
-    const std::array down{motion_event(from.first, from.second), button_event(true, from.first, from.second)};
-    const std::array up{motion_event(from.first, from.second), button_event(false, from.first, from.second)};
+    const std::array down{mouse_motion(from.first, from.second), mouse_button(true, from.first, from.second)};
+    const std::array up{mouse_motion(from.first, from.second), mouse_button(false, from.first, from.second)};
     const std::vector<workspace_action_snapshot_t> frames{f.harness.frame(down), f.harness.frame(up)};
     expect_draw(!state.stem_lanes.stem_lane_resize.has_value());
     expect_draw(count_inputs(frames, WORM_UI_COMPOSE_INPUT_BMSON_STEM_POINT_CONTINUE) == 1);
@@ -4561,11 +4531,11 @@ TEST_CASE("Stem lane edge double click resets the width at any height",
     f.release(f.edge_x + 80, 300);
     expect_draw(f.width() > 100.0);
     const auto p = f.point(f.edge_x, 420);
-    auto down = button_event(true, p.first, p.second);
-    auto up = button_event(false, p.first, p.second);
+    auto down = mouse_button(true, p.first, p.second);
+    auto up = mouse_button(false, p.first, p.second);
     down.button.clicks = 2;
     up.button.clicks = 2;
-    const std::array events{motion_event(p.first, p.second), down, up};
+    const std::array events{mouse_motion(p.first, p.second), down, up};
     (void)f.harness.frame(events);
     expect_draw(f.width() == 36.0);
 }
@@ -4647,7 +4617,7 @@ TEST_CASE("Native selected-note drag sends live BGM targets and can return to th
     (void)fixture.harness.frame();
     (void)fixture.start();
     const auto screen_x = viewport->x + static_cast<float>((bgm_x + 18) * viewport->width / view.viewport_width_pixels);
-    const std::array over{motion_event(screen_x, 460)};
+    const std::array over{mouse_motion(screen_x, 460)};
     const auto entered = fixture.harness.frame(over);
     const auto& input = move_event_input(entered, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE);
     INFO("BGM input " << input.note_move_to_bgm << " lane " << input.lane_id << " x " << input.x_pixels << " BGM " << bgm_x << " fieldright " << view.playable_field_right_pixels);
@@ -4655,7 +4625,7 @@ TEST_CASE("Native selected-note drag sends live BGM targets and can return to th
     const auto returned = fixture.move(440);
     expect_lane_key(!move_event_input(returned, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE).note_move_to_bgm);
     (void)fixture.harness.frame(over);
-    const std::array up{button_event(false, screen_x, 460)};
+    const std::array up{mouse_button(false, screen_x, 460)};
     const auto released = fixture.harness.frame(up);
     expect_lane_key(move_event_input(released, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_RELEASE).note_move_to_bgm);
     expect_lane_key(!worm_ui_nuklear_compose_state().note_move.note_move_active);
@@ -4686,12 +4656,12 @@ TEST_CASE("Combined primary clicks toggle matching sounds twice without editing"
     const auto before = t422_native_bytes(fixture.history.document);
     for (int repeat = 0; repeat < 2; ++repeat) {
         const auto [x, y] = *center;
-        const std::array down{motion_event(x, y), button_event(true, x, y)};
+        const std::array down{mouse_motion(x, y), mouse_button(true, x, y)};
         const auto pressed = fixture.harness.frame(down, modifiers);
         for (std::size_t i = 0; i < pressed.get().compose_input_count; ++i)
             expect_t422(pressed.get().compose_inputs[i].kind == kind);
         (void)fixture.dispatch(pressed);
-        const std::array up{button_event(false, x, y)};
+        const std::array up{mouse_button(false, x, y)};
         const auto released = fixture.harness.frame(up, modifiers);
         for (std::size_t i = 0; i < released.get().compose_input_count; ++i)
             expect_t422(released.get().compose_inputs[i].kind == kind);
@@ -4705,7 +4675,7 @@ TEST_CASE("Combined primary clicks toggle matching sounds twice without editing"
 
 TEST_CASE("Same sound hover travels with the remappable add shortcut", "[frontend-state][event-harness][select-same-sound]") {
     move_event_fixture_t fixture;
-    const std::array motion{motion_event(300, 400)};
+    const std::array motion{mouse_motion(300, 400)};
     const auto hovered = fixture.harness.frame(motion);
     expect_lane_key(hovered.get().compose_sound_hover_object_id == 101);
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
@@ -4767,9 +4737,9 @@ TEST_CASE("Same sound combined clicks route BGM markers and stem cut sources", "
 #else
     const auto modifiers = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT);
 #endif
-    const std::array down{motion_event(screen_x, screen_y), button_event(true, screen_x, screen_y)};
+    const std::array down{mouse_motion(screen_x, screen_y), mouse_button(true, screen_x, screen_y)};
     const auto pressed = fixture.harness.frame(down, modifiers);
-    const std::array up{button_event(false, screen_x, screen_y)};
+    const std::array up{mouse_button(false, screen_x, screen_y)};
     const auto released = fixture.harness.frame(up, modifiers);
     bool found{};
     for (const auto* frame : {&pressed, &released}) {
@@ -4804,7 +4774,7 @@ TEST_CASE("Same sound add shortcut keeps selection and Sounds dock fallbacks", "
     ui.keysound_catalog.keysound_selection.selected = {2};
     ui.keysound_catalog.keysound_selection.primary = 2;
     expect_lane_key(ui.sounds_dock.sound_list_valid);
-    const std::array motion{motion_event(ui.sounds_dock.sound_list_x + ui.sounds_dock.sound_list_width / 2,
+    const std::array motion{mouse_motion(ui.sounds_dock.sound_list_x + ui.sounds_dock.sound_list_width / 2,
         ui.sounds_dock.sound_list_y + ui.sounds_dock.sound_list_height / 2)};
     (void)fixture.harness.frame(motion);
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_A, SDL_SCANCODE_A);
@@ -4926,8 +4896,8 @@ void configure_empty_overview(nuklear_event_harness_t& harness) {
 // Moves the pointer onto the label twice so Nuklear registers hover before the tooltip pass.
 void hover_overview_label(nuklear_event_harness_t& harness, std::pair<float, float> point) {
     std::array<event_step_t, 2> script{};
-    script[0].events = {motion_event(point.first, point.second)};
-    script[1].events = {motion_event(point.first + 1.0f, point.second)};
+    script[0].events = {mouse_motion(point.first, point.second)};
+    script[1].events = {mouse_motion(point.first + 1.0f, point.second)};
     (void)harness.run_script(script);
 }
 
@@ -4940,10 +4910,10 @@ void cover_with_tap_tool(nuklear_event_harness_t& harness, std::pair<float, floa
     const auto destination_x = std::clamp(point.first - 150.0f, 0.0f, width - tap.width) + 60;
     const auto destination_y = std::clamp(point.second - 100.0f, 0.0f, height - tap.height) + 30;
     std::array<event_step_t, 3> drag{};
-    drag[0].events = {motion_event(title_x, title_y), button_event(true, title_x, title_y)};
-    drag[1].events = {motion_event(destination_x, destination_y)};
-    drag[2].events = {motion_event(destination_x, destination_y),
-                      button_event(false, destination_x, destination_y)};
+    drag[0].events = {mouse_motion(title_x, title_y), mouse_button(true, title_x, title_y)};
+    drag[1].events = {mouse_motion(destination_x, destination_y)};
+    drag[2].events = {mouse_motion(destination_x, destination_y),
+                      mouse_button(false, destination_x, destination_y)};
     (void)harness.run_script(drag);
     (void)harness.frame();
 }
@@ -5014,8 +4984,8 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     (void)harness.frame();
     // Clicking empty workspace makes the workspace the active window before Tap timing opens.
     std::array<event_step_t, 2> click{};
-    click[0].events = {motion_event(790.0f, 400.0f), button_event(true, 790.0f, 400.0f)};
-    click[1].events = {motion_event(790.0f, 400.0f), button_event(false, 790.0f, 400.0f)};
+    click[0].events = {mouse_motion(790.0f, 400.0f), mouse_button(true, 790.0f, 400.0f)};
+    click[1].events = {mouse_motion(790.0f, 400.0f), mouse_button(false, 790.0f, 400.0f)};
     (void)harness.run_script(click);
     harness.view().tap_timing.visible = true;
     (void)harness.frame();
@@ -5791,14 +5761,14 @@ struct chart_reorder_fixture_t {
         // The grip precedes the26px checkbox and the name cell with their row spacing.
         const float x = name.x - 44.0f;
         const float y = name.y + name.height * 0.5f;
-        const std::array events{motion_event(x, y), button_event(true, x, y)};
+        const std::array events{mouse_motion(x, y), mouse_button(true, x, y)};
         CHECK(harness.frame(events).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
         return {x, y};
     }
     auto release_at(float x, float y) -> workspace_action_snapshot_t {
-        const auto moved = motion_event(x, y);
+        const auto moved = mouse_motion(x, y);
         CHECK(harness.frame(std::span{&moved, 1}).get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
-        const auto released = button_event(false, x, y);
+        const auto released = mouse_button(false, x, y);
         return harness.frame(std::span{&released, 1});
     }
 };
@@ -5848,9 +5818,9 @@ void drag_options_header(nuklear_event_harness_t& harness, float dx, float dy) {
     const auto title = harness.drawn_text_center("Options");
     REQUIRE(title);
     const auto [x, y] = *title;
-    (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
-    (void)harness.frame(std::array{motion_event(x + dx, y + dy)});
-    (void)harness.frame(std::array{button_event(false, x + dx, y + dy)});
+    (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
+    (void)harness.frame(std::array{mouse_motion(x + dx, y + dy)});
+    (void)harness.frame(std::array{mouse_button(false, x + dx, y + dy)});
     (void)harness.frame();
 }
 }
@@ -5893,7 +5863,7 @@ TEST_CASE("Options header movement cancels on focus loss and while hidden",
         const auto title = harness.drawn_text_center("Options");
         REQUIRE(title);
         const auto [x, y] = *title;
-        (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
+        (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
         WormUiTestingRect before{};
         REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
         if (lose_focus) {
@@ -5908,11 +5878,11 @@ TEST_CASE("Options header movement cancels on focus loss and while hidden",
             (void)harness.frame();
             harness.view().options.visible = true;
         }
-        (void)harness.frame(std::array{motion_event(x + 80, y + 45)});
+        (void)harness.frame(std::array{mouse_motion(x + 80, y + 45)});
         WormUiTestingRect after{};
         REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
         expect_lane_key(after.x == before.x && after.y == before.y);
-        (void)harness.frame(std::array{button_event(false, x + 80, y + 45)});
+        (void)harness.frame(std::array{mouse_button(false, x + 80, y + 45)});
     }
 }
 
@@ -6241,9 +6211,9 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
     const auto x = viewport->x + static_cast<float>((extent->first + extent->second) * .5 /
                                                     view.viewport_width_pixels) * viewport->width;
     const auto y = viewport->y + 200.0f / 600 * viewport->height;
-    auto down = button_event(true, x, y), up = button_event(false, x, y);
+    auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
     down.button.clicks = up.button.clicks = 2;
-    const auto action = harness.frame(std::array{motion_event(x, y), down, up});
+    const auto action = harness.frame(std::array{mouse_motion(x, y), down, up});
     expect_draw(action.get().timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN);
     expect_draw(action.get().timing_lane == lane);
     expect_draw(action.get().timing_object_id == 991);
@@ -6280,9 +6250,9 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
     REQUIRE(viewport);
     const auto x = viewport->x + (bga_press ? 194.0f : 138.0f) / 900 * viewport->width;
     const auto y = viewport->y + 200.0f / 600 * viewport->height;
-    (void)harness.frame(std::array{motion_event(x, y), button_event(true, x, y)});
+    (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
     expect_draw(state.timing_drag.timing_stage_drag_active == !bga_press);
-    const auto action = harness.frame(std::array{motion_event(x, y + 20)});
+    const auto action = harness.frame(std::array{mouse_motion(x, y + 20)});
     expect_draw(action.get().timing_stage_action == (bga_press ? WORM_UI_TIMING_STAGE_NONE
                                                         : WORM_UI_TIMING_STAGE_MOVE));
     if (!bga_press) expect_draw(action.get().timing_object_id == 991);
@@ -6386,7 +6356,7 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     wheel.wheel.y = -5;
     wheel.wheel.mouse_x = 640;
     wheel.wheel.mouse_y = wheel_y;
-    const std::array events{motion_event(640, wheel_y), wheel};
+    const std::array events{mouse_motion(640, wheel_y), wheel};
     const auto frame = harness.frame(events);
     check_layer_menu(audio.waveform_viewport.frames_per_pixel == before);
     check_layer_menu(frame.get().audio_offset_drag_action == WORM_UI_AUDIO_OFFSET_DRAG_NONE);
@@ -6503,7 +6473,7 @@ TEST_CASE("Double-clicking a stem note arms it without opening its label editor"
     nuklear_event_harness_t harness{1280, 900};
     section_import_require(harness.ready());
     auto& view = harness.view().compose;
-    const std::array motion{motion_event(300, 400)};
+    const std::array motion{mouse_motion(300, 400)};
     const auto hover = harness.frame(motion);
     section_import_require(hover.get().compose_has_pointer_hover);
     const auto x = hover.get().compose_pointer_hover_x_pixels;
@@ -6716,14 +6686,14 @@ TEST_CASE("Rejected Alt duration release retires the production gesture and pres
     const auto original = t422_native_bytes(f.history.document);
     const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
     (void)f.dispatch(f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT));
-    const std::array press{motion_event(head->first, head->second),
-        button_event(true, head->first, head->second)};
+    const std::array press{mouse_motion(head->first, head->second),
+        mouse_button(true, head->first, head->second)};
     (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
     section_import_require(f.interaction->gesture<wormedit::pending_note_duration_gesture_t>() != nullptr);
     f.project();
-    const auto move = motion_event(target->first, target->second);
+    const auto move = mouse_motion(target->first, target->second);
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT));
-    const auto release = button_event(false, target->first, target->second);
+    const auto release = mouse_button(false, target->first, target->second);
     (void)f.dispatch(f.harness.frame(std::span{&release, 1}, SDL_KMOD_ALT));
     expect_draw(!(*f.interaction).is_pending());
     expect_draw(f.history.undo.empty());
@@ -6889,9 +6859,9 @@ TEST_CASE("Actual same-sound clicks reject a note without a sound without cleari
     const auto primary = SDL_KMOD_CTRL;
 #endif
     const auto mods = static_cast<SDL_Keymod>(primary | SDL_KMOD_SHIFT);
-    const std::array down{motion_event(point->first, point->second), button_event(true, point->first, point->second)};
+    const std::array down{mouse_motion(point->first, point->second), mouse_button(true, point->first, point->second)};
     const auto pressed = f.harness.frame(down, mods);
-    const std::array up{button_event(false, point->first, point->second)};
+    const std::array up{mouse_button(false, point->first, point->second)};
     const auto released = f.harness.frame(up, mods);
     const auto& action = pressed.get().compose_input_count ? pressed : released;
     expect_t422(action.get().compose_input_count == 1);
@@ -6919,14 +6889,14 @@ auto placement_point(t422_fixture_t& f, std::uint64_t row, std::uint64_t lane)
 }
 
 void placement_press(t422_fixture_t& f, std::pair<float, float> point) {
-    const std::array events{motion_event(point.first, point.second),
-        button_event(true, point.first, point.second)};
+    const std::array events{mouse_motion(point.first, point.second),
+        mouse_button(true, point.first, point.second)};
     (void)f.dispatch(f.harness.frame(events));
 }
 
 void placement_release(t422_fixture_t& f, std::pair<float, float> point) {
-    const std::array events{motion_event(point.first, point.second),
-        button_event(false, point.first, point.second)};
+    const std::array events{mouse_motion(point.first, point.second),
+        mouse_button(false, point.first, point.second)};
     (void)f.dispatch(f.harness.frame(events));
 }
 
@@ -7133,7 +7103,7 @@ TEST_CASE("Production unsnapped paint walks adjacent rows with the shared grid p
     prepare_placement(f);
     placement_press(f, placement_point(f, 240, 2));
     const auto end = placement_point(f, 248, 2);
-    const auto motion = motion_event(end.first, end.second);
+    const auto motion = mouse_motion(end.first, end.second);
     (void)f.dispatch(f.harness.frame(std::span{&motion, 1}));
     placement_release(f, end);
     std::vector<std::uint64_t> rows;
@@ -7170,7 +7140,7 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
         expect_t422(source.has_value());
         placement_press(f, *source);
         const auto target = placement_point(f, 240, 1);
-        const auto motion = motion_event(target.first, target.second);
+        const auto motion = mouse_motion(target.first, target.second);
         (void)f.dispatch(f.harness.frame(std::span{&motion, 1}));
         placement_release(f, target);
     }
@@ -7249,8 +7219,8 @@ TEST_CASE("Speed marker heads translate while tail handles resize through produc
     expect_t422(s.timing_marker.timing_marker_candidate_active && !s.timing_drag.kiai_drag_active);
     f.project();
     const auto end_point = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
-    const auto released = f.harness.frame(std::array{motion_event(end_point.first, end_point.second),
-        button_event(false, end_point.first, end_point.second)});
+    const auto released = f.harness.frame(std::array{mouse_motion(end_point.first, end_point.second),
+        mouse_button(false, end_point.first, end_point.second)});
     const auto status = f.dispatch(released);
     INFO(status);
     CAPTURE(released.get().compose_input_count, f.interaction->selected_objects.size(),
@@ -7371,14 +7341,14 @@ TEST_CASE("Production Alt mine begin does not retain a rejected hold", "[fronten
     expect_t422(p.has_value());
     const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
     (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
-    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    const std::array press{mouse_motion(p->first, p->second), mouse_button(true, p->first, p->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
     (void)f.dispatch(begin);
     expect_t422(!f.interaction->hold() && !f.interaction->gesture<wormedit::pending_note_duration_gesture_t>());
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     f.project();
-    const auto move = motion_event(p->first, p->second + 40);
+    const auto move = mouse_motion(p->first, p->second + 40);
     const auto next = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
     expect_t422(next.get().compose_input_count == 0);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
@@ -7393,10 +7363,10 @@ TEST_CASE("Production note move candidate retains release across chord changes",
     f.project(); (void)f.harness.frame();
     const auto p = t422_note_screen_center(f, 101);
     expect_t422(p.has_value());
-    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    const std::array press{mouse_motion(p->first, p->second), mouse_button(true, p->first, p->second)};
     (void)f.dispatch(f.harness.frame(press));
     expect_t422(worm_ui_nuklear_compose_state().note_move.note_move_candidate_active);
-    const auto release = button_event(false, p->first, p->second);
+    const auto release = mouse_button(false, p->first, p->second);
     const auto frame = f.harness.frame(std::span{&release, 1}, static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_ALT));
     expect_t422(frame.get().compose_input_count == 1);
     expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_POINTER_CLICK);
@@ -7411,7 +7381,7 @@ TEST_CASE("Production Shift Speed marker has one chord owner", "[frontend-state]
     f.interaction->pixels_per_standard_measure = 768;
     f.project();
     const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 240);
-    const std::array press{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+    const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_SHIFT);
     expect_t422(worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active);
     expect_t422(frame.get().compose_input_count == 0);
@@ -7430,9 +7400,9 @@ TEST_CASE("Production Shift BGM slice click keeps its restart meaning", "[fronte
     v.bgm_events = &event; v.bgm_event_count = 1;
     (void)f.harness.frame();
     const auto [x, y] = f.point(20, 198);
-    const std::array press{motion_event(x, y), button_event(true, x, y)};
+    const std::array press{mouse_motion(x, y), mouse_button(true, x, y)};
     (void)f.harness.frame(press, SDL_KMOD_SHIFT);
-    const auto up = button_event(false, x, y);
+    const auto up = mouse_button(false, x, y);
     const auto frame = f.harness.frame(std::span{&up, 1}, SDL_KMOD_SHIFT);
     expect_t422(frame.get().compose_input_count == 1);
     expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BMSON_RESTART_TOGGLE);
@@ -7446,7 +7416,7 @@ TEST_CASE("Production Alt Anchor press inserts only in timing focus", "[frontend
     const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
     const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
     (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
-    const std::array press{motion_event(p.first, p.second), button_event(true, p.first, p.second)};
+    const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_ALT);
     expect_t422(frame.get().timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT);
     expect_t422(frame.get().timing_lane == WORM_UI_TIMING_LANE_ANCHOR);
@@ -7460,8 +7430,8 @@ TEST_CASE("Production accepted Alt hold owns its release after modifier changes"
     f.project();
     const auto start = placement_point(f, 240, 2);
     const auto end = placement_point(f, 480, 2);
-    const std::array press{motion_event(start.first, start.second),
-        button_event(true, start.first, start.second)};
+    const std::array press{mouse_motion(start.first, start.second),
+        mouse_button(true, start.first, start.second)};
     // SDL's frame snapshot is authoritative even without a separate Alt key event.
     (void)f.dispatch(f.harness.frame(press, SDL_KMOD_ALT));
     expect_t422((f.interaction->hold() != nullptr));
@@ -7469,12 +7439,12 @@ TEST_CASE("Production accepted Alt hold owns its release after modifier changes"
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     f.project();
     expect_t422(f.harness.view().compose.editor_pointer_hold_active);
-    const auto move = motion_event(end.first, end.second);
+    const auto move = mouse_motion(end.first, end.second);
     (void)f.dispatch(f.harness.frame(std::span{&move, 1}, SDL_KMOD_SHIFT));
     expect_t422(worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
     expect_t422((f.interaction->hold() != nullptr));
     f.project();
-    const auto up = button_event(false, end.first, end.second);
+    const auto up = mouse_button(false, end.first, end.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}, SDL_KMOD_NONE));
     expect_t422(!f.interaction->hold());
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
@@ -7499,9 +7469,9 @@ TEST_CASE("Production same-sound press retains scope when modifiers are released
 #else
     const auto mods = static_cast<SDL_Keymod>(SDL_KMOD_CTRL | SDL_KMOD_SHIFT);
 #endif
-    const std::array press{motion_event(p->first, p->second), button_event(true, p->first, p->second)};
+    const std::array press{mouse_motion(p->first, p->second), mouse_button(true, p->first, p->second)};
     (void)f.dispatch(f.harness.frame(press, mods));
-    const auto up = button_event(false, p->first, p->second);
+    const auto up = mouse_button(false, p->first, p->second);
     const auto released = f.harness.frame(std::span{&up, 1});
     expect_t422(released.get().compose_input_count == 1);
     expect_t422(released.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_SELECT_SAME_SOUND_VISIBLE);
@@ -7522,12 +7492,12 @@ TEST_CASE("Production Alt BGM press cannot acquire a playable pointer hold",
     v.bgm_events = &event; v.bgm_event_count = 1;
     (void)f.harness.frame();
     const auto [x, y] = f.point(20, 198);
-    const std::array press{motion_event(x, y), button_event(true, x, y)};
+    const std::array press{mouse_motion(x, y), mouse_button(true, x, y)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
     expect_t422(begin.get().compose_input_count == 0);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
-    const auto up = button_event(false, x, y);
+    const auto up = mouse_button(false, x, y);
     const auto release = f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT);
     expect_t422(release.get().compose_input_count == 1);
     expect_t422(release.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_BGM_EVENT_CLICK);
@@ -7541,15 +7511,15 @@ TEST_CASE("Production Alt drag from playable field cannot turn into Anchor inser
     const auto anchor = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());
-    const std::array press{motion_event(note->first, note->second),
-        button_event(true, note->first, note->second)};
+    const std::array press{mouse_motion(note->first, note->second),
+        mouse_button(true, note->first, note->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
     expect_t422(begin.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
-    const auto move = motion_event(anchor.first, anchor.second);
+    const auto move = mouse_motion(anchor.first, anchor.second);
     const auto dragged = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
     expect_t422(dragged.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
-    const auto up = button_event(false, anchor.first, anchor.second);
+    const auto up = mouse_button(false, anchor.first, anchor.second);
     expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing_stage_action ==
                  WORM_UI_TIMING_STAGE_NONE);
     expect_t422(f.history.undo.empty());
@@ -7642,12 +7612,12 @@ TEST_CASE("Production overview drag synchronizes the fixed edit cursor anchor",
     prepare_navigation_overview(f, row);
     const auto cursor = f.interaction->cursor;
     const auto previous_scroll = f.interaction->viewport_scroll_pixels;
-    const std::array press{motion_event(351, 120), button_event(true, 351, 120)};
+    const std::array press{mouse_motion(351, 120), mouse_button(true, 351, 120)};
     (void)f.dispatch(f.harness.frame(press));
     const auto capture = worm_ui_nuklear_compose_state().waveform_drag.waveform_overview_capture;
     expect_t422(capture.width > 0);
     const auto x = static_cast<float>(capture.left + capture.width * 0.8);
-    const auto move = motion_event(x, 120);
+    const auto move = mouse_motion(x, 120);
     const auto frame = f.harness.frame(std::span{&move, 1});
     expect_t422(frame.get().compose_input_count == 1);
     expect_t422(frame.get().compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_SEEK);
@@ -7758,9 +7728,9 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     WormUiComposeWaveformOverviewRowView row{};
     prepare_navigation_overview(f, row);
     const auto previous = f.interaction->cursor;
-    const std::array press{motion_event(351, 120), button_event(true, 351, 120)};
+    const std::array press{mouse_motion(351, 120), mouse_button(true, 351, 120)};
     (void)f.dispatch(f.harness.frame(press, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE));
-    const auto up = button_event(false, 351, 120);
+    const auto up = mouse_button(false, 351, 120);
     const auto frame = f.harness.frame(std::span{&up, 1}, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE);
     const auto* click = find_compose_input(std::vector{frame}, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK);
     expect_t422(click != nullptr);
@@ -7786,11 +7756,11 @@ TEST_CASE("Production Ctrl click auditions only a note remaining selected",
     f.project(); (void)f.harness.frame();
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());
-    const std::array press{motion_event(note->first, note->second),
-        button_event(true, note->first, note->second)};
+    const std::array press{mouse_motion(note->first, note->second),
+        mouse_button(true, note->first, note->second)};
     const auto down = f.harness.frame(press, SDL_KMOD_CTRL);
     (void)f.dispatch(down);
-    const auto up = button_event(false, note->first, note->second);
+    const auto up = mouse_button(false, note->first, note->second);
     const auto released = f.harness.frame(std::span{&up, 1}, SDL_KMOD_CTRL);
     (void)f.dispatch(released);
     expect_t422((std::ranges::find(f.interaction->selected_notes, object_id_t{101}) ==
@@ -7809,13 +7779,13 @@ TEST_CASE("Production marquee includes visible beat markers in its mixed selecti
     t422_fixture_t f{std::move(song)};
     const auto first = placement_point(f, 60, 4);
     const auto last = placement_point(f, 800, 1);
-    const std::array press{motion_event(first.first, first.second), button_event(true, first.first, first.second)};
+    const std::array press{mouse_motion(first.first, first.second), mouse_button(true, first.first, first.second)};
     (void)f.dispatch(f.harness.frame(press));
-    const auto move = motion_event(last.first, last.second);
+    const auto move = mouse_motion(last.first, last.second);
     const auto moved = f.harness.frame(std::span{&move, 1});
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) != nullptr);
     (void)f.dispatch(moved);
-    const auto up = button_event(false, last.first, last.second);
+    const auto up = mouse_button(false, last.first, last.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
     const auto marker = editor_selection_object_t{editor_selection_object_kind_t::bookmark, object_id_t{501}};
     expect_t422(std::ranges::find(f.interaction->selected_objects, marker) != f.interaction->selected_objects.end());
@@ -7856,16 +7826,16 @@ TEST_CASE("Production off grid note drag commits its preview position and lane",
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());
     const auto target = placement_point(f, row, 2);
-    const std::array press{motion_event(note->first, note->second), button_event(true, note->first, note->second)};
+    const std::array press{mouse_motion(note->first, note->second), mouse_button(true, note->first, note->second)};
     (void)f.dispatch(f.harness.frame(press));
-    const auto motion = motion_event(target.first, target.second);
+    const auto motion = mouse_motion(target.first, target.second);
     const auto moved = f.harness.frame(std::span{&motion, 1});
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_NOTE_MOVE_UPDATE) != nullptr);
     (void)f.dispatch(moved);
     expect_t422(f.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
     const auto preview = f.interaction->gesture<wormedit::pending_note_move_gesture_t>()->preview;
     expect_t422(preview.size() == 1);
-    const auto up = button_event(false, target.first, target.second);
+    const auto up = mouse_button(false, target.first, target.second);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
     expect_t422(!f.interaction->gesture<wormedit::pending_note_move_gesture_t>());
     const auto* changed = t422_note(f.history, 101);
@@ -7909,13 +7879,13 @@ TEST_CASE("Production marquee selects a BGA tile through shared projected geomet
     const auto first = placement_point(f, 60, 4);
     const auto x2 = viewport->x + (bounds.left + 1) * viewport->width / view.viewport_width_pixels;
     const auto y2 = viewport->y + (bounds.top - 12) * viewport->height / view.viewport_height_pixels;
-    const std::array press{motion_event(first.first, first.second), button_event(true, first.first, first.second)};
+    const std::array press{mouse_motion(first.first, first.second), mouse_button(true, first.first, first.second)};
     (void)f.dispatch(f.harness.frame(press));
-    const auto move = motion_event(x2, y2);
+    const auto move = mouse_motion(x2, y2);
     const auto moved = f.harness.frame(std::span{&move, 1});
     expect_t422(find_compose_input(std::vector{moved}, WORM_UI_COMPOSE_INPUT_AREA_SELECTION_BEGIN) != nullptr);
     (void)f.dispatch(moved);
-    const auto up = button_event(false, x2, y2);
+    const auto up = mouse_button(false, x2, y2);
     (void)f.dispatch(f.harness.frame(std::span{&up, 1}));
     INFO("BGA bounds " << bounds.left << "," << bounds.top << " -> " << bounds.right << "," << bounds.bottom
          << " drag " << first.first << "," << first.second << " -> " << x2 << "," << y2);
@@ -8202,14 +8172,14 @@ TEST_CASE("Hidden BGA renumber release is serviced without rendering the panel",
     (void)harness.frame();
     (void)click_at(harness, state.bga_catalog.bga_list_x + 6 * 38 + 17, state.bga_catalog.bga_list_y + 24 + 13);
     expect_t422(state.bga_catalog.bga_renumber_confirmation_open);
-    const auto press = button_event(true, state.bga_catalog.bga_list_x + 12, state.bga_catalog.bga_list_y + 12);
+    const auto press = mouse_button(true, state.bga_catalog.bga_list_x + 12, state.bga_catalog.bga_list_y + 12);
     (void)harness.frame(std::span{&press, 1});
     ++view.chart_id;
     (void)harness.frame();
     expect_t422(!state.bga_catalog.bga_renumber_confirmation_open);
     expect_t422(state.bga_catalog.bga_renumber_release_pending);
     state.dock_layout.bga_panel_visible = false;
-    const auto release = button_event(false, press.button.x, press.button.y);
+    const auto release = mouse_button(false, press.button.x, press.button.y);
     (void)harness.frame(std::span{&release, 1});
     (void)harness.frame();
     expect_t422(!state.bga_catalog.bga_renumber_release_pending);
@@ -8280,7 +8250,7 @@ TEST_CASE("Draw right capture has one reset on interruption and late release",
     (void)fixture.harness.frame();
     const auto press = draw_right_event(true, 300, 300);
     (void)fixture.harness.frame(std::span{&press, 1});
-    const auto motion = motion_event(310, 340);
+    const auto motion = mouse_motion(310, 340);
     (void)fixture.harness.frame(std::span{&motion, 1});
     auto& state = worm_ui_nuklear_compose_state();
     expect_t422(state.pointer_capture.draw_erase_pointer_active);
@@ -8455,11 +8425,11 @@ TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propa
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
     (void)harness.frame();
-    // The measure lane icon follows the BGA lane icon at x=303.
-    const auto lane = click_at(harness, 330.0f, 122.0f);
+    const auto lane = harness.click_widget("Show measure lane: select, place and move bar lines");
     check_measure_lane(lane.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE);
     harness.view().compose.measure_lane.visible = true;
     (void)harness.frame();
-    const auto time = click_at(harness, 357.0f, 122.0f);
+    const auto time = harness.click_widget(
+        "Moved bar lines keep other objects in place (click to carry later content)");
     check_measure_lane(time.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }

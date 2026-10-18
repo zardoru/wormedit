@@ -12,28 +12,8 @@
 
 namespace {
 
-auto mouse_button(bool down, float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
-    event.button.type = static_cast<SDL_EventType>(event.type);
-    event.button.windowID = 0;
-    event.button.button = SDL_BUTTON_LEFT;
-    event.button.down = down;
-    event.button.clicks = 1;
-    event.button.x = x;
-    event.button.y = y;
-    return event;
-}
-
-auto mouse_motion(float x, float y) -> SDL_Event {
-    SDL_Event event{};
-    event.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.type = SDL_EVENT_MOUSE_MOTION;
-    event.motion.windowID = 0;
-    event.motion.x = x;
-    event.motion.y = y;
-    return event;
-}
+using wormedit::test::mouse_button;
+using wormedit::test::mouse_motion;
 
 auto mouse_wheel(float x, float y, float delta) -> SDL_Event {
     SDL_Event event{};
@@ -46,15 +26,7 @@ auto mouse_wheel(float x, float y, float delta) -> SDL_Event {
     return event;
 }
 
-auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice = false)
-    -> std::vector<workspace_action_snapshot_t> {
-    std::array<event_step_t, 2> script{{
-        {{mouse_motion(x, y), mouse_button(true, x, y)}, SDL_KMOD_NONE},
-        {{mouse_motion(x, y), mouse_button(false, x, y)}, SDL_KMOD_NONE}}};
-    script[0].events[1].button.clicks = twice ? 2 : 1;
-    script[1].events[1].button.clicks = twice ? 2 : 1;
-    return harness.run_script(script);
-}
+using wormedit::test::click_at;
 
 auto text_occurrences(std::string_view text, std::string_view needle) -> std::size_t {
     std::size_t count{};
@@ -126,22 +98,16 @@ auto compact_layout_keeps_sound_picker(nuklear_event_harness_t& harness) -> bool
 
 auto compact_toolbar_sounds_toggle_status(nuklear_event_harness_t& harness) -> std::string_view {
     auto& state = worm_ui_nuklear_compose_state();
-    constexpr float sounds_button_x = 515.0f;
-    // In the 700x800 harness, title (32), tabs (32), seek row (24), window padding,
-    // and the toolbar's 27px row place the icon center at y=122.
-    constexpr float toolbar_y = 122.0f;
-    const auto hover = mouse_motion(sounds_button_x, toolbar_y);
-    (void)harness.frame(std::span{&hover, 1});
+    (void)harness.hover_widget("Hide sounds list");
     if (harness.drawn_text().find("Hide sounds list") == std::string::npos)
         return "hover did not identify Hide sounds list";
-    (void)click_at(harness, sounds_button_x, toolbar_y);
+    (void)harness.click_widget("Hide sounds list");
     if (state.dock_layout.sounds_panel_visible || state.sounds_dock.sound_list_valid)
         return "click did not hide the Sounds dock";
-    const auto show_hover = mouse_motion(sounds_button_x, toolbar_y);
-    (void)harness.frame(std::span{&show_hover, 1});
+    (void)harness.hover_widget("Show sounds list");
     if (harness.drawn_text().find("Show sounds list") == std::string::npos)
         return "hidden dock did not expose Show sounds list";
-    (void)click_at(harness, sounds_button_x, toolbar_y);
+    (void)harness.click_widget("Show sounds list");
     if (!state.dock_layout.sounds_panel_visible || !state.sounds_dock.sound_list_valid)
         return "click did not reopen the Sounds dock hit region";
     return harness.drawn_text().find("Sounds  1") != std::string::npos

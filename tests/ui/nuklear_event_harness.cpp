@@ -8,6 +8,7 @@
 #include "ui/nuklear/timing_stage_editor.h"
 
 #include <algorithm>
+#include <array>
 #include <deque>
 #include <string>
 
@@ -113,6 +114,7 @@ auto nuklear_event_harness_t::frame(std::span<const SDL_Event> events, SDL_Keymo
         (void)worm_ui_frontend_handle_event(&event);
     }
     worm_ui_frontend_end_input();
+    const wormedit::ui::testing::icon_widget_recording_scope_t recording{icon_widgets_};
     auto action = worm_ui_frontend_compose(&view_);
     drawn_text_.resize(worm_ui_frontend_copy_drawn_text_for_testing(nullptr, 0));
     (void)worm_ui_frontend_copy_drawn_text_for_testing(drawn_text_.data(), drawn_text_.size());
@@ -239,4 +241,58 @@ workspace_action_snapshot_t::workspace_action_snapshot_t(const WormUiWorkspaceAc
 
 auto workspace_action_snapshot_t::get() const -> const WormUiWorkspaceAction& {
     return storage_->action;
+}
+
+namespace wormedit::test {
+auto mouse_button(bool down, float x, float y) -> SDL_Event {
+    SDL_Event event{};
+    event.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.type = down ? SDL_EVENT_MOUSE_BUTTON_DOWN : SDL_EVENT_MOUSE_BUTTON_UP;
+    event.button.windowID = 0;
+    event.button.button = SDL_BUTTON_LEFT;
+    event.button.down = down;
+    event.button.clicks = 1;
+    event.button.x = x;
+    event.button.y = y;
+    return event;
+}
+
+auto mouse_motion(float x, float y) -> SDL_Event {
+    SDL_Event event{};
+    event.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.type = SDL_EVENT_MOUSE_MOTION;
+    event.motion.windowID = 0;
+    event.motion.x = x;
+    event.motion.y = y;
+    return event;
+}
+
+auto click_at(nuklear_event_harness_t& harness, float x, float y, bool twice)
+    -> std::vector<workspace_action_snapshot_t> {
+    std::array<event_step_t, 2> script{};
+    script[0].events = {mouse_motion(x, y), mouse_button(true, x, y)};
+    script[1].events = {mouse_motion(x, y), mouse_button(false, x, y)};
+    script[0].events[1].button.clicks = twice ? 2 : 1;
+    script[1].events[1].button.clicks = twice ? 2 : 1;
+    return harness.run_script(script);
+}
+
+} // namespace wormedit::test
+
+auto nuklear_event_harness_t::widget_center(std::string_view tooltip) const
+    -> std::pair<float, float> {
+    return icon_widgets_.center_of(tooltip);
+}
+
+auto nuklear_event_harness_t::hover_widget(std::string_view tooltip)
+    -> workspace_action_snapshot_t {
+    const auto [x, y] = widget_center(tooltip);
+    const auto event = wormedit::test::mouse_motion(x, y);
+    return frame(std::span{&event, 1});
+}
+
+auto nuklear_event_harness_t::click_widget(std::string_view tooltip)
+    -> std::vector<workspace_action_snapshot_t> {
+    const auto [x, y] = widget_center(tooltip);
+    return wormedit::test::click_at(*this, x, y);
 }

@@ -587,6 +587,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/widget_lookup_event_harness_tests.cpp
         ../src/sys/resource_drop_router.cpp
         ../src/sys/metadata_actions.cpp
         ../src/sys/metadata_asset_runtime.cpp
@@ -682,6 +683,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         "${CMAKE_SOURCE_DIR}/include" "${CMAKE_SOURCE_DIR}/src"
         "${CMAKE_SOURCE_DIR}/src/vendor" "${CMAKE_BINARY_DIR}/generated")
     target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
+        WORMEDIT_TEST_ICON_WIDGETS=1
         WORMEDIT_SOURCE_ROOT="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_SOURCE_DIR}")
     target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
         wormedit::core wormedit::ui_frontend SDL3::SDL3 otoworm::otoworm

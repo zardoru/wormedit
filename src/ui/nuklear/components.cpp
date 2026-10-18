@@ -1,5 +1,8 @@
 #include "ui/nuklear/color.h"
 #include "ui/nuklear/chrome.h"
+#if defined(WORMEDIT_TEST_ICON_WIDGETS)
+#include "ui/nuklear/icon_widget_recording.h"
+#endif
 
 #include <algorithm>
 #include <cstring>
@@ -166,6 +169,14 @@ NativeIconCell::NativeIconCell(nk_context* context, bool selected, bool enabled,
         style.color_factor_background = style.disabled_factor;
     }
     clicked_ = nk_button_label_styled(context, &style, "") != 0 && enabled;
+#if defined(WORMEDIT_TEST_ICON_WIDGETS)
+    if (testing::icon_widget_target && tooltip_) {
+        const auto clip = window_->layout->clip;
+        testing::icon_widget_target->append(tooltip_,
+            {.x = bounds_.x, .y = bounds_.y, .w = bounds_.w, .h = bounds_.h},
+            {.x = clip.x, .y = clip.y, .w = clip.w, .h = clip.h});
+    }
+#endif
     tint_ = (context->last_widget_state & NK_WIDGET_STATE_HOVER) != 0
         ? color(UiColor::text_bright)
         : selected ? color(UiColor::selected_text) : color(UiColor::text);

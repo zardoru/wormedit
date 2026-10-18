@@ -86,19 +86,23 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-662 Let event-harness tests find widgets by tooltip
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval; after T-644's pruning of the same test files)
+- **Status:** Done (2026-10-18; bounded T-644 toolbar checkpoint completed first)
 - **Value:** Medium. Adding one toolbar button broke three tests that click fixed x positions; every toolbar change will keep doing that.
 - **Outcome:** The harness records each icon widget's bounds and tooltip during a frame, and tests call `harness.click_widget("Hide sounds list")`. Toolbar tests no longer hard-code x positions.
 - **Read first:** `tests/ui/nuklear_event_harness.h`, `docs/frontend-event-harness.md`, `src/ui/nuklear/chrome.h` (`IconButton`, `DrawnIconButton`), the testing hook `worm_ui_frontend_compose_viewport_for_testing`.
-- **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `src/ui/nuklear/chrome.h` (testing hook only), `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `docs/frontend-event-harness.md`, this card.
+- **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `src/ui/nuklear/chrome.h` (reference; hook may use its shared native cell), `src/ui/nuklear/components.cpp` (test-only recording at the shared native icon cell), new `src/ui/nuklear/icon_widget_recording.h` (C++ test snapshot), new `tests/ui/widget_lookup_event_harness_tests.cpp` (lookup contracts), `tests/CMakeLists.txt` (test-only define), `tests/ui/compose_hover_timing_event_harness_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `docs/frontend-event-harness.md`, this card.
 - **Steps:**
   1. Stale-plan check: `grep -rn "click_widget" tests/ui`.
-  2. Add the recording hook, compiled only for tests or behind the existing testing hooks; no production allocation. It is a new frontend surface, so write it in C++ types (`code-style.md` "Frontend boundary"), not as a `WormUi*` C struct.
+  2. Record at the shared native icon cell (both icon families), then add the recording hook, compiled only for tests or behind the existing testing hooks; no production allocation. It is a new frontend surface, so write it in C++ types (`code-style.md` "Frontend boundary"), not as a `WormUi*` C struct.
   3. Add `click_widget` and migrate every toolbar click by x position (`grep -rn ", 122" tests/ui`).
 - **Invariants:** No production behavior or per-frame allocation change; same assertions in migrated tests.
 - **Reject/failure behavior:** A tooltip that is not unique fails the lookup loudly rather than picking one.
 - **Verify:** `ctest --test-dir build -L event-harness`; `ctest --test-dir build --output-on-failure`.
 - **Out of scope:** Non-toolbar pixel clicks inside the field (they test geometry on purpose); T-644's pruning.
+- **Execution scope (2026-10-18):** Missing/duplicate tooltips fail loudly. Capture only visible clipped bounds, including disabled icons for hover/rejection checks; refresh per frame. The hook is compiled only in the event-harness target, with no production recorder or allocations. Add focused lookup-contract coverage and exercise existing compact/wide, conditional-icon and disabled-input cases. Verify GCC/Clang GATE and the header consumers explicitly.
+
+- **Implementation/evidence (2026-10-18):** The shared `NativeIconCell` records both icon families only under the event-harness target's `WORMEDIT_TEST_ICON_WIDGETS` definition. A C++ `icon_widget_snapshot_t` owns tooltip strings and uses existing `ui/field/rect.h` intersection over SDL rectangles; a frame scope clears the snapshot and installs/restores its sink. `widget_center`, `hover_widget` and `click_widget` reject missing/ambiguous matches, retain disabled icons for rejection checks and exclude clipped-away cells. Production symbol inspection found no recorder symbols. All identified hard-coded top Compose toolbar positions in the four owned test files were migrated; field/overview geometry coordinates remain intentional.
+- **Verification:** Final GCC GATE `/tmp/wormedit-gate.kzqQJF` and Clang GATE `/tmp/wormedit-gate.E8BLhf` each report `100% tests passed out of 4128` and `gate: passed`; each complexity stage checked all seven changed C++ consumers with no new/increased allowances. Event harness **531/531** (`/tmp/t662-final-events.log`); focused reviewed toolbar plus lookup cases **115 assertions / 11 cases** (`/tmp/t662-final-focused.log`). Three new cases cover uniqueness errors, clipped visibility and real-frontend per-frame refresh; the existing color-mode case runs at two widths with and without the conditional measure-lane icon. Isolated Compose fixture smoke `/tmp/t662-compose.png` was inspected: loaded title, toolbar, M1–M3 and notes render. Ceremony maxima are unchanged. Final documentation checks passed **3/3** (`/tmp/t662-final-docs.log`). Gate resource measurements are in `/tmp/t662-final-{gcc,clang}-timing.log`; these include rebuilds and establish no speed improvement.
 
 ## T-663 Keep the Compose edit toggles in one struct
 
@@ -250,20 +254,25 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-671 Share test helpers and put new tests by feature
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval; after T-644's pruning in the same files)
+- **Status:** partial (bounded pointer-helper checkpoint done 2026-10-18; broader fixture/move work remains)
+- **Done so far:** `wormedit::test::mouse_button` and `mouse_motion` now own construction for the four scoped files; identical vector-returning `click_at` scripts in the main and inspector tests share the harness implementation. Differently named local symbols were renamed with `clang-refactor local-rename` before removing their definitions. Motion ordering, zero window IDs, click counts and explicit NONE modifiers are preserved.
+- **Remaining:** Audit/consolidate other pointer and keyboard families in bounded checkpoints, extract the sys fixture and move existing measure-lane tests (steps 3–4). This checkpoint does not claim project-wide helper consolidation.
 - **Value:** Medium, cheap. Event-harness helpers are copied across test files under different names (`button_event` and `mouse_button`, `motion_event` and `mouse_motion`, `click_at` and `click`). Test files are named by history rather than feature: T-657's sys tests landed in `compose_action_notification_tests.cpp` and `frame_timing_tests.cpp` only because those files had the fixtures and includes, and each of these files holds 100–250 test cases.
 - **Outcome:** One set of pointer and keyboard helpers in `tests/ui/nuklear_event_harness.h`, and one sys dispatch fixture in `tests/support/` (or the existing `tests/sys/*_fixture.h`), used by every test file. New feature tests go in a file named for the feature; the testing doc says so. Existing tests move only where a file holds a clearly separate feature, such as the measure-lane cases.
 - **Read first:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/sys/application_dispatch_fixture.h`, `docs/chart-editor-plan/testing.md`, T-644.
-- **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `tests/support/` (new fixture headers), the test files whose local helper copies are removed (listed on this card after step 1), `tests/CMakeLists.txt`, `docs/chart-editor-plan/testing.md`, this card.
+- **Files owned:** `tests/ui/nuklear_event_harness.h`, `tests/ui/nuklear_event_harness.cpp`, `tests/support/` (new fixture headers), `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/bga_lane_event_harness_tests.cpp`, `tests/ui/inspector_resource_workflow_tests.cpp`, `tests/ui/compose_hover_timing_event_harness_tests.cpp` (exact pointer-helper checkpoint), `tests/CMakeLists.txt`, `docs/chart-editor-plan/testing.md`, this card.
 - **Steps:**
   1. Stale-plan check and inventory: `grep -rn "auto button_event\|auto mouse_button\|auto motion_event\|auto mouse_motion\|auto click_at\|auto click(" tests`.
   2. Move one helper family into the harness header per commit, deleting local copies.
-  3. Extract the sys dispatch fixture used by the BGA and measure-lane input tests.
-  4. Move the measure-lane sys and harness cases into `tests/sys/measure_lane_tests.cpp` and `tests/ui/measure_lane_event_harness_tests.cpp` as the example; document the rule.
+  3. Remaining after this bounded checkpoint: extract the sys dispatch fixture used by the BGA and measure-lane input tests.
+  4. Remaining after this bounded checkpoint: move the measure-lane sys and harness cases into `tests/sys/measure_lane_tests.cpp` and `tests/ui/measure_lane_event_harness_tests.cpp` as the example; document the rule.
+- **Execution scope (2026-10-18):** Share mouse-button/motion construction across these four files and the identical two-frame vector click script in the main/inspector files. Preserve click counts, per-frame motion and modifiers. BGA's fixed-array click driver remains distinct because typed consumers use its array result; wheel/keyboard variants and other test files remain later checkpoints. Use AST-aware renaming before removing differently named duplicates. One pointer-helper family per commit.
 - **Invariants:** Same assertions and the same number of test cases; no production change.
 - **Reject/failure behavior:** Helpers that differ in behavior (for example click counts or timing) stay distinct under different names, with the difference recorded.
 - **Verify:** `ctest --test-dir build --output-on-failure`; `ctest --test-dir build -L event-harness`; compare case counts before and after.
 - **Out of scope:** Deleting tests (T-644); finding widgets by tooltip (T-662).
+
+- **Verification (2026-10-18):** Same final GCC/Clang GATE and event-harness results as T-662. T-644 first changed **4,126 → 4,125** total cases and **529 → 528** event-harness cases by its documented merge/removal. This helper extraction removes no cases or assertions; T-662 then adds exactly three lookup contract cases, giving **4,128** total / **531** event-harness cases. Existing field geometry, wheel/keyboard variants and BGA fixed-array consumers retain their policies. No test moves or sys-fixture changes were included. Documentation now directs new cases to feature-named files and shared pointer helpers.
 
 ## T-672 Convert the measure-lane view fields to C++ types as the worked example
 

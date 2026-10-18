@@ -1,67 +1,77 @@
 # wormedit
 
-**A fast, cross-platform rhythm chart editor for people who author BMS, StepMania, osu!mania and BMSON charts.**
+**A rhythm chart editor for BMS, BMSON, StepMania and osu!mania, built for charting fast.**
 
-Wormedit is built around one idea: editing a chart should feel as immediate as playing it. The editor is a native C++20 application on SDL3's GPU renderer, with an exact (rational) timing model underneath and a headless core that is tested independently of any UI.
+![Compose with a keysounded BME chart: timing lanes, eight playable lanes, a BGM column and the Sounds dock](docs/manual/images/compose-overview.png)
 
-> **Status:** early and incomplete (version 0.1.0). The editor is usable in parts but far from finished, and some features described below are still being built or verified. Progress is tracked as task cards in [`docs/chart-editor-plan/tasks/`](docs/chart-editor-plan/tasks/). Storyboards, Lua generation and Quaver support are deferred and not shipped.
+> **Status: pre-release (0.1.0).** Wormedit is used to make real charts, but it is not finished and
+> has no stable release yet. Storyboards, Lua scripting and Quaver support are planned but not
+> shipped. Work is tracked as task cards in [`docs/chart-editor-plan/`](docs/chart-editor-plan.md).
 
-## Why wormedit
+## How charting works
 
-Wormedit comes from a long-standing, concrete need: charting across several rhythm games without relearning a different tool for each one. Its requirements were gathered and refined over years by someone who actually edits charts, and every feature below traces back to that workflow rather than to a checklist of formats.
+Wormedit is a _hybrid_ editor. The mouse-driven drawing and keysounding of BMS editors such as
+iBMSC and BMSE, and the keyboard-driven cursor, snaps and lane keys of the StepMania editor, work
+on the same canvas at the same time:
 
-- **One editor, several formats.** Open, edit, preview, validate and save BMS-family charts (`.bms`, `.bme`, `.bml`, `.pms`), StepMania (`.sm`, `.ssc`), osu!mania (`.osu`) and BMSON (`.bmson`). Charts live in an editor-owned document model, so a chart is not tied to the quirks of one file format.
-- **Note layers for charting by ear.** Define your own semantic layers with their own colors (vocals, kick, a synth line, a hunch you want to revisit) and tag notes with them. If you chart in a sample-bound style, you record *why* a note is there, and you can hand that intent to collaborators in the chart itself. Optional labels can be attached to individual notes as well.
-- **Exact timing.** Positions are rational numbers, not floats, and the editor models BPM changes, scroll velocity, stops/pauses and warps in dedicated timing lanes. Tap tempo, a metronome and estimated-grid clicks help you find the BPM and offset of a song.
-- **Built to be snappy.** Performance is a design goal, not an afterthought: the canvas draws through a dedicated batched GPU renderer (a handful of draw calls for the whole field), scenes and minimap textures are cached and reused between frames, waveform and audio work runs on worker threads, and playhead timing is lock-free. Frame time is instrumented and measured in isolated runs (during playback, workspace construction measured about 1.8 ms and CPU work outside rendering about 3.3 ms).
-- **Hear while you edit.** Streaming MP3/Ogg playback, waveform previews, per-note audition, and adjustable playback rate from 0.1x to 1.0x with or without pitch change (WSOLA time-stretch).
-- **A canvas that gets out of your way.** The Compose view supports range selection with Shift, Space to play/stop, a minimap with click-to-seek, undoable cut/copy/paste with ghost previews, and per-difficulty lane profiles with instrument-aware colors.
-- **Virtual canvas.** Charts without a BGM track get a virtual measure range (64 measures by default), so you can start charting before you have final audio.
-- **BMS depth.** BMS branches and BGM columns, encoding handling for legacy Shift-JIS files, and a decision to export UTF-8 for beatoraja.
-- **Safe by default.** Atomic file writes, autosave and a recovery controller, plus validation that names the chart, measure and object when a file is invalid.
-- **Multi-difficulty projects.** A native project format holds several charts, with a Project tab to create, duplicate, reorder and rate difficulties.
-- **Tested.** Over a thousand automated tests cover the core, formats, audio and frontend state, and the real window is verified in an isolated virtual X server.
+1. Arm a sound: double-click it in the Sounds dock, or press `Ctrl+K` and type its name.
+2. Walk the chart with the arrow keys, one snap at a time (`Left`/`Right` change the snap,
+   `PgUp`/`PgDn` skip a measure, holding `Tab` moves faster).
+3. Press a lane key to place the armed sound at the cursor; hold it while moving for a long note.
+4. Fix with the mouse: drag to move, `Alt`-drag to lengthen a note, right-drag to erase.
 
-## Supported formats
+Everything else is one search away in the command palette (`Ctrl+Shift+P`), which shows each
+command's shortcut as it finds it. The [user manual](docs/manual/chapters/the-wormedit-way.adoc)
+teaches this loop first.
 
-All four families have a reader and a writer, and conversion between them is loss-aware: when a target cannot represent something, the result says so instead of silently dropping it.
+## Concepts
 
-| Format | Files | Highlights |
+- A **project** (`.wormedit`) holds the song, its sounds and images, and one or more **charts**
+  (difficulties). Saving always writes the project.
+- **Output groups** turn a project into game files: each group names a format (BMS, BMSON, osu!mania,
+  StepMania `.sm`/`.ssc`), the charts it includes and where to write them. One chart can export to
+  several formats; conversions report what a format cannot store instead of dropping it silently.
+- **Sounds** are keysounds, BGM and the song audio; BMS charts can also address exact `#WAV` slots.
+- **Layers** are your own colored tags on notes (vocals, kick, a synth line) for finding, hiding
+  and editing parts of a dense chart. They live in the project, not in exported files.
+
+## What it does
+
+- **Editing.** Lane keys and keyboard holds, mouse drawing and painting, area selection,
+  cut/copy/paste with previews, moving notes between lanes and into BGM, select-by-sound, note
+  kinds (mines, lifts, fakes, rolls, invisible notes) where the format has them, and default lane
+  keys for most layouts, including BMS double play and osu!mania up to 18K.
+- **Measures and timing.** Exact (rational) positions; BPM, stops, delays, warps, scroll velocity,
+  StepMania speeds and osu!mania kiai in timing lanes beside the notes; bar lines you split, merge
+  and move like notes (`Ctrl+M` toggles one at the cursor); tap tempo, waveform beat fitting, a
+  metronome, timing lock and SV recipes.
+- **Audio.** Streaming playback with waveforms, per-note audition, BGM lane mute and solo,
+  playback from 0.1× to 1×, with or without pitch change.
+- **BMS depth.** Legacy Shift-JIS and other encodings, `#RANDOM`/`#IF`/`#SWITCH` branches, BGM
+  columns, numbered `#WAV` slot import, and paste from **iBMSC and BMSE** (and tools that write
+  their clipboard format).
+- **Checking.** Side-by-side difficulty comparison, validation that jumps to the problem, an
+  in-editor player preview and launching an external player.
+- **Safety.** Atomic saves, autosave and crash recovery; edits are undoable.
+
+## Formats
+
+| Format | Files | Notes |
 | --- | --- | --- |
-| BMS family | `.bms` `.bme` `.bml` `.pms` | UTF-8 and legacy encodings (with explicit overrides), original bytes and unknown metadata preserved, `RANDOM`/`IF`/`SWITCH` branches, exact measure lengths, BGM lanes, automatic lane-profile detection (BME 7K/14K, PMS 5/9-button) |
-| StepMania | `.sm` `.ssc` | Several difficulties per file, 3 to 10 column step types, taps, holds, rolls, mines, lifts, fakes, BPM, stops, delays, warps, scrolls and speeds; pinned StepMania 5.1 and Etterna profiles |
-| osu!mania | `.osu` | 1K to 18K, hit objects in milliseconds mapped onto the exact timing grid, pinned format profiles |
-| BMSON | `.bmson` | BMSON 1.0 with exact resolution, variable bar lines, sound-channel slices, BGM semantics and BGA events |
-| Native project | wormedit project | Several charts in one project, plus semantic layers, labels, resources, bookmarks and retained source bytes |
+| BMS family | `.bms` `.bme` `.bml` `.pms` | Lane-profile detection (BME 7K/14K, PMS 5/9-button); unchanged sections keep their original bytes; edited files are written as UTF-8 by default |
+| BMSON | `.bmson` | Exact resolution, variable bar lines, sound-channel slices and stems, BGA |
+| StepMania | `.sm` `.ssc` | Several difficulties per file; dance, pump and other step types of 3 to 8 and 10 columns; StepMania 5.1 and Etterna export targets; keysounds |
+| osu!mania | `.osu` | 1K to 18K; osu! file format v14 (stable) and v128 (lazer) |
 
-## Build
+Wormedit opens all of these and exports them through output groups. A headless converter,
+`wormedit-convert`, runs the same conversions from a JSON request.
 
-Wormedit uses CMake (3.25+) with presets, a C++20 compiler and Ninja.
+## Getting wormedit
 
-### Headless core and tests (no GUI, no GPU)
-
-```sh
-cmake --preset headless
-cmake --build --preset headless
-ctest --preset headless
-```
-
-Dependencies (nlohmann/json, Catch2, Lua) are fetched with CMake `FetchContent` and pinned to exact versions. For offline builds, point to local checkouts:
-
-```sh
-cmake --preset headless \
-  -DWORMEDIT_NLOHMANN_JSON_SOURCE_DIR=/path/to/nlohmann-json-3.12.0 \
-  -DWORMEDIT_CATCH2_SOURCE_DIR=/path/to/Catch2 \
-  -DWORMEDIT_LUA_SOURCE_DIR=/path/to/lua-5.4.8
-```
-
-### The application
-
-The GUI build (`WORMEDIT_BUILD_APP=ON`, the default for a plain configure) also needs:
-
-- **[`libotoworm`](https://github.com/zardoru/libotoworm)**, vendored as the `third_party/libotoworm` git submodule (clone with `--recurse-submodules`, or run `git submodule update --init`).
-- SDL3 and Nuklear, fetched automatically by CMake (or point `SDL3_SOURCE_DIR` at a local SDL3 checkout).
-- Optional: FFmpeg development libraries (`libavformat`, `libavcodec`, `libavutil`, `libswscale`, found through `pkg-config`) enable the bounded video-frame decoder. Without them the editor builds without video previews.
+There are no prebuilt downloads yet; build from source. Wormedit is developed on Linux. Windows
+builds are cross-compiled with MinGW-w64 and packaged as a ZIP by
+`scripts/windows-cross-package.sh`. CI builds and tests the headless core on Linux (GCC and Clang)
+and macOS.
 
 ```sh
 git clone --recurse-submodules https://github.com/zardoru/wormedit.git
@@ -71,47 +81,62 @@ cmake --build build
 ./build/wormedit
 ```
 
-Run the whole suite with `ctest --test-dir build --output-on-failure`, or a subset by prefix, e.g. `-R '^core\.'`.
+The application needs CMake 4.2 or newer (for the [`libotoworm`](https://github.com/zardoru/libotoworm)
+submodule), a C++23 compiler and zlib (and iconv outside Windows). SDL3, Nuklear and the other
+libraries are fetched by CMake. FFmpeg development libraries, if present, add video previews and
+audio metadata. [Asciidoctor](https://asciidoctor.org) builds the HTML manual that `cmake --install`
+ships; configure with `-DWORMEDIT_INSTALL_MANUAL=OFF` to skip it.
 
-More detail, including cross-compiling the headless core for Linux and Windows and reading crash backtraces, is in [`docs/building.md`](docs/building.md).
+The headless core and its tests need no window or GPU:
 
-## Using the editor
+```sh
+cmake --preset headless && cmake --build --preset headless && ctest --preset headless
+```
 
-1. **Start** from the landing screen: open an existing chart or use the wizard to create a new one or import from another format.
-2. **Compose** notes on the canvas. Select with the pointer, extend a range with Shift, or press Ctrl+Space to start a range and again to finish it. Escape cancels. Alt+scroll moves to the next snap; Ctrl+scroll zooms.
-3. **Play** with Space from the fractional cursor position, slow the rate down for tricky sections, and use the minimap to jump around.
-4. **Time** the song in the Timing tab: BPM, scroll velocity, stops, and the tap-tempo assistant.
-5. **Manage** metadata, resources and difficulties from the Project tab and the Sounds/Images/Measures panels.
-6. **Save.** Saves are atomic and autosaved sessions can be recovered after a crash.
-
-Keyboard shortcuts are profile-based and configurable in the Options window.
-
-## Repository layout
-
-| Path | Contents |
-| --- | --- |
-| `src/core` | UI-free document model, timing, commands, editing controllers |
-| `src/formats` | BMS, BMSON, StepMania, osu!mania and native project codecs |
-| `src/audio` | decoding, streaming playback, waveforms, time-stretch |
-| `src/visual` | image and video decoders for previews |
-| `src/ui`, `src/editor`, `src/sys` | SDL3/Nuklear frontend and application shell |
-| `tests/` | Catch2 tests and frontend state tests |
-| `docs/` | plan, building guide, format references |
+Offline builds, cross-compiling, Windows packaging and crash backtraces are covered in
+[`docs/building.md`](docs/building.md).
 
 ## Documentation
 
-- [Chart editor plan](docs/chart-editor-plan.md): goals, architecture, stages and task cards
+- **[User manual](docs/manual/)** (AsciiDoc; `cmake --build build --target manual` renders it to
+  HTML in `build/manual/`): the charting loop, navigation, timing, sounds and
+  layers, bar lines, walkthroughs for a keysounded BMS chart and for an osu!mania/StepMania chart,
+  and generated keyboard and layout references.
 - [Building](docs/building.md)
-- [Format and BMS references](docs/references/)
+- [Format references](docs/references/)
 
-## AI disclosure
+## Contributing
 
-Wormedit is developed with heavy AI assistance. Most of the code, tests and documentation are written by AI coding agents (Claude and Codex) working from requirements, designs and reviews supplied and steered by the project's author. The author sets the direction, decides the trade-offs and accepts or rejects the results, but the bulk of the typing is not done by hand. If that matters to you, now you know.
+Start with [`docs/architecture.md`](docs/architecture.md) (the edit pipeline) and
+[the code style](docs/chart-editor-plan/decisions/code-style.md).
 
-## License
+| Path | Contents |
+| --- | --- |
+| `include/wormedit`, `src/core` | UI-free document model, timing, commands and editing |
+| `src/formats` | BMS, BMSON, StepMania, osu!mania and native project codecs |
+| `src/audio`, `src/visual` | Decoding, playback, waveforms, time-stretch; image and video previews |
+| `src/sys` | Application shell: views, commands, jobs, preferences |
+| `src/ui` | Nuklear frontend and the GPU field renderer |
+| `src/tools` | `wormedit-convert` and the manual reference generator |
+| `tests/` | Catch2 tests and the windowless [frontend event harness](docs/frontend-event-harness.md) |
+| `docs/` | Manual, plan and task cards, building guide, format references |
 
-Released into the public domain under [The Unlicense](LICENSE). Do what you like with it. Bundled and fetched dependencies keep their own licenses (for example SDL3, Nuklear, Lua, Catch2, nlohmann/json and miniaudio).
+`scripts/gate.sh` builds, runs the whole suite (over 4,000 tests), and checks function complexity
+and whitespace; run it before sending a change.
 
-## Credits
+## AI-assisted development
 
-The SDL/OpenGL3 Nuklear backend in `src/vendor/nuklear_sdl_gl3_sdl3.h` is a minimal SDL3 port of Nuklear's upstream `demo/sdl_opengl3/nuklear_sdl_gl3.h` and retains the original public domain attribution header. [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project, included as a git submodule at `third_party/libotoworm`; it keeps its own license.
+Most of wormedit's code, tests and documentation are written by AI coding agents (Claude and
+Codex), working from requirements, designs and reviews by the project's author, who sets the
+direction and accepts or rejects every change.
+
+## License and credits
+
+Public domain under [The Unlicense](LICENSE). Bundled and fetched dependencies keep their own
+licenses, among them SDL3, Nuklear, miniaudio, stb, zlib, Catch2, nlohmann/json, Lua and, when
+enabled, FFmpeg (LGPL).
+
+- The Nuklear SDL3 backend in `src/ui/nuklear/sdl_backend.cpp` is adapted from Nuklear's
+  `demo/sdl3_renderer` and keeps its MIT notice.
+- [`libotoworm`](https://github.com/zardoru/libotoworm) (MIT) is a separate project, included as
+  the `third_party/libotoworm` submodule under its own license.

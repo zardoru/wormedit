@@ -1,6 +1,6 @@
 # Building wormedit
 
-The stage-zero build separates the headless core/tests from the existing SDL/OpenGL application scaffold. SDL3 GPU migration and production dependency packaging follow in later milestones.
+The headless core and its tests build without a window or GPU; the application is an SDL3 GPU program with a Nuklear frontend. Both use the same CMake project and presets.
 
 ## Native headless build
 

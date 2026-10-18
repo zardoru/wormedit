@@ -1,3 +1,4 @@
+#include "interaction_edit_commit.h"
 #include "interaction_gesture_runner.h"
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/interaction_dispatch.h>
@@ -251,21 +252,22 @@ auto commit_bgm_note_move(editor_edit_context_t& context, const pending_note_mov
         return editor_interaction_result_t{.diagnostics = std::move(failures)};
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(std::get<song_document_t>(staged)));
-    auto committed = transaction.commit(pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM");
-    if (!committed)
-        return editor_interaction_result_t{.diagnostics = std::move(committed.diagnostics)};
-    set_selected_notes(context.state, pending.to_bgm ? std::vector<object_id_t>{} : plan.notes);
-    for (const auto& moved : plan.bgm_moves)
-        context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
-    if (pending.to_bgm) {
-        for (const auto id : plan.notes)
-            context.state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, id});
-    }
-    reselect_bar_lines(context.state, bar_line_shift ? &*bar_line_shift : nullptr);
-    place_cursor_at(context.state, plan.reference_position);
-    auto result = editor_interaction_result_t::from(context.history, context.state, true);
-    result.accepted = true;
-    return result;
+    return commit_editor_edit(
+        context, transaction,
+        {.label = pending.to_bgm ? "Move selected notes to BGM" : "Move notes and displace to BGM",
+         .selection = pending.to_bgm ? std::vector<object_id_t>{} : plan.notes,
+         .cursor = plan.reference_position},
+        [&](editor_interaction_state_t& selected) {
+            for (const auto& moved : plan.bgm_moves)
+                selected.selected_objects.push_back(
+                    {editor_selection_object_kind_t::bgm_event, moved.note});
+            if (pending.to_bgm) {
+                for (const auto id : plan.notes)
+                    selected.selected_objects.push_back(
+                        {editor_selection_object_kind_t::bgm_event, id});
+            }
+            reselect_bar_lines(selected, bar_line_shift ? &*bar_line_shift : nullptr);
+        });
 }
 
 auto pending_note_move_gesture_t::apply(editor_edit_context_t& context) const
@@ -586,14 +588,11 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(result.document));
-    auto command =
-        transaction.commit("Paint notes");
-    if (!command)
-        return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-    set_selected_notes(state, std::move(result.painted_notes));
-    state.active_lane = pending.last_lane;
-    place_cursor_at(state, pending.last_position);
-    return editor_interaction_result_t::from(context.history, state, true);
+    return commit_editor_edit(context, transaction,
+                              {.label = "Paint notes",
+                               .selection = std::move(result.painted_notes),
+                               .cursor = pending.last_position,
+                               .lane = pending.last_lane});
 }
 
 
@@ -876,14 +875,11 @@ auto commit_stem_hold(editor_edit_context_t& context, const pending_hold_t& pend
                              : std::optional{document.painted_notes.front()};
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
-    const auto committed = transaction.commit("Place linked BMSON stem note");
-    if (!committed)
-        return editor_interaction_result_t{.diagnostics = committed.diagnostics};
-    place_cursor_at(context.state, target);
-    context.state.active_lane = pending.lane;
-    auto result = editor_interaction_result_t::from(context.history, context.state, true);
-    result.created_note = created;
-    return result;
+    return commit_editor_edit(context, transaction,
+                              {.label = "Place linked BMSON stem note",
+                               .cursor = target,
+                               .lane = pending.lane,
+                               .created_note = created});
 }
 
 auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t position,
@@ -946,16 +942,9 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
     const auto label = placement.adds_note
                            ? (placement.tail ? "Place merged hold note" : "Place tap note")
                            : "Remove note";
-    auto command = transaction.commit(label);
-    if (!command)
-        return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-    place_cursor_at(state, *snapped);
-    state.active_lane = pending.lane;
-    auto result = editor_interaction_result_t::from(history, state);
-    result.accepted = true;
-    result.document_changed = true;
-    result.created_note = id;
-    return result;
+    return commit_editor_edit(
+        context, transaction,
+        {.label = label, .cursor = *snapped, .lane = pending.lane, .created_note = id});
 }
 
 auto handle_editor_cancellation(document_history_t& history, editor_interaction_state_t& state,

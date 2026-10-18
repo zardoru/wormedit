@@ -1840,7 +1840,7 @@ TEST_CASE("typed object selection validates BGM events and synchronizes note sel
                                    true});
     REQUIRE(bgm_selected);
     REQUIRE(bgm_selected.audition.has_value());
-    CHECK(*bgm_selected.audition ==
+    CHECK(std::get<editor_object_audition_request_t>(*bgm_selected.audition) ==
           editor_object_audition_request_t{
               history.document.revision,
               chart_id_t{1},
@@ -4507,9 +4507,9 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
     REQUIRE(first);
     CHECK(first.document_changed);
     REQUIRE(first.audition.has_value());
-    CHECK(first.audition->object ==
+    CHECK(std::get<editor_object_audition_request_t>(*first.audition).object ==
           editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{102}});
-    CHECK(first.audition->document_revision == history.document.revision);
+    CHECK(std::get<editor_object_audition_request_t>(*first.audition).document_revision == history.document.revision);
     CHECK(first.view->selected_notes ==
           std::vector<object_id_t>{object_id_t{101}, object_id_t{103}});
     CHECK(find_note(history, object_id_t{102})->lane == lane_id_t{2});
@@ -4518,7 +4518,7 @@ TEST_CASE("Shift lane assignment consumes deterministic selected notes and reque
         history, state, assign_selected_objects_to_lane_action_t{lane_id_t{2}, true});
     REQUIRE(second);
     REQUIRE(second.audition.has_value());
-    CHECK(second.audition->object ==
+    CHECK(std::get<editor_object_audition_request_t>(*second.audition).object ==
           editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{103}});
     CHECK(second.view->selected_notes == std::vector<object_id_t>{object_id_t{101}});
     CHECK(find_note(history, object_id_t{103})->lane == lane_id_t{2});

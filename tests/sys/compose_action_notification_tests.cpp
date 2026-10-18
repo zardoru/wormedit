@@ -1,3 +1,4 @@
+#include "sys/compose_audition_requests.h"
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"
@@ -120,9 +121,13 @@ struct action_notification_fixture_t {
                             std::optional<editor_interaction_state_t>& interaction) -> bool {
         metadata_drop_state_t drop;
         runtime::metadata_asset_t metadata{sink};
-        return dispatch_compose_workspace_action(value, history, workspace, interaction, 800,
-            application, asset_base, scheduler, resource_copy, export_runtime, false, drop,
-            metadata, sink);
+        const compose_action_inputs_t environment{
+            .document = {.history = history, .workspace = workspace, .notifications = sink,
+                         .auditions = &application.project.auditions},
+            .editor = {application, interaction},
+            .resources = compose_resource_inputs_t{asset_base, {scheduler, resource_copy, export_runtime},
+                                                   {drop, metadata}}};
+        return dispatch_compose_workspace_action(value, environment, 800, false);
     }
     auto invoke_registered(const char* id) -> bool {
         std::optional<editor_interaction_state_t> interaction = state;
@@ -2055,7 +2060,7 @@ TEST_CASE("Sounds tab audition reaches the shared resource dispatcher without a 
     action.compose_resource_id = 20;
     std::optional<editor_interaction_state_t> interaction;
     REQUIRE(fixture.dispatch_workspace(action, interaction));
-    CHECK(fixture.application.project.sound_selection.pending_sound_audition == resource_id_t{20});
+    CHECK(fixture.application.project.auditions.has_pending_request(resource_id_t{20}));
     CHECK_FALSE(interaction.has_value());
     CHECK(fixture.history.undo.empty());
 }
@@ -2072,7 +2077,7 @@ TEST_CASE("Sounds tab audition rejects a stale document before scheduling audio"
     ++action.compose_input_document_revision;
     std::optional<editor_interaction_state_t> interaction;
     REQUIRE(fixture.dispatch_workspace(action, interaction));
-    CHECK_FALSE(fixture.application.project.sound_selection.pending_sound_audition.has_value());
+    CHECK_FALSE(fixture.application.project.auditions.has_pending_request());
     CHECK(fixture.history.undo.empty());
 }
 
@@ -2864,4 +2869,40 @@ TEST_CASE("Draw in the measure lane splits the measure and selects the new bar l
     check_action(fixture.history.undo.size() == 1);
     require_action(undo_document_command(fixture.history));
     check_action(fixture.history.document.charts.front().measures.size() == 2);
+}
+
+TEST_CASE("Compose finisher submits an initially accepted audition once before rebind",
+          "[sys][compose-outcome][audition]") {
+    action_notification_fixture_t fixture;
+    auto& auditions = fixture.application.project.auditions;
+    const document_edit_inputs_t document{.history = fixture.history, .workspace = fixture.workspace,
+        .notifications = fixture.sink, .auditions = &auditions};
+    auto outcome = compose_action_outcome_t::from({}, notification_severity_t::hint);
+    outcome.audition = resource_id_t{20};
+    auto finished = finish_compose_action(document, fixture.sink, std::move(outcome));
+    CHECK_FALSE(finished.audition.has_value());
+    CHECK(auditions.has_pending_request(resource_id_t{20}));
+    auditions.submit(resource_id_t{21});
+    (void)finish_compose_action(document, fixture.sink, std::move(finished));
+    CHECK(auditions.has_pending_request(resource_id_t{21}));
+    auto rejected = compose_action_outcome_t::blocked("Rejected");
+    rejected.audition = resource_id_t{22};
+    (void)finish_compose_action(document, fixture.sink, std::move(rejected));
+    CHECK(auditions.has_pending_request(resource_id_t{21}));
+    fixture.workspace.song = song_id_t{99};
+    auto mutation = compose_action_outcome_t::from({}, notification_severity_t::success,
+        notification_source_t::edit, true);
+    mutation.audition = resource_id_t{23};
+    finished = finish_compose_action(document, fixture.sink, std::move(mutation));
+    CHECK(finished.has_rebind_failed);
+    CHECK(auditions.has_pending_request(resource_id_t{23}));
+}
+
+TEST_CASE("Project edit reset discards a catalog audition retained for the next frame",
+          "[sys][compose-outcome][audition]") {
+    action_notification_fixture_t fixture;
+    fixture.application.project.auditions.submit(resource_id_t{20});
+    CHECK(fixture.application.project.auditions.has_pending_request(resource_id_t{20}));
+    reset_application_project_edit_state(fixture.application);
+    CHECK_FALSE(fixture.application.project.auditions.has_pending_request());
 }

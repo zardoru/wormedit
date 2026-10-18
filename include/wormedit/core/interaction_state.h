@@ -3,6 +3,7 @@
 // Editor interaction state, its view model, and the setup and result types.
 
 #include <wormedit/core/interaction_gestures.h>
+#include <wormedit/core/audition_request.h>
 #include <wormedit/core/snap.h>
 #include <wormedit/core/lane_presentation.h>
 
@@ -197,7 +198,7 @@ struct editor_interaction_result_t {
     bool document_changed{};
     std::optional<editor_interaction_view_model_t> view;
     diagnostic_list_t diagnostics;
-    std::optional<editor_object_audition_request_t> audition;
+    std::optional<audition_request_t> audition;
     // Distinguishes placement from deletion/merging for advance-after-place.
     std::optional<object_id_t> created_note;
 

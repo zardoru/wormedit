@@ -1,4 +1,5 @@
 #include "sys/compose_action_context.h"
+#include "sys/compose_audition_requests.h"
 #include <cassert>
 #include <utility>
 
@@ -58,6 +59,7 @@ auto compose_action_outcome_t::from(const editor_interaction_result_t& result,
                         source, compose_message_lifetime_t::borrowed);
     outcome.accepted = result.accepted;
     outcome.diagnostics = result.diagnostics;
+    if (result.accepted) outcome.audition = result.audition;
     if (!result.accepted && !outcome.diagnostics.empty()) {
         outcome.severity = to_notification_severity(outcome.diagnostics.front().severity);
         outcome.delivery = compose_feedback_delivery_t::diagnostic_message;
@@ -150,6 +152,7 @@ auto compose_action_outcome_t::from(editor_interaction_result_t&& interaction,
                         interaction.document_changed, interaction.accepted);
     outcome.rebind_failure = "Compose edit applied, but workspace rebinding failed.";
     outcome.diagnostics = std::move(interaction.diagnostics);
+    if (interaction.accepted) outcome.audition = std::move(interaction.audition);
     return outcome;
 }
 
@@ -213,6 +216,12 @@ void retain_compose_rebind_failure(compose_action_outcome_t& outcome,
 auto finish_compose_outcome(const document_edit_inputs_t& document,
                             const notification_sink_t& feedback, compose_action_outcome_t outcome,
                             application_command_state_t* application) -> compose_action_outcome_t {
+    // Admission precedes rebind: an accepted input already queued its audition
+    // before a later rebind failure in the old pipeline. Playback stays scoped.
+    if (document.auditions && outcome.accepted && outcome.audition) {
+        document.auditions->submit(std::move(*outcome.audition));
+        outcome.audition.reset();
+    }
     const bool posted_before_rebind =
         outcome.feedback_order == compose_feedback_order_t::before_rebind;
     if (posted_before_rebind)

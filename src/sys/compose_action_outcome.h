@@ -81,6 +81,7 @@ struct compose_action_outcome_t {
     std::string_view borrowed_message;
     bool has_rebind_failed{};
     bool are_command_diagnostics_retained{true};
+    std::optional<audition_request_t> audition{};
 
     [[nodiscard]] auto message_text() const -> std::string_view {
         return borrowed_message.empty() ? std::string_view{message} : borrowed_message;

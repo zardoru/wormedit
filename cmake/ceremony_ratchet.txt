@@ -59,3 +59,6 @@ local_declared_id_maximum | 9 | src | std::max\([^,]+, ([A-Za-z_][A-Za-z0-9_]*[.
 
 # T-651: closed note ranges belong to lane_occupancy.h.
 local_note_occupancy_interval | 0 | src,include | ^struct [a-z_]*(note|paste|collision)_interval_t[ ]*[{]
+
+# T-652: audition outcomes feed the scoped owner instead of frame-loop mailboxes.
+audition_mailbox_drain | 0 | src,include | (process_compose_audition_requests|process_sound_audition_request|pending_sound_audition|frame[.]draft_audition_request|frame[.]audition_request)

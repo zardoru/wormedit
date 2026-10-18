@@ -81,6 +81,7 @@ struct bmson_sound_marker_insertion_t {
     bool restart{};
     // Empty selects autoplay; a lane assigns this new slice to a playable tap.
     std::optional<lane_id_t> playable_lane;
+    auto operator==(const bmson_sound_marker_insertion_t&) const -> bool = default;
 };
 
 struct bmson_razor_path_t {

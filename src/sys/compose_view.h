@@ -1,5 +1,6 @@
 #pragma once
 #include "sys/bookmark_navigation.h"
+#include "sys/compose_audition_requests.h"
 #include "sys/compose_action_outcome.h"
 #include "sys/metronome.h"
 #include <algorithm>
@@ -86,13 +87,6 @@ inline constexpr double compose_maximum_playable_field_width_pixels{640.0};
 inline constexpr double compose_minimum_bgm_pane_width_pixels{96.0};
 inline constexpr std::array<std::uint64_t, 18> chart_snap_preferences{4, 5, 8, 6, 10, 12, 16, 20, 24, 32, 40, 48, 60, 64, 80, 96, 160, 320};
 
-struct bmson_draft_audition_request_t {
-    wormedit::chart_id_t chart;
-    std::uint64_t revision{};
-    wormedit::object_id_t reference;
-    std::vector<wormedit::bmson_sound_marker_insertion_t> markers;
-    std::size_t marker_index{};
-};
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 // A bounded CPU envelope ring. Geometry and GPU textures live in the frontend.
 struct envelope_projection_geometry_t {
@@ -451,8 +445,6 @@ struct compose_scene_cache_t {
         wormedit::editor_field_scene_request_t preview_scene_request;
         std::optional<wormedit::editor_object_hover_state_t> hover;
         std::optional<std::pair<double, double>> paint_pointer;
-        std::optional<wormedit::editor_object_audition_request_t> audition_request;
-        std::optional<bmson_draft_audition_request_t> draft_audition_request;
         std::unordered_map<std::uint64_t, std::size_t> semantic_layer_membership_counts;
         std::unordered_map<std::uint64_t, std::size_t> semantic_layer_bgm_membership_counts;
         bool focus_note_label_editor{};
@@ -669,14 +661,14 @@ struct application_command_state_t {
     wormedit::editor_scratch_presentation_t scratch_on_right;
 
     struct project_t {
+        compose_auditions_t auditions;
+
         struct sound_selection_state_t {
             // Fresh per-frame source context, stamped to prevent cross-chart/stale hover reuse.
             std::optional<wormedit::chart_id_t> sound_selection_chart;
             std::uint64_t sound_selection_revision{};
             std::optional<wormedit::object_id_t> sound_selection_hover;
             std::vector<wormedit::resource_id_t> sound_selection_dock;
-            // Catalog sound the Compose keysound listbox asked to audition; consumed once per frame.
-            std::optional<wormedit::resource_id_t> pending_sound_audition;
         } sound_selection;
 
         struct feedback_state_t {

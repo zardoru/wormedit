@@ -1,3 +1,4 @@
+#include "sys/compose_audition_requests.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
@@ -2397,10 +2398,14 @@ void check_placement_audition(bool enabled) {
             compose_field_downscroll(chart, application.preferences.editor_preferences))};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    (void)dispatch_compose_input_action(action, history, *binding.value, *interaction,
-        viewport, navigation, application, cache, 0.016);
+    auto notifications = notification_sink_t::muted();
+    const compose_input_inputs_t environment{
+        .document = {.history = history, .workspace = *binding.value, .notifications = notifications,
+                     .auditions = &application.project.auditions},
+        .commands = application, .controls = {cache, viewport, navigation}};
+    (void)dispatch_compose_input_action(action, environment, *interaction, 0.016, false);
     REQUIRE(history.document.charts.front().measures.front().notes.size() == 1);
-    CHECK(cache.frame.audition_request.has_value() == enabled);
+    CHECK(application.project.auditions.has_pending_request() == enabled);
 }
 } // namespace
 

@@ -27,6 +27,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
     ../src/sys/compose_action_outcome.cpp
+    ../src/sys/compose_audition_requests.cpp
     ../src/sys/application_commands.cpp
     ../src/sys/project_view.cpp
     ../src/sys/tap_timing_runtime.cpp
@@ -640,6 +641,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_action_outcome.cpp
+        ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_bgm_bar.cpp
         ../src/sys/bookmark_commands.cpp
         ../src/sys/compose_navigation.cpp
@@ -692,6 +694,13 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
             WORMEDIT_HAS_VIDEO_DECODER=1)
     endif()
     if(WORMEDIT_ENABLE_AUDIO_DECODER)
+        target_sources(wormedit_frontend_event_harness_tests PRIVATE
+            ../src/sys/audio_source_registration.cpp
+            ../src/sys/project_audio_sources.cpp
+            ../src/sys/metronome.cpp
+            ../src/sys/chart_preview_state.cpp
+            ../src/sys/sdl_audition_output.cpp
+            ../src/sys/sdl_preview_output.cpp)
         target_link_libraries(wormedit_frontend_event_harness_tests PRIVATE
             wormedit::audio_decoder)
         target_compile_definitions(wormedit_frontend_event_harness_tests PRIVATE
@@ -707,6 +716,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
     if(TARGET wormedit_visual_decoder)
         add_executable(wormedit_bga_actions_tests sys/bga_actions_tests.cpp
             ../src/sys/compose_action_outcome.cpp
+            ../src/sys/compose_audition_requests.cpp
             ../src/sys/compose_bga_actions.cpp ../src/sys/bga_list_view.cpp)
         target_include_directories(wormedit_bga_actions_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
         target_compile_definitions(wormedit_bga_actions_tests PRIVATE WORMEDIT_HAS_IMAGE_DECODER=1)
@@ -733,6 +743,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
         ../src/sys/compose_action_outcome.cpp
+        ../src/sys/compose_audition_requests.cpp
         ../src/sys/compose_view.cpp
         ../src/sys/compose_scene_view.cpp
         ../src/sys/compose_marker_view.cpp
@@ -818,6 +829,10 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_navigation.cpp
             ../src/sys/compose_playhead_skip.cpp
             ../src/sys/compose_bgm_bar.cpp)
+        target_sources(wormedit_frame_timing_tests PRIVATE
+            ../src/sys/chart_preview_state.cpp
+            ../src/sys/sdl_audition_output.cpp
+            ../src/sys/sdl_preview_output.cpp)
         target_compile_definitions(wormedit_frame_timing_tests PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1
             WORMEDIT_FIXTURE_DIR="${WORMEDIT_TEST_PATH_PREFIX}${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
         target_link_libraries(wormedit_frame_timing_tests PRIVATE wormedit::audio_decoder)
@@ -928,3 +943,15 @@ endif()
 # Label after Catch discovery so its existing labels and properties are preserved.
 set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/slow_tests.cmake")
+
+# Compile the actual unavailable owner even when the application has audio enabled.
+add_executable(wormedit_audition_unavailable_tests
+    sys/audition_unavailable_tests.cpp
+    ../src/sys/compose_audition_requests.cpp
+)
+target_include_directories(wormedit_audition_unavailable_tests PRIVATE "${CMAKE_SOURCE_DIR}/src")
+target_link_libraries(wormedit_audition_unavailable_tests PRIVATE
+    wormedit::core Catch2::Catch2WithMain)
+catch_discover_tests(wormedit_audition_unavailable_tests
+    TEST_PREFIX "audition-unavailable."
+    PROPERTIES LABELS unit LABELS sys DISCOVERY_MODE PRE_TEST)

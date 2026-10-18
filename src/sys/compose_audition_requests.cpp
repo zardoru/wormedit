@@ -1,10 +1,10 @@
 #include "sys/compose_audition_requests.h"
 
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-#include <wormedit/audio/audition_resolver.h>
-
 #include <algorithm>
 #include <utility>
+
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/audio/audition_resolver.h>
 #include <vector>
 
 namespace wormedit::sys {
@@ -46,8 +46,11 @@ auto object_sound(const song_document_t& song, chart_id_t chart_id, object_id_t 
     return std::nullopt;
 }
 
-void process_object_request(const editor_object_audition_request_t& request,
-                            document_history_t& history, const compose_audition_inputs_t& inputs) {
+} // namespace
+
+void compose_auditions_t::process_object_request(const editor_object_audition_request_t& request,
+                                                const compose_audition_inputs_t& inputs) {
+    auto& history = inputs.history;
     if (request.object.kind != editor_selection_object_kind_t::note &&
         request.object.kind != editor_selection_object_kind_t::bgm_event) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
@@ -92,8 +95,9 @@ void process_object_request(const editor_object_audition_request_t& request,
     }
 }
 
-void process_draft_request(const bmson_draft_audition_request_t& request,
-                           document_history_t& history, const compose_audition_inputs_t& inputs) {
+void compose_auditions_t::process_draft_request(const bmson_draft_audition_request_t& request,
+                                               const compose_audition_inputs_t& inputs) {
+    auto& history = inputs.history;
     inputs.audition.sources.ensure_current(history.document);
     inputs.audition.sources.registry().await_pending();
     const auto resolved =
@@ -120,16 +124,12 @@ void process_draft_request(const bmson_draft_audition_request_t& request,
     }
 }
 
-} // namespace
 
-void process_sound_audition_request(std::optional<resource_id_t>& request,
-                                    document_history_t& history,
-                                    const compose_audition_inputs_t& inputs) {
-    const auto resource_id = std::exchange(request, std::nullopt);
-    if (!resource_id)
-        return;
+void compose_auditions_t::process_catalog_request(resource_id_t resource_id,
+                                                 const compose_audition_inputs_t& inputs) {
+    auto& history = inputs.history;
     const auto resource =
-        std::ranges::find(history.document.resources, *resource_id, &resource_entry_t::id);
+        std::ranges::find(history.document.resources, resource_id, &resource_entry_t::id);
     if (resource == history.document.resources.end()) {
         inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
                                   "That sound is no longer in the list.");
@@ -158,44 +158,70 @@ void process_sound_audition_request(std::optional<resource_id_t>& request,
                           "Audio preview started.", "Audio preview could not start.");
 }
 
-void process_compose_audition_requests(compose_scene_cache_t& cache, document_history_t& history,
-                                       const compose_audition_inputs_t& inputs) {
-    auto object_request = std::exchange(cache.frame.audition_request, std::nullopt);
-    auto draft_request = std::exchange(cache.frame.draft_audition_request, std::nullopt);
-    if (object_request) {
-        process_object_request(*object_request, history, inputs);
-    }
-    if (draft_request) {
-        process_draft_request(*draft_request, history, inputs);
-    }
-}
-
 } // namespace wormedit::sys
-
-#else
-
-#include <utility>
+#endif
 
 namespace wormedit::sys {
 
-void process_sound_audition_request(std::optional<resource_id_t>& request,
-                                    const notification_sink_t& notifications) {
-    if (std::exchange(request, std::nullopt))
-        notifications.post(notification_severity_t::warning, notification_source_t::audio,
-                           "Audio preview is unavailable in this build.");
+compose_auditions_t::scope_t::scope_t(compose_auditions_t& owner,
+    compose_audition_inputs_t inputs, phase_t phase)
+    : owner_(owner), inputs_(inputs), phase_(phase) {
+    owner_.begin(phase_);
 }
 
-void process_compose_audition_requests(compose_scene_cache_t& cache, document_history_t& history,
-                                       const notification_sink_t& notifications) {
-    static_cast<void>(history);
-    const auto object_request = std::exchange(cache.frame.audition_request, std::nullopt);
-    const auto draft_request = std::exchange(cache.frame.draft_audition_request, std::nullopt);
-    if (object_request || draft_request) {
-        notifications.post(notification_severity_t::warning, notification_source_t::audio,
-                           "Audio preview is unavailable in this build.");
+compose_auditions_t::scope_t::~scope_t() { owner_.finish(phase_, inputs_); }
+
+auto compose_auditions_t::input_scope(compose_audition_inputs_t inputs) -> scope_t {
+    return {*this, inputs, phase_t::input};
+}
+
+auto compose_auditions_t::catalog_scope(compose_audition_inputs_t inputs) -> scope_t {
+    return {*this, inputs, phase_t::catalog};
+}
+
+void compose_auditions_t::submit(audition_request_t request) {
+    pending_[request.index()] = std::move(request);
+}
+
+auto compose_auditions_t::has_pending_request() const -> bool {
+    return std::ranges::any_of(pending_, [](const auto& request) { return request.has_value(); });
+}
+
+auto compose_auditions_t::has_pending_request(const audition_request_t& request) const -> bool {
+    return pending_[request.index()] == request;
+}
+
+void compose_auditions_t::begin(phase_t phase) {
+    if (phase != phase_t::input) return;
+    for (std::size_t slot = 0; slot < index<resource_id_t>(); ++slot)
+        pending_[slot].reset();
+}
+
+void compose_auditions_t::finish(phase_t phase, const compose_audition_inputs_t& inputs) {
+    const auto first = phase == phase_t::input ? std::size_t{0} : index<resource_id_t>();
+    const auto after = phase == phase_t::input ? index<resource_id_t>() : pending_.size();
+    pending_t requests;
+    // Consume the whole phase before any notification or audio operation.
+    for (auto slot = first; slot < after; ++slot)
+        requests[slot] = std::exchange(pending_[slot], std::nullopt);
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    for (const auto& request : requests) {
+        if (!request) continue;
+        std::visit([&inputs](const auto& value) {
+            using request_t = std::remove_cvref_t<decltype(value)>;
+            if constexpr (std::same_as<request_t, editor_object_audition_request_t>)
+                process_object_request(value, inputs);
+            else if constexpr (std::same_as<request_t, bmson_draft_audition_request_t>)
+                process_draft_request(value, inputs);
+            else
+                process_catalog_request(value, inputs);
+        }, *request);
     }
+#else
+    if (std::ranges::any_of(requests, [](const auto& request) { return request.has_value(); }))
+        inputs.notifications.post(notification_severity_t::warning, notification_source_t::audio,
+                                  "Audio preview is unavailable in this build.");
+#endif
 }
 
 } // namespace wormedit::sys
-
-#endif

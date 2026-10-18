@@ -2119,7 +2119,7 @@ auto process_compose_input_result(const WormUiComposeInputAction& input,
     outcome.rebind_failure = "Compose edit applied, but workspace rebinding failed.";
     outcome.is_rebind_severity_diagnostic = false;
     if (result.accepted && result.audition.has_value())
-        context.environment.controls.cache.frame.audition_request = result.audition;
+        outcome.audition = std::move(result.audition);
     const auto mutated = outcome.mutated;
     auto finished = finish_compose_action(context.environment.document,
                                           context.notifications ? *context.notifications
@@ -2392,8 +2392,6 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
     using namespace wormedit;
     if (!state.is_pending())
         state.scratch_on_right = application_state.scratch_on_right;
-    scene_cache.frame.audition_request.reset();
-    scene_cache.frame.draft_audition_request.reset();
     const chart_stamp_t stamp{
         .document = {history.document.id, ui_action.compose_input_document_revision},
         .chart = chart_id_t{ui_action.compose_input_chart_id}};

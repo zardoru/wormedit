@@ -1,3 +1,4 @@
+#include "sys/compose_audition_requests.h"
 #include "compose_scene_cache_fixture.h"
 #include "../support/stale_action_assertions.h"
 #include "../support/workspace_result_assertions.h"
@@ -4796,10 +4797,14 @@ void check_click_audition_preference(bool enabled) {
         .y_pixels = (bounds.top + bounds.bottom) / 2};
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    (void)dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
-        *fixture.interaction, viewport, navigation, fixture.application, fixture.cache, 0.016);
+    auto notifications = notification_sink_t::muted();
+    const compose_input_inputs_t environment{
+        .document = {.history = fixture.history, .workspace = *fixture.binding.value,
+                     .notifications = notifications, .auditions = &fixture.application.project.auditions},
+        .commands = fixture.application, .controls = {fixture.cache, viewport, navigation}};
+    (void)dispatch_compose_input_action(action, environment, *fixture.interaction, 0.016, false);
     expect_compose_test(!fixture.interaction->selected_notes.empty());
-    expect_compose_test(fixture.cache.frame.audition_request.has_value() == enabled);
+    expect_compose_test(fixture.application.project.auditions.has_pending_request() == enabled);
     expect_compose_test(fixture.history.undo.empty());
 }
 }

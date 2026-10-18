@@ -209,7 +209,6 @@ using wormedit::sys::chart_snap_preferences;
 using wormedit::sys::compose_bgm_lane_width_pixels;
 using wormedit::sys::compose_measure_rail_width_pixels;
 using wormedit::sys::compose_timing_lane_count;
-using wormedit::sys::bmson_draft_audition_request_t;
 using wormedit::sys::compose_scene_cache_t;
 using wormedit::sys::compare_scene_cache_t;
 using wormedit::sys::compose_field_downscroll;
@@ -2235,7 +2234,8 @@ struct application_t::implementation_t {
         std::optional<std::uint32_t> selected_sample_rate;
     };
     auto document_inputs() -> document_edit_inputs_t {
-        return {session.history, session.workspace, platform.notification_sink};
+        return {.history = session.history, .workspace = session.workspace,
+                .notifications = platform.notification_sink, .auditions = &commands.project.auditions};
     }
     auto command_inputs() -> command_dispatch_inputs_t {
         return {document_inputs(),
@@ -3270,15 +3270,16 @@ struct application_t::implementation_t {
     }
 #endif
 
+    auto audition_inputs() -> compose_audition_inputs_t {
+        return {.history = session.history, .notifications = platform.notification_sink,
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    auto audition_inputs() -> wormedit::sys::compose_audition_inputs_t {
-        return {{audio_runtime.preview_session, audio_runtime.preview_output,
-                 audio_runtime.preview_state},
-                {audio_runtime.project_sources, audio_runtime.object_audition,
-                 audio_runtime.audition_output},
-                platform.notification_sink};
-    }
+                .preview = {audio_runtime.preview_session, audio_runtime.preview_output,
+                            audio_runtime.preview_state},
+                .audition = {audio_runtime.project_sources, audio_runtime.object_audition,
+                             audio_runtime.audition_output},
 #endif
+        };
+    }
 
     auto process_compose_frame_action(
         WormUiWorkspaceAction& action, double viewport_delta_seconds,
@@ -3321,26 +3322,15 @@ struct application_t::implementation_t {
              (session.workspace.active_tab == wormedit::workspace_tab_t::compose &&
               action.compose_input_chart_id != 0)) &&
             views.compose_interaction_state) {
+            auto audition_scope = commands.project.auditions.input_scope(audition_inputs());
             (void)dispatch_compose_input_action(action, compose_inputs(),
                                                 *views.compose_interaction_state,
                                                 viewport_delta_seconds, true);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-            wormedit::sys::process_compose_audition_requests(views.compose_scene_cache,
-                                                             session.history, audition_inputs());
-#else
-            wormedit::sys::process_compose_audition_requests(
-                views.compose_scene_cache, session.history, platform.notification_sink);
-#endif
         }
-        refresh_compose_editor_width(action, session.history, session.workspace, commands);
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-        wormedit::sys::process_sound_audition_request(
-            commands.project.sound_selection.pending_sound_audition, session.history,
-            audition_inputs());
-#else
-        wormedit::sys::process_sound_audition_request(
-            commands.project.sound_selection.pending_sound_audition, platform.notification_sink);
-#endif
+        {
+            auto audition_scope = commands.project.auditions.catalog_scope(audition_inputs());
+            refresh_compose_editor_width(action, session.history, session.workspace, commands);
+        }
         if (session.workspace.active_tab != wormedit::workspace_tab_t::compose) {
             commands.project.semantic_layer.note_layer_menu_row_count = 0;
             views.compose_viewport_input.escape();

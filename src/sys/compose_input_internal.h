@@ -499,7 +499,6 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     -> compose_input_family_result_t {
     auto& history = environment.document.history;
     auto& application_state = environment.commands;
-    auto& scene_cache = environment.controls.cache;
 
     auto context = bmson_compose_context_t{environment, ui_action, state, gesture_active};
     switch (input.kind) {
@@ -532,11 +531,13 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
                 wormedit::document_identity_policy_t::revision_only))
             return compose_input_family_result_t::from(
                 wormedit::stale_action_message("BMSON region audition"));
-        scene_cache.frame.draft_audition_request = bmson_draft_audition_request_t{
-            draft->stamp.chart, draft->stamp.document.revision, draft->payload.reference, draft->payload.markers,
-            static_cast<std::size_t>(input.object_id - 1)};
-        return compose_input_family_result_t::continue_batch(
+        auto result = compose_input_family_result_t::continue_batch(
             "Preparing staged BMSON region audition.");
+        result.outcome.audition = bmson_draft_audition_request_t{
+            .chart = draft->stamp.chart, .revision = draft->stamp.document.revision,
+            .reference = draft->payload.reference, .markers = draft->payload.markers,
+            .marker_index = static_cast<std::size_t>(input.object_id - 1)};
+        return result;
     }
     case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_ACTIVE_LANE:
     case WORM_UI_COMPOSE_INPUT_BMSON_ASSIGN_DRAFT_TO_BGM:

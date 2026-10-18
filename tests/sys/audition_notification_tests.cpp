@@ -27,20 +27,25 @@ struct audition_fixture_t {
     sdl_preview_output_t preview{preview_session};
     runtime::chart_preview_t preview_state;
     document_history_t history;
-    compose_scene_cache_t cache;
+    compose_auditions_t auditions;
     auto entries() -> std::vector<notification_entry_t> {
         center.drain_inbox(notification_time_t{0});
         return center.snapshot(notification_capacity);
     }
     auto inputs() -> compose_audition_inputs_t {
-        return {{preview_session, preview, preview_state},
-                {retained_sources_for(history.document, project_sources), object_audition, output}, sink};
+        return {.history = history, .notifications = sink,
+                .preview = {preview_session, preview, preview_state},
+                .audition = {retained_sources_for(history.document, project_sources), object_audition, output}};
     }
     void catalog(std::optional<resource_id_t>& request) {
-        process_sound_audition_request(request, history, inputs());
+        if (request) auditions.submit(*std::exchange(request, std::nullopt));
+        auto scope = auditions.catalog_scope(inputs());
     }
-    void compose() {
-        process_compose_audition_requests(cache, history, inputs());
+    void compose(std::optional<audition_request_t> object = {},
+                 std::optional<audition_request_t> draft = {}) {
+        auto scope = auditions.input_scope(inputs());
+        if (object) auditions.submit(std::move(*object));
+        if (draft) auditions.submit(std::move(*draft));
     }
 };
 struct audio_lifetime_t { ~audio_lifetime_t() { SDL_QuitSubSystem(SDL_INIT_AUDIO); } };
@@ -73,35 +78,35 @@ TEST_CASE("Catalog audition rejects missing sources once and idle stays quiet", 
 TEST_CASE("Stale object audition feedback is typed and consumes its request once",
           "[audio][audition-notification][stale-object-audition]") {
     audition_fixture_t fixture;
-    fixture.cache.frame.audition_request = editor_object_audition_request_t{
+    const auto request = editor_object_audition_request_t{
         .document_revision = 1, .chart = chart_id_t{2},
         .object = {editor_selection_object_kind_t::note, object_id_t{1}}};
-    fixture.compose();
+    fixture.compose(request);
     const auto entries = fixture.entries();
     expect_audition(entries.size() == 1);
     test::check_stale_action_message(entries.front().message, "Audio preview request");
     expect_audition(entries.front().severity == notification_severity_t::warning);
-    expect_audition(!fixture.cache.frame.audition_request);
+    expect_audition(!fixture.auditions.has_pending_request());
     fixture.compose();
     expect_audition(fixture.center.statistics().posted == 1);
 }
 
 TEST_CASE("Object then draft audition preserve producer diagnostics and consumption order", "[audio][audition-notification]") {
     audition_fixture_t fixture;
-    fixture.cache.frame.audition_request = editor_object_audition_request_t{
+    const auto request = editor_object_audition_request_t{
         .object = {editor_selection_object_kind_t::bpm_event, object_id_t{1}}};
-    fixture.cache.frame.draft_audition_request = bmson_draft_audition_request_t{.chart = chart_id_t{2}};
+    const auto draft = bmson_draft_audition_request_t{.chart = chart_id_t{2}};
     const auto expected = audio::resolve_bmson_draft_audition(fixture.history.document,
         {.chart = chart_id_t{2}}, {});
     expect_audition(!expected.diagnostics.empty());
-    fixture.compose();
+    fixture.compose(request, draft);
     const auto entries = fixture.entries();
     expect_audition(entries.size() == 2);
     expect_audition(entries[0].message == expected.diagnostics.front().message);
     expect_audition(entries[0].severity == notification_severity_t::error);
     expect_audition(entries[1].message == "Only notes and BGM events can be prepared for audition.");
     expect_audition(entries[1].severity == notification_severity_t::warning);
-    expect_audition(!fixture.cache.frame.audition_request && !fixture.cache.frame.draft_audition_request);
+    expect_audition(!fixture.auditions.has_pending_request());
     fixture.compose();
     expect_audition(fixture.center.statistics().posted == 2);
 }
@@ -181,10 +186,10 @@ TEST_CASE("Auditioning a silent note or BGM event is quietly consumed", "[audio]
     fixture.history.document.charts = {chart};
     for (const auto& object : {editor_selection_object_t{editor_selection_object_kind_t::note, object_id_t{4}},
                                editor_selection_object_t{editor_selection_object_kind_t::bgm_event, object_id_t{5}}}) {
-        fixture.cache.frame.audition_request = editor_object_audition_request_t{
+        const auto request = editor_object_audition_request_t{
             .document_revision = fixture.history.document.revision, .chart = chart.id, .object = object};
-        fixture.compose();
-        expect_audition(!fixture.cache.frame.audition_request);
+        fixture.compose(request);
+        expect_audition(!fixture.auditions.has_pending_request());
     }
     expect_audition(fixture.entries().empty());
 }

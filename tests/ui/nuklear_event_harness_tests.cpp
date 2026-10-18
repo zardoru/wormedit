@@ -1,3 +1,4 @@
+#include "sys/compose_audition_requests.h"
 #include "../sys/compose_scene_cache_fixture.h"
 #include "../sys/application_dispatch_fixture.h"
 #include "../sys/compose_area_dispatch_fixture.h"
@@ -2630,8 +2631,11 @@ struct t422_fixture_t {
     }
 
     auto dispatch_action(WormUiWorkspaceAction& action) -> std::string {
-        return dispatch_compose_input_action(action, history, *binding.value, *interaction,
-                                             viewport, navigation, application, cache, 0.0, &sink);
+        const compose_input_inputs_t environment{
+            .document = {.history = history, .workspace = *binding.value, .notifications = sink,
+                         .auditions = &application.project.auditions},
+            .commands = application, .controls = {cache, viewport, navigation}};
+        return dispatch_compose_input_action(action, environment, *interaction, 0.0);
     }
 };
 
@@ -7781,7 +7785,7 @@ TEST_CASE("Production Ctrl click auditions only a note remaining selected",
     (void)f.dispatch(released);
     expect_t422((std::ranges::find(f.interaction->selected_notes, object_id_t{101}) ==
                  f.interaction->selected_notes.end()) == initially_selected);
-    expect_t422(f.cache.frame.audition_request.has_value() == !initially_selected);
+    expect_t422(f.application.project.auditions.has_pending_request() == !initially_selected);
     expect_t422(f.history.undo.empty());
 }
 

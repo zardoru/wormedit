@@ -662,10 +662,6 @@ struct renumber_sound_ids_action_t {
 static_assert(compose_action<renumber_sound_ids_action_t, const resource_action_context_t>);
 
 struct audition_compose_sound_action_t {
-    static auto from(application_command_state_t* application) -> audition_compose_sound_action_t {
-        return {.application_state = application};
-    }
-    application_command_state_t* application_state{};
     resource_id_t resource{};
     const resource_entry_t* selected{};
     auto operator==(const audition_compose_sound_action_t&) const -> bool = default;
@@ -685,10 +681,11 @@ struct audition_compose_sound_action_t {
         return std::nullopt;
     }
     auto perform(const resource_action_context_t& /*context*/) const -> compose_action_outcome_t {
-        application_state->project.sound_selection.pending_sound_audition = resource;
-        return compose_action_outcome_t::from(
+        auto outcome = compose_action_outcome_t::from(
             "Playing " + (selected->name.empty() ? std::string{"sound"} : selected->name) + ".",
             notification_severity_t::info);
+        outcome.audition = resource;
+        return outcome;
     }
 };
 static_assert(compose_action<audition_compose_sound_action_t, const resource_action_context_t>);

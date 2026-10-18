@@ -41,6 +41,14 @@ There are two paths in and one way to change the document.
   and reports that retain partial work on failure return that report directly. Shared
   `failure_code_t` names failures while domain owners retain their lifecycle phases *(T-633)*.
 
+Accepted audition requests travel on those outcomes to the shared finisher, which submits them
+to the project-owned `compose_auditions_t`. Its input scope delivers the last object request,
+then the last draft request, after the entire input batch. Its catalog scope delivers the
+previous frame's catalog request before workspace actions can submit another. These scopes
+borrow the existing audio services only while delivering; resetting project state clears pending
+requests. Submission precedes rebinding, preserving an accepted request if rebinding later fails
+*(T-652)*.
+
 Not everything reaches the transaction. View-only actions such as zoom, scroll, selection, tool
 switches and filters change interaction or UI state and stop at dispatch. Waveform analysis,
 visual decoding, resource-copy and inspection requests, and conversion previews run through

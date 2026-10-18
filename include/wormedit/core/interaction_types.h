@@ -116,17 +116,6 @@ struct editor_area_geometry_snapshot_t {
     std::optional<editor_area_geometry_projection_t> projection;
 };
 
-// A validated, revision-bound intent to audition one semantic sound object.
-// Runtime audio resolves resources, BMSON slices, and fused layers from this
-// identity rather than relying on a lossy resource-only hint.
-struct editor_object_audition_request_t {
-    std::uint64_t document_revision{};
-    chart_id_t chart;
-    editor_selection_object_t object;
-
-    auto operator==(const editor_object_audition_request_t&) const -> bool = default;
-};
-
 struct paint_cell_key_t {
     lane_id_t lane;
     std::uint64_t absolute_row{};

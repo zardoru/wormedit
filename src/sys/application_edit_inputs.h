@@ -8,6 +8,7 @@ namespace wormedit {
 class task_scheduler_t;
 }
 namespace wormedit::sys {
+class compose_auditions_t;
 struct metadata_drop_state_t;
 struct project_identity_t;
 namespace runtime {
@@ -21,6 +22,7 @@ struct document_edit_inputs_t {
     document_history_t& history;
     workspace_controller_t& workspace;
     notification_sink_t& notifications;
+    compose_auditions_t* auditions{};
 };
 struct command_editor_inputs_t {
     application_command_state_t& commands;

@@ -636,6 +636,7 @@ if(WORMEDIT_BUILD_APP)
     install(FILES assets/icons/lucide/LICENSE
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/icons/lucide")
     install(FILES LICENSE README.md DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
+    include(cmake/wormedit_manual.cmake)
 
     if(WORMEDIT_ENABLE_IMAGE_DECODER)
         target_link_libraries(wormedit PRIVATE wormedit::visual_decoder)

@@ -303,6 +303,26 @@ auto document_command_transaction_t::commit(std::string label, document_command_
     return commit_validated_document(history_, std::move(working_document), std::move(label), options);
 }
 
+auto document_command_transaction_t::finish_execution(attempt_t<document_edit_effect_t> staged,
+                                                      command_noop_policy_t noop_policy)
+    -> document_command_result_t {
+    if (!staged.value || !staged.ok()) {
+        auto result = finish_without_commit();
+        if (result.diagnostics.empty())
+            result.diagnostics = std::move(staged.diagnostics);
+        return result;
+    }
+    const auto changed = staged.value->changed;
+    auto result =
+        changed ? commit(std::move(staged.value->command_label)) : finish_without_commit();
+    result.diagnostics.insert(result.diagnostics.begin(), staged.diagnostics.begin(),
+                              staged.diagnostics.end());
+    if (!changed && noop_policy == command_noop_policy_t::accept_without_diagnostics &&
+        result.diagnostics.empty())
+        result.applied = true;
+    return result;
+}
+
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {
     if (count < 2 || history.undo.size() < count) return;
     const auto first = history.undo.end() - static_cast<std::ptrdiff_t>(count);

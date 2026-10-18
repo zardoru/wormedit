@@ -684,6 +684,13 @@ if(BUILD_TESTING)
     )
     set_tests_properties(documentation.ceremony_ratchet PROPERTIES LABELS "unit;documentation")
     add_test(
+        NAME architecture.edit_execution
+        COMMAND "${CMAKE_COMMAND}"
+            -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+            -P "${CMAKE_SOURCE_DIR}/cmake/check_edit_execution.cmake"
+    )
+    set_tests_properties(architecture.edit_execution PROPERTIES LABELS "unit;architecture")
+    add_test(
         NAME documentation.architecture_names
         COMMAND "${CMAKE_COMMAND}"
             -DWORMEDIT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}

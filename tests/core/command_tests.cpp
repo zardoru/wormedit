@@ -1,8 +1,9 @@
 #include "../support/stale_action_assertions.h"
 #include <catch2/generators/catch_generators.hpp>
-#include <wormedit/core/proposal_apply_result.h>
 #include <type_traits>
+#include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/command.h>
+#include <wormedit/core/proposal_apply_result.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,6 +11,7 @@
 #include <limits>
 #include <memory>
 #include <ranges>
+#include <source_location>
 #include <utility>
 
 using namespace wormedit;
@@ -470,4 +472,174 @@ TEST_CASE("failed command publication consumes its working snapshot", "[unit][co
     CHECK(transaction.current_document().charts.empty());
     CHECK(transaction.current_document().revision == revision);
     CHECK(history.undo.empty());
+}
+
+namespace {
+template <class Value>
+void check_command_stage(const Value& value,
+                         std::source_location location = std::source_location::current()) {
+    INFO("staging assertion at line " << location.line());
+    CHECK(static_cast<bool>(value));
+}
+template <class Value>
+void require_command_stage(const Value& value,
+                           std::source_location location = std::source_location::current()) {
+    INFO("staging assertion at line " << location.line());
+    REQUIRE(static_cast<bool>(value));
+}
+} // namespace
+
+TEST_CASE("Chart edit staging composes native edits without revision or undo changes",
+          "[core][command][staging]") {
+    auto history = document_history_t::from(make_song());
+    const auto revision = history.document.revision;
+    const auto next_revision = history.next_revision;
+    auto transaction = document_command_transaction_t(history);
+    const auto first = stage_bpm_edit(
+        transaction,
+        insert_edit_t<bpm_edit_value_t>{.chart = chart_id_t{1},
+                                        .value = {.position = {measure_id_t{1}, 240},
+                                                  .settings = {.beats_per_minute = {150, 1}}}});
+    require_command_stage(first.value);
+    require_command_stage(first.value->changed);
+    const auto* working = &transaction.current_document();
+    const auto second = stage_bpm_edit(
+        transaction,
+        insert_edit_t<bpm_edit_value_t>{.chart = chart_id_t{1},
+                                        .value = {.position = {measure_id_t{1}, 360},
+                                                  .settings = {.beats_per_minute = {180, 1}}}});
+    require_command_stage(second.value);
+    check_command_stage(&transaction.current_document() == working);
+    check_command_stage(history.document.charts.front().bpms.empty());
+    check_command_stage(history.document.revision == revision);
+    check_command_stage(history.next_revision == next_revision);
+    check_command_stage(history.undo.empty());
+    const auto committed = transaction.commit("Two BPM edits");
+    require_command_stage(committed.applied);
+    check_command_stage(history.document.charts.front().bpms.size() == 2);
+    require_command_stage(history.undo.size() == 1);
+    check_command_stage(history.undo.front().label == "Two BPM edits");
+    check_command_stage(history.document.revision == next_revision);
+    require_command_stage(undo_document_command(history));
+    check_command_stage(history.document.charts.front().bpms.empty());
+}
+
+TEST_CASE("A nested rejected stage prevents accidental publication of earlier changes",
+          "[core][command][staging]") {
+    auto history = document_history_t::from(make_song());
+    const auto revision = history.document.revision;
+    auto transaction = document_command_transaction_t(history);
+    const auto staged = transaction.stage(
+        chart_id_t{1}, "missing chart",
+        [&](chart_document_t& chart, song_document_t&) -> attempt_t<document_edit_effect_t> {
+            chart.metadata.name = "Unpublished";
+            auto rejected = stage_bpm_edit(
+                transaction,
+                insert_edit_t<bpm_edit_value_t>{.chart = chart_id_t{99},
+                                                .value = {.position = {measure_id_t{1}, 240}}});
+            check_command_stage(!rejected.value);
+            // A failed nested edit must not destroy storage while its parent is unwinding.
+            check_command_stage(chart.metadata.name == "Unpublished");
+            return {.value = document_edit_effect_t{.changed = true, .command_label = "Ignored"}};
+        });
+    check_command_stage(!staged.value);
+    require_command_stage(staged.diagnostics.size() == 1);
+    check_command_stage(staged.diagnostics.front().code == diagnostic_code_t::invalid_id);
+    check_command_stage(!transaction.commit("Must not publish").applied);
+    check_command_stage(history.document.revision == revision);
+    check_command_stage(history.undo.empty());
+    check_command_stage(history.document.charts.front().metadata.name != "Unpublished");
+}
+
+TEST_CASE("Native no-op stages preserve earlier work for the outer commit",
+          "[core][command][staging]") {
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t(history);
+    auto first = stage_bpm_edit(
+        transaction,
+        insert_edit_t<bpm_edit_value_t>{.chart = chart_id_t{1},
+                                        .value = {.position = {measure_id_t{1}, 240},
+                                                  .settings = {.beats_per_minute = {150, 1}}}});
+    require_command_stage(first.value);
+    const auto id = transaction.current_document().charts.front().bpms.front().id;
+    auto noop = stage_bpm_edit(
+        transaction,
+        update_edit_t<bpm_edit_value_t>{.chart = chart_id_t{1},
+                                        .id = id,
+                                        .value = {.position = {measure_id_t{1}, 240},
+                                                  .settings = {.beats_per_minute = {150, 1}}}});
+    require_command_stage(noop.value);
+    check_command_stage(!noop.value->changed);
+    require_command_stage(transaction.commit("One changed edit").applied);
+    check_command_stage(history.undo.size() == 1);
+    check_command_stage(history.document.charts.front().bpms.size() == 1);
+}
+
+TEST_CASE("A stale transaction cannot enter staging or acquire a working copy",
+          "[core][command][staging]") {
+    auto history = document_history_t::from(make_song());
+    const auto captured = document_stamp_t::from(history.document);
+    ++history.document.revision;
+    auto transaction = document_command_transaction_t(history, captured, "Stage BPM");
+    bool entered{};
+    const auto staged = transaction.stage(
+        chart_id_t{1}, "missing chart",
+        [&](chart_document_t&, song_document_t&) -> attempt_t<document_edit_effect_t> {
+            entered = true;
+            return {.value =
+                        document_edit_effect_t{.changed = true, .command_label = "Must not run"}};
+        });
+    check_command_stage(!staged.value);
+    check_command_stage(!entered);
+    check_command_stage(!transaction.has_copy());
+    require_command_stage(staged.diagnostics.size() == 1);
+    test::check_stale_action_message(staged.diagnostics, "Stage BPM");
+    check_command_stage(history.undo.empty());
+}
+
+TEST_CASE("A failed stage cannot publish a partial value retained in its report",
+          "[core][command][staging]") {
+    const auto retain_value = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    const auto title = history.document.metadata.title;
+    auto transaction = document_command_transaction_t(history);
+    const auto staged =
+        transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+            document.metadata.title = "Rejected partial edit";
+            return {.value = retain_value
+                                 ? std::optional{document_edit_effect_t{
+                                       .changed = true, .command_label = "Must not publish"}}
+                                 : std::nullopt,
+                    .diagnostics = {error(diagnostic_code_t::collision, "Rejected stage")}};
+        });
+    check_command_stage(!staged.value);
+    check_command_stage(!transaction.is_ready());
+    require_command_stage(staged.diagnostics.size() == 1);
+    check_command_stage(!transaction.commit("Ignored").applied);
+    check_command_stage(history.document.metadata.title == title);
+    check_command_stage(history.undo.empty());
+}
+
+TEST_CASE("Stage publication preserves warnings and applies the declared no-op policy",
+          "[core][command][staging]") {
+    const auto changed = GENERATE(false, true);
+    auto history = document_history_t::from(make_song());
+    auto transaction = document_command_transaction_t(history);
+    auto staged =
+        transaction.stage([&](song_document_t& document) -> attempt_t<document_edit_effect_t> {
+            if (changed)
+                document.metadata.title = "Warning-bearing edit";
+            return {.value = document_edit_effect_t{.changed = changed,
+                                                    .command_label = "Edit with warning"},
+                    .diagnostics = {{.severity = diagnostic_severity_t::warning,
+                                     .code = diagnostic_code_t::unsupported_feature,
+                                     .message = "Stage warning"}}};
+        });
+    const auto result = transaction.finish_execution(
+        std::move(staged), command_noop_policy_t::accept_without_diagnostics);
+    check_command_stage(result.applied == changed);
+    require_command_stage(result.diagnostics.size() == 1);
+    check_command_stage(result.diagnostics.front().severity == diagnostic_severity_t::warning);
+    check_command_stage(result.diagnostics.front().message == "Stage warning");
+    check_command_stage(history.undo.size() == (changed ? 1 : 0));
 }

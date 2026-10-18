@@ -103,6 +103,11 @@ it in new code even before the card lands.
   copy if one exists, otherwise the committed document) without copying, for validation, ID
   allocation and stale checks; `source_document()`/`source_chart(id)` are always the committed
   version. Read with `current_document()` unless you are about to change something.
+  Compose edits through `transaction.stage`: the runner supplies the working chart/document,
+  nested stages share its copy, and only the outer boundary publishes. Never combine edits by
+  invoking committing commands on a scratch history and adopting its document. The
+  [execution audit](../../audits/edit-execution.md) records remaining legacy sites;
+  `architecture.edit_execution` freezes their per-file footprint across first-party code.
 - **Check a revision once, at the boundary.** Each entry point (and each item of an input batch)
   checks the action's stamp once; handlers below it don't. Synchronous core calls take no stamp.
   State captured earlier (gestures, previews, proposals, async results) carries a

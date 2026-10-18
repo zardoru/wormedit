@@ -171,7 +171,7 @@ TEST_CASE("Editor command finisher accepts declared empty-diagnostic no-ops",
     auto context = fixture.context();
     bool called{};
     const auto result = commit_editor_edit(
-        context, {.noop_policy = editor_command_noop_policy_t::accept_without_diagnostics}, [&] {
+        context, {.noop_policy = command_noop_policy_t::accept_without_diagnostics}, [&] {
             called = true;
             return document_command_result_t{.revision = fixture.history.document.revision};
         });

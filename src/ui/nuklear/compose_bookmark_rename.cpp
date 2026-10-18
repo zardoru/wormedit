@@ -149,7 +149,7 @@ auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double
     -> std::optional<std::uint64_t> {
     return wormedit::ui::bookmark_double_click_target_at(
         visible_bookmark_lines(view), pointer_x, pointer_y, view.viewport_width_pixels,
-        compose_bookmark_label_zone_height);
+        wormedit::ui::compose_bookmark_label_zone_height);
 }
 
 auto begin_compose_bookmark_rename_at_double_click(inline_label_editor_t& editor,

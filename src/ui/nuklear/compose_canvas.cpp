@@ -40,6 +40,7 @@
 
 using wormedit::ui::theme::ComposeColor;
 using wormedit::ui::theme::compose;
+using wormedit::ui::compose_bgm_head_bounds;
 
 namespace {
 wormedit::ui::field::renderer_t* tile_renderer_override{};
@@ -884,11 +885,13 @@ static auto compose_hovered_bookmark_id(const ComposePaintContext& paint) -> std
 // A faint band over the hit area, so the double-click target is visible before clicking.
 static void draw_compose_bookmark_hover(const ComposePaintContext& paint, float y,
                                         bool labelled, nk_color color) {
+    const wormedit::ui::bookmark_rename_line_t line{.labelled = labelled};
+    const auto [top, bottom] = line.hit_extent(wormedit::ui::compose_bookmark_label_zone_height);
     const auto scale = paint.viewport.h / static_cast<float>(paint.view->viewport_height_pixels);
-    const auto above = labelled ? static_cast<float>(compose_bookmark_label_zone_height) * scale
-                                : 6.0f * scale;
+    const auto above = -static_cast<float>(top) * scale;
+    const auto below = static_cast<float>(bottom) * scale;
     color.a = 36;
-    field_rect(paint, nk_rect(paint.viewport.x, y - above, paint.viewport.w, above + 6.0f * scale),
+    field_rect(paint, nk_rect(paint.viewport.x, y - above, paint.viewport.w, above + below),
                0.0f, color, 4);
 }
 
@@ -1399,17 +1402,6 @@ static void draw_compose_stem_piece(const ComposePaintContext& paint, const Worm
         field_line(paint, center - row.absolute_peak[0] * half_width, y,
                    center + row.absolute_peak[1] * half_width, y, 1.0f, wormedit::ui::theme::field_waveform_color(nk_rgba(146, 230, 251, 190)), 6);
     }
-}
-
-// The tile of the note or BGM marker that starts a slice, if it is on screen (it may be a note
-// in the field).
-static auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> WormUiComposeRect {
-    auto bounds = event.bounds;
-    if (event.has_tail) {
-        bounds.top = event.head_top_pixels;
-        bounds.bottom = event.head_bottom_pixels;
-    }
-    return bounds;
 }
 
 static auto compose_stem_point_tile(const ComposePaintContext& paint, uint64_t object_id, bool playable)

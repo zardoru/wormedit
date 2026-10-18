@@ -17,6 +17,16 @@ inline constexpr double compose_measure_rail_width = 42.0;
 inline constexpr std::array<double, WORM_UI_TIMING_LANE_COUNT> compose_timing_lane_widths{
     64, 64, 64, 48, 48, 48, 24, 24};
 
+// Pointer targets and slice-point tiles use the head; area selection keeps the full tail.
+inline auto compose_bgm_head_bounds(const WormUiComposeBgmEventView& event) -> WormUiComposeRect {
+    auto bounds = event.bounds;
+    if (event.has_tail) {
+        bounds.top = event.head_top_pixels;
+        bounds.bottom = event.head_bottom_pixels;
+    }
+    return bounds;
+}
+
 inline auto compose_timing_width(std::uint8_t mask) -> double {
     double width{};
     for (std::size_t index = 0; index < compose_timing_lane_widths.size(); ++index)

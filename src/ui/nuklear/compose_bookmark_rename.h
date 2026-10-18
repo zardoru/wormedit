@@ -35,9 +35,6 @@ auto begin_compose_bookmark_rename(inline_label_editor_t& editor,
                                    std::uint64_t bookmark_id) -> bool;
 void cancel_compose_bookmark_rename(inline_label_editor_t& editor);
 
-// Roughly one text line; the label box sits just above its bookmark line.
-inline constexpr double compose_bookmark_label_zone_height = 18.0;
-
 // The visible bookmark whose full-width hit band holds the pointer (document pixels). Hover
 // highlight and double-click rename both use it. Notes are the caller's concern.
 auto compose_bookmark_at(const WormUiComposeView& view, double pointer_x, double pointer_y)

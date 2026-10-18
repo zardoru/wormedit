@@ -16,6 +16,7 @@
 #include "ui/nuklear/compose_area_menu.h"
 #include "ui/nuklear/compose_canvas.h"
 #include "ui/nuklear/compose_inspector.h"
+#include "ui/nuklear/compose_input_internal.h"
 #include "ui/nuklear/compose_note_menu.h"
 #include "ui/nuklear/compose_state.h"
 #include "ui/nuklear/setup_panel.h"
@@ -38,6 +39,7 @@
 #include <array>
 #include <cstdio>
 #include <cmath>
+#include <limits>
 #include <source_location>
 #include <stdexcept>
 #include <string>
@@ -6636,6 +6638,32 @@ TEST_CASE("BGM header mute and solo buttons capture press and release over canva
     expect_draw(disabled.back().get().compose_input_count == 0);
 }
 
+
+TEST_CASE("BGM pointer targets use closed head bounds and last nonghost priority",
+          "[frontend-state][bgm-geometry]") {
+    std::array events{
+        WormUiComposeBgmEventView{.bounds = {20, 100, 60, 400}, .event_id = 1,
+            .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206},
+        WormUiComposeBgmEventView{.bounds = {20, 100, 60, 400}, .event_id = 2,
+            .has_tail = true, .head_top_pixels = 190, .head_bottom_pixels = 206}};
+    WormUiComposeView view{};
+    view.bgm_events = events.data();
+    view.bgm_event_count = events.size();
+    for (const auto x : {20.0, 60.0})
+        for (const auto y : {190.0, 206.0}) expect_draw(compose_bgm_event_at(&view, x, y) == 2);
+    expect_draw(compose_bgm_event_at(&view, 40, 300) == 0);
+    expect_draw(compose_bgm_event_at(&view, 19.999, 198) == 0);
+    expect_draw(compose_bgm_event_at(&view, 60.001, 198) == 0);
+    expect_draw(compose_bgm_event_at(&view, 40, 189.999) == 0);
+    expect_draw(compose_bgm_event_at(&view, 40, 206.001) == 0);
+    events.back().proposal_ghost = true;
+    expect_draw(compose_bgm_event_at(&view, 40, 198) == 1);
+    events.front().has_tail = false;
+    expect_draw(compose_bgm_event_at(&view, 40, 300) == 1);
+    expect_draw(compose_bgm_event_at(&view, std::numeric_limits<double>::quiet_NaN(), 198) == 0);
+    expect_draw(compose_bgm_event_at(&view, 40, std::numeric_limits<double>::infinity()) == 0);
+    expect_draw(compose_bgm_event_at(nullptr, 40, 198) == 0);
+}
 
 TEST_CASE("Double-clicking a BGM stem head arms it outside the playable field",
           "[frontend-state][event-harness][scratchpad-stem-arm]") {

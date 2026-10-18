@@ -11,6 +11,13 @@
 #include <vector>
 
 namespace wormedit::ui {
+
+auto bookmark_rename_line_t::hit_extent(double label_height) const -> std::pair<double, double> {
+    const auto above = labelled ? std::max(compose_bookmark_line_reach, label_height)
+                                : compose_bookmark_line_reach;
+    return {y - above, y + compose_bookmark_line_reach};
+}
+
 namespace {
 
 constexpr float padding = 4.0f;
@@ -41,11 +48,11 @@ auto overlaps(const bookmark_label_box_t& a, const bookmark_label_box_t& b) -> b
 
 namespace {
 
-// The line within `reach` pixels of `y`, nearest first and then lowest ID.
-auto nearest_line_within(std::span<const bookmark_rename_line_t> lines, double y, double reach)
+// The line inside its hit reach, nearest first and then lowest ID.
+auto nearest_line_within(std::span<const bookmark_rename_line_t> lines, double y)
     -> std::optional<std::uint64_t> {
     auto result = std::optional<std::uint64_t>{};
-    auto best = reach;
+    auto best = compose_bookmark_line_reach;
     for (const auto& line : lines) {
         if (line.bookmark_id == 0 || !std::isfinite(line.y)) continue;
         const auto distance = std::abs(y - line.y);
@@ -79,7 +86,7 @@ auto bookmark_double_click_target_at(std::span<const bookmark_rename_line_t> lin
     -> std::optional<std::uint64_t> {
     if (!std::isfinite(x) || !std::isfinite(y) || !std::isfinite(field_width) ||
         !std::isfinite(label_height) || x < 0.0 || x > field_width) return std::nullopt;
-    if (const auto exact = nearest_line_within(lines, y, 6.0)) return exact;
+    if (const auto exact = nearest_line_within(lines, y)) return exact;
     return label_zone_target(lines, y, label_height);
 }
 

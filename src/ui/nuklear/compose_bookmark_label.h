@@ -6,8 +6,13 @@
 #include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 
 namespace wormedit::ui {
+
+inline constexpr double compose_bookmark_line_reach = 6.0;
+// Roughly one text line; the label box sits just above its bookmark line.
+inline constexpr double compose_bookmark_label_zone_height = 18.0;
 
 struct bookmark_label_box_t {
     float x{};
@@ -32,6 +37,8 @@ struct bookmark_rename_line_t {
     double y{};
     // Only a bookmark with a drawn name has a label zone to double-click.
     bool labelled{true};
+
+    [[nodiscard]] auto hit_extent(double label_height) const -> std::pair<double, double>;
 };
 
 // The hover and double-click target: a band across the whole viewport width (`field_width`

@@ -347,7 +347,20 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
     )
 
     add_library(nuklear_headers INTERFACE)
-    target_include_directories(nuklear_headers INTERFACE "${nuklear_SOURCE_DIR}")
+    if(MINGW)
+        # Nuklear's printf attribute selects legacy MSVCRT formatting on MinGW,
+        # but its vsnprintf implementation uses MinGW's C99 formatting (%zu, etc.).
+        # Adapt a build-local copy; keep the pinned/shared dependency source intact.
+        file(READ "${nuklear_SOURCE_DIR}/nuklear.h" wormedit_nuklear_header)
+        string(REPLACE "format(__printf__," "format(__gnu_printf__,"
+            wormedit_nuklear_header "${wormedit_nuklear_header}")
+        file(CONFIGURE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/generated/nuklear/nuklear.h"
+            CONTENT "${wormedit_nuklear_header}" @ONLY)
+        target_include_directories(nuklear_headers INTERFACE "${CMAKE_CURRENT_BINARY_DIR}/generated/nuklear")
+        target_compile_definitions(nuklear_headers INTERFACE __USE_MINGW_ANSI_STDIO=1)
+    else()
+        target_include_directories(nuklear_headers INTERFACE "${nuklear_SOURCE_DIR}")
+    endif()
 
     # The application links one private, stable frontend target. Backend types
     # and dependencies do not enter wormedit_core or its public headers.
@@ -607,9 +620,10 @@ if(WORMEDIT_BUILD_APP)
     else()
         set(WORMEDIT_INSTALL_BINDIR "bin")
     endif()
-    install(TARGETS wormedit RUNTIME DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
     if(WIN32)
-        install(FILES "$<TARGET_FILE:SDL3::SDL3>" DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
+        include(cmake/windows-runtime.cmake)
+    else()
+        install(TARGETS wormedit RUNTIME DESTINATION "${WORMEDIT_INSTALL_BINDIR}")
     endif()
     install(FILES assets/fonts/AdwaitaMono-Regular.ttf assets/fonts/LICENSE
         assets/fonts/NotoSansCJKjp-Regular.otf assets/fonts/NotoSansCJK-LICENSE assets/fonts/README.md

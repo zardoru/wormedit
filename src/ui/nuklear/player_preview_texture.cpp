@@ -241,6 +241,12 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
     if (!canvas || !view) {
         return result;
     }
+    if (view->visual_layer_count > WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY ||
+        (view->visual_layer_count != 0 && !view->visual_layers)) {
+        result.failure_count = 1;
+        result.first_failure = worm_ui_nuklear_preview_visual_failure_t::invalid_image;
+        return result;
+    }
     std::array<const WormUiPlayerPreviewVisualLayerView*,
                WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY>
         ordered{};
@@ -250,7 +256,10 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
             ordered[count++] = &view->visual_layers[index];
         }
     }
-    std::sort(ordered.begin(), ordered.begin() + static_cast<std::ptrdiff_t>(count),
+    const auto end = ordered.begin() + static_cast<std::ptrdiff_t>(count);
+    // Heap-sort this tiny bounded range: GCC 16 diagnoses std::sort's inlined
+    // insertion-sort threshold (16) as exceeding the six-element buffer.
+    std::partial_sort(ordered.begin(), end, end,
               [](const auto* left, const auto* right) {
                   if (left->draw_order != right->draw_order) {
                       return left->draw_order < right->draw_order;

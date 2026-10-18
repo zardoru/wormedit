@@ -341,3 +341,24 @@ TEST_CASE("Nuklear converts dense geometry with indices above 65535", "[unit][fr
     CHECK(validate_draw_indices(values, index_count, vertex_count) > 70000);
     nk_free(&context);
 }
+
+TEST_CASE("player preview rejects invalid visual layer ranges before reading them",
+          "[unit][frontend][visual][player-preview][texture]") {
+    nk_command_buffer canvas{};
+    WormUiPlayerPreviewVisualLayerView layer{};
+    WormUiPlayerPreviewView view{.visual_layers = &layer,
+        .visual_layer_count = WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY + 1};
+    const auto oversized = worm_ui_nuklear_draw_player_preview_visual_layers(
+        &canvas, nk_rect(0, 0, 16, 16), nullptr, &view);
+    CHECK_FALSE(oversized.drew_image);
+    CHECK(oversized.failure_count == 1);
+    CHECK(oversized.first_failure == worm_ui_nuklear_preview_visual_failure_t::invalid_image);
+
+    view.visual_layers = nullptr;
+    view.visual_layer_count = 1;
+    const auto missing = worm_ui_nuklear_draw_player_preview_visual_layers(
+        &canvas, nk_rect(0, 0, 16, 16), nullptr, &view);
+    CHECK_FALSE(missing.drew_image);
+    CHECK(missing.failure_count == 1);
+    CHECK(missing.first_failure == worm_ui_nuklear_preview_visual_failure_t::invalid_image);
+}

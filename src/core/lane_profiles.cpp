@@ -1197,6 +1197,20 @@ auto make_catalog_pump_double_profile() -> lane_input_profile_t {
     return *make_stepmania_profile_for("pump-double");
 }
 
+// New-project lane keys for layouts wider than the number row (owner, 2026-10-18), left to right.
+// A right scratch outside its stage takes the key after the stage; inside, the key before it.
+using enum physical_key_t;
+constexpr std::array dp5_outer_keys{digit_1, key_q, digit_2, key_w, digit_3, key_e,
+                                    key_u, digit_8, key_i, digit_9, key_o, digit_0};
+constexpr std::array dp5_inner_right_keys{digit_1, key_q, digit_2, key_w, digit_3, key_e,
+                                          key_y, key_u, digit_8, key_i, digit_9, key_o};
+constexpr std::array dp7_keys{digit_1, key_q, digit_2, key_w, digit_3, key_e, digit_4, key_r,
+                              key_y, digit_7, key_u, digit_8, key_i, digit_9, key_o, digit_0};
+constexpr std::array mania_12k_keys{digit_1, key_q, digit_2, key_w, digit_3, key_e,
+                                    key_y, digit_7, key_u, digit_8, key_i, digit_9};
+constexpr std::array mania_18k_keys{digit_1, digit_2, digit_3, digit_4, key_q, key_w, key_e, key_r, key_f,
+                                    digit_7, digit_8, digit_9, digit_0, key_y, key_u, key_i, key_o, key_h};
+
 constexpr std::array project_layouts{
     new_project_layout_descriptor_t{"osu-mania-1k", "1K", &make_catalog_mania_profile<1>, catalog_mania_outputs(1), catalog_default_step_type(1)},
     new_project_layout_descriptor_t{"osu-mania-2k", "2K", &make_catalog_mania_profile<2>, catalog_mania_outputs(2), catalog_default_step_type(2)},
@@ -1209,15 +1223,15 @@ constexpr std::array project_layouts{
     new_project_layout_descriptor_t{"osu-mania-9k", "9K", &make_catalog_mania_profile<9>, catalog_mania_outputs(9), catalog_default_step_type(9)},
     new_project_layout_descriptor_t{"osu-mania-10k", "10K", &make_catalog_mania_profile<10>, catalog_mania_outputs(10), catalog_default_step_type(10)},
     new_project_layout_descriptor_t{"osu-mania-11k", "11K", &make_catalog_mania_profile<11>, catalog_mania_outputs(11), catalog_default_step_type(11)},
-    new_project_layout_descriptor_t{"osu-mania-12k", "12K", &make_catalog_mania_profile<12>, catalog_mania_outputs(12), catalog_default_step_type(12)},
+    new_project_layout_descriptor_t{"osu-mania-12k", "12K", &make_catalog_mania_profile<12>, catalog_mania_outputs(12), catalog_default_step_type(12), mania_12k_keys},
     new_project_layout_descriptor_t{"osu-mania-13k", "13K", &make_catalog_mania_profile<13>, catalog_mania_outputs(13), catalog_default_step_type(13)},
     new_project_layout_descriptor_t{"osu-mania-14k", "14K", &make_catalog_mania_profile<14>, catalog_mania_outputs(14), catalog_default_step_type(14)},
     new_project_layout_descriptor_t{"osu-mania-15k", "15K", &make_catalog_mania_profile<15>, catalog_mania_outputs(15), catalog_default_step_type(15)},
-    new_project_layout_descriptor_t{"osu-mania-16k", "16K", &make_catalog_mania_profile<16>, catalog_mania_outputs(16), catalog_default_step_type(16)},
+    new_project_layout_descriptor_t{"osu-mania-16k", "16K", &make_catalog_mania_profile<16>, catalog_mania_outputs(16), catalog_default_step_type(16), dp7_keys},
     new_project_layout_descriptor_t{"osu-mania-17k", "17K", &make_catalog_mania_profile<17>, catalog_mania_outputs(17), catalog_default_step_type(17)},
-    new_project_layout_descriptor_t{"osu-mania-18k", "18K", &make_catalog_mania_profile<18>, catalog_mania_outputs(18), catalog_default_step_type(18)},
-    new_project_layout_descriptor_t{"osu-mania-12k-specialstyle", "12K SpecialStyle", &make_catalog_mania_profile<12, true>, mania_outputs, ""},
-    new_project_layout_descriptor_t{"osu-mania-16k-specialstyle", "16K SpecialStyle", &make_catalog_mania_profile<16, true>, mania_outputs, ""},
+    new_project_layout_descriptor_t{"osu-mania-18k", "18K", &make_catalog_mania_profile<18>, catalog_mania_outputs(18), catalog_default_step_type(18), mania_18k_keys},
+    new_project_layout_descriptor_t{"osu-mania-12k-specialstyle", "12K SpecialStyle", &make_catalog_mania_profile<12, true>, mania_outputs, "", dp5_outer_keys},
+    new_project_layout_descriptor_t{"osu-mania-16k-specialstyle", "16K SpecialStyle", &make_catalog_mania_profile<16, true>, mania_outputs, "", dp7_keys},
     new_project_layout_descriptor_t{"bms-5k-outside-scratch", "BMS 5K (outside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_standard_profile, scratch_placement_t::outside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-5k-inside-scratch", "BMS 5K (inside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_standard_profile, scratch_placement_t::inside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-5k-outside-scratch-free-zone", "BMS 5K (free zone) (outside scratch)", &make_catalog_single_scratch_profile<make_bms_5k_free_zone_profile, scratch_placement_t::outside>, bms_outputs, ""},
@@ -1228,10 +1242,10 @@ constexpr std::array project_layouts{
     new_project_layout_descriptor_t{"bme-7k-inside-scratch", "BME 7K (inside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_profile, scratch_placement_t::inside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bme-7k-outside-scratch-foot-pedal", "BME 7K (foot pedal) (outside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_foot_pedal_profile, scratch_placement_t::outside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bme-7k-inside-scratch-foot-pedal", "BME 7K (foot pedal) (inside scratch)", &make_catalog_single_scratch_profile<make_bme_7k_foot_pedal_profile, scratch_placement_t::inside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside", "BMS DP5 / 10K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside", "BMS DP5 / 10K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside", "BMS DP5 / 10K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside", "BMS DP5 / 10K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside", "BMS DP5 / 10K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, "", dp5_outer_keys},
+    new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside", "BMS DP5 / 10K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, "", dp5_inner_right_keys},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside", "BMS DP5 / 10K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, "", dp5_outer_keys},
+    new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside", "BMS DP5 / 10K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_standard_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, "", dp5_inner_right_keys},
     new_project_layout_descriptor_t{"bms-10k-left-outside-right-outside-free-zone", "BMS DP5 / 10K (free zone) (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside-free-zone", "BMS DP5 / 10K (free zone) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside-free-zone", "BMS DP5 / 10K (free zone) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_free_zone_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
@@ -1240,10 +1254,10 @@ constexpr std::array project_layouts{
     new_project_layout_descriptor_t{"bms-10k-left-outside-right-inside-foot-pedal", "BMS DP5 / 10K (foot pedal) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-10k-left-inside-right-outside-foot-pedal", "BMS DP5 / 10K (foot pedal) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bms-10k-left-inside-right-inside-foot-pedal", "BMS DP5 / 10K (foot pedal) (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bms_10k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bme-14k-left-outside-right-outside", "BME DP7 / 14K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bme-14k-left-outside-right-inside", "BME DP7 / 14K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bme-14k-left-inside-right-outside", "BME DP7 / 14K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
-    new_project_layout_descriptor_t{"bme-14k-left-inside-right-inside", "BME DP7 / 14K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, ""},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-outside", "BME DP7 / 14K (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, "", dp7_keys},
+    new_project_layout_descriptor_t{"bme-14k-left-outside-right-inside", "BME DP7 / 14K (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, "", dp7_keys},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-outside", "BME DP7 / 14K (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, "", dp7_keys},
+    new_project_layout_descriptor_t{"bme-14k-left-inside-right-inside", "BME DP7 / 14K (inside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_profile, scratch_placement_t::inside, scratch_placement_t::inside>, bms_outputs, "", dp7_keys},
     new_project_layout_descriptor_t{"bme-14k-left-outside-right-outside-foot-pedal", "BME DP7 / 14K (foot pedal) (outside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::outside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bme-14k-left-outside-right-inside-foot-pedal", "BME DP7 / 14K (foot pedal) (outside/inside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::outside, scratch_placement_t::inside>, bms_outputs, ""},
     new_project_layout_descriptor_t{"bme-14k-left-inside-right-outside-foot-pedal", "BME DP7 / 14K (foot pedal) (inside/outside scratch)", &make_catalog_double_scratch_profile<make_bme_14k_foot_pedal_profile, scratch_placement_t::inside, scratch_placement_t::outside>, bms_outputs, ""},
@@ -1274,6 +1288,17 @@ auto default_stepmania_step_type(std::size_t keys) -> std::string_view {
     return catalog_default_step_type(keys);
 }
 auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t> { return project_layouts; }
+auto new_project_layout_descriptor_t::profile() const -> lane_input_profile_t {
+    auto result = make_profile();
+    if (lane_keys.empty()) return result;
+    auto lanes = result.layout.lanes;
+    std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+    result.input.bindings.clear();
+    result.input.requires_focused_stage = false;
+    for (std::size_t index = 0; index < lanes.size() && index < lane_keys.size(); ++index)
+        result.input.bindings.push_back({.key = lane_keys[index], .lane = lanes[index].id});
+    return result;
+}
 auto find_new_project_layout(std::string_view id) -> const new_project_layout_descriptor_t* {
     for (const auto& entry : project_layouts)
         if (entry.id == id) return &entry;

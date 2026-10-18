@@ -97,7 +97,7 @@ void print_layouts() {
               << "\n[cols=\"4,1,3,2\",options=\"header\"]\n|===\n"
               << "|Layout |Lanes |Default lane keys (left to right) |Default output groups\n";
     for (const auto& layout : new_project_layouts()) {
-        const auto profile = layout.make_profile();
+        const auto profile = layout.profile();
         std::cout << "|" << layout.label << " |" << profile.layout.lanes.size() << " |"
                   << lane_keys_cell(profile) << " |" << outputs_cell(layout) << "\n";
     }

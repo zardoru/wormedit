@@ -15,15 +15,15 @@
 |9K |9 |`+1 2 3 4 5 6 7 8 9+` |osu!mania
 |10K |10 |`+1 2 3 4 5 6 7 8 9 0+` |osu!mania, StepMania SM, StepMania SSC
 |11K |11 |none by default |osu!mania
-|12K |12 |none by default |osu!mania
+|12K |12 |`+1 Q 2 W 3 E Y 7 U 8 I 9+` |osu!mania
 |13K |13 |none by default |osu!mania
 |14K |14 |none by default |osu!mania
 |15K |15 |none by default |osu!mania
-|16K |16 |none by default |osu!mania
+|16K |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |osu!mania
 |17K |17 |none by default |osu!mania
-|18K |18 |none by default |osu!mania
-|12K SpecialStyle |12 |none by default |osu!mania
-|16K SpecialStyle |16 |none by default |osu!mania
+|18K |18 |`+1 2 3 4 Q W E R F 7 8 9 0 Y U I O H+` |osu!mania
+|12K SpecialStyle |12 |`+1 Q 2 W 3 E U 8 I 9 O 0+` |osu!mania
+|16K SpecialStyle |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |osu!mania
 |BMS 5K (outside scratch) |6 |`+1 2 3 4 5 6+` |BMS
 |BMS 5K (inside scratch) |6 |`+1 2 3 4 5 6+` |BMS
 |BMS 5K (free zone) (outside scratch) |7 |`+1 2 3 4 5 6 ·+` |BMS
@@ -34,10 +34,10 @@
 |BME 7K (inside scratch) |8 |`+1 2 3 4 5 6 7 8+` |BMS
 |BME 7K (foot pedal) (outside scratch) |9 |`+1 2 3 4 5 6 7 8 ·+` |BMS
 |BME 7K (foot pedal) (inside scratch) |9 |`+1 2 3 4 5 6 7 8 ·+` |BMS
-|BMS DP5 / 10K (outside/outside scratch) |12 |none by default |BMS
-|BMS DP5 / 10K (outside/inside scratch) |12 |none by default |BMS
-|BMS DP5 / 10K (inside/outside scratch) |12 |none by default |BMS
-|BMS DP5 / 10K (inside/inside scratch) |12 |none by default |BMS
+|BMS DP5 / 10K (outside/outside scratch) |12 |`+1 Q 2 W 3 E U 8 I 9 O 0+` |BMS
+|BMS DP5 / 10K (outside/inside scratch) |12 |`+1 Q 2 W 3 E Y U 8 I 9 O+` |BMS
+|BMS DP5 / 10K (inside/outside scratch) |12 |`+1 Q 2 W 3 E U 8 I 9 O 0+` |BMS
+|BMS DP5 / 10K (inside/inside scratch) |12 |`+1 Q 2 W 3 E Y U 8 I 9 O+` |BMS
 |BMS DP5 / 10K (free zone) (outside/outside scratch) |14 |none by default |BMS
 |BMS DP5 / 10K (free zone) (outside/inside scratch) |14 |none by default |BMS
 |BMS DP5 / 10K (free zone) (inside/outside scratch) |14 |none by default |BMS
@@ -46,10 +46,10 @@
 |BMS DP5 / 10K (foot pedal) (outside/inside scratch) |14 |none by default |BMS
 |BMS DP5 / 10K (foot pedal) (inside/outside scratch) |14 |none by default |BMS
 |BMS DP5 / 10K (foot pedal) (inside/inside scratch) |14 |none by default |BMS
-|BME DP7 / 14K (outside/outside scratch) |16 |none by default |BMS
-|BME DP7 / 14K (outside/inside scratch) |16 |none by default |BMS
-|BME DP7 / 14K (inside/outside scratch) |16 |none by default |BMS
-|BME DP7 / 14K (inside/inside scratch) |16 |none by default |BMS
+|BME DP7 / 14K (outside/outside scratch) |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |BMS
+|BME DP7 / 14K (outside/inside scratch) |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |BMS
+|BME DP7 / 14K (inside/outside scratch) |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |BMS
+|BME DP7 / 14K (inside/inside scratch) |16 |`+1 Q 2 W 3 E 4 R Y 7 U 8 I 9 O 0+` |BMS
 |BME DP7 / 14K (foot pedal) (outside/outside scratch) |18 |none by default |BMS
 |BME DP7 / 14K (foot pedal) (outside/inside scratch) |18 |none by default |BMS
 |BME DP7 / 14K (foot pedal) (inside/outside scratch) |18 |none by default |BMS

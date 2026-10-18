@@ -123,7 +123,10 @@ void check_mania_catalog_document(std::uint32_t keys) {
     const auto document = wormedit::sys::make_initial_document(wormedit::song_id_t{123}, keys);
     REQUIRE(document);
     CHECK(valid_initial_layout(*document, keys));
-    CHECK((keys <= 10 || document->charts.front().input_profile.bindings.empty()));
+    const auto bindings = document->charts.front().input_profile.bindings.size();
+    // 12K, 16K and 18K have owner-chosen keys (2026-10-18); other wide counts start unbound.
+    const bool keyed = keys == 12 || keys == 16 || keys == 18;
+    CHECK((keys <= 10 || bindings == (keyed ? keys : 0)));
 }
 
 auto is_same_binding(const wormedit::lane_binding_t& actual,
@@ -148,7 +151,7 @@ auto is_catalog_output(const wormedit::output_group_t& actual,
 
 void check_catalog_document(const wormedit::song_document_t& document,
                             const wormedit::new_project_layout_descriptor_t& layout) {
-    const auto expected = layout.make_profile();
+    const auto expected = layout.profile();
     const auto& chart = document.charts.front();
     CHECK(chart.lane_layouts.front().layout == expected.layout);
     CHECK(is_same_input(chart.input_profile, expected.input));
@@ -157,7 +160,9 @@ void check_catalog_document(const wormedit::song_document_t& document,
 
 void check_catalog_document_valid(const wormedit::song_document_t& document) {
     const auto& chart = document.charts.front();
-    CHECK((chart.lane_layouts.front().layout.lanes.size() <= 10 || chart.input_profile.bindings.empty()));
+    const auto lanes = chart.lane_layouts.front().layout.lanes.size();
+    const auto bindings = chart.input_profile.bindings.size();
+    CHECK((lanes <= 10 || bindings == 0 || bindings == lanes));
     CHECK(wormedit::validate_document(document).empty());
 }
 

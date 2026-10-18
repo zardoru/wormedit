@@ -83,7 +83,7 @@ auto make_initial_document(song_id_t project_id, std::string_view layout_id)
     -> std::optional<song_document_t> {
     const auto* layout = find_new_project_layout(layout_id);
     if (!project_id || !layout) return std::nullopt;
-    auto chart = make_initial_chart(layout->make_profile(),
+    auto chart = make_initial_chart(layout->profile(),
                                     format_family_t::native_project);
     return song_document_t{.id = project_id,
                            .revision = 1,
@@ -107,7 +107,7 @@ auto make_audio_project_document(song_id_t project_id, std::filesystem::path aud
     -> std::optional<song_document_t> {
     const auto* layout = find_new_project_layout(layout_id);
     if (!project_id || !layout || audio_source_path.filename().empty()) return std::nullopt;
-    auto chart = make_initial_chart(layout->make_profile(),
+    auto chart = make_initial_chart(layout->profile(),
                                     format_family_t::native_project);
     if (!extend_chart_to_audio_end(chart, stream)) return std::nullopt;
     auto resource_name = audio_source_path.filename().generic_string();

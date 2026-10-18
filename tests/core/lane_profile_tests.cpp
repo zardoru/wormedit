@@ -948,13 +948,24 @@ TEST_CASE("BMSON DP without a gap keeps each left scratch in its own stage and p
 
 namespace {
 void check_catalog(bool condition) { REQUIRE(condition); }
+void check_project_lane_keys(const new_project_layout_descriptor_t& entry,
+                             const lane_input_profile_t& profile) {
+    if (entry.lane_keys.empty()) {
+        if (profile.layout.lanes.size() > 10) check_catalog(profile.input.bindings.empty());
+        return;
+    }
+    check_catalog(entry.lane_keys.size() == profile.layout.lanes.size());
+    check_catalog(profile.input.bindings.size() == profile.layout.lanes.size());
+    check_catalog(validate_input_profile(profile.layout, profile.input).empty());
+}
+
 void check_project_layout(const new_project_layout_descriptor_t& entry) {
-    const auto profile = entry.make_profile();
+    const auto profile = entry.profile();
     check_catalog(profile.layout.profile_id == entry.id);
     check_catalog(!entry.label.empty());
     check_catalog(!profile.layout.lanes.empty());
     check_catalog(find_new_project_layout(entry.id) == &entry);
-    if (profile.layout.lanes.size() > 10) check_catalog(profile.input.bindings.empty());
+    check_project_lane_keys(entry, profile);
     const auto groups = make_new_project_output_groups(entry, chart_id_t{42});
     check_catalog(groups.size() == entry.default_output_groups.size());
     for (const auto& group : groups) {
@@ -965,7 +976,7 @@ void check_project_layout(const new_project_layout_descriptor_t& entry) {
 }
 }
 
-TEST_CASE("New Project catalog covers all core profiles and unbinds wide layouts", "[core][catalog][D7]") {
+TEST_CASE("New Project catalog covers all core profiles and binds or unbinds wide layouts", "[core][catalog][D7]") {
     std::set<std::string_view> ids;
     for (const auto& entry : new_project_layouts()) {
         check_catalog(ids.insert(entry.id).second);
@@ -990,4 +1001,24 @@ TEST_CASE("StepMania catalog keeps supported step types and default key counts",
     check_catalog(stepmania_key_count("DaNcE-SiNgLe") == 4);
     check_catalog(!stepmania_key_count("unknown"));
     check_catalog(default_stepmania_step_type(9).empty());
+}
+
+TEST_CASE("New Project double-play layouts bind the owner's lane keys left to right", "[core][catalog]") {
+    using enum physical_key_t;
+    const auto keys_of = [](std::string_view id) {
+        const auto profile = find_new_project_layout(id)->profile();
+        auto lanes = profile.layout.lanes;
+        std::ranges::sort(lanes, {}, &lane_definition_t::display_order);
+        std::vector<physical_key_t> keys;
+        for (const auto& lane : lanes)
+            keys.push_back(std::ranges::find(profile.input.bindings, lane.id, &lane_binding_t::lane)->key);
+        return keys;
+    };
+    CHECK(keys_of("bms-10k-left-outside-right-outside") ==
+          std::vector{digit_1, key_q, digit_2, key_w, digit_3, key_e, key_u, digit_8, key_i, digit_9, key_o, digit_0});
+    CHECK(keys_of("bms-10k-left-outside-right-inside") ==
+          std::vector{digit_1, key_q, digit_2, key_w, digit_3, key_e, key_y, key_u, digit_8, key_i, digit_9, key_o});
+    CHECK(keys_of("osu-mania-18k") ==
+          std::vector{digit_1, digit_2, digit_3, digit_4, key_q, key_w, key_e, key_r, key_f,
+                      digit_7, digit_8, digit_9, digit_0, key_y, key_u, key_i, key_o, key_h});
 }

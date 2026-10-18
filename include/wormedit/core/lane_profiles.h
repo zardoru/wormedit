@@ -193,11 +193,16 @@ struct new_project_output_group_descriptor_t {
     std::string_view relative_output_path;
 };
 struct new_project_layout_descriptor_t {
+    // The layout's profile with lane_keys bound left to right in display order. A layout without
+    // lane_keys keeps its factory bindings; wider than ten lanes, that is none (D7).
+    [[nodiscard]] auto profile() const -> lane_input_profile_t;
+
     std::string_view id;
     std::string_view label;
     lane_input_profile_t (*make_profile)();
     std::span<const new_project_output_group_descriptor_t> default_output_groups;
     std::string_view step_type;
+    std::span<const physical_key_t> lane_keys{};
 };
 // Static descriptors and factories allocate only when a project is constructed.
 [[nodiscard]] auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t>;

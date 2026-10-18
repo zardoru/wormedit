@@ -102,9 +102,14 @@ void render_rows(nk_context* context, const WormUiWorkspaceView& view,
     for (auto i = first; i < std::min(rows.size(), first + page); ++i) {
         const auto& row = view.command_menu_rows[rows[i]];
         nk_layout_row_dynamic(context, 26, 1);
+        const auto bounds = nk_widget_bounds(context);
         if (!row.enabled) nk_widget_disable_begin(context);
         nk_bool selected = state.selected == i;
         const bool clicked = nk_selectable_label(context, row.label, NK_TEXT_LEFT, &selected);
+        const auto& style = context->style.selectable;
+        wormedit::ui::chrome::draw_row_shortcut(context, bounds, row.shortcut,
+            state.selected == i ? style.text_normal_active
+                                : wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted));
         if (!row.enabled) nk_widget_disable_end(context);
         if (clicked && row.enabled) activate_command(view, rows[i], action);
     }

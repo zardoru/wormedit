@@ -73,15 +73,19 @@ auto key_name(std::uint16_t usage) -> std::string {
     }
 }
 
-auto chord_list_text(const std::vector<shortcut_chord_t>& chords,
-                     shortcut_primary_modifier_t primary) -> std::string {
-    if (chords.empty()) return "Unbound";
+auto joined_chord_text(const std::vector<shortcut_chord_t>& chords,
+                       shortcut_primary_modifier_t primary) -> std::string {
     std::string text;
     for (std::size_t index = 0; index < chords.size() && index < max_chords_shown; ++index) {
         if (index != 0) text += ", ";
         text += shortcut_chord_text(chords[index], primary);
     }
     return text;
+}
+
+auto chord_list_text(const std::vector<shortcut_chord_t>& chords,
+                     shortcut_primary_modifier_t primary) -> std::string {
+    return chords.empty() ? "Unbound" : joined_chord_text(chords, primary);
 }
 
 auto conflicting_ids(const command_registry_t& registry, shortcut_primary_modifier_t primary)
@@ -147,6 +151,24 @@ auto shortcut_chord_text(shortcut_chord_t chord, shortcut_primary_modifier_t pri
         if (at != std::string::npos) text.replace(at, 5, "⌘+");
     }
     return text;
+}
+
+void command_shortcut_text_t::refresh(const command_registry_t& registry,
+                                      shortcut_primary_modifier_t primary) {
+    const auto unchanged = primary_ == primary && bindings_.size() == registry.commands.size() &&
+        std::ranges::equal(bindings_, registry.commands, {}, {}, &command_t::current_shortcuts);
+    if (unchanged) return;
+    primary_ = primary;
+    bindings_.clear();
+    texts_.clear();
+    for (const auto& command : registry.commands) {
+        bindings_.push_back(command.current_shortcuts);
+        texts_.push_back(joined_chord_text(command.current_shortcuts, primary));
+    }
+}
+
+auto command_shortcut_text_t::text(std::size_t command_index) const noexcept -> const char* {
+    return command_index < texts_.size() ? texts_[command_index].c_str() : "";
 }
 
 auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events) -> shortcut_capture_t {

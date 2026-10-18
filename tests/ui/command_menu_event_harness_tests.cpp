@@ -25,10 +25,10 @@ struct fixture_t {
     fixture_t() {
         auto& view = harness.view();
         view.command_menu_count = 4;
-        view.command_menu_rows[0] = {"disabled", "Disabled alpha", false};
-        view.command_menu_rows[1] = {"first", "First alpha", true};
-        view.command_menu_rows[2] = {"second", "Second beta", true};
-        view.command_menu_rows[3] = {"last", "Last alpha", true};
+        view.command_menu_rows[0] = {.id = "disabled", .label = "Disabled alpha", .enabled = false};
+        view.command_menu_rows[1] = {.id = "first", .label = "First alpha", .enabled = true};
+        view.command_menu_rows[2] = {.id = "second", .label = "Second beta", .enabled = true};
+        view.command_menu_rows[3] = {.id = "last", .label = "Last alpha", .enabled = true};
         (void)harness.frame();
     }
     void open() {
@@ -102,8 +102,8 @@ TEST_CASE("Command menu can find a registry command beyond the first twenty rows
     fixture_t fixture;
     auto& view = fixture.harness.view();
     view.command_menu_count = 40;
-    for (std::size_t i = 0; i < 39; ++i) view.command_menu_rows[i] = {"other", "Other", true};
-    view.command_menu_rows[39] = {"needle", "Needle late command", true};
+    for (std::size_t i = 0; i < 39; ++i) view.command_menu_rows[i] = {.id = "other", .label = "Other", .enabled = true};
+    view.command_menu_rows[39] = {.id = "needle", .label = "Needle late command", .enabled = true};
     (void)fixture.harness.frame();
     fixture.open(); fixture.type("needle");
     const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);

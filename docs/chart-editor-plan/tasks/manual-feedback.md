@@ -37,16 +37,17 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 
 - **Status:** ready
 - **Value:** High for wide and unusual layouts: today a chart whose layout has no default keys ("No lane keys are bound for this chart") can only be keyed with the mouse, and nobody can change a default they dislike.
-- **Outcome:** A *Lane keys* dialog (Options, and the command menu) shows the chart's lanes by stage with their keys and a physical keyboard map; clicking a lane and pressing a key binds it, Backspace unbinds, presets (Wormedit default, iBMSC interleaved for DP, Custom) fill all lanes at once, and *Apply* saves to this chart or to every chart with the layout. See the [mockup](https://claude.ai/artifact/12NUndRq3jDPrJCzcSfhXN) (owner, 2026-10-18).
+- **Outcome:** A *Lane keys* dialog (Options, and the command menu) shows the current layout's lanes by stage with their keys and a physical keyboard map; clicking a lane and pressing a key binds it, Backspace unbinds, presets (Wormedit default, iBMSC interleaved for DP, Custom) fill all lanes at once, and *Apply* saves the layout's keys to the user's preferences, where every chart with that layout uses them. See the [mockup](https://claude.ai/artifact/12NUndRq3jDPrJCzcSfhXN) (owner, 2026-10-18: "quite beautiful").
+- **Decision (owner, 2026-10-18):** lane keys per layout are the user's personal configuration, global: program preferences keyed by layout profile ID, not chart or project data. A chart's stored `input_profile_t` is only the fallback for a layout the user never customized.
 - **Read first:** the mockup, `include/wormedit/core/document.h` (`input_profile_t`, `lane_binding_t`, `physical_key_hid_usage`), `validate_input_profile` in `include/wormedit/core/lane_profile_switch.h`, `src/sys/shortcut_rows.cpp` (`capture_shortcut_batch`, the existing key capture), `src/ui/nuklear/options_window.cpp`.
-- **Files owned:** a new `src/ui/nuklear/lane_keys_dialog.cpp/.h`, its C++ view and action (per the frontend recipe in [frontend-cxx-views.md](frontend-cxx-views.md)), a core command that replaces a chart's `input_profile_t` through the transaction, the program preferences for per-layout keys, `src/core/command_registry.cpp` (a *Lane Keys…* command), tests, `docs/manual` (layout reference note), this card.
+- **Files owned:** a new `src/ui/nuklear/lane_keys_dialog.cpp/.h`, its C++ view and action (per the frontend recipe in [frontend-cxx-views.md](frontend-cxx-views.md)), `include/wormedit/core/preferences.h` and `src/core/preferences.cpp` (per-layout lane keys), the sys code that resolves a chart's active bindings (`src/sys/compose_view.cpp`, lane key projection), `src/core/command_registry.cpp` (a *Lane Keys…* command), tests, `docs/manual` (layout reference note), this card.
 - **Steps:**
-  1. **STOP:** confirm with the owner where per-layout keys live: the chart (exported with the project) or program preferences (every project), or both as the mockup's *Apply to* suggests.
-  2. Core: a command that sets a chart's input profile, validated by `validate_input_profile`, one Undo step.
+  1. Preferences: a per-layout map from profile ID to ordered physical keys, stored with the program preferences (not Undo history, not the project), validated with `validate_input_profile` against the layout before use.
+  2. Resolution: Compose uses the preference keys for the chart's layout when present, otherwise the chart's own `input_profile_t`. Opened charts and new projects follow the same rule.
   3. Capture: reuse the shortcut capture so only letters and digits bind (Space, Tab, arrows and editing keys are refused with a reason); duplicates inside a stage are flagged before Apply.
-  4. The dialog per the mockup; presets come from `new_project_layout_descriptor_t::lane_keys` and the factory profiles.
-  5. Event-harness tests: bind, unbind, duplicate refusal, preset, Apply scope.
-- **Invariants:** Bindings are physical keys; changing them never touches chart data or lanes.
+  4. The dialog per the mockup; presets come from `new_project_layout_descriptor_t::lane_keys` and the factory profiles. *Reset to preset* drops the preference so the layout's defaults apply again.
+  5. Event-harness tests: bind, unbind, duplicate refusal, preset, a second chart with the same layout picking up the keys.
+- **Invariants:** Bindings are physical keys; changing them never touches chart data, lanes or the project's dirty state.
 - **Reject/failure behavior:** Cancel or Escape leaves bindings unchanged; an invalid profile is never applied.
 - **Verify:** GATE; event harness; isolated Xvfb capture compared with the mockup.
 - **Out of scope:** MIDI or second-keyboard input; per-stage focus switching for 48K.
@@ -80,3 +81,17 @@ T-700 (iBMSC/BMSE paste) is in [editing-commands.md](editing-commands.md).
 - **Reject/failure behavior:** A manual with Asciidoctor warnings fails the build.
 - **Verify:** `cmake --build build --target manual`; `cmake --install build --prefix <tmp>` produces `bin/manual/index.html` and its images.
 - **Out of scope:** A `--no-manual` flag on the Windows script (the script already passes `CMAKE_ARGS`; add the flag once the in-progress Windows packaging work lands).
+
+## T-706 Show each command's shortcut in the command palette
+
+- **Status:** done (2026-10-18; owner: "Yes, do add the shortcuts")
+- **Outcome:** Every row of the command palette shows the command's current keys right-aligned in platform form (`Ctrl+Shift+Z`, `⌘` on macOS), nothing for unbound commands, following rebinds.
+- **Read first:** `src/sys/shortcut_rows.h`, `src/ui/nuklear/command_menu.cpp`, `src/ui/nuklear/chrome.h` (`menu_item`).
+- **Files owned:** `src/sys/shortcut_rows.h/.cpp` (`command_shortcut_text_t`), `src/sys/application.cpp` (`build_command_menu_view`), `src/ui/frontend/workspace.h` (`WormUiCommandMenuRow::shortcut`), `src/ui/nuklear/chrome.h` (`draw_row_shortcut`, shared with menus), `src/ui/nuklear/command_menu.cpp`, `tests/sys/shortcut_rows_tests.cpp`, `tests/ui/command_menu_event_harness_tests.cpp`, `docs/manual/chapters/command-palette.adoc`, this card.
+- **Steps:**
+  1. Cache the chord text per command, reformatted only when a binding or the platform modifier changes, because the palette view is rebuilt every frame.
+  2. Draw it with the same right-aligned helper the menu bar uses.
+- **Invariants:** No steady-state per-frame allocation; palette search still matches names only.
+- **Reject/failure behavior:** Not applicable.
+- **Verify:** GATE; `wormedit_core_tests "[shortcut-rows]"`; isolated Xvfb capture of the palette.
+- **Out of scope:** Searching by key.

@@ -30,6 +30,20 @@ void build_shortcut_rows_view(const command_registry_t& registry,
 [[nodiscard]] auto shortcut_chord_text(shortcut_chord_t chord, shortcut_primary_modifier_t primary)
     -> std::string;
 
+// Each registry command's chords as platform text ("Ctrl+Shift+Z", empty when unbound), for views
+// rebuilt every frame such as the command palette. It reformats only when a binding or the primary
+// modifier changes, so steady-state frames allocate nothing.
+class command_shortcut_text_t {
+  public:
+    void refresh(const command_registry_t& registry, shortcut_primary_modifier_t primary);
+    [[nodiscard]] auto text(std::size_t command_index) const noexcept -> const char*;
+
+  private:
+    std::vector<std::vector<shortcut_chord_t>> bindings_;
+    std::optional<shortcut_primary_modifier_t> primary_;
+    std::vector<std::string> texts_;
+};
+
 // Result of one frame's key batch while a capture is waiting. Escape without modifiers cancels.
 struct shortcut_capture_t {
     bool cancel{};

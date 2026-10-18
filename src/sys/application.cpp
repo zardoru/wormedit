@@ -984,13 +984,17 @@ void consume_menu_shortcut(WormUiWorkspaceAction& action,
     action.shortcut_event_count = retained;
 }
 
-void build_command_menu_view(const wormedit::command_registry_t& registry, WormUiWorkspaceView& view) {
+void build_command_menu_view(const wormedit::command_registry_t& registry,
+                             wormedit::sys::command_shortcut_text_t& shortcuts,
+                             WormUiWorkspaceView& view) {
+    shortcuts.refresh(registry, application_primary_modifier());
     view.command_menu_count = std::min(registry.commands.size(),
         static_cast<std::size_t>(WORM_UI_COMMAND_MENU_CAPACITY));
     for (std::size_t i = 0; i < view.command_menu_count; ++i) {
         const auto& command = registry.commands[i];
         view.command_menu_rows[i] = {command.definition.id.value.c_str(),
                                      command.definition.display_name.c_str(),
+                                     shortcuts.text(i),
                                      command.definition.enabled};
     }
 }
@@ -2153,6 +2157,8 @@ struct application_t::implementation_t {
     } preferences;
     application_command_state_t commands{};
     command_registry_t command_registry{};
+    // Shortcut text the command palette shows beside each command.
+    wormedit::sys::command_shortcut_text_t command_menu_shortcuts{};
 
     struct editor_views_t {
         std::string close_feedback{};
@@ -4728,7 +4734,7 @@ struct application_t::implementation_t {
         refresh_application_command_states(command_registry, session.history, session.workspace,
                                            views.compose_interaction_state, commands);
         wormedit::sys::build_menu_commands_view(command_registry, flattened.view);
-        build_command_menu_view(command_registry, flattened.view);
+        build_command_menu_view(command_registry, command_menu_shortcuts, flattened.view);
 #if defined(WORMEDIT_HAS_MACOS_MENU)
         wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif

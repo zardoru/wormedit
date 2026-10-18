@@ -197,3 +197,16 @@ TEST_CASE("projection shows the primary modifier as the platform key", "[sys][sh
     build_shortcut_rows_view(registry, shortcut_primary_modifier_t::meta, projection);
     CHECK(std::string(projection.rows[0].chord) == "Shift+⌘+Z");
 }
+
+TEST_CASE("palette shortcut text follows bindings and is empty when unbound", "[sys][shortcut-rows]") {
+    command_registry_t registry;
+    register_unbound_and_bound(registry);
+    wormedit::sys::command_shortcut_text_t shortcuts;
+    shortcuts.refresh(registry, shortcut_primary_modifier_t::control);
+    CHECK(std::string(shortcuts.text(0)).empty());
+    CHECK(std::string(shortcuts.text(1)) == "Ctrl+S");
+    CHECK(std::string(shortcuts.text(2)).empty());
+    registry.commands[0].current_shortcuts = {shortcut_chord_t{.key = shortcut_key_t::q, .modifiers = 0}};
+    shortcuts.refresh(registry, shortcut_primary_modifier_t::control);
+    CHECK(std::string(shortcuts.text(0)) == "Q");
+}

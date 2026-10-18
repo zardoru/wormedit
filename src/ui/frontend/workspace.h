@@ -50,6 +50,7 @@ enum { WORM_UI_COMMAND_MENU_CAPACITY = 512 };
 typedef struct WormUiCommandMenuRow {
     const char* id;
     const char* label;
+    const char* shortcut; /* platform chord text; empty when the command has no key */
     bool enabled;
 } WormUiCommandMenuRow;
 

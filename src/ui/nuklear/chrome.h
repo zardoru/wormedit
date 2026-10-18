@@ -121,6 +121,19 @@ inline void button_feedback(nk_context* context, struct nk_rect bounds, bool sel
     }
 }
 
+// Draws a chord right-aligned inside a row already laid out at `bounds` (menus, the command palette).
+inline void draw_row_shortcut(nk_context* context, struct nk_rect bounds, const char* shortcut_text,
+                              struct nk_color tint) {
+    if (!shortcut_text || !shortcut_text[0]) return;
+    const auto* font = context->style.font;
+    const auto length = static_cast<int>(std::strlen(shortcut_text));
+    const float width = font->width(font->userdata, font->height, shortcut_text, length);
+    nk_draw_text(nk_window_get_canvas(context),
+                 nk_rect(bounds.x + bounds.w - width - metrics::gap_medium,
+                         bounds.y + (bounds.h - font->height) * 0.5f, width, font->height),
+                 shortcut_text, length, font, nk_rgba(0, 0, 0, 0), tint);
+}
+
 // A menu row reserves the same check gutter even when unchecked. Shortcut text is
 // a separate right-aligned draw, so labels and remapped chords keep their alignment.
 inline auto menu_item(nk_context* context, const char* label, const char* shortcut_text,
@@ -139,16 +152,8 @@ inline auto menu_item(nk_context* context, const char* label, const char* shortc
         nk_stroke_line(canvas, x, y, x + 4.0f, y + 4.0f, 1.5f, check_tint);
         nk_stroke_line(canvas, x + 4.0f, y + 4.0f, x + 11.0f, y - 4.0f, 1.5f, check_tint);
     }
-    if (shortcut_text && shortcut_text[0]) {
-        const auto* font = context->style.font;
-        const auto length = static_cast<int>(std::strlen(shortcut_text));
-        const float width = font->width(font->userdata, font->height, shortcut_text, length);
-        auto tint = color(UiColor::text_muted);
-        tint = nk_rgb_factor(tint, style.color_factor_text);
-        nk_draw_text(canvas, nk_rect(bounds.x + bounds.w - width - metrics::gap_medium,
-                     bounds.y + (bounds.h - font->height) * 0.5f, width, font->height),
-                     shortcut_text, length, font, nk_rgba(0, 0, 0, 0), tint);
-    }
+    draw_row_shortcut(context, bounds, shortcut_text,
+                      nk_rgb_factor(color(UiColor::text_muted), style.color_factor_text));
     if (!enabled) nk_widget_disable_end(context);
     if (chosen && enabled && close_popup) nk_popup_close(context);
     return chosen && enabled;

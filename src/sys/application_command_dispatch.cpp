@@ -411,7 +411,10 @@ auto clipboard_commands(command_context_t& context) -> command_result_t {
             notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     if (kind == command_kind_t::edit_cut)
         context.environment.editor.commands.project.timing_recipe.kiai_selected_head = 0;
-    context.environment.editor.commands.project.clipboard.chart_clipboard = std::move(*copied);
+    auto& commands = context.environment.editor.commands;
+    commands.project.clipboard.chart_clipboard = std::move(*copied);
+    commands.project.clipboard.system_text_at_copy =
+        commands.services.system_clipboard_text ? commands.services.system_clipboard_text() : "";
     auto outcome = compose_action_outcome_t::from(
         kind == command_kind_t::edit_cut ? "Selection cut." : "Selection copied.",
         notification_severity_t::success, notification_source_t::edit,

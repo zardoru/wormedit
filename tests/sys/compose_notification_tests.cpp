@@ -8,6 +8,7 @@
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/notifications.h>
 #include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/formats/bms.h>
 
 #include <array>
 #include <bit>
@@ -717,4 +718,77 @@ TEST_CASE("Compose input binds the workspace before publishing mutation feedback
     check_mixed_input(fixture.is_workspace_current_when_feedback_posted);
     check_mixed_input(fixture.workspace.document_revision == fixture.history.document.revision);
     check_mixed_input(fixture.history.undo.size() == 1);
+}
+
+namespace {
+struct bms_editor_paste_fixture_t {
+    document_history_t history;
+    editor_interaction_state_t state;
+    application_command_state_t application;
+    std::string system_clipboard;
+
+    bms_editor_paste_fixture_t() {
+        const std::string_view source = "#PLAYER 1\r\n#BPM 120\r\n#WAV01 a.ogg\r\n#00111:01\r\n#00116:01\r\n#00118:01\r\n#00119:01\r\n";
+        auto parsed = parse_bms_bytes(std::as_bytes(std::span{source}),
+            {.file_extension = ".bme", .lane_profile_id = "bme-7k-outside-scratch"});
+        REQUIRE(parsed.value.song);
+        history = document_history_t::from(std::move(*parsed.value.song));
+        state.chart = history.document.charts.front().id;
+        application.services.system_clipboard_text = [this] { return system_clipboard; };
+    }
+    auto paste(std::string& status) -> bool {
+        const auto pasted = begin_compose_paste(application, history, state, status);
+        UNSCOPED_INFO(status);
+        return pasted;
+    }
+    auto pasted_object_count() const -> std::size_t {
+        return application.project.clipboard.paste_session->clipboard.objects.size();
+    }
+};
+
+constexpr std::string_view ibmsc_one_note = "iBMSC Clipboard Data\r\n6 0 10000 0 0 0";
+} // namespace
+
+TEST_CASE("Paste decodes iBMSC text from the system clipboard",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    fixture.system_clipboard = ibmsc_one_note;
+    std::string status;
+    REQUIRE(fixture.paste(status));
+    CHECK(fixture.pasted_object_count() == 1);
+    CHECK(status.starts_with("Pasting BMS editor data"));
+}
+
+TEST_CASE("Paste keeps wormedit's own copy until the system clipboard changes",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    fixture.system_clipboard = ibmsc_one_note;
+    fixture.application.project.clipboard.chart_clipboard = chart_clipboard_t{};
+    fixture.application.project.clipboard.system_text_at_copy = std::string{ibmsc_one_note};
+    std::string status;
+    REQUIRE(fixture.paste(status));
+    CHECK(fixture.pasted_object_count() == 0);
+
+    fixture.system_clipboard = std::string{ibmsc_one_note} + "\r\n6 48 10000 0 0 0";
+    REQUIRE(fixture.paste(status));
+    CHECK(fixture.pasted_object_count() == 2);
+}
+
+TEST_CASE("Paste ignores unrelated system clipboard text",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    fixture.system_clipboard = "some notes from a text editor";
+    std::string status;
+    CHECK_FALSE(fixture.paste(status));
+    CHECK(status == "Paste requires a copied selection and no pending gesture.");
+}
+
+TEST_CASE("Paste reports BMS editor text it cannot decode without pasting",
+          "[unit][sys][compose-notification][bms-clipboard]") {
+    bms_editor_paste_fixture_t fixture;
+    fixture.system_clipboard = "iBMSC Clipboard Data\r\n6 0 990000 0 0 0";
+    std::string status;
+    CHECK_FALSE(fixture.paste(status));
+    CHECK(status.starts_with("BMS editor clipboard was not pasted: "));
+    CHECK_FALSE(fixture.application.project.clipboard.paste_session);
 }

@@ -97,6 +97,7 @@ auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& env
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             running = false;
+        if (event.type == SDL_EVENT_CLIPBOARD_UPDATE) environment.system_clipboard_changed = true;
         const bool sound_drop = collect_dropped_resources(event, window.handle, workspace,
                                                       history, sound_drop_transaction, pending_resource_batches);
         const bool project_chart_drop = !sound_drop && offer_dropped_chart_project(

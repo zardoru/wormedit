@@ -248,6 +248,21 @@ Implementation review (2026-10-04): Panel created and eight inspector lane toggl
 - **Verify:** `ctest --test-dir build --output-on-failure -R 'bms_clipboard'`.
 - **Out of scope:** encoding wormedit selections into BMSE/iBMSC text (add a card after this one lands).
 
+## T-700 Paste BMSE and iBMSC text from the system clipboard
+
+- **Status:** done (2026-10-18; found while writing the manual: T-63's decoder had no caller, so Paste never read the system clipboard)
+- **Outcome:** with BMSE 3.0, BMSE legacy, iBMSC or iBMSC xNT text on the system clipboard, Paste (Ctrl/Cmd+V) in Compose decodes it against the lane layout at the cursor and opens the ordinary paste preview; Enter or a click commits it as one Undo step.
+- **Read first:** T-63 above, `include/wormedit/formats/bms_clipboard.h`, `src/sys/compose_view.cpp` (`begin_compose_paste`).
+- **Files owned:** `include/wormedit/formats/bms_clipboard.h`, `src/formats/bms_clipboard.cpp` (`is_bms_editor_clipboard_text`), `src/sys/compose_view.h/.cpp`, `src/sys/application_command_dispatch.cpp` (copy-time snapshot), `src/sys/application.cpp`, `src/sys/application_edit_inputs.h`, `src/sys/application_frame_services.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/formats/bms_clipboard_tests.cpp`, this card.
+- **Steps:**
+  1. Recognize the four headers on the first line, whatever its line ending, so text with the wrong line endings reports the decoder's error instead of being ignored.
+  2. Paste prefers system-clipboard BMS editor text only when it differs from the text that was on the system clipboard at wormedit's own last Copy or Cut; otherwise the internal clipboard pastes as before.
+  3. Keep Paste enabled while the system clipboard holds BMS editor text, refreshed from `SDL_EVENT_CLIPBOARD_UPDATE` instead of reading the clipboard every frame.
+- **Invariants:** wormedit's own Copy/Cut/Paste behavior is unchanged; the decoder's limits and exact rows (T-63) apply; resources resolve through the chart's BMS `#WAV` identities in base 36.
+- **Reject/failure behavior:** undecodable BMS editor text reports "BMS editor clipboard was not pasted: <reason>" and starts no preview; unrelated system clipboard text is ignored; a chart without a lane profile asks for one.
+- **Verify:** GATE; `wormedit_frame_timing_tests "[bms-clipboard]"` (four cases) and the header test in `bms_clipboard_tests.cpp`; isolated Xvfb paste of iBMSC text into the manual tutorial project, preview and commit inspected.
+- **Out of scope:** writing BMSE/iBMSC text on Copy; base-62 or base-16 `#WAV` numbering (the decoder supports them, but the document does not yet record a chart's numbering, so Paste uses base 36).
+
 ## T-64 Decide the remaining note-presentation questions
 
 - **Status:** done (user decision 2026-09-30: question 8 → ship Pump 5K and Solo 6K; question 10 → one semantic layer per note (no change); question 11 → beatmania-style DP5/DP7 with scratches outside, plus a separate scratchless osu!mania-style 10K; question 14 → StepMania/ITG snap palette. Follow-ups: T-284, T-285, T-286.)

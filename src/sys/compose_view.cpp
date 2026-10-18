@@ -18,6 +18,7 @@
 #include <wormedit/core/snap.h>
 #include <wormedit/core/rational.h>
 #include <wormedit/core/lane_profile_switch.h>
+#include <wormedit/formats/bms_clipboard.h>
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
 #include <wormedit/core/semantic_layer_editor.h>
@@ -283,27 +284,64 @@ auto revise_compose_paste(application_command_state_t& application_state,
     return true;
 }
 
+namespace {
+// BMSE or iBMSC text copied after wormedit's own last Copy, if the system clipboard holds any.
+auto external_bms_clipboard_text(const application_command_state_t& application_state)
+    -> std::optional<std::string> {
+    const auto& read = application_state.services.system_clipboard_text;
+    if (!read) return std::nullopt;
+    auto text = read();
+    if (!wormedit::is_bms_editor_clipboard_text(text)) return std::nullopt;
+    const auto& clipboard = application_state.project.clipboard;
+    if (clipboard.chart_clipboard && text == clipboard.system_text_at_copy) return std::nullopt;
+    return text;
+}
+
+// Decodes other editors' text against the lane layout at the cursor.
+auto decode_external_clipboard(std::string_view text, const wormedit::song_document_t& document,
+    const wormedit::chart_document_t& chart, wormedit::local_position_t cursor)
+    -> wormedit::chart_clipboard_outcome_t {
+    const auto* segment = wormedit::active_lane_layout_segment(chart, cursor);
+    if (!segment && chart.lane_layouts.empty())
+        return std::unexpected(std::string{"Choose a lane profile before pasting BMS editor data."});
+    const auto& layout = segment ? segment->layout : chart.lane_layouts.front().layout;
+    return wormedit::parse_bms_chart_clipboard(text, document, chart, layout);
+}
+} // namespace
+
 auto begin_compose_paste(application_command_state_t& application_state,
     const wormedit::document_history_t& history, const wormedit::editor_interaction_state_t& state,
     std::string& status) -> bool {
     const auto& document = history.document;
-    if (!application_state.project.clipboard.chart_clipboard || state.is_pending()) {
-        status = "Paste requires a copied selection and no pending gesture.";
-        return false;
-    }
-    application_command_state_t::paste_session_t session;
-    session.clipboard = *application_state.project.clipboard.chart_clipboard;
-    application_state.project.compose_gesture.note_paint_mode_active = false;
-    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
     const auto* source = document.find_chart(state.chart);
     if (!source) {
         application_state.project.clipboard.paste_session.reset();
         status = "The paste chart is unavailable.";
         return false;
     }
+    const auto external = state.is_pending() ? std::nullopt
+                                             : external_bms_clipboard_text(application_state);
+    if ((!external && !application_state.project.clipboard.chart_clipboard) || state.is_pending()) {
+        status = "Paste requires a copied selection and no pending gesture.";
+        return false;
+    }
+    application_command_state_t::paste_session_t session;
+    if (external) {
+        auto decoded = decode_external_clipboard(*external, document, *source, state.cursor);
+        if (!decoded) {
+            status = "BMS editor clipboard was not pasted: " + decoded.error();
+            return false;
+        }
+        session.clipboard = std::move(*decoded);
+    } else {
+        session.clipboard = *application_state.project.clipboard.chart_clipboard;
+    }
+    application_state.project.compose_gesture.note_paint_mode_active = false;
+    application_state.project.compose_gesture.semantic_layer_paint_mode_active = false;
     build_compose_paste_preview(session, history, *source, state.cursor);
     application_state.project.clipboard.paste_session = std::move(session);
-    status = "Paste preview: click or Enter to commit; Escape to cancel.";
+    status = external ? "Pasting BMS editor data: click or Enter to commit; Escape to cancel."
+                      : "Paste preview: click or Enter to commit; Escape to cancel.";
     return true;
 }
 

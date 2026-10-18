@@ -716,6 +716,10 @@ using record_key_t = std::tuple<object_kind_t, std::size_t, std::size_t,
 
 } // namespace
 
+auto is_bms_editor_clipboard_text(std::string_view text) -> bool {
+    return detect_grammar(text.substr(0, text.find_first_of("\r\n"))).has_value();
+}
+
 auto parse_bms_chart_clipboard(std::string_view text, const song_document_t& target_document,
                                const chart_document_t& target_chart,
                                const lane_layout_t& target_layout,

@@ -4,10 +4,12 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <string>
+#include <string_view>
 #include <utility>
 
 namespace {
@@ -427,4 +429,25 @@ TEST_CASE("bms_clipboard decimal reduction precedes magnitude overflow", "[forma
     REQUIRE(bpm);
     CHECK((std::get<wormedit::bpm_event_t>(bpm->payload).beats_per_minute ==
            wormedit::signed_rational_t{INT64_MAX, 1}));
+}
+
+TEST_CASE("bms_clipboard recognizes the four editor headers whatever their line ending",
+          "[formats]") {
+    struct sample_t {
+        std::string_view text;
+        bool recognized;
+    };
+    constexpr std::array samples{
+        sample_t{"BMSE3.0 ClipBoard Object Data Format\r\n", true},
+        sample_t{"BMSE ClipBoard Object Data Format\n", true},
+        sample_t{"iBMSC Clipboard Data\r\n6 0 10000 0 0 0", true},
+        sample_t{"iBMSC Clipboard Data xNT", true},
+        sample_t{"", false},
+        sample_t{"iBMSC Clipboard Data plus", false},
+        sample_t{"#00111:01", false},
+    };
+    for (const auto& sample : samples) {
+        INFO(sample.text);
+        CHECK(wormedit::is_bms_editor_clipboard_text(sample.text) == sample.recognized);
+    }
 }

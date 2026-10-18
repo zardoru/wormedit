@@ -504,6 +504,8 @@ struct application_command_services_t {
     std::function<bool(wormedit::chart_id_t, std::span<const std::uint64_t>)> transport_set_bgm_mix;
     std::function<std::string(external_player_action_t)> external_player;
     std::function<std::string()> transport_cancel_restore;
+    // Current system clipboard text, or empty when unavailable.
+    std::function<std::string()> system_clipboard_text;
 };
 
 struct bgm_lane_mix_state_t {
@@ -659,6 +661,8 @@ struct application_command_state_t {
     } preferences;
     // Resolved from display preferences and the field skin, outside the project lifetime.
     wormedit::editor_scratch_presentation_t scratch_on_right;
+    // Whether the system clipboard holds BMSE or iBMSC text; refreshed when the clipboard changes.
+    bool system_clipboard_has_bms_editor_text{};
 
     struct project_t {
         compose_auditions_t auditions;
@@ -677,6 +681,9 @@ struct application_command_state_t {
 
         struct clipboard_state_t {
             std::optional<wormedit::chart_clipboard_t> chart_clipboard;
+            // System clipboard text at wormedit's last Copy or Cut. BMSE or iBMSC text pastes
+            // instead of chart_clipboard only once it differs, so stale external text never wins.
+            std::string system_text_at_copy;
             std::optional<paste_session_t> paste_session;
         } clipboard;
 

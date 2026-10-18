@@ -114,6 +114,7 @@
 #include <wormedit/core/viewport_input.h>
 #include <wormedit/core/virtual_canvas.h>
 #include <wormedit/core/workspace.h>
+#include <wormedit/formats/bms_clipboard.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/native_project_storage.h>
@@ -726,7 +727,9 @@ auto play_stop_available(const wormedit::chart_document_t* chart,
 
 auto paste_target_available(bool compose_ready, bool pending,
                             const application_command_state_t& state) -> bool {
-    return compose_ready && !pending && state.project.clipboard.chart_clipboard.has_value();
+    return compose_ready && !pending &&
+           (state.project.clipboard.chart_clipboard.has_value() ||
+            state.system_clipboard_has_bms_editor_text);
 }
 
 void refresh_semantic_membership_commands(wormedit::command_registry_t& registry,
@@ -1195,6 +1198,14 @@ auto has_fresh_shortcut_key(const WormUiWorkspaceAction& action) -> bool {
 
 
 
+
+auto read_system_clipboard_text() -> std::string {
+    if (!SDL_HasClipboardText()) return {};
+    char* text = SDL_GetClipboardText();
+    std::string copied = text ? text : "";
+    SDL_free(text);
+    return copied;
+}
 
 auto can_offer_audio_project_drop(bool session_loaded, bool fresh_blank_project,
                                   const wormedit::document_history_t& history) -> bool {
@@ -2176,6 +2187,8 @@ struct application_t::implementation_t {
         std::function<tap_timing_clock_t()> tap_clock;
         timing_grid_state_t timing_grid{};
         metadata_drop_state_t metadata_drop{};
+        // Starts true so the first frame reads the clipboard the application started with.
+        bool system_clipboard_changed{true};
         std::uint64_t compose_viewport_last_ticks{};
         project_portability_notice_t portability_notice{};
     } views;
@@ -2255,7 +2268,8 @@ struct application_t::implementation_t {
                 session.project_identity.asset_base};
     }
     auto frontend_inputs() -> frontend_event_inputs_t {
-        return {document_inputs(), views.metadata_drop, session.project_identity};
+        return {document_inputs(), views.metadata_drop, session.project_identity,
+                views.system_clipboard_changed};
     }
 
     void post_project_feedback(wormedit::notification_severity_t severity,
@@ -4033,6 +4047,7 @@ struct application_t::implementation_t {
         commands.services.open_sound_picker = worm_ui_frontend_open_sound_picker;
         commands.services.compose_dock_command = worm_ui_frontend_compose_dock_command;
         commands.services.open_project_export = worm_ui_frontend_open_project_export;
+        commands.services.system_clipboard_text = read_system_clipboard_text;
         commands.services.compose_left_dock_pixels = worm_ui_frontend_compose_left_dock_pixels;
         commands.services.compose_bgm_lane_width = worm_ui_frontend_compose_bgm_lane_width;
         preferences.program_preferences = load_program_preferences_runtime();
@@ -4424,6 +4439,14 @@ struct application_t::implementation_t {
                     views.pending_close, close_target_t::application,
                     preferences.program_preferences.preferences.general.confirm_unsaved_close);
         }
+        refresh_system_clipboard_state();
+    }
+
+    void refresh_system_clipboard_state() {
+        if (!views.system_clipboard_changed) return;
+        views.system_clipboard_changed = false;
+        commands.system_clipboard_has_bms_editor_text =
+            wormedit::is_bms_editor_clipboard_text(read_system_clipboard_text());
     }
 
     void import_frame_drops() {

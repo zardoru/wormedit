@@ -81,5 +81,7 @@ struct frontend_event_inputs_t {
     document_edit_inputs_t document;
     metadata_drop_state_t& metadata_drop;
     project_identity_t& project;
+    // Set when SDL reports a system clipboard change; the application clears it after refreshing.
+    bool& system_clipboard_changed;
 };
 } // namespace wormedit::sys

@@ -160,6 +160,15 @@ it in new code even before the card lands.
   the `documentation.ceremony_ratchet` test fails when a count grows. Lower the maximum in the same
   commit that lowers a count; raising one needs the owner's approval. When an audit finds a new
   ceremony pattern, add a row.
+- **A migration finishes in its card, or it ratchets** (owner, 2026-10-18). "Convert it when you
+  touch it" is a judgment call that people resolve differently, so both forms live on and new code
+  copies whichever is nearby. A migration whose sites can be counted converts every site in one
+  card (or one ordered lane of cards), and that card adds a ratchet row whose maximum ends at the
+  remaining legitimate count. A migration too large for that may go gradually only if a ratchet
+  row can detect the old form: new code cannot add it, and the count only falls. A migration no
+  regex can detect is not ready to be gradual; sharpen the old form's definition or schedule a
+  closing card. The "Frontend boundary" migration below predates this rule and has no ratchet
+  yet; whether it gets one is an open owner decision.
 
 ## Tests (owner, 2026-10-15)
 
@@ -232,4 +241,4 @@ it in new code even before the card lands.
 vocabularies translated by hand? 4. A query that should be a member? 5. A local outcome or result
 type, or a failure builder? 6. State with no owner? 7. A fact written in two places, or a list
 position crossing the frontend boundary? 8. A context unpacked and rebuilt? 9. A name breaking the table above?
-10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")?
+10. Hand-rolled code a dependency provides? 11. Background work with its own generation, in-flight or poll/wait plumbing instead of the async shell? 12. A third copy of a skeleton instead of a shared runner? 13. A scaffold without a removal card? 14. A ratchet count raised? 15. A core edit or command surrounded by lifecycle, stamp, transaction or result plumbing that a shared runner should own, or a change to a runner without updating `docs/architecture.md`? 16. A new view surface or action payload written as a `WormUi*` C struct instead of C++ types, or a reworked C-struct surface left unconverted when the conversion was contained (see "Frontend boundary")? 17. A migration left half done with no ratchet row holding the old form's count?

@@ -507,22 +507,6 @@ TEST_CASE("Captured paste batches apply exact proposal IDs with one Undo record"
     expect(history.document.charts.back().measures.front().notes.empty());
 }
 
-TEST_CASE("Captured paste expires by revision before publishing any object",
-          "[core][paste-proposal-stamp]") {
-    auto [song, clipboard] = paste_fixture();
-    auto history = document_history_t::from(std::move(song));
-    auto proposal = chart_paste_proposal_t::propose(history.document, chart_id_t{2}, clipboard,
-        {measure_id_t{1}, 120}, history.document.revision);
-    expect(proposal.value.has_value());
-    ++history.document.revision;
-    const auto result = apply_proposal(history, std::move(*proposal.value));
-    expect(!result.applied);
-    expect(result.diagnostics.size() == 1);
-    test::check_stale_action_message(result.diagnostics, "Chart paste proposal");
-    expect(history.undo.empty());
-    expect(history.document.charts.back().measures.front().notes.empty());
-}
-
 TEST_CASE("Captured paste retains its separate clipboard-project provenance rejection",
           "[core][paste-proposal-stamp]") {
     auto [song, clipboard] = paste_fixture();

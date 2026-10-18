@@ -27,6 +27,8 @@ void check_stale_channel_outcome(const channel_map_proposal_outcome_t& outcome) 
     REQUIRE_FALSE(outcome.value);
     REQUIRE(outcome.diagnostics.size() == 1);
     test::check_stale_action_message(outcome.diagnostics.front().message, "Channel-map edit");
+    CHECK(outcome.diagnostics.front().issue == channel_map_issue_t::stale_revision);
+    CHECK(outcome.diagnostics.front().code == diagnostic_code_t::invalid_binding);
 }
 
 auto channel_song() -> song_document_t {
@@ -323,21 +325,6 @@ TEST_CASE("Sealed channel-map stamp changes stay tamper errors before staleness"
     CHECK(result.payload.issue == channel_map_issue_t::invalid_replacement);
     CHECK(result.payload.message == "Channel-map preview data changed after proposal.");
     CHECK(result.command.diagnostics.empty());
-    CHECK(history.undo.empty());
-}
-
-TEST_CASE("Channel-map diagnostics own the existing proposal failure message",
-          "[unit][core][channel-map][proposal-stamp]") {
-    auto history = document_history_t::from(channel_song());
-    const auto& chart = history.document.charts.front();
-    const auto change = replacement(chart.lane_layouts.front().layout.lanes.front(), "1A");
-    const auto proposal = channel_map_proposal_t::propose(history.document, history.document.revision + 1,
-        chart.id, chart.lane_layouts.front().id, std::span{&change, 1});
-    REQUIRE(proposal.diagnostics.size() == 1);
-    CHECK_FALSE(proposal.value);
-    test::check_stale_action_message(proposal.diagnostics.front().message, "Channel-map edit");
-    CHECK(proposal.diagnostics.front().issue == channel_map_issue_t::stale_revision);
-    CHECK(proposal.diagnostics.front().code == diagnostic_code_t::invalid_binding);
     CHECK(history.undo.empty());
 }
 

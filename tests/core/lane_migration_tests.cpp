@@ -29,6 +29,7 @@ void check_lane_staleness(const lane_migration_proposal_outcome_t& outcome) {
     REQUIRE_FALSE(outcome.value);
     REQUIRE(outcome.diagnostics.size() == 1);
     test::check_stale_action_message(outcome.diagnostics.front().message, "Lane migration");
+    CHECK(outcome.diagnostics.front().issue == lane_migration_issue_t::stale_revision);
 }
 
 
@@ -619,20 +620,6 @@ TEST_CASE("Sealed lane migration stamp changes stay tamper errors before stalene
     CHECK(result.payload.issue == lane_migration_issue_t::invalid_mapping);
     CHECK(result.payload.message == "Lane migration preview data was changed after proposal.");
     CHECK(result.command.diagnostics.empty());
-    CHECK(history.undo.empty());
-}
-
-TEST_CASE("Lane migration diagnostics own the existing proposal failure message",
-          "[unit][core][lane-migration][proposal-stamp]") {
-    auto history = document_history_t::from(migration_song());
-    const auto target = make_osu_mania_profile(5);
-    REQUIRE(target);
-    const auto proposal = lane_migration_proposal_t::propose(history.document, history.document.revision + 1,
-        chart_id_t{2}, *target);
-    REQUIRE(proposal.diagnostics.size() == 1);
-    CHECK_FALSE(proposal.value);
-    test::check_stale_action_message(proposal.diagnostics.front().message, "Lane migration");
-    CHECK(proposal.diagnostics.front().issue == lane_migration_issue_t::stale_revision);
     CHECK(history.undo.empty());
 }
 

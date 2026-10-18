@@ -20,8 +20,6 @@ using interaction_detail::find_active_lane;
 using interaction_detail::snapped_position;
 namespace {
 
-
-
 auto is_scope_accepted(editor_selection_scope_t scope, editor_selection_object_kind_t kind) -> bool {
     switch (kind) {
     case editor_selection_object_kind_t::note: return scope.notes;
@@ -220,7 +218,6 @@ auto area_selection_bounds_t::from(const chart_document_t& chart,
         std::distance(index.note_spans.begin(), after));
     return result;
 }
-
 
 auto collect_area_note_spans(note_area_query_t& query, std::vector<object_id_t>& selected,
                              std::size_t node, std::size_t first, std::size_t last) -> void {
@@ -510,10 +507,6 @@ auto editor_objects_in_area_selection(const chart_document_t& chart,
     return selected;
 }
 
-} // namespace wormedit
-
-#include "interaction_internal.h"
-namespace wormedit {
 using namespace interaction_detail;
 auto combine_editor_area_selection(const editor_interaction_state_t& state,
                                    const std::vector<editor_selection_object_t>& hits,
@@ -559,10 +552,7 @@ auto combine_editor_area_selection(const editor_interaction_state_t& state,
             result.push_back(object);
     return result;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_space_range_selection_t::begin(editor_edit_context_t& context,
                                  const space_range_selection_action_t& action)
     -> diagnosed_t<std::optional<pending_space_range_selection_t>> {
@@ -593,10 +583,7 @@ auto pending_space_range_selection_t::begin(editor_edit_context_t& context,
                                  : 0,
     }};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_space_range_selection_t::revise(editor_edit_context_t& context) -> diagnostic_list_t {
     const auto& pending = *this;
     const auto& history = context.history;
@@ -614,10 +601,7 @@ auto pending_space_range_selection_t::revise(editor_edit_context_t& context) -> 
     }
     return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_space_range_selection_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     auto& state = context.state;
@@ -638,10 +622,7 @@ auto pending_space_range_selection_t::apply(editor_edit_context_t& context) cons
             : std::nullopt;
     return editor_interaction_result_t::from(context.history, state);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t& request,
                                   double viewport_height) -> bool {
     return std::isfinite(request.x_pixels) && std::isfinite(request.y_pixels) &&
@@ -653,10 +634,7 @@ auto is_valid_area_selection_capture(const begin_editor_area_selection_action_t&
              request.x_pixels < request.field_left_pixels + request.field_width_pixels)) &&
            request.y_pixels >= 0.0 && request.y_pixels < viewport_height;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_editor_area_selection_t::begin(editor_edit_context_t& context,
                                   const begin_editor_area_selection_action_t& request)
     -> diagnosed_t<std::optional<pending_editor_area_selection_t>> {
@@ -713,10 +691,7 @@ auto pending_editor_area_selection_t::begin(editor_edit_context_t& context,
         .object_geometry = request.object_geometry,
     }};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_editor_area_selection_t::revise(editor_edit_context_t& context,
     double x_pixels, double y_pixels) -> diagnostic_list_t {
     auto& history = context.history;
@@ -760,10 +735,7 @@ auto pending_editor_area_selection_t::revise(editor_edit_context_t& context,
         std::make_shared<const std::vector<editor_selection_object_t>>(std::move(objects));
     return {};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto snapped_area_selection_row(const editor_edit_context_t& context,
                                 const editor_interaction_view_model_t& view, double y)
     -> std::optional<std::uint64_t> {
@@ -784,10 +756,7 @@ auto snapped_area_selection_row(const editor_edit_context_t& context,
     return snap_canvas_row(context.scope.chart, context.scope.measures, *row, denominator,
                            total_rows);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto retain_area_selection_range(editor_edit_context_t& context,
                                  const pending_editor_area_selection_t& pending) -> void {
     const auto& view = *context.initial_view;
@@ -806,10 +775,7 @@ auto retain_area_selection_range(editor_edit_context_t& context,
                                               std::max(*anchor_row, *tail_row)}}
             : std::nullopt;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto pending_editor_area_selection_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     const auto& pending = *this;

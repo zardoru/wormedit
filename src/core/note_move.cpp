@@ -30,9 +30,7 @@ auto resolve_resize_parameters(const chart_document_t& chart, const measure_inde
                                                            : new_duration - old_duration,
                                new_duration < old_duration};
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto valid_resize_ids(const std::vector<object_id_t>& targets)
     -> std::variant<std::unordered_set<std::uint64_t>, diagnostic_list_t> {
     std::unordered_set<std::uint64_t> ids;
@@ -45,9 +43,7 @@ auto valid_resize_ids(const std::vector<object_id_t>& targets)
     }
     return ids;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto resize_one_note(duration_resize_context_t& context, const resize_parameters_t& parameters,
                      duration_resize_plan_t& plan, object_id_t id) -> std::optional<diagnostic_t> {
     const auto found = context.target_notes.find(id.value);
@@ -87,9 +83,7 @@ auto resize_one_note(duration_resize_context_t& context, const resize_parameters
     context.collisions.push_back({.lane = lane_occupancy_key_t::from(note->lane), .begin = *begin, .end = end, .note = id, .proposed = true});
     return std::nullopt;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto resize_selected_notes(duration_resize_context_t& context,
                            const resize_parameters_t& parameters, duration_resize_plan_t& plan)
     -> std::optional<diagnostic_t> {
@@ -99,9 +93,7 @@ auto resize_selected_notes(duration_resize_context_t& context,
             return failure;
     return std::nullopt;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
     -> std::optional<diagnostic_t> {
     const auto occupancy = lane_occupancy_t::from(std::move(collisions), lane_occupancy_order_t::resize);
@@ -111,9 +103,7 @@ auto validate_resize_collisions(std::vector<lane_occupant_t>& collisions)
             return failure;
     return std::nullopt;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& index,
                           std::vector<object_id_t> targets, object_id_t reference_id,
                           local_position_t reference_end, std::uint64_t snap_denominator,
@@ -145,9 +135,7 @@ auto plan_duration_resize(const chart_document_t& chart, const measure_index_t& 
         return diagnostic_list_t{*failure};
     return plan;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto duration_previews(const duration_resize_plan_t& plan) -> std::vector<note_duration_preview_t> {
     std::vector<note_duration_preview_t> result;
     result.reserve(plan.resized.size());
@@ -157,9 +145,7 @@ auto duration_previews(const duration_resize_plan_t& plan) -> std::vector<note_d
     }
     return result;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan)
     -> moved_stem_events_t {
     moved_stem_events_t moved;
@@ -186,9 +172,7 @@ auto move_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
                          moved.channels.end());
     return moved;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events_t& moved)
     -> const sound_channel_event_t* {
     for (const auto& event : channel.events) {
@@ -203,9 +187,7 @@ auto landed_on_taken_row(const sound_channel_t& channel, const moved_stem_events
     }
     return nullptr;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& plan,
                               const song_document_t& document) -> std::optional<diagnostic_t> {
     const auto moved = move_linked_sound_events(chart, plan);
@@ -224,9 +206,7 @@ auto sync_linked_sound_events(chart_document_t& chart, const note_move_plan_t& p
     }
     return std::nullopt;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_definition_t* {
     for (const auto& layout : chart.lane_layouts) {
         for (const auto& lane : layout.layout.lanes) {
@@ -236,9 +216,7 @@ auto known_move_lane(const chart_document_t& chart, lane_id_t id) -> const lane_
     }
     return nullptr;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto move_lane_column(const chart_document_t& chart, const measure_index_t& index,
                       local_position_t position, const lane_definition_t& lane,
                       const editor_scratch_presentation_t& sides) -> std::int64_t {
@@ -253,9 +231,7 @@ auto move_lane_column(const chart_document_t& chart, const measure_index_t& inde
     }
     return lane.display_order;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto resolve_note_move_parameters(const chart_document_t& chart, const measure_index_t& index,
                                   std::vector<object_id_t>& targets, object_id_t reference_id,
                                   local_position_t reference_position, lane_id_t requested_lane,
@@ -317,9 +293,7 @@ auto resolve_note_move_parameters(const chart_document_t& chart, const measure_i
                            move_lane_column(chart, index, reference->position, *source_lane, sides),
         .scratch_on_right = sides};
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto shifted_move_row(std::uint64_t row, std::uint64_t last,
                       const note_move_parameters_t& parameters) -> shifted_move_row_t {
     if (parameters.forward) {
@@ -331,16 +305,12 @@ auto shifted_move_row(std::uint64_t row, std::uint64_t last,
         return {0, true, false};
     return {row - parameters.delta, false, false};
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto display_move_row(std::uint64_t row, const note_move_parameters_t& parameters) -> long double {
     const auto delta = static_cast<long double>(parameters.delta);
     return static_cast<long double>(row) + (parameters.forward ? delta : -delta);
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_t& plan)
     -> std::optional<diagnostic_t> {
     const auto found = context.targets.find(id.value);
@@ -395,9 +365,7 @@ auto move_one_note(note_move_context_t& context, object_id_t id, note_move_plan_
         context.collisions.push_back({.lane = lane_occupancy_key_t::from(target.lane), .begin = moved_begin, .end = moved_end, .note = id, .proposed = true});
     return std::nullopt;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto merged_move_ranges(const std::vector<lane_occupant_t>& collisions,
                         std::size_t moved_count) -> std::vector<lane_occupant_t> {
     std::vector<lane_occupant_t> ranges;
@@ -420,9 +388,7 @@ auto merged_move_ranges(const std::vector<lane_occupant_t>& collisions,
     ranges.resize(merged);
     return ranges;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto is_overlapping_move_range(const lane_occupant_t& interval,
                          const std::vector<lane_occupant_t>& ranges) -> bool {
     const auto key = std::pair{interval.lane.value, interval.begin};
@@ -430,9 +396,7 @@ auto is_overlapping_move_range(const lane_occupant_t& interval,
         ranges, key, {}, [](const auto& range) { return std::pair{range.lane.value, range.end}; });
     return found != ranges.end() && found->overlaps(interval);
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
                           note_move_plan_t& plan) {
     const auto ranges = merged_move_ranges(collisions, plan.moved.size());
@@ -449,9 +413,7 @@ void mark_move_collisions(std::vector<lane_occupant_t>& collisions,
     for (const auto id : sweep.occupants)
         plan.occupants.push_back(object_id_t{id});
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
                     std::vector<object_id_t> targets, object_id_t reference_id,
                     local_position_t reference_position, lane_id_t requested_reference_lane,
@@ -500,9 +462,7 @@ auto plan_note_move(const chart_document_t& chart, const measure_index_t& index,
     mark_move_collisions(collected.collisions, plan);
     return plan;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto selected_move_bgm_ids(const editor_interaction_state_t& state, object_id_t reference,
                            std::span<const object_id_t>) -> std::vector<object_id_t> {
     const auto reference_selected =
@@ -517,9 +477,7 @@ auto selected_move_bgm_ids(const editor_interaction_state_t& state, object_id_t 
             ids.push_back(object.id);
     return ids;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto translated_object_position(const measure_index_t& index, local_position_t position,
                                 std::uint64_t origin, std::uint64_t target)
     -> std::optional<local_position_t> {
@@ -533,9 +491,7 @@ auto translated_object_position(const measure_index_t& index, local_position_t p
         return std::nullopt;
     return index.position_at(target >= origin ? *row + delta : *row - delta);
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto append_selected_bgm_moves(const chart_document_t& chart, const measure_index_t& index,
                                std::span<const object_id_t> ids, local_position_t origin,
                                note_move_plan_t& plan) -> diagnostic_list_t {
@@ -558,9 +514,7 @@ auto append_selected_bgm_moves(const chart_document_t& chart, const measure_inde
     }
     return {};
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_selected_object_move(const chart_document_t& chart, const measure_index_t& index,
                                const editor_interaction_state_t& state,
                                std::vector<object_id_t> notes, object_id_t reference,
@@ -621,9 +575,7 @@ auto plan_selected_object_move(const chart_document_t& chart, const measure_inde
         return diagnostics;
     return plan;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const bgm_event_t& source,
                            local_position_t position, object_id_t lane,
                            std::optional<std::uint64_t> canvas_row, std::uint64_t snap)
@@ -647,9 +599,7 @@ auto stage_single_bgm_move(document_history_t& scratch, chart_id_t chart, const 
         scratch,
         {.chart = chart, .event = source.id, .position = position, .source_lane = lane});
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_single_bgm_move(const document_history_t& history,
                           const editor_interaction_state_t& state, const bgm_event_t& source,
                           local_position_t requested, std::optional<object_id_t> lane,
@@ -692,9 +642,7 @@ auto plan_single_bgm_move(const document_history_t& history,
         plan.staged_bgm_document = std::move(scratch.document);
     return plan;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_move_gesture(const editor_edit_context_t& context,
                        std::vector<object_id_t> targets, object_id_t reference,
                        local_position_t position, lane_id_t lane, bool exact_position,
@@ -716,9 +664,7 @@ auto plan_move_gesture(const editor_edit_context_t& context,
                                      reference, position, lane, edit_snap_denominator(chart, state),
                                      exact_position);
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
                            const note_move_plan_t& plan) -> diagnostic_list_t {
     if (plan.bgm_moves.empty())
@@ -782,9 +728,7 @@ auto relocate_selected_bgm(song_document_t& proposed, chart_id_t chart_id,
     proposed = std::move(scratch.document);
     return {};
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_preview_t> {
     std::vector<note_move_preview_t> result;
     result.reserve(plan.moved.size());
@@ -795,9 +739,7 @@ auto move_previews(const note_move_plan_t& plan) -> std::vector<note_move_previe
     }
     return result;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto move_conflict_count(const note_move_plan_t& plan) -> std::size_t {
     return std::ranges::count_if(
         plan.moved, [](const auto& note) { return note.conflict != note_move_conflict_t::none; });
@@ -831,10 +773,7 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
     result.accepted = true;
     return result;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool {
     for (const auto& candidate : plan.moved) {
         const auto* note = chart.find_note(candidate.id);
@@ -844,10 +783,7 @@ auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t
     }
     return false;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
                           document_history_t& history, editor_interaction_state_t& state)
     -> std::optional<diagnostic_t> {
@@ -877,10 +813,7 @@ auto relocate_moved_notes(chart_document_t& chart, const note_move_plan_t& plan,
     (void)state;
     return sync_linked_sound_events(chart, plan, history.document);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto stage_bgm_note_move(const document_history_t& history, editor_interaction_state_t& state,
                          const note_move_plan_t& plan, const pending_note_move_gesture_t& pending)
     -> std::variant<song_document_t, diagnostic_list_t> {
@@ -925,10 +858,7 @@ auto stage_bgm_note_move(const document_history_t& history, editor_interaction_s
         return failures;
     return std::move(scratch.document);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 void reselect_bar_lines(editor_interaction_state_t& state, const shift_selection_action_t* bar_line_shift) {
     if (bar_line_shift == nullptr) return;
     for (const auto measure : bar_line_shift->bar_lines)

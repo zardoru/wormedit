@@ -10,9 +10,7 @@ auto is_plain_editable_note(const note_t& note) -> bool {
     return plain_kind && !note.sound.has_value() && note.semantic_layers.empty() &&
            !note.label.has_value() && !note.branch.has_value();
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) -> bool {
     if (!note.sound || note.sound_channel_event || note.label || note.branch)
         return false;
@@ -21,9 +19,7 @@ auto is_removable_sound_note(const chart_document_t& chart, const note_t& note) 
         return layer != chart.semantic_layers.end() && layer->visible && !layer->locked;
     });
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index, lane_id_t lane,
                     std::uint64_t anchor_row, std::uint64_t moving_row,
                     hold_overlap_policy_t overlap_policy)
@@ -54,9 +50,7 @@ auto plan_hold_rows(const chart_document_t& chart, const measure_index_t& index,
     std::ranges::sort(result.removals, {}, &object_id_t::value);
     return result;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_index_t& index,
                                    std::uint64_t canvas_rows, std::uint64_t revision,
                                    const editor_interaction_state_t& state)
@@ -97,20 +91,12 @@ auto canvas_keyboard_hold_previews(const chart_document_t& chart, const measure_
     }
     return previews;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto next_object_id(const chart_document_t& chart) -> std::optional<object_id_t> {
     // Temporary: removed by T-642 when interaction callers use the shared allocation query.
     return next_chart_object_id(chart).id;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
-
-} // namespace wormedit::interaction_detail
-
-namespace wormedit::interaction_detail {
 auto resolve_row_placement(const chart_document_t& chart, const measure_index_t& index,
                            const editor_interaction_state_t& state, lane_id_t lane,
                            local_position_t position)
@@ -125,29 +111,21 @@ auto resolve_row_placement(const chart_document_t& chart, const measure_index_t&
                                        "placement lane is unavailable at the snapped row")};
     return *target;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto make_hold_removals(std::vector<object_id_t> removals,
                         std::type_identity<std::vector<object_id_t>>) -> std::vector<object_id_t> {
     return removals;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto make_hold_removals(std::vector<object_id_t> removals,
                         std::type_identity<hold_preview_removals_t>) -> hold_preview_removals_t {
     return std::make_shared<const std::vector<object_id_t>>(std::move(removals));
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto held_note_kind(note_kind_t armed) -> note_kind_t {
     return armed == note_kind_t::roll || armed == note_kind_t::fake ? armed : note_kind_t::hold;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 void erase_notes(chart_document_t& chart, std::span<const object_id_t> ids) {
     if (ids.empty()) {
         return;
@@ -162,9 +140,7 @@ void erase_notes(chart_document_t& chart, std::span<const object_id_t> ids) {
                       [&](const auto& note) { return wanted.contains(note.id.value); });
     }
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_t> targets)
     -> std::variant<std::vector<paint_row_t>, diagnostic_list_t> {
     std::vector<paint_row_t> rows;
@@ -181,9 +157,7 @@ auto paint_rows(const measure_index_t& index, std::span<const note_paint_target_
     });
     return rows;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto erase_active_paint_notes(std::map<std::uint64_t, lane_occupant_t>& active,
                               note_paint_plan_t& plan) -> void {
     while (!active.empty()) {
@@ -192,9 +166,7 @@ auto erase_active_paint_notes(std::map<std::uint64_t, lane_occupant_t>& active,
         active.erase(active.begin());
     }
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto process_draw_paint_row(const paint_row_t& row, note_paint_plan_t& plan,
                             const std::map<std::uint64_t, lane_occupant_t>& active,
                             note_kind_t kind) -> std::optional<diagnostic_t> {
@@ -212,9 +184,7 @@ auto process_draw_paint_row(const paint_row_t& row, note_paint_plan_t& plan,
     return error(diagnostic_code_t::collision, "paint gesture overlaps a non-tap note",
                  active.begin()->second.note);
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index,
                      std::span<const note_paint_target_t> targets, note_kind_t kind,
                      note_paint_intent_t intent)
@@ -246,9 +216,7 @@ auto plan_note_paint(const chart_document_t& chart, const measure_index_t& index
     }
     return plan;
 }
-} // namespace wormedit::interaction_detail
 
-namespace wormedit::interaction_detail {
 auto chart_note_ids(const chart_document_t& chart) -> std::unordered_set<std::uint64_t> {
     auto count = std::size_t{};
     for (const auto& measure : chart.measures) {
@@ -282,10 +250,7 @@ auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_
         {error(diagnostic_code_t::invalid_resolution,
                std::string(description) + " requires a BMS chart and valid snap")});
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
     -> std::optional<diagnostic_list_t> {
     const auto required =
@@ -302,10 +267,7 @@ auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
     }
     return std::nullopt;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto snap_virtual_row(const editor_edit_context_t& context, const virtual_canvas_t& canvas,
                       std::uint64_t row) -> std::optional<std::uint64_t> {
     if (row >= canvas.total_rows)
@@ -314,10 +276,7 @@ auto snap_virtual_row(const editor_edit_context_t& context, const virtual_canvas
                            edit_snap_denominator(context.scope.chart, context.state),
                            canvas.total_rows);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
                                const place_virtual_bms_hold_action_t& action)
     -> std::variant<virtual_hold_rows_t, diagnostic_list_t> {
@@ -338,10 +297,7 @@ auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
     return virtual_hold_rows_t{*anchor, *end,
                                std::max(anchor_measure->number, end_measure->number) + 1};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto publish_row_placement(editor_edit_context_t& context, document_history_t& scratch,
                            const editor_interaction_state_t& staged,
                            editor_interaction_result_t result) -> editor_interaction_result_t {
@@ -363,10 +319,7 @@ auto publish_row_placement(editor_edit_context_t& context, document_history_t& s
     published.created_note = result.created_note;
     return published;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows, const pending_hold_t* captured) -> editor_interaction_result_t {
@@ -400,10 +353,7 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     if (!result) return result;
     return publish_row_placement(context, scratch, staged, std::move(result));
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto place_virtual_bms_hold(editor_edit_context_t& context,
                             const place_virtual_bms_hold_action_t& action)
     -> editor_interaction_result_t {
@@ -416,10 +366,7 @@ auto place_virtual_bms_hold(editor_edit_context_t& context,
     if (!result) return diagnostic_result(context.history, context.state, std::move(result.diagnostics));
     return result;
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto resolve_virtual_tap_target(const editor_edit_context_t& context,
                                 const place_virtual_bms_tap_action_t& action)
     -> std::variant<virtual_tap_target_t, diagnostic_list_t> {
@@ -448,10 +395,7 @@ auto resolve_virtual_tap_target(const editor_edit_context_t& context,
     }
     return virtual_tap_target_t{row, destination->number, destination->begin_row};
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto validate_virtual_tap_sample(const editor_edit_context_t& context,
                                  std::optional<resource_id_t> sample)
     -> std::optional<editor_interaction_result_t> {
@@ -466,10 +410,7 @@ auto validate_virtual_tap_sample(const editor_edit_context_t& context,
         context.history, context.state,
         {error(diagnostic_code_t::invalid_id, "virtual tap sample is unavailable")});
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto place_virtual_bms_tap(editor_edit_context_t& context,
                            const place_virtual_bms_tap_action_t& action)
     -> editor_interaction_result_t {
@@ -506,10 +447,7 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
     }
     return publish_row_placement(context, scratch, staged, result);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& state,
                        const cycle_edit_snap_action_t& action) -> editor_interaction_result_t {
     if (action.direction != interaction_direction_t::backward &&
@@ -535,10 +473,7 @@ auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& 
     }
     return editor_interaction_result_t::from(history, state, false);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto set_editor_snap(document_history_t& history, editor_interaction_state_t& state,
                      const set_edit_snap_action_t& action) -> editor_interaction_result_t {
     const auto supported = std::ranges::find(state.supported_snap_denominators, action.denominator);
@@ -549,10 +484,7 @@ auto set_editor_snap(document_history_t& history, editor_interaction_state_t& st
     }
     return editor_interaction_result_t::from(history, state, false);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t& state,
                         const chart_document_t& chart, const measure_index_t& index,
                         std::uint64_t absolute, const adjust_editor_zoom_action_t& action)
@@ -601,10 +533,7 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     state = std::move(proposed);
     return editor_interaction_result_t::from(history, state, false);
 }
-} // namespace wormedit
 
-namespace wormedit {
-using namespace interaction_detail;
 auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
     -> editor_interaction_result_t {
     auto& state = context.state;

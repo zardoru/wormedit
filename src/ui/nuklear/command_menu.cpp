@@ -2,6 +2,7 @@
 #include "ui/nuklear/command_menu.h"
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/modal_input.h"
 #include "ui/nuklear/sdl_backend.h"
 
 #include <SDL3/SDL_events.h>
@@ -144,7 +145,7 @@ auto capture_command_menu_key(nk_context* context, const SDL_KeyboardEvent& even
     if (!command_menu_owns_input() && held == state.captured.end()) return false;
     if (!event.down) {
         if (held != state.captured.end()) state.captured.erase(held);
-        if (state.open) { SDL_Event copy{}; copy.type = event.type; copy.key = event; nk_sdl_handle_event(context, &copy); }
+        if (state.open) wormedit::ui::chrome::forward_modal_key(context, event);
         return true;
     }
     if (held == state.captured.end()) state.captured.push_back(event.scancode);
@@ -154,7 +155,7 @@ auto capture_command_menu_key(nk_context* context, const SDL_KeyboardEvent& even
         state.movement = std::clamp(state.movement + (event.key == SDLK_UP ? -1 : 1), -20, 20);
     else if (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER) {
         if (!ime && !event.repeat) state.activate = true;
-    } else { SDL_Event copy{}; copy.type = event.type; copy.key = event; nk_sdl_handle_event(context, &copy); }
+    } else wormedit::ui::chrome::forward_modal_key(context, event);
     return true;
 }
 auto capture_command_menu_text(nk_context* context, const SDL_Event& event) -> bool {

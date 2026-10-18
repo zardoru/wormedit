@@ -167,8 +167,8 @@ it in new code even before the card lands.
   remaining legitimate count. A migration too large for that may go gradually only if a ratchet
   row can detect the old form: new code cannot add it, and the count only falls. A migration no
   regex can detect is not ready to be gradual; sharpen the old form's definition or schedule a
-  closing card. The "Frontend boundary" migration below predates this rule and has no ratchet
-  yet; whether it gets one is an open owner decision.
+  closing card. The "Frontend boundary" migration below is the gradual
+  kind and has its rows.
 
 ## Tests (owner, 2026-10-15)
 
@@ -201,11 +201,15 @@ it in new code even before the card lands.
   editor state may not. Today's frontend follows this in what it uses, but four Nuklear files
   included all of `document.h` or the old `interaction.h` for a few enums until T-670 gave the vocabulary a
   light header, `core/vocabulary.h`.
-- **Migrate slowly, when touched ("good citizen").** No wholesale conversion card. A change that
-  adds a view surface or action payload writes it in C++ types. A change that substantially
-  reworks an existing `WormUi*` surface may convert that surface when the conversion is contained
-  in the files it already owns; record it on the card. Do not convert surfaces a change does not
-  otherwise touch, and do not break an in-flight card's promise of an unchanged layout.
+- **Migrate gradually, under a ratchet** (owner, 2026-10-17; ratchet added 2026-10-18). No
+  wholesale conversion card. A change that adds a view surface or action payload writes it in C++
+  types. A change that substantially reworks an existing `WormUi*` surface may convert that surface
+  when the conversion is contained in the files it already owns; record it on the card. Do not
+  convert surfaces a change does not otherwise touch, and do not break an in-flight card's promise
+  of an unchanged layout. Four `cmake/ceremony_ratchet.txt` rows hold the old form's count so it
+  only falls: C view structs (`typedef struct WormUi`), fixed capacities
+  (`WORM_UI_*_CAPACITY`), pointer-plus-count fields in `src/ui/frontend`, and `ui_codec`
+  specializations. A conversion lowers the rows it touches in the same commit.
 - **What a conversion removes:** fixed capacities and their truncation paths, the frame-storage
   flattening that keeps pointer-plus-count arrays alive, raw integer kinds and IDs, and that
   surface's `ui_codec` specialization once the frontend can read the view type directly.

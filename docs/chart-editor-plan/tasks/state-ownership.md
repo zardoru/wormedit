@@ -4,6 +4,8 @@
 
 ## Execution
 
+Shrink-wrap audit completed on 2026-10-18 at `6fb21cd`: see [bounded findings and proposed checkpoints](#shrink-wrap-audit-2026-10-18), T-673–T-678. These are proposals, not implementation approval. T-653 remains pending revision; further T-644 review waits for a later scheduled checkpoint; T-621 remains last.
+
 Cards run in coordinated parallel lanes. Wave 1: **wyrm T-601–T-605**; **drake T-607–T-608**; **wyvern T-625 (core/formats/audio/visual scope), then T-613**; **hydra T-622, then T-628 (src/ui scope)**. Later waves are scheduled by Claude. Ready means available for scheduling; dependencies and explicit STOP steps still apply.
 
 Read `AGENTS.md` and `docs/chart-editor-plan/tasks.md` before taking a card. Work only in the assigned worktree on its existing branch; never switch branches, push or rewrite commits. Commit each card or numbered large-card part separately. Implementers put stale-plan findings, behavior-based search patterns, behavior differences, changed call sites and actual gate tails in commit bodies. Claude records evidence on the cards when merging and owns plan/status updates.
@@ -490,6 +492,7 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
 ## T-621 Move subsystem files into folders
 
 - **Status:** Ready
+- **Shrink-wrap dependency (2026-10-18):** proposed T-678 would delete the unused legacy `Chart.h` model instead of lowercasing it. If accepted and completed, drop those deleted paths from this card's move inventory. Do not rename or delete it merely on this proposal; keep the unrelated interval-index owner.
 - **Proposed addition (2026-10-17, [measure-lane retrospective](../../../memory/coordination/oct17-measure-lane-retrospective.md); awaiting owner approval):** folders alone leave the files that most cards collide on: `src/sys/application.cpp` (about 4,800 lines), `src/sys/compose_actions.cpp` (3,700), `src/ui/nuklear/compose_canvas.cpp` (3,400), `src/sys/compose_view.cpp` (2,700) and `src/sys/compose_input.cpp` (2,600). Many cards own the same few files, which serializes parallel lanes. Where a seam already exists, split along it as pure moves in the same per-folder commits: `compose_actions.cpp` along T-636's route modules (local, resource, marker, bookmark, area, BGA, sound), `compose_input.cpp` along its input families. Inventory seams first and leave a file whole where no seam is clear.
 - **Findings closed:** FL1–FL5 (targets; not yet closed).
 - **Stale-plan audit:** Search by behavior: prefix clusters, include paths, CMake source entries and capitalized header consumers. Confirm every A lead and current caller/body equivalence; record stale claims, stricter validation, diagnostics, rounding and policy differences before editing.
@@ -1468,3 +1471,114 @@ Each implementation card runs the full Verify gate. After T-622 lands, add `cmak
   ```
   Grep writes to action_numerator_text: serialization lives once at the metadata-state owner; action-specific pointer field assignments stay local.
 - **Out of scope:** Format-schema fallback A/Q needs its own policy inventory; field validation/parser redesign unapproved. UI lifetime split D6; runner/result work T-633; redundant tests T-644.
+
+## Shrink-wrap audit 2026-10-18
+
+Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and state channels; line count or a short body alone is not the maintenance argument. [Source index](../../audits/shrink-wrap-source-index-2026-10-18.tsv) records **740 first-party C/C++ source/header paths indexed**, excluding vendor/build/test code: core/formats 240, sys/audio/visual 293, UI/common 201, coordinator six. File indexing is not body review. [Evidence inventory](../../audits/shrink-wrap-inventory-2026-10-18.tsv) records 59 overlapping rows, not 59 distinct unnecessary abstractions. Searches covered result/outcome conversions, temporary/compatibility labels, single-return/call forwarding shapes and parallel payloads; definitions and actual callers were then read for bounded families. Tests supplied caller/acceptance evidence only; no T-644 pruning or suite-wide usefulness conclusion.
+
+- **Reviewed scope:** all 19 exact `outcome_move_adapter` signature bodies (17 core/formats, two audio), all 15 `Temporary:` comments and their live-purpose context, the extra SV compilation bridge, and the allocation alias. Timing caller review was representative, not exhaustive. Sys/audio/visual reviewed 13 named families with per-row body/caller limits. UI/common reviewed eight families, including six facade bodies and real input owners, action-index transport, modal policies, keyboard overflow, rational representation and interval queries. Coordinator corroborated dead-model searches and reviewed CLI policy helpers and the three top-level platform/configuration headers. Other indexed bodies remain unreviewed; no whole-tree cleanliness claim.
+- **First implementation batch proposed:** T-673 preview results, T-674 duplicate sys algorithms, T-677 input facade. These have separate production ownership; T-674 owns build-list changes. Each family keeps its own acceptance semantics and checkpoint evidence; coordinate supporting files before edits and run integration gates after all lanes stop writing. T-675 dead action channels, T-676 SDL report and T-678 dead legacy model follow separately; T-675 overlaps T-674's `application.cpp`, and T-678 overlaps its CMake ownership.
+- **Preview results:** player and storyboard legacy builders have no production caller outside their declarations/definitions; tests have seven and two lexical builder calls respectively, plus explicit adapter calls. Production uses the type factories. Remove the parallel optional-index/diagnostics structs and stop teaching obsolete APIs in tests. Player's old acceptance requires presence plus empty diagnostics; storyboard requires presence only. Warning-bearing values must survive; do not substitute one generic success query blindly (T-673).
+- **BMS branch projection, later coherent checkpoint:** `bms_branch_view_result_t` mirrors three vectors and diagnostics and reconstructs a duplicate status; actual producer already returns a diagnosed view. Active consumers are current/proposed preview results, BMS writer and branch-selection publication; branch-editor tests also use the legacy factory. A future exact-owned-path card should migrate `bms_branch_view.h/.cpp`, `bms_writer.cpp`, `bms_branch_selection.cpp` and existing tests together, retaining limits, diagnostic kinds and entering/leaving order. All current branch diagnostics are errors; keep their vocabulary. This family is worthwhile but is not silently added to T-673.
+- **Scene, recipe, slices, conversion and timing need separate caller inventories:** scene's retained-window metadata stores the old result and private composition/friend ownership lives there; move that ownership coherently, preserving warning acceptance and no retained bulk copies per frame. Recipe sampling/compilation has a real out-and-back conversion, but carries partial points/tolerance and staging semantics. Sound-slice calls span core, audio, formats and sys (14 production lexical derive calls excluding its definition; 25 test calls); no small local deletion. Conversion success requires nonempty outputs plus no errors, while diagnosed success alone permits empty output; publication carries atomic staging, separate errors/warnings and published/pruned data. Timing's nine adapters still serve internal legacy producers, metadata and partial results: coordinate queries, scroll/spans and preview scheduling should be separate reviews. Adapter counts do not authorize a blanket sweep.
+- **Sys algorithms and reports:** the misc edit helper duplicates strict integer parsing (six calls) and indexed row lookup (five calls using validated chart-index provenance). Use their existing owners, not a new helper (T-674). SDL preview wraps a report in `result_t<X,X>` even though the report owns its failure and optional underlying session; remove only the outer rule, preserving partial work and lock/device ordering (T-676). Audition resolution has opposite report/diagnosed conversions; a later family migration must explicitly distinguish silent zero-clip success from readiness to audition. Keep scratch-history draft materialization and stale request semantics.
+- **UI/state:** obsolete layout/encoding action indices are emitted/copied but semantic consumers use stable IDs (T-675). Six input facades add duplicate names/declarations with no policy; canonical implementations can keep public names in the already lightweight `compose_panel.h`, so no new header is needed (T-677). Keyboard queue overflow hand-clears a smaller capture set than the shared 32-entry cancellation registry. This is ownership debt, not a proven transparent substitution: characterize BGA/bookmark/measure/stem captures, release fences and deferred waveform-offset cancellation before deciding whole-input-loss policy. Existing interruption coverage established wheel overflow, not keyboard overflow. No behavior change is approved by the audit.
+- **Keep and repair stale ownership labels:** transaction-taking BPM/SV entry points still hide private operation/proposal dispatch while borrowing the existing transaction. Result-returning proposal application still serves beat-interval and timing-pseudonote operations; stamp forwarding still serves BMSON marker/razor and BGA stroke payloads. Keep these live contracts unless a concrete replacement improves ownership. Their comments naming completed T-634/T-637 need durable purpose wording or a real future migration owner. The active-gesture variant already holds all seven proposal alternatives; its pending-migration comment is stale. The two-caller `next_object_id` projection is only opportunistic cleanup; T-642's deferred inventory still records it. No deletions or comment rewrites made here.
+- **Keep distinct contracts:** SDL reports retain session work after device failure; stream-lock guards own RAII and lock-depth assertions; waveform snapshots retain complete waveform/failure/block metadata through cache publication failures; visual job values enforce a shared nonnull payload rule. Projection feedback owns identity and edge suppression, frame arenas own bounded allocation/truncation, audition controllers own prepare/edit/start sequencing, and native edit context owns transaction-terminal policy. UI modal helpers retain differing IME/Escape/release behavior, rational editing preserves scale such as 150/100 rather than reduced decimal syntax, and bounded interval queries retain a no-allocation fast path with complete fallback. Screened domain reports carry real confidence/fallback/change/label data; screening does not prove their full families nonredundant.
+- **Dead architecture:** no repository consumer found for the legacy `Chart` loader/header or `Field` header/model; the application still compiles their source entries. T-678 checks targets before deletion and supersedes T-621's lowercase-header work only if accepted. No dependency purge, interval-index removal, C ABI codec sweep, UI lifetime split or test audit is included.
+- **Verification (2026-10-18):** source audit only; no production changes and no runtime suite rerun. `ctest --test-dir build -R '^documentation\.' --output-on-failure`: `100% tests passed out of 3`, `Total Test time (real) = 7.26 sec`; log `/tmp/shrink-audit-docs.log`. `git diff --check` clean; source index validated as 740 unique tracked paths at the baseline. T-673–T-678 remain proposed, not executed.
+
+## T-673 Retire test-only preview index result APIs
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Outcome:** Player and storyboard preview index construction has one factory/result contract per type; no legacy `build_*_preview_index` or mirror result structs remain.
+- **Read first:** `docs/architecture.md`, `docs/chart-editor-plan/decisions/code-style.md`, `include/wormedit/core/player_preview.h`, `include/wormedit/core/storyboard_preview.h`, `docs/audits/shrink-wrap-inventory-2026-10-18.tsv`.
+- **Files owned:** `include/wormedit/core/player_preview.h`, `src/core/player_preview.cpp`, `tests/core/player_preview_tests.cpp`, `include/wormedit/core/storyboard_preview.h`, `src/core/storyboard_preview.cpp`, `tests/core/storyboard_preview_tests.cpp`; supporting `cmake/ceremony_ratchet.txt` to lower exactly the two removed matches.
+- **Steps:**
+  1. Recheck all builder/type/adapter callers against the audit baseline; record any newly active production contract before editing.
+  2. Migrate the player tests to `player_preview_index_t::from`, preserving value/diagnostic assertions and strict presence-plus-empty-diagnostics acceptance where actually required; remove its obsolete builder/result/adapter.
+  3. Separately migrate storyboard tests to the type factory, preserving presence-only acceptance; remove its obsolete builder/result/adapter.
+  4. Lower the ratchet by actual removed matches; review unchanged algorithms, run verification and record per-family evidence.
+- **Invariants:** Warning-bearing optional values, diagnostics, limits, revision/cache identity and preview geometry unchanged. No new success rule or per-frame copies.
+- **Reject/failure behavior:** Preserve rejected/missing index behavior and warning-bearing partial value. A test that only exercises the retired adapter may migrate its assertions to the actual factory; no assertion about domain behavior is dropped.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on both affected .cpp files. Existing preview tests; no new forwarding-deletion test.
+- **Out of scope:** BMS branch/scene/recipe/timing result migrations, changing warning acceptance, T-644 pruning and frontend codec conversion.
+
+## T-674 Delete duplicate sys parsing and row-query algorithms
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Outcome:** Sys consumers use `parse_integer<std::int64_t>` and `measure_index_t::position_at`; the misc `application_edit_helpers` owner and source-list entries are gone.
+- **Read first:** `docs/architecture.md`; `src/sys/application_edit_helpers.cpp`; `include/wormedit/core/numeric_text.h`; `src/core/document.cpp` position query; shrink-wrap audit above.
+- **Files owned:** `src/sys/application_edit_helpers.h`, `src/sys/application_edit_helpers.cpp`, `src/sys/metadata_actions.cpp`, `src/sys/compose_bookmark_actions.cpp`, `src/sys/compose_resource_actions.cpp`, `src/sys/application_timing_stage.cpp`, `src/sys/compose_actions_internal.h`, `src/sys/application.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
+- **Steps:**
+  1. Re-inventory the six parser and five row-query calls, all includes/usings and three test-target source entries. Confirm every row query still borrows a validated, contiguous chart index.
+  2. Replace strict signed parsing with the existing numeric owner and row lookup with the member's reject-chart-end policy. Preserve caller-owned validation/diagnostics and transaction behavior.
+  3. Delete the helper header/source, stale declarations/includes/usings and exact source-list entries; coordinate shared application/CMake paths before editing.
+  4. Run verification and record caller provenance and parser/boundary equivalence limits.
+- **Invariants:** Null/empty/full-string parsing, no whitespace/plus/partial acceptance, overflow rejection and chart-end rejection unchanged. No new index validation/API or allocations. Old linear search and member query are not claimed equivalent for arbitrary malformed aggregate indices.
+- **Reject/failure behavior:** If any current caller supplies an unvalidated index, stop that replacement and record the necessary policy decision; do not quietly change its rejection behavior.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing document query, bookmark, resource, metadata and timing-stage behavior tests.
+- **Out of scope:** Numeric grammar changes, measure-index redesign, export/publication refactors, T-644 pruning and T-653.
+
+## T-675 Remove obsolete action index channels
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Outcome:** BMS import encoding and new-project layout actions carry their stable IDs without unused index fields or pending-close mirrors.
+- **Read first:** `src/ui/frontend/actions.h`; `src/ui/nuklear/frontend.cpp`; `src/sys/application.cpp`; shrink-wrap UI/state findings; frontend-boundary style rule.
+- **Files owned:** `src/ui/frontend/actions.h`, `src/ui/nuklear/frontend.cpp`, `src/sys/application.cpp`. Existing tests are read as contract evidence; supporting test edits need an exact extension if compilation requires adaptation.
+- **Steps:**
+  1. Recheck all `bms_encoding_index`/`new_project_layout_index` action and pending-close usages; distinguish the wizard's live local row index from the action fields.
+  2. Confirm semantic consumers and replay validate/use stable IDs, with no index fallback or external consumer. Remove only the two action fields, two pending mirrors and their emit/copy/restore plumbing.
+  3. Verify existing stable-ID emission, cancellation, unsaved-close replay and stale-context behavior; record the removed state-channel inventory.
+- **Invariants:** Wizard catalog selection, encoding/layout IDs and validation, unsaved-close replay and UI timing unchanged. Keep local catalog indices; do not substitute row numbers for identity.
+- **Reject/failure behavior:** A discovered semantic index reader stops deletion pending an explicit compatibility decision. Preserve existing bad/missing ID rejection.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on both affected .cpp files. Existing stable-ID event-harness and project/import tests; no member-absence test.
+- **Out of scope:** Whole action/view conversion, new codecs, unrelated field cleanup, local wizard-index removal and UI state lifetime regrouping.
+
+## T-676 Return SDL preview start reports directly
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling)
+- **Outcome:** SDL preview start/seek returns the existing start report directly instead of `result_t<X,X>` with the same report in both arms.
+- **Read first:** `src/sys/sdl_preview_output.h`; `src/sys/sdl_preview_output.cpp`; `src/sys/sdl_session_results.h`; `src/sys/chart_preview_state.cpp`; shrink-wrap sys reports finding.
+- **Files owned:** `src/sys/sdl_preview_output.h`, `src/sys/sdl_preview_output.cpp`, `src/sys/chart_preview_state.cpp`, `tests/sys/sdl_preview_output_tests.cpp`.
+- **Steps:**
+  1. Inventory every start/seek consumer and nested-session assertion; identify how the outer arm currently agrees with the report's error and session state.
+  2. Change the preview start alias to the existing report; remove outer wrapping/unwrapping while retaining `finish_start` as a cohesive operation.
+  3. Adapt consumers/tests to explicit report/session checks, preserving assertions for failed seek, retained source tail and device failure after session work.
+  4. Review every pause/lock/clear/unlock/resume path and run verification.
+- **Invariants:** Optional underlying session attempt, failure/message details, refill/generation and callback publication, retained playing state and every stream/device ordering constraint unchanged.
+- **Reject/failure behavior:** Preserve device failure before/after session work and session failure while an existing source tail remains. Never discard partial session evidence merely because outer failure wrapping disappears.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing SDL preview/session and transport behavior tests.
+- **Out of scope:** Shared SDL report redesign, audition resolver migration, locking/worker changes, timing success-policy changes and T-644 pruning.
+
+## T-677 Put Compose input entry points at their implementations
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling; modest navigation benefit)
+- **Outcome:** The six Compose key/wheel/middle/focus/discard/prepare entry points each have one canonical name/declaration/implementation at the input owner, without facade functions in `compose_panel.cpp`.
+- **Read first:** `src/ui/nuklear/compose_panel.h`; `src/ui/nuklear/compose_panel.cpp`; `src/ui/nuklear/compose_input_panel.h`; `src/ui/nuklear/compose_keyboard_input.h`; shrink-wrap UI facade finding.
+- **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_input_panel.h`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_keyboard_input.h`.
+- **Steps:**
+  1. Recheck the six wrapper bodies and production/internal callers. Keep the existing lightweight public declarations and frontend call names where possible.
+  2. Use AST-aware renaming to give actual owner implementations the public names; update the internal discard call and delete redundant private declarations and facade definitions.
+  3. Preserve the three-reset coordinator and all real input implementation bodies; verify header dependency boundaries and absence of old private names.
+  4. Run verification and record exact removed hops, without attributing a defect or timing improvement to them.
+- **Invariants:** Input ordering, IME, capture/release, focus loss, queue overflow and preparation unchanged. No new header, callback runner, public frontend surface or state owner needed.
+- **Reject/failure behavior:** If canonical-name relocation changes binding, exposes private transitive dependencies or reveals wrapper policy, preserve that boundary and report the exact exception.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing event harness; no facade-specific tests.
+- **Out of scope:** Keyboard-overflow policy changes, modal helper flattening, reset coordinator removal, C ABI migration and T-642 retained wrappers.
+
+## T-678 Remove unused legacy Chart and Field models
+
+- **Status:** Proposed (2026-10-18 shrink-wrap audit; awaiting owner scheduling; before T-621)
+- **Outcome:** The unused legacy Chart loader and empty Field scaffolding no longer present parallel models or application source entries; T-621 no longer plans a rename for a deleted header.
+- **Read first:** `src/common/Chart.h`; `src/common/chart.cpp`; `src/editor/field.h`; `src/editor/field.cpp`; T-621 and shrink-wrap dead-architecture findings.
+- **Files owned:** `src/common/Chart.h`, `src/common/chart.cpp`, `src/editor/field.h`, `src/editor/field.cpp`, `CMakeLists.txt`; supporting `docs/chart-editor-plan/tasks/state-ownership.md` to remove superseded T-621 paths after deletion, and `docs/chart-editor-plan/decisions/code-style.md` only if a naming example references the deleted header.
+- **Steps:**
+  1. Recheck complete loader/model bodies, exact type/include/call references, configured targets and any export/plugin registration. Record absence of repository consumers, not hypothetical external compatibility guarantees.
+  2. Delete only the four unused files and their application source entries. Leave the current import pipeline, libotoworm dependency and interval-index owner intact.
+  3. Remove the now-obsolete T-621 lowercase-header instruction and exact deleted paths from its owned/read-first inventory; keep the rest of its move work.
+  4. Run verification and record stale-plan paths and target checks.
+- **Invariants:** Existing document/import models, importer diagnostics and visible loading behavior unchanged; no dependency or supported-format removal.
+- **Reject/failure behavior:** Any actual consumer/registration stops the relevant deletion for a separate migration decision. Do not replace these models with new wrappers.
+- **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; confirm app and converter targets still build. Documentation and whitespace checks cover deleted plan paths. No tests solely for dead-file absence.
+- **Out of scope:** libotoworm purge, common interval index, actual frontend field renderer, import redesign and folder moves.

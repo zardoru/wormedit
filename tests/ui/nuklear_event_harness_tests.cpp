@@ -1370,24 +1370,6 @@ TEST_CASE("Unavailable overview tooltip stays on its row and preserves panel too
     check_no_tooltip_text(harness, "Hide sounds list");
 }
 
-TEST_CASE("Disabled song bar icon keeps its tooltip and emits no toggle action",
-          "[unit][frontend-state][frontend][event-harness][tooltip]") {
-    nuklear_event_harness_t harness{1280, 900};
-    REQUIRE(harness.ready());
-    harness.view().compose.bgm_bar_available = false;
-    (void)harness.frame();
-    // The T-268 toolbar toggle shifts the song-bar icon left.
-    hover_at(harness, 1231, 122);
-    check_tooltip_text(harness, "Song audio is unavailable");
-    const auto clicked = click_at(harness, 1231, 122);
-    check_no_toolbar_document_actions(clicked);
-    for (const auto& frame : clicked) {
-        const auto& action = frame.get();
-        for (size_t index = 0; index < action.compose_input_count; ++index)
-            CHECK(action.compose_inputs[index].kind != WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
-    }
-}
-
 TEST_CASE("Stopped Compose seek bar emits navigation and drag seeks",
           "[unit][frontend-state][event-harness][seek-bar]") {
     nuklear_event_harness_t harness{1280, 900};

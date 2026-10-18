@@ -146,6 +146,7 @@ void check_native_toolbar(bool value, std::source_location location = std::sourc
 TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
           "[frontend-state][event-harness][native-icon-toolbar]") {
     nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
     const bool available = GENERATE(false, true);
     harness.view().compose.bgm_bar_available = available;
     (void)harness.frame();
@@ -162,6 +163,7 @@ TEST_CASE("Song bar native toolbar availability controls exactly one toggle",
     check_native_toolbar(action.kind == WORM_UI_WORKSPACE_ACTION_NONE);
     const std::array up{left_button(false, 1231, 122)};
     const auto released = harness.frame(up);
+    check_native_toolbar(released.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     for (std::size_t index = 0; index < released.get().compose_input_count; ++index)
         check_native_toolbar(released.get().compose_inputs[index].kind != WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE);
 }

@@ -435,6 +435,7 @@ typedef struct WormUiTimingTarget {
 } WormUiTimingTarget;
 
 typedef struct WormUiWorkspaceAction {
+    wormedit::ui::file_jobs_action_t file_jobs;
     char menu_command_id[96];
     bool compose_menu_command;
     WormUiClipboardAction clipboard;

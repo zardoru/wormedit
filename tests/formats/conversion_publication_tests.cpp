@@ -664,3 +664,77 @@ TEST_CASE("conversion primary publication installs real output bytes", "[unit][p
     check_publication(outcome.value.published && outcome.value.pruned_files == 0);
     check_publication(read(temporary.path / "exports/song.bmson") == "{}");
 }
+
+TEST_CASE("Cancelling atomic publication between artifacts preserves the destination",
+          "[unit][format][publication][export-progress]") {
+    temporary_directory_t temporary;
+    std::filesystem::create_directory(temporary.path / "exports");
+    std::ofstream(temporary.path / "exports/keep.txt") << "original";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .charts = {wormedit::chart_id_t{1}},
+                                         .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    auto outputs = converted("first.bmson");
+    outputs.outputs.push_back({.target = wormedit::format_family_t::bmson,
+                               .chart = wormedit::chart_id_t{1},
+                               .suggested_filename = "second.bmson", .bytes = "{}",
+                               .reimport_validated = true});
+    for (const auto stage : {wormedit::conversion_publication_stage_t::write_output,
+                            wormedit::conversion_publication_stage_t::exchange_directory}) {
+        std::stop_source stop;
+        wormedit::job_progress_t progress;
+        std::size_t writes{};
+        wormedit::conversion_publication_options_t options;
+        options.stop = stop.get_token();
+        options.progress = &progress;
+        options.allow_stage = [&](auto current) {
+            if (current == wormedit::conversion_publication_stage_t::write_output) ++writes;
+            if (current == stage && (stage != wormedit::conversion_publication_stage_t::write_output || writes == 2))
+                stop.request_stop();
+            return true;
+        };
+        const auto published = wormedit::publish_conversion_group_atomic(
+            temporary.path, group, request, outputs, std::move(options));
+        require_publication(!static_cast<bool>(published.published));
+        require_publication(!static_cast<bool>(published.errors.empty()));
+        require_publication(static_cast<bool>(read(temporary.path / "exports/keep.txt") == "original"));
+        require_publication(!static_cast<bool>(std::filesystem::exists(temporary.path / "exports/first.bmson")));
+        require_publication(static_cast<bool>(progress.completed.load() == (stage == wormedit::conversion_publication_stage_t::write_output ? 1 : 2)));
+        require_publication(static_cast<bool>(progress.total.load() == 2));
+        require_publication(static_cast<bool>(std::distance(std::filesystem::directory_iterator(temporary.path),
+                              std::filesystem::directory_iterator{}) == 1));
+    }
+}
+
+TEST_CASE("Automatic export music is copied only inside atomic staging", "[unit][format][publication][export-progress]") {
+    temporary_directory_t temporary;
+    std::ofstream(temporary.path / "music.wav") << "audio";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+        .charts = {wormedit::chart_id_t{1}}, .relative_output_path = "exports"};
+    const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson,
+        .staged_assets = {{wormedit::asset_id_t{5}, "assets/5-music.wav"}}};
+    const auto outputs = converted();
+    wormedit::conversion_publication_options_t options;
+    options.pending_assets.push_back({.project_directory = temporary.path,
+                                      .source_path = "music.wav", .asset = wormedit::asset_id_t{5}});
+    std::stop_source stop;
+    options.stop = stop.get_token();
+    options.allow_stage = [&](auto stage) {
+        if (stage == wormedit::conversion_publication_stage_t::exchange_directory) stop.request_stop();
+        return true;
+    };
+    const auto cancelled = wormedit::publish_conversion_group_atomic(
+        temporary.path, group, request, outputs, options);
+    require_publication(!static_cast<bool>(cancelled.published));
+    require_publication(!static_cast<bool>(std::filesystem::exists(temporary.path / "exports")));
+    require_publication(static_cast<bool>(read(temporary.path / "music.wav") == "audio"));
+    require_publication(static_cast<bool>(std::distance(std::filesystem::directory_iterator(temporary.path),
+                          std::filesystem::directory_iterator{}) == 1));
+    options.stop = {};
+    options.allow_stage = {};
+    const auto published = wormedit::publish_conversion_group_atomic(
+        temporary.path, group, request, outputs, options);
+    require_publication(static_cast<bool>(published.published));
+    require_publication(static_cast<bool>(read(temporary.path / "exports/assets/5-music.wav") == "audio"));
+    require_publication(static_cast<bool>(read(temporary.path / "exports/song.bmson") == "{}"));
+}

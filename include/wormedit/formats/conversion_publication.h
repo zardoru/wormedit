@@ -1,10 +1,12 @@
 #pragma once
 
 #include <wormedit/formats/conversion.h>
+#include <wormedit/core/resource_file_copy.h>
 
 #include <filesystem>
 #include <functional>
 #include <stop_token>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,7 +33,8 @@ struct conversion_publication_plan_error_t;
 struct conversion_publication_plan_payload_t {
     [[nodiscard]] static auto from(const std::filesystem::path& project_directory,
         const output_group_t& group, const conversion_request_t& request,
-        const conversion_result_t& converted, bool destination_is_directory = false)
+        const conversion_result_t& converted, bool destination_is_directory = false,
+        std::span<const project_asset_copy_request_t> pending_assets = {})
         -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
     std::vector<conversion_publication_file_t> files;
     std::vector<conversion_publication_asset_t> assets;
@@ -94,6 +97,10 @@ enum class conversion_publication_stage_t {
 };
 
 struct conversion_publication_options_t {
+    std::stop_token stop;
+    job_progress_t* progress{};
+    // Copied only into private staging; source roots retain their original meaning.
+    std::vector<project_asset_copy_request_t> pending_assets;
     std::uintmax_t maximum_existing_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
     std::size_t maximum_existing_entries{8192};
     std::function<bool(conversion_publication_stage_t)> allow_stage;

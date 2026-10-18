@@ -137,10 +137,26 @@ auto append_generated_files(const std::filesystem::path& project_directory,
     return std::nullopt;
 }
 
+auto validate_pending_assets(const conversion_request_t& request,
+                             std::span<const project_asset_copy_request_t> pending)
+    -> std::optional<std::string> {
+    std::set<asset_id_t> seen;
+    for (const auto& copy : pending) {
+        const auto matching = std::ranges::count_if(request.staged_assets, [&](const auto& staged) {
+            return staged.asset == copy.asset &&
+                   staged.relative_path == std::filesystem::path{"assets"} / copy.destination_filename();
+        });
+        if (!seen.insert(copy.asset).second || matching != 1)
+            return "Pending asset must have one matching staged mapping.";
+    }
+    return std::nullopt;
+}
+
 auto append_staged_assets(const std::filesystem::path& project_directory,
                           const output_group_t& group, const conversion_request_t& request,
                           conversion_publication_plan_payload_t& plan,
-                          std::set<std::filesystem::path>& destinations, bool destination_is_directory)
+                          std::set<std::filesystem::path>& destinations, bool destination_is_directory,
+                          std::span<const project_asset_copy_request_t> pending_assets)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
     const auto asset_directory = destination_is_directory
@@ -154,6 +170,9 @@ auto append_staged_assets(const std::filesystem::path& project_directory,
                                       ? group.relative_output_path.parent_path()
                                       : group.relative_output_path;
     for (const auto& staged : request.staged_assets) {
+        const bool pending = std::ranges::any_of(pending_assets, [&](const auto& copy) {
+            return copy.asset == staged.asset;
+        });
         const auto relative = output_directory / staged.relative_path;
         std::string error;
         if (!staged.asset || !asset_ids.insert(staged.asset).second ||
@@ -161,7 +180,7 @@ auto append_staged_assets(const std::filesystem::path& project_directory,
             staged.relative_path.parent_path() != fs::path{"assets"} || !is_valid_relative(relative) ||
             relative.parent_path() != *asset_directory || destinations.contains(relative) ||
             !asset_destinations.insert(relative).second ||
-            !is_safe_existing_components(project_directory, relative, true, error)) {
+            !is_safe_existing_components(project_directory, relative, !pending, error)) {
             return error.empty() ? "Staged asset path is invalid or missing." : error;
         }
         plan.assets.push_back({staged.asset, relative});
@@ -229,7 +248,8 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
 
 auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
-                                 const conversion_result_t& converted, bool destination_is_directory)
+                                 const conversion_result_t& converted, bool destination_is_directory,
+                                 std::span<const project_asset_copy_request_t> pending_assets)
     -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t> {
     namespace fs = std::filesystem;
     conversion_publication_plan_payload_t plan{};
@@ -250,7 +270,9 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
-    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory);
+    if (auto error = validate_pending_assets(request, pending_assets))
+        return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), *error));
+    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory, pending_assets);
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }

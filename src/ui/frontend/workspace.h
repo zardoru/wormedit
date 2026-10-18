@@ -1,4 +1,5 @@
 #pragma once
+#include "file_jobs.h"
 #include "options_notifications.h"
 #include "catalog.h"
 
@@ -53,6 +54,7 @@ typedef struct WormUiCommandMenuRow {
 } WormUiCommandMenuRow;
 
 typedef struct WormUiWorkspaceView {
+    wormedit::ui::file_jobs_view_t file_jobs;
     WormUiStringCatalogView new_project_layouts;
     WormUiKindCatalogView playback_rates;
     WormUiKindCatalogView bms_encodings;

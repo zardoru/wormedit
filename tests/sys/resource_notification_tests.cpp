@@ -1,6 +1,8 @@
 #include "../support/stale_action_assertions.h"
 #include <catch2/generators/catch_generators.hpp>
 #include "sys/metadata_asset_runtime.h"
+#include <wormedit/formats/osu_mania.h>
+#include <span>
 #include "sys/resource_job_state.h"
 #include "ui/frontend.h"
 
@@ -142,6 +144,8 @@ auto export_test_worker(const output_group_export_request_t& request, std::stop_
     const bool after = mode == "cancel-after";
     if (!before)
         ++export_worker_control.publications;
+    request.progress->total.store(2);
+    request.progress->completed.store(1);
     export_worker_control.entered = true;
     if (before || after) {
         while (!stop.stop_requested())
@@ -417,6 +421,10 @@ TEST_CASE("export cancellation retains publication receipts and busy admission",
     exports.cancel();
     require_resource_notification(entered);
     check_resource_notification(exports.is_busy());
+    check_resource_notification(exports.view().active);
+    check_resource_notification(exports.view().cancelling);
+    check_resource_notification(exports.view().completed == 1);
+    check_resource_notification(exports.view().total == 2);
     check_resource_notification(!start_test_export(exports, fixture.history));
     const auto completed = wait_for_export_result(exports, fixture.history);
     require_resource_notification(completed.has_value());
@@ -487,4 +495,42 @@ TEST_CASE("output preview and publication share format request policy",
         check_resource_notification(plan.request.target_profile.empty());
         document.charts.clear();
     }
+}
+
+TEST_CASE("Rejected music export creates no destination", "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    fixture.history.document.audio_assets.push_back({.id = asset_id_t{5}, .source_path = fixture.source});
+    fixture.history.document.resources.push_back({.id = resource_id_t{6}, .name = "Music",
+        .asset = asset_id_t{5}, .roles = {resource_role_t::music}});
+    auto plan = output_group_export_plan_t::from(fixture.history.document,
+        {.family = format_family_t::osu_mania, .charts = {chart_id_t{1}},
+         .relative_output_path = "exports/song.osu"});
+    plan.request.target_profile = "invalid-profile";
+    const auto result = run_output_group_export(
+        {.document = fixture.history.document, .plan = std::move(plan), .asset_base = fixture.project}, {});
+    REQUIRE_FALSE(result.published);
+    REQUIRE_FALSE(std::filesystem::exists(fixture.project / "exports"));
+}
+
+TEST_CASE("Music export publishes its chart and automatic asset together", "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    const std::string source = "osu file format v14\n[General]\nAudioFilename: source.wav\nMode: 3\n"
+        "[Metadata]\nTitle:Export music\nArtist:Test\nVersion:Normal\n"
+        "[Difficulty]\nCircleSize:4\n[TimingPoints]\n0,500,4,1,0,100,1,0\n[HitObjects]\n";
+    auto parsed = parse_osu_mania_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+                                       {.asset_base_directory = fixture.root});
+    REQUIRE(parsed.value);
+    auto song = std::move(parsed.value);
+    const auto chart = song->charts.front().id;
+    auto plan = output_group_export_plan_t::from(*song,
+        {.family = format_family_t::osu_mania, .charts = {chart},
+         .relative_output_path = "exports/song.osu"});
+    const auto result = run_output_group_export(
+        {.document = *song, .plan = std::move(plan), .asset_base = fixture.root}, {});
+    INFO(result.message);
+    REQUIRE(result.published);
+    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/song.osu"));
+    const project_asset_copy_request_t copy{.source_path = fixture.source,
+        .asset = song->audio_assets.front().id};
+    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/assets" / copy.destination_filename()));
 }

@@ -1151,3 +1151,61 @@ TEST_CASE("Project session boundary resets identity and advances generation", "[
     check_project_boundary(current.scanned_primary_version->project_id == wormedit::song_id_t{2});
     check_project_boundary(current.external_player_source_path.empty());
 }
+
+TEST_CASE("Project opening reports bytes and cancellation never yields a document", "[project-open]") {
+    temporary_project_file_t source{".bms"};
+    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    wormedit::job_progress_t progress;
+    const auto opened = wormedit::sys::open_project_file(source.path, {}, {}, &progress);
+    REQUIRE(opened.is_success());
+    REQUIRE(progress.total.load() == std::filesystem::file_size(source.path));
+    REQUIRE(progress.completed.load() == progress.total.load());
+    std::stop_source stop;
+    stop.request_stop();
+    const auto cancelled = wormedit::sys::open_project_file(source.path, {}, stop.get_token());
+    REQUIRE_FALSE(cancelled.document);
+}
+
+TEST_CASE("Project open runtime retains cancellation until terminal collection", "[project-open]") {
+    temporary_project_file_t source{".bms"};
+    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    wormedit::task_scheduler_t scheduler{1, 1};
+    wormedit::sys::project_open_runtime_t runtime{scheduler};
+    const wormedit::sys::project_open_identity_t identity{
+        .document = {.project = wormedit::song_id_t{12}, .revision = 7}, .session_generation = 3};
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    runtime.cancel();
+    require_open_audio(static_cast<bool>(runtime.is_busy()));
+    require_open_audio(static_cast<bool>(runtime.view().cancelling));
+    require_open_audio(!static_cast<bool>(runtime.start(source.path, {}, identity)));
+    auto completion = runtime.wait();
+    require_open_audio(static_cast<bool>(completion));
+    require_open_audio(!static_cast<bool>(*completion));
+    require_open_audio(static_cast<bool>(completion->error().identity == identity));
+    require_open_audio(static_cast<bool>(completion->error().cause.code == wormedit::failure_code_t::cancelled));
+    require_open_audio(!static_cast<bool>(runtime.is_busy()));
+    require_open_audio(!static_cast<bool>(runtime.poll()));
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    auto retry = runtime.wait();
+    require_open_audio(static_cast<bool>(retry));
+    require_open_audio(static_cast<bool>(*retry));
+    require_open_audio(static_cast<bool>((*retry->value().payload)->is_success()));
+    require_open_audio(!static_cast<bool>(runtime.view().cancelling));
+}
+
+TEST_CASE("Project open completion carries its captured session and encoding request", "[project-open]") {
+    temporary_project_file_t source{".bms"};
+    source.write("#TITLE Async\n#BPM 120\n#00111:0100\n");
+    wormedit::task_scheduler_t scheduler{1, 1};
+    wormedit::sys::project_open_runtime_t runtime{scheduler};
+    const wormedit::sys::project_open_identity_t identity{.session_generation = 15};
+    require_open_audio(static_cast<bool>(runtime.start(source.path, {}, identity)));
+    // Wait outside the UI loop, without cancelling successful work.
+    auto completion = runtime.wait();
+    require_open_audio(static_cast<bool>(completion));
+    require_open_audio(static_cast<bool>(*completion));
+    require_open_audio(static_cast<bool>(completion->value().identity == identity));
+    require_open_audio(static_cast<bool>((*completion->value().payload)->is_success()));
+    require_open_audio(!static_cast<bool>(runtime.is_encoding_retry()));
+    require_open_audio(!static_cast<bool>(runtime.poll()));
+}

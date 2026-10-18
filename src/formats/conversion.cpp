@@ -35,6 +35,11 @@ struct conversion_context_t {
     const conversion_request_t& request;
     const conversion_limits_t& limits;
     conversion_outcome_t& result;
+    const conversion_execution_t& execution;
+    [[nodiscard]] auto can_continue() -> bool;
+    void advance() const {
+        if (execution.progress) ++execution.progress->completed;
+    }
 };
 auto byte_span(std::string_view bytes) -> std::span<const std::byte> {
     return {reinterpret_cast<const std::byte*>(bytes.data()), bytes.size()};
@@ -46,6 +51,15 @@ void add_diagnostic(conversion_outcome_t& result, diagnostic_severity_t severity
                     std::string message, std::string path = {}, bool loss = false) {
     result.diagnostics.push_back({severity, code, stage, target, chart, loss, std::move(message),
                                   std::move(path)});
+}
+
+auto conversion_context_t::can_continue() -> bool {
+    if (!execution.stop.stop_requested()) return true;
+    if (result.ok())
+        add_diagnostic(result, diagnostic_severity_t::error,
+                       conversion_diagnostic_code_t::cancelled, conversion_stage_t::serialize,
+                       request.target, request.chart, "Conversion cancelled.");
+    return false;
 }
 
 auto selected_chart_ids(conversion_context_t& context, const song_document_t& song)
@@ -767,7 +781,7 @@ void append_conversion_output(conversion_context_t& context, const song_document
                               std::optional<chart_id_t> chart, std::string extension,
                               std::optional<std::string> bytes,
                               const chart_document_t* chart_document) {
-    if (!bytes) {
+    if (!context.can_continue() || !bytes) {
         return;
     }
     const auto filename = filename_for(prepared, chart_document, extension, context.limits);
@@ -780,6 +794,7 @@ void append_conversion_output(conversion_context_t& context, const song_document
     }
     context.result.value.outputs.push_back(
         {context.request.target, chart, *filename, std::move(*bytes), false});
+    context.advance();
 }
 
 void write_native_output(conversion_context_t& context, const song_document_t& prepared) {
@@ -801,6 +816,7 @@ void write_native_output(conversion_context_t& context, const song_document_t& p
 void write_bms_outputs(conversion_context_t& context, const song_document_t& prepared,
                        const std::vector<chart_id_t>& charts) {
     for (const auto chart_id : charts) {
+        if (!context.can_continue()) return;
         bms_write_options_t options;
         options.chart = chart_id;
         options.preserve_unchanged_source = context.request.staged_assets.empty();
@@ -897,6 +913,7 @@ void write_osu_outputs(conversion_context_t& context, const song_document_t& pre
         return;
     }
     for (const auto chart_id : charts) {
+        if (!context.can_continue()) return;
         const auto written = write_osu_mania(prepared, {.profile = profile, .chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
@@ -915,6 +932,7 @@ void write_bmson_outputs(conversion_context_t& context, const song_document_t& p
         return;
     }
     for (const auto chart_id : charts) {
+        if (!context.can_continue()) return;
         const auto written = write_bmson(prepared, {.chart = chart_id});
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
@@ -984,11 +1002,12 @@ auto validate_conversion_outputs(conversion_context_t& context,
         total_bytes += output.bytes.size();
     }
     for (auto& output : context.result.value.outputs) {
-        if (!validate_reimport(context, output, stepmania_options)) {
+        if (!context.can_continue() || !validate_reimport(context, output, stepmania_options)) {
             context.result.value.outputs.clear();
             return false;
         }
         output.reimport_validated = true;
+        context.advance();
     }
     return true;
 }
@@ -1019,15 +1038,22 @@ auto is_conversion_needs_slice_spans(const song_document_t& song, const conversi
 }
 
 auto conversion_result_t::from(const song_document_t& song, const conversion_request_t& request,
-                      conversion_limits_t limits) -> conversion_outcome_t {
+                      conversion_limits_t limits, conversion_execution_t execution) -> conversion_outcome_t {
     conversion_outcome_t result{};
-    conversion_context_t context{request, limits, result};
-    if (!validate_request_policies(context, song)) {
+    conversion_context_t context{request, limits, result, execution};
+    if (!context.can_continue() || !validate_request_policies(context, song)) {
         return result;
     }
     const auto charts = selected_chart_ids(context, song);
     if (!result.ok() || !validate_selected_target(context, song, charts)) {
         return result;
+    }
+    if (execution.progress) {
+        execution.progress->phase.store(job_phase_t::preparing);
+        execution.progress->completed.store(0);
+        const auto count = request.target == format_family_t::native_project ||
+                                   request.target == format_family_t::stepmania ? 1 : charts.size();
+        execution.progress->total.store(count * 2);
     }
     auto prepared = prepare_document(context, song, charts);
     if (!prepared || !result.ok()) {
@@ -1035,24 +1061,24 @@ auto conversion_result_t::from(const song_document_t& song, const conversion_req
         return result;
     }
     if (!prepare_slice_exports(context, *prepared, charts)) {
-        result.value.slice_plans.clear();
-        result.value.asset_copies.clear();
-        result.value.silent_files.clear();
+        result.value = {};
+        return result;
+    }
+    if (!context.can_continue()) {
+        result.value = {};
         return result;
     }
     auto stepmania_options = serialize_conversion(context, *prepared, charts);
     if (!validate_conversion_outputs(context, stepmania_options ? &*stepmania_options : nullptr)) {
-        result.value.slice_plans.clear();
-        result.value.asset_copies.clear();
-        result.value.silent_files.clear();
+        result.value = {};
         return result;
     }
     return result;
 }
 
 auto convert_document(const song_document_t& song, const conversion_request_t& request,
-    conversion_limits_t limits) -> conversion_result_t {
-    return conversion_result_t::from(conversion_result_t::from(song, request, limits));
+    conversion_limits_t limits, conversion_execution_t execution) -> conversion_result_t {
+    return conversion_result_t::from(conversion_result_t::from(song, request, limits, execution));
 }
 
 } // namespace wormedit

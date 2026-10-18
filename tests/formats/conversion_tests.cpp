@@ -729,3 +729,27 @@ TEST_CASE("conversion primary prepares a reimported output atomically", "[format
     check_conversion(outcome.value.outputs.front().reimport_validated);
     check_conversion(write_native_project(song).value == before);
 }
+
+TEST_CASE("Conversion progress counts serialized and reimported artifacts", "[unit][format][conversion-progress]") {
+    const auto song = stepmania_song();
+    wormedit::job_progress_t progress;
+    const auto converted = wormedit::convert_document(
+        song, {.target = wormedit::format_family_t::native_project}, {}, {.progress = &progress});
+    REQUIRE(converted);
+    REQUIRE(converted.outputs.size() == 1);
+    REQUIRE(progress.completed.load() == 2);
+    REQUIRE(progress.total.load() == 2);
+}
+
+TEST_CASE("Cancelled conversion returns no artifacts", "[unit][format][conversion-progress]") {
+    const auto song = stepmania_song();
+    std::stop_source stop;
+    stop.request_stop();
+    const auto converted = wormedit::convert_document(
+        song, {.target = wormedit::format_family_t::native_project}, {}, {.stop = stop.get_token()});
+    REQUIRE_FALSE(converted);
+    REQUIRE(converted.outputs.empty());
+    REQUIRE(converted.slice_plans.empty());
+    REQUIRE(converted.asset_copies.empty());
+    REQUIRE(converted.diagnostics.front().code == wormedit::conversion_diagnostic_code_t::cancelled);
+}

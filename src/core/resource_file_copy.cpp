@@ -127,8 +127,7 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
         !request.project_directory.is_absolute() || !is_valid_relative(relative_directory) ||
         request.source_path.filename().empty())
         return false;
-    const auto relative = relative_directory / (std::to_string(request.asset.value) + "-" +
-                                                request.source_path.filename().string());
+    const auto relative = relative_directory / request.destination_filename();
     if (copy.relative_path != relative ||
         copy.absolute_path != request.project_directory / relative)
         return false;
@@ -430,7 +429,7 @@ static auto copy_resource_file_to_relative_directory(
         return std::unexpected(std::move(preparation.error()));
     }
     const auto relative =
-        relative_directory / (std::to_string(request.asset.value) + "-" + filename.string());
+        relative_directory / request.destination_filename();
     const copy_location_t location{source, directory, relative,
                                    request.project_directory / relative};
     if (stop.stop_requested()) {

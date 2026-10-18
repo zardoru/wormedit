@@ -15,6 +15,9 @@ namespace wormedit {
 enum class project_asset_copy_phase_t { copied, reused };
 
 struct project_asset_copy_request_t {
+    [[nodiscard]] auto destination_filename() const -> std::filesystem::path {
+        return std::to_string(asset.value) + "-" + source_path.filename().string();
+    }
     std::filesystem::path project_directory;
     std::filesystem::path source_path;
     asset_id_t asset;

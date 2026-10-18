@@ -335,3 +335,25 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
     expect_project(reset_without_waiting);
     expect_project(after_reset == 2);
 }
+
+TEST_CASE("Conversion preview Cancel retains busy state and discards its result", "[unit][project-view][output-groups]") {
+    auto history = document_history_t::from(project_song());
+    history.document.output_groups[0].family = format_family_t::native_project;
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    WormUiSetupView view{.visible = true};
+    build_project_chart_view(runtime, history.document, view);
+    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id.value, .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation};
+    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).status ==
+            "Conversion preview started.");
+    runtime.request_cancel_preview();
+    REQUIRE(runtime.preview_view().active);
+    REQUIRE(runtime.preview_view().cancelling);
+    scheduler.shutdown();
+    build_project_chart_view(runtime, history.document, view);
+    REQUIRE_FALSE(runtime.preview_view().active);
+    REQUIRE(std::string_view(view.output_groups[0].preview_status) == "Conversion preview cancelled.");
+    REQUIRE(history.undo.empty());
+}

@@ -1,6 +1,8 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/job_progress.h>
+#include <stop_token>
 #include <wormedit/formats/slice_spans.h>
 
 #include <cstddef>
@@ -84,6 +86,7 @@ enum class conversion_diagnostic_code_t {
     loss_rejected,
     output_limit,
     reimport_failed,
+    cancelled,
 };
 
 struct conversion_diagnostic_t {
@@ -105,6 +108,12 @@ struct conversion_output_t {
     std::string bytes;
     bool reimport_validated{};
     auto operator==(const conversion_output_t&) const -> bool = default;
+};
+
+// Advisory artifact counters; stop checks run between writers/reimports.
+struct conversion_execution_t {
+    std::stop_token stop;
+    job_progress_t* progress{};
 };
 
 struct conversion_limits_t {
@@ -130,7 +139,7 @@ struct conversion_payload_t {
 using conversion_outcome_t = diagnosed_t<conversion_payload_t, std::vector<conversion_diagnostic_t>>;
 struct conversion_result_t {
     [[nodiscard]] static auto from(const song_document_t& song, const conversion_request_t& request,
-        conversion_limits_t limits = {}) -> conversion_outcome_t;
+        conversion_limits_t limits = {}, conversion_execution_t execution = {}) -> conversion_outcome_t;
     [[nodiscard]] static auto from(conversion_outcome_t&& outcome) -> conversion_result_t;
     std::vector<conversion_output_t> outputs;
     // Render these detached plans only inside atomic publication staging.
@@ -154,7 +163,7 @@ struct conversion_result_t {
 // preparation boundary.
 [[nodiscard]] auto convert_document(const song_document_t& song,
                                     const conversion_request_t& request,
-                                    conversion_limits_t limits = {})
+                                    conversion_limits_t limits = {}, conversion_execution_t execution = {})
     -> conversion_result_t;
 
 } // namespace wormedit

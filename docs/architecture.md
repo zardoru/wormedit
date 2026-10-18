@@ -159,12 +159,13 @@ the T-681–T-683 implementation scopes and their bounded verification evidence.
 ## File preparation and publication
 
 Opening a project reads/parses/normalizes into a detached `project_open_result_t`
-through `open_project_file` (`sys/project_open.cpp`). The application currently calls
-it synchronously. `finish_project_open` owns encoding retry/error feedback and only
+through `open_project_file` (`sys/project_open.cpp`). The application submits selected files through `project_open_runtime_t` over `async_job_t`.
+The worker owns the path, encoding and byte progress; the UI polls its completion. `finish_project_open` owns encoding retry/error feedback and only
 passes successful results to `publish_opened_project`. That UI-thread method owns
 session replacement, imported session identity, recent-file updates and aggregated
-warnings. T-146 can put the read behind a worker; its generation/cancellation admission
-must precede this completion boundary, keeping the previous document until replacement.
+warnings. The job generation, cancellation and captured document/session admission precede this
+completion boundary, keeping the previous document until replacement. Reading checks cancellation
+between bounded chunks; parser calls are non-interruptible, and cancelled parse results are discarded.
 
 `output_group_export_plan_t::from` (`sys/output_group_export.h`) owns format request
 policy shared by preview and publication, including StepMania filename/profile and
@@ -174,5 +175,10 @@ copying its document, owns task submission and captures all worker inputs.
 calls the existing atomic publisher. The runtime owns completion and notification.
 Cancelling retains busy state until terminal polling, and a separate domain receipt
 preserves publication evidence when scheduler cancellation replaces the task outcome.
-Artifact-level progress/stop checks remain T-147; this does not promise interruptible
-conversion or retract output already published. Preview audio encoding remains T-107.
+Conversion and preview expose advisory artifact counters and check stop tokens between
+writers/reimports. Atomic staging checks cancellation between existing files, generated
+artifacts and immediately before exchange. Automatic music copies are pending mappings
+until copied into private staging, so rejection/cancellation cannot leave a new output
+folder or audio file. Completed exchange remains published even if cancellation races
+with completion. Individual writers and filesystem calls are not preemptible.
+Preview audio encoding remains T-107.

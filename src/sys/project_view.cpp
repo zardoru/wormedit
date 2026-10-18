@@ -213,10 +213,25 @@ auto project_chart_runtime_t::preview_job(task_scheduler_t& scheduler) -> output
 }
 
 void project_chart_runtime_t::cancel_preview() {
+    preview_progress_.reset();
+    preview_cancelling_ = false;
     if (preview_job_) {
         preview_job_->cancel();
         preview_job_.reset();
     }
+}
+
+void project_chart_runtime_t::request_cancel_preview() {
+    if (!preview_job_ || !preview_job_->is_busy()) return;
+    preview_cancelling_ = true;
+    preview_job_->cancel(async_job_cancel_policy_t::retain_completion);
+}
+
+auto project_chart_runtime_t::preview_view() const -> ui::file_job_view_t {
+    return {.active = preview_job_ && preview_job_->is_busy(), .cancelling = preview_cancelling_,
+            .completed = preview_progress_ ? preview_progress_->completed.load() : 0,
+            .total = preview_progress_ ? preview_progress_->total.load() : 0,
+            .label = "Converting and checking preview artifacts"};
 }
 
 namespace {
@@ -234,7 +249,8 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
     const auto index =
         result->has_value() ? result->value().identity.index : result->error().identity.index;
     runtime.output_group_status[index] =
-        result->has_value() ? *result->value().payload : result->error().cause.message;
+        runtime.is_preview_cancelling() ? "Conversion preview cancelled."
+        : result->has_value() ? *result->value().payload : result->error().cause.message;
 }
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
                              WormUiSetupView& view) {
@@ -258,10 +274,13 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
     view.output_group_count = count;
     view.output_groups_truncated = count != doc.output_groups.size();
 }
-auto output_preview(const song_document_t& doc, const output_group_t& group) -> std::string {
+auto output_preview(const output_preview_request_t& input, std::stop_token stop) -> std::string {
+    const auto& doc = input.document;
+    const auto& group = input.group;
     if (group.charts.empty()) return "Add at least one chart before exporting.";
     const auto plan = output_group_export_plan_t::from(doc, group);
-    const auto result = convert_document(doc, plan.request);
+    const auto result = convert_document(doc, plan.request, {},
+                                         {.stop = stop, .progress = input.progress.get()});
     const auto error = std::ranges::find(result.diagnostics, diagnostic_severity_t::error,
         &conversion_diagnostic_t::severity);
     if (error != result.diagnostics.end()) return "Cannot convert: " + error->message;
@@ -274,21 +293,24 @@ auto run_output_preview(const output_preview_request_t& request, std::stop_token
     if (stop.stop_requested())
         return std::unexpected(
             error_t<failure_code_t>{failure_code_t::cancelled, "Preview cancelled."});
-    return output_preview(request.document, request.group);
+    return output_preview(request, stop);
 }
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
     size_t index, task_scheduler_t& scheduler) -> project_chart_ui_result_t {
     poll_output_group_preview(runtime, doc);
     if (runtime.preview_job() && runtime.preview_job()->is_busy())
         return {.status = "Wait for the current conversion preview."};
+    auto progress = std::make_shared<job_progress_t>();
     const auto started = runtime.preview_job(scheduler).request(
-        [&doc, index] {
-            return output_preview_request_t{.document = doc, .group = doc.output_groups[index]};
+        [&doc, index, &progress] {
+            return output_preview_request_t{.document = doc, .group = doc.output_groups[index],
+                                            .progress = progress};
         },
         {.document = {.project = doc.id, .document_revision = doc.revision}, .index = index},
         run_output_preview);
     if (!started)
         return {.status = started.error().message};
+    runtime.begin_preview(std::move(progress));
     runtime.output_group_status[index] = "Preview running…";
     return {.status = "Conversion preview started.", .severity = notification_severity_t::info};
 }

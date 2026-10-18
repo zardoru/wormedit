@@ -4,6 +4,7 @@
 #include <map>
 #include <optional>
 #include <wormedit/core/async_job.h>
+#include <wormedit/core/job_progress.h>
 #include <wormedit/core/document.h>
 #include <wormedit/core/command.h>
 #include <wormedit/core/keyed_cache.h>
@@ -78,6 +79,7 @@ struct project_chart_command_result_t {
 struct output_preview_request_t {
     song_document_t document;
     output_group_t group;
+    std::shared_ptr<job_progress_t> progress;
 };
 struct output_preview_identity_t {
     async_job_project_identity_t document;
@@ -106,9 +108,18 @@ class project_chart_runtime_t {
     }
     [[nodiscard]] auto preview_job(task_scheduler_t& scheduler) -> output_preview_job_t&;
     void cancel_preview();
+    void request_cancel_preview();
+    void begin_preview(std::shared_ptr<job_progress_t> progress) {
+        preview_progress_ = std::move(progress);
+        preview_cancelling_ = false;
+    }
+    [[nodiscard]] auto is_preview_cancelling() const -> bool { return preview_cancelling_; }
+    [[nodiscard]] auto preview_view() const -> ui::file_job_view_t;
 
   private:
     std::optional<output_preview_job_t> preview_job_;
+    std::shared_ptr<job_progress_t> preview_progress_;
+    bool preview_cancelling_{};
 };
 struct project_chart_ui_result_t {
     std::string status;

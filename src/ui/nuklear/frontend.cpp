@@ -2307,6 +2307,21 @@ static bool history_owns_content_input(const WormUiWorkspaceView& view) {
         notification_history_bounds(false), g_context->input.mouse.pos.x, g_context->input.mouse.pos.y);
 }
 
+static constexpr std::array<const char*, 3> file_job_titles{
+    "Opening file", "Exporting output", "Previewing output"};
+
+static auto file_job_bounds(const wormedit::ui::file_jobs_view_t& jobs, int height)
+    -> std::array<struct nk_rect, 3> {
+    const std::array active{jobs.opening.active, jobs.exporting.active, jobs.preview.active};
+    std::array<struct nk_rect, 3> bounds{};
+    float y = 90;
+    for (std::size_t index = 0; index < bounds.size(); ++index) {
+        bounds[index] = nk_rect(30, std::min(y, static_cast<float>(height) - 180), 460, 170);
+        if (active[index]) y += 180;
+    }
+    return bounds;
+}
+
 static bool modeless_window_owns_pointer(const char* name, struct nk_rect fallback) {
     if (!g_context) return false;
     const auto* window = nk_window_find(g_context, name);
@@ -2321,6 +2336,15 @@ static bool modeless_window_owns_pointer(const char* name, struct nk_rect fallba
     return false;
 }
 
+static bool file_jobs_own_pointer(const WormUiWorkspaceView& view) {
+    int width{}, height{};
+    if (!frontend_window_size(&width, &height)) return false;
+    const auto bounds = file_job_bounds(view.file_jobs, height);
+    return (view.file_jobs.opening.active && modeless_window_owns_pointer(file_job_titles[0], bounds[0])) ||
+           (view.file_jobs.exporting.active && modeless_window_owns_pointer(file_job_titles[1], bounds[1])) ||
+           (view.file_jobs.preview.active && modeless_window_owns_pointer(file_job_titles[2], bounds[2]));
+}
+
 static bool modeless_timing_owns_pointer(const WormUiWorkspaceView& view) {
     return (view.timing_settings_visible && modeless_window_owns_pointer(
                 "Timing Settings", nk_rect(340, 120, 420, 430))) ||
@@ -2332,7 +2356,7 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     if (view.close_confirmation.visible) return true;
     if (g_menu_popup_open || g_menu_popup_release_pending) return true;
     if (history_owns_content_input(view)) return true;
-    if (modeless_timing_owns_pointer(view)) return true;
+    if (modeless_timing_owns_pointer(view) || file_jobs_own_pointer(view)) return true;
     const auto& compose = worm_ui_nuklear_compose_state();
     const bool text_active = nuklear_text_entry_active() || g_ime_composition_active ||
                              compose.inline_timing.inline_timing_open || compose.dialogs.go_to_measure_open ||
@@ -2681,7 +2705,7 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
 }
 
 static bool external_project_modal_active(const WormUiWorkspaceView& view) {
-    return (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
+    return view.file_jobs.opening.active || (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
            g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open ||
@@ -3054,7 +3078,33 @@ static void render_tap_timing_tool(const WorkspaceRenderContext& frame) {
     g_shortcut_event_count = count;
 }
 
+static void render_file_job(const wormedit::ui::file_job_view_t& job, const char* title,
+                            bool& cancel, struct nk_rect bounds) {
+    if (!job.active) return;
+    if (nk_begin(g_context, title, bounds,
+                 NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
+        nk_layout_row_dynamic(g_context, 24, 1);
+        nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.c_str(), NK_TEXT_LEFT);
+        auto completed = static_cast<nk_size>(job.completed);
+        nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
+        nk_layout_row_dynamic(g_context, 18, 1);
+        if (job.total)
+            nk_labelf(g_context, NK_TEXT_LEFT, "%zu / %zu", job.completed, job.total);
+        else
+            nk_label(g_context, "Preparing…", NK_TEXT_LEFT);
+        nk_layout_row_dynamic(g_context, 28, 1);
+        if (job.cancelling) nk_widget_disable_begin(g_context);
+        if (nk_button_label(g_context, "Cancel")) cancel = true;
+        if (job.cancelling) nk_widget_disable_end(g_context);
+    }
+    nk_end(g_context);
+}
+
 static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
+    const auto jobs = file_job_bounds(frame.view.file_jobs, frame.height);
+    render_file_job(frame.view.file_jobs.opening, file_job_titles[0], frame.action.file_jobs.cancel_open, jobs[0]);
+    render_file_job(frame.view.file_jobs.exporting, file_job_titles[1], frame.action.file_jobs.cancel_export, jobs[1]);
+    render_file_job(frame.view.file_jobs.preview, file_job_titles[2], frame.action.file_jobs.cancel_preview, jobs[2]);
     worm_ui_nuklear_render_setup_dialogs(g_context, frame.view.setup, frame.action);
     render_close_confirmation(frame.view.close_confirmation, frame.action, frame.width, frame.height);
     if (frame.view.project_loaded &&

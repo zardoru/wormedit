@@ -1,6 +1,10 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/async_job.h>
+#include <wormedit/core/job_progress.h>
+#include "ui/frontend/file_jobs.h"
 #include <wormedit/core/result.h>
 #include <wormedit/formats/native_project_storage.h>
 
@@ -70,7 +74,43 @@ void validate_opened_document(project_open_result_t& result);
 // imported charts are new unsaved sessions rooted at their source directory.
 [[nodiscard]] auto open_project_file(
     const std::filesystem::path& selected_path,
-    std::optional<text_encoding_t> encoding_override = {})
+    std::optional<text_encoding_t> encoding_override = {},
+    std::stop_token stop = {}, job_progress_t* progress = nullptr)
     -> project_open_result_t;
+
+struct project_open_request_t {
+    std::filesystem::path path;
+    std::optional<text_encoding_t> encoding;
+    std::shared_ptr<job_progress_t> progress;
+};
+struct project_open_identity_t {
+    document_stamp_t document;
+    std::uint64_t session_generation{};
+    auto operator==(const project_open_identity_t&) const -> bool = default;
+};
+using project_open_job_t = async_job_t<project_open_request_t, std::unique_ptr<project_open_result_t>,
+                                      project_open_identity_t>;
+class project_open_runtime_t {
+public:
+    explicit project_open_runtime_t(task_scheduler_t& scheduler);
+    auto start(std::filesystem::path path, std::optional<text_encoding_t> encoding,
+               project_open_identity_t identity,
+               project_open_job_t::work_function_t work = open) -> async_job_start_outcome_t;
+    auto poll() -> std::optional<project_open_job_t::completion_t> { return collect(false); }
+    void cancel();
+    void shutdown() { job_.shutdown(); }
+    auto wait() -> std::optional<project_open_job_t::completion_t> { return collect(true); }
+    [[nodiscard]] auto is_busy() const -> bool { return job_.is_busy(); }
+    [[nodiscard]] auto view() const -> ui::file_job_view_t;
+    [[nodiscard]] auto is_encoding_retry() const -> bool { return encoding_retry_; }
+private:
+    static auto open(const project_open_request_t& request, std::stop_token stop)
+        -> project_open_job_t::work_outcome_t;
+    auto collect(bool wait) -> std::optional<project_open_job_t::completion_t>;
+    project_open_job_t job_;
+    std::shared_ptr<job_progress_t> progress_;
+    bool cancelling_{};
+    bool encoding_retry_{};
+};
 
 } // namespace wormedit::sys

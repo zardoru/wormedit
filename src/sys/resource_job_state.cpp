@@ -196,10 +196,11 @@ auto runtime::output_group_export_t::start(const song_document_t& document,
         return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
             "Wait for the current resource copy, import, or export to finish."});
     auto receipt = std::make_shared<std::optional<output_group_export_task_result_t>>();
+    auto progress = std::make_shared<job_progress_t>();
     task_graph_t graph{1};
     const auto added = graph.create_task({},
         [request = output_group_export_request_t{.document = document, .plan = std::move(plan),
-                                                 .asset_base = std::move(asset_base)},
+                                                 .asset_base = std::move(asset_base), .progress = progress},
          receipt, work](std::span<const task_outcome_t>, std::stop_token stop) {
             receipt->emplace(work(request, stop));
             return task_value_t{};
@@ -209,6 +210,8 @@ auto runtime::output_group_export_t::start(const song_document_t& document,
     auto submitted = scheduler_.begin(std::move(graph));
     if (!submitted)
         return std::unexpected(submitted.error());
+    progress_ = std::move(progress);
+    cancelling_ = false;
     pending_ = pending_t{.graph = std::move(*submitted), .task = *added,
                         .identity = {.project = document.id,
                                      .document_revision = document.revision},
@@ -258,7 +261,16 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
 void runtime::output_group_export_t::cancel() {
     if (!pending_)
         return;
+    cancelling_ = true;
     pending_->graph.cancel();
+}
+
+auto runtime::output_group_export_t::view() const -> ui::file_job_view_t {
+    return {.active = is_busy(), .cancelling = cancelling_,
+            .completed = progress_ ? progress_->completed.load() : 0,
+            .total = progress_ ? progress_->total.load() : 0,
+            .label = progress_ && progress_->phase.load() == job_phase_t::publishing
+                         ? "Publishing artifacts" : "Converting and checking artifacts"};
 }
 
 void runtime::output_group_export_t::shutdown() {

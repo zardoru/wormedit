@@ -98,3 +98,19 @@ These existing services retain explicit scheduler orchestration and domain polic
   failure exchange.
 - Resident loading (`resident_sample_loader_t`) owns progress, priorities and
   budget retries; it cancels old work before attempting replacement submission.
+
+Selected project/chart opening uses `project_open_runtime_t` over `async_job_t`.
+The request owns its path, encoding choice and advisory atomic byte counters.
+Cancellation retains busy state until terminal collection; the runtime also rejects
+successful results collected after Cancel. The application checks the captured
+document stamp and project-session generation before encoding retry or session
+publication. Native/imported identity and recent paths change only after success.
+Parser calls are not preemptible; cancellation during parsing discards the result.
+
+Export and conversion preview share cooperative conversion execution controls.
+Their progress counts serialized/reimported artifacts; publication switches to its
+staging artifact counters. Cancellation stays busy until terminal collection, and
+preview discards a successful result collected after Cancel. Export retains its
+publication receipt and reports completed output even after a late stop. Automatic
+music mappings are planned before conversion but copied only inside the publisher's
+private staging directory. Individual writers and filesystem calls are not preempted.

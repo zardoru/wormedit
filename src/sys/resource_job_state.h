@@ -8,6 +8,7 @@
 
 #include "sys/thread_priority.h"
 #include "sys/output_group_export.h"
+#include "ui/frontend/file_jobs.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -72,6 +73,7 @@ public:
     using start_outcome_t = result_t<void, error_t<failure_code_t>>;
 
     [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
+    [[nodiscard]] auto view() const -> ui::file_job_view_t;
     [[nodiscard]] auto scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
     auto start(const song_document_t& document, output_group_export_plan_t plan,
                std::filesystem::path asset_base,
@@ -90,6 +92,8 @@ private:
         std::shared_ptr<std::optional<output_group_export_task_result_t>> receipt;
     };
     notification_sink_t notifications_;
+    std::shared_ptr<job_progress_t> progress_;
+    bool cancelling_{};
     task_scheduler_t scheduler_{1, 1, background_scheduler_options()};
     std::optional<pending_t> pending_;
 };

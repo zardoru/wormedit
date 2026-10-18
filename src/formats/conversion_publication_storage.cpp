@@ -207,7 +207,8 @@ struct temporary_directory_t {
 
 auto is_allowed(const conversion_publication_options_t& options, conversion_publication_stage_t stage)
     -> bool {
-    return !options.allow_stage || options.allow_stage(stage);
+    if (options.stop.stop_requested()) return false;
+    return (!options.allow_stage || options.allow_stage(stage)) && !options.stop.stop_requested();
 }
 
 auto sync_file(const fs::path& path) -> bool {
@@ -289,6 +290,10 @@ auto copy_existing(const fs::path& source, const fs::path& staging,
     std::size_t entries{};
     for (fs::recursive_directory_iterator it(source, error), end; it != end && !error;
          it.increment(error)) {
+        if (options.stop.stop_requested()) {
+            failure = "Export cancelled while staging existing files.";
+            return false;
+        }
         const auto status = it->symlink_status(error);
         if (error || ++entries > options.maximum_existing_entries || fs::is_symlink(status) ||
             (!fs::is_directory(status) && !fs::is_regular_file(status))) {
@@ -510,6 +515,7 @@ auto write_generated_charts(staged_chart_write_t context) -> std::optional<std::
             return "Could not identify a staged chart file.";
         }
         context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
+        if (context.options.progress) ++context.options.progress->completed;
     }
     return std::nullopt;
 }
@@ -519,12 +525,14 @@ auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::s
     if (!context.options.stage_generated_files) return "Generated audio staging callback is required.";
     std::error_code error;
     for (const auto& file : context.plan.generated_files) {
+        if (context.options.stop.stop_requested()) return "Export cancelled while staging audio.";
         const auto relative = file.lexically_relative(context.relative_directory);
         fs::remove(context.staging / relative, error);
         if (error) return "Cannot prepare a generated audio staging destination.";
     }
     if (auto failure = context.options.stage_generated_files(context.staging)) return failure;
     for (const auto& file : context.plan.generated_files) {
+        if (context.options.stop.stop_requested()) return "Export cancelled while staging audio.";
         const auto relative = file.lexically_relative(context.relative_directory);
         const auto path = context.staging / relative;
         const auto status = fs::symlink_status(path, error);
@@ -533,6 +541,20 @@ auto write_generated_audio(staged_chart_write_t context) -> std::optional<std::s
         const auto identity = file_identity(path);
         if (!identity) return "Cannot identify generated audio.";
         context.ownership[context.group_key].emplace(relative.generic_string(), *identity);
+        if (context.options.progress) ++context.options.progress->completed;
+    }
+    return std::nullopt;
+}
+
+auto stage_pending_assets(const conversion_publication_options_t& options, const fs::path& staging)
+    -> std::optional<std::string> {
+    for (auto copy : options.pending_assets) {
+        if (options.stop.stop_requested()) return "Export cancelled while copying assets.";
+        if (!copy.source_path.is_absolute()) copy.source_path = copy.project_directory / copy.source_path;
+        copy.project_directory = staging;
+        const auto copied = create_project_asset_copy(copy, options.stop);
+        if (!copied) return copied.error().message;
+        if (options.progress) ++options.progress->completed;
     }
     return std::nullopt;
 }
@@ -649,12 +671,17 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
                                      conversion_publication_options_t options)
     -> conversion_publication_outcome_t {
     conversion_publication_outcome_t result{};
-    auto planned = conversion_publication_plan_payload_t::from(project_directory, group, request, converted, options.destination_is_directory);
+    auto planned = conversion_publication_plan_payload_t::from(project_directory, group, request, converted, options.destination_is_directory, options.pending_assets);
     if (!planned) {
         result.diagnostics.errors.push_back(std::move(planned.error().message));
         return result;
     }
     const auto& plan = *planned;
+    if (options.progress) {
+        options.progress->phase.store(job_phase_t::publishing);
+        options.progress->completed.store(0);
+        options.progress->total.store(plan.files.size() + plan.generated_files.size() + options.pending_assets.size());
+    }
     if (!plan.generated_files.empty() && !options.stage_generated_files) {
         result.diagnostics.errors.emplace_back("Generated audio staging callback is required.");
         return result;
@@ -700,6 +727,10 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
     std::size_t pruned_files{};
     if (auto failure = prune_stale_chart_files(staging.path, ownership, group_key, current_files,
                                               pruned_files)) {
+        result.diagnostics.errors.push_back(std::move(*failure));
+        return result;
+    }
+    if (auto failure = stage_pending_assets(options, staging.path)) {
         result.diagnostics.errors.push_back(std::move(*failure));
         return result;
     }

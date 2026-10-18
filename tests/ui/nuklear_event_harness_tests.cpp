@@ -8433,3 +8433,49 @@ TEST_CASE("The toolbar toggles the measure lane and, while shown, its time propa
         "Moved bar lines keep other objects in place (click to carry later content)");
     check_measure_lane(time.front().get().compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_BAR_LINE_TIME);
 }
+
+TEST_CASE("Opening progress exposes Cancel on loaded and empty workspaces",
+          "[frontend-state][event-harness][file-jobs]") {
+    nuklear_event_harness_t harness{960, 720};
+    REQUIRE(harness.ready());
+    harness.view().project_loaded = GENERATE(true, false);
+    harness.view().file_jobs.opening = {.active = true, .completed = 32, .total = 64,
+                                       .label = "Reading chart"};
+    (void)harness.frame();
+    (void)harness.frame();
+    REQUIRE(harness.drawn_text().find("Reading chart") != std::string::npos);
+    const auto button = harness.drawn_text_center("Cancel");
+    REQUIRE(button);
+    const auto actions = wormedit::test::click_at(harness, button->first, button->second);
+    REQUIRE(std::ranges::any_of(actions, [](const auto& action) {
+        return action.get().file_jobs.cancel_open;
+    }));
+}
+
+TEST_CASE("Export and preview progress emit their respective cancellation actions",
+          "[frontend-state][event-harness][file-jobs]") {
+    nuklear_event_harness_t harness{960, 900};
+    require_project_access(static_cast<bool>(harness.ready()));
+    const bool preview = GENERATE(false, true);
+    auto& jobs = harness.view().file_jobs;
+    auto& job = preview ? jobs.preview : jobs.exporting;
+    job = {.active = true, .completed = 1, .total = 3, .label = "Checking artifacts"};
+    (void)harness.frame();
+    (void)harness.frame();
+    const auto button = harness.drawn_text_center("Cancel");
+    require_project_access(static_cast<bool>(button));
+    const auto actions = wormedit::test::click_at(harness, button->first, button->second);
+    require_project_access(static_cast<bool>(std::ranges::any_of(actions, [preview](const auto& action) {
+        const auto& cancel = action.get().file_jobs;
+        return preview ? cancel.cancel_preview : cancel.cancel_export;
+    })));
+    require_project_access(std::ranges::all_of(actions, [](const auto& action) {
+        return action.get().compose_input_count == 0;
+    }));
+    job.cancelling = true;
+    (void)harness.frame();
+    const auto disabled = wormedit::test::click_at(harness, button->first, button->second);
+    require_project_access(static_cast<bool>(std::ranges::none_of(disabled, [](const auto& action) {
+        return action.get().file_jobs.cancel_export || action.get().file_jobs.cancel_preview;
+    })));
+}

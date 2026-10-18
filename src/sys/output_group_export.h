@@ -4,6 +4,7 @@
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/slice_spans.h>
 #include <utility>
+#include <memory>
 #include <filesystem>
 #include <stop_token>
 #include <string>
@@ -43,6 +44,7 @@ struct output_group_export_request_t {
     song_document_t document;
     output_group_export_plan_t plan;
     std::filesystem::path asset_base;
+    std::shared_ptr<job_progress_t> progress;
 };
 
 struct output_group_export_task_result_t {

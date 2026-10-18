@@ -2091,6 +2091,8 @@ struct application_t::implementation_t {
         runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
         runtime::metadata_asset_t metadata_asset_runtime{notifications};
         runtime::output_group_export_t export_runtime{notifications};
+        task_scheduler_t project_open_scheduler{1, 1, background_scheduler_options()};
+        project_open_runtime_t project_open_runtime{project_open_scheduler};
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         visual::image_cache_t player_image_cache{};
         task_scheduler_t player_image_scheduler{1, 4, background_scheduler_options()};
@@ -2189,7 +2191,7 @@ struct application_t::implementation_t {
 #endif
     };
     std::optional<std::uint64_t>* current_tap_event_{};
-    static constexpr std::size_t worker_count = 3
+    static constexpr std::size_t worker_count = 4
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
                                                 + 1
 #endif
@@ -2204,6 +2206,7 @@ struct application_t::implementation_t {
         &session.autosave_scheduler,
         &jobs.resource_copy_scheduler,
         &jobs.export_runtime.scheduler(),
+        &jobs.project_open_scheduler,
 #if defined(WORMEDIT_HAS_IMAGE_DECODER)
         &jobs.player_image_scheduler,
 #endif
@@ -2291,7 +2294,7 @@ struct application_t::implementation_t {
     }
 
     void tick_loaded_project_autosave() {
-        if (!session.project_identity.session_loaded)
+        if (!session.project_identity.session_loaded || jobs.project_open_runtime.is_busy())
             return;
         static const std::filesystem::path unavailable_directory;
         wormedit::sys::tick_application_autosave(
@@ -2771,6 +2774,7 @@ struct application_t::implementation_t {
     }
 
     void begin_project_session(wormedit::sys::project_identity_t replacement) {
+        jobs.project_open_runtime.cancel();
         wormedit::sys::begin_project_session(session.project_identity, views.project_chart_runtime,
                                              std::move(replacement));
         worm_ui_frontend_begin_project_session();
@@ -2984,8 +2988,41 @@ struct application_t::implementation_t {
         const auto encoding = action.bms_encoding_id == 0
                                   ? std::optional<wormedit::text_encoding_t>{}
                                   : std::optional{kind};
-        auto opened = wormedit::sys::open_project_file(action.project_path, encoding);
-        finish_project_open(std::move(opened), action.project_path, encoding.has_value());
+        const auto started = jobs.project_open_runtime.start(action.project_path, encoding,
+                                                              project_open_identity());
+        if (!started)
+            post_project_feedback(notification_severity_t::warning, notification_source_t::import_,
+                                  started.error().message);
+        else
+            session.project_identity.pending_import.bms_encoding_path.clear();
+    }
+
+    auto project_open_identity() const -> project_open_identity_t {
+        return {.document = document_stamp_t::from(session.history.document),
+                .session_generation = views.project_chart_runtime.session_generation};
+    }
+
+    void poll_project_open() {
+        auto completion = jobs.project_open_runtime.poll();
+        if (!completion) return;
+        if (!*completion) {
+            const auto& error = completion->error();
+            if (error.identity != project_open_identity()) return;
+            post_project_feedback(error.cause.code == failure_code_t::cancelled
+                                      ? notification_severity_t::info : notification_severity_t::error,
+                                  notification_source_t::import_, error.cause.message);
+            return;
+        }
+        auto& value = **completion;
+        if (value.identity != project_open_identity()) {
+            post_project_feedback(notification_severity_t::warning, notification_source_t::import_,
+                                  "Opening discarded because the current project changed.");
+            return;
+        }
+        // The immutable payload owns a detached result; transfer its document without copying.
+        auto opened = std::move(**value.payload);
+        const auto path = opened.source_path;
+        finish_project_open(std::move(opened), path, jobs.project_open_runtime.is_encoding_retry());
     }
 
     void finish_project_open(wormedit::sys::project_open_result_t opened,
@@ -3004,8 +3041,7 @@ struct application_t::implementation_t {
         publish_opened_project(std::move(opened));
     }
 
-    // UI-thread publication boundary. T-146 must admit only current-generation,
-    // uncancelled completions before entering this method.
+    // UI-thread publication boundary: only current, uncancelled jobs reach here.
     void publish_opened_project(wormedit::sys::project_open_result_t opened) {
         auto document = std::move(*opened.document);
         if (!opened.native_project)
@@ -4048,6 +4084,7 @@ struct application_t::implementation_t {
         if (shutdown_started_)
             return;
         shutdown_started_ = true;
+        jobs.project_open_runtime.shutdown();
         jobs.resource_copy_runtime.cancel();
         jobs.metadata_asset_runtime.cancel();
         jobs.export_runtime.cancel();
@@ -4409,6 +4446,7 @@ struct application_t::implementation_t {
             wormedit::sys::poll_application_jobs(
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
+            poll_project_open();
             compose_viewport_delta_seconds =
                 wormedit::sys::compose_frame_delta_seconds(views.compose_viewport_last_ticks);
             tick_loaded_project_autosave();
@@ -4550,6 +4588,9 @@ struct application_t::implementation_t {
 
     void complete_frame_view(frontend_workspace_view_t& flattened,
                              const composed_frame_inputs_t& frame) {
+        flattened.view.file_jobs.opening = jobs.project_open_runtime.view();
+        flattened.view.file_jobs.exporting = jobs.export_runtime.view();
+        flattened.view.file_jobs.preview = views.project_chart_runtime.preview_view();
         validate_minimap_start_frame(commands, session.history, views.compose_interaction_state);
         flattened.view.minimap_click_moves_paused_playhead =
             commands.preferences.minimap_click_moves_paused_playhead;
@@ -4644,6 +4685,10 @@ struct application_t::implementation_t {
             selected_waveform_sample_rate = selected_waveform_rate();
 #endif
 
+            if (action.file_jobs.cancel_open) jobs.project_open_runtime.cancel();
+            if (action.file_jobs.cancel_export) jobs.export_runtime.cancel();
+            if (action.file_jobs.cancel_preview) views.project_chart_runtime.request_cancel_preview();
+            if (jobs.project_open_runtime.is_busy()) return;
             if (dispatch_close_confirmation(
                     views.pending_close, action,
                     preferences.program_preferences.preferences.general.confirm_unsaved_close))

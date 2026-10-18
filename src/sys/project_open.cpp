@@ -42,7 +42,8 @@ auto supported_source_limit(std::string_view extension) -> std::size_t {
 }
 
 auto read_bounded_file(const std::filesystem::path& path, std::size_t limit,
-                       std::string& error_message) -> std::optional<std::string> {
+                       std::string& error_message, std::stop_token stop,
+                       job_progress_t* progress) -> std::optional<std::string> {
     std::error_code error;
     if (!std::filesystem::is_regular_file(path, error)) {
         error_message = error ? "Could not inspect the selected file: " + error.message()
@@ -64,9 +65,19 @@ auto read_bounded_file(const std::filesystem::path& path, std::size_t limit,
         return std::nullopt;
     }
     std::string bytes(static_cast<std::size_t>(size), '\0');
-    if (!bytes.empty() && !input.read(bytes.data(), static_cast<std::streamsize>(bytes.size()))) {
-        error_message = "Could not read the complete selected file.";
-        return std::nullopt;
+    if (progress) {
+        progress->phase.store(job_phase_t::reading);
+        progress->total.store(bytes.size());
+    }
+    for (std::size_t offset = 0; offset < bytes.size();) {
+        if (stop.stop_requested()) return std::nullopt;
+        const auto count = std::min<std::size_t>(64 * 1024, bytes.size() - offset);
+        if (!input.read(bytes.data() + offset, static_cast<std::streamsize>(count))) {
+            error_message = "Could not read the complete selected file.";
+            return std::nullopt;
+        }
+        offset += count;
+        if (progress) progress->completed.store(offset);
     }
     if (input.peek() != std::char_traits<char>::eof()) {
         error_message = "The selected file changed while it was being read.";
@@ -526,7 +537,8 @@ auto is_supported_project_file_extension(const std::filesystem::path& path) -> b
 }
 
 auto open_project_file(const std::filesystem::path& selected_path,
-                       std::optional<text_encoding_t> encoding_override)
+                       std::optional<text_encoding_t> encoding_override,
+                       std::stop_token stop, job_progress_t* progress)
     -> project_open_result_t {
     project_open_result_t result;
     if (selected_path.empty()) {
@@ -546,10 +558,71 @@ auto open_project_file(const std::filesystem::path& selected_path,
         return result;
     }
     result.asset_base = result.source_path.parent_path();
-    auto source = read_bounded_file(result.source_path, limit, result.error);
+    auto source = read_bounded_file(result.source_path, limit, result.error, stop, progress);
+    if (stop.stop_requested()) return result;
+    if (progress) progress->phase.store(job_phase_t::preparing);
     if (source) parse_selected_file(extension, *source, encoding_override, result);
+    if (stop.stop_requested()) {
+        result.document.reset();
+        return result;
+    }
     validate_opened_document(result);
     return result;
+}
+
+project_open_runtime_t::project_open_runtime_t(task_scheduler_t& scheduler)
+    : job_(scheduler, 1, "Could not open file.", "Wait for the current file open.",
+           "Opening returned no result.") {}
+
+auto project_open_runtime_t::open(const project_open_request_t& request, std::stop_token stop)
+    -> project_open_job_t::work_outcome_t {
+    return std::make_unique<project_open_result_t>(
+        open_project_file(request.path, request.encoding, stop, request.progress.get()));
+}
+
+auto project_open_runtime_t::start(std::filesystem::path path,
+                                  std::optional<text_encoding_t> encoding,
+                                  project_open_identity_t identity,
+                                  project_open_job_t::work_function_t work)
+    -> async_job_start_outcome_t {
+    if (is_busy())
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::capacity_exceeded,
+                                                     "Wait for the current file open."});
+    auto progress = std::make_shared<job_progress_t>();
+    auto started = job_.request([&] {
+        return project_open_request_t{.path = std::move(path), .encoding = encoding,
+                                      .progress = progress};
+    }, identity, work);
+    if (started) {
+        progress_ = std::move(progress);
+        cancelling_ = false;
+        encoding_retry_ = encoding.has_value();
+    }
+    return started;
+}
+
+auto project_open_runtime_t::collect(bool wait) -> std::optional<project_open_job_t::completion_t> {
+    auto completion = wait ? job_.wait() : job_.poll();
+    if (completion && *completion && cancelling_) {
+        auto& value = **completion;
+        return project_open_job_t::completion_t{std::unexpected(
+            async_job_completion_error_t<project_open_identity_t>{
+                .generation = value.generation, .identity = value.identity,
+                .cause = {failure_code_t::cancelled, "Opening cancelled."}})};
+    }
+    return completion;
+}
+void project_open_runtime_t::cancel() {
+    if (!is_busy()) return;
+    cancelling_ = true;
+    job_.cancel(async_job_cancel_policy_t::retain_completion);
+}
+auto project_open_runtime_t::view() const -> ui::file_job_view_t {
+    return {.active = is_busy(), .cancelling = cancelling_,
+            .completed = progress_ ? progress_->completed.load() : 0,
+            .total = progress_ ? progress_->total.load() : 0,
+            .label = progress_ && progress_->phase.load() == job_phase_t::reading
+                         ? "Reading file" : "Parsing and validating"};
 }
 
 } // namespace wormedit::sys

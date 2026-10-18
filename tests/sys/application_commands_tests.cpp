@@ -2501,7 +2501,7 @@ TEST_CASE("Loop selection command rejects missing invalid and unavailable areas"
 #endif
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
-TEST_CASE("Measure split command keeps later heads fixed and cursor on the new head", "[sys][application_commands][measure-split]") {
+TEST_CASE("Measure line command toggles the bar line at the cursor", "[sys][application_commands][measure-split]") {
     TimingInsertFixture fixture;
     const auto result = fixture.invoke(application_command_kind_t::measures_split_at_cursor);
     require_bookmark_callback(result.value);
@@ -2511,8 +2511,16 @@ TEST_CASE("Measure split command keeps later heads fixed and cursor on the new h
     check_bookmark_callback(fixture.compose_state->cursor.row == 0);
     check_bookmark_callback(fixture.compose_state->cursor.measure == chart.measures[1].id);
     check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
+    // Pressing again on the new bar line removes it, and the cursor keeps its row.
     require_bookmark_callback(fixture.invoke(application_command_kind_t::measures_split_at_cursor).value);
-    check_bookmark_callback(fixture.fixture.history.undo.size() == 1);
+    check_bookmark_callback(chart.measures.size() == 2);
+    check_bookmark_callback(fixture.compose_state->cursor.row != 0);
+    check_bookmark_callback(fixture.fixture.history.undo.size() == 2);
+    // The chart's first bar line cannot be removed.
+    fixture.compose_state->cursor = {chart.measures.front().id, 0};
+    static_cast<void>(fixture.invoke(application_command_kind_t::measures_split_at_cursor));
+    check_bookmark_callback(chart.measures.size() == 2);
+    check_bookmark_callback(fixture.fixture.history.undo.size() == 2);
 }
 #endif
 

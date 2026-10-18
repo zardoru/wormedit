@@ -69,6 +69,13 @@ struct split_measure_action_t {
     local_position_t position;
 };
 
+// Removes the bar line that starts `measure`, merging it into the measure before it; every object
+// keeps its row (the inverse of a split). The first measure has no removable bar line.
+struct remove_bar_line_action_t {
+    chart_id_t chart;
+    measure_id_t measure;
+};
+
 struct delete_measure_action_t {
     chart_id_t chart;
     measure_id_t measure;
@@ -97,7 +104,7 @@ struct convert_range_to_pause_action_t {
 using measure_edit_action_t =
     std::variant<convert_range_to_pause_action_t, insert_measure_action_t, update_measure_definition_action_t,
                  update_measures_definition_action_t,
-                 resize_measure_keep_rows_action_t, move_bar_line_action_t, materialize_measures_action_t, split_measure_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
+                 resize_measure_keep_rows_action_t, move_bar_line_action_t, materialize_measures_action_t, split_measure_action_t, remove_bar_line_action_t, delete_measure_action_t, remove_measure_with_contents_action_t>;
 
 struct measure_removal_proposal_t {
     std::size_t deleted_notes{};

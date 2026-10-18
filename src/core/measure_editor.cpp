@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <iterator>
 #include <cmath>
 #include <limits>
 #include <optional>
@@ -711,6 +712,21 @@ void apply_measure_action(measure_edit_context_t& context, const split_measure_a
     }
     context.changed = true;
     context.label = "Split measure at cursor";
+}
+
+void apply_measure_action(measure_edit_context_t& context, const remove_bar_line_action_t& edit) {
+    auto* chart = target_measure_chart(context, edit.chart);
+    if (!chart) return;
+    const std::array measures{edit.measure};
+    auto diagnostics = remove_bar_lines(*chart, measures, context.limits);
+    if (!diagnostics.empty()) {
+        context.result.diagnostics.insert(context.result.diagnostics.end(),
+                                          std::make_move_iterator(diagnostics.begin()),
+                                          std::make_move_iterator(diagnostics.end()));
+        return;
+    }
+    context.changed = true;
+    context.label = "Remove bar line at cursor";
 }
 
 // A Stop follows events at its row; a Delay precedes them. The removed

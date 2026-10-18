@@ -91,19 +91,23 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
                                  notification_severity_t* severity) -> std::string {
     set_feedback_severity(severity, notification_severity_t::warning);
     if (state.virtual_bms_cursor_row) return "Materialize the cursor measure before splitting it.";
-    if (state.cursor.row == 0) {
-        set_feedback_severity(severity, notification_severity_t::hint);
-        return "The cursor is already on a measure head.";
-    }
     const auto chart = history.document.find_chart(state.chart);
     if (chart == nullptr) return "The selected chart is unavailable.";
     const auto& index = history.indices(state.chart)->measures;
     const auto* before = index ? &*index : nullptr;
     const auto row = before ? (*before).row_of(state.cursor) : std::nullopt;
     if (!row) return "The cursor is outside the authored chart.";
-    const auto result =
-        apply_measure_edit(history, split_measure_action_t{state.chart, state.cursor});
-    if (!result) return rejection(result, "The measure could not be split.", severity);
+    const bool on_bar_line = state.cursor.row == 0;
+    if (on_bar_line && *row == 0) {
+        set_feedback_severity(severity, notification_severity_t::hint);
+        return "The first measure has no bar line to remove.";
+    }
+    const auto result = on_bar_line
+        ? apply_measure_edit(history, remove_bar_line_action_t{state.chart, state.cursor.measure})
+        : apply_measure_edit(history, split_measure_action_t{state.chart, state.cursor});
+    if (!result)
+        return rejection(result, on_bar_line ? "The bar line could not be removed."
+                                             : "The measure could not be split.", severity);
     const auto& after = history.indices(state.chart)->measures;
     if (after)
         if (const auto position = after->position_at(*row)) place_cursor_at(state, *position);
@@ -111,7 +115,7 @@ auto apply_cursor_measure_split(document_history_t& history, editor_interaction_
     state.retained_canvas_selection_range.reset();
     state.selected_canvas_measure.reset();
     set_feedback_severity(severity, notification_severity_t::success);
-    return "Measure split at cursor.";
+    return on_bar_line ? "Bar line removed at cursor." : "Bar line added at cursor.";
 }
 
 auto apply_cursor_measure_meter(document_history_t& history, editor_interaction_state_t& state,

@@ -882,7 +882,7 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
     add_builtin(registry, invoker, "transport.play_from_start", "Play from Start",
                 command_category_t::transport, workspace,
                 {chord(shortcut_key_t::space, modified(shortcut_modifier_t::shift))});
-    add_builtin(registry, invoker, "measures.split_at_cursor", "Add Measure Line at Cursor",
+    add_builtin(registry, invoker, "measures.split_at_cursor", "Toggle Measure Line at Cursor",
                 command_category_t::edit, command_focus_scope_t::tab,
                 {chord(shortcut_key_t::m, primary())}, true, compose);
     add_builtin(registry, invoker, "transport.loop_selection", "Play Selection Looped",

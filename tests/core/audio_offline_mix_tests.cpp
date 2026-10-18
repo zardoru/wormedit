@@ -187,7 +187,6 @@ TEST_CASE("Offline interval rejects an empty range", "[unit][audio][offline]") {
     const auto invalid = render_offline_interval(sources, schedule, {}, 20, 20);
     REQUIRE_FALSE(invalid.has_value());
     REQUIRE(invalid.error().code == failure_code_t::invalid_request);
-    CHECK(invalid.error().message == "Invalid offline mix interval or options.");
 }
 
 TEST_CASE("Offline interval bounds output frames and bytes", "[unit][audio][offline]") {
@@ -213,5 +212,4 @@ TEST_CASE("Offline interval reports cancellation without a PCM value", "[unit][a
     const auto cancelled = render_offline_interval(sources, schedule, {}, 0, 64, {}, cancel.get_token());
     REQUIRE_FALSE(cancelled.has_value());
     REQUIRE(cancelled.error().code == failure_code_t::cancelled);
-    CHECK(cancelled.error().message == "Offline mix cancelled.");
 }

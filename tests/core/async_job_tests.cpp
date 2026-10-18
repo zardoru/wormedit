@@ -98,10 +98,18 @@ TEST_CASE("async job scheduler rejection preserves current work", "[unit][async-
     require_async(static_cast<bool>(first));
     started.wait();
     const auto rejected = job.request(capture({.value = 2}), 22, work);
+    job_t idle{scheduler, 2, "invalid", "capacity", "missing"};
+    const auto idle_rejected = idle.request(capture({.value = 3}), 33, work);
     release.count_down();
     const auto completion = job.wait();
     require_async(!(rejected));
+    check_async(rejected.error().code == wormedit::failure_code_t::capacity_exceeded);
     check_async(rejected.error().message == "scheduler outstanding-task capacity exceeded");
+    require_async(!(idle_rejected));
+    check_async(idle_rejected.error().code == wormedit::failure_code_t::capacity_exceeded);
+    check_async(idle_rejected.error().message == "scheduler outstanding-task capacity exceeded");
+    check_async(!(idle.is_busy()));
+    check_async(!(idle.poll()));
     require_async(static_cast<bool>(completion));
     require_async(static_cast<bool>(*completion));
     check_async(completion->value().generation == *first);

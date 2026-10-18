@@ -1,3 +1,4 @@
+#include "interaction_edit_commit.h"
 #include "interaction_internal.h"
 #include <wormedit/core/interaction_cursor_pose.h>
 #include <wormedit/core/time_shift.h>
@@ -761,17 +762,13 @@ auto apply_duration_resize_plan(document_history_t& history, editor_interaction_
         note->kind = kind;
         note->end = candidate.end_position;
     }
-    if (changed) {
-        auto command = transaction.commit(plan.notes.size() == 1 ? "Resize note duration" : "Resize selected note durations");
-        if (!command)
-            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
-    }
-    set_selected_notes(state, plan.notes);
-    state.active_lane = plan.reference_lane;
-    place_cursor_at(state, plan.reference_end);
-    auto result = editor_interaction_result_t::from(history, state, changed);
-    result.accepted = true;
-    return result;
+    return commit_editor_edit(history, state, transaction,
+                              {.label = plan.notes.size() == 1 ? "Resize note duration"
+                                                               : "Resize selected note durations",
+                               .has_document_changes = changed,
+                               .selection = plan.notes,
+                               .cursor = plan.reference_end,
+                               .lane = plan.reference_lane});
 }
 
 auto has_note_move_changes(const chart_document_t& chart, const note_move_plan_t& plan) -> bool {
@@ -872,7 +869,8 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
     transaction.adopt_document(plan.staged_bgm_document.value_or(history.document));
     auto& proposed = transaction.document();
     auto* chart = proposed.find_chart(state.chart);
-    const auto changed = plan.staged_bgm_document.has_value() || has_note_move_changes(*chart, plan) ||
+    const auto changed = plan.staged_bgm_document.has_value() ||
+                         has_note_move_changes(*chart, plan) ||
                          (bar_line_shift != nullptr && bar_line_shift->rows != 0) ||
                          std::ranges::any_of(plan.bgm_moves, [&](const auto& move) {
                              const auto* source = (*chart).find_bgm_event(move.note);
@@ -894,19 +892,21 @@ auto apply_note_move_plan(document_history_t& history, editor_interaction_state_
                 return editor_interaction_result_t{.diagnostics =
                                                        std::move(shifted.command.diagnostics)};
         }
-        auto command = transaction.commit(plan.bgm_moves.empty() ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
-                                   : "Move selected chart objects");
-        if (!command)
-            return editor_interaction_result_t{.diagnostics = std::move(command.diagnostics)};
     }
-    set_selected_notes(state, plan.notes);
-    for (const auto& moved : plan.bgm_moves)
-        state.selected_objects.push_back({editor_selection_object_kind_t::bgm_event, moved.note});
-    reselect_bar_lines(state, bar_line_shift);
-    state.active_lane = plan.reference_lane;
-    place_cursor_at(state, plan.reference_position);
-    auto result = editor_interaction_result_t::from(history, state, changed);
-    result.accepted = true;
-    return result;
+    return commit_editor_edit(
+        history, state, transaction,
+        {.label = plan.bgm_moves.empty()
+                      ? (plan.notes.size() == 1 ? "Move note" : "Move selected notes")
+                      : "Move selected chart objects",
+         .has_document_changes = changed,
+         .selection = plan.notes,
+         .cursor = plan.reference_position,
+         .lane = plan.reference_lane},
+        [&](editor_interaction_state_t& selected) {
+            for (const auto& moved : plan.bgm_moves)
+                selected.selected_objects.push_back(
+                    {editor_selection_object_kind_t::bgm_event, moved.note});
+            reselect_bar_lines(selected, bar_line_shift);
+        });
 }
 } // namespace wormedit

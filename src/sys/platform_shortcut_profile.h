@@ -7,12 +7,10 @@
 
 namespace wormedit {
 
-using platform_shortcut_profile_path_result_t = result_t<std::filesystem::path, std::string>;
-
 // Resolves the per-user shortcut preference file beside the recovery folder.
 // File contents and publication are handled by the headless core storage API.
 [[nodiscard]] auto prepare_platform_shortcut_profile_path()
-    -> platform_shortcut_profile_path_result_t;
+    -> result_t<std::filesystem::path, std::string>;
 
 // Resolves the platform preference path and applies the optional profile to
 // the startup registry. A missing first-run profile is intentionally silent.

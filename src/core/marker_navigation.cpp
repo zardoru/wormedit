@@ -508,8 +508,8 @@ auto marker_navigation_match_t::from(const song_document_t& song, std::uint64_t 
 
 auto section_selection_t::from(const song_document_t& song, std::uint64_t expected_revision,
                                chart_id_t chart_id, object_id_t section_id,
-                               marker_navigation_limits_t limits) -> section_selection_outcome_t {
-    section_selection_outcome_t result{
+                               marker_navigation_limits_t limits) -> diagnosed_t<section_selection_t> {
+    diagnosed_t<section_selection_t> result{
         .value = {.status = failure_code_t::invalid_request,
                   .document_revision = song.revision,
                   .chart = chart_id,

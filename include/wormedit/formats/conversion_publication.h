@@ -50,8 +50,6 @@ struct conversion_publication_plan_error_t {
     }
     auto operator==(const conversion_publication_plan_error_t&) const -> bool = default;
 };
-using conversion_publication_plan_outcome_t =
-    result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
 
 struct staged_asset_discovery_error_t {
     std::vector<conversion_request_t::staged_asset_t> mappings;

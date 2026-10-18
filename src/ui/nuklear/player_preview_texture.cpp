@@ -44,9 +44,6 @@ std::size_t texture_count{};
 std::size_t texture_bytes{};
 std::uint64_t texture_use_sequence{};
 
-using texture_result_t =
-    wormedit::result_t<SDL_Texture*, worm_ui_nuklear_preview_visual_failure_t>;
-
 auto next_texture_use() -> std::uint64_t {
     ++texture_use_sequence;
     if (texture_use_sequence == 0) {
@@ -124,7 +121,8 @@ void order_bga_composite_layers(std::span<const WormUiPlayerPreviewVisualLayerVi
 
 template <typename ImageView>
 auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
-                 const ImageView& layer, bool black_key = false) -> texture_result_t {
+                 const ImageView& layer, bool black_key = false)
+        -> wormedit::result_t<SDL_Texture*, worm_ui_nuklear_preview_visual_failure_t> {
     if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
         layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
         layer.rgba_byte_count > maximum_texture_bytes) {

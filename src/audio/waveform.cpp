@@ -245,28 +245,26 @@ auto read_analysis_block(waveform_analysis_work_t& work, std::uint64_t block_ind
     const auto requested_frames = static_cast<std::size_t>(std::min<std::uint64_t>(
         work.stream_info.output_frame_count - start_frame, maximum_read_frames));
     std::vector<float> samples(maximum_read_frames * output_channel_count);
-    const auto read_outcome = work.decoder.read_frames_at(start_frame, samples, requested_frames);
-    const auto& read = read_outcome ? *read_outcome : read_outcome.error();
-    if (read.status == read_status_t::seek_error) {
+    const auto read = work.decoder.read_frames_at(start_frame, samples, requested_frames);
+    if (read.status == wormedit::failure_code_t::seek_failed) {
         return std::unexpected(waveform_analysis_error_t{
-            .code = waveform_analysis_status_t::decode_failed, .failed_block_index = block_index,
-            .block_status = block_decode_status_t::seek_failed});
+            .code = wormedit::failure_code_t::decode_failed, .failed_block_index = block_index,
+            .block_status = wormedit::failure_code_t::seek_failed});
     }
-    if ((read.status != read_status_t::success && read.status != read_status_t::end_of_stream) ||
+    if ((read.status != read_phase_t::success && read.status != read_phase_t::end_of_stream) ||
         read.frames_read == 0) {
         return std::unexpected(waveform_analysis_error_t{
-            .code = waveform_analysis_status_t::decode_failed, .failed_block_index = block_index,
-            .block_status = block_decode_status_t::decode_failed});
+            .code = wormedit::failure_code_t::decode_failed, .failed_block_index = block_index,
+            .block_status = wormedit::failure_code_t::decode_failed});
     }
     samples.resize(read.frames_read * output_channel_count);
     decoded_audio_block_t block{.key = key,
                                 .frame_count = read.frames_read,
                                 .interleaved_stereo = std::move(samples)};
-    if (work.block_cache.store(key, block.frame_count, block.interleaved_stereo) !=
-        block_store_status_t::stored) {
+    if (!work.block_cache.store(key, block.frame_count, block.interleaved_stereo)) {
         return std::unexpected(waveform_analysis_error_t{
-            .code = waveform_analysis_status_t::decode_failed, .failed_block_index = block_index,
-            .block_status = block_decode_status_t::cache_capacity_exceeded});
+            .code = wormedit::failure_code_t::decode_failed, .failed_block_index = block_index,
+            .block_status = wormedit::failure_code_t::allocation_failed});
     }
     return block;
 }
@@ -299,13 +297,13 @@ auto decode_analysis_blocks(waveform_analysis_work_t& work)
     const auto last_block = (waveform_end(work.waveform) - 1U) / maximum_read_frames;
     std::uint64_t visited_frames{};
     for (auto index = first_block; index <= last_block; ++index) {
-        if (work.stop.stop_requested()) return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::cancelled});
+        if (work.stop.stop_requested()) return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::cancelled});
         auto block = read_analysis_block(work, index);
         if (!block) return std::unexpected(std::move(block.error()));
         accumulate_analysis_block(*block, visited_frames, work);
     }
     if (visited_frames != waveform_frames(work.waveform))
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::decode_failed});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::decode_failed});
     return {};
 }
 
@@ -380,24 +378,24 @@ auto append_pyramid_level(waveform_analysis_work_t& work,
 }
 
 auto build_waveform_pyramid(waveform_analysis_work_t& work)
-    -> waveform_analysis_status_t {
+    -> result_t<void, failure_code_t> {
     const std::vector<waveform_bin_t>* prior_bins = &work.waveform.bins;
     auto prior_frames_per_bin = static_cast<std::uint64_t>(work.frames_per_bin);
     while (prior_bins->size() > 1U) {
         if (work.stop.stop_requested()) {
-            return waveform_analysis_status_t::cancelled;
+            return std::unexpected(failure_code_t::cancelled);
         }
         if (prior_frames_per_bin > std::numeric_limits<std::uint64_t>::max() / 2U) {
-            return waveform_analysis_status_t::source_too_large;
+            return std::unexpected(failure_code_t::capacity_exceeded);
         }
         if (!append_pyramid_level(work, *prior_bins, prior_frames_per_bin)) {
-            return waveform_analysis_status_t::cancelled;
+            return std::unexpected(failure_code_t::cancelled);
         }
         const auto& level = work.waveform.coarser_levels.back();
         prior_bins = &level.bins;
         prior_frames_per_bin = level.frames_per_bin;
     }
-    return waveform_analysis_status_t::generated;
+    return {};
 }
 
 } // namespace
@@ -424,17 +422,17 @@ auto waveform_cache_t::find(const waveform_key_t& key) -> std::optional<waveform
     return most_recent_first_.front();
 }
 
-auto waveform_cache_t::store(waveform_t waveform) -> waveform_store_status_t {
+auto waveform_cache_t::store(waveform_t waveform) -> result_t<void, failure_code_t> {
     if (!is_valid_waveform(waveform, limits_.maximum_bins_per_entry)) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
-        return waveform_store_status_t::invalid_waveform;
+        return std::unexpected(failure_code_t::invalid_data);
     }
     const auto bytes = waveform_bytes(waveform);
     if (!bytes.has_value() || limits_.maximum_entries == 0 || *bytes > limits_.maximum_bytes) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
-        return waveform_store_status_t::capacity_exceeded;
+        return std::unexpected(failure_code_t::capacity_exceeded);
     }
 
     std::scoped_lock lock(mutex_);
@@ -445,14 +443,14 @@ auto waveform_cache_t::store(waveform_t waveform) -> waveform_store_status_t {
            stats_.cached_bytes > limits_.maximum_bytes - *bytes) {
         if (most_recent_first_.empty()) {
             ++stats_.rejected_stores;
-            return waveform_store_status_t::capacity_exceeded;
+            return std::unexpected(failure_code_t::capacity_exceeded);
         }
         erase(std::prev(most_recent_first_.end()), true);
     }
     most_recent_first_.push_front(std::move(waveform));
     ++stats_.entries;
     stats_.cached_bytes += *bytes;
-    return waveform_store_status_t::stored;
+    return {};
 }
 
 void waveform_cache_t::erase(entry_iterator_t entry, bool eviction) {
@@ -499,22 +497,22 @@ auto waveform_analysis_t::from(decoder_t& decoder, decoded_block_cache_t& block_
     const waveform_key_t key{.source = std::move(source), .frames_per_bin = frames_per_bin,
                              .begin_frame = options.begin_frame, .end_frame = options.end_frame};
     if (!is_valid_source(key.source) || frames_per_bin == 0) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::invalid_request});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::invalid_request});
     }
     if (stop.stop_requested()) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::cancelled});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::cancelled});
     }
     if (auto cached = waveform_cache.find(key); cached && !options.require_cached_pcm) {
-        return waveform_analysis_t{.waveform = std::move(*cached), .status = waveform_analysis_status_t::cache_hit};
+        return waveform_analysis_t{.waveform = std::move(*cached), .status = waveform_analysis_phase_t::cache_hit};
     }
 
     const auto info = decoder.info();
     if (!info.has_value()) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::decoder_unavailable});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::unavailable});
     }
     const auto end = key.end_frame == 0 ? info->output_frame_count : key.end_frame;
     if (key.begin_frame >= end || end > info->output_frame_count)
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::invalid_request});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::invalid_request});
     const auto count = expected_bin_count(end - key.begin_frame, frames_per_bin);
     const auto bytes = count.has_value() && *count <= std::numeric_limits<std::size_t>::max()
                            ? bins_bytes(static_cast<std::size_t>(*count))
@@ -523,7 +521,7 @@ auto waveform_analysis_t::from(decoder_t& decoder, decoded_block_cache_t& block_
         bytes.has_value() && *bytes <= waveform_cache.limits().maximum_bytes / 2U;
     if (!count.has_value() || *count > waveform_cache.limits().maximum_bins_per_entry ||
         *count > std::numeric_limits<std::size_t>::max() || !pyramid_fits) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::source_too_large});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::capacity_exceeded});
     }
 
     waveform_analysis_work_t work{
@@ -547,18 +545,18 @@ auto waveform_analysis_t::from(decoder_t& decoder, decoded_block_cache_t& block_
     }
     // Decode and LRU access stay on this call's thread; workers touch only local arrays.
     if (!calculate_base_rms(work)) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::cancelled});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::cancelled});
     }
     const auto pyramid_status = build_waveform_pyramid(work);
-    if (pyramid_status != waveform_analysis_status_t::generated) {
-        return std::unexpected(waveform_analysis_error_t{.code = pyramid_status});
+    if (!pyramid_status) {
+        return std::unexpected(waveform_analysis_error_t{.code = pyramid_status.error()});
     }
     if (stop.stop_requested()) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::cancelled});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::cancelled});
     }
-    if (waveform_cache.store(work.waveform) != waveform_store_status_t::stored) {
+    if (!waveform_cache.store(work.waveform)) {
         return std::unexpected(waveform_analysis_error_t{
-            .code = waveform_analysis_status_t::analysis_cache_capacity_exceeded,
+            .code = wormedit::failure_code_t::allocation_failed,
             .waveform = std::move(work.waveform)});
     }
     return waveform_analysis_t{.waveform = std::move(work.waveform)};

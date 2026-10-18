@@ -40,6 +40,8 @@ void begin_project_session(project_identity_t& current, project_chart_runtime_t&
     const std::filesystem::path& path) -> bool;
 
 struct project_open_result_t {
+    [[nodiscard]] auto is_success() const noexcept -> bool { return document.has_value(); }
+
     std::optional<song_document_t> document;
     std::filesystem::path source_path;
     std::filesystem::path asset_base;
@@ -51,7 +53,6 @@ struct project_open_result_t {
     // Nonfatal osu import quantization and asset-resolution diagnostics.
     std::vector<std::string> warnings;
 };
-using project_open_outcome_t = result_t<project_open_result_t, project_open_result_t>;
 
 // Refreshes exact audio file availability for documents loaded through startup,
 // recovery or session replacement. Decoder support does not affect missing state;
@@ -70,6 +71,6 @@ void validate_opened_document(project_open_result_t& result);
 [[nodiscard]] auto open_project_file(
     const std::filesystem::path& selected_path,
     std::optional<text_encoding_t> encoding_override = {})
-    -> project_open_outcome_t;
+    -> project_open_result_t;
 
 } // namespace wormedit::sys

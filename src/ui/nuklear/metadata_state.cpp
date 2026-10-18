@@ -205,7 +205,7 @@ void worm_ui_nuklear_metadata_file_dialog_complete(std::uint64_t generation, std
 }
 
 auto worm_ui_nuklear_metadata_file_dialog_take()
-    -> std::optional<worm_ui_nuklear_metadata_file_dialog_result_t> {
+    -> std::optional<wormedit::ui::file_dialog_result_t> {
     return metadata_file_dialog_state().take();
 }
 

@@ -41,8 +41,6 @@ struct source_line_t {
     std::size_t order{};
 };
 
-using decode_result_t = text_codec_result_t;
-
 struct parsed_line_t {
     std::string token;
     std::string raw_value;
@@ -87,7 +85,7 @@ using text_util::path_from_utf8;
 
 using text_util::invalid_utf8_offset;
 
-auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
+auto decode_line(std::string_view input, text_encoding_t encoding) -> text_codec_result_t {
     if (encoding == text_encoding_t::ascii) {
         for (std::size_t index = 0; index < input.size(); ++index) {
             if (static_cast<unsigned char>(input[index]) > 0x7fU) {
@@ -172,7 +170,7 @@ auto decode_line(std::string_view input, text_encoding_t encoding) -> decode_res
 
 #if defined(WORMEDIT_HAS_ICONV)
 auto encode_with_iconv(std::string_view input, std::string_view destination_name)
-    -> decode_result_t {
+    -> text_codec_result_t {
     const auto converter = iconv_open(std::string(destination_name).c_str(), "UTF-8");
     if (converter == reinterpret_cast<iconv_t>(-1)) {
         return std::unexpected(text_codec_error_t{.unsupported = true});
@@ -207,7 +205,7 @@ auto encode_with_iconv(std::string_view input, std::string_view destination_name
 }
 #endif
 
-auto encode_line(std::string_view input, text_encoding_t encoding) -> decode_result_t {
+auto encode_line(std::string_view input, text_encoding_t encoding) -> text_codec_result_t {
     if (invalid_utf8_offset(input).has_value()) {
         return std::unexpected(text_codec_error_t{});
     }

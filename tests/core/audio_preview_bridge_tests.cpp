@@ -106,10 +106,8 @@ TEST_CASE("preview bridge preserves playable, BGM, and metronome polyphony",
           "[unit][audio][preview-bridge][polyphony]") {
     decoded_block_cache_t cache;
     const auto pcm = std::vector<float>(64 * output_channel_count, 0.25F);
-    REQUIRE(cache.store({.source = {"asset:key", "revision:1"}}, 64, pcm) ==
-            block_store_status_t::stored);
-    REQUIRE(cache.store({.source = {"asset:click", "revision:1"}}, 64, pcm) ==
-            block_store_status_t::stored);
+    REQUIRE(cache.store({.source = {"asset:key", "revision:1"}}, 64, pcm).has_value());
+    REQUIRE(cache.store({.source = {"asset:click", "revision:1"}}, 64, pcm).has_value());
     auto transport = transport_for(cache, 16);
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();
@@ -422,7 +420,7 @@ TEST_CASE("preview bridge volume scales chart and assist clicks through one clic
     preview_transport_bridge_t bridge{transport};
     const audio_source_identity_t source{"asset:click", "revision:volume"};
     const std::vector<float> pcm(128 * output_channel_count, 0.25F);
-    REQUIRE(cache.store({.source = source, .block_index = 0}, 128, pcm) == block_store_status_t::stored);
+    REQUIRE(cache.store({.source = source, .block_index = 0}, 128, pcm).has_value());
     auto chart = schedule();
     chart.metronome = {{.sample_frame = 0, .accent = metronome_accent_t::regular}};
     const std::array clicks{
@@ -458,8 +456,7 @@ TEST_CASE("preview bridge disabling retires queued clicks while preserving music
           "[unit][audio][preview-bridge][metronome]") {
     decoded_block_cache_t cache;
     const auto pcm = std::vector<float>(64 * output_channel_count, 0.25F);
-    require_metronome(cache.store({.source = {"asset:key", "revision:1"}}, 64, pcm) ==
-                       block_store_status_t::stored);
+    require_metronome(cache.store({.source = {"asset:key", "revision:1"}}, 64, pcm).has_value());
     auto transport = transport_for(cache);
     preview_transport_bridge_t bridge{transport};
     auto chart = four_measure_clicks();
@@ -551,7 +548,7 @@ TEST_CASE("preview bridge assist estimate updates keep handed voices and replace
           "[unit][audio][preview-bridge][assist]") {
     decoded_block_cache_t cache;
     require_metronome(cache.store({.source = {"asset:key", "revision:1"}}, 64,
-        std::vector<float>(64 * output_channel_count, 0.25F)) == block_store_status_t::stored);
+        std::vector<float>(64 * output_channel_count, 0.25F)).has_value());
     auto transport = transport_for(cache, 1);
     preview_transport_bridge_t bridge{transport};
     auto chart = schedule();

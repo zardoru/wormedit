@@ -107,8 +107,7 @@ auto parse_positive_fixture(const std::filesystem::path& path) -> wormedit::song
         auto parsed = wormedit::parse_stepmania_bytes(bytes, options);
         return checked_fixture_document(std::move(parsed.value), parsed.diagnostics);
     }
-    auto opened_outcome = wormedit::sys::open_project_file(path);
-    auto& opened = opened_outcome ? *opened_outcome : opened_outcome.error();
+    auto opened = wormedit::sys::open_project_file(path);
     INFO(opened.error);
     REQUIRE(opened.document);
     return std::move(*opened.document);

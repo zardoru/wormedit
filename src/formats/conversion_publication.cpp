@@ -230,7 +230,7 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
 auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
                                  const conversion_result_t& converted, bool destination_is_directory)
-    -> conversion_publication_plan_outcome_t {
+    -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t> {
     namespace fs = std::filesystem;
     conversion_publication_plan_payload_t plan{};
     if (!project_directory.is_absolute() || !is_valid_relative(group.relative_output_path) ||

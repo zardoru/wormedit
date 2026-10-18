@@ -159,7 +159,7 @@ auto parse_measure_length(std::string_view text) -> measure_parse_result_t {
 
 auto measure_capacity_t::from(
     std::uint64_t divisions_per_standard_measure,
-    const measure_definition_t& measure) -> measure_capacity_outcome_t
+    const measure_definition_t& measure) -> result_t<measure_capacity_t, measure_error_t>
 {
     if (divisions_per_standard_measure == 0) {
         return std::unexpected(measure_error_t::zero_resolution);
@@ -200,7 +200,8 @@ auto measure_capacity_t::from(
     return measure_capacity_t{.row_capacity = capacity};
 }
 
-auto measure_validation_t::from(measure_capacity_outcome_t&& outcome) -> measure_validation_t {
+auto measure_validation_t::from(result_t<measure_capacity_t, measure_error_t>&& outcome)
+    -> measure_validation_t {
     if (outcome) return {.row_capacity = outcome->row_capacity, .error = measure_error_t::none};
     return {.row_capacity = std::nullopt, .error = outcome.error()};
 }

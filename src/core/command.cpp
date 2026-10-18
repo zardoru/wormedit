@@ -158,8 +158,8 @@ void mark_document_saved(document_history_t& history) noexcept {
 
 static auto commit_validated_document(document_history_t& history, song_document_t&& proposed,
                              std::string label, document_command_options_t options)
-    -> document_command_outcome_t {
-    document_command_outcome_t result{.value = {.revision = history.document.revision}};
+    -> document_command_result_t {
+    document_command_result_t result{.revision = history.document.revision};
     if (history.next_revision == std::numeric_limits<std::uint64_t>::max()) {
         result.diagnostics.push_back(
             error(diagnostic_code_t::invalid_id, "document revision sequence is exhausted"));
@@ -172,7 +172,7 @@ static auto commit_validated_document(document_history_t& history, song_document
     if (!options.preserve_retained_source_flags) mark_retained_sources_changed(proposed);
     sync_virtual_tails(proposed);
     result.diagnostics = validate_document(proposed);
-    if (!result.ok()) {
+    if (diagnostic_queries::has_errors(result.diagnostics)) {
         return result;
     }
 
@@ -186,23 +186,14 @@ static auto commit_validated_document(document_history_t& history, song_document
     trim_undo_history(history);
     history.redo.clear();
     ++history.next_revision;
-    result.value.applied = true;
-    result.value.revision = history.document.revision;
+    result.applied = true;
+    result.revision = history.document.revision;
     return result;
-}
-
-auto document_command_result_t::from(document_command_outcome_t&& outcome) -> document_command_result_t {
-    return {.applied = outcome.value.applied, .revision = outcome.value.revision,
-        .diagnostics = std::move(outcome.diagnostics)};
-}
-
-auto document_command_result_t::from(document_command_result_t&& result) -> document_command_outcome_t {
-    return {.value = {.applied = result.applied, .revision = result.revision}, .diagnostics = std::move(result.diagnostics)};
 }
 
 auto commit_document_command(document_history_t& history, song_document_t proposed,
     std::string label, document_command_options_t options) -> document_command_result_t {
-    return document_command_result_t::from(commit_validated_document(history, std::move(proposed), std::move(label), options));
+    return commit_validated_document(history, std::move(proposed), std::move(label), options);
 }
 
 document_command_transaction_t::document_command_transaction_t(document_history_t& history)
@@ -304,17 +295,12 @@ auto document_command_transaction_t::reject(diagnostic_code_t code, std::string 
     return std::move(outcome_);
 }
 
-auto document_command_transaction_t::commit_outcome(std::string label, document_command_options_t options)
-    -> document_command_outcome_t {
-    if (!is_ready() || !document_) return document_command_result_t::from(std::move(outcome_));
+auto document_command_transaction_t::commit(std::string label, document_command_options_t options)
+    -> document_command_result_t {
+    if (!is_ready() || !document_) return std::move(outcome_);
     finished_ = true;
     auto working_document = std::move(*document_);
     return commit_validated_document(history_, std::move(working_document), std::move(label), options);
-}
-
-auto document_command_transaction_t::commit(std::string label, document_command_options_t options)
-    -> document_command_result_t {
-    return document_command_result_t::from(commit_outcome(std::move(label), options));
 }
 
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label) {

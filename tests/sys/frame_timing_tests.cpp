@@ -1005,7 +1005,7 @@ TEST_CASE("Compose envelope projects only exposed stable world rows during follo
     expect_gpu_work(cache.waveform.waveform_envelope_ring.value().reused_rows == 201);
     const audio::audio_block_key_t key{{"unrelated", "immutable"}, 0};
     std::array<float, 16> pcm{};
-    expect_gpu_work(blocks.store(key, 8, pcm) == audio::block_store_status_t::stored);
+    expect_gpu_work(blocks.store(key, 8, pcm).has_value());
     expect_gpu_work(project());
     expect_gpu_work(cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     interaction.viewport_scroll_pixels = 10.75;
@@ -1064,9 +1064,9 @@ void compare_cached_envelope_source(envelope_projection_fixture_t& fixture) {
         {.viewport_scroll_pixels = scroll - 1, .viewport_height_pixels = height + 2,
          .pixels_per_standard_measure = fixture.flattened.view.compose.pixels_per_standard_measure},
         &fixture.blocks, fixture.style);
-    expect_gpu_work(static_cast<bool>(reference));
+    expect_gpu_work(static_cast<bool>((!reference.status.has_failure())));
     std::size_t index = 0;
-    for (const auto& row : reference->rows) {
+    for (const auto& row : reference.rows) {
         const auto y = row.y_pixels - 1;
         if (y < 0 || y > height) continue;
         expect_gpu_work(index < fixture.flattened.compose.waveform.row.size());
@@ -1119,7 +1119,7 @@ void prepare_waveform_sample_points(envelope_projection_fixture_t& fixture) {
     fixture.style = {.sample_points = true, .detail_level = true};
     const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
     const std::vector<float> pcm(32768, .8f);
-    expect_gpu_work(fixture.blocks.store(key, 16384, pcm) == audio::block_store_status_t::stored);
+    expect_gpu_work(fixture.blocks.store(key, 16384, pcm).has_value());
 }
 void prepare_seven_key_mp3_project(envelope_projection_fixture_t& fixture) {
     const auto path = std::filesystem::path(__FILE__).parent_path().parent_path() /
@@ -1177,7 +1177,7 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     const audio::audio_block_key_t key{fixture.analysis.waveform->key.source, 0};
     const std::vector<float> pcm(32768, .8f);
-    expect_gpu_work(fixture.blocks.store(key, 16384, pcm) == audio::block_store_status_t::stored);
+    expect_gpu_work(fixture.blocks.store(key, 16384, pcm).has_value());
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 34);
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projection_calls == 1);
@@ -1188,7 +1188,7 @@ TEST_CASE("Incomplete envelope detail retries after PCM arrives and retains reso
     expect_gpu_work(std::abs(resolved.rms[0] - .8f) < .00001f);
     expect_gpu_work(resolved.absolute_peak[0] != coarse_peak);
     const audio::audio_block_key_t unrelated{{"elsewhere", "unchanged"}, 0};
-    expect_gpu_work(fixture.blocks.store(unrelated, 16384, pcm) == audio::block_store_status_t::stored);
+    expect_gpu_work(fixture.blocks.store(unrelated, 16384, pcm).has_value());
     fixture.project();
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().projected_rows == 0);
     expect_gpu_work(fixture.cache.waveform.waveform_envelope_ring.value().reused_rows == 34);
@@ -1553,8 +1553,8 @@ void check_clock_projection(const audio::waveform_t& waveform, const timing_inde
         .viewport_height_pixels = 64, .pixels_per_standard_measure = 192};
     const auto result = audio::aligned_waveform_view_result_t::from(waveform, nullptr, timing,
                                                                request, nullptr, {});
-    REQUIRE(result);
-    for (const auto& row : result->rows) {
+    REQUIRE(!result.status.has_failure());
+    for (const auto& row : result.rows) {
         const auto pixel = std::floor(row.y_pixels);
         const auto begin = reference_frame(timing, (scroll + pixel) * 5, false, waveform);
         const auto end = reference_frame(timing, (scroll + pixel + 1) * 5, true, waveform);
@@ -3991,12 +3991,12 @@ TEST_CASE("Compose waveform arena preserves every row at the maximum output capa
             .viewport_height_pixels=view.viewport_height_pixels,
             .pixels_per_standard_measure=view.pixels_per_standard_measure,
             .maximum_rows=WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY});
-    expect_waveform_arena(static_cast<bool>(reference));
-    expect_waveform_arena(reference->rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
-    expect_waveform_arena(view.waveform_row_count == reference->rows.size());
-    for (std::size_t index=0; index<reference->rows.size(); ++index) {
+    expect_waveform_arena(static_cast<bool>((!reference.status.has_failure())));
+    expect_waveform_arena(reference.rows.size() == WORM_UI_COMPOSE_WAVEFORM_ROW_CAPACITY);
+    expect_waveform_arena(view.waveform_row_count == reference.rows.size());
+    for (std::size_t index=0; index<reference.rows.size(); ++index) {
         const auto& row = view.waveform_rows[index];
-        const auto& expected = reference->rows[index];
+        const auto& expected = reference.rows[index];
         expect_waveform_arena(row.y_pixels == expected.y_pixels);
         expect_waveform_arena(std::ranges::equal(row.absolute_peak, expected.absolute_peak));
         expect_waveform_arena(std::ranges::equal(row.rms, expected.rms));

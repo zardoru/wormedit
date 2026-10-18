@@ -59,13 +59,13 @@ TEST_CASE("decoded source registry exposes authoritative geometry and exact iden
     REQUIRE(token.has_value());
     const audio_block_key_t key{added->source, 0};
     const auto decoded = registry.decode_source_block(transport, *token, key);
-    CHECK(decoded.value().status == block_decode_status_t::decoded);
-    CHECK(decoded.value().frames > 0);
+    CHECK(decoded.status == block_decode_phase_t::decoded);
+    CHECK(decoded.frames > 0);
     CHECK(cache.has_block(key));
 
     const auto unknown = registry.decode_source_block(
         transport, *token, {.source = {"fixture:unknown", "missing:v1"}, .block_index = 0});
-    CHECK(unknown == std::unexpected(block_decode_result_t{.status = block_decode_status_t::invalid_key}));
+    CHECK(unknown == block_decode_result_t{.status = wormedit::failure_code_t::invalid_request});
     CHECK(registry.remove(wormedit::asset_id_t{7}));
     CHECK_FALSE(registry.binding(wormedit::asset_id_t{7}));
     CHECK_FALSE(registry.remove(wormedit::asset_id_t{7}));
@@ -161,8 +161,8 @@ TEST_CASE("generated decoded sources feed transport blocks without becoming proj
     REQUIRE(token.has_value());
     const audio_block_key_t key{added->source, 0};
     const auto decoded = registry.decode_source_block(transport, *token, key);
-    REQUIRE(decoded.value().status == block_decode_status_t::decoded);
-    CHECK(decoded.value().frames == 3);
+    REQUIRE(decoded.status == block_decode_phase_t::decoded);
+    CHECK(decoded.frames == 3);
     REQUIRE(cache.with_block(key, [&](const decoded_audio_block_t& block) {
         CHECK(block.frame_count == 3);
         CHECK(block.interleaved_stereo == pcm);
@@ -185,16 +185,16 @@ TEST_CASE("decoded source registry retains project decoders for waveform analysi
     waveform_cache_t waveforms;
 
     const auto analyzed = registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128);
-    REQUIRE(analyzed.value().status == waveform_analysis_status_t::generated);
+    REQUIRE(analyzed.value().status == waveform_analysis_phase_t::generated);
     REQUIRE(waveform_analysis_t::find_waveform(analyzed) != nullptr);
     CHECK(waveform_analysis_t::find_waveform(analyzed)->key.source == added->source);
     CHECK(waveform_analysis_t::find_waveform(analyzed)->total_frames == added->output_frame_count);
     CHECK(registry.analyze_waveform(asset_id_t{7}, blocks, waveforms, 128).value().status ==
-          waveform_analysis_status_t::cache_hit);
+          waveform_analysis_phase_t::cache_hit);
     CHECK(registry.analyze_waveform(asset_id_t{99}, blocks, waveforms, 128).error().code ==
-          waveform_analysis_status_t::decoder_unavailable);
+          wormedit::failure_code_t::unavailable);
     CHECK(registry.analyze_waveform({}, blocks, waveforms, 128).error().code ==
-          waveform_analysis_status_t::invalid_request);
+          wormedit::failure_code_t::invalid_request);
 }
 
 namespace {
@@ -295,7 +295,7 @@ void check_pending_decode(wormedit::audio::decoded_source_registry_t& registry, 
                                      "pending-v1:" + std::to_string(asset)},
                                     0};
         const auto decoded = registry.decode_source_block(transport, token, key);
-        CHECK(decoded.value().status == block_decode_status_t::decoded);
+        CHECK(decoded.status == block_decode_phase_t::decoded);
         CHECK(registry.binding(wormedit::asset_id_t{asset}).has_value());
         CHECK(registry.open_decoder_count() <= 4);
 }
@@ -351,8 +351,8 @@ TEST_CASE("long streaming sources keep their decoder open when idle decoders are
     const auto token = transport.start();
     REQUIRE(token.has_value());
     const audio_source_identity_t long_source{"fixture:long", "generated-v1:long"};
-    REQUIRE(registry.decode_source_block(transport, *token, {long_source, 0}).value().status ==
-            block_decode_status_t::decoded);
+    REQUIRE(registry.decode_source_block(transport, *token, {long_source, 0}).status ==
+            block_decode_phase_t::decoded);
     for (std::uint64_t asset = 1; asset <= 4; ++asset) {
         REQUIRE(registry.create_pending_source(pending_registration(asset)).has_value());
         check_pending_decode(registry, transport, *token, asset);

@@ -168,7 +168,6 @@ using storyboard_schedule_outcome_t = diagnosed_t<std::optional<storyboard_sched
                                                storyboard_schedule_options_t options = {})
     -> storyboard_schedule_outcome_t;
 
-using storyboard_cursor_outcome_t = result_t<std::span<const storyboard_event_t>, failure_code_t>;
 
 
 // The schedule must outlive this cursor. seek() is logarithmic; advance() only
@@ -178,7 +177,7 @@ class storyboard_event_cursor_t {
     [[nodiscard]] auto start(const storyboard_schedule_t& schedule, std::int64_t time_ms)
         -> result_t<void, failure_code_t>;
     [[nodiscard]] auto seek(std::int64_t time_ms) -> result_t<void, failure_code_t>;
-    [[nodiscard]] auto advance_events(std::int64_t exclusive_end_time_ms) noexcept -> storyboard_cursor_outcome_t;
+    [[nodiscard]] auto advance_events(std::int64_t exclusive_end_time_ms) noexcept -> result_t<std::span<const storyboard_event_t>, failure_code_t>;
 
     void stop() noexcept;
 
@@ -202,6 +201,8 @@ struct storyboard_value_t {
 };
 
 struct storyboard_evaluation_effect_t {
+    bool succeeded{true};
+    [[nodiscard]] auto is_success() const -> bool { return succeeded; }
     storyboard_value_t value;
     storyboard_diagnostic_t diagnostic;
     std::int64_t start_time_ms{};
@@ -209,7 +210,6 @@ struct storyboard_evaluation_effect_t {
     std::uint64_t visit_order{};
     auto operator==(const storyboard_evaluation_effect_t&) const -> bool = default;
 };
-using storyboard_evaluation_outcome_t = result_t<storyboard_evaluation_effect_t, storyboard_evaluation_effect_t>;
 
 
 // Evaluates one property at an exact OSB millisecond. The last started command
@@ -217,7 +217,7 @@ using storyboard_evaluation_outcome_t = result_t<storyboard_evaluation_effect_t,
 [[nodiscard]] auto evaluate_storyboard_property(const storyboard_sprite_t& sprite,
                                                 storyboard_opcode_t opcode, std::int64_t time_ms,
                                                 std::size_t maximum_nesting = 128)
-    -> storyboard_evaluation_outcome_t;
+    -> storyboard_evaluation_effect_t;
 
 // Semantic comparison ignores source-order labels and blank-only formatting
 // lines, but compares retained directive text and authored loop structure.

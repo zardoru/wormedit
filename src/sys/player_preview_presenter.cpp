@@ -276,16 +276,16 @@ auto evaluate_storyboards(const song_document_t& document,
         const auto frame = evaluate_storyboard_frame(
             *storyboard->model, cached.index, time_ms, cached.arena,
             {.maximum_instances = std::max<std::size_t>(remaining, 1)});
-        if (!frame) {
-            error = frame.error().diagnostic ? frame.error().diagnostic->message
+        if (!frame.is_success()) {
+            error = frame.diagnostic ? frame.diagnostic->message
                                      : "The storyboard frame exceeded its preview bounds.";
             return false;
         }
-        if (frame->instances.size() > remaining) {
+        if (frame.instances.size() > remaining) {
             error = "The storyboard frame exceeds the frontend sprite cap.";
             return false;
         }
-        instances.insert(instances.end(), frame->instances.begin(), frame->instances.end());
+        instances.insert(instances.end(), frame.instances.begin(), frame.instances.end());
     }
     return true;
 }

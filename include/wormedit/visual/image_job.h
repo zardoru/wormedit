@@ -69,9 +69,6 @@ struct image_job_result_t {
     std::vector<image_job_item_outcome_t> items;
 };
 
-using image_job_completion_outcome_t =
-    async_job_completion_outcome_t<async_job_project_identity_t, image_job_result_t>;
-
 struct image_request_t {
     image_cache_t& cache;
     song_id_t project;

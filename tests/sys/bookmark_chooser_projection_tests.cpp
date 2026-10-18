@@ -64,11 +64,11 @@ TEST_CASE("bookmark chooser orders beat and audio anchors with disambiguated lab
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
     const auto result = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 16);
-    REQUIRE(result);
-    check_projection_header(result.value());
-    check_first_beat_row(result.value());
-    check_second_audio_row(result.value());
-    check_unnamed_row(result.value());
+    REQUIRE(result.is_success());
+    check_projection_header(result);
+    check_first_beat_row(result);
+    check_second_audio_row(result);
+    check_unnamed_row(result);
 }
 
 TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-four rows",
@@ -82,19 +82,19 @@ TEST_CASE("bookmark chooser sorts the complete list before paging beyond sixty-f
             .position = local_position_t{measure_id_t{10}, 0}});
     }
     const auto page = bookmark_chooser_view_t::from(document, chart_id_t{2}, 64, 8);
-    REQUIRE(page);
-    check_page_endpoints(page.value());
+    REQUIRE(page.is_success());
+    check_page_endpoints(page);
     const auto empty = bookmark_chooser_view_t::from(document, chart_id_t{2}, 70, 8);
-    REQUIRE(empty);
-    CHECK(empty.value().rows.empty());
-    CHECK(empty.value().total_count == 70);
+    REQUIRE(empty.is_success());
+    CHECK(empty.rows.empty());
+    CHECK(empty.total_count == 70);
 }
 
 TEST_CASE("bookmark chooser rejects invalid paging and missing charts",
           "[unit][sys][bookmark-chooser]") {
     const auto document = chooser_document();
-    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 0));
-    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{99}, 0, 8));
+    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 0).is_success());
+    CHECK_FALSE(bookmark_chooser_view_t::from(document, chart_id_t{99}, 0, 8).is_success());
 }
 
 TEST_CASE("bookmark chooser searches every bookmark before paging with case insensitive labels",
@@ -106,17 +106,17 @@ TEST_CASE("bookmark chooser searches every bookmark before paging with case inse
             .anchor = marker_anchor_t::beat,
             .position = local_position_t{measure_id_t{12}, id}});
     const auto bridge = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "BRIDGE");
-    REQUIRE(bridge.value().rows.size() == 1);
-    CHECK(bridge.value().total_count == 1);
-    CHECK(bridge.value().rows.front().bookmark_id == object_id_t{279});
+    REQUIRE(bridge.rows.size() == 1);
+    CHECK(bridge.total_count == 1);
+    CHECK(bridge.rows.front().bookmark_id == object_id_t{279});
     const auto cjk = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "東京");
-    REQUIRE(cjk.value().rows.size() == 1);
-    CHECK(cjk.value().rows.front().bookmark_id == object_id_t{279});
+    REQUIRE(cjk.rows.size() == 1);
+    CHECK(cjk.rows.front().bookmark_id == object_id_t{279});
     const auto position = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "Measure 001");
-    CHECK(position.value().total_count == 2);
+    CHECK(position.total_count == 2);
     const auto missing = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 12, "not present");
-    CHECK(missing.value().total_count == 0);
-    CHECK(missing.value().rows.empty());
+    CHECK(missing.total_count == 0);
+    CHECK(missing.rows.empty());
 }
 
 TEST_CASE("Bookmark chooser retains a supplied snapshot geometry failure", "[sys][bookmark-chooser]") {
@@ -124,7 +124,7 @@ TEST_CASE("Bookmark chooser retains a supplied snapshot geometry failure", "[sys
     chart_indices_t indices;
     indices.measures = std::unexpected(diagnostic_list_t{});
     const auto result = bookmark_chooser_view_t::from(document, chart_id_t{2}, 0, 16, {}, {.committed = &indices});
-    REQUIRE_FALSE(result);
-    CHECK(result.error().status == "Bookmark positions could not be resolved.");
-    CHECK(result.error().rows.empty());
+    REQUIRE_FALSE(result.is_success());
+    CHECK(result.status == "Bookmark positions could not be resolved.");
+    CHECK(result.rows.empty());
 }

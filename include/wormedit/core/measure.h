@@ -53,10 +53,9 @@ struct measure_capacity_t {
     std::uint64_t row_capacity{};
     auto operator==(const measure_capacity_t&) const -> bool = default;
 };
-using measure_capacity_outcome_t = result_t<measure_capacity_t, measure_error_t>;
-
 struct measure_validation_t {
-    [[nodiscard]] static auto from(measure_capacity_outcome_t&& outcome) -> measure_validation_t;
+    [[nodiscard]] static auto from(result_t<measure_capacity_t, measure_error_t>&& outcome)
+        -> measure_validation_t;
     std::optional<std::uint64_t> row_capacity;
     measure_error_t error{measure_error_t::none};
 

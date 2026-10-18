@@ -20,7 +20,7 @@ auto load_program_preferences_runtime() -> program_preferences_runtime_t {
         runtime.path = shortcut_path->parent_path() / "preferences.json";
         auto loaded = load_program_preferences_for_startup(runtime.path,
             runtime.path.parent_path() / "external-players.conf");
-        auto& contents = loaded.contents ? *loaded.contents : loaded.contents.error();
+        auto& contents = loaded.contents;
         runtime.preferences = std::move(contents.preferences);
         runtime.warnings = std::move(contents.warnings);
         runtime.migrated = loaded.migrated;

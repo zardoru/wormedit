@@ -210,15 +210,7 @@ struct document_history_t {
         -> const std::shared_ptr<const chart_indices_t>&;
 };
 
-struct document_command_effect_t {
-    bool applied{};
-    std::uint64_t revision{};
-    auto operator==(const document_command_effect_t&) const -> bool = default;
-};
-using document_command_outcome_t = diagnosed_t<document_command_effect_t>;
 struct document_command_result_t {
-    [[nodiscard]] static auto from(document_command_outcome_t&& outcome) -> document_command_result_t;
-    [[nodiscard]] static auto from(document_command_result_t&& result) -> document_command_outcome_t;
     bool applied{};
     std::uint64_t revision{};
     diagnostic_list_t diagnostics;
@@ -235,22 +227,7 @@ void reject(document_command_result_t& result, diagnostic_code_t code, std::stri
 // step. Does nothing for fewer than two records or when older ones were already trimmed away.
 void merge_recent_undo_records(document_history_t& history, std::size_t count, std::string label);
 
-template <class Payload> struct command_payload_effect_t {
-    document_command_effect_t command;
-    Payload payload{};
-    auto operator==(const command_payload_effect_t&) const -> bool requires std::equality_comparable<Payload> = default;
-};
-template <class Payload> using command_result_with_outcome_t = diagnosed_t<command_payload_effect_t<Payload>>;
 template <class Payload> struct command_result_with_t {
-    [[nodiscard]] static auto from(command_result_with_outcome_t<Payload>&& outcome) -> command_result_with_t {
-        return {.command = document_command_result_t::from(document_command_outcome_t{
-            .value = outcome.value.command, .diagnostics = std::move(outcome.diagnostics)}),
-            .payload = std::move(outcome.value.payload)};
-    }
-    [[nodiscard]] static auto from(command_result_with_t&& result) -> command_result_with_outcome_t<Payload> {
-        return {.value = {.command = {.applied = result.command.applied, .revision = result.command.revision},
-            .payload = std::move(result.payload)}, .diagnostics = std::move(result.command.diagnostics)};
-    }
     document_command_result_t command;
     Payload payload{};
 
@@ -399,23 +376,15 @@ class document_command_transaction_t {
     template <class Operation, class Effect>
     [[nodiscard]] auto finish_execution(Operation& operation, Effect&& effect,
                                         chart_document_t& chart) -> document_command_result_t {
-        if constexpr (requires { effect.has_value(); }) {
-            if (!effect)
+        if (!outcome_.diagnostics.empty() || !effect.changed)
+            return finish_without_commit();
+        if constexpr (requires { operation.postvalidate(chart, document()); }) {
+            if (!operation.postvalidate(chart, document()))
                 return finish_without_commit();
-            return finish_execution(operation, std::move(*effect), chart);
-        } else {
-            if (!outcome_.diagnostics.empty() || !effect.changed)
-                return finish_without_commit();
-            if constexpr (requires { operation.postvalidate(chart, document()); }) {
-                if (!operation.postvalidate(chart, document()))
-                    return finish_without_commit();
-            }
-            return commit(std::move(effect.command_label));
         }
+        return commit(std::move(effect.command_label));
     }
 
-    [[nodiscard]] auto commit_outcome(std::string label, document_command_options_t options = {})
-        -> document_command_outcome_t;
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})
         -> document_command_result_t;
 

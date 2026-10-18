@@ -87,20 +87,21 @@ struct slice_span_render_options_t {
     bool preserve_float_samples{false};
 };
 struct slice_span_render_payload_t {
+    bool succeeded{true};
+    [[nodiscard]] auto is_success() const -> bool { return succeeded; }
     std::vector<std::filesystem::path> files{};
     std::string error{};
     std::optional<asset_id_t> asset{};
     [[nodiscard]] static auto from(std::string message, std::optional<asset_id_t> asset = {}) -> slice_span_render_payload_t {
-        return {.files = {}, .error = std::move(message), .asset = asset};
+        return {.succeeded = false, .files = {}, .error = std::move(message), .asset = asset};
     }
     auto operator==(const slice_span_render_payload_t&) const -> bool = default;
 };
-using slice_span_render_outcome_t = result_t<slice_span_render_payload_t, slice_span_render_payload_t>;
 // Preflights every referenced decoder/span before writing; one render call per distinct span
 // supports overlapping ranges. Exclusive publication never overwrites an existing file.
 // Any failure removes our staged and published files and leaves the input unchanged.
 [[nodiscard]] auto create_slice_span_files(const song_document_t& song, const slice_span_render_input_t& plan,
-    const slice_span_render_options_t& options) -> slice_span_render_outcome_t;
+    const slice_span_render_options_t& options) -> slice_span_render_payload_t;
 
 
 struct conversion_request_t;

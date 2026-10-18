@@ -164,7 +164,8 @@ auto candidate_error_less(double input, rational_t left, rational_t right) -> bo
 }
 
 auto make_approximation(double input, rational_t candidate, std::uint32_t iterations,
-                        const rationalization_options_t& options) -> rationalization_result_t {
+                        const rationalization_options_t& options)
+        -> result_t<rationalized_value_t, rationalization_error_info_t> {
     const auto bound = error_bound(input, candidate);
     if (options.maximum_absolute_error.has_value() && bound > *options.maximum_absolute_error) {
         return std::unexpected(rationalization_error_info_t{
@@ -302,7 +303,7 @@ auto parse_exact_decimal(std::string_view text, std::optional<std::uint32_t> max
 }
 
 auto rationalized_value_t::from(double value, const rationalization_options_t& options)
-    -> rationalization_result_t {
+    -> result_t<rationalized_value_t, rationalization_error_info_t> {
     if (!std::isfinite(value)) {
         return std::unexpected(rationalization_error_info_t{.code = failure_code_t::invalid_data});
     }

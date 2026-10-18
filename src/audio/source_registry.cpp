@@ -451,19 +451,19 @@ auto decoded_source_registry_t::binding(asset_id_t asset) const
 
 auto decoded_source_registry_t::decode_source_block(transport_t& transport, session_token_t token,
                                                     audio_block_key_t key)
-    -> block_decode_outcome_t {
+    -> block_decode_result_t {
     if (!is_valid_source(key.source)) {
-        return block_decode_result_t::from(block_decode_status_t::invalid_key);
+        return block_decode_result_t::from(wormedit::failure_code_t::invalid_request);
     }
     if (const auto resident = transport.resident_block_hit(token, key)) {
-        return block_decode_result_t::from(block_decode_result_t{*resident});
+        return *resident;
     }
     std::shared_ptr<entry_t> entry;
     {
         const std::scoped_lock lock(mutex_);
         const auto found = std::ranges::find(entries_, key.source, &entry_t::source);
         if (found == entries_.end()) {
-            return block_decode_result_t::from(block_decode_status_t::invalid_key);
+            return block_decode_result_t::from(wormedit::failure_code_t::invalid_request);
         }
         entry = *found;
     }
@@ -471,7 +471,7 @@ auto decoded_source_registry_t::decode_source_block(transport_t& transport, sess
     // its geometry instead of failing.
     const auto lease = acquire_lease(entry);
     if (!lease) {
-        return block_decode_result_t::from(block_decode_status_t::invalid_key);
+        return block_decode_result_t::from(wormedit::failure_code_t::invalid_request);
     }
     return transport.decode_source_block(lease.decoder(), token, std::move(key));
 }
@@ -498,8 +498,8 @@ auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cac
     for (std::uint64_t block = 0; block < blocks && !stop.stop_requested(); ++block) {
         const auto result = decode_and_cache_block(lease.decoder(), block_cache, session, *token,
                                                    {.source = entry->source, .block_index = block});
-        if (result.status != block_decode_status_t::decoded &&
-            result.status != block_decode_status_t::cache_hit) {
+        if (result.status != block_decode_phase_t::decoded &&
+            result.status != block_decode_phase_t::cache_hit) {
             break;
         }
         ++cached;
@@ -510,11 +510,11 @@ auto decoded_source_registry_t::preload_head(asset_id_t asset, decoded_block_cac
 
 auto decoded_source_registry_t::load_resident(asset_id_t asset, resident_sample_store_t& store,
                                               const resident_request_t& request,
-                                              std::stop_token stop) -> resident_load_status_t {
+                                              std::stop_token stop) -> operation_state_t<resident_load_phase_t> {
     const auto entry = find_entry(asset);
-    if (!entry) return resident_load_status_t::decode_failed;
+    if (!entry) return wormedit::failure_code_t::decode_failed;
     const auto lease = acquire_lease(entry);
-    if (!lease) return resident_load_status_t::decode_failed;
+    if (!lease) return wormedit::failure_code_t::decode_failed;
     return store.load(request, lease.decoder(), stop);
 }
 
@@ -523,7 +523,7 @@ auto decoded_source_registry_t::analyze_waveform(
     std::uint32_t frames_per_bin, waveform_analysis_options_t options, std::stop_token stop)
     -> waveform_analysis_outcome_t {
     if (!asset || frames_per_bin == 0) {
-        return std::unexpected(waveform_analysis_error_t{.code = waveform_analysis_status_t::invalid_request});
+        return std::unexpected(waveform_analysis_error_t{.code = wormedit::failure_code_t::invalid_request});
     }
     const auto entry = find_entry(asset);
     if (!entry) {

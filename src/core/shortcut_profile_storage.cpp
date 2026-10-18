@@ -64,7 +64,8 @@ auto shortcut_profile_json_size_bound(const shortcut_profile_t& profile)
 static_assert(maximum_shortcut_profile_json_bound < maximum_shortcut_profile_bytes,
               "shortcut profile schema bounds must keep serialization below its byte cap");
 
-auto open_shortcut_profile(const std::filesystem::path& path) -> shortcut_profile_load_outcome_t {
+auto open_shortcut_profile(const std::filesystem::path& path)
+    -> result_t<shortcut_profile_t, diagnosed_t<error_t<failure_code_t>>> {
     if (path.empty() || path.filename().empty()) {
         return std::unexpected(diagnosed_t<error_t<failure_code_t>>{
             .value = {failure_code_t::io_failed,
@@ -140,7 +141,7 @@ auto open_shortcut_profile(const std::filesystem::path& path) -> shortcut_profil
 
 auto create_shortcut_profile_file(const std::filesystem::path& path,
                                   const shortcut_profile_t& profile)
-    -> shortcut_profile_save_outcome_t {
+    -> result_t<void, error_t<failure_code_t>> {
     if (path.empty() || path.filename().empty()) {
         return std::unexpected(error_t<failure_code_t>{
             failure_code_t::io_failed, "shortcut profile path must name a file"});

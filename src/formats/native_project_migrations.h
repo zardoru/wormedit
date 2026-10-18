@@ -24,9 +24,6 @@ struct migration_t {
 
 enum class migration_phase_t : std::uint8_t { unchanged, migrated };
 
-// Success retains whether a migration ran; failures carry a shared code and message.
-using migration_outcome_t = result_t<migration_phase_t, error_t<failure_code_t>>;
-
 // Migrations shipped with the reader: one `migrate_vN_to_vN+1` per released
 // schema bump. Schema 2 added `expression_source` to SV recipes.
 [[nodiscard]] auto default_migrations() -> std::span<const migration_t>;
@@ -38,10 +35,12 @@ using migration_outcome_t = result_t<migration_phase_t, error_t<failure_code_t>>
 // when the document changed.
 [[nodiscard]] auto normalize_legacy_bms_bgm(song_document_t& song) -> bool;
 
+// Success retains whether a migration ran; failures carry a shared code and message.
 // Walks `document.schema_version` up to `target_version`, one table step at a
 // time, and sets the version after each successful step.
 [[nodiscard]] auto migrate_document(nlohmann::json& document, std::uint32_t target_version,
-                                    std::span<const migration_t> table) -> migration_outcome_t;
+                                    std::span<const migration_t> table)
+    -> result_t<migration_phase_t, error_t<failure_code_t>>;
 
 [[nodiscard]] auto build_native_project_parse(std::string_view bytes, native_project_limits_t limits,
     std::uint32_t target_version, std::span<const migration_t> table) -> native_project_parse_outcome_t;

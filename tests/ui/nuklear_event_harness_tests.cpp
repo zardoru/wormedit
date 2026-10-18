@@ -7942,8 +7942,8 @@ TEST_CASE("BGA file drops share retained POSITION and reject changed origins",
     event.drop.data = nullptr;
     const auto result = handle_resource_drop(event, origin, transaction);
     expect_t422(result.consumed && result.completed.has_value());
-    expect_t422(result.completed->has_value() == !changed_project);
-    const auto& batch = *result.completed ? result.completed->value() : result.completed->error();
+    expect_t422(result.completed->is_success() == !changed_project);
+    const auto& batch = *result.completed;
     expect_t422(batch.origin.project_id == 1);
     expect_t422(batch.origin.target == resource_drop_target_t::bga);
     expect_t422(batch.paths == std::vector<std::string>{"/tmp/drop-image.png", "/tmp/drop-image-two.png"});

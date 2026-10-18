@@ -594,7 +594,9 @@ TEST_CASE("conversion publication distinguishes dotted directories from chart fi
 TEST_CASE("conversion publication expected failure preserves an empty error", "[unit][publication][results]") {
     wormedit::conversion_publication_plan_payload_t payload{};
     payload.files.reserve(2);
-    wormedit::conversion_publication_plan_outcome_t outcome = std::unexpected(wormedit::conversion_publication_plan_error_t::from(std::move(payload), {}));
+    wormedit::result_t<wormedit::conversion_publication_plan_payload_t,
+                       wormedit::conversion_publication_plan_error_t> outcome =
+        std::unexpected(wormedit::conversion_publication_plan_error_t::from(std::move(payload), {}));
     require_publication(!outcome.has_value());
     check_publication(outcome.error().message.empty());
     const auto& retained = outcome.error().plan;

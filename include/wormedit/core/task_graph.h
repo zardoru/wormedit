@@ -59,8 +59,6 @@ struct task_failure_t {
 };
 
 using task_outcome_t = result_t<task_value_t, task_failure_t>;
-using task_add_outcome_t = result_t<task_id_t, error_t<failure_code_t>>;
-
 template <typename value_t>
 [[nodiscard]] auto task_value_cast(const task_outcome_t& result) -> std::shared_ptr<const value_t> {
     if (!result)
@@ -87,7 +85,7 @@ class task_graph_t {
     auto operator=(const task_graph_t&) -> task_graph_t& = delete;
 
     [[nodiscard]] auto create_task(std::span<const task_id_t> dependencies,
-                                   task_function_t function) -> task_add_outcome_t;
+                                   task_function_t function) -> result_t<task_id_t, error_t<failure_code_t>>;
     [[nodiscard]] auto size() const noexcept -> std::size_t;
 
   private:
@@ -114,8 +112,6 @@ class task_graph_handle_t {
     friend class task_scheduler_t;
 };
 
-using task_submit_outcome_t = result_t<task_graph_handle_t, error_t<failure_code_t>>;
-
 // Fixed jthread pool with a preallocated ring queue. The capacity covers queued,
 // running, and dependency-blocked nodes across submitted graphs. It does not bound
 // memory allocated by user callbacks or their result payloads. No std::async is used.
@@ -139,7 +135,7 @@ class task_scheduler_t {
     auto operator=(const task_scheduler_t&) -> task_scheduler_t& = delete;
     ~task_scheduler_t();
 
-    [[nodiscard]] auto begin(task_graph_t graph) -> task_submit_outcome_t;
+    [[nodiscard]] auto begin(task_graph_t graph) -> result_t<task_graph_handle_t, error_t<failure_code_t>>;
     void shutdown();
     [[nodiscard]] auto outstanding_tasks() const noexcept -> std::size_t;
     [[nodiscard]] auto maximum_outstanding_tasks() const noexcept -> std::size_t;

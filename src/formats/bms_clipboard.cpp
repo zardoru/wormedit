@@ -46,10 +46,6 @@ struct record_t {
     bool long_endpoint{};
 };
 
-using line_result_t = result_t<std::vector<std::string_view>, std::string>;
-
-using record_result_t = result_t<record_t, std::string>;
-
 struct resource_result_t {
     std::optional<resource_id_t> id;
     bool ambiguous{};
@@ -85,7 +81,8 @@ struct decode_context_t {
     return true;
 }
 
-[[nodiscard]] auto split_payload(std::string_view text, grammar_t grammar) -> line_result_t {
+[[nodiscard]] auto split_payload(std::string_view text, grammar_t grammar)
+    -> result_t<std::vector<std::string_view>, std::string> {
     if (!is_valid_newlines(text)) return std::unexpected(std::string{"BMS clipboard must use consistent CRLF line endings."});
     const auto header_end = text.find("\r\n");
     if (header_end == std::string_view::npos)
@@ -367,7 +364,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
 
 [[nodiscard]] auto parse_bmse_record(std::string_view line, grammar_t grammar,
                                     std::size_t order, const decode_context_t& context)
-    -> record_result_t {
+    -> result_t<record_t, std::string> {
     const auto header_bytes = grammar == grammar_t::bmse3 ? std::size_t{20} : std::size_t{11};
     if (line.size() <= header_bytes) return std::unexpected(std::string{"BMSE clipboard record is truncated."});
     std::size_t bgm_lane{};
@@ -459,7 +456,7 @@ auto base36_digit(char byte) -> std::optional<std::uint32_t> {
 
 [[nodiscard]] auto parse_ibmsc_record(std::string_view line, grammar_t grammar,
                                      std::size_t order, const decode_context_t& context)
-    -> record_result_t {
+    -> result_t<record_t, std::string> {
     const auto fields = split_single_spaces(line);
     if (!fields || fields->size() != 6)
         return std::unexpected(std::string{"iBMSC record must have six single-space-separated fields."});

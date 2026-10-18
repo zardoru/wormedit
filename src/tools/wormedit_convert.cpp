@@ -279,8 +279,8 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
 auto run_request(const json& body) -> std::pair<int, json> {
     auto request = parse_request(body);
     const auto opened = sys::open_project_file(request.input);
-    if (!opened) return {2, fail_json(opened.error().error.empty() ? "could not open the input" : opened.error().error)};
-    if (const auto message = select_charts(*opened.value().document, request.chart_indices,
+    if (!opened.is_success()) return {2, fail_json(opened.error.empty() ? "could not open the input" : opened.error)};
+    if (const auto message = select_charts(*opened.document, request.chart_indices,
                                            request.conversion)) {
         return {2, fail_json(*message)};
     }
@@ -288,10 +288,10 @@ auto run_request(const json& body) -> std::pair<int, json> {
     if (!std::filesystem::is_directory(request.output_directory, error)) {
         return {2, fail_json("output_directory must be an existing directory")};
     }
-    if (auto failure = prepare_cli_slices(*opened.value().document, request)) return {1, fail_json(*failure)};
-    const auto converted = convert_document(*opened.value().document, request.conversion);
+    if (auto failure = prepare_cli_slices(*opened.document, request)) return {1, fail_json(*failure)};
+    const auto converted = convert_document(*opened.document, request.conversion);
     json result{{"ok", false}, {"artifacts", json::array()}, {"diagnostics", json::array()},
-                {"import_warnings", opened.value().warnings}};
+                {"import_warnings", opened.warnings}};
     for (const auto& diagnostic : converted.diagnostics) {
         result["diagnostics"].push_back(diagnostic_json(diagnostic));
     }
@@ -301,8 +301,8 @@ auto run_request(const json& body) -> std::pair<int, json> {
         result["error"] = *conflict;
         return {1, result};
     }
-    const auto failure = is_conversion_needs_slice_spans(*opened.value().document, request.conversion)
-        ? publish_cli_slices(*opened.value().document, request, converted, result["artifacts"])
+    const auto failure = is_conversion_needs_slice_spans(*opened.document, request.conversion)
+        ? publish_cli_slices(*opened.document, request, converted, result["artifacts"])
         : write_outputs(converted, request.output_directory, result["artifacts"]);
     if (failure) {
         result["error"] = *failure;

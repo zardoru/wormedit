@@ -20,23 +20,11 @@ auto checked_end(std::uint64_t begin, std::uint64_t count) -> std::optional<std:
     return begin + count;
 }
 
-auto decode_failure_status(block_decode_status_t status) -> failure_code_t {
-    switch (status) {
-    case block_decode_status_t::stale_generation:
+auto decode_failure_status(operation_state_t<block_decode_phase_t> status) -> failure_code_t {
+    if (status == failure_code_t::stale_generation)
         return failure_code_t::stale_generation;
-    case block_decode_status_t::invalid_key:
-    case block_decode_status_t::decoder_unavailable:
+    if (status == failure_code_t::invalid_request || status == failure_code_t::unavailable)
         return failure_code_t::unavailable;
-    case block_decode_status_t::cache_hit:
-    case block_decode_status_t::decoded:
-        break;
-    case block_decode_status_t::beyond_end:
-    case block_decode_status_t::seek_failed:
-    case block_decode_status_t::decode_failed:
-    case block_decode_status_t::cache_capacity_exceeded:
-    case block_decode_status_t::session_queue_full:
-        return failure_code_t::decode_failed;
-    }
     return failure_code_t::decode_failed;
 }
 
@@ -109,13 +97,12 @@ auto decode_audition_plan(decoded_source_registry_t& sources, transport_t& trans
                                   .cached_blocks = 0,
                                   .failure = std::nullopt};
     for (const auto& key : plan.keys) {
-        const auto decoded_outcome = sources.decode_source_block(transport, token, key);
-        const auto& decoded = decoded_outcome ? *decoded_outcome : decoded_outcome.error();
-        if (decoded.status == block_decode_status_t::decoded) {
+        const auto decoded = sources.decode_source_block(transport, token, key);
+        if (decoded.status == block_decode_phase_t::decoded) {
             ++result.decoded_blocks;
             continue;
         }
-        if (decoded.status == block_decode_status_t::cache_hit) {
+        if (decoded.status == block_decode_phase_t::cache_hit) {
             ++result.cached_blocks;
             continue;
         }
@@ -142,7 +129,7 @@ auto prime_resident_audition_blocks(transport_t& transport, session_token_t toke
                                   .requested_blocks = plan->keys.size()};
     for (const auto& key : plan->keys) {
         const auto hit = transport.resident_block_hit(token, key);
-        if (!hit || hit->status != block_decode_status_t::cache_hit)
+        if (!hit || hit->status != block_decode_phase_t::cache_hit)
             return std::nullopt;
         ++result.cached_blocks;
     }

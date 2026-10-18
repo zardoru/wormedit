@@ -49,13 +49,6 @@ struct block_cache_limits_t {
     std::size_t maximum_frames_per_asset{65'536U};
 };
 
-enum class block_store_status_t {
-    stored,
-    invalid_key,
-    invalid_block,
-    capacity_exceeded,
-};
-
 struct block_cache_stats_t {
     std::size_t entries{};
     std::size_t cached_frames{};
@@ -98,7 +91,7 @@ class decoded_block_cache_t {
         -> std::optional<std::size_t>;
     [[nodiscard]] auto has_block(const audio_block_key_t& key) -> bool;
     [[nodiscard]] auto store(const audio_block_key_t& key, std::size_t frame_count,
-                             std::span<const float> interleaved_stereo) -> block_store_status_t;
+                             std::span<const float> interleaved_stereo) -> result_t<void, failure_code_t>;
     void clear();
     void clear_source(const audio_source_identity_t& source);
 
@@ -126,13 +119,7 @@ struct session_token_t {
     auto operator==(const session_token_t&) const -> bool = default;
 };
 
-enum class session_publish_status_t {
-    accepted,
-    already_pending,
-    stale_generation,
-    queue_full,
-    invalid_key,
-};
+enum class session_publish_phase_t { accepted, already_pending };
 
 // A headless Stop/session boundary for decoded-block publications. Workers may
 // publish only block keys, never PCM ownership into a live transport queue.
@@ -149,7 +136,7 @@ class decode_session_t {
     void stop() noexcept;
     [[nodiscard]] auto is_current(session_token_t token) const noexcept -> bool;
     [[nodiscard]] auto publish_if_current(session_token_t token, const audio_block_key_t& key)
-        -> session_publish_status_t;
+        -> operation_state_t<session_publish_phase_t>;
     [[nodiscard]] auto take_ready(session_token_t token) -> std::vector<audio_block_key_t>;
     [[nodiscard]] auto pending_count() const -> std::size_t;
 
@@ -173,37 +160,24 @@ class decode_session_t {
     std::vector<audio_block_key_t> ready_;
 };
 
-enum class block_decode_status_t {
-    cache_hit,
-    decoded,
-    stale_generation,
-    invalid_key,
-    decoder_unavailable,
-    beyond_end,
-    seek_failed,
-    decode_failed,
-    cache_capacity_exceeded,
-    session_queue_full,
-};
+enum class block_decode_phase_t { cache_hit, decoded };
 
 struct block_decode_result_t {
-    [[nodiscard]] static auto from(block_decode_status_t status, std::size_t frames = 0,
-                                   read_status_t decoder_status = read_status_t::not_open)
-        -> result_t<block_decode_result_t, block_decode_result_t>;
-    [[nodiscard]] static auto from(block_decode_result_t&& report)
-        -> result_t<block_decode_result_t, block_decode_result_t>;
-    [[nodiscard]] static auto from(result_t<block_decode_result_t, block_decode_result_t>&& outcome)
+    [[nodiscard]] static auto from(operation_state_t<block_decode_phase_t> status, std::size_t frames = 0,
+                                   operation_state_t<read_phase_t> decoder_status = wormedit::failure_code_t::not_started)
         -> block_decode_result_t;
-    block_decode_status_t status{block_decode_status_t::decoder_unavailable};
+    [[nodiscard]] auto is_success() const -> bool {
+        return !status.has_failure();
+    }
+    operation_state_t<block_decode_phase_t> status{wormedit::failure_code_t::unavailable};
     std::size_t frames{};
-    read_status_t decoder_status{read_status_t::not_open};
+    operation_state_t<read_phase_t> decoder_status{wormedit::failure_code_t::not_started};
     auto operator==(const block_decode_result_t&) const -> bool = default;
 };
-using block_decode_outcome_t = result_t<block_decode_result_t, block_decode_result_t>;
 
 [[nodiscard]] auto decode_cached_block(decoder_t& decoder, decoded_block_cache_t& cache,
                                      decode_session_t& session, session_token_t token,
-                                     audio_block_key_t key) -> block_decode_outcome_t;
+                                     audio_block_key_t key) -> block_decode_result_t;
 
 // Decodes at most one maximum_read_frames block. A completed block is retained
 // in the cache and its key is published only if the supplied session generation

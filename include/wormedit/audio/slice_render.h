@@ -51,6 +51,4 @@ struct rendered_audio_slices_t {
     std::vector<std::filesystem::path> files;
     auto operator==(const rendered_audio_slices_t&) const -> bool = default;
 };
-using slice_render_outcome_t = result_t<rendered_audio_slices_t, error_t<failure_code_t>>;
-
 } // namespace wormedit::audio

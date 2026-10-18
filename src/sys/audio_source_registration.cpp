@@ -247,11 +247,11 @@ auto next_pending_index(const std::vector<resident_wanted_t>& wanted,
     return missing[static_cast<std::size_t>(free - taken.begin())];
 }
 
-void count_resident_status(audio::resident_load_status_t status,
+void count_resident_status(operation_state_t<audio::resident_load_phase_t> status,
                            std::atomic<std::size_t>& over_budget,
                            std::atomic<std::size_t>& failed) {
-    if (status == audio::resident_load_status_t::over_budget) ++over_budget;
-    if (status == audio::resident_load_status_t::decode_failed) ++failed;
+    if (status == wormedit::failure_code_t::capacity_exceeded) ++over_budget;
+    if (status == wormedit::failure_code_t::decode_failed) ++failed;
 }
 
 } // namespace
@@ -296,7 +296,7 @@ void run_resident_loads(const std::vector<resident_wanted_t>& wanted,
         const auto status =
             sources.load_resident(wanted[*next].asset, store, requests[*next], stop);
         count_resident_status(status, state.over_budget, state.failed);
-        if (status == audio::resident_load_status_t::over_budget)
+        if (status == wormedit::failure_code_t::capacity_exceeded)
             state.skipped.emplace_back(wanted[*next].asset, requests[*next]);
         ++state.done;
     }
@@ -316,7 +316,7 @@ void retry_skipped_samples(audio::resident_sample_store_t& store,
         if (stop.stop_requested()) return;
         const auto status = state.sources->load_resident(asset, store, request, stop);
         count_resident_status(status, state.over_budget, state.failed);
-        if (status == audio::resident_load_status_t::over_budget)
+        if (status == wormedit::failure_code_t::capacity_exceeded)
             state.skipped.emplace_back(asset, std::move(request));
     }
 }

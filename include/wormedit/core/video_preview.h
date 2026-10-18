@@ -37,9 +37,7 @@ struct video_preview_clock_t {
     auto operator==(const video_preview_clock_t&) const -> bool = default;
 };
 
-using video_preview_clock_result_t =
-    result_t<video_preview_clock_t, operation_state_t<video_preview_clock_phase_t>>;
-static_assert(sizeof(video_preview_clock_result_t) <=
+static_assert(sizeof(result_t<video_preview_clock_t, operation_state_t<video_preview_clock_phase_t>>) <=
               sizeof(video_preview_clock_t) + alignof(video_preview_clock_t));
 
 

@@ -103,16 +103,16 @@ struct program_preferences_t {
 };
 struct preferences_parse_effect_t {
     [[nodiscard]] static auto from(std::string_view bytes)
-        -> result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
+        -> preferences_parse_effect_t;
 
+    bool succeeded{true};
+    [[nodiscard]] auto is_success() const -> bool { return succeeded; }
     program_preferences_t preferences;
     std::vector<std::string> warnings;
     auto operator==(const preferences_parse_effect_t&) const -> bool = default;
 };
-using preferences_parse_outcome_t = result_t<preferences_parse_effect_t, preferences_parse_effect_t>;
 struct preferences_load_result_t {
-    preferences_parse_outcome_t contents{std::unexpected(preferences_parse_effect_t{
-        .preferences = program_preferences_t::with_defaults(), .warnings = {}})};
+    preferences_parse_effect_t contents{.succeeded = false, .preferences = program_preferences_t::with_defaults()};
     bool missing{};
     bool migrated{};
 };

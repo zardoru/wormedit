@@ -113,6 +113,10 @@ it in new code even before the card lands.
 - **Expected failures are values:** `result_t<T, E>` (an alias of `std::expected` under C++23) and
   `diagnosed_t<T>` for results that carry warnings. One success rule per type, no per-file
   `fail()`/`reject()`/`rejected()` builders, and no new bespoke `operator bool`. *(T-620)*
+- **Outcome aliases name shared contracts or complex types.** Keep an alias when several
+  signatures share it or it makes a hard-to-read type clearer. Spell a simple type used by one
+  operation directly in its signature. An effect returned on both success and failure carries
+  its status and partial work directly; do not wrap it in `result_t<T, T>`. *(T-633)*
 
 - **Background work runs through one async shell** (owner, 2026-10-15): every job that leaves
   the UI thread is an `async_job_t` instance over the shared `task_scheduler_t`, with one

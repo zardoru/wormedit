@@ -16,7 +16,7 @@ auto is_marker_navigation_accepted(const marker_navigation_outcome_t& outcome) -
     return outcome.diagnostics.empty() && outcome.value.is_found();
 }
 
-auto is_section_selection_accepted(const section_selection_outcome_t& outcome) -> bool {
+auto is_section_selection_accepted(const diagnosed_t<section_selection_t>& outcome) -> bool {
     return outcome.diagnostics.empty() && outcome.value.is_resolved();
 }
 

@@ -98,7 +98,7 @@ TEST_CASE("empty import warnings produce no notification", "[notification][impor
 }
 
 TEST_CASE("startup context does not repeat a platform recovery failure", "[notification][recovery]") {
-    const platform_recovery_directory_result_t unavailable{
+    const result_t<std::filesystem::path, std::string> unavailable{
         std::unexpected{std::string{"Platform recovery failure."}}};
     const auto empty = make_initial_application_feedback(false, {}, unavailable);
     check_drop_notification(empty.severity == notification_severity_t::info);

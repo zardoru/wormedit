@@ -55,13 +55,13 @@ auto finish_drop(wormedit::sys::sound_drop_transaction_t& transaction,
     return transaction.handle(complete, current, false);
 }
 
-auto batch_matches(const wormedit::sys::sound_drop_outcome_t& batch,
+auto batch_matches(const wormedit::sys::sound_drop_batch_t& batch,
                    const std::vector<std::string>& paths) -> bool {
-    return batch.has_value() && batch.value().paths == paths;
+    return batch.is_success() && batch.paths == paths;
 }
 
 auto collect_two_file_drop_with_slot_change()
-    -> std::optional<wormedit::sys::sound_drop_outcome_t> {
+    -> std::optional<wormedit::sys::sound_drop_batch_t> {
     using namespace wormedit::sys;
     sound_drop_transaction_t transaction;
     auto initial = origin();
@@ -75,7 +75,7 @@ auto collect_two_file_drop_with_slot_change()
 }
 
 struct interruption_result_t {
-    std::optional<wormedit::sys::sound_drop_outcome_t> batch;
+    std::optional<wormedit::sys::sound_drop_batch_t> batch;
     bool active{};
     bool claimed{};
 };
@@ -101,7 +101,7 @@ auto rejects_changed_origin(wormedit::sys::sound_drop_origin_t changed) -> bool 
     (void)start_drop(transaction, current, true);
     (void)send_file(transaction, current, "/tmp/origin.wav");
     const auto result = finish_drop(transaction, changed);
-    return result.completed && !result.completed->has_value();
+    return result.completed && !result.completed->is_success();
 }
 
 auto rejects_every_origin_change() -> bool {
@@ -137,7 +137,7 @@ TEST_CASE("sound drop retains files across polls and preserves its original slot
     const auto result = collect_two_file_drop_with_slot_change();
     REQUIRE(result);
     REQUIRE(batch_matches(*result, {"/tmp/kick.wav", "/tmp/snare.wav"}));
-    CHECK(result->value().origin.first_slot == 17);
+    CHECK(result->origin.first_slot == 17);
 }
 
 TEST_CASE("sound drop claims only when its first file lands on the Sounds list",
@@ -191,8 +191,8 @@ TEST_CASE("sound drop batches are not clipped at prior fixed limits",
     for (const auto& path : paths) (void)send_file(transaction, current, path);
     const auto completed = finish_drop(transaction, current);
     REQUIRE(completed.completed);
-    REQUIRE(completed.completed->has_value());
-    CHECK(completed.completed->value().paths.size() == path_count);
+    REQUIRE(completed.completed->is_success());
+    CHECK(completed.completed->paths.size() == path_count);
 }
 
 TEST_CASE("sound drop retains invalid paths and rejects the complete batch",
@@ -205,9 +205,9 @@ TEST_CASE("sound drop retains invalid paths and rejects the complete batch",
     REQUIRE(send_file(transaction, current, invalid));
     const auto completed = finish_drop(transaction, current);
     REQUIRE(completed.completed);
-    REQUIRE_FALSE(completed.completed->has_value());
-    CHECK(completed.completed->error().reason.find("absolute") != std::string::npos);
-    CHECK(completed.completed->error().paths == std::vector<std::string>{"relative.wav"});
+    REQUIRE_FALSE(completed.completed->is_success());
+    CHECK(completed.completed->reason.find("absolute") != std::string::npos);
+    CHECK(completed.completed->paths == std::vector<std::string>{"relative.wav"});
 }
 
 TEST_CASE("sound drop retains duplicate paths but rejects the whole batch",
@@ -220,8 +220,8 @@ TEST_CASE("sound drop retains duplicate paths but rejects the whole batch",
     REQUIRE(send_file(transaction, current, "/tmp/./duplicate.wav"));
     const auto completed = finish_drop(transaction, current);
     REQUIRE(completed.completed);
-    REQUIRE_FALSE(completed.completed->has_value());
-    CHECK(completed.completed->error().paths.size() == 2);
+    REQUIRE_FALSE(completed.completed->is_success());
+    CHECK(completed.completed->paths.size() == 2);
 }
 
 TEST_CASE("sound drop rejects a stale revision before completion",
@@ -236,8 +236,8 @@ TEST_CASE("sound drop rejects a stale revision before completion",
     ++changed.revision;
     const auto stale = finish_drop(stale_transaction, changed);
     REQUIRE(stale.completed);
-    REQUIRE_FALSE(stale.completed->has_value());
-    CHECK(stale.completed->error().paths == std::vector<std::string>{path});
+    REQUIRE_FALSE(stale.completed->is_success());
+    CHECK(stale.completed->paths == std::vector<std::string>{path});
 }
 
 TEST_CASE("sound drop rejects project chart revision tab and mode changes",
@@ -255,9 +255,9 @@ TEST_CASE("sound drop cancellation returns the retained rejected batch",
     REQUIRE(send_file(transaction, current, path));
     const auto cancelled = transaction.cancel();
     REQUIRE(cancelled);
-    REQUIRE_FALSE(cancelled->has_value());
-    CHECK(cancelled->error().reason.find("cancelled") != std::string::npos);
-    CHECK(cancelled->error().paths == std::vector<std::string>{path});
+    REQUIRE_FALSE(cancelled->is_success());
+    CHECK(cancelled->reason.find("cancelled") != std::string::npos);
+    CHECK(cancelled->paths == std::vector<std::string>{path});
 }
 
 TEST_CASE("sound drop completion rejects a different window",
@@ -269,15 +269,15 @@ TEST_CASE("sound drop completion rejects a different window",
     REQUIRE(send_file(transaction, current, "/tmp/window.wav"));
     const auto result = finish_drop(transaction, current, current.window_id + 1);
     REQUIRE(result.completed);
-    REQUIRE_FALSE(result.completed->has_value());
+    REQUIRE_FALSE(result.completed->is_success());
 }
 
 TEST_CASE("starting another drop returns cancellation for the previous batch",
           "[unit][sys][sound-drop]") {
     const auto result = interrupt_with_new_drop();
     REQUIRE(result.batch);
-    REQUIRE_FALSE(result.batch->has_value());
-    CHECK(result.batch->error().paths == std::vector<std::string>{"/tmp/abandoned.wav"});
+    REQUIRE_FALSE(result.batch->is_success());
+    CHECK(result.batch->paths == std::vector<std::string>{"/tmp/abandoned.wav"});
     CHECK(result.active);
     CHECK_FALSE(result.claimed);
 }

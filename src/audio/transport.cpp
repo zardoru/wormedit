@@ -272,7 +272,7 @@ auto transport_t::is_current(session_token_t token) const noexcept -> bool {
 }
 
 auto transport_t::decode_source_block(decoder_t& decoder, session_token_t token, audio_block_key_t key)
-    -> block_decode_outcome_t {
+    -> block_decode_result_t {
     auto result =
         decode_cached_block(decoder, block_cache_, decode_session_, token, std::move(key));
     // Publication is only a generation handoff. The mixer addresses immutable
@@ -304,11 +304,11 @@ auto transport_t::resident_block_hit(session_token_t token, const audio_block_ke
         return std::nullopt;
     }
     if (!is_current(token)) {
-        return block_decode_result_t{.status = block_decode_status_t::stale_generation};
+        return block_decode_result_t{.status = wormedit::failure_code_t::stale_generation};
     }
-    return block_decode_result_t{.status = block_decode_status_t::cache_hit,
+    return block_decode_result_t{.status = block_decode_phase_t::cache_hit,
                                  .frames = pcm.size() / output_channel_count,
-                                 .decoder_status = read_status_t::success};
+                                 .decoder_status = read_phase_t::success};
 }
 
 auto transport_t::schedule_voice(session_token_t token, transport_voice_t voice)

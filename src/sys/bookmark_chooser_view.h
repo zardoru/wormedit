@@ -37,6 +37,8 @@ struct bookmark_chooser_row_t {
 };
 
 struct bookmark_chooser_view_t {
+    [[nodiscard]] auto is_success() const noexcept -> bool { return status.empty(); }
+
     chart_id_t chart;
     std::uint64_t document_revision{};
     std::size_t total_count{};
@@ -47,9 +49,7 @@ struct bookmark_chooser_view_t {
 
     [[nodiscard]] static auto from(const song_document_t&, chart_id_t,
                                    std::size_t first_row, std::size_t row_limit, std::string_view query = {},
-                                   const bookmark_chooser_indices_t& indices = {}) -> result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
+                                   const bookmark_chooser_indices_t& indices = {}) -> bookmark_chooser_view_t;
 };
-using bookmark_chooser_view_outcome_t =
-    result_t<bookmark_chooser_view_t, bookmark_chooser_view_t>;
 
 } // namespace wormedit::sys

@@ -108,6 +108,4 @@ struct section_selection_t {
     }
     auto operator==(const section_selection_t&) const -> bool = default;
 };
-using section_selection_outcome_t = diagnosed_t<section_selection_t>;
-
 } // namespace wormedit

@@ -61,15 +61,15 @@ TEST_CASE("adjacent MP3 read_at blocks agree with continuous reads across interv
     for (std::size_t block = 0; block < 10; ++block) {
         const auto before = continuous.read_frames(expected, maximum_read_frames);
         const auto after = positioned.read_frames_at(block * maximum_read_frames, actual, maximum_read_frames);
-        check_mp3_continuity(before.value().status == read_status_t::success);
-        check_mp3_continuity(after.value().status == read_status_t::success);
-        check_mp3_continuity(before.value().frames_read == after.value().frames_read);
+        check_mp3_continuity(before.status == read_phase_t::success);
+        check_mp3_continuity(after.status == read_phase_t::success);
+        check_mp3_continuity(before.frames_read == after.frames_read);
         check_mp3_continuity(actual == expected);
     }
     check_mp3_continuity(positioned.seek(0));
     check_mp3_continuity(continuous.seek(0));
-    check_mp3_continuity(positioned.read_frames_at(0, actual, maximum_read_frames).value().status == read_status_t::success);
-    check_mp3_continuity(continuous.read_frames(expected, maximum_read_frames).value().status == read_status_t::success);
+    check_mp3_continuity(positioned.read_frames_at(0, actual, maximum_read_frames).status == read_phase_t::success);
+    check_mp3_continuity(continuous.read_frames(expected, maximum_read_frames).status == read_phase_t::success);
     check_mp3_continuity(actual == expected);
 }
 
@@ -209,12 +209,12 @@ TEST_CASE("MP3 and Ogg fixtures decode completely to normalized stereo PCM",
             for (std::size_t iteration = 0; iteration < 128; ++iteration) {
                 const auto read = decoder.read_frames(block,
                                                wormedit::audio::maximum_read_frames);
-                CHECK(read.value().frames_read <= wormedit::audio::maximum_read_frames);
-                frames_decoded += read.value().frames_read;
-                if (read.value().status == wormedit::audio::read_status_t::end_of_stream) {
+                CHECK(read.frames_read <= wormedit::audio::maximum_read_frames);
+                frames_decoded += read.frames_read;
+                if (read.status == wormedit::audio::read_phase_t::end_of_stream) {
                     break;
                 }
-                REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
+                REQUIRE(read.status == wormedit::audio::read_phase_t::success);
                 REQUIRE(iteration < 127);
             }
             CHECK(frames_decoded == stream_info->output_frame_count);
@@ -233,10 +233,10 @@ TEST_CASE("decoder enforces the 16384-frame request and stereo output buffer bou
     std::vector<float> buffer(
         wormedit::audio::maximum_read_frames * wormedit::audio::output_channel_count);
     CHECK(decoder.read_frames(buffer, wormedit::audio::maximum_read_frames + 1) ==
-          std::unexpected(wormedit::audio::read_result_t{.status = wormedit::audio::read_status_t::request_too_large}));
+          wormedit::audio::read_result_t{.status = wormedit::failure_code_t::capacity_exceeded});
     CHECK(decoder.read_frames(std::span<float>(buffer.data(), buffer.size() - 1),
                        wormedit::audio::maximum_read_frames)
-              == std::unexpected(wormedit::audio::read_result_t{.status = wormedit::audio::read_status_t::insufficient_output_space}));
+              == wormedit::audio::read_result_t{.status = wormedit::failure_code_t::invalid_request});
 }
 
 TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
@@ -257,8 +257,8 @@ TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
             const auto first_frame = center_frame - window_frames / 2;
             REQUIRE(decoder.seek(first_frame));
             const auto read = decoder.read_frames(window, window_frames);
-            REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
-            REQUIRE(read.value().frames_read == window_frames);
+            REQUIRE(read.status == wormedit::audio::read_phase_t::success);
+            REQUIRE(read.frames_read == window_frames);
 
             const auto rms = window_rms(window);
             const auto dbfs = 20.0 * std::log10(std::max(rms, 1.0e-12));
@@ -278,8 +278,8 @@ TEST_CASE("MP3 and Ogg seek to the authored tone and silence regions",
             const auto first_frame = center_frame - window_frames / 2;
             REQUIRE(decoder.seek(first_frame));
             const auto read = decoder.read_frames(window, window_frames);
-            REQUIRE(read.value().status == wormedit::audio::read_status_t::success);
-            REQUIRE(read.value().frames_read == window_frames);
+            REQUIRE(read.status == wormedit::audio::read_phase_t::success);
+            REQUIRE(read.frames_read == window_frames);
             const auto rms = window_rms(window);
             const auto dbfs = 20.0 * std::log10(std::max(rms, 1.0e-12));
             CHECK(dbfs < -45.0);
@@ -295,13 +295,13 @@ auto expected_decoder_reads_keep_eof_and_positioned_counts() -> bool {
     if (!decoder.open_pcm(pcm)) return false;
     std::vector<float> output(8);
     const auto first = decoder.read_frames(output, 4);
-    if (!first) return false;
+    if (!first.is_success()) return false;
     const auto positioned = decoder.read_frames_at(1, output, 4);
-    if (!positioned) return false;
+    if (!positioned.is_success()) return false;
     const auto remaining = decoder.read_frames(output, 1);
-    return first->status == read_status_t::end_of_stream && first->frames_read == 2 &&
-           positioned->status == read_status_t::end_of_stream && positioned->frames_read == 1 &&
-           remaining.value().status == read_status_t::end_of_stream && remaining.value().frames_read == 0;
+    return first.status == read_phase_t::end_of_stream && first.frames_read == 2 &&
+           positioned.status == read_phase_t::end_of_stream && positioned.frames_read == 1 &&
+           remaining.status == read_phase_t::end_of_stream && remaining.frames_read == 0;
 }
 } // namespace
 

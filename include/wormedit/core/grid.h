@@ -89,7 +89,5 @@ struct editor_grid_t {
     std::vector<editor_grid_line_t> lines;
     auto operator==(const editor_grid_t&) const -> bool = default;
 };
-using editor_grid_result_t = diagnosed_t<editor_grid_t>;
-
 
 } // namespace wormedit

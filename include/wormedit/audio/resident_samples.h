@@ -66,15 +66,7 @@ struct resident_request_t {
     std::uint64_t frame_count{};
 };
 
-enum class resident_load_status_t {
-    loaded,
-    already_resident,
-    too_long,
-    over_budget,
-    decode_failed,
-    // The request is no longer wanted or the run was cancelled.
-    stopped,
-};
+enum class resident_load_phase_t { loaded, already_resident, too_long };
 
 struct resident_sample_stats_t {
     std::size_t resident_samples{};
@@ -104,7 +96,7 @@ class resident_sample_store_t {
         -> std::vector<std::size_t>;
     // Decodes one wanted request straight into the arena and publishes it.
     [[nodiscard]] auto load(const resident_request_t& request, decoder_t& decoder,
-                            std::stop_token stop = {}) -> resident_load_status_t;
+                            std::stop_token stop = {}) -> operation_state_t<resident_load_phase_t>;
     // Compacts when stale payload reaches the threshold; true when it did.
     auto compact_if_needed() -> bool;
     void clear();
@@ -130,9 +122,9 @@ class resident_sample_store_t {
     [[nodiscard]] auto publish_locked() -> resident_snapshot_ptr_t;
     void notify(const resident_snapshot_ptr_t& snapshot) const;
     [[nodiscard]] auto reserve(const resident_request_t& request)
-        -> std::pair<resident_load_status_t, append_arena_span_t>;
+        -> std::pair<operation_state_t<resident_load_phase_t>, append_arena_span_t>;
     [[nodiscard]] auto commit(const resident_request_t& request, append_arena_span_t span,
-                              std::size_t frames) -> resident_load_status_t;
+                              std::size_t frames) -> operation_state_t<resident_load_phase_t>;
     void discard(const append_arena_span_t& span);
     auto compact_locked() -> bool;
 

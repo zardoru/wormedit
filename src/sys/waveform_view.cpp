@@ -29,10 +29,10 @@ auto build_waveform_overview(const audio::waveform_t& waveform, const timing_ind
                              const audio::aligned_waveform_request_t& request, bool& succeeded,
                              compose_scene_cache_t::waveform_state_t::overview_data_t& data) -> bool {
     const auto overview = audio::waveform_overview_view_result_t::from(waveform, timing, request);
-    succeeded = overview.has_value();
+    succeeded = !overview.status.has_failure();
     if (!succeeded) return false;
     data.rows.clear();
-    for (const auto& row : overview->rows)
+    for (const auto& row : overview.rows)
         data.rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
     static std::atomic<std::uint64_t> next_generation{1};
     data.generation = next_generation.fetch_add(1, std::memory_order_relaxed);
@@ -179,9 +179,8 @@ void build_cpu_envelope_range_view(const envelope_projection_context_t& context,
     request.viewport_scroll_pixels = static_cast<double>(first);
     request.viewport_height_pixels = static_cast<double>(count);
     request.maximum_rows = audio::maximum_aligned_waveform_rows;
-    auto projected = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
+    const auto projected_data = audio::aligned_waveform_view_result_t::from(context.overview, context.detail,
         context.row_table, request, context.blocks, context.style);
-    const auto& projected_data = projected ? *projected : projected.error();
     ++ring.value().projection_calls;
     ring.value().projected_rows += count;
     for (std::size_t index = 0; index < count; ++index) {
@@ -246,19 +245,17 @@ void populate_direct_envelope(frame_span<WormUiComposeWaveformRowView>& output,
     audio::decoded_block_cache_t* decoded_blocks,
     const audio::waveform_analysis_result_t* detail_analysis,
     const audio::aligned_waveform_style_t* stable_style) {
-    audio::aligned_waveform_view_outcome_t aligned =
-        std::unexpected(audio::aligned_waveform_view_result_t{});
+    audio::aligned_waveform_view_result_t aligned;
     aligned = stable_style
         ? audio::aligned_waveform_view_result_t::from(waveform,
             detail_analysis && detail_analysis->waveform ? &*detail_analysis->waveform : nullptr,
             timing, request, decoded_blocks, *stable_style)
         : (decoded_blocks ? audio::aligned_waveform_view_result_t::from(waveform,
-            timing, request, *decoded_blocks) : audio::aligned_waveform_view_outcome_t{
-                std::unexpected(audio::aligned_waveform_view_result_t{})});
-    if (!stable_style && (!aligned || aligned->rows.empty()))
+            timing, request, *decoded_blocks) : audio::aligned_waveform_view_result_t{});
+    if (!stable_style && (aligned.status.has_failure() || aligned.rows.empty()))
         aligned = audio::aligned_waveform_view_result_t::from(*selected_waveform, timing, request);
-    if (aligned) {
-        for (const auto& row : aligned->rows) {
+    if (!aligned.status.has_failure()) {
+        for (const auto& row : aligned.rows) {
             if (!output.push_back({
                 .y_pixels = row.y_pixels,
                 .absolute_peak = {std::clamp(row.absolute_peak[0], 0.0f, 1.0f),
@@ -293,10 +290,10 @@ auto build_bgm_bar_rows(const audio::waveform_t& waveform, bgm_bar_range_t range
                         std::vector<WormUiComposeWaveformOverviewRowView>& rows) -> bool {
     const auto projected = audio::waveform_overview_view_result_t::from(waveform, range.begin, range.end,
                                                          WORM_UI_COMPOSE_BGM_BAR_ROW_CAPACITY);
-    succeeded = projected.has_value();
+    succeeded = !projected.status.has_failure();
     if (!succeeded) return false;
     rows.clear();
-    for (const auto& row : projected->rows)
+    for (const auto& row : projected.rows)
         rows.push_back({row.audio_fraction, std::clamp(row.absolute_peak, 0.0f, 1.0f)});
     return true;
 }

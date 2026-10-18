@@ -19,7 +19,7 @@ auto make_chart(std::uint64_t divisions, std::vector<measure_chunk_t> measures)
     };
 }
 
-auto line_at(const editor_grid_result_t& result, std::uint64_t whole_row)
+auto line_at(const diagnosed_t<editor_grid_t>& result, std::uint64_t whole_row)
     -> const editor_grid_line_t* {
     const auto found = std::ranges::find_if(result.value.lines, [whole_row](const auto& line) {
         return line.chart_row.whole_rows == whole_row &&

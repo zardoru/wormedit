@@ -45,8 +45,9 @@ TEST_CASE("Program preferences defaults preserve existing player and minimap beh
     expect_preference(values.display.ui_scale_percent == 0 && values.display.theme.empty());
     expect_preference(values.players.players.size() == 3 && values.players.selected == 0);
     expect_preference(values.players.players[1].here_arguments == "-P -N<measure> \"<filename>\"");
+    expect_preference(preferences_parse_effect_t{}.is_success());
     const auto parsed = preferences_parse_effect_t::from("{}");
-    expect_preference(parsed.has_value() && parsed.value().warnings.empty() && parsed.value().preferences == values);
+    expect_preference(parsed.succeeded && parsed.warnings.empty() && parsed.preferences == values);
 }
 
 TEST_CASE("Program preferences round trip every section without project data", "[unit][core][preferences]") {
@@ -62,8 +63,8 @@ TEST_CASE("Program preferences round trip every section without project data", "
     const auto encoded = serialize_program_preferences(values);
     require_preference(encoded.has_value());
     const auto parsed = preferences_parse_effect_t::from(*encoded);
-    expect_preference(parsed.has_value() && parsed.value().warnings.empty());
-    expect_preference(parsed.value().preferences == values);
+    expect_preference(parsed.succeeded && parsed.warnings.empty());
+    expect_preference(parsed.preferences == values);
     expect_preference(encoded->find("\"version\": 1") != std::string::npos);
     expect_preference(encoded->find("\"charts\"") == std::string::npos);
 }
@@ -74,14 +75,14 @@ TEST_CASE("Program preferences preserve all exact supported playback rates", "[u
         values.audio.playback_rate = rate;
         const auto encoded = serialize_program_preferences(values);
         require_preference(encoded.has_value());
-        expect_preference(preferences_parse_effect_t::from(*encoded).value().preferences.audio.playback_rate == rate);
+        expect_preference(preferences_parse_effect_t::from(*encoded).preferences.audio.playback_rate == rate);
     }
 }
 
 TEST_CASE("Program preferences replace invalid fields individually", "[unit][core][preferences]") {
     const auto parsed = preferences_parse_effect_t::from(R"({"version":1,"general":{"autosave_minutes":0,"recent_files_count":101,"shortcut_profile_path":"","confirm_unsaved_close":false},"editor":{"default_snap":-1},"audio":{"playback_rate":{"numerator":2,"denominator":3},"keep_pitch":true},"display":{"ui_scale_percent":99},"minimap":{"click_moves_paused_playhead":true}})");
-    expect_preference(parsed.has_value() && !parsed.value().warnings.empty());
-    const auto& value = parsed.value().preferences;
+    expect_preference(parsed.succeeded && !parsed.warnings.empty());
+    const auto& value = parsed.preferences;
     expect_preference(value.general.autosave_minutes == 5 && value.general.recent_files_count == 10);
     expect_preference(value.general.shortcut_profile_path == "shortcuts.json");
     expect_preference(!value.general.confirm_unsaved_close);
@@ -93,45 +94,45 @@ TEST_CASE("Program preferences replace invalid fields individually", "[unit][cor
 
 TEST_CASE("Program preferences ignore unknown keys with one warning", "[unit][core][preferences]") {
     const auto parsed = preferences_parse_effect_t::from(R"({"other":1,"general":{"unknown":2},"editor":{"future":3},"players":{"definitions":[{"name":"Custom","other":true}]}})");
-    expect_preference(parsed.has_value());
-    expect_preference(parsed.value().warnings.size() == 1);
-    expect_preference(parsed.value().preferences.players.players[0].name == "Custom");
+    expect_preference(parsed.succeeded);
+    expect_preference(parsed.warnings.size() == 1);
+    expect_preference(parsed.preferences.players.players[0].name == "Custom");
 }
 
 TEST_CASE("Program preferences reject malformed roots and unsupported versions safely", "[unit][core][preferences]") {
     for (const auto text : {"{", "[]", "null", "{\"version\":2}", "{\"version\":1.0}"}) {
         const auto parsed = preferences_parse_effect_t::from(text);
-        require_preference(!parsed.has_value());
-        expect_preference(!parsed.error().warnings.empty());
-        expect_preference(parsed.error().preferences == program_preferences_t::with_defaults());
+        require_preference(!parsed.succeeded);
+        expect_preference(!parsed.warnings.empty());
+        expect_preference(parsed.preferences == program_preferences_t::with_defaults());
     }
 }
 
 TEST_CASE("Program preferences bound bytes nesting and JSON nodes", "[unit][core][preferences]") {
-    expect_preference(!preferences_parse_effect_t::from(std::string(maximum_preferences_bytes + 1, ' ')).has_value());
+    expect_preference(!preferences_parse_effect_t::from(std::string(maximum_preferences_bytes + 1, ' ')).succeeded);
     std::string nested = "0";
     for (unsigned depth = 0; depth < maximum_preferences_depth + 2; ++depth) nested = "[" + nested + "]";
-    expect_preference(!preferences_parse_effect_t::from("{\"unknown\":" + nested + "}").has_value());
+    expect_preference(!preferences_parse_effect_t::from("{\"unknown\":" + nested + "}").succeeded);
     std::string nodes = "{\"unknown\":[0";
     for (unsigned index = 0; index < 65536; ++index) nodes += ",0";
     nodes += "]}";
-    expect_preference(!preferences_parse_effect_t::from(nodes).has_value());
+    expect_preference(!preferences_parse_effect_t::from(nodes).succeeded);
 }
 
 TEST_CASE("Program preferences reject wrong types NUL and integer overflow", "[unit][core][preferences]") {
     const auto parsed = preferences_parse_effect_t::from(R"({"general":{"autosave_minutes":18446744073709551615,"shortcut_profile_path":"bad\u0000path"},"display":{"theme":12},"audio":{"keep_pitch":"true"},"minimap":false,"editor":{"default_snap":3.5}})");
-    expect_preference(parsed.has_value() && parsed.value().warnings.size() >= 5);
-    expect_preference(parsed.value().preferences == program_preferences_t::with_defaults());
+    expect_preference(parsed.succeeded && parsed.warnings.size() >= 5);
+    expect_preference(parsed.preferences == program_preferences_t::with_defaults());
 }
 
 TEST_CASE("Program preferences bound and repair external player entries", "[unit][core][preferences]") {
     auto parsed = preferences_parse_effect_t::from(R"({"players":{"selected":64,"definitions":[]}})");
-    expect_preference(parsed.has_value() && parsed.value().preferences.players == external_player_preferences_t::with_defaults());
+    expect_preference(parsed.succeeded && parsed.preferences.players == external_player_preferences_t::with_defaults());
     parsed = preferences_parse_effect_t::from(R"({"players":{"selected":1,"definitions":[null,{"name":"Custom","path":"/usr/bin/player"}]}})");
-    expect_preference(parsed.has_value() && parsed.value().preferences.players.players.size() == 2);
-    expect_preference(parsed.value().preferences.players.selected == 1);
-    expect_preference(parsed.value().preferences.players.players[0].name == "mBMplay");
-    expect_preference(parsed.value().preferences.players.players[1].path == "/usr/bin/player");
+    expect_preference(parsed.succeeded && parsed.preferences.players.players.size() == 2);
+    expect_preference(parsed.preferences.players.selected == 1);
+    expect_preference(parsed.preferences.players.players[0].name == "mBMplay");
+    expect_preference(parsed.preferences.players.players[1].path == "/usr/bin/player");
 }
 
 TEST_CASE("Program preferences refuse serializing invalid in-memory values", "[unit][core][preferences]") {
@@ -149,17 +150,19 @@ TEST_CASE("Program preferences refuse serializing invalid in-memory values", "[u
 TEST_CASE("Program preferences files round trip atomically and reject invalid replacements", "[unit][core][preferences]") {
     const preferences_test_directory_t directory;
     const auto path = directory.path / "preferences.json";
-    expect_preference(load_program_preferences(path).missing);
+    const auto missing = load_program_preferences(path);
+    expect_preference(missing.missing);
+    expect_preference(!missing.contents.is_success() && missing.contents.warnings.empty());
     auto values = program_preferences_t::with_defaults();
     values.minimap.click_moves_paused_playhead = true;
     require_preference(static_cast<bool>(save_program_preferences_atomic(path, values)));
     auto loaded = load_program_preferences(path);
-    expect_preference(loaded.contents.has_value() && !loaded.missing && loaded.contents.value().preferences == values);
+    expect_preference(loaded.contents.succeeded && !loaded.missing && loaded.contents.preferences == values);
     values.general.autosave_minutes = 0;
     expect_preference(!save_program_preferences_atomic(path, values));
     loaded = load_program_preferences(path);
-    expect_preference(loaded.contents.has_value() && loaded.contents.value().preferences.general.autosave_minutes == 5);
-    expect_preference(loaded.contents.value().preferences.minimap.click_moves_paused_playhead);
+    expect_preference(loaded.contents.succeeded && loaded.contents.preferences.general.autosave_minutes == 5);
+    expect_preference(loaded.contents.preferences.minimap.click_moves_paused_playhead);
     expect_preference(std::distance(std::filesystem::directory_iterator{directory.path}, std::filesystem::directory_iterator{}) == 1);
 }
 
@@ -168,14 +171,14 @@ TEST_CASE("Program preferences corrupt and oversized files use defaults without 
     const auto path = directory.path / "preferences.json";
     { std::ofstream stream(path); stream << "{corrupt"; }
     auto loaded = load_program_preferences(path);
-    require_preference(!loaded.contents.has_value());
-    expect_preference(!loaded.missing && !loaded.contents.error().warnings.empty());
-    expect_preference(loaded.contents.error().preferences == program_preferences_t::with_defaults());
+    require_preference(!loaded.contents.succeeded);
+    expect_preference(!loaded.missing && !loaded.contents.warnings.empty());
+    expect_preference(loaded.contents.preferences == program_preferences_t::with_defaults());
     expect_preference(std::filesystem::file_size(path) == 8);
     { std::ofstream stream(path); stream << std::string(maximum_preferences_bytes + 1, ' '); }
     loaded = load_program_preferences(path);
-    require_preference(!loaded.contents.has_value());
-    expect_preference(!loaded.contents.error().warnings.empty());
+    require_preference(!loaded.contents.succeeded);
+    expect_preference(!loaded.contents.warnings.empty());
     expect_preference(std::filesystem::file_size(path) == maximum_preferences_bytes + 1);
 }
 
@@ -204,17 +207,17 @@ TEST_CASE("Program preferences migrate legacy players once and retain the legacy
 )";
     { std::ofstream stream(legacy, std::ios::binary); stream << old; }
     const auto migrated = load_program_preferences_for_startup(current, legacy);
-    require_preference(!migrated.contents.has_value());
-    expect_preference(migrated.migrated && migrated.contents.error().warnings.empty());
-    expect_preference(migrated.contents.error().preferences.players.selected == 1);
-    expect_preference(migrated.contents.error().preferences.players.players[0].path == "/tmp/player one");
-    expect_preference(migrated.contents.error().preferences.players.players[0].start_arguments == "\"<filename>\"");
+    require_preference(!migrated.contents.succeeded);
+    expect_preference(migrated.migrated && migrated.contents.warnings.empty());
+    expect_preference(migrated.contents.preferences.players.selected == 1);
+    expect_preference(migrated.contents.preferences.players.players[0].path == "/tmp/player one");
+    expect_preference(migrated.contents.preferences.players.players[0].start_arguments == "\"<filename>\"");
     expect_preference(std::filesystem::file_size(legacy) == old.size());
     require_preference(std::filesystem::is_regular_file(current));
     { std::ofstream stream(legacy, std::ios::binary); stream << "now corrupt"; }
     const auto second = load_program_preferences_for_startup(current, legacy);
-    expect_preference(!second.migrated && second.contents.has_value() && second.contents.value().warnings.empty());
-    expect_preference(second.contents.value().preferences == migrated.contents.error().preferences);
+    expect_preference(!second.migrated && second.contents.succeeded && second.contents.warnings.empty());
+    expect_preference(second.contents.preferences == migrated.contents.preferences);
 }
 
 TEST_CASE("Program preferences migration save failure retains accepted player values", "[unit][core][preferences]") {
@@ -222,9 +225,9 @@ TEST_CASE("Program preferences migration save failure retains accepted player va
     const auto legacy = directory.path / "external-players.conf";
     { std::ofstream stream(legacy, std::ios::binary); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
     const auto loaded = load_program_preferences_for_startup(directory.path / "missing" / "preferences.json", legacy);
-    require_preference(!loaded.contents.has_value());
-    expect_preference(loaded.migrated && !loaded.contents.error().warnings.empty());
-    expect_preference(loaded.contents.error().preferences.players.players[0].name == "Custom");
+    require_preference(!loaded.contents.succeeded);
+    expect_preference(loaded.migrated && !loaded.contents.warnings.empty());
+    expect_preference(loaded.contents.preferences.players.players[0].name == "Custom");
     expect_preference(!std::filesystem::exists(directory.path / "missing" / "preferences.json"));
 }
 
@@ -235,9 +238,9 @@ TEST_CASE("Program preferences never replace an existing corrupt file with legac
     { std::ofstream stream(legacy, std::ios::binary); stream << "wormedit-external-players-v1 0 1\n\"Custom\" \"/tmp/player\" \"start\" \"here\" \"stop\"\n"; }
     { std::ofstream stream(current); stream << "{bad}"; }
     const auto loaded = load_program_preferences_for_startup(current, legacy);
-    require_preference(!loaded.contents.has_value());
-    expect_preference(!loaded.migrated && !loaded.contents.error().warnings.empty());
-    expect_preference(loaded.contents.error().preferences == program_preferences_t::with_defaults());
+    require_preference(!loaded.contents.succeeded);
+    expect_preference(!loaded.migrated && !loaded.contents.warnings.empty());
+    expect_preference(loaded.contents.preferences == program_preferences_t::with_defaults());
     expect_preference(std::filesystem::file_size(current) == 5);
 }
 
@@ -249,7 +252,7 @@ TEST_CASE("Editor preference defaults preserve existing appearance and profile d
     expect_preference(defaults.editor.lane_key_legend_visible);
     expect_preference(defaults.editor.area_band_alpha == 48);
     for (auto direction : defaults.editor.scroll_directions) expect_preference(direction == 0);
-    expect_preference(preferences_parse_effect_t::from(R"({"version":1,"editor":{"default_snap":8}})").value().preferences.editor.area_band_alpha == 48);
+    expect_preference(preferences_parse_effect_t::from(R"({"version":1,"editor":{"default_snap":8}})").preferences.editor.area_band_alpha == 48);
 }
 TEST_CASE("Editor preference fields round trip and invalid individual values retain defaults", "[preferences]") {
     auto value = program_preferences_t::with_defaults();
@@ -261,13 +264,13 @@ TEST_CASE("Editor preference fields round trip and invalid individual values ret
     value.editor.area_band_alpha = 0;
     const auto bytes = serialize_program_preferences(value);
     require_preference(bytes.has_value());
-    expect_preference(preferences_parse_effect_t::from(*bytes).value().preferences == value);
+    expect_preference(preferences_parse_effect_t::from(*bytes).preferences == value);
     const auto invalid = preferences_parse_effect_t::from(R"({"version":1,"editor":{"playhead_anchor_percent":101,"area_band_alpha":256,"scroll_directions":{"dance":3,"popn":2},"note_kind_palette_visible":false}})");
-    expect_preference(invalid.value().preferences.editor.playhead_anchor_percent == 20);
-    expect_preference(invalid.value().preferences.editor.area_band_alpha == 48);
-    expect_preference(invalid.value().preferences.editor.scroll_directions[2] == 0);
-    expect_preference(invalid.value().preferences.editor.scroll_directions[1] == 2);
-    expect_preference(!invalid.value().preferences.editor.note_kind_palette_visible);
+    expect_preference(invalid.preferences.editor.playhead_anchor_percent == 20);
+    expect_preference(invalid.preferences.editor.area_band_alpha == 48);
+    expect_preference(invalid.preferences.editor.scroll_directions[2] == 0);
+    expect_preference(invalid.preferences.editor.scroll_directions[1] == 2);
+    expect_preference(!invalid.preferences.editor.note_kind_palette_visible);
     value.editor.scroll_directions[0] = 3;
     expect_preference(!serialize_program_preferences(value));
 }
@@ -276,11 +279,11 @@ namespace {
 void check_keysound_preference(std::string_view literal, std::uint32_t expected) {
     const auto parsed = wormedit::preferences_parse_effect_t::from(
         "{\"audio\":{\"keysound_budget_mib\":" + std::string{literal} + "}}");
-    CHECK(parsed.has_value());
-    CHECK(parsed.value().preferences.audio.keysound_budget_mib == expected);
-    const auto serialized = wormedit::serialize_program_preferences(parsed.value().preferences);
+    CHECK(parsed.succeeded);
+    CHECK(parsed.preferences.audio.keysound_budget_mib == expected);
+    const auto serialized = wormedit::serialize_program_preferences(parsed.preferences);
     REQUIRE(serialized);
-    CHECK(wormedit::preferences_parse_effect_t::from(*serialized).value().preferences.audio.keysound_budget_mib == expected);
+    CHECK(wormedit::preferences_parse_effect_t::from(*serialized).preferences.audio.keysound_budget_mib == expected);
 }
 }
 TEST_CASE("keysound budgets default and clamp wide JSON integers before narrowing", "[preferences][budget]") {
@@ -294,7 +297,7 @@ TEST_CASE("keysound budgets default and clamp wide JSON integers before narrowin
 TEST_CASE("keysound budget invalid JSON types retain the default", "[preferences][budget]") {
     for (const auto value : {"null", "true", "\"8192\"", "512.5", "[]", "{}"})
         check_keysound_preference(value, 512);
-    CHECK(wormedit::preferences_parse_effect_t::from("{}").value().preferences.audio.keysound_budget_mib == 512);
+    CHECK(wormedit::preferences_parse_effect_t::from("{}").preferences.audio.keysound_budget_mib == 512);
 }
 
 TEST_CASE("Move collision preference defaults to Reject and persists displacement safely", "[unit][core][preferences][bgm-move]") {
@@ -303,49 +306,49 @@ TEST_CASE("Move collision preference defaults to Reject and persists displacemen
     values.editor.move_collision_policy = move_collision_policy_t::displace_to_bgm;
     const auto encoded = serialize_program_preferences(values);
     require_preference(encoded.has_value());
-    expect_preference(preferences_parse_effect_t::from(*encoded).value().preferences == values);
+    expect_preference(preferences_parse_effect_t::from(*encoded).preferences == values);
     const auto invalid = preferences_parse_effect_t::from(R"({"editor":{"move_collision_policy":"delete"}})");
-    expect_preference(!invalid.value().warnings.empty());
-    expect_preference(invalid.value().preferences.editor.move_collision_policy == move_collision_policy_t::reject);
+    expect_preference(!invalid.warnings.empty());
+    expect_preference(invalid.preferences.editor.move_collision_policy == move_collision_policy_t::reject);
     values.editor.move_collision_policy = static_cast<move_collision_policy_t>(2);
     expect_preference(!serialize_program_preferences(values));
 }
 
 TEST_CASE("Snap-colored grid defaults on and round-trips its saved opt-out", "[preferences][snap-grid]") {
-    expect_preference(preferences_parse_effect_t::from(R"({"version":1,"display":{}})").value().preferences.display.snap_colored_grid);
+    expect_preference(preferences_parse_effect_t::from(R"({"version":1,"display":{}})").preferences.display.snap_colored_grid);
     auto values = program_preferences_t::with_defaults();
     values.display.snap_colored_grid = false;
     const auto encoded = serialize_program_preferences(values);
     require_preference(encoded.has_value());
-    expect_preference(preferences_parse_effect_t::from(*encoded).value().preferences == values);
+    expect_preference(preferences_parse_effect_t::from(*encoded).preferences == values);
     for (const auto literal : {"null", "1", "\"false\"", "[]"}) {
         const auto invalid = preferences_parse_effect_t::from(
             "{\"display\":{\"snap_colored_grid\":" + std::string(literal) + "}}");
-        expect_preference(invalid.value().preferences.display.snap_colored_grid);
-        expect_preference(!invalid.value().warnings.empty());
+        expect_preference(invalid.preferences.display.snap_colored_grid);
+        expect_preference(!invalid.warnings.empty());
     }
 }
 
 TEST_CASE("Snap grid opacity defaults mild and rejects invalid saved values", "[preferences][snap-grid][opacity]") {
-    expect_preference(preferences_parse_effect_t::from("{}").value().preferences.display.snap_grid_opacity_percent == 35);
+    expect_preference(preferences_parse_effect_t::from("{}").preferences.display.snap_grid_opacity_percent == 35);
     auto values = program_preferences_t::with_defaults();
     for (const auto percent : {0u, 35u, 100u}) {
         values.display.snap_grid_opacity_percent = percent;
         const auto encoded = serialize_program_preferences(values);
         require_preference(encoded.has_value());
-        expect_preference(preferences_parse_effect_t::from(*encoded).value().preferences == values);
+        expect_preference(preferences_parse_effect_t::from(*encoded).preferences == values);
     }
     for (const auto literal : {"-1", "101", "18446744073709551615", "null", "true", "35.5", "\"50\""}) {
         const auto parsed = preferences_parse_effect_t::from("{\"display\":{\"snap_grid_opacity_percent\":" + std::string(literal) + "}}");
-        expect_preference(parsed.value().preferences.display.snap_grid_opacity_percent == 35);
-        expect_preference(!parsed.value().warnings.empty());
+        expect_preference(parsed.preferences.display.snap_grid_opacity_percent == 35);
+        expect_preference(!parsed.warnings.empty());
     }
     values.display.snap_grid_opacity_percent = 101;
     expect_preference(!serialize_program_preferences(values));
 }
 
 TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defaults", "[preferences][feedback]") {
-    const auto defaults = preferences_parse_effect_t::from("{}").value().preferences;
+    const auto defaults = preferences_parse_effect_t::from("{}").preferences;
     expect_preference(!defaults.editor.invert_scroll_wheel);
     expect_preference(defaults.display.field_waveform_opacity_percent == 75);
     auto values = defaults;
@@ -355,36 +358,36 @@ TEST_CASE("Feedback scroll inversion and waveform opacity persist with safe defa
     const auto bytes = serialize_program_preferences(values);
     require_preference(bytes.has_value());
     const auto parsed = preferences_parse_effect_t::from(*bytes);
-    expect_preference(parsed.has_value());
-    expect_preference(parsed.value().preferences == values);
+    expect_preference(parsed.succeeded);
+    expect_preference(parsed.preferences == values);
     const auto invalid = preferences_parse_effect_t::from(R"({"display":{"field_waveform_opacity_percent":101},"editor":{"invert_scroll_wheel":123}})");
-    expect_preference(invalid.value().preferences.display.field_waveform_opacity_percent == 75);
-    expect_preference(!invalid.value().preferences.editor.invert_scroll_wheel);
-    expect_preference(!invalid.value().warnings.empty());
+    expect_preference(invalid.preferences.display.field_waveform_opacity_percent == 75);
+    expect_preference(!invalid.preferences.editor.invert_scroll_wheel);
+    expect_preference(!invalid.warnings.empty());
     values.display.field_waveform_opacity_percent = 101;
     expect_preference(!serialize_program_preferences(values));
 }
 
 TEST_CASE("Scratch presentation overrides persist independently with safe defaults", "[preferences][scratch-presentation]") {
-    const auto defaults = preferences_parse_effect_t::from("{}").value().preferences;
+    const auto defaults = preferences_parse_effect_t::from("{}").preferences;
     expect_preference(defaults.display.scratch_positions == std::array<std::uint32_t, 2>{0, 0});
     for (std::uint32_t first = 0; first < 4; ++first) {
         auto value = defaults;
         value.display.scratch_positions = {first, 3 - first};
         const auto bytes = serialize_program_preferences(value);
         require_preference(bytes.has_value());
-        expect_preference(preferences_parse_effect_t::from(*bytes).value().preferences == value);
+        expect_preference(preferences_parse_effect_t::from(*bytes).preferences == value);
     }
     for (const auto invalid : {R"({"display":{"scratch_positions":[4,2]}})",
                                R"({"display":{"scratch_positions":[-1,2]}})",
                                R"({"display":{"scratch_positions":["right",2]}})"}) {
         const auto parsed = preferences_parse_effect_t::from(invalid);
-        expect_preference(!parsed.value().warnings.empty());
-        expect_preference(parsed.value().preferences.display.scratch_positions == std::array<std::uint32_t, 2>{0, 2});
+        expect_preference(!parsed.warnings.empty());
+        expect_preference(parsed.preferences.display.scratch_positions == std::array<std::uint32_t, 2>{0, 2});
     }
     const auto bad_shape = preferences_parse_effect_t::from(R"({"display":{"scratch_positions":[3]}})");
-    expect_preference(!bad_shape.value().warnings.empty());
-    expect_preference(bad_shape.value().preferences.display.scratch_positions == defaults.display.scratch_positions);
+    expect_preference(!bad_shape.warnings.empty());
+    expect_preference(bad_shape.preferences.display.scratch_positions == defaults.display.scratch_positions);
     auto invalid = defaults;
     invalid.display.scratch_positions[1] = 4;
     expect_preference(!serialize_program_preferences(invalid));
@@ -407,27 +410,27 @@ TEST_CASE("Field skins resolve explicit layout preferences and global fallback",
 
 TEST_CASE("Layout skins persist while legacy global preferences keep their meaning", "[core][preferences][layout-skins]") {
     const auto legacy = preferences_parse_effect_t::from(R"({"display":{"field_scheme":"bmse"}})");
-    expect_preference(legacy.has_value() && legacy.value().warnings.empty());
-    expect_preference(legacy.value().preferences.display.field_scheme_overrides.empty());
-    expect_preference(resolve_field_scheme(legacy.value().preferences.display, "beat-5k") == "bmse");
-    auto preferences = legacy.value().preferences;
+    expect_preference(legacy.succeeded && legacy.warnings.empty());
+    expect_preference(legacy.preferences.display.field_scheme_overrides.empty());
+    expect_preference(resolve_field_scheme(legacy.preferences.display, "beat-5k") == "bmse");
+    auto preferences = legacy.preferences;
     preferences.display.field_scheme_overrides = {{"beat-7k", "classic"}, {"layout-音楽", "custom-skin"}};
     const auto bytes = serialize_program_preferences(preferences);
     require_preference(bytes.has_value());
     const auto parsed = preferences_parse_effect_t::from(*bytes);
-    expect_preference(parsed.has_value() && parsed.value().warnings.empty());
-    expect_preference(parsed.value().preferences == preferences);
+    expect_preference(parsed.succeeded && parsed.warnings.empty());
+    expect_preference(parsed.preferences == preferences);
     preferences_test_directory_t directory;
     expect_preference(static_cast<bool>(save_program_preferences_atomic(directory.path / "preferences.json", preferences)));
-    expect_preference(load_program_preferences(directory.path / "preferences.json").contents.value().preferences == preferences);
+    expect_preference(load_program_preferences(directory.path / "preferences.json").contents.preferences == preferences);
 }
 
 TEST_CASE("Layout skin parser sanitizes invalid entries and bounds map size", "[core][preferences][layout-skins]") {
     const auto parsed = preferences_parse_effect_t::from(R"({"display":{"field_scheme":"bmse","field_scheme_overrides":{"beat-7k":"classic","":"bmse","beat-5k":"","bad-type":3,"nul\u0000key":"classic","bad-value":"bad\u0000value"}}})");
-    expect_preference(parsed.has_value() && !parsed.value().warnings.empty());
-    expect_preference(parsed.value().preferences.display.field_scheme == "bmse");
-    expect_preference(parsed.value().preferences.display.field_scheme_overrides.size() == 1);
-    expect_preference(resolve_field_scheme(parsed.value().preferences.display, "beat-7k") == "classic");
+    expect_preference(parsed.succeeded && !parsed.warnings.empty());
+    expect_preference(parsed.preferences.display.field_scheme == "bmse");
+    expect_preference(parsed.preferences.display.field_scheme_overrides.size() == 1);
+    expect_preference(resolve_field_scheme(parsed.preferences.display, "beat-7k") == "classic");
     std::string bytes = R"({"display":{"field_scheme":"classic","field_scheme_overrides":{)";
     for (unsigned index = 0; index < 129; ++index) {
         if (index) bytes += ',';
@@ -435,9 +438,9 @@ TEST_CASE("Layout skin parser sanitizes invalid entries and bounds map size", "[
     }
     bytes += "}}}";
     const auto overflow = preferences_parse_effect_t::from(bytes);
-    expect_preference(overflow.has_value() && !overflow.value().warnings.empty());
-    expect_preference(overflow.value().preferences.display.field_scheme_overrides.empty());
-    expect_preference(overflow.value().preferences.display.field_scheme == "classic");
+    expect_preference(overflow.succeeded && !overflow.warnings.empty());
+    expect_preference(overflow.preferences.display.field_scheme_overrides.empty());
+    expect_preference(overflow.preferences.display.field_scheme == "classic");
 }
 
 TEST_CASE("Typed layout skins reject oversized strings and overflowing maps", "[core][preferences][layout-skins]") {
@@ -470,8 +473,8 @@ TEST_CASE("preference serialization rejects malformed UTF-8", "[unit][core][help
 
 TEST_CASE("preference warnings travel with parsed success", "[core][preferences][results]") {
     auto parsed = preferences_parse_effect_t::from(R"({"unknown":true})");
-    REQUIRE(parsed);
-    REQUIRE(parsed->warnings.size() == 1);
-    CHECK(parsed.has_value());
-    CHECK(parsed->warnings.front() == "Unknown preference keys were ignored.");
+    REQUIRE(parsed.is_success());
+    REQUIRE(parsed.warnings.size() == 1);
+    CHECK(parsed.succeeded);
+    CHECK(parsed.warnings.front() == "Unknown preference keys were ignored.");
 }

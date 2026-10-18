@@ -9,7 +9,7 @@
 
 namespace wormedit {
 
-auto prepare_platform_shortcut_profile_path() -> platform_shortcut_profile_path_result_t {
+auto prepare_platform_shortcut_profile_path() -> result_t<std::filesystem::path, std::string> {
     char* preference_path = SDL_GetPrefPath("otoworld", "wormedit");
     if (preference_path == nullptr) {
         return std::unexpected{"SDL could not resolve the per-user application directory"};

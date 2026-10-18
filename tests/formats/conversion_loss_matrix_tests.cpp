@@ -83,7 +83,7 @@ auto load_fixture(const std::filesystem::path& path) -> std::optional<wormedit::
         return std::move(parsed.value);
     }
     auto opened = wormedit::sys::open_project_file(path);
-    return opened ? std::move(opened->document) : std::move(opened.error().document);
+    return std::move(opened.document);
 }
 
 struct matrix_target_t {

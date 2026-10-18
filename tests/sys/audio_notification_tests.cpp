@@ -473,7 +473,7 @@ TEST_CASE("Waveform task failures use native metadata while cancellations stay q
     completed = async_job_completion_value_t<asset_id_t, audio::waveform_analysis_result_t>{};
     check_audio_worker(!sys::runtime::waveform_completion_notification(completed));
     auto cancelled = std::make_shared<audio::waveform_analysis_result_t>();
-    cancelled->status = audio::waveform_analysis_status_t::cancelled;
+    cancelled->status = wormedit::failure_code_t::cancelled;
     completed = async_job_completion_value_t<asset_id_t, audio::waveform_analysis_result_t>{
         .payload = std::move(cancelled)};
     check_audio_worker(!sys::runtime::waveform_completion_notification(completed));

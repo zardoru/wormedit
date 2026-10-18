@@ -41,7 +41,7 @@ auto request(std::string name, std::size_t frames = sample_frames) -> resident_r
 }
 
 auto load_pcm(resident_sample_store_t& store, const resident_request_t& wanted, float seed)
-    -> resident_load_status_t {
+    -> wormedit::operation_state_t<resident_load_phase_t> {
     const auto pcm = make_pcm(static_cast<std::size_t>(wanted.frame_count), seed);
     decoder_t decoder;
     REQUIRE(decoder.open_pcm(pcm));
@@ -65,9 +65,9 @@ TEST_CASE("resident samples decode once into contiguous arena spans in load orde
     CHECK(store.reconcile(wanted).size() == 3);
     for (std::size_t index = 0; index < wanted.size(); ++index) {
         CHECK(load_pcm(store, wanted[index], static_cast<float>(index)) ==
-              resident_load_status_t::loaded);
+              resident_load_phase_t::loaded);
     }
-    CHECK(load_pcm(store, wanted[0], 0.0F) == resident_load_status_t::already_resident);
+    CHECK(load_pcm(store, wanted[0], 0.0F) == resident_load_phase_t::already_resident);
 
     const auto snapshot = store.snapshot();
     REQUIRE(snapshot->size() == 3);
@@ -88,7 +88,7 @@ TEST_CASE("resident blocks are served without decoding or touching the block cac
     resident_sample_store_t store{small_options()};
     const auto wanted = request("hit");
     REQUIRE(store.reconcile(std::array{wanted}).size() == 1);
-    REQUIRE(load_pcm(store, wanted, 0.5F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, wanted, 0.5F) == resident_load_phase_t::loaded);
 
     decoded_block_cache_t cache;
     transport_t transport{cache};
@@ -98,8 +98,8 @@ TEST_CASE("resident blocks are served without decoding or touching the block cac
     decoded_source_registry_t registry;
     for (int index = 0; index < 100; ++index) {
         const auto hit = registry.decode_source_block(transport, *token, {wanted.source, 0});
-        REQUIRE(hit.value().status == block_decode_status_t::cache_hit);
-        CHECK(hit.value().frames == sample_frames);
+        REQUIRE(hit.status == block_decode_phase_t::cache_hit);
+        CHECK(hit.frames == sample_frames);
     }
     CHECK(store.stats().decode_count == 1);
     CHECK(cache.stats().entries == 0);
@@ -108,7 +108,7 @@ TEST_CASE("resident blocks are served without decoding or touching the block cac
     // Not resident: falls through to the registry, which does not know the source.
     const auto unknown = registry.decode_source_block(
         transport, *token, {.source = {"asset:other", "binding:1:other"}, .block_index = 0});
-    CHECK(unknown == std::unexpected(block_decode_result_t{.status = block_decode_status_t::invalid_key}));
+    CHECK(unknown == block_decode_result_t{.status = wormedit::failure_code_t::invalid_request});
 }
 
 TEST_CASE("the mixer reads resident samples and prefers them over the block cache",
@@ -116,7 +116,7 @@ TEST_CASE("the mixer reads resident samples and prefers them over the block cach
     resident_sample_store_t store{small_options()};
     const auto wanted = request("mix");
     REQUIRE(store.reconcile(std::array{wanted}).size() == 1);
-    REQUIRE(load_pcm(store, wanted, 0.25F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, wanted, 0.25F) == resident_load_phase_t::loaded);
 
     decoded_block_cache_t cache;
     transport_t transport{cache};
@@ -143,8 +143,8 @@ TEST_CASE("relinking marks the old content stale and rebinding keeps unchanged c
     auto first = request("relink");
     auto other = request("other");
     REQUIRE(store.reconcile(std::array{first, other}).size() == 2);
-    REQUIRE(load_pcm(store, first, 1.0F) == resident_load_status_t::loaded);
-    REQUIRE(load_pcm(store, other, 2.0F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, first, 1.0F) == resident_load_phase_t::loaded);
+    REQUIRE(load_pcm(store, other, 2.0F) == resident_load_phase_t::loaded);
     const auto live_before = store.stats().live_bytes;
 
     // New binding generation for both; only `relink` changed on disk.
@@ -161,7 +161,7 @@ TEST_CASE("relinking marks the old content stale and rebinding keeps unchanged c
     CHECK(block_equals(*store.snapshot(), rebound_other, 2.0F));
     CHECK(store.snapshot()->find(relinked.source) == nullptr);
 
-    REQUIRE(load_pcm(store, relinked, 3.0F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, relinked, 3.0F) == resident_load_phase_t::loaded);
     CHECK(block_equals(*store.snapshot(), relinked, 3.0F));
     CHECK(store.stats().live_bytes == live_before);
 }
@@ -173,7 +173,7 @@ TEST_CASE("compaction triggers exactly at the stale threshold and preserves live
     REQUIRE(store.reconcile(all).size() == 4);
     for (std::size_t index = 0; index < all.size(); ++index) {
         REQUIRE(load_pcm(store, all[index], static_cast<float>(index)) ==
-                resident_load_status_t::loaded);
+                resident_load_phase_t::loaded);
     }
     // One of four stale: 25 percent is below the one-third threshold.
     static_cast<void>(store.reconcile(std::span{all}.subspan(1)));
@@ -199,7 +199,7 @@ TEST_CASE("compaction at exactly one third stale", "[unit][audio][resident]") {
     REQUIRE(store.reconcile(all).size() == 3);
     for (std::size_t index = 0; index < all.size(); ++index) {
         REQUIRE(load_pcm(store, all[index], static_cast<float>(index)) ==
-                resident_load_status_t::loaded);
+                resident_load_phase_t::loaded);
     }
     std::weak_ptr<const std::byte[]> old_chunk;
     {
@@ -220,10 +220,10 @@ TEST_CASE("samples beyond the budget or the length limit stay on the streaming p
     resident_sample_store_t store{options};
     const std::array wanted{request("a"), request("b"), request("c"), request("long", 5'000)};
     REQUIRE(store.reconcile(wanted).size() == 4);
-    CHECK(load_pcm(store, wanted[0], 0.0F) == resident_load_status_t::loaded);
-    CHECK(load_pcm(store, wanted[1], 1.0F) == resident_load_status_t::loaded);
-    CHECK(load_pcm(store, wanted[2], 2.0F) == resident_load_status_t::over_budget);
-    CHECK(load_pcm(store, wanted[3], 3.0F) == resident_load_status_t::too_long);
+    CHECK(load_pcm(store, wanted[0], 0.0F) == resident_load_phase_t::loaded);
+    CHECK(load_pcm(store, wanted[1], 1.0F) == resident_load_phase_t::loaded);
+    CHECK(load_pcm(store, wanted[2], 2.0F) == wormedit::failure_code_t::capacity_exceeded);
+    CHECK(load_pcm(store, wanted[3], 3.0F) == resident_load_phase_t::too_long);
     CHECK(store.stats().over_budget_count == 1);
     CHECK(store.snapshot()->size() == 2);
     // Resident samples are never evicted to make room.
@@ -237,7 +237,7 @@ TEST_CASE("a failed decode is reported and leaves nothing resident", "[unit][aud
     const auto pcm = make_pcm(sample_frames / 2, 0.0F);
     decoder_t decoder;
     REQUIRE(decoder.open_pcm(pcm));
-    CHECK(store.load(wanted, decoder) == resident_load_status_t::decode_failed);
+    CHECK(store.load(wanted, decoder) == wormedit::failure_code_t::decode_failed);
     CHECK(store.snapshot()->size() == 0);
     CHECK(store.stats().failed_count == 1);
 }
@@ -249,7 +249,7 @@ TEST_CASE("readers see consistent samples while the store publishes and compacts
     std::atomic<std::size_t> mismatches{0};
     const auto stable = request("stable");
     REQUIRE(store.reconcile(std::array{stable}).size() == 1);
-    REQUIRE(load_pcm(store, stable, 7.0F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, stable, 7.0F) == resident_load_phase_t::loaded);
 
     std::vector<std::thread> readers;
     for (int index = 0; index < 4; ++index) {
@@ -288,7 +288,7 @@ void check_resident_growth_preserves_snapshot(resident_sample_store_t& store,
 void check_resident_lowering_preserves_snapshot(resident_sample_store_t& store,
                                                const resident_snapshot_ptr_t& held,
                                                const std::array<resident_request_t, 2>& wanted) {
-    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::over_budget);
+    CHECK(load_pcm(store, wanted[1], 3.0F) == wormedit::failure_code_t::capacity_exceeded);
     CHECK(store.snapshot() == held);
     CHECK(block_equals(*held, wanted[0], 7.0F));
 }
@@ -302,11 +302,11 @@ TEST_CASE("raising resident budget retries a sample beyond the original arena ce
     resident_sample_store_t store{options};
     const std::array wanted{request("stable"), request("large", 4 * sample_frames)};
     REQUIRE(store.reconcile(wanted).size() == 2);
-    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_phase_t::loaded);
     const auto held = store.snapshot();
-    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::over_budget);
+    CHECK(load_pcm(store, wanted[1], 3.0F) == wormedit::failure_code_t::capacity_exceeded);
     CHECK(store.set_budget_bytes(5 * sample_bytes));
-    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_status_t::loaded);
+    CHECK(load_pcm(store, wanted[1], 3.0F) == resident_load_phase_t::loaded);
     check_resident_growth_preserves_snapshot(store, held, wanted[0]);
 }
 
@@ -315,7 +315,7 @@ TEST_CASE("lowering resident budget keeps snapshots and blocks future loads",
     resident_sample_store_t store{small_options()};
     const std::array wanted{request("stable"), request("later")};
     REQUIRE(store.reconcile(wanted).size() == 2);
-    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_status_t::loaded);
+    REQUIRE(load_pcm(store, wanted[0], 7.0F) == resident_load_phase_t::loaded);
     const auto held = store.snapshot();
     const auto original_options = store.options();
     CHECK(store.set_budget_bytes(0));

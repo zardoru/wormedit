@@ -156,7 +156,8 @@ auto find_step(std::span<const migration_t> table, std::uint32_t from_version)
 } // namespace
 
 auto migrate_document(nlohmann::json& document, std::uint32_t target_version,
-                      std::span<const migration_t> table) -> migration_outcome_t {
+                      std::span<const migration_t> table)
+    -> result_t<migration_phase_t, error_t<failure_code_t>> {
     if (!document.is_object() || !document.contains("schema_version") ||
         !document.at("schema_version").is_number_unsigned()) {
         return std::unexpected(error_t{failure_code_t::invalid_request,

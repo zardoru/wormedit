@@ -360,7 +360,7 @@ enum class command_payload_issue_t { none, rejected };
 }
 
 TEST_CASE("shared command payload results preserve proposal acceptance", "[unit][core][command]") {
-    using result_t = proposal_apply_result_t<command_payload_issue_t>;
+    using result_t = command_result_with_t<proposal_apply_payload_t<command_payload_issue_t>>;
     static_assert(std::is_aggregate_v<result_t>);
     static_assert(std::is_aggregate_v<command_result_with_t<std::size_t>>);
     result_t result{.command = {.applied = true},
@@ -425,51 +425,45 @@ TEST_CASE("chart identity stamp query ignores revision for persistent configurat
     CHECK_FALSE(stamp.is_identity_current(document, chart_id_t{2}));
 }
 
-TEST_CASE("command diagnosed no-change preserves revision and legacy application policy", "[unit][core][command][results]") {
+TEST_CASE("command no-change preserves revision and application policy", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t(history);
-    auto outcome = transaction.commit_outcome("No change");
-    REQUIRE(outcome.ok());
-    CHECK(outcome.value == document_command_effect_t{false, history.document.revision});
-    const auto legacy = document_command_result_t::from(std::move(outcome));
-    CHECK_FALSE(static_cast<bool>(legacy));
+    const auto result = transaction.commit("No change");
+    CHECK(result.diagnostics.empty());
+    CHECK(result.revision == history.document.revision);
+    CHECK_FALSE(static_cast<bool>(result));
     CHECK(history.undo.empty());
 }
 
-TEST_CASE("command diagnosed adapters retain warnings independently of application", "[unit][core][command][results]") {
-    document_command_outcome_t outcome{.value = {.applied = true, .revision = 7},
+TEST_CASE("command application is independent of warning diagnostics", "[unit][core][command][results]") {
+    const document_command_result_t result{.applied = true, .revision = 7,
         .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
-    REQUIRE(outcome.ok());
-    auto legacy = document_command_result_t::from(std::move(outcome));
-    CHECK(static_cast<bool>(legacy));
-    auto restored = document_command_result_t::from(std::move(legacy));
-    CHECK(restored.value == document_command_effect_t{true, 7});
-    CHECK(restored.diagnostics.front().message == "warning");
+    CHECK(static_cast<bool>(result));
+    CHECK(result.revision == 7);
+    CHECK(result.diagnostics.front().message == "warning");
 }
 
-TEST_CASE("command primary commit publishes one undoable document", "[unit][core][command][results]") {
+TEST_CASE("command commit publishes one undoable document", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t(history);
     transaction.document().charts.front().measures.front().notes.front().position.row = 240;
-    const auto outcome = transaction.commit_outcome("Move note");
-    REQUIRE(outcome.ok());
-    CHECK((outcome.value.applied && outcome.value.revision == history.document.revision));
+    const auto result = transaction.commit("Move note");
+    REQUIRE(result.applied);
+    CHECK(result.revision == history.document.revision);
     REQUIRE(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
     CHECK(note_row(history) == 130);
 }
 
-TEST_CASE("command payload outcomes preserve domain metadata and command diagnostics", "[unit][core][command][results]") {
-    command_result_with_outcome_t<quantize_command_payload_t> outcome{
-        .value = {.command = {.applied = true, .revision = 7}, .payload = {.promoted_from = 240, .promoted_to = 480}},
-        .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}};
-    REQUIRE(outcome.ok());
-    auto legacy = quantize_command_result_t::from(std::move(outcome));
-    CHECK(static_cast<bool>(legacy));
-    auto restored = quantize_command_result_t::from(std::move(legacy));
-    CHECK(restored.value.command == document_command_effect_t{true, 7});
-    CHECK((restored.value.payload.promoted_from == 240 && restored.value.payload.promoted_to == 480));
-    CHECK(restored.diagnostics.front().message == "warning");
+TEST_CASE("command payload retains domain metadata and command diagnostics", "[unit][core][command][results]") {
+    const quantize_command_result_t result{
+        .command = {.applied = true, .revision = 7,
+            .diagnostics = {{.severity = diagnostic_severity_t::warning, .message = "warning"}}},
+        .payload = {.promoted_from = 240, .promoted_to = 480}};
+    CHECK(static_cast<bool>(result));
+    CHECK(result.command.revision == 7);
+    CHECK((result.payload.promoted_from == 240 && result.payload.promoted_to == 480));
+    CHECK(result.command.diagnostics.front().message == "warning");
 }
 
 TEST_CASE("failed command publication consumes its working snapshot", "[unit][core][command][results]") {

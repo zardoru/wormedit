@@ -42,8 +42,6 @@ struct write_failure_t {
     std::string path;
 };
 
-using text_encode_result_t = text_codec_result_t;
-
 [[noreturn]] auto fail(bms_write_diagnostic_code_t code, std::string message, std::string path)
     -> void {
     throw write_failure_t{code, std::move(message), std::move(path)};
@@ -56,7 +54,7 @@ auto warn(std::vector<bms_write_diagnostic_t>& diagnostics, bms_write_diagnostic
 }
 
 auto encode_normalized_bms(std::string_view utf8_with_bom, text_encoding_t encoding)
-    -> text_encode_result_t {
+    -> text_codec_result_t {
     constexpr std::string_view utf8_bom = "\xef\xbb\xbf";
     if (!utf8_with_bom.starts_with(utf8_bom)) {
         return std::unexpected(text_codec_error_t{.error_offset = 0});

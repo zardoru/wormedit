@@ -60,9 +60,6 @@ using video_job_frame_t = visual_job_value_t<video_job_context_t, rgba_video_fra
 using video_job_outcome_t = result_t<video_job_frame_t,
     visual_job_error_t<video_job_context_t, rgba_video_frame_t>>;
 
-using video_job_completion_outcome_t =
-    async_job_completion_outcome_t<async_job_project_identity_t, video_job_outcome_t>;
-
 class video_frame_job_t;
 struct video_decode_request_t {
     video_frame_job_t& owner;

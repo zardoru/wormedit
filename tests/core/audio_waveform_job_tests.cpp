@@ -37,7 +37,7 @@ auto has_failed_analysis_in_completed_job() -> bool {
     auto completion = job.wait();
     if (!completion || !*completion) return false;
     const auto& completed = completion->value();
-    if (!completed.payload || completed.payload->status != waveform_analysis_status_t::decoder_unavailable)
+    if (!completed.payload || completed.payload->status != wormedit::failure_code_t::unavailable)
         return false;
     return completed.generation == *started && completed.identity == asset_id_t{7} &&
            completed.payload != nullptr && !job.is_busy() &&

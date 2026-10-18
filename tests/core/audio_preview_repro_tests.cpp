@@ -68,18 +68,16 @@ auto decode_status(operation_state_t<std::monostate> status) -> const char* {
 }
 
 auto block_failure_status(const block_decode_result_t& failure) -> const char* {
-    switch (failure.status) {
-    case block_decode_status_t::cache_hit: return "cache_hit";
-    case block_decode_status_t::decoded: return "decoded";
-    case block_decode_status_t::stale_generation: return "stale_generation";
-    case block_decode_status_t::invalid_key: return "invalid_key";
-    case block_decode_status_t::decoder_unavailable: return "decoder_unavailable";
-    case block_decode_status_t::beyond_end: return "beyond_end";
-    case block_decode_status_t::seek_failed: return "seek_failed";
-    case block_decode_status_t::decode_failed: return "decode_failed";
-    case block_decode_status_t::cache_capacity_exceeded: return "cache_capacity_exceeded";
-    case block_decode_status_t::session_queue_full: return "session_queue_full";
-    }
+    if (failure.status == block_decode_phase_t::cache_hit) return "cache_hit";
+    if (failure.status == block_decode_phase_t::decoded) return "decoded";
+    if (failure.status == wormedit::failure_code_t::stale_generation) return "stale_generation";
+    if (failure.status == wormedit::failure_code_t::invalid_request) return "invalid_key";
+    if (failure.status == wormedit::failure_code_t::unavailable) return "decoder_unavailable";
+    if (failure.status == wormedit::failure_code_t::not_found) return "beyond_end";
+    if (failure.status == wormedit::failure_code_t::seek_failed) return "seek_failed";
+    if (failure.status == wormedit::failure_code_t::decode_failed) return "decode_failed";
+    if (failure.status == wormedit::failure_code_t::allocation_failed) return "cache_capacity_exceeded";
+    if (failure.status == wormedit::failure_code_t::capacity_exceeded) return "session_queue_full";
     return "unknown";
 }
 
@@ -282,13 +280,13 @@ void resolve_repro_bindings(repro_chart_t& chart) {
 
 auto load_repro_chart(const std::filesystem::path& path) -> repro_chart_t {
     const auto opened = sys::open_project_file(path);
-    REQUIRE(opened);
-    REQUIRE(opened.value().document);
-    REQUIRE_FALSE(opened.value().document->charts.empty());
+    REQUIRE(opened.is_success());
+    REQUIRE(opened.document);
+    REQUIRE_FALSE(opened.document->charts.empty());
     auto result = repro_chart_t{};
     result.path = path;
-    result.asset_base = opened.value().asset_base;
-    result.document = *opened.value().document;
+    result.asset_base = opened.asset_base;
+    result.document = *opened.document;
     const auto& chart = result.document.charts.front();
     const auto measure_build = measure_index_t::from(chart);
     REQUIRE(measure_build.has_value());

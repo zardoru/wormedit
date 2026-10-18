@@ -39,11 +39,11 @@ TEST_CASE("waveform expected errors retain generated data when cache publication
     auto outcome = waveform_analysis_t::from(decoder, blocks, cache,
         {"generated:uncached-outcome", "pcm:v1"}, 4);
     REQUIRE_FALSE(outcome.has_value());
-    CHECK(outcome.error().code == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    CHECK(outcome.error().code == wormedit::failure_code_t::allocation_failed);
     REQUIRE(waveform_analysis_t::find_waveform(outcome));
     const auto expected_waveform = outcome.error().waveform;
     const auto legacy = waveform_analysis_result_t::from(std::move(outcome));
-    CHECK(legacy.status == waveform_analysis_status_t::analysis_cache_capacity_exceeded);
+    CHECK(legacy.status == wormedit::failure_code_t::allocation_failed);
     CHECK(legacy.waveform == expected_waveform);
 }
 
@@ -63,7 +63,8 @@ TEST_CASE("MP3 project audio produces a complete coarse waveform", "[audio][wave
     wormedit::audio::waveform_cache_t waveforms;
     const auto result = wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms,
                                                         fixture_source(), 256);
-    CAPTURE(result ? result->status : result.error().code);
+    CAPTURE(result ? wormedit::operation_state_t{result->status}
+                   : wormedit::operation_state_t<wormedit::audio::waveform_analysis_phase_t>{result.error().code});
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(result));
     CHECK(wormedit::audio::waveform_analysis_t::find_waveform(result)->total_frames == decoder.info()->output_frame_count);
     CHECK(bin_at_seconds(*wormedit::audio::waveform_analysis_t::find_waveform(result), 0.2).absolute_peak[0] > 0.05F);
@@ -82,7 +83,7 @@ TEST_CASE("complete waveform analysis streams through the bounded decoded-block 
     const auto result = wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms,
                                                           fixture_source(), frames_per_bin);
 
-    REQUIRE(result.value().status == wormedit::audio::waveform_analysis_status_t::generated);
+    REQUIRE(result.value().status == wormedit::audio::waveform_analysis_phase_t::generated);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(result) != nullptr);
     const auto& waveform = *wormedit::audio::waveform_analysis_t::find_waveform(result);
     CHECK(waveform.sample_rate == wormedit::audio::output_sample_rate);
@@ -148,12 +149,12 @@ TEST_CASE("waveform analysis cache is stable across later PCM seeks",
     };
     const auto decoded =
         wormedit::audio::decode_and_cache_block(decoder, blocks, session, *token, sought);
-    CHECK((decoded.status == wormedit::audio::block_decode_status_t::decoded ||
-           decoded.status == wormedit::audio::block_decode_status_t::cache_hit));
+    CHECK((decoded.status == wormedit::audio::block_decode_phase_t::decoded ||
+           decoded.status == wormedit::audio::block_decode_phase_t::cache_hit));
 
     const auto cached = wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms,
                                                           fixture_source(), frames_per_bin);
-    REQUIRE(cached.value().status == wormedit::audio::waveform_analysis_status_t::cache_hit);
+    REQUIRE(cached.value().status == wormedit::audio::waveform_analysis_phase_t::cache_hit);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(cached) != nullptr);
     CHECK(*wormedit::audio::waveform_analysis_t::find_waveform(cached) == expected);
     CHECK(waveforms.stats().hits == 1);
@@ -186,8 +187,8 @@ TEST_CASE("concurrent waveform levels share one decoder without interleaving see
     });
     const auto fine = fine_job.get();
     const auto coarse = coarse_job.get();
-    REQUIRE(fine.value().status == wormedit::audio::waveform_analysis_status_t::generated);
-    REQUIRE(coarse.value().status == wormedit::audio::waveform_analysis_status_t::generated);
+    REQUIRE(fine.value().status == wormedit::audio::waveform_analysis_phase_t::generated);
+    REQUIRE(coarse.value().status == wormedit::audio::waveform_analysis_phase_t::generated);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(fine) != nullptr);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(coarse) != nullptr);
     CHECK(wormedit::audio::waveform_analysis_t::find_waveform(fine)->total_frames == wormedit::audio::waveform_analysis_t::find_waveform(coarse)->total_frames);
@@ -215,8 +216,8 @@ TEST_CASE("parallel waveform pyramid construction is bitwise deterministic",
         decoder, blocks, parallel_cache, fixture_source(), frames_per_bin,
         {.parallel_minimum_bins = 1, .maximum_parallel_workers = 4});
 
-    REQUIRE(serial.value().status == wormedit::audio::waveform_analysis_status_t::generated);
-    REQUIRE(parallel.value().status == wormedit::audio::waveform_analysis_status_t::generated);
+    REQUIRE(serial.value().status == wormedit::audio::waveform_analysis_phase_t::generated);
+    REQUIRE(parallel.value().status == wormedit::audio::waveform_analysis_phase_t::generated);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(serial) != nullptr);
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(parallel) != nullptr);
     CHECK(*wormedit::audio::waveform_analysis_t::find_waveform(parallel) == *wormedit::audio::waveform_analysis_t::find_waveform(serial));
@@ -232,11 +233,11 @@ TEST_CASE("waveform analysis rejects invalid or unbounded requests deterministic
     wormedit::audio::waveform_cache_t waveforms;
     CHECK(
         wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms, fixture_source(), 0).error().code ==
-        wormedit::audio::waveform_analysis_status_t::invalid_request);
+        wormedit::failure_code_t::invalid_request);
     CHECK(
         wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms, {"", "source"}, 128).error().code ==
-        wormedit::audio::waveform_analysis_status_t::invalid_request);
-    CHECK(wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms, fixture_source(), 128).error().code == wormedit::audio::waveform_analysis_status_t::decoder_unavailable);
+        wormedit::failure_code_t::invalid_request);
+    CHECK(wormedit::audio::waveform_analysis_t::from(decoder, blocks, waveforms, fixture_source(), 128).error().code == wormedit::failure_code_t::unavailable);
 
     std::string error;
     REQUIRE(decoder.open(fixture_path("sliced-seek-source.ogg"), &error));
@@ -246,7 +247,7 @@ TEST_CASE("waveform analysis rejects invalid or unbounded requests deterministic
         .maximum_bytes = sizeof(wormedit::audio::waveform_bin_t),
         .maximum_bins_per_entry = 1,
     });
-    CHECK(wormedit::audio::waveform_analysis_t::from(decoder, blocks, one_bin_only, fixture_source(), 1).error().code == wormedit::audio::waveform_analysis_status_t::source_too_large);
+    CHECK(wormedit::audio::waveform_analysis_t::from(decoder, blocks, one_bin_only, fixture_source(), 1).error().code == wormedit::failure_code_t::capacity_exceeded);
     CHECK_FALSE(
         wormedit::audio::waveform_level_for_zoom(wormedit::audio::waveform_t{}, 1.0).has_value());
 }
@@ -314,7 +315,7 @@ TEST_CASE("waveform analysis cancellation publishes no partial cache entry",
     const auto result =
         waveform_analysis_t::from(decoder, blocks, waveforms, {"generated:cancellation", "pcm:v1"}, 4, {},
                          cancellation.get_token());
-    CHECK(result.error().code == waveform_analysis_status_t::cancelled);
+    CHECK(result.error().code == wormedit::failure_code_t::cancelled);
     CHECK_FALSE(wormedit::audio::waveform_analysis_t::find_waveform(result) != nullptr);
     CHECK(waveforms.stats().entries == 0);
     CHECK(blocks.stats().entries == 0);
@@ -358,7 +359,7 @@ void check_other_range(decoder_t& decoder, decoded_block_cache_t& blocks, wavefo
     const auto other = waveform_analysis_t::from(decoder, blocks, cache, source, 32,
                                        {.begin_frame = 768, .end_frame = 1024});
     REQUIRE(wormedit::audio::waveform_analysis_t::find_waveform(other));
-    CHECK(other.value().status == waveform_analysis_status_t::generated);
+    CHECK(other.value().status == waveform_analysis_phase_t::generated);
     CHECK(cache.stats().entries == 3);
 }
 
@@ -368,7 +369,7 @@ void check_cancelled_range(decoder_t& decoder, decoded_block_cache_t& blocks, wa
     cancelled.request_stop();
     CHECK(waveform_analysis_t::from(decoder, blocks, cache, source, 32,
           {.begin_frame = 1024, .end_frame = 1280}, cancelled.get_token()).error().code ==
-          waveform_analysis_status_t::cancelled);
+          wormedit::failure_code_t::cancelled);
     CHECK(cache.stats().entries == 3);
 }
 
@@ -410,24 +411,24 @@ void check_detail_window(const waveform_t& waveform, const wormedit::timing_inde
     CHECK(window->frames_per_pixel < 1.0);
 }
 
-void check_aligned_samples(const aligned_waveform_view_outcome_t& projected) {
-    REQUIRE(projected);
-    REQUIRE_FALSE(projected->rows.empty());
-    CHECK(projected->rows.front().sample_point);
-    CHECK(projected->rows.front().samples[0] == -0.75f);
+void check_aligned_samples(const aligned_waveform_view_result_t& projected) {
+    REQUIRE(!projected.status.has_failure());
+    REQUIRE_FALSE(projected.rows.empty());
+    CHECK(projected.rows.front().sample_point);
+    CHECK(projected.rows.front().samples[0] == -0.75f);
 }
 
-void check_aligned_sample_bounds(const aligned_waveform_view_outcome_t& projected) {
-    CHECK(projected->rows.front().samples[1] == 0.25f);
-    CHECK(projected->rows.front().y_pixels >= 0.0);
-    CHECK(projected->rows.back().y_pixels < 8.0);
+void check_aligned_sample_bounds(const aligned_waveform_view_result_t& projected) {
+    CHECK(projected.rows.front().samples[1] == 0.25f);
+    CHECK(projected.rows.front().y_pixels >= 0.0);
+    CHECK(projected.rows.back().y_pixels < 8.0);
 }
 
 void check_aligned_fallback(const waveform_t& waveform, const wormedit::timing_index_t& timing,
                             aligned_waveform_request_t request, decoded_block_cache_t& blocks) {
     blocks.clear();
-    CHECK_FALSE(aligned_waveform_view_result_t::from(waveform, timing, request, blocks));
-    CHECK(aligned_waveform_view_result_t::from(waveform, timing, request));
+    CHECK_FALSE(!(aligned_waveform_view_result_t::from(waveform, timing, request, blocks)).status.has_failure());
+    CHECK(!(aligned_waveform_view_result_t::from(waveform, timing, request)).status.has_failure());
 }
 } // namespace
 
@@ -458,7 +459,7 @@ TEST_CASE("sample waveform projection reads signed visible PCM and falls back on
     decoded_block_cache_t blocks;
     const audio_source_identity_t source{"generated:samples", "pcm:v1"};
     const std::vector<float> pcm{0.25f, -0.5f, -0.75f, 0.125f, 0.5f, -0.25f};
-    REQUIRE(blocks.store({source, 0}, 3, pcm) == block_store_status_t::stored);
+    REQUIRE(blocks.store({source, 0}, 3, pcm).has_value());
     const auto samples = build_cached_waveform_samples_view(blocks, source, 1, 3);
     REQUIRE(samples);
     check_signed_points(*samples);
@@ -502,5 +503,5 @@ TEST_CASE("short sources and clipped chart ends retain the actual waveform zoom 
     CHECK(window->end_frame == 64);
     CHECK(window->frames_per_pixel > 400.0);
     decoded_block_cache_t blocks;
-    CHECK_FALSE(aligned_waveform_view_result_t::from(waveform, timing, coarse, blocks));
+    CHECK_FALSE(!(aligned_waveform_view_result_t::from(waveform, timing, coarse, blocks)).status.has_failure());
 }

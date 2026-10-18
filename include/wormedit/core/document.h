@@ -1126,8 +1126,6 @@ struct redivision_plan_t {
     std::optional<chart_document_t> chart;
     std::vector<redivision_move_t> moves;
 };
-using redivision_outcome_t = diagnosed_t<redivision_plan_t>;
-
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,
     local_position_t position) -> const lane_layout_t*;
 [[nodiscard]] auto layout_at(const chart_document_t& chart, const measure_index_t& index,

@@ -50,8 +50,6 @@ struct bgm_column_assignment_t {
     std::size_t lane_count{};
     auto operator==(const bgm_column_assignment_t&) const -> bool = default;
 };
-using bgm_packing_outcome_t = result_t<bgm_column_assignment_t, bgm_packing_error_t>;
-
 namespace bgm_packing_detail {
 
 struct group_t {
@@ -190,7 +188,8 @@ inline auto seed_preferences(std::vector<group_t>& groups,
 inline auto bgm_column_assignment_t::from(std::span<const bgm_packing_request_t> requests,
                                           std::span<const bgm_packing_existing_t> existing,
                                           std::size_t existing_lane_count,
-                                          std::size_t maximum_lanes) -> bgm_packing_outcome_t {
+                                          std::size_t maximum_lanes)
+        -> result_t<bgm_column_assignment_t, bgm_packing_error_t> {
     using namespace bgm_packing_detail;
     state_t state{.result = {.lanes = {}, .lane_count = existing_lane_count},
                   .initial_lane_count = existing_lane_count,

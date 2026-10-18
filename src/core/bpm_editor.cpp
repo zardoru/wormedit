@@ -50,7 +50,6 @@ struct bpm_edit_effect_t {
     std::string command_label;
     auto operator==(const bpm_edit_effect_t&) const -> bool = default;
 };
-using bpm_edit_outcome_t = result_t<bpm_edit_effect_t, bpm_edit_effect_t>;
 
 struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     static constexpr std::string_view invalid_limits_message = "BPM event cap must be positive";
@@ -64,28 +63,28 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     }
 
     auto operator()(chart_document_t& chart, const insert_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_outcome_t {
+        -> bpm_edit_effect_t {
         if (chart.bpms.size() >= limits.maximum_bpm_events) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "BPM insertion would exceed the configured event cap");
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         if (!validate_bpm_position(chart, edit.value.position, result) ||
             !validate_bpm_value(edit.value.settings.beats_per_minute, result)) {
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         const auto allocation = next_chart_object_id(chart, limits.maximum_chart_objects);
         if (!allocation.id) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    allocation.over_limit ? "selected chart exceeds the object ID allocation cap"
                                          : "chart object ID sequence is exhausted");
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         const auto source_order = next_source_order(chart.bpms);
         if (!source_order) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "BPM source-order sequence is exhausted");
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         chart.bpms.push_back({
             .id = *allocation.id,
@@ -97,17 +96,17 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     }
 
     auto operator()(chart_document_t& chart, const update_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_outcome_t {
+        -> bpm_edit_effect_t {
         if (!edit.id) {
             reject(result, diagnostic_code_t::invalid_id,
                    "BPM update uses the reserved zero event ID");
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         auto* event = chart.unique_target(&chart_document_t::bpms, edit.id, result.diagnostics,
                                           bpm_target_policy);
         if (event == nullptr || !validate_bpm_position(chart, edit.value.position, result) ||
             !validate_bpm_value(edit.value.settings.beats_per_minute, result)) {
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         if (event->position == edit.value.position &&
             event->beats_per_minute == edit.value.settings.beats_per_minute) {
@@ -119,16 +118,16 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     }
 
     auto operator()(chart_document_t& chart, const delete_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_outcome_t {
+        -> bpm_edit_effect_t {
         if (!edit.id) {
             reject(result, diagnostic_code_t::invalid_id,
                    "BPM deletion uses the reserved zero event ID");
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         auto* event = chart.unique_target(&chart_document_t::bpms, edit.id, result.diagnostics,
                                           bpm_target_policy);
         if (event == nullptr) {
-            return std::unexpected(bpm_edit_effect_t{});
+            return {};
         }
         const auto id = event->id;
         std::erase_if(chart.bms_bpm_projections,

@@ -46,7 +46,7 @@ auto song_with_two_resolutions() -> wormedit::song_document_t {
 }
 
 auto compare(const wormedit::song_document_t& song, wormedit::chart_compare_request_t request = {})
-    -> wormedit::chart_comparison_result_t {
+    -> wormedit::diagnosed_t<wormedit::chart_comparison_t> {
     if (request.charts.empty()) {
         request.charts = {wormedit::chart_id_t{1}, wormedit::chart_id_t{2}};
     }
@@ -249,7 +249,7 @@ TEST_CASE("diagnosed chart comparison preserves failure metadata",
 
 TEST_CASE("diagnosed chart comparison preserves warning success and feedback",
           "[unit][core][chart-compare][result]") {
-    const wormedit::chart_comparison_result_t result{
+    const wormedit::diagnosed_t<wormedit::chart_comparison_t> result{
         .value = {.document_revision = 17, .charts = {}, .differing_rows = {}},
         .diagnostics = {{.severity = wormedit::diagnostic_severity_t::warning,
                          .code = wormedit::diagnostic_code_t::approximated_feature,

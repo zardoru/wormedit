@@ -86,8 +86,6 @@ struct rationalized_value_t {
     auto operator==(const rationalized_value_t&) const -> bool = default;
 };
 
-using rationalization_result_t = result_t<rationalized_value_t, rationalization_error_info_t>;
-
 struct snap_state_t {
     // Configured order is preserved, unsupported values and duplicates removed.
     // If none remain, the exact one-row fallback (1 / resolution) is inserted.

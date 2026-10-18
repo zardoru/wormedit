@@ -98,6 +98,4 @@ struct chart_comparison_t {
     auto operator==(const chart_comparison_t&) const -> bool = default;
 };
 
-using chart_comparison_result_t = diagnosed_t<chart_comparison_t>;
-
 } // namespace wormedit

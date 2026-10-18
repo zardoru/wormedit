@@ -140,7 +140,8 @@ auto chunk_arena_core_t::add_chunk(std::size_t size, std::size_t alignment) noex
 }
 
 auto chunk_arena_core_t::allocate(std::size_t size, std::size_t alignment,
-                                  arena_fit_policy_t policy) noexcept -> allocation_outcome_t {
+                                  arena_fit_policy_t policy) noexcept
+        -> result_t<allocation_location_t, failure_code_t> {
     if (!is_power_of_two(alignment) || alignment > max_default_alignment)
         return std::unexpected(failure_code_t::invalid_request);
     if (object_count_ >= options_.maximum_objects)
@@ -195,7 +196,7 @@ frame_arena_t::frame_arena_t(frame_arena_t&&) noexcept = default;
 auto frame_arena_t::operator=(frame_arena_t&&) noexcept -> frame_arena_t& = default;
 
 auto frame_arena_t::allocate(std::size_t size, std::size_t alignment) noexcept
-    -> arena_allocation_outcome_t {
+    -> result_t<void*, failure_code_t> {
     if (!core_)
         return std::unexpected(failure_code_t::out_of_memory);
     const auto allocation = core_->allocate(size, alignment, arena_fit_policy_t::any_chunk);
@@ -244,7 +245,7 @@ auto append_arena_t::operator=(append_arena_t&& other) noexcept -> append_arena_
 }
 
 auto append_arena_t::append_span(std::size_t size, std::size_t alignment) noexcept
-    -> append_arena_outcome_t {
+    -> result_t<append_arena_span_t, failure_code_t> {
     const auto allocation = core_.allocate(size, alignment, arena_fit_policy_t::newest_chunk);
     if (!allocation)
         return std::unexpected(allocation.error());
@@ -323,7 +324,7 @@ auto is_valid_order(std::span<const std::size_t> order, std::size_t count) -> bo
 
 auto append_arena_t::build_compaction(std::span<const append_arena_span_t> live_spans,
                                       std::span<const std::size_t> order) const noexcept
-    -> append_arena_compaction_outcome_t {
+    -> result_t<append_arena_snapshot_t, arena_compaction_failure_t> {
     append_arena_snapshot_t result{.arena = append_arena_t{core_.options(), core_.resource()},
                                    .remap = {}};
     for (const auto& span : live_spans) {

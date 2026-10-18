@@ -114,7 +114,7 @@ auto build_membership_updates(chart_document_t& chart, const event_layer_map_t& 
 } // namespace
 
 auto create_bmson_sound_channel_layers(chart_document_t& chart)
-    -> bmson_layer_defaults_outcome_t {
+    -> result_t<bool, std::string> {
     if (!chart.semantic_layers.empty() || chart.sound_channels.empty()) return false;
 
     std::vector<semantic_layer_t> layers;

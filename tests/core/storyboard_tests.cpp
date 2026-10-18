@@ -156,16 +156,16 @@ TEST_CASE("OSB easing 15 through 34 evaluates and invalid model easing is reject
     for (std::int32_t easing = 15; easing <= 34; ++easing) {
         const auto value = sample(easing, 50);
         INFO("easing=" << easing);
-        REQUIRE(value);
-        REQUIRE(value->value.present);
-        CHECK(std::isfinite(value->value.values[0]));
-        CHECK(sample(easing, 0)->value.values[0] == 0.0);
-        CHECK(sample(easing, 100)->value.values[0] == 1.0);
+        REQUIRE(value.succeeded);
+        REQUIRE(value.value.present);
+        CHECK(std::isfinite(value.value.values[0]));
+        CHECK(sample(easing, 0).value.values[0] == 0.0);
+        CHECK(sample(easing, 100).value.values[0] == 1.0);
     }
-    CHECK(std::abs(sample(15, 50)->value.values[0] - (1.0 - std::sqrt(0.5))) < 1e-12);
-    CHECK(std::abs(sample(16, 50)->value.values[0] - std::sqrt(0.5)) < 1e-12);
-    CHECK(std::abs(sample(26, 50)->value.values[0] - 0.984130859375) < 1e-12);
-    CHECK(std::abs(sample(27, 50)->value.values[0] - 1.027307435) < 1e-8);
+    CHECK(std::abs(sample(15, 50).value.values[0] - (1.0 - std::sqrt(0.5))) < 1e-12);
+    CHECK(std::abs(sample(16, 50).value.values[0] - std::sqrt(0.5)) < 1e-12);
+    CHECK(std::abs(sample(26, 50).value.values[0] - 0.984130859375) < 1e-12);
+    CHECK(std::abs(sample(27, 50).value.values[0] - 1.027307435) < 1e-8);
 
     storyboard_document_model_t invalid_document;
     storyboard_sprite_t sprite;
@@ -174,7 +174,7 @@ TEST_CASE("OSB easing 15 through 34 evaluates and invalid model easing is reject
     invalid_document.sprites.push_back(sprite);
     CHECK_FALSE(compile_storyboard_schedule(invalid_document).value);
     CHECK_FALSE(emit_osb(invalid_document).value);
-    CHECK(!sample(35, 50));
+    CHECK_FALSE(sample(35, 50).succeeded);
 }
 
 TEST_CASE("storyboard semantic equality compares retained directives and ignores blank lines",
@@ -266,21 +266,21 @@ TEST_CASE("large OSB loop counts remain structural and interpolate in each itera
 
     const auto first_iteration =
         evaluate_storyboard_property(document.sprites.front(), storyboard_opcode_t::fade, 150);
-    REQUIRE(first_iteration);
-    REQUIRE(first_iteration->value.present);
-    CHECK(first_iteration->value.values[0] == 0.5);
+    REQUIRE(first_iteration.succeeded);
+    REQUIRE(first_iteration.value.present);
+    CHECK(first_iteration.value.values[0] == 0.5);
 
     const auto next_iteration =
         evaluate_storyboard_property(document.sprites.front(), storyboard_opcode_t::fade, 250);
-    REQUIRE(next_iteration);
-    REQUIRE(next_iteration->value.present);
-    CHECK(next_iteration->value.values[0] == 0.5);
+    REQUIRE(next_iteration.succeeded);
+    REQUIRE(next_iteration.value.present);
+    CHECK(next_iteration.value.values[0] == 0.5);
 
     const auto easing =
         evaluate_storyboard_property(document.sprites.front(), storyboard_opcode_t::fade, 125);
-    REQUIRE(easing);
-    REQUIRE(easing->value.present);
-    CHECK(easing->value.values[0] == 0.125);
+    REQUIRE(easing.succeeded);
+    REQUIRE(easing.value.present);
+    CHECK(easing.value.values[0] == 0.125);
 }
 
 TEST_CASE("storyboard event schedule rejects loop time overflow atomically",
@@ -336,6 +336,6 @@ TEST_CASE("storyboard cursor errors and missing properties remain distinct outco
     CHECK(advance.error() == failure_code_t::not_started);
     const storyboard_sprite_t sprite;
     auto evaluated = evaluate_storyboard_property(sprite, storyboard_opcode_t::fade, 0);
-    REQUIRE(evaluated);
-    CHECK_FALSE(evaluated->value.present);
+    REQUIRE(evaluated.succeeded);
+    CHECK_FALSE(evaluated.value.present);
 }

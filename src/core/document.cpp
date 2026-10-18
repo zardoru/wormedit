@@ -1919,8 +1919,8 @@ auto redivide_chart_positions(chart_document_t& chart, redivision_context_t& con
 
 auto redivision_plan_t::from(const chart_document_t& chart,
                           std::uint64_t target_divisions_per_standard_measure)
-    -> redivision_outcome_t {
-    redivision_outcome_t result;
+    -> diagnosed_t<redivision_plan_t> {
+    diagnosed_t<redivision_plan_t> result;
     if (chart.divisions_per_standard_measure == 0 || target_divisions_per_standard_measure == 0) {
         add_diagnostic(result.diagnostics, diagnostic_code_t::invalid_resolution,
                        "source and target chart resolutions must be positive");

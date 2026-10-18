@@ -28,8 +28,6 @@ struct offline_mix_t {
     auto operator==(const offline_mix_t&) const -> bool = default;
 };
 
-using offline_mix_result_t = result_t<offline_mix_t, error_t<failure_code_t>>;
-
 // Mixes [begin_frame, end_frame) through the same preview bridge and transport
 // used by playback, without metronome clicks. Renders from timeline zero and
 // discards the prefix so earlier voices retain their tails inside the selection.
@@ -38,6 +36,7 @@ using offline_mix_result_t = result_t<offline_mix_t, error_t<failure_code_t>>;
     decoded_source_registry_t& sources, const preview_schedule_t& schedule,
     std::span<const preview_object_source_binding_t> objects,
     std::uint64_t begin_frame, std::uint64_t end_frame,
-    offline_mix_options_t options = {}, std::stop_token stop = {}) -> offline_mix_result_t;
+    offline_mix_options_t options = {}, std::stop_token stop = {})
+        -> result_t<offline_mix_t, error_t<failure_code_t>>;
 
 } // namespace wormedit::audio

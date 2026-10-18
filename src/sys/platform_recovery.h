@@ -9,14 +9,12 @@
 
 namespace wormedit {
 
-using platform_recovery_directory_result_t = result_t<std::filesystem::path, std::string>;
-
 // Resolves and creates Wormedit's per-user recovery directory through SDL's
 // platform filesystem policy. This remains an application boundary; the
 // headless recovery scanner only receives caller-owned paths.
 [[nodiscard]] auto prepare_platform_recovery_directory(
     notification_sink_t notifications = notification_sink_t::muted())
-    -> platform_recovery_directory_result_t;
+    -> result_t<std::filesystem::path, std::string>;
 
 // The crash marker lives in the recovery directory; the scanner ignores it as a candidate.
 [[nodiscard]] auto crash_marker_path(const std::filesystem::path& recovery_directory)

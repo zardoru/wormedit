@@ -154,7 +154,7 @@ auto render_offline_interval(decoded_source_registry_t& sources, const preview_s
                              std::span<const preview_object_source_binding_t> objects,
                              std::uint64_t begin_frame, std::uint64_t end_frame,
                              offline_mix_options_t options, std::stop_token stop)
-    -> offline_mix_result_t {
+    -> result_t<offline_mix_t, error_t<failure_code_t>> {
     std::size_t output_samples{};
     const auto valid = validate_offline_interval(schedule.sample_rate, begin_frame, end_frame, options, output_samples);
     if (valid)

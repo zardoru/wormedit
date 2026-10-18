@@ -65,7 +65,7 @@ auto load_resident_fixture(wormedit::audio::decoded_source_registry_t& sources,
         "resident-test:" + std::string(name), binding.output_frame_count};
     static_cast<void>(store.reconcile(std::span{&request, 1}));
     REQUIRE(sources.load_resident(binding.asset, store, request) ==
-            wormedit::audio::resident_load_status_t::loaded);
+            wormedit::audio::resident_load_phase_t::loaded);
     return binding;
 }
 

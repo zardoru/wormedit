@@ -106,7 +106,7 @@ class decoded_source_registry_t {
     [[nodiscard]] auto bindings() const -> std::vector<decoded_source_binding_t>;
     [[nodiscard]] auto binding(asset_id_t asset) const -> std::optional<decoded_source_binding_t>;
     [[nodiscard]] auto decode_source_block(transport_t& transport, session_token_t token,
-                                         audio_block_key_t key) -> block_decode_outcome_t;
+                                         audio_block_key_t key) -> block_decode_result_t;
     // Decodes the first `frames` output frames into `block_cache` ahead of playback
     // (for long sources that stay on the streaming path). Probes the source first
     // if needed. Returns the number of blocks that are cached afterwards.
@@ -116,7 +116,7 @@ class decoded_source_registry_t {
     // Probes the source first if needed; an unknown asset reports decode_failed.
     [[nodiscard]] auto load_resident(asset_id_t asset, resident_sample_store_t& store,
                                      const resident_request_t& request, std::stop_token stop = {})
-        -> resident_load_status_t;
+        -> operation_state_t<resident_load_phase_t>;
     [[nodiscard]] auto analyze_waveform(asset_id_t asset, decoded_block_cache_t& block_cache,
                                         waveform_cache_t& waveform_cache,
                                         std::uint32_t frames_per_bin,

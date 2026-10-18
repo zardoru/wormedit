@@ -330,10 +330,10 @@ struct preference_json_budget_t {
 };
 } // namespace
 
-auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_parse_outcome_t {
-    preferences_parse_effect_t result{.preferences = program_preferences_t::with_defaults()};
+auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_parse_effect_t {
+    preferences_parse_effect_t result{.succeeded = false, .preferences = program_preferences_t::with_defaults()};
     if (bytes.size() > maximum_preferences_bytes) {
-        result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return std::unexpected(std::move(result));
+        result.warnings.push_back("Preferences exceed the 1 MiB limit; defaults retained."); return result;
     }
     try {
         preference_json_budget_t budget;
@@ -347,12 +347,13 @@ auto preferences_parse_effect_t::from(std::string_view bytes) -> preferences_par
         read_general(reader, root); read_editor_audio(reader, root);
         read_display_minimap_layout(reader, root); read_players(reader, root);
         if (reader.unknown) reader.warn("Unknown preference keys were ignored.");
+        result.succeeded = true;
         return result;
     } catch (const std::exception&) {
         result.preferences = program_preferences_t::with_defaults();
         result.warnings = {"Preferences are corrupt, unsupported, or exceed limits; defaults retained."};
     }
-    return std::unexpected(std::move(result));
+    return result;
 }
 
 auto serialize_program_preferences(const program_preferences_t& value) -> std::optional<std::string> {
@@ -366,7 +367,7 @@ auto serialize_program_preferences(const program_preferences_t& value) -> std::o
 
 auto load_program_preferences(const std::filesystem::path& path) -> preferences_load_result_t {
     preferences_load_result_t result;
-    auto& contents = result.contents.error();
+    auto& contents = result.contents;
     std::error_code error;
     const auto status = std::filesystem::status(path, error);
     if (error == std::errc::no_such_file_or_directory || status.type() == std::filesystem::file_type::not_found) {
@@ -433,7 +434,7 @@ auto load_program_preferences_for_startup(const std::filesystem::path& path,
     const std::filesystem::path& legacy_player_path) -> preferences_load_result_t {
     auto result = load_program_preferences(path);
     if (!result.missing) return result;
-    auto& contents = result.contents.error();
+    auto& contents = result.contents;
     std::error_code error;
     const bool legacy_exists = std::filesystem::exists(legacy_player_path, error);
     if (error) contents.warnings.push_back("Cannot inspect legacy external-player preferences.");

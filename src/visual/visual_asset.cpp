@@ -7,7 +7,7 @@ namespace wormedit::visual {
 
 auto resolved_visual_asset_t::from(const song_document_t& document, resource_id_t resource,
                                    const std::filesystem::path& project_directory)
-    -> visual_asset_resolution_outcome_t {
+    -> result_t<resolved_visual_asset_t, error_t<failure_code_t>> {
     const auto resource_entry =
         std::ranges::find(document.resources, resource, &resource_entry_t::id);
     if (resource_entry == document.resources.end()) {

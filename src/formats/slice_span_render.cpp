@@ -53,9 +53,8 @@ auto verify_decoding(audio::decoder_t& decoder, const slice_span_t& span,
     while (cursor < span.end_frame) {
         if (options.stop.stop_requested()) return std::unexpected(slice_span_render_payload_t::from("Slice rendering cancelled", span.asset));
         const auto requested = static_cast<std::size_t>(std::min<std::uint64_t>(audio::maximum_read_frames, span.end_frame - cursor));
-        const auto read_outcome = decoder.read_frames_at(cursor, buffer, requested);
-        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
-        if (read.status != audio::read_status_t::success || read.frames_read != requested)
+        const auto read = decoder.read_frames_at(cursor, buffer, requested);
+        if (read.status != audio::read_phase_t::success || read.frames_read != requested)
             return std::unexpected(slice_span_render_payload_t::from("Cannot decode span for asset " + std::to_string(span.asset.value), span.asset));
         cursor += read.frames_read;
     }
@@ -145,15 +144,15 @@ auto render_staged(const song_document_t& song, const slice_span_render_input_t&
 }
 
 auto publish(const slice_span_render_input_t& plan, const slice_span_render_options_t& options,
-             std::span<const std::filesystem::path> staged, publication_t& publication) -> slice_span_render_outcome_t {
+             std::span<const std::filesystem::path> staged, publication_t& publication) -> slice_span_render_payload_t {
     for (std::size_t index = 0; index < plan.spans.size(); ++index) {
-        if (options.stop.stop_requested()) return std::unexpected(slice_span_render_payload_t::from("Slice publication cancelled"));
+        if (options.stop.stop_requested()) return slice_span_render_payload_t::from("Slice publication cancelled");
         auto path = options.output_directory / plan.spans[index].filename;
         std::error_code error;
         // The staging and output directories share a filesystem. An exclusive hard link
         // publishes complete WAV bytes and refuses destination races without overwriting.
         std::filesystem::create_hard_link(staged[index], path, error);
-        if (error) return std::unexpected(slice_span_render_payload_t::from("Cannot exclusively publish " + path.string() + ": " + error.message(), plan.spans[index].asset));
+        if (error) return slice_span_render_payload_t::from("Cannot exclusively publish " + path.string() + ": " + error.message(), plan.spans[index].asset);
         publication.published.push_back(std::move(path));
     }
     slice_span_render_payload_t result{.files = std::move(publication.published)};
@@ -164,19 +163,19 @@ auto publish(const slice_span_render_input_t& plan, const slice_span_render_opti
 } // namespace
 
 auto create_slice_span_files(const song_document_t& song, const slice_span_render_input_t& plan,
-    const slice_span_render_options_t& options) -> slice_span_render_outcome_t {
+    const slice_span_render_options_t& options) -> slice_span_render_payload_t {
     decoders_t decoders;
     auto checked = preflight(song, plan, options, decoders);
-    if (!checked) return std::unexpected(std::move(checked.error()));
+    if (!checked) return std::move(checked.error());
     if (plan.spans.empty()) return slice_span_render_payload_t{};
     publication_t publication{.staging = {}, .output = options.output_directory, .created_output = false, .published = {}};
     publication.published.reserve(plan.spans.size());
     auto reserved = make_staging(publication);
-    if (!reserved) return std::unexpected(std::move(reserved.error()));
+    if (!reserved) return std::move(reserved.error());
     std::vector<std::filesystem::path> staged;
     staged.reserve(plan.spans.size());
     auto rendered = render_staged(song, plan, options, decoders, publication, staged);
-    if (!rendered) return std::unexpected(std::move(rendered.error()));
+    if (!rendered) return std::move(rendered.error());
     return publish(plan, options, staged, publication);
 }
 
@@ -266,7 +265,7 @@ auto render_conversion_slice_plans(const song_document_t& song, const conversion
     for (const auto& plan : converted.slice_plans) {
         const auto rendered = create_slice_span_files(song, slice_span_render_input_t::from(plan),
                                                        rendering);
-        if (!rendered) return rendered.error().error;
+        if (!rendered.succeeded) return rendered.error;
     }
     return std::nullopt;
 }

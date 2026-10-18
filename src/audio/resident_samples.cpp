@@ -140,27 +140,27 @@ auto resident_sample_store_t::reconcile(std::span<const resident_request_t> want
 }
 
 auto resident_sample_store_t::reserve(const resident_request_t& request)
-    -> std::pair<resident_load_status_t, append_arena_span_t> {
+    -> std::pair<operation_state_t<resident_load_phase_t>, append_arena_span_t> {
     const std::scoped_lock lock(mutex_);
     const auto wanted = bindings_.find(request.source.source_identity);
     if (wanted == bindings_.end() || wanted->second.content_key != request.content_key)
-        return {resident_load_status_t::stopped, {}};
+        return {wormedit::failure_code_t::cancelled, {}};
     if (contents_.contains(request.content_key))
-        return {resident_load_status_t::already_resident, {}};
+        return {resident_load_phase_t::already_resident, {}};
     if (request.frame_count == 0 || request.frame_count > options_.maximum_frames_per_sample)
-        return {resident_load_status_t::too_long, {}};
+        return {resident_load_phase_t::too_long, {}};
     const auto bytes = static_cast<std::size_t>(request.frame_count) * bytes_per_frame;
     const auto live_bytes = arena_.live_bytes();
     if (live_bytes > options_.budget_bytes || bytes > options_.budget_bytes - live_bytes) {
         ++over_budget_count_;
-        return {resident_load_status_t::over_budget, {}};
+        return {wormedit::failure_code_t::capacity_exceeded, {}};
     }
     auto appended = arena_.append_span(bytes, alignof(float));
     if (!appended) {
         ++failed_count_;
-        return {resident_load_status_t::decode_failed, {}};
+        return {wormedit::failure_code_t::decode_failed, {}};
     }
-    return {resident_load_status_t::loaded, std::move(*appended)};
+    return {resident_load_phase_t::loaded, std::move(*appended)};
 }
 
 void resident_sample_store_t::discard(const append_arena_span_t& span) {
@@ -170,7 +170,7 @@ void resident_sample_store_t::discard(const append_arena_span_t& span) {
 }
 
 auto resident_sample_store_t::commit(const resident_request_t& request, append_arena_span_t span,
-                                     std::size_t frames) -> resident_load_status_t {
+                                     std::size_t frames) -> operation_state_t<resident_load_phase_t> {
     resident_snapshot_ptr_t published;
     {
         const std::scoped_lock lock(mutex_);
@@ -178,7 +178,7 @@ auto resident_sample_store_t::commit(const resident_request_t& request, append_a
         if (wanted == bindings_.end() || wanted->second.content_key != request.content_key ||
             contents_.contains(request.content_key)) {
             arena_.mark_stale(span.bytes.size());
-            return resident_load_status_t::stopped;
+            return wormedit::failure_code_t::cancelled;
         }
         contents_.emplace(request.content_key,
                           content_t{.span = std::move(span),
@@ -187,15 +187,15 @@ auto resident_sample_store_t::commit(const resident_request_t& request, append_a
         published = publish_locked();
     }
     notify(published);
-    return resident_load_status_t::loaded;
+    return resident_load_phase_t::loaded;
 }
 
 auto resident_sample_store_t::load(const resident_request_t& request, decoder_t& decoder,
-                                   std::stop_token stop) -> resident_load_status_t {
+                                   std::stop_token stop) -> operation_state_t<resident_load_phase_t> {
     if (stop.stop_requested())
-        return resident_load_status_t::stopped;
+        return wormedit::failure_code_t::cancelled;
     auto [status, span] = reserve(request);
-    if (status != resident_load_status_t::loaded)
+    if (status != resident_load_phase_t::loaded)
         return status;
     const auto frames = static_cast<std::size_t>(request.frame_count);
     auto* output = reinterpret_cast<float*>(span.bytes.data());
@@ -206,17 +206,16 @@ auto resident_sample_store_t::load(const resident_request_t& request, decoder_t&
     for (std::size_t done = 0; done < frames;) {
         if (stop.stop_requested()) {
             discard(span);
-            return resident_load_status_t::stopped;
+            return wormedit::failure_code_t::cancelled;
         }
         const auto wanted = std::min(maximum_read_frames, frames - done);
-        const auto read_outcome = decoder.read_frames_at(
+        const auto read = decoder.read_frames_at(
             done, std::span<float>{output + done * output_channel_count,
                                    wanted * output_channel_count},
             wanted);
-        const auto& read = read_outcome ? *read_outcome : read_outcome.error();
         if (read.frames_read != wanted) {
             discard(span);
-            return resident_load_status_t::decode_failed;
+            return wormedit::failure_code_t::decode_failed;
         }
         done += wanted;
     }

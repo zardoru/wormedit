@@ -37,11 +37,10 @@ struct rgba_image_t {
     std::vector<std::uint8_t> pixels;
 };
 
-using image_decode_outcome_t = result_t<rgba_image_t, error_t<failure_code_t>>;
-
 // File loading applies the input byte cap before allocation and delegates to
 // the same memory decoder used by fixtures and future archive-backed assets.
 [[nodiscard]] auto open_image_rgba(const resolved_visual_asset_t& source,
-                                   image_decode_limits_t limits = {}) -> image_decode_outcome_t;
+                                   image_decode_limits_t limits = {})
+        -> result_t<rgba_image_t, error_t<failure_code_t>>;
 
 } // namespace wormedit::visual

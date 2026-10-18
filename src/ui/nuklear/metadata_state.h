@@ -134,8 +134,6 @@ void worm_ui_nuklear_set_metadata_drop_target(
 [[nodiscard]] auto worm_ui_nuklear_metadata_drop_target(float x, float y)
     -> WormUiMetadataDropTarget;
 
-using worm_ui_nuklear_metadata_file_dialog_result_t = wormedit::ui::file_dialog_result_t;
-
 struct worm_ui_nuklear_metadata_rational_t {
     std::int64_t numerator{};
     std::uint64_t denominator{1};
@@ -161,7 +159,7 @@ struct worm_ui_nuklear_metadata_rational_t {
 void worm_ui_nuklear_metadata_file_dialog_complete(std::uint64_t generation, std::string path,
                                                    std::string error, bool canceled);
 [[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_take()
-    -> std::optional<worm_ui_nuklear_metadata_file_dialog_result_t>;
+    -> std::optional<wormedit::ui::file_dialog_result_t>;
 [[nodiscard]] auto worm_ui_nuklear_metadata_file_dialog_open() -> bool;
 
 // Draft-only insertion: a slot is before that index, or after the final tag.

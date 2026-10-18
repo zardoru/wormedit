@@ -21,7 +21,7 @@ auto collect_selected_bgm_ids(const editor_interaction_state_t& state,
 } // namespace
 
 auto move_selected_bgm_to_lane(document_history_t& history, editor_interaction_state_t& state, lane_id_t lane,
-                               std::optional<object_id_t> also, bool successive) -> note_to_bgm_outcome_t {
+                               std::optional<object_id_t> also, bool successive) -> selected_note_to_bgm_result_t {
     auto proposed_state = state;
     if (also && std::ranges::none_of(proposed_state.selected_objects, [&](const auto& object) {
             return object.kind == editor_selection_object_kind_t::bgm_event && object.id == *also;

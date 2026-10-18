@@ -1416,7 +1416,7 @@ auto storyboard_event_cursor_t::seek(std::int64_t time_ms) -> result_t<void, fai
 }
 
 auto storyboard_event_cursor_t::advance_events(std::int64_t exclusive_end_time_ms) noexcept
-    -> storyboard_cursor_outcome_t {
+    -> result_t<std::span<const storyboard_event_t>, failure_code_t> {
     if (!active_ || schedule_ == nullptr)
         return std::unexpected(failure_code_t::not_started);
     if (exclusive_end_time_ms < last_end_time_ms_) {
@@ -1441,20 +1441,20 @@ void storyboard_event_cursor_t::stop() noexcept {
 
 auto evaluate_storyboard_property(const storyboard_sprite_t& sprite, storyboard_opcode_t opcode,
                                   std::int64_t time_ms, std::size_t maximum_nesting)
-    -> storyboard_evaluation_outcome_t {
+    -> storyboard_evaluation_effect_t {
     evaluation_context_t context;
     context.opcode = opcode;
     context.query_time_ms = time_ms;
     context.maximum_nesting = maximum_nesting;
     evaluate_nodes(sprite.nodes, 0, time_ms, 0, context);
     storyboard_evaluation_effect_t effect{
+        .succeeded = !context.failed,
         .value = context.candidate.value,
         .diagnostic = std::move(context.diagnostic),
         .start_time_ms = context.candidate.start_time_ms,
         .source_order = context.candidate.source_order,
         .visit_order = context.candidate.visit_order,
     };
-    if (context.failed) return std::unexpected(std::move(effect));
     return effect;
 }
 

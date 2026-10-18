@@ -105,12 +105,6 @@ struct waveform_cache_limits_t {
     std::size_t maximum_bins_per_entry{1'000'000};
 };
 
-enum class waveform_store_status_t {
-    stored,
-    invalid_waveform,
-    capacity_exceeded,
-};
-
 struct waveform_cache_stats_t {
     std::size_t entries{};
     std::size_t cached_bytes{};
@@ -140,7 +134,7 @@ class waveform_cache_t {
     explicit waveform_cache_t(waveform_cache_limits_t limits = {});
 
     [[nodiscard]] auto find(const waveform_key_t& key) -> std::optional<waveform_t>;
-    [[nodiscard]] auto store(waveform_t waveform) -> waveform_store_status_t;
+    [[nodiscard]] auto store(waveform_t waveform) -> result_t<void, failure_code_t>;
     void clear();
     void clear_source(const audio_source_identity_t& source);
 
@@ -160,23 +154,14 @@ class waveform_cache_t {
     waveform_cache_stats_t stats_;
 };
 
-enum class waveform_analysis_status_t {
-    cache_hit,
-    generated,
-    cancelled,
-    invalid_request,
-    decoder_unavailable,
-    source_too_large,
-    decode_failed,
-    analysis_cache_capacity_exceeded,
-};
+enum class waveform_analysis_phase_t { cache_hit, generated };
 
 struct waveform_analysis_error_t {
-    waveform_analysis_status_t code{waveform_analysis_status_t::decoder_unavailable};
+    failure_code_t code{failure_code_t::unavailable};
     // Cache publication can fail after a complete usable waveform has been generated.
     std::optional<waveform_t> waveform;
     std::optional<std::uint64_t> failed_block_index;
-    block_decode_status_t block_status{block_decode_status_t::decoder_unavailable};
+    operation_state_t<block_decode_phase_t> block_status{wormedit::failure_code_t::unavailable};
     auto operator==(const waveform_analysis_error_t&) const -> bool = default;
 };
 
@@ -196,7 +181,7 @@ struct waveform_analysis_t {
         -> const waveform_t*;
 
     waveform_t waveform;
-    waveform_analysis_status_t status{waveform_analysis_status_t::generated};
+    waveform_analysis_phase_t status{waveform_analysis_phase_t::generated};
     auto operator==(const waveform_analysis_t&) const -> bool = default;
 };
 using waveform_analysis_outcome_t = result_t<waveform_analysis_t, waveform_analysis_error_t>;
@@ -204,10 +189,10 @@ using waveform_analysis_outcome_t = result_t<waveform_analysis_t, waveform_analy
 // Retained for the beat-fit cache/gesture snapshot contract (T-630/T-632).
 struct waveform_analysis_result_t {
     [[nodiscard]] static auto from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t;
-    waveform_analysis_status_t status{waveform_analysis_status_t::decoder_unavailable};
+    operation_state_t<waveform_analysis_phase_t> status{wormedit::failure_code_t::unavailable};
     std::optional<waveform_t> waveform;
     std::optional<std::uint64_t> failed_block_index;
-    block_decode_status_t block_status{block_decode_status_t::decoder_unavailable};
+    operation_state_t<block_decode_phase_t> block_status{wormedit::failure_code_t::unavailable};
 };
 
 struct waveform_sample_t {

@@ -1,5 +1,5 @@
 #pragma once
-#include <wormedit/core/result.h>
+#include <wormedit/core/operation_state.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,26 +32,17 @@ struct stream_info_t {
     bool seekable{};
 };
 
-enum class read_status_t {
-    success,
-    end_of_stream,
-    not_open,
-    seek_error,
-    request_too_large,
-    insufficient_output_space,
-    decode_error,
-};
+enum class read_phase_t { success, end_of_stream };
 
 struct read_result_t {
-    [[nodiscard]] static auto from(read_status_t status, std::size_t frames_read) noexcept
-        -> result_t<read_result_t, read_result_t>;
-    [[nodiscard]] static auto from(result_t<read_result_t, read_result_t>&& outcome) noexcept
-        -> read_result_t;
-    read_status_t status{read_status_t::not_open};
+    [[nodiscard]] static auto from(operation_state_t<read_phase_t> status, std::size_t frames_read) noexcept -> read_result_t;
+    [[nodiscard]] auto is_success() const noexcept -> bool {
+        return !status.has_failure();
+    }
+    operation_state_t<read_phase_t> status{wormedit::failure_code_t::not_started};
     std::size_t frames_read{};
     auto operator==(const read_result_t&) const -> bool = default;
 };
-using read_outcome_t = result_t<read_result_t, read_result_t>;
 
 class decoder_t {
   public:
@@ -79,10 +70,10 @@ class decoder_t {
     [[nodiscard]] auto read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
                                std::size_t requested_frames) noexcept -> read_result_t;
     [[nodiscard]] auto read_frames(std::span<float> interleaved_stereo,
-                                  std::size_t requested_frames) noexcept -> read_outcome_t;
+                                  std::size_t requested_frames) noexcept -> read_result_t;
     [[nodiscard]] auto read_frames_at(std::uint64_t output_frame,
                                      std::span<float> interleaved_stereo,
-                                     std::size_t requested_frames) noexcept -> read_outcome_t;
+                                     std::size_t requested_frames) noexcept -> read_result_t;
 
   private:
     struct impl_t;

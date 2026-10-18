@@ -829,14 +829,12 @@ void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state
                                                          const char* text,
                                                          WormUiWorkspaceAction& action) -> bool;
 
-using worm_ui_nuklear_compose_file_dialog_result_t = wormedit::ui::file_dialog_result_t;
-
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_begin()
     -> std::optional<std::uint64_t>;
 void worm_ui_nuklear_compose_file_dialog_complete(
     std::uint64_t generation, std::string path, std::string error, bool canceled);
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_take()
-    -> std::optional<worm_ui_nuklear_compose_file_dialog_result_t>;
+    -> std::optional<wormedit::ui::file_dialog_result_t>;
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_open() -> bool;
 
 auto worm_ui_nuklear_overview_source_fraction(const WormUiComposeView& view)

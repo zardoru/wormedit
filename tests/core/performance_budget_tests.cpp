@@ -120,7 +120,7 @@ void verify_waveform_geometry(const audio::waveform_t& waveform) {
 }
 
 void verify_waveform(const audio::waveform_analysis_outcome_t& result) {
-    REQUIRE(result.value().status == audio::waveform_analysis_status_t::generated);
+    REQUIRE(result.value().status == audio::waveform_analysis_phase_t::generated);
     REQUIRE(audio::waveform_analysis_t::find_waveform(result));
     verify_waveform_geometry(*audio::waveform_analysis_t::find_waveform(result));
 }

@@ -62,14 +62,13 @@ void build_channel_ring_range_view(const channel_ring_context_t& context, std::i
                                 std::size_t count) {
     auto& cache = context.application.cache;
     auto& ring = context.target.ring;
-    const auto projected = audio::aligned_waveform_view_result_t::from(context.waveform, context.channel,
+    const auto projected_data = audio::aligned_waveform_view_result_t::from(context.waveform, context.channel,
         context.table ? *context.table : cache.waveform.waveform_row_table,
         {.viewport_scroll_pixels = static_cast<double>(begin),
          .viewport_height_pixels = static_cast<double>(count),
          .pixels_per_standard_measure = context.zoom,
          .maximum_rows = WORM_UI_COMPOSE_CHANNEL_WAVEFORM_ROW_CAPACITY},
         *context.target.slices, context.source);
-    const auto& projected_data = projected ? *projected : projected.error();
     ring.value().projected_rows += count;
     ++ring.value().projection_calls;
     for (std::size_t index = 0; index < count; ++index) {

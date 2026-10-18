@@ -307,7 +307,7 @@ auto task_graph_t::operator=(task_graph_t&&) noexcept -> task_graph_t& = default
 task_graph_t::~task_graph_t() = default;
 
 auto task_graph_t::create_task(std::span<const task_id_t> dependencies, task_function_t function)
-    -> task_add_outcome_t {
+    -> result_t<task_id_t, error_t<failure_code_t>> {
     if (!impl_ || !function) {
         return std::unexpected(
             error_t<failure_code_t>{failure_code_t::invalid_request, "task callback is empty"});
@@ -419,7 +419,7 @@ task_scheduler_t::~task_scheduler_t() {
     shutdown();
 }
 
-auto task_scheduler_t::begin(task_graph_t graph) -> task_submit_outcome_t {
+auto task_scheduler_t::begin(task_graph_t graph) -> result_t<task_graph_handle_t, error_t<failure_code_t>> {
     if (!impl_ || !graph.impl_ || graph.impl_->nodes.empty()) {
         return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
                                                           "cannot submit an empty task graph"});

@@ -44,10 +44,10 @@ auto transport_drops_missing_voice_without_affecting_other_voices() -> bool {
     const audio_block_key_t other_third{.source = other_source, .block_index = 2};
     const std::vector<float> first_samples(maximum_read_frames * output_channel_count, 0.125F);
     const std::vector<float> other_samples(maximum_read_frames * output_channel_count, 0.25F);
-    if (blocks.store(dropped_first, maximum_read_frames, first_samples) != block_store_status_t::stored ||
-        blocks.store(other_first, maximum_read_frames, other_samples) != block_store_status_t::stored ||
-        blocks.store(other_second, maximum_read_frames, other_samples) != block_store_status_t::stored ||
-        blocks.store(other_third, maximum_read_frames, other_samples) != block_store_status_t::stored)
+    if (!blocks.store(dropped_first, maximum_read_frames, first_samples) ||
+        !blocks.store(other_first, maximum_read_frames, other_samples) ||
+        !blocks.store(other_second, maximum_read_frames, other_samples) ||
+        !blocks.store(other_third, maximum_read_frames, other_samples))
         return false;
     const std::array voices{
         transport_voice_t{.id = 1,
@@ -65,8 +65,7 @@ auto transport_drops_missing_voice_without_affecting_other_voices() -> bool {
     const bool first_mix_ok = first_mix.missing_blocks == 1 && first_mix.dropped_voices == 1 &&
                               transport.scheduled_voice_count() == 1 && output[0] == 0.375F &&
                               output[maximum_read_frames * output_channel_count] == 0.25F;
-    if (blocks.store(dropped_second, maximum_read_frames, first_samples) !=
-        block_store_status_t::stored)
+    if (!blocks.store(dropped_second, maximum_read_frames, first_samples))
         return false;
     std::vector<float> later_output(maximum_read_frames * output_channel_count);
     const auto later_mix = transport.mix_frames(*token, 2U * maximum_read_frames, later_output);
@@ -111,7 +110,7 @@ TEST_CASE("transport mixes same-frame keysound polyphony from decoded cache bloc
             .block_index = 0,
         };
         const auto decoded = transport.decode_source_block(decoders[index], *token, key);
-        REQUIRE(decoded.value().status == wormedit::audio::block_decode_status_t::decoded);
+        REQUIRE(decoded.status == wormedit::audio::block_decode_phase_t::decoded);
         REQUIRE(transport.schedule_voice(
                     *token, {
                                 .id = index + 1U,
@@ -152,8 +151,8 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
         .source = source("polyphonic-chord.ogg"),
         .block_index = 0,
     };
-    REQUIRE(transport.decode_source_block(decoder, *token, key).value().status ==
-            wormedit::audio::block_decode_status_t::decoded);
+    REQUIRE(transport.decode_source_block(decoder, *token, key).status ==
+            wormedit::audio::block_decode_phase_t::decoded);
     constexpr std::array kinds{
         wormedit::audio::voice_kind_t::music,
         wormedit::audio::voice_kind_t::bgm,
@@ -188,7 +187,7 @@ TEST_CASE("transport Stop clears every voice class and silences the next callbac
     CHECK(silent.status == wormedit::failure_code_t::stale_generation);
     CHECK(all_zero(after_stop));
     CHECK(transport.decode_source_block(decoder, *token, key) ==
-          std::unexpected(wormedit::audio::block_decode_result_t{.status = wormedit::audio::block_decode_status_t::stale_generation}));
+          wormedit::audio::block_decode_result_t{.status = wormedit::failure_code_t::stale_generation});
     CHECK(blocks.has_block(key));
 
     const auto next_token = transport.start();
@@ -211,10 +210,8 @@ TEST_CASE("transport metronome volume changes scheduled chart and assist clicks 
     const audio_source_identity_t music_source{"fixture:music", "generated:music"};
     const std::vector<float> click_pcm(16 * output_channel_count, 0.25F);
     const std::vector<float> music_pcm(16 * output_channel_count, 0.25F);
-    REQUIRE(cache.store({.source = click_source, .block_index = 0}, 16, click_pcm) ==
-            block_store_status_t::stored);
-    REQUIRE(cache.store({.source = music_source, .block_index = 0}, 16, music_pcm) ==
-            block_store_status_t::stored);
+    REQUIRE(cache.store({.source = click_source, .block_index = 0}, 16, click_pcm).has_value());
+    REQUIRE(cache.store({.source = music_source, .block_index = 0}, 16, music_pcm).has_value());
     const auto token = transport.start();
     REQUIRE(token);
     CHECK(transport.click_preview_volume() == 100);
@@ -349,7 +346,7 @@ TEST_CASE("BGM mix groups silence active and future voices without losing their 
     for (std::size_t frame = 0; frame < 64; ++frame)
         for (std::size_t channel = 0; channel < output_channel_count; ++channel)
             samples[frame * output_channel_count + channel] = static_cast<float>(frame + 1) / 1024;
-    require_transport(blocks.store({.source = shared, .block_index = 0}, 64, samples) == block_store_status_t::stored);
+    require_transport(blocks.store({.source = shared, .block_index = 0}, 64, samples).has_value());
     const std::array voices{
         transport_voice_t{.id = 1, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64, .mix_group = 11},
         transport_voice_t{.id = 2, .kind = voice_kind_t::bgm, .source = shared, .frame_count = 64, .mix_group = 22},

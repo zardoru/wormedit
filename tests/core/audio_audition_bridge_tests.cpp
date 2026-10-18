@@ -30,8 +30,8 @@ TEST_CASE("audition bridge mixes exact source ranges and simultaneous layers",
     std::array<float, 16> second{};
     std::fill(first.begin() + 8, first.end(), 0.2F);
     std::fill(second.begin() + 8, second.end(), 0.3F);
-    REQUIRE(cache.store({.source = source("first")}, 8, first) == block_store_status_t::stored);
-    REQUIRE(cache.store({.source = source("second")}, 8, second) == block_store_status_t::stored);
+    REQUIRE(cache.store({.source = source("first")}, 8, first).has_value());
+    REQUIRE(cache.store({.source = source("second")}, 8, second).has_value());
     transport_t transport{cache, 4};
     audition_transport_bridge_t bridge{transport};
     const std::array clips{clip("first", 4, 4), clip("second", 4, 4)};

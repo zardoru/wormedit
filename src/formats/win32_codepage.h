@@ -14,11 +14,9 @@
 
 namespace wormedit::win32_codepage {
 
-using convert_result_t = text_codec_result_t;
-
 [[nodiscard]] auto code_page_for(text_encoding_t encoding) -> std::optional<unsigned>;
-[[nodiscard]] auto to_utf8(unsigned code_page, std::string_view input) -> convert_result_t;
-[[nodiscard]] auto from_utf8(unsigned code_page, std::string_view utf8) -> convert_result_t;
+[[nodiscard]] auto to_utf8(unsigned code_page, std::string_view input) -> text_codec_result_t;
+[[nodiscard]] auto from_utf8(unsigned code_page, std::string_view utf8) -> text_codec_result_t;
 
 } // namespace wormedit::win32_codepage
 

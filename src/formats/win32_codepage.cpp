@@ -129,7 +129,7 @@ auto code_page_for(text_encoding_t encoding) -> std::optional<unsigned> {
     return std::nullopt;
 }
 
-auto to_utf8(unsigned code_page, std::string_view input) -> convert_result_t {
+auto to_utf8(unsigned code_page, std::string_view input) -> text_codec_result_t {
     const auto wide = multibyte_to_wide(code_page, input);
     if (!wide.has_value()) {
         return std::unexpected(text_codec_error_t{.error_offset = first_undecodable_offset(code_page, input)});
@@ -142,7 +142,7 @@ auto to_utf8(unsigned code_page, std::string_view input) -> convert_result_t {
     return std::move(*utf8);
 }
 
-auto from_utf8(unsigned code_page, std::string_view utf8) -> convert_result_t {
+auto from_utf8(unsigned code_page, std::string_view utf8) -> text_codec_result_t {
     const auto wide = multibyte_to_wide(CP_UTF8, utf8);
     if (!wide.has_value()) {
         return std::unexpected(text_codec_error_t{.error_offset = first_unencodable_offset(code_page, utf8)});

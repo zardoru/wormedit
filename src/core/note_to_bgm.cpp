@@ -52,7 +52,6 @@ struct candidates_t {
     std::map<group_key_t, std::size_t> group_first_ordinal;
     auto operator==(const candidates_t&) const -> bool = default;
 };
-using candidates_result_t = result_t<candidates_t, diagnostic_t>;
 
 auto make_resource_keys(std::span<const resource_entry_t> resources) -> resource_keys_t {
     resource_keys_t keys;
@@ -84,7 +83,8 @@ auto note_group(const note_t& note,
 
 auto collect_candidates(const chart_document_t& chart, std::span<const object_id_t> ids,
                         const resource_keys_t& resource_keys,
-                        const wormedit::measure_lookup_t& measure_entries) -> candidates_result_t {
+                        const wormedit::measure_lookup_t& measure_entries)
+    -> result_t<candidates_t, diagnostic_t> {
     std::unordered_set<std::uint64_t> requested;
     requested.reserve(ids.size());
     for (const auto id : ids) {
@@ -336,10 +336,9 @@ struct selected_note_sets_t {
     std::vector<object_id_t> ordinary;
     std::vector<object_id_t> bmson_linked;
 };
-using selected_note_sets_outcome_t = result_t<selected_note_sets_t, diagnostic_t>;
 
 auto partition_selected_notes(const chart_document_t& chart, std::span<const object_id_t> ids)
-    -> selected_note_sets_outcome_t {
+    -> result_t<selected_note_sets_t, diagnostic_t> {
     std::unordered_set<std::uint64_t> requested;
     requested.reserve(ids.size());
     for (const auto id : ids)

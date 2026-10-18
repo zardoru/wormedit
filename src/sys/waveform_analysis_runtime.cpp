@@ -13,23 +13,21 @@
 namespace wormedit::sys::runtime {
 
 namespace {
-auto waveform_failure_message(audio::waveform_analysis_status_t status) -> const char* {
-    using enum audio::waveform_analysis_status_t;
-    switch (status) {
-    case decoder_unavailable: return "Waveform analysis failed: the audio source is unavailable.";
-    case source_too_large: return "Waveform analysis failed: the audio exceeds the analysis cache limit.";
-    case decode_failed: return "Waveform analysis failed while decoding the audio.";
-    case analysis_cache_capacity_exceeded: return "Waveform analysis failed: the waveform cache is full.";
-    case invalid_request: return "Waveform analysis failed: the analysis range is invalid.";
-    case cancelled: return "";
-    default: return "Waveform analysis returned no waveform.";
-    }
+auto waveform_failure_message(operation_state_t<audio::waveform_analysis_phase_t> status) -> const char* {
+    if (status == failure_code_t::unavailable) return "Waveform analysis failed: the audio source is unavailable.";
+    if (status == failure_code_t::capacity_exceeded) return "Waveform analysis failed: the audio exceeds the analysis cache limit.";
+    if (status == failure_code_t::decode_failed) return "Waveform analysis failed while decoding the audio.";
+    if (status == failure_code_t::allocation_failed) return "Waveform analysis failed: the waveform cache is full.";
+    if (status == failure_code_t::invalid_request) return "Waveform analysis failed: the analysis range is invalid.";
+    if (status == failure_code_t::cancelled) return "";
+    return "Waveform analysis returned no waveform.";
 }
+
 auto waveform_source_recovered(std::optional<asset_id_t> asset,
     const std::shared_ptr<const audio::waveform_analysis_result_t>& analysis,
     const audio::decoded_source_registry_t& sources) -> bool {
     return asset && analysis && !analysis->waveform &&
-           analysis->status == audio::waveform_analysis_status_t::decoder_unavailable &&
+           analysis->status == wormedit::failure_code_t::unavailable &&
            sources.binding(*asset).has_value();
 }
 } // namespace
@@ -194,7 +192,7 @@ auto waveform_completion_notification(const audio::waveform_job_completion_outco
     }
     const auto& analysis = completed->payload;
     if (!analysis || analysis->waveform ||
-        analysis->status == audio::waveform_analysis_status_t::cancelled) return std::nullopt;
+        analysis->status == wormedit::failure_code_t::cancelled) return std::nullopt;
     return notification_post_t{.severity = notification_severity_t::error,
         .source = notification_source_t::audio, .message = failure_message ? failure_message : waveform_failure_message(analysis->status)};
 }

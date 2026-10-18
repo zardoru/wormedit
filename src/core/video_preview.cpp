@@ -7,7 +7,7 @@ namespace wormedit {
 auto video_preview_clock_t::from(const std::optional<preview_visual_event_t>& active_video,
                                   std::uint64_t sample_frame,
                                   std::uint32_t sample_rate) noexcept
-    -> video_preview_clock_result_t {
+    -> result_t<video_preview_clock_t, operation_state_t<video_preview_clock_phase_t>> {
     if (sample_rate == 0) {
         return std::unexpected(failure_code_t::invalid_request);
     }

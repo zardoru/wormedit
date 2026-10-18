@@ -26,7 +26,4 @@ struct resolved_visual_asset_t {
     std::optional<std::uint32_t> declared_height;
 };
 
-using visual_asset_resolution_outcome_t =
-    result_t<resolved_visual_asset_t, error_t<failure_code_t>>;
-
 } // namespace wormedit::visual

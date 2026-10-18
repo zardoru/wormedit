@@ -54,7 +54,7 @@ void remove_crash_marker(const std::filesystem::path& marker) noexcept {
 }
 
 auto prepare_platform_recovery_directory(notification_sink_t notifications)
-    -> platform_recovery_directory_result_t {
+    -> result_t<std::filesystem::path, std::string> {
     char* preference_path = SDL_GetPrefPath("otoworld", "wormedit");
     if (preference_path == nullptr) {
         std::string message = "SDL could not resolve the per-user application directory";

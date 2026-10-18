@@ -1174,10 +1174,9 @@ void populate_bookmark_chooser(const workspace_projection_context_t& projection,
     view.document_revision = projection.document.revision;
     const auto& request = projection.bookmark_chooser_request;
     if (!request.open) return;
-    const auto page_outcome = bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
+    const auto page = bookmark_chooser_view_t::from(projection.document, chart, request.first_row,
                                                std::clamp(request.row_limit, std::size_t{1}, std::size_t{64}), request.query,
                                                projection.bookmark_indices);
-    const auto& page = page_outcome ? *page_outcome : page_outcome.error();
     view.total_count = page.total_count;
     view.first_row = page.first_row;
     auto* arena = result.arena();

@@ -187,7 +187,7 @@ auto pane_signature_equal(const pane_signature_t& left, const pane_signature_t& 
 struct chart_compare_work_t {
     const song_document_t& song;
     const chart_compare_request_t& request;
-    chart_comparison_result_t& result;
+    diagnosed_t<chart_comparison_t>& result;
     std::unordered_set<std::uint64_t> selected_ids;
     std::vector<chart_projection_t> projections;
     std::vector<rational_t> candidates;
@@ -513,8 +513,8 @@ auto append_difference_rows(chart_compare_work_t& work) -> bool {
 } // namespace
 
 auto chart_comparison_t::from(const song_document_t& song, const chart_compare_request_t& request)
-    -> chart_comparison_result_t {
-    chart_comparison_result_t result{.value = {.document_revision = song.revision,
+    -> diagnosed_t<chart_comparison_t> {
+    diagnosed_t<chart_comparison_t> result{.value = {.document_revision = song.revision,
                                               .charts = request.charts, .differing_rows = {}},
                                      .diagnostics = {}};
     if (request.maximum_charts < 2 || request.maximum_input_note_endpoints == 0 ||

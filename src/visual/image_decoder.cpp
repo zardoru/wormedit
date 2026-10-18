@@ -51,7 +51,7 @@ auto checked_geometry(int width, int height, image_decode_limits_t limits)
 } // namespace
 
 auto rgba_image_t::from(const resolved_visual_asset_t& source, std::span<const std::byte> encoded,
-                        image_decode_limits_t limits) -> image_decode_outcome_t {
+                        image_decode_limits_t limits) -> result_t<rgba_image_t, error_t<failure_code_t>> {
     if (source.kind != asset_kind_t::image) {
         return std::unexpected(
             error_t<failure_code_t>{failure_code_t::unsupported,
@@ -115,7 +115,7 @@ auto rgba_image_t::from(const resolved_visual_asset_t& source, std::span<const s
 }
 
 auto open_image_rgba(const resolved_visual_asset_t& source, image_decode_limits_t limits)
-    -> image_decode_outcome_t {
+    -> result_t<rgba_image_t, error_t<failure_code_t>> {
     if (source.kind != asset_kind_t::image) {
         return std::unexpected(
             error_t<failure_code_t>{failure_code_t::unsupported,

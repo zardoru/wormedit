@@ -262,31 +262,24 @@ auto decoder_t::seek(std::uint64_t output_frame) noexcept -> bool {
     return ma_decoder_seek_to_pcm_frame(&impl_->decoder, output_frame) == MA_SUCCESS;
 }
 
-auto read_result_t::from(read_status_t status, std::size_t frames_read) noexcept -> read_outcome_t {
-    read_result_t report{.status = status, .frames_read = frames_read};
-    if (status != read_status_t::success && status != read_status_t::end_of_stream)
-        return std::unexpected(report);
-    return report;
-}
-
-auto read_result_t::from(read_outcome_t&& outcome) noexcept -> read_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
+auto read_result_t::from(operation_state_t<read_phase_t> status, std::size_t frames_read) noexcept -> read_result_t {
+    return {.status = status, .frames_read = frames_read};
 }
 
 auto decoder_t::read_frames(std::span<float> interleaved_stereo,
-                            std::size_t requested_frames) noexcept -> read_outcome_t {
+                            std::size_t requested_frames) noexcept -> read_result_t {
     if (!impl_) {
-        return read_result_t::from(read_status_t::not_open, 0);
+        return read_result_t::from(wormedit::failure_code_t::not_started, 0);
     }
     if (requested_frames > maximum_read_frames) {
-        return read_result_t::from(read_status_t::request_too_large, 0);
+        return read_result_t::from(wormedit::failure_code_t::capacity_exceeded, 0);
     }
     if (requested_frames > std::numeric_limits<std::size_t>::max() / output_channel_count ||
         interleaved_stereo.size() < requested_frames * output_channel_count) {
-        return read_result_t::from(read_status_t::insufficient_output_space, 0);
+        return read_result_t::from(wormedit::failure_code_t::invalid_request, 0);
     }
     if (requested_frames == 0) {
-        return read_result_t::from(read_status_t::success, 0);
+        return read_result_t::from(read_phase_t::success, 0);
     }
 
     const std::scoped_lock lock(impl_->mutex);
@@ -298,79 +291,79 @@ auto decoder_t::read_frames(std::span<float> interleaved_stereo,
         std::copy_n(impl_->memory_pcm.begin() + static_cast<std::ptrdiff_t>(begin),
                     frames * output_channel_count, interleaved_stereo.begin());
         impl_->memory_cursor += frames;
-        return read_result_t::from(frames == requested_frames ? read_status_t::success
-                                                              : read_status_t::end_of_stream,
+        return read_result_t::from(frames == requested_frames ? read_phase_t::success
+                                                              : read_phase_t::end_of_stream,
                                    frames);
     }
     ma_uint64 frames_read{};
     const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
                                                    requested_frames, &frames_read);
     if (frames_read > requested_frames) {
-        return read_result_t::from(read_status_t::decode_error, 0);
+        return read_result_t::from(wormedit::failure_code_t::decode_failed, 0);
     }
     if (result == MA_SUCCESS) {
-        return read_result_t::from(read_status_t::success, static_cast<std::size_t>(frames_read));
+        return read_result_t::from(read_phase_t::success, static_cast<std::size_t>(frames_read));
     }
     if (result == MA_AT_END) {
-        return read_result_t::from(read_status_t::end_of_stream,
+        return read_result_t::from(read_phase_t::end_of_stream,
                                    static_cast<std::size_t>(frames_read));
     }
-    return read_result_t::from(read_status_t::decode_error, static_cast<std::size_t>(frames_read));
+    return read_result_t::from(wormedit::failure_code_t::decode_failed, static_cast<std::size_t>(frames_read));
 }
 
 auto decoder_t::read_frames_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
-                               std::size_t requested_frames) noexcept -> read_outcome_t {
+                               std::size_t requested_frames) noexcept -> read_result_t {
     if (!impl_) {
-        return read_result_t::from(read_status_t::not_open, 0);
+        return read_result_t::from(wormedit::failure_code_t::not_started, 0);
     }
     if (requested_frames > maximum_read_frames) {
-        return read_result_t::from(read_status_t::request_too_large, 0);
+        return read_result_t::from(wormedit::failure_code_t::capacity_exceeded, 0);
     }
     if (requested_frames > std::numeric_limits<std::size_t>::max() / output_channel_count ||
         interleaved_stereo.size() < requested_frames * output_channel_count) {
-        return read_result_t::from(read_status_t::insufficient_output_space, 0);
+        return read_result_t::from(wormedit::failure_code_t::invalid_request, 0);
     }
 
     const std::scoped_lock lock(impl_->mutex);
     if (!impl_->memory_pcm.empty()) {
         if (output_frame > impl_->stream_info.output_frame_count)
-            return read_result_t::from(read_status_t::seek_error, 0);
+            return read_result_t::from(wormedit::failure_code_t::seek_failed, 0);
         const auto remaining = impl_->stream_info.output_frame_count - output_frame;
         const auto frames =
             static_cast<std::size_t>(std::min<std::uint64_t>(remaining, requested_frames));
         const auto begin = static_cast<std::size_t>(output_frame) * output_channel_count;
         std::copy_n(impl_->memory_pcm.begin() + static_cast<std::ptrdiff_t>(begin),
                     frames * output_channel_count, interleaved_stereo.begin());
-        return read_result_t::from(frames == requested_frames ? read_status_t::success
-                                                              : read_status_t::end_of_stream,
+        return read_result_t::from(frames == requested_frames ? read_phase_t::success
+                                                              : read_phase_t::end_of_stream,
                                    frames);
     }
     if (!impl_->stream_info.seekable || output_frame > impl_->stream_info.output_frame_count ||
         !position_decoder(impl_->decoder, output_frame)) {
-        return read_result_t::from(read_status_t::seek_error, 0);
+        return read_result_t::from(wormedit::failure_code_t::seek_failed, 0);
     }
     if (requested_frames == 0) {
-        return read_result_t::from(read_status_t::success, 0);
+        return read_result_t::from(read_phase_t::success, 0);
     }
     ma_uint64 frames_read{};
     const auto result = ma_decoder_read_pcm_frames(&impl_->decoder, interleaved_stereo.data(),
                                                    requested_frames, &frames_read);
     if (frames_read > requested_frames) {
-        return read_result_t::from(read_status_t::decode_error, 0);
+        return read_result_t::from(wormedit::failure_code_t::decode_failed, 0);
     }
     if (result == MA_SUCCESS) {
-        return read_result_t::from(read_status_t::success, static_cast<std::size_t>(frames_read));
+        return read_result_t::from(read_phase_t::success, static_cast<std::size_t>(frames_read));
     }
     if (result == MA_AT_END) {
-        return read_result_t::from(read_status_t::end_of_stream,
+        return read_result_t::from(read_phase_t::end_of_stream,
                                    static_cast<std::size_t>(frames_read));
     }
-    return read_result_t::from(read_status_t::decode_error, static_cast<std::size_t>(frames_read));
+    return read_result_t::from(wormedit::failure_code_t::decode_failed, static_cast<std::size_t>(frames_read));
 }
 
 auto decoder_t::read_at(std::uint64_t output_frame, std::span<float> interleaved_stereo,
                         std::size_t requested_frames) noexcept -> read_result_t {
-    return read_result_t::from(read_frames_at(output_frame, interleaved_stereo, requested_frames));
+    return read_frames_at(output_frame, interleaved_stereo, requested_frames);
 }
 
 } // namespace wormedit::audio

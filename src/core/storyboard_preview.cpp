@@ -26,11 +26,11 @@ auto layer_order(std::string_view layer) noexcept -> std::uint8_t {
     return 4;
 }
 
-auto is_evaluation_failed(const storyboard_evaluation_outcome_t* result,
+auto is_evaluation_failed(const storyboard_evaluation_effect_t* result,
                        storyboard_frame_effect_t& frame) -> bool {
-    if (result->has_value())
+    if (result->succeeded)
         return false;
-    frame.diagnostic = result->error().diagnostic;
+    frame.diagnostic = result->diagnostic;
     return true;
 }
 
@@ -155,7 +155,7 @@ auto build_storyboard_preview_index(const storyboard_document_model_t& document,
 auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
                                const storyboard_preview_index_t& index, std::int64_t time_ms,
                                storyboard_frame_arena_t& arena, storyboard_frame_options_t options)
-    -> storyboard_frame_outcome_t {
+    -> storyboard_frame_effect_t {
     arena.reset();
     storyboard_frame_effect_t result{};
     const auto active_count = static_cast<std::size_t>(
@@ -164,7 +164,7 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         result.diagnostic =
             storyboard_diagnostic_t{storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                     "storyboard frame exceeds its configured instance limit"};
-        return std::unexpected(std::move(result));
+        return result;
     }
     if (active_count == 0)
         return result;
@@ -173,13 +173,13 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         result.diagnostic =
             storyboard_diagnostic_t{storyboard_diagnostic_code_t::capacity_exceeded, 0,
                                     "storyboard frame instance storage overflowed"};
-        return std::unexpected(std::move(result));
+        return result;
     }
     const auto allocation = arena.allocate(active_count * sizeof(storyboard_draw_instance_t),
                                                  alignof(storyboard_draw_instance_t));
     if (!allocation) {
         result.arena_error = allocation.error();
-        return std::unexpected(std::move(result));
+        return result;
     }
     auto* output = static_cast<storyboard_draw_instance_t*>(*allocation);
     std::size_t output_count = 0;
@@ -191,10 +191,10 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
             result.diagnostic =
                 storyboard_diagnostic_t{storyboard_diagnostic_code_t::invalid_model, 0,
                                         "storyboard preview index is stale for its document"};
-            return std::unexpected(std::move(result));
+            return result;
         }
         const auto& sprite = document.sprites[source.sprite_index];
-        using evaluator_t = storyboard_evaluation_outcome_t (*)(const storyboard_sprite_t&,
+        using evaluator_t = storyboard_evaluation_effect_t (*)(const storyboard_sprite_t&,
             storyboard_opcode_t, std::int64_t, std::size_t);
         const auto evaluate = std::bind_front(std::bind_back(static_cast<evaluator_t>(&evaluate_storyboard_property),
             time_ms, options.maximum_nesting), std::cref(sprite));
@@ -209,7 +209,7 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
         const std::array evaluations{&fade,  &move,         &move_x, &move_y,
                                      &scale, &vector_scale, &rotate, &color};
         if (std::ranges::any_of(evaluations, std::bind_back(is_evaluation_failed, std::ref(result)))) {
-            return std::unexpected(std::move(result));
+            return result;
         }
 
         storyboard_draw_instance_t instance{
@@ -223,7 +223,7 @@ auto evaluate_storyboard_frame(const storyboard_document_model_t& document,
             .y = sprite.y,
         };
         apply_frame_evaluations(instance,
-                                {*fade, *move, *move_x, *move_y, *scale, *vector_scale, *rotate, *color});
+                                {fade, move, move_x, move_y, scale, vector_scale, rotate, color});
         std::construct_at(output + output_count, instance);
         ++output_count;
     }

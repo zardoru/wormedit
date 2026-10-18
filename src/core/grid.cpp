@@ -283,7 +283,7 @@ struct editor_grid_build_context_t {
     const measure_index_t& measure_index;
     const std::optional<virtual_canvas_t>& virtual_canvas;
     const std::unordered_map<std::uint64_t, const editor_grid_grouping_t*>& authored_groupings;
-    editor_grid_result_t& result;
+    diagnosed_t<editor_grid_t>& result;
     std::uint64_t candidate_begin{};
     std::uint64_t candidate_end{};
     std::uint64_t divisions{};
@@ -656,8 +656,8 @@ auto thin_grid_candidates(editor_grid_build_context_t& context) -> void {
 } // namespace
 
 auto editor_grid_t::from(const chart_document_t& chart, const editor_grid_request_t& request)
-    -> editor_grid_result_t {
-    editor_grid_result_t result;
+    -> diagnosed_t<editor_grid_t> {
+    diagnosed_t<editor_grid_t> result;
     const auto built_index = measure_index_t::from(chart);
     if (!built_index) {
         result.diagnostics = built_index.error();

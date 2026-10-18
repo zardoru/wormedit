@@ -23,7 +23,7 @@ struct application_startup_arguments_t {
 
 [[nodiscard]] auto select_initial_application_status(
     bool loaded_primary, const std::filesystem::path& requested_primary_path,
-    const platform_recovery_directory_result_t& platform_recovery) -> std::string;
+    const result_t<std::filesystem::path, std::string>& platform_recovery) -> std::string;
 
 struct application_runtime_t {
     WormAudioSystem audio{};

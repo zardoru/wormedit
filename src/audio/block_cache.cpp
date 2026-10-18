@@ -25,39 +25,19 @@ auto block_bytes(std::size_t frames) -> std::optional<std::size_t> {
     return frames * samples_per_frame * sizeof(float);
 }
 
-auto publish_status(block_decode_status_t success_status, session_publish_status_t publish_result)
-    -> block_decode_status_t {
-    switch (publish_result) {
-    case session_publish_status_t::accepted:
-    case session_publish_status_t::already_pending:
-        return success_status;
-    case session_publish_status_t::stale_generation:
-        return block_decode_status_t::stale_generation;
-    case session_publish_status_t::queue_full:
-        return block_decode_status_t::session_queue_full;
-    case session_publish_status_t::invalid_key:
-        return block_decode_status_t::invalid_key;
-    }
-    return block_decode_status_t::decode_failed;
+auto publish_status(block_decode_phase_t success_status,
+                    operation_state_t<session_publish_phase_t> publish_result)
+    -> operation_state_t<block_decode_phase_t> {
+    if (publish_result.has_failure())
+        return std::get<failure_code_t>(publish_result.value());
+    return success_status;
 }
 
 } // namespace
 
-auto block_decode_result_t::from(block_decode_status_t status, std::size_t frames,
-                                 read_status_t decoder_status) -> block_decode_outcome_t {
-    return from(block_decode_result_t{
-        .status = status, .frames = frames, .decoder_status = decoder_status});
-}
-
-auto block_decode_result_t::from(block_decode_result_t&& report) -> block_decode_outcome_t {
-    if (report.status != block_decode_status_t::cache_hit &&
-        report.status != block_decode_status_t::decoded)
-        return std::unexpected(std::move(report));
-    return std::move(report);
-}
-
-auto block_decode_result_t::from(block_decode_outcome_t&& outcome) -> block_decode_result_t {
-    return std::move(outcome ? *outcome : outcome.error());
+auto block_decode_result_t::from(operation_state_t<block_decode_phase_t> status, std::size_t frames,
+                                 operation_state_t<read_phase_t> decoder_status) -> block_decode_result_t {
+    return {.status = status, .frames = frames, .decoder_status = decoder_status};
 }
 
 decoded_block_cache_t::decoded_block_cache_t(block_cache_limits_t limits) : limits_(limits) {}
@@ -107,26 +87,26 @@ auto decoded_block_cache_t::has_block(const audio_block_key_t& key) -> bool {
 
 auto decoded_block_cache_t::store(const audio_block_key_t& key, std::size_t frame_count,
                                   std::span<const float> interleaved_stereo)
-    -> block_store_status_t {
+    -> result_t<void, failure_code_t> {
     const auto required_bytes = block_bytes(frame_count);
     if (!is_valid_key(key)) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
-        return block_store_status_t::invalid_key;
+        return std::unexpected(failure_code_t::invalid_request);
     }
     if (!required_bytes.has_value() || frame_count == 0 ||
         frame_count > maximum_read_frames ||
         interleaved_stereo.size() != frame_count * output_channel_count) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
-        return block_store_status_t::invalid_block;
+        return std::unexpected(failure_code_t::invalid_data);
     }
     if (frame_count > limits_.maximum_frames || *required_bytes > limits_.maximum_bytes ||
         frame_count > limits_.maximum_frames_per_asset ||
         *required_bytes > limits_.maximum_bytes_per_asset) {
         std::scoped_lock lock(mutex_);
         ++stats_.rejected_stores;
-        return block_store_status_t::capacity_exceeded;
+        return std::unexpected(failure_code_t::capacity_exceeded);
     }
 
     std::scoped_lock lock(mutex_);
@@ -160,7 +140,7 @@ auto decoded_block_cache_t::store(const audio_block_key_t& key, std::size_t fram
         }
         if (victim == most_recent_first_.end()) {
             ++stats_.rejected_stores;
-            return block_store_status_t::capacity_exceeded;
+            return std::unexpected(failure_code_t::capacity_exceeded);
         }
         erase(victim, true);
     }
@@ -173,7 +153,7 @@ auto decoded_block_cache_t::store(const audio_block_key_t& key, std::size_t fram
     ++stats_.entries;
     stats_.cached_frames += frame_count;
     stats_.cached_bytes += *required_bytes;
-    return block_store_status_t::stored;
+    return {};
 }
 
 auto decoded_block_cache_t::asset_usage(std::string_view asset_identity) const
@@ -266,22 +246,22 @@ auto decode_session_t::is_current(session_token_t token) const noexcept -> bool 
 
 auto decode_session_t::publish_if_current(session_token_t token,
                                           const audio_block_key_t& key)
-    -> session_publish_status_t {
+    -> operation_state_t<session_publish_phase_t> {
     if (!is_valid_key(key)) {
-        return session_publish_status_t::invalid_key;
+        return wormedit::failure_code_t::invalid_request;
     }
     std::scoped_lock lock(mutex_);
     if (!active_ || token.generation != generation_) {
-        return session_publish_status_t::stale_generation;
+        return wormedit::failure_code_t::stale_generation;
     }
     if (std::ranges::find(ready_, key) != ready_.end()) {
-        return session_publish_status_t::already_pending;
+        return session_publish_phase_t::already_pending;
     }
     if (ready_.size() >= maximum_pending_blocks_) {
-        return session_publish_status_t::queue_full;
+        return wormedit::failure_code_t::capacity_exceeded;
     }
     ready_.push_back(key);
-    return session_publish_status_t::accepted;
+    return session_publish_phase_t::accepted;
 }
 
 auto decode_session_t::take_ready(session_token_t token) -> std::vector<audio_block_key_t> {
@@ -301,71 +281,70 @@ auto decode_session_t::pending_count() const -> std::size_t {
 
 auto decode_cached_block(decoder_t& decoder, decoded_block_cache_t& cache,
                          decode_session_t& session, session_token_t token, audio_block_key_t key)
-    -> block_decode_outcome_t {
+    -> block_decode_result_t {
     if (!session.is_current(token)) {
-        return block_decode_result_t::from(block_decode_status_t::stale_generation);
+        return block_decode_result_t::from(wormedit::failure_code_t::stale_generation);
     }
     if (!is_valid_key(key)) {
-        return block_decode_result_t::from(block_decode_status_t::invalid_key);
+        return block_decode_result_t::from(wormedit::failure_code_t::invalid_request);
     }
 
     if (const auto frame_count = cache.cached_frame_count(key); frame_count.has_value()) {
-        return block_decode_result_t::from(publish_status(block_decode_status_t::cache_hit,
+        return block_decode_result_t::from(publish_status(block_decode_phase_t::cache_hit,
                                                           session.publish_if_current(token, key)),
-                                           *frame_count, read_status_t::success);
+                                           *frame_count, read_phase_t::success);
     }
 
     const auto stream_info = decoder.info();
     if (!stream_info.has_value()) {
-        return block_decode_result_t::from(block_decode_status_t::decoder_unavailable);
+        return block_decode_result_t::from(wormedit::failure_code_t::unavailable);
     }
     if (key.block_index > std::numeric_limits<std::uint64_t>::max() / maximum_read_frames) {
-        return block_decode_result_t::from(block_decode_status_t::beyond_end);
+        return block_decode_result_t::from(wormedit::failure_code_t::not_found);
     }
     const auto start_frame = key.block_index * maximum_read_frames;
     if (start_frame >= stream_info->output_frame_count) {
-        return block_decode_result_t::from(block_decode_status_t::beyond_end, 0,
-                                           read_status_t::end_of_stream);
+        return block_decode_result_t::from(wormedit::failure_code_t::not_found, 0,
+                                           read_phase_t::end_of_stream);
     }
     const auto remaining_frames = stream_info->output_frame_count - start_frame;
     const auto requested_frames =
         static_cast<std::size_t>(std::min<std::uint64_t>(remaining_frames, maximum_read_frames));
     std::vector<float> block(maximum_read_frames * output_channel_count);
     const auto read = decoder.read_at(start_frame, block, requested_frames);
-    if (read.status == read_status_t::seek_error) {
-        return block_decode_result_t::from(block_decode_status_t::seek_failed, 0, read.status);
+    if (read.status == wormedit::failure_code_t::seek_failed) {
+        return block_decode_result_t::from(wormedit::failure_code_t::seek_failed, 0, read.status);
     }
-    if (read.status == read_status_t::decode_error || read.status == read_status_t::not_open ||
-        read.status == read_status_t::request_too_large ||
-        read.status == read_status_t::insufficient_output_space) {
-        return block_decode_result_t::from(block_decode_status_t::decode_failed, read.frames_read,
+    if (read.status == wormedit::failure_code_t::decode_failed || read.status == wormedit::failure_code_t::not_started ||
+        read.status == wormedit::failure_code_t::capacity_exceeded ||
+        read.status == wormedit::failure_code_t::invalid_request) {
+        return block_decode_result_t::from(wormedit::failure_code_t::decode_failed, read.frames_read,
                                            read.status);
     }
     if (read.frames_read == 0) {
-        return block_decode_result_t::from(block_decode_status_t::beyond_end, 0, read.status);
+        return block_decode_result_t::from(wormedit::failure_code_t::not_found, 0, read.status);
     }
     if (!session.is_current(token)) {
-        return block_decode_result_t::from(block_decode_status_t::stale_generation,
+        return block_decode_result_t::from(wormedit::failure_code_t::stale_generation,
                                            read.frames_read, read.status);
     }
 
     const auto sample_count = read.frames_read * output_channel_count;
     const auto stored =
         cache.store(key, read.frames_read, std::span<const float>(block.data(), sample_count));
-    if (stored != block_store_status_t::stored) {
-        return block_decode_result_t::from(block_decode_status_t::cache_capacity_exceeded,
+    if (!stored) {
+        return block_decode_result_t::from(wormedit::failure_code_t::allocation_failed,
                                            read.frames_read, read.status);
     }
     return block_decode_result_t::from(
-        publish_status(block_decode_status_t::decoded, session.publish_if_current(token, key)),
+        publish_status(block_decode_phase_t::decoded, session.publish_if_current(token, key)),
         read.frames_read, read.status);
 }
 
 auto decode_and_cache_block(decoder_t& decoder, decoded_block_cache_t& cache,
                             decode_session_t& session, session_token_t token, audio_block_key_t key)
     -> block_decode_result_t {
-    return block_decode_result_t::from(
-        decode_cached_block(decoder, cache, session, token, std::move(key)));
+    return decode_cached_block(decoder, cache, session, token, std::move(key));
 }
 
 } // namespace wormedit::audio

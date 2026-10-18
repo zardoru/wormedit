@@ -132,7 +132,7 @@ TEST_CASE("waveform onset detector discards earlier results on incomplete covera
     const auto result = waveform_onset_index_t::from(waveform, request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames));
 
     REQUIRE_FALSE(result);
-    CHECK(result.error() == onset_status_t::not_ready);
+    CHECK(result.error() == wormedit::failure_code_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector requires cached context for its first baseline",
@@ -149,7 +149,7 @@ TEST_CASE("waveform onset detector requires cached context for its first baselin
 
     const auto result = waveform_onset_index_t::from(waveform, request);
     REQUIRE_FALSE(result);
-    CHECK(result.error() == onset_status_t::not_ready);
+    CHECK(result.error() == wormedit::failure_code_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector rejects malformed RMS bins",
@@ -162,7 +162,7 @@ TEST_CASE("waveform onset detector rejects malformed RMS bins",
     const auto result = waveform_onset_index_t::from(waveform, request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames));
 
     REQUIRE_FALSE(result);
-    CHECK(result.error() == onset_status_t::invalid_waveform);
+    CHECK(result.error() == wormedit::failure_code_t::invalid_data);
 }
 
 TEST_CASE("waveform onset detector rejects invalid requests and oversized base bins",
@@ -173,20 +173,20 @@ TEST_CASE("waveform onset detector rejects invalid requests and oversized base b
     const auto& waveform = *waveform_analysis_t::find_waveform(analyzed);
     auto invalid = request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames);
     invalid.window_frames = 0;
-    CHECK(waveform_onset_index_t::from(waveform, invalid).error() == onset_status_t::invalid_request);
+    CHECK(waveform_onset_index_t::from(waveform, invalid).error() == wormedit::failure_code_t::invalid_request);
 
     auto too_many = request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames);
     too_many.maximum_onsets = maximum_onset_frames + 1;
-    CHECK(waveform_onset_index_t::from(waveform, too_many).error() == onset_status_t::invalid_request);
+    CHECK(waveform_onset_index_t::from(waveform, too_many).error() == wormedit::failure_code_t::invalid_request);
 
     const auto coarse = analyze_pcm(samples, 512);
     REQUIRE(waveform_analysis_t::find_waveform(coarse) != nullptr);
     CHECK(waveform_onset_index_t::from(*waveform_analysis_t::find_waveform(coarse), request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames)).error() ==
-          onset_status_t::not_ready);
+          wormedit::failure_code_t::not_ready);
 
     auto unaligned = request_for(waveform_analysis_t::find_waveform(analyzed)->total_frames);
     unaligned.window_frames = 257;
-    CHECK(waveform_onset_index_t::from(waveform, unaligned).error() == onset_status_t::not_ready);
+    CHECK(waveform_onset_index_t::from(waveform, unaligned).error() == wormedit::failure_code_t::not_ready);
 }
 
 TEST_CASE("waveform onset detector reports output capacity overflow without partial frames",
@@ -200,7 +200,7 @@ TEST_CASE("waveform onset detector reports output capacity overflow without part
     const auto result = waveform_onset_index_t::from(*waveform_analysis_t::find_waveform(analyzed), request);
 
     REQUIRE_FALSE(result);
-    CHECK(result.error() == onset_status_t::capacity_exceeded);
+    CHECK(result.error() == wormedit::failure_code_t::capacity_exceeded);
 }
 
 TEST_CASE("waveform onset detector checks complete coverage before the output cap", "[audio][onset]") {
@@ -214,7 +214,7 @@ TEST_CASE("waveform onset detector checks complete coverage before the output ca
     request.maximum_onsets = 1;
     const auto result = waveform_onset_index_t::from(waveform, request);
     REQUIRE_FALSE(result);
-    CHECK(result.error() == onset_status_t::not_ready);
+    CHECK(result.error() == wormedit::failure_code_t::not_ready);
 }
 
 TEST_CASE("canonical onset construction reports the legacy invalid request code",
@@ -222,5 +222,5 @@ TEST_CASE("canonical onset construction reports the legacy invalid request code"
     waveform_t waveform;
     const auto detected = waveform_onset_index_t::from(waveform, {});
     REQUIRE_FALSE(detected.has_value());
-    CHECK(detected.error() == onset_status_t::invalid_request);
+    CHECK(detected.error() == wormedit::failure_code_t::invalid_request);
 }

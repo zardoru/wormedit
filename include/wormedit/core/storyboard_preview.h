@@ -80,6 +80,7 @@ struct storyboard_frame_options_t {
 };
 
 struct storyboard_frame_effect_t {
+    [[nodiscard]] auto is_success() const -> bool { return !diagnostic && !arena_error; }
     // std::span has no default equality; compare the live borrowed view through its element values.
     [[nodiscard]] auto operator==(const storyboard_frame_effect_t& other) const -> bool {
         return std::ranges::equal(instances, other.instances) && diagnostic == other.diagnostic &&
@@ -89,7 +90,6 @@ struct storyboard_frame_effect_t {
     std::optional<storyboard_diagnostic_t> diagnostic;
     std::optional<failure_code_t> arena_error;
 };
-using storyboard_frame_outcome_t = result_t<storyboard_frame_effect_t, storyboard_frame_effect_t>;
 
 
 // Resets the supplied arena and returns draw data valid until its next reset.
@@ -98,6 +98,6 @@ using storyboard_frame_outcome_t = result_t<storyboard_frame_effect_t, storyboar
                                              const storyboard_preview_index_t& index,
                                              std::int64_t time_ms, storyboard_frame_arena_t& arena,
                                              storyboard_frame_options_t options = {})
-    -> storyboard_frame_outcome_t;
+    -> storyboard_frame_effect_t;
 
 } // namespace wormedit

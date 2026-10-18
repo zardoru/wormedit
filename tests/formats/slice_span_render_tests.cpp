@@ -64,14 +64,14 @@ struct render_fixture_t {
         std::filesystem::remove_all(directory, ignored);
     }
     auto plan() const -> slice_span_plan_outcome_t { return slice_span_plan_payload_t::from(song, chart_id_t{3}, sources); }
-    auto render(const slice_span_plan_outcome_t& plan) const -> slice_span_render_outcome_t {
+    auto render(const slice_span_plan_outcome_t& plan) const -> slice_span_render_payload_t {
         return create_slice_span_files(song, slice_span_render_input_t::from(plan),
             {.source_directory = directory, .output_directory = directory / "out"});
     }
 };
 
 void check_exact_rendered_pcm(const render_fixture_t& fixture, const slice_span_plan_outcome_t& plan,
-                              const slice_span_render_outcome_t& rendered) {
+                              const slice_span_render_payload_t& rendered) {
     audio::decoder_t decoder;
     require_span(decoder.open(fixture.directory / "stem.wav"));
     for (std::size_t index = 0; index < plan.value.spans.size(); ++index) {
@@ -82,10 +82,10 @@ void check_exact_rendered_pcm(const render_fixture_t& fixture, const slice_span_
         while (done < frames) {
             const auto count = std::min(audio::maximum_read_frames, frames - done);
             const auto read = decoder.read_frames_at(span.begin_frame + done, std::span(pcm).subspan(done * 2, count * 2), count);
-            require_span(read.value().status == audio::read_status_t::success && read.value().frames_read == count);
+            require_span(read.status == audio::read_phase_t::success && read.frames_read == count);
             done += count;
         }
-        check_span(bytes_at(rendered.value().files[index]) == audio::encode_wav_pcm16(pcm, audio::output_sample_rate));
+        check_span(bytes_at(rendered.files[index]) == audio::encode_wav_pcm16(pcm, audio::output_sample_rate));
     }
 }
 
@@ -98,9 +98,9 @@ TEST_CASE("slice_spans repeated identical stem slices render one exact WAV", "[s
     require_span(plan.ok());
     require_span(plan.value.spans.size() == 1 && plan.value.mappings.size() == 2);
     const auto rendered = fixture.render(plan);
-    require_span(static_cast<bool>(rendered));
-    require_span(rendered.value().files.size() == 1);
-    check_span(rendered.value().files[0].filename() == plan.value.spans[0].filename);
+    require_span(rendered.succeeded);
+    require_span(rendered.files.size() == 1);
+    check_span(rendered.files[0].filename() == plan.value.spans[0].filename);
     check_exact_rendered_pcm(fixture, plan, rendered);
     check_span(bytes_at(fixture.directory / "stem.wav") == original);
     check_span(fixture.song.revision == 7);
@@ -117,7 +117,7 @@ TEST_CASE("slice_spans overlapping ranges render independently and preserve exac
     require_span(plan.value.spans.size() == 3);
     check_span(plan.value.spans[0].begin_frame == 0 && plan.value.spans[2].begin_frame == 0);
     const auto rendered = fixture.render(plan);
-    require_span(static_cast<bool>(rendered));
+    require_span(rendered.succeeded);
     check_exact_rendered_pcm(fixture, plan, rendered);
 }
 
@@ -129,10 +129,10 @@ TEST_CASE("slice_spans later undecodable asset rejects before any output writes"
     plan.value.sources.push_back({asset_id_t{9}, 44'100, 100, 100});
     plan.value.spans.push_back({asset_id_t{9}, 0, 100, "broken_002.wav"});
     const auto rendered = fixture.render(plan);
-    require_span(!rendered);
-    check_span(rendered.error().asset == asset_id_t{9});
-    check_span(rendered.error().error.find("broken.wav") != std::string::npos);
-    check_span(rendered.error().files.empty());
+    require_span(!rendered.succeeded);
+    check_span(rendered.asset == asset_id_t{9});
+    check_span(rendered.error.find("broken.wav") != std::string::npos);
+    check_span(rendered.files.empty());
     check_span(!std::filesystem::exists(fixture.directory / "out"));
 }
 
@@ -140,31 +140,31 @@ TEST_CASE("slice_spans existing output refuses overwrite and reserved names perm
     render_fixture_t fixture;
     const auto plan = fixture.plan();
     const auto rendered = fixture.render(plan);
-    require_span(static_cast<bool>(rendered));
-    const auto bytes = bytes_at(rendered.value().files.front());
+    require_span(rendered.succeeded);
+    const auto bytes = bytes_at(rendered.files.front());
     const auto rejected = fixture.render(plan);
-    check_span(!rejected && rejected.error().files.empty());
-    check_span(bytes_at(rendered.value().files.front()) == bytes);
+    check_span(!rejected.succeeded && rejected.files.empty());
+    check_span(bytes_at(rendered.files.front()) == bytes);
     const auto second = slice_span_plan_payload_t::from(fixture.song, chart_id_t{3}, fixture.sources,
         {.occupied_filenames = {plan.value.spans.front().filename}});
     const auto next = fixture.render(second);
-    require_span(static_cast<bool>(next));
-    check_span(next.value().files.front() != rendered.value().files.front());
-    check_span(bytes_at(rendered.value().files.front()) == bytes);
+    require_span(next.succeeded);
+    check_span(next.files.front() != rendered.files.front());
+    check_span(bytes_at(rendered.files.front()) == bytes);
 }
 
 TEST_CASE("slice_spans invalid range and cancellation leave no files", "[slice_spans][audio]") {
     render_fixture_t fixture;
     auto plan = fixture.plan();
     plan.value.spans.front().end_frame = 44'101;
-    check_span(!fixture.render(plan));
+    check_span(!fixture.render(plan).is_success());
     check_span(!std::filesystem::exists(fixture.directory / "out"));
     plan = fixture.plan();
     std::stop_source stop;
     stop.request_stop();
     const auto cancelled = create_slice_span_files(fixture.song, slice_span_render_input_t::from(plan),
         {.source_directory = fixture.directory, .output_directory = fixture.directory / "out", .stop = stop.get_token()});
-    check_span(!cancelled && cancelled.error().files.empty());
+    check_span(!cancelled.succeeded && cancelled.files.empty());
     check_span(!std::filesystem::exists(fixture.directory / "out"));
 }
 
@@ -178,8 +178,8 @@ TEST_CASE("slice_spans renders audio once and keeps EOF continuation silent", "[
     require_span(plan.value.spans.size() == 1 && plan.value.mappings.size() == 2);
     check_span(!plan.value.mappings.back().span_index);
     const auto rendered = fixture.render(plan);
-    require_span(static_cast<bool>(rendered));
-    check_span(rendered.value().files.size() == 1);
+    require_span(rendered.succeeded);
+    check_span(rendered.files.size() == 1);
     check_exact_rendered_pcm(fixture, plan, rendered);
 }
 
@@ -194,8 +194,8 @@ TEST_CASE("slice_spans soundless gameplay needs no source geometry or files", "[
     require_span(plan.value.spans.empty() && plan.value.mappings.size() == 1);
     check_span(!plan.value.mappings.front().span_index);
     const auto rendered = fixture.render(plan);
-    require_span(static_cast<bool>(rendered));
-    check_span(rendered.value().files.empty());
+    require_span(rendered.succeeded);
+    check_span(rendered.files.empty());
     check_span(!std::filesystem::exists(fixture.directory / "out"));
 }
 
@@ -343,15 +343,15 @@ TEST_CASE("BMS silent gameplay materializes one zero float sample",
     require_span(decoder.open(fixture.directory / "out" / converted.silent_files.front()));
     require_span(decoder.info()->output_frame_count == 1);
     std::array<float, 2> sample{1, 1};
-    require_span(decoder.read_frames_at(0, sample, 1).value().frames_read == 1);
+    require_span(decoder.read_frames_at(0, sample, 1).frames_read == 1);
     check_span(sample[0] == 0 && sample[1] == 0);
 }
 
-TEST_CASE("slice render expected failures retain metadata with an empty message", "[unit][slice-spans][results]") {
-    slice_span_render_outcome_t outcome = std::unexpected(slice_span_render_payload_t::from({}, asset_id_t{7}));
-    require_span(!outcome.has_value());
-    check_span(outcome.error().error.empty());
-    check_span(outcome.error().asset == asset_id_t{7});
+TEST_CASE("slice render failures retain metadata with an empty message", "[unit][slice-spans][results]") {
+    slice_span_render_payload_t outcome = slice_span_render_payload_t::from({}, asset_id_t{7});
+    require_span(!outcome.succeeded);
+    check_span(outcome.error.empty());
+    check_span(outcome.asset == asset_id_t{7});
 }
 
 TEST_CASE("slice primary render publishes canonical planned audio", "[unit][slice-spans][results]") {
@@ -360,7 +360,7 @@ TEST_CASE("slice primary render publishes canonical planned audio", "[unit][slic
     require_span(plan.ok());
     auto rendered = create_slice_span_files(fixture.song, slice_span_render_input_t::from(plan),
         {.source_directory = fixture.directory, .output_directory = fixture.directory / "canonical"});
-    require_span(rendered.has_value());
-    require_span(!rendered->files.empty());
-    check_span(std::filesystem::exists(rendered->files.front()));
+    require_span(rendered.succeeded);
+    require_span(!rendered.files.empty());
+    check_span(std::filesystem::exists(rendered.files.front()));
 }

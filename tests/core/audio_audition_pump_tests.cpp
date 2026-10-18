@@ -115,7 +115,7 @@ TEST_CASE("audition lookahead rejects stale unknown and invalid requests without
     REQUIRE(unavailable.status.has_failure());
     CHECK(unavailable.status == wormedit::failure_code_t::unavailable);
     REQUIRE(unavailable.failure.has_value());
-    CHECK(unavailable.failure->status == block_decode_status_t::invalid_key);
+    CHECK(unavailable.failure->status == wormedit::failure_code_t::invalid_request);
 
     const auto invalid =
         pump_audition_blocks(sources, transport, started.value().token, std::span{&clip, 1}, 0,

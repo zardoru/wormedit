@@ -415,12 +415,10 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
     staged.virtual_bms_cursor_row.reset();
     const local_position_t position{chart->measures[resolved.measure].id,
                                     resolved.row - resolved.measure_begin_row};
-    auto result = dispatch_editor_action(
+    auto prepared = stage_editor_tap_placement(
         scratch, staged, place_tap_action_t{position, action.sample, action.source_geometry});
-    if (!result) {
-        result.view.reset();
-        return result;
-    }
+    if (!prepared.value || !prepared.ok())
+        return {.diagnostics = std::move(prepared.diagnostics)};
     if (staged.hold()) {
         auto holds = std::move(*staged.gesture<hold_gesture_t>());
         auto& pending = *holds.primary();
@@ -431,13 +429,16 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         context.state.active_lane = action.lane;
         return editor_interaction_result_t::from(context.history, context.state, false);
     }
+    if (prepared.value->document)
+        scratch.document = std::move(*prepared.value->document);
+    prepared.value->effect.apply_cursor(staged);
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(scratch.document));
     return commit_editor_edit(context, transaction,
                               {.label = virtual_row_placement_label,
                                .cursor_pose = capture_cursor_pose(staged),
                                .lane = staged.active_lane,
-                               .created_note = result.created_note,
+                               .created_note = prepared.value->effect.created_note,
                                .consume_primary_hold = true});
 }
 
@@ -527,34 +528,41 @@ auto adjust_editor_zoom(document_history_t& history, editor_interaction_state_t&
     return editor_interaction_result_t::from(history, state, false);
 }
 
-auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
-    -> editor_interaction_result_t {
+auto stage_editor_tap(editor_edit_context_t& context, document_command_transaction_t& transaction,
+                      const place_tap_action_t& action) -> attempt_t<editor_edit_effect_t> {
     auto& state = context.state;
     const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures, state,
                                                 state.active_lane, action.position);
     const auto* target = std::get_if<local_position_t>(&resolved);
     if (!target)
-        return editor_interaction_result_t{.diagnostics = std::get<diagnostic_list_t>(resolved)};
+        return attempt_t<editor_edit_effect_t>{.diagnostics =
+                                                   std::get<diagnostic_list_t>(resolved)};
     const std::array targets{note_paint_target_t{state.active_lane, *target}};
     const auto planned = plan_note_paint(context.scope.chart, context.scope.measures, targets,
                                          state.armed_note_kind, note_paint_intent_t::toggle);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&planned))
-        return editor_interaction_result_t{.diagnostics = *failure};
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *failure};
     const auto& plan = std::get<note_paint_plan_t>(planned);
     auto prepared =
         prepare_note_paint_document(context.history, state.chart, plan, state.armed_note_kind,
                                     action.sound, state.armed_note_layers, action.source_geometry);
     if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
-        return editor_interaction_result_t{.diagnostics = *failure};
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *failure};
     auto document = std::get<prepared_note_paint_t>(std::move(prepared));
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};
-    auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
-    return commit_editor_edit(context, transaction,
-                              {.label = created ? "Place note" : "Remove note",
-                               .cursor = *target,
-                               .created_note = created});
+    return {.value = editor_edit_effect_t{.label = created ? "Place note" : "Remove note",
+                                          .cursor = *target,
+                                          .created_note = created}};
 }
+
+auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
+    -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) {
+        return stage_editor_tap(context, transaction, action);
+    });
+}
+
 } // namespace wormedit

@@ -472,10 +472,11 @@ auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart
         editor_interaction_state_t selection;
         selection.chart = chart_id;
         selection.selected_notes = plan.removals;
-        const auto removed =
-            dispatch_editor_action(scratch, selection, delete_editor_selection_action_t{});
-        if (!removed)
-            return removed.diagnostics;
+        auto removed = stage_editor_selection_delete(scratch, selection);
+        if (!removed.value || !removed.ok())
+            return std::move(removed.diagnostics);
+        if (removed.value->document)
+            scratch.document = std::move(*removed.value->document);
     }
     std::vector<object_id_t> notes;
     for (const auto& target : plan.additions) {

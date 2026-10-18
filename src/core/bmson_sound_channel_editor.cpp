@@ -1,3 +1,4 @@
+#include "bmson_sound_channel_editor_internal.h"
 #include "chart_object_ids.h"
 #include "timing_arithmetic.h"
 #include <wormedit/core/bmson_sound_channel_editor.h>
@@ -545,18 +546,19 @@ auto insert_bmson_sound_markers(document_history_t& history,
     return insert_bmson_sound_markers(transaction, chart, reference_bgm_event, markers);
 }
 
-auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
-                             object_id_t bgm_event) -> document_command_result_t {
-    const auto found_chart = history.document.find_chart(chart);
+auto stage_delete_bmson_bgm_marker(document_command_transaction_t& transaction, chart_id_t chart,
+                                   object_id_t bgm_event) -> diagnosed_t<std::string> {
+    const auto found_chart = transaction.current_document().find_chart(chart);
     if (!chart || found_chart == nullptr ||
         found_chart->source_family != format_family_t::bmson || !bgm_event) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BMSON marker deletion requires a known chart and BGM event");
+        return {
+            .diagnostics = {error(diagnostic_code_t::invalid_id,
+                                  "BMSON marker deletion requires a known chart and BGM event")}};
     }
     const auto* semantic = found_chart->find_bgm_event(bgm_event);
     if (!semantic || !semantic->sound_channel_event) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BGM marker has no retained BMSON sound-channel event");
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                      "BGM marker has no retained BMSON sound-channel event")}};
     }
     const auto channel = std::ranges::find_if(found_chart->sound_channels,
         [&](const auto& candidate) {
@@ -565,19 +567,19 @@ auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
             });
         });
     if (channel == found_chart->sound_channels.end()) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BGM marker source event is unavailable");
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                      "BGM marker source event is unavailable")}};
     }
     const auto source = std::ranges::find(channel->events, *semantic->sound_channel_event,
                                            &sound_channel_event_t::id);
     if (source == channel->events.end() || source->playable ||
         source->position != semantic->position) {
-        return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id,
-                        "BGM marker and retained source event disagree");
+        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                      "BGM marker and retained source event disagree")}};
     }
-    auto transaction = document_command_transaction_t(history);
+    const auto chart_offset =
+        static_cast<std::size_t>(found_chart - transaction.current_document().charts.data());
     auto& proposed = transaction.document();
-    const auto chart_offset = static_cast<std::size_t>(found_chart - history.document.charts.data());
     auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
     std::erase_if(changed_chart.sound_channels[channel_offset].events,
@@ -595,11 +597,21 @@ auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart,
             changed_chart, changed_chart.sound_channels[channel_offset],
             asset->stream.sample_rate, asset->stream.frame_count);
         if (!slices) {
-            return document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_resolution,
-                            slices.diagnostics.front().message);
+            return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                          slices.diagnostics.front().message)}};
         }
     }
-    return transaction.commit("Delete BMSON BGM marker");
+    return {.value = "Delete BMSON BGM marker"};
+}
+
+auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart, object_id_t bgm_event)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    auto staged = stage_delete_bmson_bgm_marker(transaction, chart, bgm_event);
+    if (!staged.ok())
+        return document_command_transaction_t::rejection(history.document.revision,
+                                                         std::move(staged.diagnostics));
+    return transaction.commit(std::move(staged.value));
 }
 
 namespace {

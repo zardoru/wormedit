@@ -960,6 +960,14 @@ auto inspect_delete_bgm_events(const chart_document_t& chart, const editor_delet
 auto stage_delete_stem_points(song_document_t& proposed, const editor_edit_context_t& context,
                               const editor_delete_ids_t& ids)
     -> std::variant<std::size_t, diagnostic_list_t>;
+struct editor_edit_effect_t;
+struct prepared_editor_edit_t;
+auto stage_editor_selection_delete(document_history_t& history, editor_interaction_state_t& state)
+    -> attempt_t<prepared_editor_edit_t>;
+auto stage_editor_tap_placement(document_history_t& history, editor_interaction_state_t& state,
+                                const place_tap_action_t& action) -> attempt_t<prepared_editor_edit_t>;
+auto stage_editor_tap(editor_edit_context_t& context, document_command_transaction_t& transaction,
+                       const place_tap_action_t& action) -> attempt_t<editor_edit_effect_t>;
 auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t;
 struct assignment_candidate_t {
     const note_t* note{};

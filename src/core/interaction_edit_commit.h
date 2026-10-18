@@ -126,4 +126,37 @@ template <class Command, class SelectionEffect = preserve_editor_selection_t>
                               std::move(effect), std::move(select));
 }
 
+struct prepared_editor_edit_t {
+    std::optional<song_document_t> document;
+    editor_edit_effect_t effect;
+};
+
+template <class Stage>
+[[nodiscard]] auto prepare_editor_edit(editor_edit_context_t& context, Stage stage)
+    -> attempt_t<prepared_editor_edit_t> {
+    auto transaction = document_command_transaction_t(context.history);
+    auto staged = stage(transaction);
+    if (!staged.value || !staged.ok())
+        return {.diagnostics = std::move(staged.diagnostics)};
+    prepared_editor_edit_t prepared{.effect = std::move(*staged.value)};
+    if (transaction.has_copy())
+        prepared.document = std::move(transaction.document());
+    auto outcome = transaction.finish_without_commit();
+    if (diagnostic_queries::has_errors(outcome.diagnostics))
+        return {.diagnostics = std::move(outcome.diagnostics)};
+    return {.value = std::move(prepared), .diagnostics = std::move(staged.diagnostics)};
+}
+
+template <class Stage>
+[[nodiscard]] auto run_editor_edit(editor_edit_context_t& context, Stage stage)
+    -> editor_interaction_result_t {
+    auto prepared = prepare_editor_edit(context, std::move(stage));
+    if (!prepared.value || !prepared.ok())
+        return {.diagnostics = std::move(prepared.diagnostics)};
+    auto transaction = document_command_transaction_t(context.history);
+    if (prepared.value->document)
+        transaction.adopt_document(std::move(*prepared.value->document));
+    return commit_editor_edit(context, transaction, std::move(prepared.value->effect));
+}
+
 } // namespace wormedit

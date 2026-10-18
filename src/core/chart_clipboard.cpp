@@ -292,12 +292,17 @@ static auto delete_selection_all_impl(document_history_t& history,
     if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
     diagnostics = stage_selection_timing(staged, proposed_state, options.timing_locked);
     if (!diagnostics.empty()) return {.diagnostics = std::move(diagnostics)};
+    auto has_document_changes = !staged.undo.empty();
     if (!explicit_selection || !proposed_state.selected_objects.empty()) {
-        const auto deleted = dispatch_editor_action(staged, proposed_state, delete_editor_selection_action_t{});
-        if (!deleted)
-            return {.diagnostics = deleted.diagnostics};
+        auto deleted = stage_editor_selection_delete(staged, proposed_state);
+        if (!deleted.value || !deleted.ok())
+            return {.diagnostics = std::move(deleted.diagnostics)};
+        has_document_changes = has_document_changes || deleted.value->effect.has_document_changes;
+        if (deleted.value->document)
+            staged.document = std::move(*deleted.value->document);
     }
-    if (staged.undo.empty()) return {.accepted = true};
+    if (!has_document_changes)
+        return {.accepted = true};
     auto transaction = document_command_transaction_t(history);
     transaction.adopt_document(std::move(staged.document));
     return commit_editor_edit(history, state, transaction,

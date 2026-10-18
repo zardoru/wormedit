@@ -3,6 +3,7 @@
 #include <array>
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
+#include <wormedit/core/interaction_dispatch.h>
 #include <wormedit/formats/native_project.h>
 
 using namespace wormedit;
@@ -193,4 +194,67 @@ TEST_CASE("Editor command publication can retain its no-view contract", "[core][
     CHECK(result.document_changed);
     CHECK_FALSE(result.view);
     CHECK(result.diagnostics.empty());
+}
+
+TEST_CASE("Tap staging returns data and effect without publishing history",
+          "[core][edit-staging]") {
+    auto fixture = edit_fixture_t::from();
+    const auto before = write_native_project(fixture.history.document);
+    auto staged = stage_editor_tap_placement(
+        fixture.history, fixture.state, place_tap_action_t{.position = {measure_id_t{1}, 240}});
+    REQUIRE(staged.value);
+    REQUIRE(staged.value->document);
+    CHECK(staged.value->effect.created_note == object_id_t{102});
+    const auto* note = staged.value->document->charts.front().find_note(object_id_t{102});
+    REQUIRE(note);
+    CHECK(note->position == local_position_t{measure_id_t{1}, 240});
+    CHECK(staged.value->effect.label == "Place note");
+    fixture.check_unpublished(before.value);
+}
+
+TEST_CASE("Delete staging returns its selection effect without publishing history",
+          "[core][edit-staging]") {
+    auto fixture = edit_fixture_t::from();
+    fixture.state.selected_notes = {object_id_t{101}};
+    const auto before = write_native_project(fixture.history.document);
+    auto staged = stage_editor_selection_delete(fixture.history, fixture.state);
+    REQUIRE(staged.value);
+    REQUIRE(staged.value->document);
+    CHECK(staged.value->document->charts.front().find_note(object_id_t{101}) == nullptr);
+    CHECK(std::holds_alternative<clear_editor_selection_t>(staged.value->effect.selection));
+    CHECK(staged.value->effect.label == "Delete selected chart objects");
+    CHECK(fixture.state.selected_notes == std::vector{object_id_t{101}});
+    fixture.check_unpublished(before.value);
+}
+
+TEST_CASE("Staging retains the public action's invalid-view diagnostics", "[core][edit-staging]") {
+    auto fixture = edit_fixture_t::from();
+    fixture.state.active_lane = lane_id_t{};
+    auto public_history = fixture.history;
+    auto public_state = fixture.state;
+    const auto expected =
+        dispatch_editor_action(public_history, public_state, delete_editor_selection_action_t{});
+    const auto staged = stage_editor_selection_delete(fixture.history, fixture.state);
+    CHECK_FALSE(staged.value);
+    REQUIRE_FALSE(staged.diagnostics.empty());
+    CHECK(staged.diagnostics.front().code == diagnostic_code_t::unknown_lane);
+    CHECK(staged.diagnostics == expected.diagnostics);
+}
+
+TEST_CASE("Editor staging retains transaction rejection without publishing",
+          "[core][edit-staging]") {
+    auto fixture = edit_fixture_t::from();
+    auto context = fixture.context();
+    const auto before = write_native_project(fixture.history.document);
+    const auto staged = prepare_editor_edit(
+        context,
+        [&](document_command_transaction_t& transaction) -> attempt_t<editor_edit_effect_t> {
+            transaction.document().charts.front().measures.front().notes.front().label = "Rejected";
+            reject(transaction.outcome(), diagnostic_code_t::collision, "Rejected stage");
+            return {.value = editor_edit_effect_t{.label = "Rejected edit"}};
+        });
+    CHECK_FALSE(staged.value);
+    REQUIRE(staged.diagnostics.size() == 1);
+    CHECK(staged.diagnostics.front().code == diagnostic_code_t::collision);
+    fixture.check_unpublished(before.value);
 }

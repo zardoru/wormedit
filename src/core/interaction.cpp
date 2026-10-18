@@ -1,3 +1,4 @@
+#include "bmson_sound_channel_editor_internal.h"
 #include "interaction_edit_commit.h"
 #include "interaction_context.h"
 #include "interaction_geometry.h"
@@ -872,42 +873,21 @@ auto stage_delete_bar_lines(chart_document_t& chart, const editor_delete_ids_t& 
     return measures.size();
 }
 
-auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t {
-    auto collected = collect_delete_ids(context.state);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
-    auto ids = std::get<editor_delete_ids_t>(std::move(collected));
-    if (const auto invalid = validate_delete_note_ids(context.scope.chart, ids.notes))
-        return editor_interaction_result_t{.diagnostics = {*invalid}};
-    auto inspected = inspect_delete_bgm_events(context.scope.chart, ids);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
-    const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
-    if (linked_event) {
-        return commit_editor_edit(context, {.selection = clear_editor_selection_t{}}, [&] {
-            return delete_bmson_bgm_marker(context.history, context.state.chart, *linked_event);
-        });
-    }
-
-    auto transaction = document_command_transaction_t(context.history);
-
-    auto& proposed = transaction.document();
-    auto staged = stage_delete_stem_points(proposed, context, ids);
-    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
-    auto* chart = proposed.find_chart(context.state.chart);
-    auto removed = std::get<std::size_t>(staged);
+auto erase_editor_selection_objects(chart_document_t& chart,
+                                    const editor_interaction_state_t& state,
+                                    const editor_delete_ids_t& ids) -> std::size_t {
+    std::size_t removed{};
     const auto selected = ids.total() != 0;
-    removed += std::erase_if(chart->bookmarks, [&](const auto& bookmark) {
+    removed += std::erase_if(chart.bookmarks, [&](const auto& bookmark) {
         return ids.bookmarks.contains(bookmark.id.value);
     });
-    removed += std::erase_if(chart->sections, [&](const auto& section) {
+    removed += std::erase_if(chart.sections, [&](const auto& section) {
         return ids.sections.contains(section.id.value);
     });
-    removed += std::erase_if(chart->bga_events, [&](const auto& event) {
+    removed += std::erase_if(chart.bga_events, [&](const auto& event) {
         return ids.bga_events.contains(event.id.value);
     });
-    for (auto& measure : chart->measures) {
+    for (auto& measure : chart.measures) {
         if (selected) {
             removed += std::erase_if(measure.notes, [&](const auto& note) {
                 return ids.notes.contains(note.id.value);
@@ -917,27 +897,64 @@ auto delete_editor_selection(editor_edit_context_t& context) -> editor_interacti
             });
         } else {
             removed += std::erase_if(measure.notes, [&](const auto& note) {
-                return note.position == context.state.cursor &&
-                       note.lane == context.state.active_lane;
+                return note.position == state.cursor && note.lane == state.active_lane;
             });
         }
     }
+    return removed;
+}
+
+auto stage_editor_delete(editor_edit_context_t& context,
+                         document_command_transaction_t& transaction)
+    -> attempt_t<editor_edit_effect_t> {
+    auto collected = collect_delete_ids(context.state);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&collected))
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
+    auto ids = std::get<editor_delete_ids_t>(std::move(collected));
+    if (const auto invalid = validate_delete_note_ids(context.scope.chart, ids.notes))
+        return attempt_t<editor_edit_effect_t>{.diagnostics = {*invalid}};
+    auto inspected = inspect_delete_bgm_events(context.scope.chart, ids);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&inspected))
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
+    const auto linked_event = std::get<std::optional<object_id_t>>(inspected);
+    if (linked_event) {
+        auto staged =
+            stage_delete_bmson_bgm_marker(transaction, context.state.chart, *linked_event);
+        if (!staged.ok())
+            return {.diagnostics = std::move(staged.diagnostics)};
+        return {.value = editor_edit_effect_t{.label = std::move(staged.value),
+                                              .selection = clear_editor_selection_t{}}};
+    }
+
+    auto& proposed = transaction.document();
+    auto staged = stage_delete_stem_points(proposed, context, ids);
+    if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&staged))
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
+    auto* chart = proposed.find_chart(context.state.chart);
+    auto removed = std::get<std::size_t>(staged);
+    const auto selected = ids.total() != 0;
+    removed += erase_editor_selection_objects(*chart, context.state, ids);
     auto merged = stage_delete_bar_lines(*chart, ids);
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&merged))
-        return editor_interaction_result_t{.diagnostics = *diagnostics};
+        return attempt_t<editor_edit_effect_t>{.diagnostics = *diagnostics};
     removed += std::get<std::size_t>(merged);
     if (removed == 0)
-        return commit_editor_edit(context, transaction, {.has_document_changes = false});
+        return {.value = editor_edit_effect_t{.has_document_changes = false}};
     if (selected && removed != ids.total()) {
-        return editor_interaction_result_t{
+        return attempt_t<editor_edit_effect_t>{
             .diagnostics = {error(diagnostic_code_t::invalid_id,
                                   "selected deletion did not resolve every object")}};
     }
-    return commit_editor_edit(context, transaction,
-                              {.label = selected ? "Delete selected chart objects" : "Delete note",
-                               .selection = clear_editor_selection_t{}});
+    return {.value = editor_edit_effect_t{.label = selected ? "Delete selected chart objects"
+                                                            : "Delete note",
+                                          .selection = clear_editor_selection_t{}}};
 }
 
+auto delete_editor_selection(editor_edit_context_t& context) -> editor_interaction_result_t {
+    return run_editor_edit(context, [&](document_command_transaction_t& transaction) {
+        return stage_editor_delete(context, transaction);
+    });
+}
 
 auto collect_assignment_candidates(const editor_edit_context_t& context)
     -> std::variant<std::vector<assignment_candidate_t>, diagnostic_list_t> {
@@ -1352,8 +1369,12 @@ auto stage_keyboard_occupant(document_history_t& scratch, editor_interaction_sta
     state.clear();
     state.selected_notes = {occupant.id};
     state.selected_objects.clear();
-    const auto removed = dispatch_editor_action(scratch, state, delete_editor_selection_action_t{});
-    return removed.diagnostics;
+    auto removed = stage_editor_selection_delete(scratch, state);
+    if (!removed.value || !removed.ok())
+        return std::move(removed.diagnostics);
+    if (removed.value->document)
+        scratch.document = std::move(*removed.value->document);
+    return {};
 }
 
 auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_t state,
@@ -1367,12 +1388,14 @@ auto place_keyboard_entry(document_history_t& scratch, editor_interaction_state_
     place_cursor_at(state, target);
     state.active_lane = lane;
     if (!stem) {
-        const auto placed =
-            dispatch_editor_action(scratch, state, place_tap_action_t{.position = target, .sound = sound});
-        if (!placed)
-            return placed.diagnostics;
-        if (placed.created_note)
-            return *placed.created_note;
+        auto placed = stage_editor_tap_placement(
+            scratch, state, place_tap_action_t{.position = target, .sound = sound});
+        if (!placed.value || !placed.ok())
+            return std::move(placed.diagnostics);
+        if (placed.value->document)
+            scratch.document = std::move(*placed.value->document);
+        if (placed.value->effect.created_note)
+            return *placed.value->effect.created_note;
         return diagnostic_list_t{error(diagnostic_code_t::invalid_hold,
                                        "Choose a non-hold note kind to replace an occupied head")};
     }
@@ -2127,14 +2150,16 @@ struct editor_action_dispatch_t {
     document_history_t& history;
     editor_interaction_state_t& state;
 
-    template <editor_action_handler Action>
-    auto operator()(const Action& action) const -> editor_interaction_result_t {
+    template <editor_action_handler Action, class Perform>
+    auto with_context(const Action&, Perform perform) const
+        -> std::invoke_result_t<Perform&, editor_action_context_t&> {
+        using result_type = std::invoke_result_t<Perform&, editor_action_context_t&>;
         constexpr auto policy = editor_action_handler_t<Action>::virtual_cursor;
         const auto can_use_virtual_cursor = policy == virtual_cursor_policy_t::allowed ||
             (policy == virtual_cursor_policy_t::selection &&
              (!state.selected_objects.empty() || !state.selected_notes.empty()));
         if (state.virtual_bms_cursor_row && !can_use_virtual_cursor)
-            return editor_interaction_result_t{
+            return result_type{
                 .diagnostics = {error(diagnostic_code_t::row_out_of_range,
                                       "this edit requires a materialized cursor measure")}};
         const auto* chart = history.document.find_chart(state.chart);
@@ -2142,17 +2167,65 @@ struct editor_action_dispatch_t {
             state.armed_note_kind = note_kind_t::tap;
         const auto initial_view = make_view(history, state);
         if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&initial_view))
-            return editor_interaction_result_t{.diagnostics = *diagnostics};
+            return result_type{.diagnostics = *diagnostics};
         const auto built_index = measure_index_t::from(*chart);
         const auto& index = built_index.value();
         editor_action_context_t context{
             {history, state, {*chart, index},
              &std::get<editor_interaction_view_model_t>(initial_view), history.document.revision},
             *state.cursor_canvas_row(index)};
-        return editor_action_handler_t<Action>::perform(context, action);
+        return perform(context);
+    }
+    template <editor_action_handler Action>
+    auto operator()(const Action& action) const -> editor_interaction_result_t {
+        return with_context(action, [&](editor_action_context_t& context) {
+            return editor_action_handler_t<Action>::perform(context, action);
+        });
     }
 };
 } // namespace
+
+template <class Action, class Stage>
+auto run_staged_editor_action(document_history_t& history, editor_interaction_state_t& state,
+                              const Action& action, Stage stage)
+    -> attempt_t<prepared_editor_edit_t> {
+    if (auto stale = validate_gesture_capture(history, state))
+        return {.diagnostics = std::move(stale->diagnostics)};
+    if (auto rejected = validate_active_gesture_action(state, action))
+        return {.diagnostics = std::move(rejected->diagnostics)};
+    return editor_action_dispatch_t{history, state}.with_context(
+        action, [&](editor_action_context_t& context) { return stage(context.edit); });
+}
+
+auto stage_editor_selection_delete(document_history_t& history, editor_interaction_state_t& state)
+    -> attempt_t<prepared_editor_edit_t> {
+    return run_staged_editor_action(
+        history, state, delete_editor_selection_action_t{}, [&](editor_edit_context_t& context) {
+            return prepare_editor_edit(context, [&](document_command_transaction_t& transaction) {
+                return stage_editor_delete(context, transaction);
+            });
+        });
+}
+
+auto stage_editor_tap_placement(document_history_t& history, editor_interaction_state_t& state,
+                                const place_tap_action_t& action)
+    -> attempt_t<prepared_editor_edit_t> {
+    return run_staged_editor_action(
+        history, state, action,
+        [&](editor_edit_context_t& context) -> attempt_t<prepared_editor_edit_t> {
+            if (state.armed_note_kind == note_kind_t::hold ||
+                state.armed_note_kind == note_kind_t::roll) {
+                auto begun =
+                    begin_gesture<hold_gesture_t>(context, hold_start_t::from(state, action));
+                if (!begun)
+                    return {.diagnostics = std::move(begun.diagnostics)};
+                return {.value = prepared_editor_edit_t{.effect = {.has_document_changes = false}}};
+            }
+            return prepare_editor_edit(context, [&](document_command_transaction_t& transaction) {
+                return stage_editor_tap(context, transaction, action);
+            });
+        });
+}
 
 auto dispatch_editor_action_impl(document_history_t& history, editor_interaction_state_t& state,
                                  const editor_interaction_action_t& action) -> editor_interaction_result_t {

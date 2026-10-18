@@ -103,7 +103,15 @@ where facts coincide, preserve named input priority and per-domain release rules
 production-emitter interruption/late-release case with the gesture. Audio-offset cancellation
 keeps its separate stamp and deferred action.
 
+SV compilation uses `sv_recipe_prepared_t` in `core/sv_recipe.h`: pure built-ins keep exact
+random-access values, while an already-evaluated emission batch holds its preceding value
+between rows. The prepared owner stores validated data and inspection samples, with no live
+evaluator. Composition uses that owner for overlap multiplication and authored baseline rows;
+draft preview reuses its prepared candidate, and export baking reaches the same composition
+path. These transient values belong to one input snapshot; captured work still needs the stamp
+checks above. Lua execution and stored post-processing stages remain separate feature work.
+
 The [extension checkpoints](chart-editor-plan/tasks/extension-friction.md) record the current
-SV capability references, cross-cycle state direction, bounded lane/gesture findings and proposed
-T-681–T-683 scopes. These are extension goals; the existing owners above remain the implemented
-architecture until each checkpoint lands.
+SV capability references, cross-cycle state direction, bounded lane/gesture findings,
+the T-681 implementation and proposed T-682–T-683 scopes. Lane and gesture extractions remain
+extension goals until their checkpoints land.

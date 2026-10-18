@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <utility>
 #include <variant>
 #include <vector>
 
@@ -30,6 +31,46 @@ struct sv_recipe_samples_t {
     auto operator==(const sv_recipe_samples_t&) const -> bool = default;
 };
 using sv_recipe_sample_outcome_t = diagnosed_t<sv_recipe_samples_t>;
+
+// A transient semantic emission, before target rounding or double conversion.
+struct sv_recipe_emission_t {
+    std::uint64_t absolute_row{};
+    long double value{};
+    auto operator==(const sv_recipe_emission_t&) const -> bool = default;
+};
+
+// Owns the evaluated recipe contract shared by composition and inspection.
+// Built-ins retain their exact random-access curve. Materialized output (from
+// an ordered evaluator or a batch transform) is a half-open step function:
+// between emissions the previous value holds, without invoking an evaluator.
+class sv_recipe_prepared_t {
+  public:
+    [[nodiscard]] static auto from(const chart_document_t& chart, const sv_recipe_t& recipe)
+        -> diagnosed_t<sv_recipe_prepared_t>;
+    [[nodiscard]] static auto from_emissions(const chart_document_t& chart,
+        const sv_recipe_t& recipe, std::span<const sv_recipe_emission_t> emissions)
+        -> diagnosed_t<sv_recipe_prepared_t>;
+
+    [[nodiscard]] auto recipe() const -> const sv_recipe_t& { return recipe_; }
+    [[nodiscard]] auto samples() const -> const sv_recipe_samples_t& { return samples_; }
+    [[nodiscard]] auto range() const -> const std::pair<std::uint64_t, std::uint64_t>& {
+        return range_;
+    }
+    [[nodiscard]] auto value_at(std::uint64_t row) const -> std::optional<long double>;
+    [[nodiscard]] auto has_matching_geometry(const chart_document_t& chart,
+        const measure_index_t& index) const -> bool;
+    auto operator==(const sv_recipe_prepared_t&) const -> bool = default;
+
+  private:
+    sv_recipe_prepared_t() = default;
+    sv_recipe_t recipe_;
+    chart_id_t chart_;
+    std::uint64_t divisions_{};
+    std::pair<std::uint64_t, std::uint64_t> range_{};
+    sv_recipe_samples_t samples_;
+    std::vector<sv_recipe_emission_t> emissions_;
+};
+
 struct sv_recipe_sample_result_t {
     [[nodiscard]] static auto from(sv_recipe_sample_outcome_t&& outcome) -> sv_recipe_sample_result_t;
     std::vector<sv_recipe_point_t> points;
@@ -44,6 +85,11 @@ struct sv_recipe_sample_result_t {
 
 struct sv_recipe_compiled_output_t {
     [[nodiscard]] static auto from(const chart_document_t& chart, sv_recipe_output_t output)
+        -> diagnosed_t<sv_recipe_compiled_output_t>;
+    // Takes enabled recipes of this output family, from matching chart geometry,
+    // in the caller's declared composition order. Snapshot stamps remain the caller's responsibility.
+    [[nodiscard]] static auto from(const chart_document_t& chart, sv_recipe_output_t output,
+        std::span<const sv_recipe_prepared_t> recipes)
         -> diagnosed_t<sv_recipe_compiled_output_t>;
     sv_recipe_output_t output{sv_recipe_output_t::sv};
     std::vector<sv_recipe_point_t> points;

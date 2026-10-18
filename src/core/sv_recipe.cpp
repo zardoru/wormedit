@@ -656,31 +656,140 @@ auto sample_sv_recipe(const chart_document_t& chart, const sv_recipe_t& recipe) 
 
 namespace {
 
-struct recipe_sample_set_t {
-    std::vector<const sv_recipe_t*> recipes;
-    std::set<std::uint64_t> rows;
-};
+auto validate_recipe_emissions(std::span<const sv_recipe_emission_t> emissions,
+    const std::pair<std::uint64_t, std::uint64_t>& range, sv_recipe_output_t output)
+    -> diagnostic_list_t {
+    if (emissions.empty() || emissions.size() > maximum_sv_recipe_sample_points)
+        return {error(diagnostic_code_t::invalid_resolution,
+                      "SV emissions require 1 to 4096 bounded points")};
+    if (emissions.front().absolute_row != range.first)
+        return {error(diagnostic_code_t::row_out_of_range,
+                      "SV emissions must cover the recipe's first row")};
+    std::optional<std::uint64_t> previous;
+    for (const auto& emission : emissions) {
+        if (emission.absolute_row < range.first || emission.absolute_row > range.second ||
+            (previous && emission.absolute_row <= *previous))
+            return {error(diagnostic_code_t::row_out_of_range,
+                          "SV emission rows must be strictly increasing inside the recipe range")};
+        if (!is_valid_curve_result(emission.value, output))
+            return {error(diagnostic_code_t::invalid_rational,
+                          "SV emission value is non-finite, oversized, or target-invalid")};
+        previous = emission.absolute_row;
+    }
+    return {};
+}
+
+auto sample_recipe_emissions(const measure_index_t& index, const sv_recipe_t& recipe,
+    const std::pair<std::uint64_t, std::uint64_t>& range,
+    std::span<const sv_recipe_emission_t> emissions) -> sv_recipe_sample_outcome_t {
+    std::map<std::uint64_t, long double> points;
+    for (const auto& emission : emissions)
+        if (emission.absolute_row < index.total_rows)
+            points.emplace(emission.absolute_row, emission.value);
+    const auto last = range.second == index.total_rows ? index.total_rows - 1 : range.second;
+    if (!points.contains(last)) points.emplace(last, points.rbegin()->second);
+    if (points.size() > maximum_sv_recipe_sample_points)
+        return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+            "SV emission inspection boundaries exceed the point cap")}};
+    sv_recipe_sample_outcome_t result{};
+    result.value.points.reserve(points.size());
+    for (const auto& [row, value] : points) {
+        const auto position = index.position_at(row);
+        if (!position)
+            return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                          "SV emission point is outside chart geometry")}};
+        result.value.points.push_back({.absolute_row = row, .position = *position,
+            .value = static_cast<double>(value),
+            .transition_duration = recipe.transition_duration.value_or(rational_t{}),
+            .transition_is_seconds = recipe.transition_is_seconds.value_or(false)});
+    }
+    return result;
+}
+
+} // namespace
+
+auto sv_recipe_prepared_t::from(const chart_document_t& chart, const sv_recipe_t& recipe)
+    -> diagnosed_t<sv_recipe_prepared_t> {
+    auto sampled = sv_recipe_samples_t::from(chart, recipe);
+    sv_recipe_prepared_t prepared;
+    prepared.samples_ = std::move(sampled.value);
+    if (sampled.diagnostics.empty()) {
+        const auto index = measure_index_t::from(chart);
+        prepared.recipe_ = recipe;
+        prepared.chart_ = chart.id;
+        prepared.divisions_ = chart.divisions_per_standard_measure;
+        prepared.range_ = *recipe_range(chart, recipe, *index);
+    }
+    return {.value = std::move(prepared), .diagnostics = std::move(sampled.diagnostics)};
+}
+
+auto sv_recipe_prepared_t::from_emissions(const chart_document_t& chart,
+    const sv_recipe_t& recipe, std::span<const sv_recipe_emission_t> emissions)
+    -> diagnosed_t<sv_recipe_prepared_t> {
+    sv_recipe_prepared_t prepared;
+    auto diagnostics = validate_sv_recipe(chart, recipe);
+    if (!diagnostics.empty())
+        return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
+    const auto index = measure_index_t::from(chart);
+    const auto range = *recipe_range(chart, recipe, *index);
+    diagnostics = validate_recipe_emissions(emissions, range, recipe.output);
+    if (!diagnostics.empty())
+        return {.value = std::move(prepared), .diagnostics = std::move(diagnostics)};
+    auto sampled = sample_recipe_emissions(*index, recipe, range, emissions);
+    prepared.samples_ = std::move(sampled.value);
+    if (sampled.diagnostics.empty()) {
+        prepared.recipe_ = recipe;
+        prepared.chart_ = chart.id;
+        prepared.divisions_ = chart.divisions_per_standard_measure;
+        prepared.range_ = range;
+        prepared.emissions_.assign(emissions.begin(), emissions.end());
+    }
+    return {.value = std::move(prepared), .diagnostics = std::move(sampled.diagnostics)};
+}
+
+auto sv_recipe_prepared_t::value_at(std::uint64_t row) const -> std::optional<long double> {
+    if (row < range_.first || row >= range_.second) return std::nullopt;
+    if (emissions_.empty())
+        return curve_value(recipe_, recipe_position_for_row(range_, row));
+    const auto after = std::upper_bound(emissions_.begin(), emissions_.end(), row,
+        [](std::uint64_t sought, const auto& emission) { return sought < emission.absolute_row; });
+    return std::prev(after)->value;
+}
+
+auto sv_recipe_prepared_t::has_matching_geometry(const chart_document_t& chart,
+    const measure_index_t& index) const -> bool {
+    return range_.first < range_.second && chart.id == chart_ &&
+        chart.divisions_per_standard_measure == divisions_ &&
+        index.row_of(recipe_.range.begin) == range_.first &&
+        index.row_of(recipe_.range.end, measure_chart_end_policy_t::allow) == range_.second &&
+        std::ranges::all_of(samples_.points, [&](const auto& point) {
+            return index.row_of(point.position) == point.absolute_row;
+        });
+}
+
+namespace {
 
 auto append_recipe_sample(const chart_document_t& chart, const sv_recipe_t& recipe,
-                          recipe_sample_set_t& samples,
-                          diagnostic_list_t& diagnostics) -> bool {
-    const auto sample = sv_recipe_samples_t::from(chart, recipe);
+                          std::vector<sv_recipe_prepared_t>& samples,
+                          diagnostic_list_t& diagnostics,
+                          const sv_recipe_prepared_t* prepared = nullptr) -> bool {
+    auto sample = prepared ? diagnosed_t<sv_recipe_prepared_t>{.value = *prepared}
+                           : sv_recipe_prepared_t::from(chart, recipe);
     if (!sample.diagnostics.empty()) {
         diagnostics.insert(diagnostics.end(), sample.diagnostics.begin(), sample.diagnostics.end());
         return false;
     }
-    samples.recipes.push_back(&recipe);
-    for (const auto& point : sample.value.points) {
-        samples.rows.insert(point.absolute_row);
-    }
+    samples.push_back(std::move(sample.value));
     return true;
 }
 
 auto collect_recipe_samples(const chart_document_t& chart, sv_recipe_output_t output,
                            const sv_recipe_t* candidate,
                            std::optional<recipe_id_t> replacing_recipe,
-                           diagnostic_list_t& diagnostics) -> recipe_sample_set_t {
-    recipe_sample_set_t samples;
+                           diagnostic_list_t& diagnostics,
+                           const sv_recipe_prepared_t* prepared_candidate)
+    -> std::vector<sv_recipe_prepared_t> {
+    std::vector<sv_recipe_prepared_t> samples;
     for (const auto& stored : chart.sv_recipes) {
         const auto* recipe = replacing_recipe && stored.id == *replacing_recipe
                                  ? candidate
@@ -688,39 +797,35 @@ auto collect_recipe_samples(const chart_document_t& chart, sv_recipe_output_t ou
         if (recipe == nullptr || !recipe->enabled || recipe->output != output) {
             continue;
         }
-        (void)append_recipe_sample(chart, *recipe, samples, diagnostics);
+        (void)append_recipe_sample(chart, *recipe, samples, diagnostics,
+                                  recipe == candidate ? prepared_candidate : nullptr);
     }
     if (candidate != nullptr && !replacing_recipe && candidate->enabled &&
         candidate->output == output) {
-        (void)append_recipe_sample(chart, *candidate, samples, diagnostics);
+        (void)append_recipe_sample(chart, *candidate, samples, diagnostics, prepared_candidate);
     }
     return samples;
 }
 
 auto has_overlapping_speed_transition(const chart_document_t& chart,
                                      const measure_index_t& index,
-                                     const recipe_sample_set_t& samples) -> bool {
+                                     std::span<const sv_recipe_prepared_t> recipes) -> bool {
     std::uint64_t last_recipe_end{};
-    for (const auto* recipe : samples.recipes) {
-        if (const auto range = recipe_range(chart, *recipe, index)) {
-            last_recipe_end = std::max(last_recipe_end, range->second);
-        }
-    }
+    for (const auto& recipe : recipes)
+        last_recipe_end = std::max(last_recipe_end, recipe.range().second);
     return std::ranges::any_of(chart.speeds, [&](const auto& event) {
         const auto row = index.row_of(event.position);
         return event.transition_beats.numerator != 0 && row && *row < last_recipe_end;
     });
 }
 
-void add_authored_event_rows(const chart_document_t& chart, const measure_index_t& index,
-                             const std::vector<std::pair<std::uint64_t, long double>>& events,
-                             const std::vector<const sv_recipe_t*>& recipes,
+void add_authored_event_rows(const std::vector<std::pair<std::uint64_t, long double>>& events,
+                             std::span<const sv_recipe_prepared_t> recipes,
                              std::set<std::uint64_t>& rows) {
     for (const auto& [row, value] : events) {
         (void)value;
-        if (std::ranges::any_of(recipes, [&](const auto* recipe) {
-                const auto range = recipe_range(chart, *recipe, index);
-                return range && row >= range->first && row < range->second;
+        if (std::ranges::any_of(recipes, [&](const auto& recipe) {
+                return row >= recipe.range().first && row < recipe.range().second;
             })) {
             rows.insert(row);
         }
@@ -728,10 +833,9 @@ void add_authored_event_rows(const chart_document_t& chart, const measure_index_
 }
 
 struct recipe_composition_context_t {
-    const chart_document_t& chart;
     sv_recipe_output_t output{};
     const measure_index_t& index;
-    const std::vector<const sv_recipe_t*>& recipes;
+    std::span<const sv_recipe_prepared_t> recipes;
     const std::vector<std::pair<std::uint64_t, long double>>& base_events;
 };
 
@@ -740,14 +844,12 @@ auto compose_recipe_point(const recipe_composition_context_t& context, std::uint
     -> std::optional<sv_recipe_point_t> {
     long double value = base_value_at(context.base_events, row);
     const sv_recipe_t* transition_source{};
-    for (const auto* recipe : context.recipes) {
-        const auto range = recipe_range(context.chart, *recipe, context.index);
-        if (!range || row < range->first || row >= range->second) {
-            continue;
-        }
-        value *= curve_value(*recipe, recipe_position_for_row(*range, row));
+    for (const auto& recipe : context.recipes) {
+        const auto prepared_value = recipe.value_at(row);
+        if (!prepared_value) continue;
+        value *= *prepared_value;
         if (context.output == sv_recipe_output_t::speeds) {
-            transition_source = recipe;
+            transition_source = &recipe.recipe();
         }
     }
     if (!is_valid_curve_result(value, context.output)) {
@@ -772,24 +874,25 @@ auto compose_recipe_point(const recipe_composition_context_t& context, std::uint
 
 auto compose_recipe_points(const recipe_composition_context_t& context,
                            const std::set<std::uint64_t>& rows,
-                           sv_recipe_compilation_t& result) -> bool {
-    result.points.reserve(rows.size());
+                           sv_recipe_compilation_outcome_t& result) -> bool {
+    result.value.points.reserve(rows.size());
     for (const auto row : rows) {
         auto point = compose_recipe_point(context, row, result.diagnostics);
         if (!point.has_value()) {
-            result.points.clear();
+            result.value.points.clear();
             return false;
         }
-        result.points.push_back(std::move(*point));
+        result.value.points.push_back(std::move(*point));
     }
     return true;
 }
 
 auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t output,
                              const sv_recipe_t* candidate,
-                             std::optional<recipe_id_t> replacing_recipe)
-    -> sv_recipe_compilation_t {
-    sv_recipe_compilation_t result{.output = output};
+                             std::optional<recipe_id_t> replacing_recipe,
+                             const sv_recipe_prepared_t* prepared_candidate = nullptr)
+    -> sv_recipe_compilation_outcome_t {
+    sv_recipe_compilation_outcome_t result{.value = {.output = output}};
     if (static_cast<unsigned int>(output) > static_cast<unsigned int>(sv_recipe_output_t::speeds)) {
         reject(result.diagnostics, diagnostic_code_t::invalid_id,
                "SV compilation requested an unknown output family");
@@ -811,30 +914,12 @@ auto compile_sv_recipes_impl(const chart_document_t& chart, sv_recipe_output_t o
         result.diagnostics = index_result.error();
         return result;
     }
-    const auto& index = *index_result;
     auto samples = collect_recipe_samples(chart, output, candidate, replacing_recipe,
-                                          result.diagnostics);
-    if (!result.diagnostics.empty() || samples.recipes.empty()) {
+                                          result.diagnostics, prepared_candidate);
+    if (!result.diagnostics.empty() || samples.empty()) {
         return result;
     }
-    if (output == sv_recipe_output_t::speeds &&
-        has_overlapping_speed_transition(chart, index, samples)) {
-        reject(result.diagnostics, diagnostic_code_t::invalid_rational,
-               "SV recipe composition over a potentially overlapping authored SPEEDS "
-               "transition is not yet supported");
-        return result;
-    }
-    const auto base_events = base_events_for(chart, output, index);
-    add_authored_event_rows(chart, index, base_events, samples.recipes, samples.rows);
-    const recipe_composition_context_t context{
-        .chart = chart,
-        .output = output,
-        .index = index,
-        .recipes = samples.recipes,
-        .base_events = base_events,
-    };
-    (void)compose_recipe_points(context, samples.rows, result);
-    return result;
+    return sv_recipe_compiled_output_t::from(chart, output, samples);
 }
 
 } // namespace
@@ -848,8 +933,47 @@ auto sv_recipe_compilation_t::into_outcome() && -> sv_recipe_compilation_outcome
 }
 auto sv_recipe_compiled_output_t::from(const chart_document_t& chart, sv_recipe_output_t output)
     -> sv_recipe_compilation_outcome_t {
-    // The pure shared implementation still feeds unchanged staged preview callers.
-    return compile_sv_recipes_impl(chart, output, nullptr, std::nullopt).into_outcome();
+    return compile_sv_recipes_impl(chart, output, nullptr, std::nullopt);
+}
+
+auto sv_recipe_compiled_output_t::from(const chart_document_t& chart, sv_recipe_output_t output,
+    std::span<const sv_recipe_prepared_t> recipes) -> sv_recipe_compilation_outcome_t {
+    sv_recipe_compilation_outcome_t result{.value = {.output = output}};
+    if (static_cast<unsigned int>(output) > static_cast<unsigned int>(sv_recipe_output_t::speeds)) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_id,
+               "SV compilation requested an unknown output family");
+        return result;
+    }
+    const auto built_index = measure_index_t::from(chart);
+    if (!built_index) {
+        result.diagnostics = built_index.error();
+        return result;
+    }
+    const auto& index = *built_index;
+    std::set<std::uint64_t> rows;
+    for (const auto& recipe : recipes) {
+        if (recipe.recipe().output != output || !recipe.recipe().enabled ||
+            !recipe.has_matching_geometry(chart, index)) {
+            reject(result.diagnostics, diagnostic_code_t::invalid_binding,
+                   "Prepared SV recipe does not match the chart geometry or active output family");
+            return result;
+        }
+        for (const auto& point : recipe.samples().points) rows.insert(point.absolute_row);
+    }
+    if (recipes.empty()) return result;
+    if (output == sv_recipe_output_t::speeds &&
+        has_overlapping_speed_transition(chart, index, recipes)) {
+        reject(result.diagnostics, diagnostic_code_t::invalid_rational,
+               "SV recipe composition over a potentially overlapping authored SPEEDS "
+               "transition is not yet supported");
+        return result;
+    }
+    const auto base_events = base_events_for(chart, output, index);
+    add_authored_event_rows(base_events, recipes, rows);
+    const recipe_composition_context_t context{
+        .output = output, .index = index, .recipes = recipes, .base_events = base_events};
+    (void)compose_recipe_points(context, rows, result);
+    return result;
 }
 auto compile_sv_recipes(const chart_document_t& chart, sv_recipe_output_t output) -> sv_recipe_compilation_t {
     return sv_recipe_compilation_t::from(sv_recipe_compiled_output_t::from(chart, output));
@@ -994,13 +1118,16 @@ auto preview_sv_recipe_draft(const document_history_t& history, const proposal_t
     const auto* chart = *target;
 
     const auto candidate = draft.preview_candidate();
-    preview.candidate_points = sample_sv_recipe(*chart, candidate);
+    const auto prepared = sv_recipe_prepared_t::from(*chart, candidate);
+    preview.candidate_points = sv_recipe_sample_result_t::from(
+        {.value = prepared.value.samples(), .diagnostics = prepared.diagnostics});
     if (!preview.candidate_points) {
         preview.diagnostics = preview.candidate_points.diagnostics;
         return preview;
     }
-    preview.effective_output =
-        compile_sv_recipes_impl(*chart, candidate.output, &candidate, draft.existing_recipe);
+    preview.effective_output = sv_recipe_compilation_t::from(
+        compile_sv_recipes_impl(*chart, candidate.output, &candidate, draft.existing_recipe,
+                               &prepared.value));
     preview.diagnostics = preview.effective_output.diagnostics;
     return preview;
 }

@@ -8,7 +8,9 @@
 #include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
+#include <limits>
 #include <type_traits>
 
 using namespace wormedit;
@@ -107,6 +109,33 @@ void revise_draft_range(const document_history_t& history,
     auto revised = draft.value->revise(history, {.diagnostics = std::move(draft.diagnostics)}, hits, snap);
     REQUIRE(revised.value);
     draft = std::move(revised);
+}
+
+void check_recipe_point(const sv_recipe_point_t& point, std::uint64_t row, long double value) {
+    CHECK(point.absolute_row == row);
+    CHECK(point.value == static_cast<double>(value));
+}
+
+void check_sample_endpoint_rows(std::span<const sv_recipe_point_t> points,
+                               std::uint64_t first, std::uint64_t last) {
+    REQUIRE_FALSE(points.empty());
+    CHECK(points.front().absolute_row == first);
+    CHECK(points.back().absolute_row == last);
+}
+
+// Models one evaluation session: its counter survives cycle boundaries, while
+// each new call rebuilds the session from its declared seed.
+auto emit_counter_cycles(std::uint64_t seed, std::size_t& evaluations)
+    -> std::vector<sv_recipe_emission_t> {
+    std::vector<sv_recipe_emission_t> emissions;
+    auto state = seed;
+    for (std::uint64_t cycle = 0; cycle < 2; ++cycle)
+        for (std::uint64_t division = 0; division < 2; ++division) {
+            ++evaluations;
+            emissions.push_back({.absolute_row = (cycle * 2 + division) * 240,
+                                 .value = static_cast<long double>(++state)});
+        }
+    return emissions;
 }
 
 } // namespace
@@ -1013,4 +1042,220 @@ TEST_CASE("SV recipe allocation and duplicate rejection share every declaration 
     CHECK((!duplicate.applied && duplicate.diagnostics.front().code == diagnostic_code_t::duplicate_id &&
            duplicate.diagnostics.front().message == "SV recipe ID is already used by a generator recipe"));
     CHECK(history.undo.size() == 1);
+}
+
+TEST_CASE("SV composition preserves exact off-grid values and authored baseline boundaries",
+          "[unit][sv-recipe][prepared-characterization]") {
+    auto chart = make_recipe_chart();
+    chart.scrolls = {{.id = object_id_t{30}, .position = {measure_id_t{11}, 0},
+                      .multiplier = {2, 1}},
+                     {.id = object_id_t{31}, .position = {measure_id_t{11}, 137},
+                      .multiplier = {3, 2}}};
+    auto rise = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12},
+                                   {1, 3}, {7, 3});
+    auto inner = make_constant_recipe(recipe_id_t{21}, measure_id_t{11}, measure_id_t{12}, {2, 1});
+    inner.range = {{measure_id_t{11}, 240}, {measure_id_t{11}, 720}};
+    chart.sv_recipes = {rise, inner};
+    const auto compiled = compile_sv_recipes(chart, sv_recipe_output_t::sv);
+    REQUIRE(compiled);
+    const std::array<std::uint64_t, 6> expected_rows{0, 137, 240, 480, 720, 960};
+    REQUIRE(compiled.points.size() == expected_rows.size());
+    for (std::size_t i = 0; i < expected_rows.size(); ++i) {
+        const auto row = expected_rows[i];
+        const auto baseline = row < 137 ? 2.0L : 1.5L;
+        const auto value = row >= 960 ? baseline : baseline *
+            (1.0L / 3.0L + (7.0L / 3.0L - 1.0L / 3.0L) * row / 960.0L) *
+            (row >= 240 && row < 720 ? 2.0L : 1.0L);
+        check_recipe_point(compiled.points[i], row, value);
+    }
+}
+
+TEST_CASE("SV adaptive point-cap exhaustion retains samples without a diagnostic",
+          "[unit][sv-recipe][prepared-characterization]") {
+    auto chart = make_recipe_chart();
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12},
+                                      {1, 1}, {4, 1});
+    recipe.curve = sv_recipe_curve_t::exponential;
+    recipe.parameters.shape = {8, 1};
+    recipe.sampling = {.mode = sv_recipe_sampling_mode_t::adaptive,
+        .fixed_point_count = std::nullopt, .tolerance = {1, 1'000'000}, .max_points = 2};
+    const auto sampled = sv_recipe_samples_t::from(chart, recipe);
+    REQUIRE(sampled.diagnostics.empty());
+    CHECK_FALSE(sampled.value.tolerance_met);
+    REQUIRE(sampled.value.points.size() == 2);
+    check_sample_endpoint_rows(sampled.value.points, 0, 960);
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    CHECK(prepared.value.samples() == sampled.value);
+    chart.sv_recipes = {recipe};
+    const auto compiled = compile_sv_recipes(chart, sv_recipe_output_t::sv);
+    REQUIRE(compiled);
+    CHECK(compiled.points.size() == 2);
+}
+
+TEST_CASE("prepared SV builtin samples retain exact off-grid values",
+          "[unit][sv-recipe][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_linear_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12},
+                                     {1, 3}, {7, 3});
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    const auto sampled = sv_recipe_samples_t::from(chart, recipe);
+    REQUIRE(prepared.diagnostics.empty());
+    CHECK(prepared.value.samples() == sampled.value);
+    const auto expected = 1.0L / 3.0L + (7.0L / 3.0L - 1.0L / 3.0L) * (137.0L / 960.0L);
+    CHECK(prepared.value.value_at(137) == expected);
+    CHECK_FALSE(prepared.value.value_at(960));
+}
+
+TEST_CASE("prepared emission queries hold the previous value without advancing a session",
+          "[unit][sv-recipe][prepared]") {
+    const auto i = GENERATE(0, 1, 2, 3);
+    const std::array<std::uint64_t, 4> rows{0, 239, 480, 959};
+    const std::array<long double, 4> expected{11, 11, 13, 14};
+    const auto chart = make_recipe_chart();
+    const auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    std::size_t evaluations{};
+    const auto emissions = emit_counter_cycles(10, evaluations);
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    REQUIRE(prepared.diagnostics.empty());
+    CHECK(prepared.value.value_at(rows[i]) == expected[i]);
+    CHECK_FALSE(prepared.value.value_at(960));
+    CHECK(evaluations == 4);
+}
+
+TEST_CASE("SV composition consumes materialized emissions at authored and overlapping recipe rows",
+          "[unit][sv-recipe][prepared]") {
+    const auto i = GENERATE(0, 1, 2, 3, 4);
+    const std::array<std::uint64_t, 5> rows{137, 300, 420, 480, 540};
+    const std::array<long double, 5> expected{22, 72, 72, 78, 26};
+    auto chart = make_recipe_chart();
+    chart.scrolls = {{.id = object_id_t{30}, .position = {measure_id_t{11}, 137},
+                      .multiplier = {2, 1}}};
+    const auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    auto overlap = make_constant_recipe(recipe_id_t{21}, measure_id_t{11}, measure_id_t{12}, {3, 1});
+    overlap.range = {{measure_id_t{11}, 300}, {measure_id_t{11}, 540}};
+    std::size_t evaluations{};
+    const auto emissions = emit_counter_cycles(10, evaluations);
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    const auto other = sv_recipe_prepared_t::from(chart, overlap);
+    REQUIRE(prepared.diagnostics.empty());
+    REQUIRE(other.diagnostics.empty());
+    const std::array inputs{prepared.value, other.value};
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, sv_recipe_output_t::sv, inputs);
+    REQUIRE(compiled.diagnostics.empty());
+    const auto found = std::ranges::find(compiled.value.points, rows[i], &sv_recipe_point_t::absolute_row);
+    REQUIRE(found != compiled.value.points.end());
+    check_recipe_point(*found, rows[i], expected[i]);
+    CHECK(evaluations == 4);
+}
+
+TEST_CASE("rebuilding prepared emission sessions starts fresh from the seed",
+          "[unit][sv-recipe][prepared]") {
+    const auto chart = make_recipe_chart();
+    const auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    std::size_t first_calls{}, second_calls{};
+    const auto first = sv_recipe_prepared_t::from_emissions(chart, recipe, emit_counter_cycles(10, first_calls));
+    const auto replay = sv_recipe_prepared_t::from_emissions(chart, recipe, emit_counter_cycles(10, second_calls));
+    REQUIRE(first.diagnostics.empty());
+    REQUIRE(replay.diagnostics.empty());
+    CHECK(first.value == replay.value);
+    CHECK(first_calls == 4);
+    CHECK(second_calls == 4);
+}
+
+TEST_CASE("prepared emissions preserve chart-end inspection without evaluating the sentinel",
+          "[unit][sv-recipe][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    recipe.range.end = {measure_id_t{12}, 960};
+    const std::array emissions{sv_recipe_emission_t{0, 3}, sv_recipe_emission_t{960, 5},
+                               sv_recipe_emission_t{1920, 99}};
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    REQUIRE(prepared.diagnostics.empty());
+    check_recipe_point(prepared.value.samples().points.back(), 1919, 5);
+    CHECK_FALSE(prepared.value.value_at(1920));
+}
+
+TEST_CASE("prepared SV emission batches reject invalid coverage ordering values and capacity",
+          "[unit][sv-recipe][prepared]") {
+    const auto scenario = GENERATE(0, 1, 2, 3, 4, 5, 6, 7);
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    std::vector<sv_recipe_emission_t> emissions{{0, 1}, {480, 2}};
+    auto code = diagnostic_code_t::row_out_of_range;
+    switch (scenario) {
+    case 0: emissions.clear(); code = diagnostic_code_t::invalid_resolution; break;
+    case 1: emissions.back().absolute_row = 0; break;
+    case 2: emissions.front().absolute_row = 240; break;
+    case 3: emissions.back().absolute_row = 961; break;
+    case 4: emissions.back().value = std::numeric_limits<long double>::infinity();
+            code = diagnostic_code_t::invalid_rational; break;
+    case 5: emissions.resize(maximum_sv_recipe_sample_points + 1);
+            code = diagnostic_code_t::invalid_resolution; break;
+    case 6: recipe.output = sv_recipe_output_t::speeds;
+            recipe.transition_duration = rational_t{}; recipe.transition_is_seconds = false;
+            emissions.back().value = -1; code = diagnostic_code_t::invalid_rational; break;
+    case 7: std::ranges::reverse(emissions); break;
+    }
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    REQUIRE_FALSE(prepared.diagnostics.empty());
+    CHECK(prepared.diagnostics.front().code == code);
+    CHECK_FALSE(prepared.value.value_at(0));
+}
+
+TEST_CASE("prepared SV composition rejects a different geometry or output family",
+          "[unit][sv-recipe][prepared]") {
+    const auto scenario = GENERATE(0, 1, 2);
+    auto chart = make_recipe_chart();
+    const auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    const auto prepared = sv_recipe_prepared_t::from(chart, recipe);
+    REQUIRE(prepared.diagnostics.empty());
+    if (scenario == 0) chart.id = chart_id_t{99};
+    if (scenario == 1) chart.measures.front().definition = {{3, 2}, meter_t{6, 4}};
+    const auto output = scenario == 2 ? sv_recipe_output_t::scrolls : sv_recipe_output_t::sv;
+    const auto compiled = sv_recipe_compiled_output_t::from(chart, output, std::span{&prepared.value, 1});
+    REQUIRE_FALSE(compiled.diagnostics.empty());
+    CHECK(compiled.diagnostics.front().code == diagnostic_code_t::invalid_binding);
+    CHECK(compiled.value.points.empty());
+}
+
+TEST_CASE("prepared emissions accept evaluated script data while raw Lua sampling remains unsupported",
+          "[unit][sv-recipe][prepared]") {
+    const auto chart = make_recipe_chart();
+    auto recipe = make_constant_recipe(recipe_id_t{20}, measure_id_t{11}, measure_id_t{12}, {1, 1});
+    recipe.curve = sv_recipe_curve_t::lua_expression;
+    recipe.expression_source = "return function(p) return p end";
+    const auto raw = sv_recipe_samples_t::from(chart, recipe);
+    REQUIRE_FALSE(raw.diagnostics.empty());
+    CHECK(raw.diagnostics.front().code == diagnostic_code_t::unsupported_feature);
+    const std::array emissions{sv_recipe_emission_t{0, 7}, sv_recipe_emission_t{480, 9}};
+    const auto prepared = sv_recipe_prepared_t::from_emissions(chart, recipe, emissions);
+    REQUIRE(prepared.diagnostics.empty());
+    CHECK(prepared.value.value_at(137) == 7.0L);
+    CHECK(prepared.value.value_at(700) == 9.0L);
+}
+
+TEST_CASE("SV draft preview and export agree at authored rows between samples",
+          "[unit][sv-recipe][prepared][export]") {
+    const auto i = GENERATE(0, 1, 2, 3);
+    const std::array<std::uint64_t, 4> rows{0, 137, 480, 960};
+    const std::array<long double, 4> expected{1, 276, 962, 2};
+    auto song = make_recipe_song();
+    song.charts.front().scrolls = {{.id = object_id_t{30},
+        .position = {measure_id_t{11}, 137}, .multiplier = {2, 1}}};
+    auto history = document_history_t::from(std::move(song));
+    const auto candidate = make_linear_recipe({}, measure_id_t{11}, measure_id_t{12}, {1, 1}, {961, 1});
+    auto draft = checked_draft(sv_recipe_draft_t::propose(history, chart_id_t{10}, candidate));
+    const auto preview = preview_sv_recipe_draft(history, *draft.value);
+    REQUIRE(preview);
+    REQUIRE(apply_proposal(history, *draft.value));
+    const auto baked = bake_sv_recipes_for_export(history.document.charts.front());
+    require_export_bake(baked);
+    const auto point = std::ranges::find(preview.effective_output.points, rows[i],
+                                         &sv_recipe_point_t::absolute_row);
+    REQUIRE(point != preview.effective_output.points.end());
+    const auto event = std::ranges::find(baked.value->scrolls, point->position,
+                                         &scroll_event_t::position);
+    REQUIRE(event != baked.value->scrolls.end());
+    check_recipe_point(*point, rows[i], expected[i]);
+    CHECK((event->multiplier == signed_rational_t{static_cast<std::int64_t>(expected[i]), 1}));
 }

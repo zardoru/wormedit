@@ -270,6 +270,15 @@ struct document_command_options_t {
 
 // Domain operations share execution state; chart identity, limits and completion belong
 // to the transaction. The operation itself supplies validation, mutation and effect.
+// A staged document edit describes publication; it never publishes by itself.
+enum class command_noop_policy_t { reject, accept_without_diagnostics };
+
+struct document_edit_effect_t {
+    bool changed{};
+    std::string command_label;
+    auto operator==(const document_edit_effect_t&) const -> bool = default;
+};
+
 template <class Limits> struct chart_edit_context_t {
     document_command_result_t& result;
     const Limits& limits;
@@ -319,71 +328,126 @@ class document_command_transaction_t {
         -> document_command_result_t;
     [[nodiscard]] static auto rejection(std::uint64_t revision, diagnostic_list_t diagnostics)
         -> document_command_result_t;
-    // Operations declare chart/cap policy and overload operator()(chart, edit).
-    // This visitor is the single chart lookup, cap check and execution boundary.
+    // Run a chart edit in this transaction. Nested edits share its one lazy copy.
+    // Rejection poisons publication but retains storage until callbacks unwind.
+    template <class Edit>
+    [[nodiscard]] auto stage(Edit edit) -> std::invoke_result_t<Edit&, song_document_t&> {
+        using result_type = std::invoke_result_t<Edit&, song_document_t&>;
+        if (!is_ready())
+            return result_type{.diagnostics = outcome_.diagnostics};
+        auto staged = edit(document());
+        if (!staged.value || !staged.ok()) {
+            if (!finished_)
+                outcome_.diagnostics.insert(outcome_.diagnostics.end(), staged.diagnostics.begin(),
+                                            staged.diagnostics.end());
+            finished_ = true;
+        }
+        if (!is_ready())
+            return result_type{.diagnostics = outcome_.diagnostics};
+        return staged;
+    }
+
+    template <class Edit>
+    [[nodiscard]] auto stage(chart_id_t id, std::string_view unknown_chart_message, Edit edit,
+                             bool requires_unique_chart = false)
+        -> std::invoke_result_t<Edit&, chart_document_t&, song_document_t&> {
+        using result_type = std::invoke_result_t<Edit&, chart_document_t&, song_document_t&>;
+        return stage([&](song_document_t& proposed) -> result_type {
+            auto* target = proposed.find_chart(id);
+            if (!id || !target ||
+                (requires_unique_chart &&
+                 std::ranges::count(proposed.charts, id, &chart_document_t::id) != 1)) {
+                return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                              std::string(unknown_chart_message))}};
+            }
+            return edit(*target, proposed);
+        });
+    }
+
+    // Native typed edits use the same chart-resolution/staging boundary as composite edits.
     template <class Operation, class Limits> struct edit_execution_t {
         document_command_transaction_t& transaction;
         const Limits& limits;
 
-        template <class Edit> auto operator()(const Edit& edit) const -> document_command_result_t {
-            auto& proposed = transaction.document();
-            auto* chart = proposed.find_chart(edit.chart);
-            bool invalid_chart = !edit.chart || chart == nullptr;
-            if constexpr (requires { Operation::requires_unique_chart; }) {
-                invalid_chart = invalid_chart || std::ranges::count(proposed.charts, edit.chart,
-                                                                    &chart_document_t::id) != 1;
-            }
-            if (invalid_chart) {
-                wormedit::reject(transaction.outcome_, diagnostic_code_t::invalid_id,
-                                 std::string(Operation::unknown_chart_message));
-                return transaction.finish_without_commit();
-            }
-            Operation operation{{transaction.outcome_, limits}};
-            for (const auto& cap : operation.event_caps(*chart, edit)) {
-                if (cap.count > cap.maximum) {
-                    wormedit::reject(transaction.outcome_, diagnostic_code_t::invalid_resolution,
-                                     std::string(cap.message));
-                    return transaction.finish_without_commit();
-                }
-            }
-            if constexpr (requires { operation.prepare(*chart); }) {
-                if (!operation.prepare(*chart))
-                    return transaction.finish_without_commit();
-            }
-            if constexpr (std::is_void_v<decltype(operation(*chart, edit))>) {
-                operation(*chart, edit);
-                return transaction.finish_execution(operation, operation, *chart);
-            } else {
-                auto effect = operation(*chart, edit);
-                return transaction.finish_execution(operation, std::move(effect), *chart);
-            }
+        template <class Edit>
+        auto operator()(const Edit& edit) const -> attempt_t<document_edit_effect_t> {
+            constexpr bool unique = [] {
+                if constexpr (requires { Operation::requires_unique_chart; })
+                    return Operation::requires_unique_chart;
+                return false;
+            }();
+            return transaction.stage(
+                edit.chart, Operation::unknown_chart_message,
+                [&](chart_document_t& chart,
+                    song_document_t& document) -> attempt_t<document_edit_effect_t> {
+                    Operation operation{{transaction.outcome_, limits}};
+                    for (const auto& cap : operation.event_caps(chart, edit)) {
+                        if (cap.count > cap.maximum) {
+                            wormedit::reject(transaction.outcome_,
+                                             diagnostic_code_t::invalid_resolution,
+                                             std::string(cap.message));
+                            return {};
+                        }
+                    }
+                    if constexpr (requires { operation.prepare(chart); }) {
+                        if (!operation.prepare(chart))
+                            return {};
+                    }
+                    if constexpr (std::is_void_v<decltype(operation(chart, edit))>) {
+                        operation(chart, edit);
+                        return transaction.stage_effect(operation, operation, chart, document);
+                    } else {
+                        auto effect = operation(chart, edit);
+                        return transaction.stage_effect(operation, std::move(effect), chart,
+                                                        document);
+                    }
+                },
+                unique);
         }
     };
 
     template <class Operation, class Action, class Limits>
-    [[nodiscard]] auto execute(const Action& action, const Limits& limits)
-        -> document_command_result_t {
+    [[nodiscard]] auto stage(const Action& action, const Limits& limits)
+        -> attempt_t<document_edit_effect_t> {
         if (!is_ready())
-            return commit({});
+            return {.diagnostics = outcome_.diagnostics};
         if (!Operation::has_valid_limits(limits)) {
             wormedit::reject(outcome_, diagnostic_code_t::invalid_resolution,
                              std::string(Operation::invalid_limits_message));
-            return finish_without_commit();
+            finished_ = true;
+            return {.diagnostics = outcome_.diagnostics};
         }
         return std::visit(edit_execution_t<Operation, Limits>{*this, limits}, action);
     }
 
-    template <class Operation, class Effect>
-    [[nodiscard]] auto finish_execution(Operation& operation, Effect&& effect,
-                                        chart_document_t& chart) -> document_command_result_t {
-        if (!outcome_.diagnostics.empty() || !effect.changed)
-            return finish_without_commit();
-        if constexpr (requires { operation.postvalidate(chart, document()); }) {
-            if (!operation.postvalidate(chart, document()))
-                return finish_without_commit();
-        }
-        return commit(std::move(effect.command_label));
+    template <class Operation, class Action, class Limits>
+    [[nodiscard]] auto execute(const Action& action, const Limits& limits)
+        -> document_command_result_t {
+        return finish_execution(stage<Operation>(action, limits));
     }
+
+  private:
+    template <class Operation, class Effect>
+    [[nodiscard]] auto stage_effect(Operation& operation, Effect&& effect, chart_document_t& chart,
+                                    song_document_t& document)
+        -> attempt_t<document_edit_effect_t> {
+        if (!outcome_.diagnostics.empty())
+            return {};
+        if (!effect.changed)
+            return {.value = document_edit_effect_t{}};
+        if constexpr (requires { operation.postvalidate(chart, document); }) {
+            if (!operation.postvalidate(chart, document))
+                return {};
+        }
+        return {.value = document_edit_effect_t{.changed = effect.changed,
+                                                .command_label = std::move(effect.command_label)}};
+    }
+
+  public:
+    [[nodiscard]] auto
+    finish_execution(attempt_t<document_edit_effect_t> staged,
+                     command_noop_policy_t noop_policy = command_noop_policy_t::reject)
+        -> document_command_result_t;
 
     [[nodiscard]] auto commit(std::string label, document_command_options_t options = {})
         -> document_command_result_t;

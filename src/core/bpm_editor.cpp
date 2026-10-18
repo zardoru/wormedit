@@ -45,11 +45,6 @@ constexpr target_query_policy_t bpm_target_policy{
                  "BPM event ID is ambiguous because it appears more than once"},
     .scope = target_uniqueness_scope_t::chart_objects};
 
-struct bpm_edit_effect_t {
-    bool changed{};
-    std::string command_label;
-    auto operator==(const bpm_edit_effect_t&) const -> bool = default;
-};
 
 struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     static constexpr std::string_view invalid_limits_message = "BPM event cap must be positive";
@@ -63,7 +58,7 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
     }
 
     auto operator()(chart_document_t& chart, const insert_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_effect_t {
+        -> document_edit_effect_t {
         if (chart.bpms.size() >= limits.maximum_bpm_events) {
             reject(result, diagnostic_code_t::invalid_resolution,
                    "BPM insertion would exceed the configured event cap");
@@ -92,11 +87,11 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
             .beats_per_minute = edit.value.settings.beats_per_minute,
             .provenance = {.source_order = *source_order},
         });
-        return bpm_edit_effect_t{.changed = true, .command_label = "Insert BPM event"};
+        return document_edit_effect_t{.changed = true, .command_label = "Insert BPM event"};
     }
 
     auto operator()(chart_document_t& chart, const update_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_effect_t {
+        -> document_edit_effect_t {
         if (!edit.id) {
             reject(result, diagnostic_code_t::invalid_id,
                    "BPM update uses the reserved zero event ID");
@@ -110,15 +105,15 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
         }
         if (event->position == edit.value.position &&
             event->beats_per_minute == edit.value.settings.beats_per_minute) {
-            return bpm_edit_effect_t{};
+            return document_edit_effect_t{};
         }
         event->position = edit.value.position;
         event->beats_per_minute = edit.value.settings.beats_per_minute;
-        return bpm_edit_effect_t{.changed = true, .command_label = "Update BPM event"};
+        return document_edit_effect_t{.changed = true, .command_label = "Update BPM event"};
     }
 
     auto operator()(chart_document_t& chart, const delete_edit_t<bpm_edit_value_t>& edit) const
-        -> bpm_edit_effect_t {
+        -> document_edit_effect_t {
         if (!edit.id) {
             reject(result, diagnostic_code_t::invalid_id,
                    "BPM deletion uses the reserved zero event ID");
@@ -133,7 +128,7 @@ struct bpm_operation_visitor_t : chart_edit_context_t<bpm_edit_limits_t> {
         std::erase_if(chart.bms_bpm_projections,
                       [id](const auto& projection) { return projection.event == id; });
         std::erase_if(chart.bpms, [id](const auto& item) { return item.id == id; });
-        return bpm_edit_effect_t{.changed = true, .command_label = "Delete BPM event"};
+        return document_edit_effect_t{.changed = true, .command_label = "Delete BPM event"};
     }
 
     auto postvalidate(chart_document_t&, song_document_t& proposed) -> bool {
@@ -222,10 +217,14 @@ auto apply_bpm_edit(document_history_t& history,
     return document_command_transaction_t(history).execute<bpm_operation_visitor_t>(action, limits);
 }
 
-// Temporary: removed by T-637; native_chart_edit_action.h still dispatches into existing transactions.
-auto apply_bpm_edit(document_command_transaction_t& transaction,
-                    const bpm_edit_action_t& action, bpm_edit_limits_t limits)
-    -> document_command_result_t {
+auto stage_bpm_edit(document_command_transaction_t& transaction, const bpm_edit_action_t& action,
+                    bpm_edit_limits_t limits) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage<bpm_operation_visitor_t>(action, limits);
+}
+
+// Native commands retain their immediate-publication boundary; compositions use staging.
+auto apply_bpm_edit(document_command_transaction_t& transaction, const bpm_edit_action_t& action,
+                    bpm_edit_limits_t limits) -> document_command_result_t {
     return transaction.execute<bpm_operation_visitor_t>(action, limits);
 }
 

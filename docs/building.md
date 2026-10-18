@@ -92,13 +92,34 @@ Windows target (`cmake/dependencies/zlib.cmake`), and the FFmpeg video decoder i
 Windows-target FFmpeg. Pass `-DWORMEDIT_WINDOWS_CONSOLE=ON` to keep a console attached for debugging.
 
 ```sh
-scripts/windows-cross-package.sh [output-dir]        # configure, build, strip, zip (default build/dist)
 scripts/windows-install.sh <dir> [--run]             # install into a folder, optionally launch under Wine
 ```
 
-Both scripts source `scripts/env-mingw.sh`, which finds `x86_64-w64-mingw32-*` on `PATH` (override with
-`MINGW_PREFIX`). The package contains `wormedit.exe`, `SDL3.dll`, `assets/`, `LICENSE` and `README.md`; assets
-are looked up next to the executable. The libstdc++/winpthread runtimes are linked statically.
+The scripts source `scripts/env-mingw.sh`, which finds `x86_64-w64-mingw32-*` on `PATH` (override with
+`MINGW_PREFIX`). The libstdc++/winpthread runtimes are linked statically.
+
+For distribution, build the pinned Windows FFmpeg SDK and package the
+`windows-cross-release` preset, which requires video playback and audio metadata support:
+
+```sh
+scripts/windows-ffmpeg.sh                            # isolated SDK in build/windows-ffmpeg/prefix
+scripts/windows-cross-package.sh [output-dir]        # build, install, strip, zip (default build/dist)
+```
+
+The SDK script needs curl, tar, make, pkg-config and MinGW-w64. It verifies the source
+archive's pinned SHA-256 and builds LGPL shared libraries without external codecs,
+network protocols, encoders or command-line programs. Set `WORMEDIT_BUILD_JOBS` to
+override the shared-machine default of at most eight jobs. To use another SDK built
+with the same source/license layout, set `WORMEDIT_FFMPEG_ROOT` to its prefix.
+Only that SDK's pkg-config directory is searched, preventing host FFmpeg discovery.
+
+The ZIP contains `wormedit.exe`, SDL3 and FFmpeg DLLs, `assets/`, licenses, a launch
+note, build revision and local tracked changes. An uncommitted build is marked
+`preview` in the filename. FFmpeg's corresponding source archive, license and build
+configuration are included under `third-party/ffmpeg`; keep these when redistributing.
+Installation resolves DLL imports recursively and fails for missing third-party
+dependencies. Extract the entire ZIP before launching; assets and DLLs belong next
+to the executable. A SHA-256 sidecar is written beside the ZIP.
 
 ## Frontend event harness
 

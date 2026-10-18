@@ -6,7 +6,6 @@
 namespace wormedit {
 
 struct clear_editor_selection_t {};
-enum class editor_command_noop_policy_t { reject, accept_without_diagnostics };
 enum class editor_edit_view_policy_t { build, omit };
 
 struct editor_edit_effect_t {
@@ -20,7 +19,7 @@ struct editor_edit_effect_t {
     std::optional<editor_object_audition_request_t> audition;
     bool consume_primary_hold{};
     bool retain_commit_diagnostics{};
-    editor_command_noop_policy_t noop_policy{editor_command_noop_policy_t::reject};
+    command_noop_policy_t noop_policy{command_noop_policy_t::reject};
     editor_edit_view_policy_t view_policy{editor_edit_view_policy_t::build};
 
     void apply_capture(editor_interaction_state_t& state, std::uint64_t revision,
@@ -119,7 +118,7 @@ template <class Command, class SelectionEffect = preserve_editor_selection_t>
     auto committed = effect.has_document_changes
                          ? command()
                          : document_command_result_t{.revision = before_revision};
-    if (effect.noop_policy == editor_command_noop_policy_t::accept_without_diagnostics &&
+    if (effect.noop_policy == command_noop_policy_t::accept_without_diagnostics &&
         !committed.applied && committed.diagnostics.empty())
         effect.has_document_changes = false;
     return finish_editor_edit(context.history, context.state, before_revision, std::move(committed),
@@ -147,16 +146,17 @@ template <class Stage>
     return {.value = std::move(prepared), .diagnostics = std::move(staged.diagnostics)};
 }
 
-template <class Stage>
-[[nodiscard]] auto run_editor_edit(editor_edit_context_t& context, Stage stage)
-    -> editor_interaction_result_t {
+template <class Stage, class SelectionEffect = preserve_editor_selection_t>
+[[nodiscard]] auto run_editor_edit(editor_edit_context_t& context, Stage stage,
+                                   SelectionEffect select = {}) -> editor_interaction_result_t {
     auto prepared = prepare_editor_edit(context, std::move(stage));
     if (!prepared.value || !prepared.ok())
         return {.diagnostics = std::move(prepared.diagnostics)};
     auto transaction = document_command_transaction_t(context.history);
     if (prepared.value->document)
         transaction.adopt_document(std::move(*prepared.value->document));
-    return commit_editor_edit(context, transaction, std::move(prepared.value->effect));
+    return commit_editor_edit(context, transaction, std::move(prepared.value->effect),
+                              std::move(select));
 }
 
 } // namespace wormedit

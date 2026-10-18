@@ -19,6 +19,10 @@
 namespace wormedit {
 namespace {
 
+constexpr auto bmson_assignment_target_message =
+    "BMSON sound assignment requires a linked event and valid target";
+constexpr auto bmson_deletion_target_message =
+    "BMSON marker deletion requires a known chart and BGM event";
 
 struct bmson_restart_target_t {
     std::size_t chart_offset;
@@ -547,71 +551,69 @@ auto insert_bmson_sound_markers(document_history_t& history,
 }
 
 auto stage_delete_bmson_bgm_marker(document_command_transaction_t& transaction, chart_id_t chart,
-                                   object_id_t bgm_event) -> diagnosed_t<std::string> {
-    const auto found_chart = transaction.current_document().find_chart(chart);
-    if (!chart || found_chart == nullptr ||
-        found_chart->source_family != format_family_t::bmson || !bgm_event) {
-        return {
-            .diagnostics = {error(diagnostic_code_t::invalid_id,
-                                  "BMSON marker deletion requires a known chart and BGM event")}};
-    }
-    const auto* semantic = found_chart->find_bgm_event(bgm_event);
-    if (!semantic || !semantic->sound_channel_event) {
-        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                      "BGM marker has no retained BMSON sound-channel event")}};
-    }
-    const auto channel = std::ranges::find_if(found_chart->sound_channels,
-        [&](const auto& candidate) {
-            return std::ranges::any_of(candidate.events, [&](const auto& event) {
-                return event.id == *semantic->sound_channel_event;
-            });
+                                   object_id_t bgm_event) -> attempt_t<document_edit_effect_t> {
+    return transaction.stage(
+        chart, bmson_deletion_target_message,
+        [&](chart_document_t& changed_chart,
+            song_document_t& proposed) -> attempt_t<document_edit_effect_t> {
+            if (changed_chart.source_family != format_family_t::bmson || !bgm_event) {
+                return {.diagnostics = {
+                            error(diagnostic_code_t::invalid_id, bmson_deletion_target_message)}};
+            }
+            const auto* semantic = changed_chart.find_bgm_event(bgm_event);
+            if (!semantic || !semantic->sound_channel_event) {
+                return {
+                    .diagnostics = {error(diagnostic_code_t::invalid_id,
+                                          "BGM marker has no retained BMSON sound-channel event")}};
+            }
+            const auto channel =
+                std::ranges::find_if(changed_chart.sound_channels, [&](const auto& candidate) {
+                    return std::ranges::any_of(candidate.events, [&](const auto& event) {
+                        return event.id == *semantic->sound_channel_event;
+                    });
+                });
+            if (channel == changed_chart.sound_channels.end()) {
+                return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                              "BGM marker source event is unavailable")}};
+            }
+            const auto source = std::ranges::find(channel->events, *semantic->sound_channel_event,
+                                                  &sound_channel_event_t::id);
+            if (source == channel->events.end() || source->playable ||
+                source->position != semantic->position) {
+                return {.diagnostics = {error(diagnostic_code_t::invalid_id,
+                                              "BGM marker and retained source event disagree")}};
+            }
+            const auto channel_offset =
+                static_cast<std::size_t>(channel - changed_chart.sound_channels.begin());
+            std::erase_if(changed_chart.sound_channels[channel_offset].events,
+                          [id = *semantic->sound_channel_event](const auto& event) {
+                              return event.id == id;
+                          });
+            for (auto& measure : changed_chart.measures) {
+                std::erase_if(measure.bgm_events,
+                              [bgm_event](const auto& event) { return event.id == bgm_event; });
+            }
+            const auto asset = proposed.find_audio_asset(
+                changed_chart.sound_channels[channel_offset].source_clip.source);
+            if (asset != nullptr && asset->stream.sample_rate != 0) {
+                const auto slices = derive_sound_channel_slices(
+                    changed_chart, changed_chart.sound_channels[channel_offset],
+                    asset->stream.sample_rate, asset->stream.frame_count);
+                if (!slices) {
+                    return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
+                                                  slices.diagnostics.front().message)}};
+                }
+            }
+            return {.value = document_edit_effect_t{.changed = true,
+                                                    .command_label = "Delete BMSON BGM marker"}};
         });
-    if (channel == found_chart->sound_channels.end()) {
-        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                      "BGM marker source event is unavailable")}};
-    }
-    const auto source = std::ranges::find(channel->events, *semantic->sound_channel_event,
-                                           &sound_channel_event_t::id);
-    if (source == channel->events.end() || source->playable ||
-        source->position != semantic->position) {
-        return {.diagnostics = {error(diagnostic_code_t::invalid_id,
-                                      "BGM marker and retained source event disagree")}};
-    }
-    const auto chart_offset =
-        static_cast<std::size_t>(found_chart - transaction.current_document().charts.data());
-    auto& proposed = transaction.document();
-    auto& changed_chart = proposed.charts[chart_offset];
-    const auto channel_offset = static_cast<std::size_t>(channel - found_chart->sound_channels.begin());
-    std::erase_if(changed_chart.sound_channels[channel_offset].events,
-                  [id = *semantic->sound_channel_event](const auto& event) {
-                      return event.id == id;
-                  });
-    for (auto& measure : changed_chart.measures) {
-        std::erase_if(measure.bgm_events, [bgm_event](const auto& event) {
-            return event.id == bgm_event;
-        });
-    }
-    const auto asset = proposed.find_audio_asset(changed_chart.sound_channels[channel_offset].source_clip.source);
-    if (asset != nullptr && asset->stream.sample_rate != 0) {
-        const auto slices = derive_sound_channel_slices(
-            changed_chart, changed_chart.sound_channels[channel_offset],
-            asset->stream.sample_rate, asset->stream.frame_count);
-        if (!slices) {
-            return {.diagnostics = {error(diagnostic_code_t::invalid_resolution,
-                                          slices.diagnostics.front().message)}};
-        }
-    }
-    return {.value = "Delete BMSON BGM marker"};
 }
 
 auto delete_bmson_bgm_marker(document_history_t& history, chart_id_t chart, object_id_t bgm_event)
     -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
-    auto staged = stage_delete_bmson_bgm_marker(transaction, chart, bgm_event);
-    if (!staged.ok())
-        return document_command_transaction_t::rejection(history.document.revision,
-                                                         std::move(staged.diagnostics));
-    return transaction.commit(std::move(staged.value));
+    return transaction.finish_execution(
+        stage_delete_bmson_bgm_marker(transaction, chart, bgm_event));
 }
 
 namespace {
@@ -816,77 +818,96 @@ auto update_semantic_assignment(chart_document_t& chart, measure_chunk_t& measur
 
 } // namespace
 
-auto assign_bmson_sound_event(document_history_t& history,
-                              chart_id_t chart, object_id_t semantic_event,
-                              std::optional<lane_id_t> playable_lane) -> document_command_result_t {
-    const auto revision = history.document.revision;
-    const auto found_chart =
-        history.document.find_chart(chart);
-    if (!chart || found_chart == nullptr ||
-        found_chart->source_family != format_family_t::bmson || !semantic_event ||
+namespace {
+auto stage_bmson_sound_assignment(chart_document_t& changed_chart, song_document_t& proposed,
+                                  object_id_t semantic_event,
+                                  std::optional<lane_id_t> playable_lane)
+    -> attempt_t<document_edit_effect_t> {
+    const auto revision = proposed.revision;
+    if (changed_chart.source_family != format_family_t::bmson || !semantic_event ||
         (playable_lane && !*playable_lane))
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
-                        "BMSON sound assignment requires a linked event and valid target");
-    const auto built = measure_index_t::from(*found_chart);
+        return {
+            .diagnostics = {error(diagnostic_code_t::invalid_id, bmson_assignment_target_message)}};
+    const auto built = measure_index_t::from(changed_chart);
     if (!built)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_measure,
-                        "BMSON sound assignment requires valid measure geometry");
+        return {.diagnostics = {error(diagnostic_code_t::invalid_measure,
+                                      "BMSON sound assignment requires valid measure geometry")}};
     const auto& index = *built;
-    const auto refs = find_semantic_event(*found_chart, semantic_event);
+    const auto refs = find_semantic_event(changed_chart, semantic_event);
     if (!is_valid_semantic_event(refs))
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
-                        "BMSON sound assignment requires one supported linked event");
+        return {
+            .diagnostics = {error(diagnostic_code_t::invalid_id,
+                                  "BMSON sound assignment requires one supported linked event")}};
     const auto semantic_position = refs.note ? refs.note->position : refs.bgm->position;
     const auto semantic_end = refs.note ? refs.note->end : refs.bgm->end;
     if (semantic_end) {
         const auto begin = index.row_of(semantic_position);
         const auto finish = index.row_of(*semantic_end);
         if (!begin || !finish || *finish <= *begin)
-            return document_command_transaction_t::rejection(revision, diagnostic_code_t::row_out_of_range,
-                            "BMSON linked hold requires a positive in-chart span");
+            return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                          "BMSON linked hold requires a positive in-chart span")}};
     }
     if ((refs.note && playable_lane && refs.note->lane == *playable_lane) ||
         (refs.bgm && !playable_lane))
-        return {.revision = revision, .diagnostics = {}};
-    if (auto failure = target_assignment_lane(*found_chart, index, refs, playable_lane, revision))
-        return *failure;
+        return {.value = document_edit_effect_t{}};
+    if (auto failure = target_assignment_lane(changed_chart, index, refs, playable_lane, revision))
+        return {.diagnostics = failure->diagnostics};
     const auto position = refs.note ? refs.note->position : refs.bgm->position;
     const auto target_row = index.row_of(position);
     if (!target_row)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::row_out_of_range,
-                        "BMSON sound assignment target is outside chart geometry");
-    const auto source_id = refs.note ? *refs.note->sound_channel_event
-                                     : *refs.bgm->sound_channel_event;
-    const auto source_result = find_linked_sound_source(*found_chart, source_id, position,
-                                                        refs, revision);
+        return {.diagnostics = {error(diagnostic_code_t::row_out_of_range,
+                                      "BMSON sound assignment target is outside chart geometry")}};
+    const auto source_id =
+        refs.note ? *refs.note->sound_channel_event : *refs.bgm->sound_channel_event;
+    const auto source_result =
+        find_linked_sound_source(changed_chart, source_id, position, refs, revision);
     if (const auto* failure = std::get_if<document_command_result_t>(&source_result))
-        return *failure;
+        return {.diagnostics = failure->diagnostics};
     const auto source = std::get<linked_sound_source_t>(source_result);
-    auto transaction = document_command_transaction_t(history);
-    auto& proposed = transaction.document();
-    const auto chart_offset =
-        static_cast<std::size_t>(found_chart - history.document.charts.data());
-    auto& changed_chart = proposed.charts[chart_offset];
     const auto channel_offset =
-        static_cast<std::size_t>(source.channel - found_chart->sound_channels.data());
-    const auto source_offset = static_cast<std::size_t>(source.event - source.channel->events.data());
+        static_cast<std::size_t>(source.channel - changed_chart.sound_channels.data());
+    const auto source_offset =
+        static_cast<std::size_t>(source.event - source.channel->events.data());
     auto& changed_source = changed_chart.sound_channels[channel_offset].events[source_offset];
     changed_source.playable = playable_lane.has_value();
     changed_source.lane = playable_lane.value_or(lane_id_t{});
     const auto destination =
         changed_chart.find_measure(position.measure);
     if (destination == nullptr)
-        return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_measure,
-                        "BMSON sound assignment measure is unavailable");
+        return {.diagnostics = {error(diagnostic_code_t::invalid_measure,
+                                      "BMSON sound assignment measure is unavailable")}};
     auto& changed_measure = *destination;
-    if (auto failure = update_semantic_assignment(
-            changed_chart, changed_measure, refs, semantic_event, source_id, playable_lane,
-            channel_offset, source.channel->name, revision)) return *failure;
+    if (auto failure = update_semantic_assignment(changed_chart, changed_measure, refs,
+                                                  semantic_event, source_id, playable_lane,
+                                                  channel_offset, source.channel->name, revision))
+        return {.diagnostics = failure->diagnostics};
     if (auto failure = validate_channel_slices(
             proposed, changed_chart, changed_chart.sound_channels[channel_offset], revision))
-        return *failure;
-    return transaction.commit(playable_lane ? "Assign BMSON sound to playable lane"
-                                                 : "Assign BMSON sound to BGM");
+        return {.diagnostics = failure->diagnostics};
+    return {.value = document_edit_effect_t{
+                .changed = true,
+                .command_label = playable_lane ? "Assign BMSON sound to playable lane"
+                                               : "Assign BMSON sound to BGM"}};
+}
+} // namespace
+
+auto stage_assign_bmson_sound_event(document_command_transaction_t& transaction, chart_id_t chart,
+                                    object_id_t semantic_event,
+                                    std::optional<lane_id_t> playable_lane)
+    -> attempt_t<document_edit_effect_t> {
+    return transaction.stage(chart, bmson_assignment_target_message,
+                             [&](chart_document_t& target, song_document_t& document) {
+                                 return stage_bmson_sound_assignment(target, document,
+                                                                     semantic_event, playable_lane);
+                             });
+}
+
+auto assign_bmson_sound_event(document_history_t& history, chart_id_t chart,
+                              object_id_t semantic_event, std::optional<lane_id_t> playable_lane)
+    -> document_command_result_t {
+    auto transaction = document_command_transaction_t(history);
+    return transaction.finish_execution(
+        stage_assign_bmson_sound_event(transaction, chart, semantic_event, playable_lane));
 }
 
 namespace {

@@ -131,9 +131,13 @@ using beat_interval_drag_outcome_t = proposal_outcome_t<beat_interval_drag_t>;
 
 [[nodiscard]] auto quantize_bpm(signed_rational_t bpm, signed_rational_t step)
     -> std::optional<signed_rational_t>;
-// Temporary: removed by T-637; the Sys native edit dispatcher still supplies existing transactions.
+// Staging composes into an existing transaction; apply publishes immediately.
+[[nodiscard]] auto stage_bpm_edit(document_command_transaction_t& transaction,
+                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+    -> attempt_t<document_edit_effect_t>;
+
 [[nodiscard]] auto apply_bpm_edit(document_command_transaction_t& transaction,
-    const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
+                                  const bpm_edit_action_t& action, bpm_edit_limits_t limits = {})
     -> document_command_result_t;
 
 } // namespace wormedit

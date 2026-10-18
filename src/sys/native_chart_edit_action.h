@@ -25,7 +25,8 @@ template <class NativeAction, class Owner> struct native_chart_edit_context_t {
     const compose_action_description_t& description;
 
     template <class Edit>
-    auto validate(const Edit& edit) const -> std::optional<compose_action_outcome_t> {
+    auto validate([[maybe_unused]] const Edit& edit) const
+        -> std::optional<compose_action_outcome_t> {
         assert(std::get_if<Edit>(&original) == &edit);
         if constexpr (std::same_as<Owner, document_command_transaction_t>) {
             // Preserve the native owner's terminal failure policy without staging

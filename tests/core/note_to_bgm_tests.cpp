@@ -1067,3 +1067,38 @@ TEST_CASE("Core Move to BGM rejects missing notes and active gestures atomically
     check_move(history.undo.empty() && state.selected_notes == selection);
     check_move(write_native_project(history.document).value == before);
 }
+
+TEST_CASE("Restoring multiple BGM events consumes only the outer revision budget",
+          "[core][note-to-bgm][staging]") {
+    auto history = document_history_t::from(plain_song());
+    const std::array ids{object_id_t{1}, object_id_t{3}};
+    require_move(move_notes_to_bgm(history, chart_id_t{1}, ids, std::nullopt).applied);
+    history.undo.clear();
+    history.document.revision = std::numeric_limits<std::uint64_t>::max() - 2;
+    history.next_revision = std::numeric_limits<std::uint64_t>::max() - 1;
+    const auto restored = move_bgm_events_to_lane(history, chart_id_t{1}, ids, lane_id_t{1});
+    require_move(restored.applied);
+    check_move(history.document.revision == std::numeric_limits<std::uint64_t>::max() - 1);
+    require_move(history.undo.size() == 1);
+    check_move(history.undo.front().label == "Move BGM events to lane");
+    check_move(history.document.charts.front().find_note(object_id_t{1}) != nullptr);
+    check_move(history.document.charts.front().find_note(object_id_t{3}) != nullptr);
+}
+
+TEST_CASE("Rejected BGM staging cannot publish a partially converted note set",
+          "[core][note-to-bgm][staging]") {
+    auto history = document_history_t::from(plain_song());
+    const auto before = write_native_project(history.document);
+    auto transaction = document_command_transaction_t(history);
+    const std::array first{object_id_t{1}};
+    const auto moved = stage_move_notes_to_bgm(transaction, chart_id_t{1}, first, std::nullopt);
+    require_move(moved.value && moved.ok());
+    const std::array invalid{object_id_t{2}, object_id_t{999}};
+    const auto rejected =
+        stage_move_notes_to_bgm(transaction, chart_id_t{1}, invalid, std::nullopt);
+    check_move(!rejected.value);
+    check_move(!transaction.is_ready());
+    check_move(!transaction.commit("Must not publish").applied);
+    check_move(history.undo.empty());
+    check_move(write_native_project(history.document).value == before.value);
+}

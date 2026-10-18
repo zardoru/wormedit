@@ -28,8 +28,10 @@ There are two paths in and one way to change the document.
 - **Transaction (the executor):** `document_command_transaction_t` is the only way to change the
   document. It checks the stamp, copies the document lazily once, runs the edit, rejects
   without publishing, detects a no-op, and commits once with its Undo label *(T-607, T-637)*.
-  `execute<Operation>` resolves the target chart, checks the operation's declared event caps,
-  and passes `chart_document_t&` to its edit overload. Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
+  `stage` resolves the working chart and passes the chart/document to an edit without
+  publication. Nested stages share one copy; a rejected stage blocks the outer commit while
+  retaining working storage until callbacks unwind. Typed `stage<Operation>` adds declared
+  limits, event caps and postvalidation. `execute<Operation>` stages and then publishes once. Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
   direct command's operation, *is* the edit.
 - **Core edit:** a plain function or `apply(transaction&)` in `src/core` that changes chart data.
   This is where domain logic lives.
@@ -182,3 +184,24 @@ until copied into private staging, so rejection/cancellation cannot leave a new 
 folder or audio file. Completed exchange remains published even if cancellation races
 with completion. Individual writers and filesystem calls are not preemptible.
 Preview audio encoding remains T-107.
+
+## Composing edits
+
+Use `document_command_transaction_t::stage` for each component and publish at the outer
+boundary. Chart callbacks receive `chart_document_t&` and `song_document_t&`; document-wide
+callbacks receive `song_document_t&`. Return `attempt_t<Effect>` with domain validation,
+mutation and effect. A missing value or error rejects the transaction, including all previous
+stages. An unchanged effect leaves earlier successful stages available for the outer commit.
+Callbacks must preserve the document/chart storage borrowed by enclosing callbacks.
+
+`document_edit_effect_t` carries a command's changed flag and Undo label;
+`finish_execution` applies the command's explicit no-op policy and commits once. Editor edits
+retain `editor_edit_effect_t`; their existing finisher publishes selection/cursor effects only
+after the outer document commit succeeds. `stage_move_notes_to_bgm`,
+`stage_move_bgm_events_to_lane` and `stage_assign_note_lanes` compose through this executor.
+
+Do not create a scratch history, invoke committing commands on it, then adopt its document
+into another transaction to combine edits. The [global execution audit](audits/edit-execution.md)
+records remaining legacy sites and distinguishes session creation and detached payloads.
+`architecture.edit_execution` checks every first-party source/header against an exact per-file
+footprint; new files have no allowances, and reductions require lowering the inventory.

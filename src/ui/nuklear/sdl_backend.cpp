@@ -22,7 +22,15 @@
  */
 
 #define NK_IMPLEMENTATION
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+// Nuklear retains assertion-only bookkeeping in release builds.
+#pragma GCC diagnostic ignored "-Wunused-but-set-variable"
+#endif
 #include "ui/nuklear/sdl_backend.h"
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 #include <wormedit/core/keyed_cache.h>
 #include "ui/frontend.h"
 #include "ui/nuklear/image_quad.h"
@@ -1187,7 +1195,7 @@ NK_INTERN void nk_sdl_query_debug_font_glypth(nk_handle handle, float height,
 static void draw_sdl_debug_font_atlas(SDL_Renderer* renderer) {
     char buf[2];
     int x, y;
-    bool success;
+    [[maybe_unused]] bool success;
     /* SPACE is the first printable ASCII character */
     NK_MEMCPY(buf, " ", sizeof(buf));
     for (x = 0; x < NK_SDL_DFWH; x++) {
@@ -1211,7 +1219,7 @@ NK_API void nk_sdl_style_set_debug_font(struct nk_context* ctx) {
     struct nk_sdl* sdl;
     SDL_Surface* surface;
     SDL_Renderer* renderer;
-    bool success;
+    [[maybe_unused]] bool success;
     NK_ASSERT(ctx);
 
     sdl = (struct nk_sdl*)ctx->userdata.ptr;

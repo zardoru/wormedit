@@ -55,6 +55,13 @@ using note_to_bgm_allocation_outcome_t = diagnosed_t<note_to_bgm_allocation_t>;
                                      std::optional<object_id_t> preferred_lane,
                                      note_to_bgm_policy_t policy = {}) -> document_command_result_t;
 
+// Composable form: changes the transaction's working document without publication.
+[[nodiscard]] auto stage_move_notes_to_bgm(document_command_transaction_t& transaction,
+                                           chart_id_t chart, std::span<const object_id_t> notes,
+                                           std::optional<object_id_t> preferred_lane,
+                                           note_to_bgm_policy_t policy = {})
+    -> attempt_t<document_edit_effect_t>;
+
 struct selected_note_to_bgm_payload_t {
     bool handled{};
     bool selection_exhausted{};
@@ -78,9 +85,15 @@ using selected_note_to_bgm_result_t = command_result_with_t<selected_note_to_bgm
                                            chart_id_t chart, std::span<const object_id_t> events,
                                            lane_id_t lane) -> document_command_result_t;
 
-// Internal note-part validator/application used by the atomic mixed lane command.
-[[nodiscard]] auto assign_note_lanes(document_history_t& history, editor_interaction_state_t& state,
-                                     lane_id_t lane) -> editor_interaction_result_t;
+[[nodiscard]] auto
+stage_move_bgm_events_to_lane(document_command_transaction_t& transaction, chart_id_t chart,
+                              std::span<const object_id_t> events, lane_id_t lane)
+    -> attempt_t<document_edit_effect_t>;
+
+// Note-part validation/application used by the atomic mixed lane command.
+[[nodiscard]] auto stage_assign_note_lanes(document_command_transaction_t& transaction,
+                                           const editor_interaction_state_t& state, lane_id_t lane)
+    -> attempt_t<document_edit_effect_t>;
 
 // Assigns a mixed selected note/BGM set into a lane as one all-or-nothing undo command.
 [[nodiscard]] auto move_selected_objects_to_lane(

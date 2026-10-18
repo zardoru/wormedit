@@ -7,6 +7,8 @@
 
 #include "text_codec_result.h"
 
+#include <wormedit/core/document.h>
+
 #include <cstddef>
 #include <optional>
 #include <string>

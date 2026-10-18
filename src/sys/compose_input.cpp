@@ -863,16 +863,20 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
 void arm_compose_note_layers(wormedit::editor_interaction_state_t& state,
                              const application_command_state_t& app,
                              const wormedit::chart_document_t& chart) {
-    state.armed_note_layers.reset();
     if (app.project.semantic_layer.semantic_layer_target_none) {
-        state.armed_note_layers = std::vector<wormedit::layer_id_t>{};
+        state.armed_note_layers.emplace();
         return;
     }
-    if (!app.project.semantic_layer.semantic_layer_target) return;
+    if (!app.project.semantic_layer.semantic_layer_target) {
+        state.armed_note_layers.reset();
+        return;
+    }
     const auto layer = std::ranges::find(chart.semantic_layers, *app.project.semantic_layer.semantic_layer_target,
                                         &wormedit::semantic_layer_t::id);
     if (layer != chart.semantic_layers.end() && !layer->locked)
-        state.armed_note_layers = std::vector{layer->id};
+        state.armed_note_layers.emplace(1, layer->id);
+    else
+        state.armed_note_layers.reset();
 }
 
 auto semantic_layer_paint_armed(const application_command_state_t& app) -> bool {

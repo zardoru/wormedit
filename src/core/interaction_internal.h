@@ -1102,9 +1102,7 @@ struct virtual_hold_rows_t {
 auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
                                const place_virtual_bms_hold_action_t& action)
     -> std::variant<virtual_hold_rows_t, diagnostic_list_t>;
-auto publish_row_placement(editor_edit_context_t& context, document_history_t& scratch,
-                           const editor_interaction_state_t& staged,
-                           editor_interaction_result_t result) -> editor_interaction_result_t;
+
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows, const pending_hold_t* captured = nullptr) -> editor_interaction_result_t;

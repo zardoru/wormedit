@@ -1,3 +1,4 @@
+#include "interaction_edit_commit.h"
 #include "interaction_gesture_runner.h"
 #include "chart_object_ids.h"
 #include "interaction_internal.h"
@@ -235,6 +236,8 @@ auto chart_note_ids(const chart_document_t& chart) -> std::unordered_set<std::ui
 
 namespace wormedit {
 using namespace interaction_detail;
+constexpr auto virtual_row_placement_label = "Place note in virtual BMS measure";
+
 auto validate_virtual_note_target(const editor_edit_context_t& context, lane_id_t lane,
                                   std::string_view description)
     -> std::optional<editor_interaction_result_t> {
@@ -297,28 +300,6 @@ auto resolve_virtual_hold_rows(const editor_edit_context_t& context,
                                std::max(anchor_measure->number, end_measure->number) + 1};
 }
 
-auto publish_row_placement(editor_edit_context_t& context, document_history_t& scratch,
-                           const editor_interaction_state_t& staged,
-                           editor_interaction_result_t result) -> editor_interaction_result_t {
-    if (!result)
-        return result;
-    auto transaction = document_command_transaction_t(context.history);
-    transaction.adopt_document(std::move(scratch.document));
-    const auto command = transaction.commit("Place note in virtual BMS measure");
-    if (!command)
-        return editor_interaction_result_t{.diagnostics = command.diagnostics};
-    if (auto* holds = context.state.gesture<hold_gesture_t>()) {
-        holds->discard_primary();
-        if (holds->has_pending()) refresh_gesture_stamp<hold_gesture_t>(context);
-        else context.state.clear();
-    }
-    restore_cursor_pose(context.state, capture_cursor_pose(staged));
-    context.state.active_lane = staged.active_lane;
-    auto published = editor_interaction_result_t::from(context.history, context.state, true);
-    published.created_note = result.created_note;
-    return published;
-}
-
 auto commit_virtual_hold(editor_edit_context_t& context,
                          const place_virtual_bms_hold_action_t& action,
                          const virtual_hold_rows_t& rows, const pending_hold_t* captured) -> editor_interaction_result_t {
@@ -350,7 +331,14 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     editor_edit_context_t placement{scratch, staged, {*chart, index}};
     auto result = pending.apply(placement, *end, action.source_geometry);
     if (!result) return result;
-    return publish_row_placement(context, scratch, staged, std::move(result));
+    auto transaction = document_command_transaction_t(context.history);
+    transaction.adopt_document(std::move(scratch.document));
+    return commit_editor_edit(context, transaction,
+                              {.label = virtual_row_placement_label,
+                               .cursor_pose = capture_cursor_pose(staged),
+                               .lane = staged.active_lane,
+                               .created_note = result.created_note,
+                               .consume_primary_hold = true});
 }
 
 auto place_virtual_bms_hold(editor_edit_context_t& context,
@@ -443,7 +431,14 @@ auto place_virtual_bms_tap(editor_edit_context_t& context,
         context.state.active_lane = action.lane;
         return editor_interaction_result_t::from(context.history, context.state, false);
     }
-    return publish_row_placement(context, scratch, staged, result);
+    auto transaction = document_command_transaction_t(context.history);
+    transaction.adopt_document(std::move(scratch.document));
+    return commit_editor_edit(context, transaction,
+                              {.label = virtual_row_placement_label,
+                               .cursor_pose = capture_cursor_pose(staged),
+                               .lane = staged.active_lane,
+                               .created_note = result.created_note,
+                               .consume_primary_hold = true});
 }
 
 auto cycle_editor_snap(document_history_t& history, editor_interaction_state_t& state,
@@ -557,12 +552,9 @@ auto place_tap(editor_edit_context_t& context, const place_tap_action_t& action)
                              : std::optional{document.painted_notes.front()};
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(document.document));
-    const auto command = transaction.commit(created ? "Place note" : "Remove note");
-    if (!command)
-        return editor_interaction_result_t{.diagnostics = command.diagnostics};
-    place_cursor_at(state, *target);
-    auto result = editor_interaction_result_t::from(context.history, state, true);
-    result.created_note = created;
-    return result;
+    return commit_editor_edit(context, transaction,
+                              {.label = created ? "Place note" : "Remove note",
+                               .cursor = *target,
+                               .created_note = created});
 }
 } // namespace wormedit

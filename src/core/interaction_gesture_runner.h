@@ -72,12 +72,6 @@ void capture_gesture(editor_edit_context_t& context, Gesture&& gesture) {
         .payload = std::forward<Gesture>(gesture)};
 }
 
-template<class Gesture>
-void refresh_gesture_stamp(editor_edit_context_t& context) {
-    if (auto* stored = gesture_storage<Gesture>(context.state.active_gesture ? &*context.state.active_gesture : nullptr))
-        stored->stamp = document_stamp_t::from(context.history.document.revision);
-}
-
 template<class Gesture, class... Arguments>
 [[nodiscard]] auto gesture_revision_message(const Arguments&...) -> std::string_view {
     if constexpr (sizeof...(Arguments) == 1) {

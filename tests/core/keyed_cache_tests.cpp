@@ -235,8 +235,10 @@ TEST_CASE("A bound cache value supports owner updates without rebuilding", "[cor
     std::size_t calls{};
     auto& retained = cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1}});
     retained.push_back(2);
-    CHECK(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {9}}).size() == 2);
-    CHECK(calls == 1);
+    cache.value().back() = 3;
+    const auto& reused = cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {9}});
+    CHECK((reused.size() == 2 && reused.back() == 3 && cache.key() == std::optional<int>{1}));
+    CHECK((calls == 1 && cache.build_count() == 1));
     CHECK(cache.get_or_build(2, counting_builder_t<std::vector<int>>{calls, {9}}).front() == 9);
     CHECK(cache.build_count() == 2);
 }
@@ -335,17 +337,6 @@ TEST_CASE("Owner invalidation preserves selected storage and metrics", "[core][k
     CHECK(cache.build_count() == 1);
     static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}));
     CHECK(cache.build_count() == 2);
-}
-
-TEST_CASE("Owner product updates preserve the cache binding", "[core][keyed-cache]") {
-    keyed_cache_t<int, std::vector<int>> cache;
-    std::size_t calls{};
-    static_cast<void>(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {1, 2}}));
-    cache.value().back() = 3;
-    CHECK(cache.get_or_build(1, counting_builder_t<std::vector<int>>{calls, {4}}).back() == 3);
-    CHECK(cache.key() == std::optional<int>{1});
-    CHECK(cache.build_count() == 1);
-    CHECK(calls == 1);
 }
 
 TEST_CASE("Binding invalidation retains the incremental product and retries", "[core][keyed-cache]") {

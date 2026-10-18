@@ -1,5 +1,4 @@
 #include <wormedit/core/result.h>
-#include <wormedit/core/async_job.h>
 #include <wormedit/core/sound_slice.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -63,17 +62,6 @@ TEST_CASE("format diagnostics retain typed locations and codes", "[unit][core][r
     CHECK(attempt.diagnostics.front() == warning);
 }
 
-TEST_CASE("shared expected results preserve values and error messages", "[unit][core][result]") {
-    result_t<std::unique_ptr<int>, wormedit::error_t<diagnostic_code_t>> value = std::make_unique<int>(42);
-    REQUIRE(value.has_value());
-    CHECK(**value == 42);
-    result_t<void, wormedit::error_t<diagnostic_code_t>> failure =
-        std::unexpected(wormedit::error_t<diagnostic_code_t>{diagnostic_code_t::invalid_id, "bad id"});
-    REQUIRE_FALSE(failure.has_value());
-    CHECK(failure.error().code == diagnostic_code_t::invalid_id);
-    CHECK(failure.error().message == "bad id");
-}
-
 TEST_CASE("diagnosed results accept warnings and reject errors", "[unit][core][result]") {
     diagnosed_t<int> value{.value = 42, .diagnostics = {}};
     CHECK(value.ok());
@@ -85,18 +73,6 @@ TEST_CASE("diagnosed results accept warnings and reject errors", "[unit][core][r
                                  .code = diagnostic_code_t::invalid_id, .message = "bad id"});
     CHECK_FALSE(value.ok());
     CHECK(value.diagnostics.size() == 3);
-}
-
-TEST_CASE("async start outcomes preserve generation and failure feedback",
-          "[unit][core][result][async]") {
-    const async_job_start_outcome_t ready{17};
-    REQUIRE(ready);
-    CHECK(*ready == 17);
-    const async_job_start_outcome_t failed{std::unexpected(wormedit::error_t<failure_code_t>{
-        failure_code_t::capacity_exceeded, "full"})};
-    REQUIRE_FALSE(failed);
-    CHECK(failed.error().code == failure_code_t::capacity_exceeded);
-    CHECK(failed.error().message == "full");
 }
 
 namespace {

@@ -310,17 +310,6 @@ TEST_CASE("document transactions reuse their working snapshot", "[unit][core][co
     CHECK(history.document.charts.front().metadata.name.empty());
 }
 
-TEST_CASE("document transactions publish one reversible edit", "[unit][core][command]") {
-    auto history = document_history_t::from(make_song());
-    auto transaction = document_command_transaction_t(history);
-    transaction.document().charts.front().metadata.name = "Edited";
-    REQUIRE(transaction.commit("Edit name"));
-    CHECK(history.document.charts.front().metadata.name == "Edited");
-    REQUIRE(history.undo.size() == 1);
-    REQUIRE(undo_document_command(history));
-    CHECK(history.document.charts.front().metadata.name.empty());
-}
-
 TEST_CASE("rejecting a document transaction does not copy", "[unit][core][command]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t(history);
@@ -446,13 +435,16 @@ TEST_CASE("command application is independent of warning diagnostics", "[unit][c
 TEST_CASE("command commit publishes one undoable document", "[unit][core][command][results]") {
     auto history = document_history_t::from(make_song());
     auto transaction = document_command_transaction_t(history);
+    transaction.document().charts.front().metadata.name = "Edited";
     transaction.document().charts.front().measures.front().notes.front().position.row = 240;
     const auto result = transaction.commit("Move note");
-    REQUIRE(result.applied);
-    CHECK(result.revision == history.document.revision);
+    REQUIRE((result.applied && result.revision == history.document.revision));
+    const auto committed_state_matches = history.document.charts.front().metadata.name == "Edited" &&
+        note_row(history) == 240;
+    CHECK(committed_state_matches);
     REQUIRE(history.undo.size() == 1);
     REQUIRE(undo_document_command(history));
-    CHECK(note_row(history) == 130);
+    CHECK((history.document.charts.front().metadata.name.empty() && note_row(history) == 130));
 }
 
 TEST_CASE("command payload retains domain metadata and command diagnostics", "[unit][core][command][results]") {

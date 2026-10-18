@@ -314,9 +314,6 @@ auto player_preview_note_source_t::displacement_less(const player_preview_note_s
     return left.note.value < right.note.value;
 }
 
-auto player_preview_index_result_t::from(player_preview_index_outcome_t&& outcome) -> player_preview_index_result_t {
-    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
 auto player_preview_index_t::from(const chart_document_t& chart, std::uint64_t document_revision,
                                 player_preview_index_options_t options)
     -> player_preview_index_outcome_t {
@@ -382,11 +379,6 @@ auto player_preview_index_t::from(const chart_document_t& chart, std::uint64_t d
     index.note_tree_max_end = append_tree(index.notes, index.note_tree_leaf_base);
     result.value = std::move(index);
     return result;
-}
-
-auto build_player_preview_index(const chart_document_t& chart, std::uint64_t document_revision,
-    player_preview_index_options_t options) -> player_preview_index_result_t {
-    return player_preview_index_result_t::from(player_preview_index_t::from(chart, document_revision, options));
 }
 
 auto player_preview_scene_view_t::from(const player_preview_index_t& index,

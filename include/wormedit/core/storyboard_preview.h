@@ -40,19 +40,6 @@ struct storyboard_preview_index_t {
 };
 
 using storyboard_preview_index_outcome_t = diagnosed_t<std::optional<storyboard_preview_index_t>, std::vector<storyboard_diagnostic_t>>;
-struct storyboard_preview_index_result_t {
-    [[nodiscard]] static auto from(storyboard_preview_index_outcome_t&& outcome) -> storyboard_preview_index_result_t;
-    std::optional<storyboard_preview_index_t> index;
-    std::vector<storyboard_diagnostic_t> diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return index.has_value();
-    }
-};
-
-[[nodiscard]] auto build_storyboard_preview_index(const storyboard_document_model_t& document,
-                                                  storyboard_schedule_options_t options = {})
-    -> storyboard_preview_index_result_t;
 
 struct storyboard_draw_instance_t {
     std::uint64_t stable_id{};

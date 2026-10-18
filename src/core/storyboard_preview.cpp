@@ -91,9 +91,6 @@ auto apply_frame_evaluations(storyboard_draw_instance_t& instance,
 
 } // namespace
 
-auto storyboard_preview_index_result_t::from(storyboard_preview_index_outcome_t&& outcome) -> storyboard_preview_index_result_t {
-    return {.index = std::move(outcome.value), .diagnostics = std::move(outcome.diagnostics)};
-}
 auto storyboard_preview_index_t::from(const storyboard_document_model_t& document,
                                     storyboard_schedule_options_t options)
     -> storyboard_preview_index_outcome_t {
@@ -145,11 +142,6 @@ auto storyboard_preview_index_t::from(const storyboard_document_model_t& documen
     }
     result.value = std::move(candidate);
     return result;
-}
-
-auto build_storyboard_preview_index(const storyboard_document_model_t& document,
-    storyboard_schedule_options_t options) -> storyboard_preview_index_result_t {
-    return storyboard_preview_index_result_t::from(storyboard_preview_index_t::from(document, options));
 }
 
 auto evaluate_storyboard_frame(const storyboard_document_model_t& document,

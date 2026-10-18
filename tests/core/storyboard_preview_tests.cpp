@@ -56,14 +56,14 @@ TEST_CASE("storyboard preview evaluates a bounded renderer-neutral frame",
     };
     document.sprites = {foreground, background};
 
-    const auto built = storyboard_preview_index_result_t::from(storyboard_preview_index_t::from(document));
-    REQUIRE(built);
-    REQUIRE(built.index->sources.size() == 2);
-    CHECK(built.index->sources[0].sprite_index == 1);
-    CHECK(built.index->sources[1].sprite_index == 0);
+    const auto built = storyboard_preview_index_t::from(document);
+    REQUIRE(built.value);
+    REQUIRE(built.value->sources.size() == 2);
+    CHECK(built.value->sources[0].sprite_index == 1);
+    CHECK(built.value->sources[1].sprite_index == 0);
 
     storyboard_frame_arena_t arena;
-    const auto frame = evaluate_storyboard_frame(document, *built.index, 150, arena);
+    const auto frame = evaluate_storyboard_frame(document, *built.value, 150, arena);
     REQUIRE(frame.is_success());
     REQUIRE(frame.instances.size() == 2);
     CHECK(frame.instances[0].path == "back.png");
@@ -79,10 +79,10 @@ TEST_CASE("storyboard preview evaluates a bounded renderer-neutral frame",
     CHECK(frame.instances[1].green == 100.0);
     CHECK(frame.instances[1].blue == 110.0);
 
-    const auto before = evaluate_storyboard_frame(document, *built.index, 99, arena);
+    const auto before = evaluate_storyboard_frame(document, *built.value, 99, arena);
     REQUIRE(before.is_success());
     CHECK(before.instances.empty());
-    const auto after = evaluate_storyboard_frame(document, *built.index, 201, arena);
+    const auto after = evaluate_storyboard_frame(document, *built.value, 201, arena);
     REQUIRE(after.is_success());
     CHECK(after.instances.empty());
 }
@@ -95,19 +95,19 @@ TEST_CASE("storyboard preview rejects stale, ambiguous, and over-capacity state"
     auto second = sprite(1, 2, "Foreground", "b.png");
     second.nodes = {command(storyboard_opcode_t::fade, 0, 10, {0.0}, {1.0}, 2)};
     duplicate.sprites = {first, second};
-    CHECK_FALSE(build_storyboard_preview_index(duplicate));
+    CHECK_FALSE(storyboard_preview_index_t::from(duplicate).value);
 
     duplicate.sprites[1].stable_id = 2;
-    const auto built = build_storyboard_preview_index(duplicate);
-    REQUIRE(built);
+    const auto built = storyboard_preview_index_t::from(duplicate);
+    REQUIRE(built.value);
     storyboard_frame_arena_t arena;
     const auto capped =
-        evaluate_storyboard_frame(duplicate, *built.index, 5, arena, {.maximum_instances = 1});
+        evaluate_storyboard_frame(duplicate, *built.value, 5, arena, {.maximum_instances = 1});
     CHECK_FALSE(capped.is_success());
     REQUIRE(capped.diagnostic.has_value());
     CHECK(capped.diagnostic->code == storyboard_diagnostic_code_t::capacity_exceeded);
 
-    auto stale = *built.index;
+    auto stale = *built.value;
     stale.sources.front().stable_id = 99;
     const auto rejected = evaluate_storyboard_frame(duplicate, stale, 5, arena);
     CHECK_FALSE(rejected.is_success());

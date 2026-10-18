@@ -67,15 +67,6 @@ struct player_preview_index_t {
 };
 
 using player_preview_index_outcome_t = diagnosed_t<std::optional<player_preview_index_t>>;
-struct player_preview_index_result_t {
-    [[nodiscard]] static auto from(player_preview_index_outcome_t&& outcome) -> player_preview_index_result_t;
-    std::optional<player_preview_index_t> index;
-    diagnostic_list_t diagnostics;
-
-    [[nodiscard]] explicit operator bool() const noexcept {
-        return index.has_value() && diagnostics.empty();
-    }
-};
 
 using player_preview_rect_t = rect_t;
 
@@ -173,9 +164,5 @@ struct player_preview_scene_view_t {
 };
 
 using player_preview_scene_view_outcome_t = diagnosed_t<std::optional<player_preview_scene_view_t>>;
-[[nodiscard]] auto build_player_preview_index(const chart_document_t& chart,
-                                              std::uint64_t document_revision,
-                                              player_preview_index_options_t options = {})
-    -> player_preview_index_result_t;
 
 } // namespace wormedit

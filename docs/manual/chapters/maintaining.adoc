@@ -13,4 +13,9 @@ records the commit it shows in `docs/manual/images/revisions.adoc` and in the PN
 captions print it. `scripts/manual-captures.sh --check-stale` lists shots whose interface code
 has changed since they were taken.
 * *Links, includes and images* are checked by the `documentation.manual_links` test.
-* Build the book with `asciidoctor docs/manual/index.adoc`.
+* Build the book with `asciidoctor docs/manual/index.adoc`. The CMake build does this too (target
+`manual`, part of the default build) and `cmake --install` puts the HTML in a `manual/` folder next
+to the program, so packages such as `scripts/windows-cross-package.sh` include it. Opt out with
+`-DWORMEDIT_INSTALL_MANUAL=OFF` (for the Windows script, `CMAKE_ARGS=-DWORMEDIT_INSTALL_MANUAL=OFF`).
+Without Asciidoctor a build only warns, but installing fails until it is installed or the manual is
+turned off.

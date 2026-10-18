@@ -1,0 +1,68 @@
+[#command-palette]
+= The command palette
+
+Every command in Wormedit, whether it has a key or not, can be run by name. Press
+kbd:[Ctrl+Shift+P] to open the *Command menu*, type a few letters of what you want, and press
+kbd:[Enter]. If you would rather not memorize shortcuts, the palette can be your main way of
+working: the keyboard stays on the keyboard, and nothing is more than a word away.
+
+== Using it
+
+. kbd:[Ctrl+Shift+P] opens the palette with the cursor in its search box.
+. Type any part of a command's name. Matching ignores case and can start anywhere in the name:
+`loop` finds *Play Selection Looped* and *Toggle Selection Loop*, `bgm` finds *Move Selection to
+BGM*.
+. kbd:[Up] and kbd:[Down] move through the matches (up to twenty are listed), skipping commands
+that cannot run right now, which are shown dimmed.
+. kbd:[Enter] runs the highlighted command; clicking a match does the same. kbd:[Escape] closes the
+palette without running anything.
+
+.The command palette searching for "measure" (captured at {shot-command-palette-revision})
+image::command-palette.png[The Command menu with the query measure and four matching commands]
+
+A command runs on the tab and chart that were active when you opened the palette, so the palette
+works on the chart you were editing even though it is a separate box.
+
+== Commands that live in the palette
+
+Some useful commands have no default key and are easiest to reach from the palette, for example:
+
+[cols="2,3",options="header"]
+|===
+|Type |To run
+
+|`tap`
+|*Tap Timing*: find the tempo by tapping (see <<timing>>).
+
+|`metronome`
+|*Toggle Metronome*.
+
+|`timing settings`
+|*Timing Settings*: timing lane visibility and metronome options.
+
+|`insert bpm` / `insert scroll`
+|*Insert BPM Change* / *Insert Scroll Velocity* at the cursor.
+
+|`quantization`
+|*Apply Quantization* to the selection.
+
+|`layer`
+|*Apply Layer to Selection*, *Remove Layer from Selection*, *Toggle Layer on Selection*.
+
+|`measure`
+|*Insert Measure Before*, *Insert Measure After*, *Remove Empty Measure*, *Toggle Measure Line at
+Cursor*.
+
+|`external`
+|*External Play from Start*, *External Play from Here*, *External Stop*: preview in an external
+player.
+
+|`export`
+|*Export Output Group…*.
+
+|`click`
+|*Play Sound on Click*.
+|===
+
+The <<keyboard-reference,keyboard reference>> lists every command; those marked _unbound_ are the
+ones to reach through the palette, or to give a key in *Options* (kbd:[Ctrl+,]).

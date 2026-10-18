@@ -30,8 +30,10 @@ or inside each stage; _free zone_ and _foot pedal_ variants add those lanes.
 * *BMSON generic 24K / 48K* are keyboard-style BMSON layouts.
 
 The <<layout-reference,layout reference>> lists every layout with its lanes, lane keys and
-outputs. Layouts with more than ten lanes, including the BMS double-play layouts, start without
-lane keys: place their notes with the mouse.
+outputs. Double-play and the wider osu!mania layouts interleave the number row with the row
+below it (for BME DP7: kbd:[1] kbd:[Q] kbd:[2] kbd:[W] … on the left, kbd:[Y] kbd:[7] kbd:[U]
+kbd:[8] … on the right). A few wide layouts have no default lane keys yet; place their notes with
+the mouse.
 
 You can add more charts to the project later from the *Project* tab (kbd:[F1]): *New chart*
 (kbd:[Ctrl+Shift+N]), *Import chart…* to bring in difficulties from another file, *Duplicate* and
@@ -68,8 +70,8 @@ formats from inside the editor.
 
 === Sounds (keysounds)
 
-Drop audio files onto the *Sounds* list in Compose or Audio Slices, or click the *+* button at the
-top of the Sounds dock. Wormedit shows a *Review sound import* dialog before anything changes:
+Drop audio files (WAV, Ogg, MP3 or FLAC) onto the *Sounds* list in Compose or Audio Slices, or
+click the *+* button at the top of the Sounds dock. Wormedit shows a *Review sound import* dialog before anything changes:
 
 * It suggests *sound groups* for the new files. Edit the group names, move sounds between
 groups, add one with *Create new group*, or choose *Leave all ungrouped*.
@@ -78,8 +80,7 @@ groups, add one with *Create new group*, or choose *Leave all ungrouped*.
 Sounds can be grouped later too: select them in the Sounds dock and click *Group…*. Its *Keep IDs
 together* option keeps the group's BMS `#WAV` numbers next to each other.
 
-Sounds dropped while the Sounds dock is in *BMS slots* mode fill the slots starting at the selected
-one.
+For BMS charts you can also put sounds into exact `#WAV` slots; see <<bms-slots>>.
 
 === BGA images
 

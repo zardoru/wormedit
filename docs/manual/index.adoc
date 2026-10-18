@@ -29,6 +29,8 @@ kbd:[Cmd]{nbsp}(⌘) and kbd:[Alt] is kbd:[Option].
 
 include::chapters/the-wormedit-way.adoc[leveloffset=+1]
 
+include::chapters/command-palette.adoc[leveloffset=+1]
+
 include::chapters/getting-started.adoc[leveloffset=+1]
 
 include::chapters/navigating.adoc[leveloffset=+1]
@@ -38,6 +40,8 @@ include::chapters/placing-notes.adoc[leveloffset=+1]
 include::chapters/sounds-and-layers.adoc[leveloffset=+1]
 
 include::chapters/measures.adoc[leveloffset=+1]
+
+include::chapters/timing.adoc[leveloffset=+1]
 
 include::chapters/walkthrough-bms.adoc[leveloffset=+1]
 

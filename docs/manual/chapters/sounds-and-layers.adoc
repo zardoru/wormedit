@@ -17,6 +17,30 @@ it. A single click only selects the row; with preview-on-click turned on it also
 arm that sound without leaving the keyboard.
 * In *BMS slots* mode the dock lists `#WAV` slots instead; clicking a filled slot arms its sound.
 
+[#bms-slots]
+== Importing into specific BMS slots
+
+Some BMS workflows need a sound in an exact `#WAV` slot: matching an existing chart's numbering,
+pasting notes from iBMSC or BMSE (which refer to sounds by slot number), or keeping a keysound set
+in a fixed order. The Sounds dock's *BMS slots* mode does this. It is available for BMS charts
+only.
+
+. Click *BMS slots* at the top of the Sounds dock. The list shows the slots `01` to `ZZ` (1295 of
+them, in base 36) and which sound each holds. The search box finds a slot or a sound.
+. Click the slot where the import should start. An empty slot is fine.
+. Click *+* (_Choose files for consecutive BMS WAV slots_) and pick the files, or drop them onto the
+list:
+** *One file* goes into the selected slot. If the slot already holds a sound, Wormedit asks
+before replacing it (*Replace occupied WAV slot … with this file?*).
+** *Several files* fill consecutive slots starting at the selected one. Wormedit shows the slot
+planned for each file for review before importing, and refuses an import that would run past `ZZ`.
+
+.BMS slots mode with the empty slot 09 selected as the import target (captured at {shot-bms-slots-revision})
+image::bms-slots.png[The Sounds dock listing WAV slots 01 to 0G, slots 01 to 04 filled and slot 09 selected]
+
+Each import is one Undo step. Switch back with *Automatic IDs*, where new sounds take the next free
+IDs.
+
 The armed sound goes on every note you place: lane keys, keyboard holds, Draw clicks and drags,
 and kbd:[Alt]-drag holds. A missing sound (its file was not found) cannot be armed.
 

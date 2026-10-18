@@ -18,8 +18,7 @@ each bar line.
 notes. An area selection that crosses the lane picks up the bar lines inside it. Selected handles
 are gold.
 * *Place*: with the Draw tool, click the lane to split the measure at the snapped row. The new bar
-line is selected, and later measures are renumbered. From the keyboard, kbd:[Ctrl+M] (*Add Measure
-Line at Cursor*) does the same at the cursor.
+line is selected, and later measures are renumbered.
 * *Delete*: select bar lines and press kbd:[Delete]. Each one merges its measure into the one
 before it; notes stay where they are.
 
@@ -28,6 +27,22 @@ image::measure-lane.png[The measure lane with a new gold bar line splitting a me
 
 Hiding the measure lane drops bar lines from the selection, so ordinary editing never moves them
 by accident.
+
+[#toggle-measure-line]
+== Toggling a bar line from the keyboard
+
+kbd:[Ctrl+M] (*Toggle Measure Line at Cursor*) works without the measure lane and without the
+mouse:
+
+* With the cursor _inside_ a measure, it adds a bar line at the cursor, splitting the measure
+there. The cursor ends up on the new bar line.
+* With the cursor _on_ a bar line, it removes it, merging that measure into the one before it. The
+cursor keeps its place in the music.
+
+So kbd:[Ctrl+M] twice undoes itself, and combined with the snap and the cursor keys it reshapes
+measures quickly: walk to the beat where a measure should end, press kbd:[Ctrl+M]; walk onto a bar
+line that should not be there, press kbd:[Ctrl+M]. Notes never move in time, and each press is one
+Undo step. The first bar line of the chart cannot be removed.
 
 == Moving bar lines
 

@@ -79,7 +79,8 @@ scripts so they can be regenerated after UI changes, never by hand.
 
 - **Status:** partial (2026-10-18)
 - **Done so far:** the BMS walkthrough (with BMSE/iBMSC paste, wired in T-700) and the osu!mania/StepMania walkthrough.
-- **Remaining:** timing chapter, Troubleshooting from notification texts, "try it" exercises, and walkthrough screenshots of the Project tab output groups and export.
+- **Done so far (2026-10-18, owner's second pass):** timing chapter (lanes, inline editing, Timing focus, tap tempo, beat fitting, offset, lock, the area menu's stop/delay conversion and SV recipes); command palette chapter; importing into specific BMS slots; Ctrl+M toggling (T-701); wide-layout lane keys (T-702) in the generated layout table. Twelve shots captured at `f1dad8d`.
+- **Remaining:** Troubleshooting from notification texts, "try it" exercises, and walkthrough screenshots of the Project tab output groups and export.
 - **Outcome:** the remaining chapters are written: Keysounding BMS charts (Sounds dock, groups, armed sounds with lane keys, move-and-deselect, Move to BGM, select same sound), osu!mania and hitsounds, Timing, Exporting and converting, and Troubleshooting. Each one ends with a short "try it" exercise on a bundled fixture.
 - **Read first:** `docs/manual/README.md`, [BMS editing cards](bms-editing.md), the export cards, and the timing cards.
 - **Files owned:** `docs/manual/keysounding.md`, `docs/manual/osu-mania.md`, `docs/manual/timing.md`, `docs/manual/export.md`, `docs/manual/troubleshooting.md`, `docs/manual/shots.txt`, `docs/manual/images/`, this card.

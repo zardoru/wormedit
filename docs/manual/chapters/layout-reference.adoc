@@ -3,6 +3,6 @@
 
 Each layout offered when creating a project, with its lane count, the default lane keys from left
 to right, and the output groups a new project starts with. A `·` marks a lane without a default
-key. Layouts with more than ten lanes start without lane keys; place their notes with the mouse.
+key. Layouts marked _none by default_ start without lane keys; place their notes with the mouse.
 
 include::../generated/layouts.adoc[]

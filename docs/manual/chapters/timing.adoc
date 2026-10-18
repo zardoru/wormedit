@@ -1,0 +1,145 @@
+[#timing]
+= Timing
+
+Timing is everything that decides _when_ a row of the chart plays and _how fast_ it scrolls: tempo
+changes, stops, scroll speed and the song's offset. In Wormedit, timing lives on the same canvas
+as the notes, in the timing lanes at the left of Compose. Get it right before charting a long
+song; the notes follow it.
+
+== The timing lanes
+
+[cols="1,2,3",options="header"]
+|===
+|Lane |Event |Used by
+
+|BPM
+|Tempo change. The chart's starting BPM sits on the first row.
+|All formats.
+
+|SV
+|Scroll velocity: how fast the notes scroll, without changing the music.
+|osu!mania (SV) and StepMania (`#SCROLLS`).
+
+|SPD
+|StepMania speed change, with a transition length.
+|StepMania (`#SPEEDS`).
+
+|Stop
+|The chart pauses while the music keeps playing; notes at the row play before the pause.
+|BMS (`#STOP`) and StepMania.
+
+|Delay
+|Like a stop, but notes at the row play after the pause.
+|StepMania (`#DELAYS`).
+
+|Warp
+|Skips a span of the chart instantly.
+|StepMania (`#WARPS`).
+
+|Kiai
+|osu!mania kiai time on or off.
+|osu!mania.
+
+|Anchor
+|Pins a beat to an exact moment of the song audio; beat fitting pivots on anchors.
+|Wormedit only.
+|===
+
+*Timing Settings* (in the command menu, kbd:[Ctrl+Shift+P]) chooses which timing lanes are shown.
+Hiding a lane only hides it: its events keep working in playback and export.
+
+[#editing-timing-events]
+== Adding and editing timing events
+
+* *Double-click* an event to edit it in place. Double-click an empty row of a lane to start a new
+event there; it shows as a pending marker until you confirm it with kbd:[Enter] or *Confirm
+event*, and kbd:[Escape] discards it.
+* *Drag* a timing marker along its lane to move it to another snapped row.
+* *BPM* is typed as a decimal, such as `174`, `174.5` or `174.375`, and stored exactly. Values
+that came from an imported chart and have no exact decimal show a rounded decimal marked as
+approximate; *Advanced exact fraction* shows and edits the exact value. Opening and closing the
+editor never rounds the stored value.
+* *Stops* and *delays* take a duration in seconds or, for BMS, in `#STOP` ticks. *SV* and *SPD*
+take a multiplier; *SPD* also takes a transition length.
+* In Timing focus (kbd:[F3]), kbd:[Ctrl]-click an empty BPM row to add a change with the current
+tempo, and kbd:[Alt]-click the Anchor lane to add an anchor.
+* *Insert BPM Change* and *Insert Scroll Velocity* in the command menu add an event at the cursor.
+* Select events like notes and press kbd:[Delete] to remove them.
+
+.Editing the starting BPM in place: kbd:[Enter] applies, kbd:[Escape] cancels (captured at {shot-timing-bpm-edit-revision})
+image::timing-bpm-edit.png[The BPM marker on the first row open in its inline editor showing 140]
+
+== Timing focus
+
+kbd:[F3] (or the timer button in the toolbar) switches Compose to *Timing focus*: notes are locked
+and every click goes to the timing lanes. Press kbd:[F4] to return to ordinary Compose.
+
+== Finding the tempo
+
+=== Tap tempo
+
+Run *Tap Timing* from the command menu. Start playback and press kbd:[T] (or kbd:[Space]) on every
+beat. After four taps an estimate appears; keep tapping until it settles, pick how to round it
+(*Round to*), and click *Apply BPM*. The song needs a music track, and timing must be unlocked.
+
+=== Beat fitting
+
+With the song's waveform shown, drag a beat line of the grid onto the matching hit in the waveform.
+The tempo between the previous BPM change (or anchor) and that beat stretches so the line lands
+where you drop it; release to commit.
+
+* Hold kbd:[Ctrl] while dragging to snap the BPM to the step chosen with the *BPM snap* buttons
+(0.1, 0.25, 0.33, 0.5, 0.75 or 1 BPM); kbd:[Ctrl] + wheel changes the step mid-drag.
+* Hold kbd:[Ctrl+Alt] to snap to the onsets Wormedit detects in the audio.
+* kbd:[Escape] cancels the fit and leaves timing unchanged.
+
+Fit from the start of the song outward: each fit pivots on the last BPM change or anchor before
+it, so earlier fits stay in place.
+
+== The song offset
+
+The toolbar's *Audio offset* (in seconds) moves the whole song against the chart. Its buttons
+nudge it by one audio frame or by 10 ms; the lock button stops it from changing by accident.
+
+== Locking timing
+
+kbd:[Ctrl+Shift+T] (*Toggle Timing Lock*) locks every timing event: nothing can create, delete,
+drag, paste or quantize them until you unlock it, whichever tool or shortcut tries. Lock timing as
+soon as it is right.
+
+[#area-menu]
+== The area menu
+
+Drag across empty space with the Select tool to select an area (whole rows), then right-click it.
+Besides the timing tools below, the menu quantizes the selection, creates a section, loops
+playback over the area, and adds the selected sounds to a layer.
+
+.The area menu on an area selection (captured at {shot-area-menu-revision})
+image::area-menu.png[Right-click menu on an area with Convert to Stop, Convert to Delay, Add SV recipe and Add SPEEDS span]
+
+== Turning silence into a stop or delay
+
+Select an empty area, right-click it and choose *Convert to Stop* or *Convert to Delay*. The
+selected rows become a pause of the same length, and everything after moves earlier so the music
+does not change. The *shorten measures* variants also remove those rows from the measures they
+were in.
+
+== SV recipes
+
+For osu!mania and StepMania scroll effects, select an area, right-click and choose *Add SV recipe*.
+A recipe is a scroll curve over that area, kept as a curve rather than a cloud of SV points:
+
+* *Shape*: constant, linear, exponential or a curve, with its values.
+* *Output*: osu!mania/StepMania scrolls (`#SCROLLS`) or StepMania speeds (`#SPEEDS`).
+* *Sampling*: adaptive (with a tolerance) or fixed steps; points are only generated when the chart
+is exported.
+
+*Add SPEEDS span* does the same for a StepMania speed change across the area.
+
+Recipes appear as areas in the SV (or SPD) lane. Select one to edit its form in the inspector
+(*Apply* keeps the changes, *Revert* drops them); its menu enables, disables or deletes it.
+
+== Metronome
+
+*Toggle Metronome* (command menu) clicks on every beat during playback. *Timing Settings* sets its
+volume and count-in.

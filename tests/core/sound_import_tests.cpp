@@ -2,6 +2,7 @@
 #include <wormedit/core/sound_import.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/formats/bmson.h>
+#include <wormedit/formats/native_project.h>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -530,4 +531,42 @@ TEST_CASE("bulk import group names reject malformed UTF-8", "[unit][core][helper
         reserved(std::move(action), history.document));
     CHECK_FALSE(result);
     CHECK(history.document.sound_groups.empty());
+}
+
+TEST_CASE("joining a sound group needs no fresh ID even when the group domain is exhausted",
+          "[core][sounds][import][sound-groups][id-ceiling]") {
+    auto song = bmson_song();
+    const sound_group_id_t existing{std::numeric_limits<std::uint64_t>::max()};
+    song.sound_groups.push_back({.id = existing, .name = "Existing"});
+    song.resources.front().sound_group = existing;
+    auto history = document_history_t::from(std::move(song));
+    auto sound = entry("joining", sound_kind_t::keysound);
+    sound.asset.allocate_bms_identifier = true;
+    bulk_sound_import_action_t action{.entries = {sound},
+        .groups = {{.name = "Existing", .existing_group = existing, .entry_indexes = {0}}}};
+    REQUIRE(apply_bulk_sound_import(history, reserved(std::move(action), history.document)));
+    CHECK(history.document.resources.back().sound_group == existing);
+    CHECK(history.document.sound_groups.size() == 1);
+}
+
+TEST_CASE("new sound groups reserve their complete ID run before publication",
+          "[core][sounds][import][sound-groups][id-ceiling]") {
+    auto song = bmson_song();
+    song.sound_groups.push_back({.id = sound_group_id_t{std::numeric_limits<std::uint64_t>::max() - 1},
+                                 .name = "Existing"});
+    song.resources.front().sound_group = song.sound_groups.back().id;
+    auto history = document_history_t::from(std::move(song));
+    const auto before = write_native_project(history.document).value;
+    REQUIRE(before.has_value());
+    auto first = entry("first", sound_kind_t::keysound);
+    auto second = entry("second", sound_kind_t::keysound);
+    first.asset.allocate_bms_identifier = second.asset.allocate_bms_identifier = true;
+    bulk_sound_import_action_t action{.entries = {first, second},
+        .groups = {{.name = "First", .entry_indexes = {0}},
+                   {.name = "Second", .entry_indexes = {1}}}};
+    const auto result = apply_bulk_sound_import(history, reserved(std::move(action), history.document));
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK((!result.applied && result.diagnostics.front().code == diagnostic_code_t::invalid_id &&
+           result.diagnostics.front().message == "sound group IDs are exhausted"));
+    CHECK((history.undo.empty() && write_native_project(history.document).value == before));
 }

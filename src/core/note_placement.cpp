@@ -319,16 +319,15 @@ auto extend_virtual_chart(chart_document_t& chart, std::uint64_t measure_count)
     -> std::optional<diagnostic_list_t> {
     const auto required =
         measure_count > chart.measures.size() ? measure_count - chart.measures.size() : 0;
-    std::uint64_t last_measure_id{};
-    for (const auto& measure : chart.measures)
-        last_measure_id = std::max(last_measure_id, measure.id.value);
-    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id)
+    if (required == 0) return std::nullopt;
+    const auto first = id_ceiling_t<measure_id_t>::from(chart).next(static_cast<std::size_t>(required));
+    if (!first)
         return diagnostic_list_t{
             error(diagnostic_code_t::invalid_id, "virtual measure ID sequence is exhausted")};
     chart.measures.reserve(measure_count);
     for (std::size_t added = 0; added < required; ++added) {
         chart.measures.push_back(
-            {.id = measure_id_t{++last_measure_id}, .definition = {{1, 1}, meter_t{4, 4}}});
+            {.id = measure_id_t{first->value + added}, .definition = {{1, 1}, meter_t{4, 4}}});
     }
     return std::nullopt;
 }

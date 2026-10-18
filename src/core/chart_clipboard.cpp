@@ -685,7 +685,7 @@ auto add_paste_bar_lines(chart_document_t& chart, const chart_clipboard_t& clipb
 auto place_paste_objects(chart_document_t& chart, const measure_index_t& index,
     const chart_clipboard_t& clipboard, std::uint64_t row, chart_paste_proposal_t& proposal)
     -> result_t<void, std::string> {
-    auto id = object_id_ceiling_t::from(chart).maximum;
+    auto id = id_ceiling_t<object_id_t>::from(chart).maximum;
     for (const auto& source : clipboard.objects) {
         auto object = place_object(source, chart, index, row);
         if (!object) return std::unexpected("A clipboard position, duration or lane cannot be represented exactly.");

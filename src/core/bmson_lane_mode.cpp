@@ -27,7 +27,7 @@ auto make_stem(chart_document_t& chart, const sound_channel_t& channel,
     auto lane = std::ranges::find(chart.bgm_source_lanes, std::optional{channel.id},
                                   &bgm_source_lane_t::stem_channel);
     if (lane == chart.bgm_source_lanes.end()) {
-        const auto largest = object_id_ceiling_t::from(chart).maximum;
+        const auto largest = id_ceiling_t<object_id_t>::from(chart).maximum;
         std::size_t order{};
         for (const auto& item : chart.bgm_source_lanes) {
             if (item.source_order == std::numeric_limits<std::size_t>::max())

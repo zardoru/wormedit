@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <array>
 #include <filesystem>
+#include <limits>
 #include <ranges>
 #include <span>
 #include <string>
@@ -2220,4 +2221,32 @@ TEST_CASE("rejected BGA stroke closes its supplied transaction and discards a wo
     check_bga_stroke(!transaction.commit("Must stay closed").applied);
     check_bga_stroke(history.document.metadata.title == original);
     check_bga_stroke(history.undo.empty());
+}
+
+TEST_CASE("resource creation preserves exhausted-ID feedback without publication",
+          "[core][resources][id-ceiling]") {
+    auto song = assignment_song();
+    song.resources.back().id = resource_id_t{std::numeric_limits<std::uint64_t>::max()};
+    auto history = document_history_t::from(std::move(song));
+    const auto before = write_native_project(history.document).value;
+    REQUIRE(before.has_value());
+    const auto result = apply_resource_creation(history,
+        {.asset = asset_id_t{1}, .role = resource_role_t::sample, .name = "New resource"});
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK((!result.applied && result.diagnostics.front().code == diagnostic_code_t::invalid_id &&
+           result.diagnostics.front().message == "resource ID space is exhausted"));
+    CHECK((history.undo.empty() && history.document.revision == 4 &&
+           write_native_project(history.document).value == before));
+}
+
+TEST_CASE("resource asset allocation applies one cap to all three catalogs",
+          "[core][resources][id-ceiling]") {
+    // The fixed production cap requires 100,000 declarations; invalid duplicate
+    // zero IDs are sufficient because this query counts declarations, not validation.
+    song_document_t song;
+    song.midi_assets.resize(99'998);
+    song.audio_assets.push_back({.id = asset_id_t{11}});
+    CHECK(next_resource_asset_id(song) == asset_id_t{12});
+    song.visual_assets.push_back({.id = asset_id_t{17}});
+    CHECK_FALSE(next_resource_asset_id(song));
 }

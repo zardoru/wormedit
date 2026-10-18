@@ -185,7 +185,7 @@ auto prepare_allocation_state(const chart_document_t& chart, const resource_keys
     for (std::size_t i = 0; i < state.lanes.size(); ++i)
         state.lane_index.emplace(state.lanes[i].id, i);
     rank_group_preferences(state, counts);
-    state.largest_id = object_id_ceiling_t::from(chart).maximum;
+    state.largest_id = id_ceiling_t<object_id_t>::from(chart).maximum;
     for (const auto& lane : state.lanes) {
         if (lane.order == std::numeric_limits<std::size_t>::max())
             state.order_exhausted = true;

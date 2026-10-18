@@ -20,7 +20,7 @@ auto events_in_column(const chart_document_t& chart, object_id_t column) -> std:
 
 auto grow_columns(chart_document_t& chart, std::size_t count, document_command_result_t& result)
     -> bool {
-    auto next_id = object_id_ceiling_t::from(chart).maximum;
+    auto next_id = id_ceiling_t<object_id_t>::from(chart).maximum;
     std::size_t order{};
     for (const auto& lane : chart.bgm_source_lanes) order = std::max(order, lane.source_order + 1);
     const auto missing = count - chart.bgm_source_lanes.size();

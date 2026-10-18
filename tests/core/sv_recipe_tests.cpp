@@ -5,6 +5,7 @@
 
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -988,4 +989,28 @@ TEST_CASE("SV range changed captures reject a numeric no-op", "[unit][sv-recipe]
     CHECK(result.diagnostics.empty());
     CHECK(pending.value->payload.lifecycle.status() == proposal_status_t::rejected);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("SV recipe allocation and duplicate rejection share every declaration list",
+          "[unit][sv-recipe][id-ceiling]") {
+    const auto domain = GENERATE(0, 1, 2);
+    auto song = make_recipe_song();
+    song.charts.push_back(make_recipe_chart());
+    song.charts.back().id = chart_id_t{30};
+    if (domain == 0) song.generator_recipes.push_back({.id = recipe_id_t{71}});
+    else song.charts[static_cast<std::size_t>(domain - 1)].sv_recipes.push_back(
+        make_constant_recipe(recipe_id_t{71}, measure_id_t{11}, measure_id_t{12}, {2, 1}));
+    auto history = document_history_t::from(std::move(song));
+    const auto inserted = apply_sv_recipe_edit(history,
+        insert_edit_t<sv_recipe_t>{.chart = chart_id_t{10},
+            .value = make_constant_recipe({}, measure_id_t{11}, measure_id_t{12}, {3, 1})});
+    REQUIRE(inserted);
+    CHECK(history.document.charts.front().sv_recipes.back().id == recipe_id_t{72});
+    const auto duplicate = apply_sv_recipe_edit(history,
+        insert_edit_t<sv_recipe_t>{.chart = chart_id_t{10},
+            .value = make_constant_recipe(recipe_id_t{71}, measure_id_t{11}, measure_id_t{12}, {3, 1})});
+    REQUIRE(duplicate.diagnostics.size() == 1);
+    CHECK((!duplicate.applied && duplicate.diagnostics.front().code == diagnostic_code_t::duplicate_id &&
+           duplicate.diagnostics.front().message == "SV recipe ID is already used by a generator recipe"));
+    CHECK(history.undo.size() == 1);
 }

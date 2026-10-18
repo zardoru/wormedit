@@ -1,3 +1,4 @@
+#include "id_ceiling.h"
 #include "../core/text_util.h"
 #include "checked_math.h"
 #include <wormedit/core/semantic_layer_editor.h>
@@ -187,17 +188,6 @@ auto chart_note_index_t::unique_note(object_id_t id, document_command_result_t& 
         return nullptr;
     }
     return note->second;
-}
-
-auto next_layer_id(const chart_document_t& chart) -> std::optional<layer_id_t> {
-    auto maximum = std::uint64_t{};
-    for (const auto& layer : chart.semantic_layers) {
-        maximum = std::max(maximum, layer.id.value);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return layer_id_t{maximum + 1};
 }
 
 auto layer_membership_note_count(const chart_document_t& chart, layer_id_t layer) -> std::size_t {
@@ -522,7 +512,7 @@ auto insert_semantic_layer(
                "semantic layer names exceed the configured total byte cap");
         return false;
     }
-    const auto id = next_layer_id(chart);
+    const auto id = id_ceiling_t<layer_id_t>::from(chart).next();
     if (!id.has_value()) {
         reject(result, diagnostic_code_t::invalid_resolution,
                "semantic layer ID sequence is exhausted");

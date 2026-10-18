@@ -241,7 +241,7 @@ auto next_channel_source_index(const song_document_t& document, const chart_docu
 
 // Adds an empty BMSON channel and its explicitly linked presentation lane.
 auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_t source_index,
-                 object_id_ceiling_t& ids, document_command_result_t& result) -> bool {
+                 id_ceiling_t<object_id_t>& ids, document_command_result_t& result) -> bool {
     if (ids.count > default_maximum_chart_objects - 2 ||
         ids.maximum > std::numeric_limits<std::uint64_t>::max() - 2) {
         reject(result, diagnostic_code_t::invalid_id, "chart cannot hold another stem (object IDs exhausted)");
@@ -265,7 +265,7 @@ auto append_stem(chart_document_t& chart, resource_entry_t& resource, std::size_
 }
 
 auto import_entry(document_history_t& draft, const bulk_sound_import_entry_t& entry,
-                  chart_id_t stem_chart, object_id_ceiling_t& ids,
+                  chart_id_t stem_chart, id_ceiling_t<object_id_t>& ids,
                   const std::optional<std::string>& bms_identifier,
                   document_command_result_t& result) -> bool {
     auto asset = entry.asset;
@@ -366,20 +366,13 @@ auto next_sound_group_id(const song_document_t& song,
     const auto new_group_count = static_cast<std::uint64_t>(std::ranges::count_if(
         action.groups, [](const auto& group) { return !group.existing_group; }));
     if (new_group_count == 0) return std::uint64_t{1};
-    auto next_id = std::uint64_t{1};
-    for (const auto& group : song.sound_groups) {
-        if (group.id.value == std::numeric_limits<std::uint64_t>::max()) {
-            reject(result, diagnostic_code_t::invalid_id, "sound group IDs are exhausted");
-            return std::nullopt;
-        }
-        next_id = std::max(next_id, group.id.value + 1);
-    }
-    if (new_group_count != 0 && new_group_count - 1 >
-            std::numeric_limits<std::uint64_t>::max() - next_id) {
+    const auto next = id_ceiling_t<sound_group_id_t>::from(song).next(
+        static_cast<std::size_t>(new_group_count));
+    if (!next) {
         reject(result, diagnostic_code_t::invalid_id, "sound group IDs are exhausted");
         return std::nullopt;
     }
-    return next_id;
+    return next->value;
 }
 
 void apply_import_group_rows(song_document_t& song, const bulk_sound_import_action_t& action,
@@ -422,7 +415,7 @@ auto apply_bulk_sound_import(document_history_t& history,
     auto draft = document_history_t::from(history.document, 1, false);
     const auto first_imported_resource = draft.document.resources.size();
     chart_id_t stem_chart{};
-    object_id_ceiling_t ids;
+    id_ceiling_t<object_id_t> ids;
     if (action.chart) {
         const auto found = draft.document.find_chart(action.chart);
         if (found == nullptr) {
@@ -431,7 +424,7 @@ auto apply_bulk_sound_import(document_history_t& history,
         }
         if (found->source_family == format_family_t::bmson) {
             stem_chart = found->id;
-            ids = object_id_ceiling_t::from(*found);
+            ids = id_ceiling_t<object_id_t>::from(*found);
         }
     }
     for (std::size_t index = 0; index < action.entries.size(); ++index) {

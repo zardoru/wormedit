@@ -1182,17 +1182,15 @@ auto apply_virtual_bms_resource_placement(
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
-    std::uint64_t last_measure_id{};
-    for (const auto& measure : chart.measures)
-        last_measure_id = std::max(last_measure_id, measure.id.value);
-    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
+    if (!first_measure_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "virtual resource measure ID sequence is exhausted");
         return result;
     }
     chart.measures.reserve(destination->number + 1);
     for (std::size_t added = 0; added < required; ++added) {
-        chart.measures.push_back({.id = measure_id_t{++last_measure_id},
+        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
                                   .definition = {{1, 1}, meter_t{4, 4}}});
     }
     const local_position_t position{chart.measures[destination->number].id,
@@ -1264,17 +1262,15 @@ auto apply_virtual_bms_bgm_event_move(
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
-    std::uint64_t last_measure_id{};
-    for (const auto& measure : chart.measures)
-        last_measure_id = std::max(last_measure_id, measure.id.value);
-    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
+    if (!first_measure_id) {
         reject(result, diagnostic_code_t::invalid_id,
                "virtual BGM move measure ID sequence is exhausted");
         return result;
     }
     chart.measures.reserve(destination->number + 1);
     for (std::size_t added = 0; added < required; ++added) {
-        chart.measures.push_back({.id = measure_id_t{++last_measure_id},
+        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
                                   .definition = {{1, 1}, meter_t{4, 4}}});
     }
     const local_position_t position{chart.measures[destination->number].id,
@@ -1337,16 +1333,14 @@ auto apply_virtual_bms_bga_event_move(
     auto& chart = proposed.charts[static_cast<std::size_t>(
         source_chart - history.document.charts.data())];
     const auto required = destination->number + 1 - chart.measures.size();
-    std::uint64_t last_measure_id{};
-    for (const auto& measure : chart.measures)
-        last_measure_id = std::max(last_measure_id, measure.id.value);
-    if (required > std::numeric_limits<std::uint64_t>::max() - last_measure_id) {
+    const auto first_measure_id = id_ceiling_t<measure_id_t>::from(chart).next(required);
+    if (!first_measure_id) {
         reject(result, diagnostic_code_t::invalid_id, "virtual BGA measure ID sequence is exhausted");
         return result;
     }
     chart.measures.reserve(destination->number + 1);
     for (std::size_t added = 0; added < required; ++added)
-        chart.measures.push_back({.id = measure_id_t{++last_measure_id},
+        chart.measures.push_back({.id = measure_id_t{first_measure_id->value + added},
                                   .definition = {{1, 1}, meter_t{4, 4}}});
     const local_position_t position{chart.measures[destination->number].id,
                                     snapped_row - destination->begin_row};
@@ -1417,11 +1411,8 @@ auto apply_resource_creation(document_history_t& history,
                "resource creation requires a registered asset of the selected type");
         return result;
     }
-    std::uint64_t largest_id{};
-    for (const auto& resource : document.resources) {
-        largest_id = std::max(largest_id, resource.id.value);
-    }
-    if (largest_id == std::numeric_limits<std::uint64_t>::max()) {
+    const auto id = id_ceiling_t<resource_id_t>::from(document).next();
+    if (!id) {
         reject(result, diagnostic_code_t::invalid_id, "resource ID space is exhausted");
         return result;
     }
@@ -1435,7 +1426,7 @@ auto apply_resource_creation(document_history_t& history,
                "resource source filename exceeds the bounded name limit");
         return result;
     }
-    resource_entry_t resource{.id = resource_id_t{largest_id + 1},
+    resource_entry_t resource{.id = *id,
                               .name = std::move(name),
                               .asset = action.asset,
                               .roles = {action.role},
@@ -1462,16 +1453,7 @@ auto next_resource_asset_id(const song_document_t& document) -> std::optional<as
         document.audio_assets.size() + document.visual_assets.size() + document.midi_assets.size();
     if (asset_count >= 100'000)
         return std::nullopt;
-    std::uint64_t largest{};
-    for (const auto& item : document.audio_assets)
-        largest = std::max(largest, item.id.value);
-    for (const auto& item : document.visual_assets)
-        largest = std::max(largest, item.id.value);
-    for (const auto& item : document.midi_assets)
-        largest = std::max(largest, item.id.value);
-    if (largest == std::numeric_limits<std::uint64_t>::max())
-        return std::nullopt;
-    return asset_id_t{largest + 1};
+    return id_ceiling_t<asset_id_t>::from(document).next();
 }
 
 auto validate_import_source_paths(const import_resource_asset_action_t& action,

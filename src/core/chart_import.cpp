@@ -1,3 +1,4 @@
+#include "id_ceiling.h"
 #include <wormedit/core/rational.h>
 #include <wormedit/core/chart_import.h>
 
@@ -265,11 +266,8 @@ struct merge_maps_t {
 };
 
 auto next_resource_id(const song_document_t& document) -> std::optional<resource_id_t> {
-    std::uint64_t largest{};
-    for (const auto& resource : document.resources) largest = std::max(largest, resource.id.value);
-    if (largest == std::numeric_limits<std::uint64_t>::max() || document.resources.size() >= maximum_catalog_entries)
-        return std::nullopt;
-    return resource_id_t{largest + 1};
+    if (document.resources.size() >= maximum_catalog_entries) return std::nullopt;
+    return id_ceiling_t<resource_id_t>::from(document).next();
 }
 
 // Copies a source asset into the target under a fresh ID and an absolute path.
@@ -345,12 +343,6 @@ void remap_references(chart_document_t& chart, const merge_maps_t& maps) {
         channel.source_clip.source = maps.assets.at(channel.source_clip.source.value);
 }
 
-auto highest_chart_id(const song_document_t& document) -> std::uint64_t {
-    std::uint64_t largest{};
-    for (const auto& chart : document.charts) largest = std::max(largest, chart.id.value);
-    return largest;
-}
-
 // Fresh identities come from the duplicate-chart command, which renumbers every ID of a chart
 // above everything already in the document (and the history).
 auto import_one_chart(document_history_t& scratch, const chart_document_t& source_chart,
@@ -358,10 +350,11 @@ auto import_one_chart(document_history_t& scratch, const chart_document_t& sourc
     auto staged = source_chart;
     remap_references(staged, maps);
     const auto name = staged.metadata.name;
-    staged.id = chart_id_t{highest_chart_id(scratch.document) + 1};
-    const auto staged_id = staged.id;
+    const auto staged_id = id_ceiling_t<chart_id_t>::from(scratch.document).next();
+    if (!staged_id) return std::nullopt;
+    staged.id = *staged_id;
     scratch.document.charts.push_back(std::move(staged));
-    const auto duplicated = apply_duplicate_chart_command(scratch, staged_id);
+    const auto duplicated = apply_duplicate_chart_command(scratch, *staged_id);
     if (!duplicated || !duplicated.payload.chart) return std::nullopt;
     auto chart = *scratch.document.find_chart(*duplicated.payload.chart);
     chart.metadata.name = name;

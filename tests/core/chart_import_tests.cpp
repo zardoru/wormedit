@@ -2,6 +2,7 @@
 
 #include <wormedit/core/chart_import.h>
 #include <wormedit/formats/bms.h>
+#include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
@@ -11,6 +12,7 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <string>
 
 using namespace wormedit;
@@ -271,4 +273,29 @@ TEST_CASE("Chart import session shares stale feedback after missing-source check
     if (!missing) CHECK(session.error == expected);
     CHECK(history.document.revision == revision);
     CHECK(history.undo.empty());
+}
+
+TEST_CASE("Chart import rejects exhausted chart IDs without publishing staged resources",
+          "[unit][core][chart-import][id-allocation]") {
+    scratch_t scratch;
+    auto history = document_history_t::from(parse_bms_text(target_bms));
+    history.document.charts.front().id = chart_id_t{std::numeric_limits<std::uint64_t>::max()};
+    const auto before = write_native_project(history.document);
+    REQUIRE(before.value.has_value());
+    const auto revision = history.document.revision;
+    const auto next_revision = history.next_revision;
+    const auto saved_revision = history.saved_revision;
+    const auto source = parse_sm_fixture("keysounds.sm");
+    const chart_import_paths_t paths{scratch.root / "source", scratch.root / "project"};
+    const std::vector<chart_id_t> selected{source.charts.front().id};
+
+    const auto result = apply_chart_import(history, source, paths, selected);
+
+    check_chart_import_rejection(result, "a chart could not be given fresh identities");
+    CHECK(result.command.diagnostics.front().code == diagnostic_code_t::invalid_id);
+    const auto unchanged = write_native_project(history.document).value == before.value &&
+        history.document.revision == revision && result.command.revision == revision &&
+        history.next_revision == next_revision && history.saved_revision == saved_revision &&
+        history.undo.empty() && history.redo.empty() && result.payload.charts.empty();
+    CHECK(unchanged);
 }

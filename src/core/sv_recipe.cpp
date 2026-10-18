@@ -245,33 +245,6 @@ auto recipe_by_id(chart_document_t& chart, recipe_id_t id) -> sv_recipe_t* {
     return found == chart.sv_recipes.end() ? nullptr : &*found;
 }
 
-auto is_globally_used_recipe_id(const song_document_t& song, recipe_id_t id) -> bool {
-    if (std::ranges::any_of(song.generator_recipes,
-                            [id](const auto& recipe) { return recipe.id == id; })) {
-        return true;
-    }
-    return std::ranges::any_of(song.charts, [id](const auto& chart) {
-        return std::ranges::any_of(chart.sv_recipes,
-                                   [id](const auto& recipe) { return recipe.id == id; });
-    });
-}
-
-auto next_recipe_id(const song_document_t& song) -> std::optional<recipe_id_t> {
-    std::uint64_t maximum{};
-    for (const auto& recipe : song.generator_recipes) {
-        maximum = std::max(maximum, recipe.id.value);
-    }
-    for (const auto& chart : song.charts) {
-        for (const auto& recipe : chart.sv_recipes) {
-            maximum = std::max(maximum, recipe.id.value);
-        }
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return recipe_id_t{maximum + 1};
-}
-
 auto export_rational(double value) -> std::optional<signed_rational_t> {
     constexpr std::uint64_t denominator = 1'000'000'000ULL;
     const auto scaled = static_cast<long double>(value) * static_cast<long double>(denominator);
@@ -1408,14 +1381,14 @@ void apply_recipe_operation(sv_recipe_edit_context_t& context,
     }
     auto recipe = edit.value;
     if (!recipe.id) {
-        const auto id = next_recipe_id(context.transaction.current_document());
+        const auto id = id_ceiling_t<recipe_id_t>::from(context.transaction.current_document()).next();
         if (!id) {
             reject(context.transaction.outcome().diagnostics, diagnostic_code_t::invalid_id,
                    "SV recipe ID sequence is exhausted");
             return;
         }
         recipe.id = *id;
-    } else if (is_globally_used_recipe_id(context.transaction.current_document(), recipe.id)) {
+    } else if (id_counter_t<recipe_id_t>::from(context.transaction.current_document(), recipe.id, 1).count != 0) {
         reject(context.transaction.outcome().diagnostics, diagnostic_code_t::duplicate_id,
                "SV recipe ID is already used by a generator recipe");
         return;

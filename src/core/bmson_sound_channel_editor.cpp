@@ -423,8 +423,8 @@ auto validate_marker_targets(const chart_document_t& chart, const measure_index_
 
 // Marker reservation also includes source clips, a distinct ID domain. Keep its
 // existing ceiling/cap policy separate from chart object declarations.
-auto chart_object_stats(const chart_document_t& chart) -> object_id_ceiling_t {
-    auto stats = object_id_ceiling_t::from(chart);
+auto chart_object_stats(const chart_document_t& chart) -> id_ceiling_t<object_id_t> {
+    auto stats = id_ceiling_t<object_id_t>::from(chart);
     for (const auto& channel : chart.sound_channels) {
         stats.maximum = std::max(stats.maximum, channel.source_clip.id.value);
         ++stats.count;
@@ -751,7 +751,7 @@ auto ensure_bgm_source_lane(chart_document_t& chart, object_id_t channel, std::u
     const auto found = std::ranges::find_if(chart.bgm_source_lanes,
         [&](const auto& lane) { return lane.source_order == order; });
     if (found != chart.bgm_source_lanes.end()) return found->id;
-    const auto largest = object_id_ceiling_t::from(chart).maximum;
+    const auto largest = id_ceiling_t<object_id_t>::from(chart).maximum;
     if (largest == std::numeric_limits<std::uint64_t>::max())
         return document_command_transaction_t::rejection(revision, diagnostic_code_t::invalid_id,
                         "BMSON BGM lane ID space is exhausted");

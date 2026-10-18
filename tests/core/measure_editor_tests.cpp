@@ -971,3 +971,14 @@ TEST_CASE("Adding bar lines rejects before changing the chart", "[core][measure-
         .children = {{.id = branch_id_t{2}, .kind = bms_control_kind_t::random}}};
     rejects({480}, branched);
 }
+
+TEST_CASE("audio extent rejects a multi-measure ID reservation before appending",
+          "[core][measure-editor][audio-extent][id-ceiling]") {
+    auto song = measure_song();
+    auto& chart = song.charts.front();
+    chart.measures.push_back({.id = measure_id_t{std::numeric_limits<std::uint64_t>::max() - 1}});
+    const auto before = write_native_project(song).value;
+    REQUIRE(before.has_value());
+    CHECK_FALSE(extend_chart_to_audio_end(chart, {48'000, 2, 48'000 * 13, true}));
+    CHECK(write_native_project(song).value == before);
+}

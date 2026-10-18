@@ -928,3 +928,21 @@ TEST_CASE("Selected sound layers deduplicate resources support BGM-only and igno
     check_selected_sounds(history.document.revision == revision);
     check_selected_sounds(history.undo.size() == 1);
 }
+
+TEST_CASE("semantic layer allocation preserves exhausted-ID rejection",
+          "[core][semantic-layer-editor][id-ceiling]") {
+    auto song = semantic_layer_song();
+    song.charts.front().semantic_layers.push_back(
+        {.id = layer_id_t{std::numeric_limits<std::uint64_t>::max()}, .name = "Last"});
+    auto history = document_history_t::from(std::move(song));
+    const auto before = write_native_project(history.document).value;
+    REQUIRE(before.has_value());
+    const auto result = apply_semantic_layer_edit(history,
+        insert_edit_t<semantic_layer_edit_value_t>{.chart = chart_id_t{2},
+            .value = {.name = "New", .color = {.alpha = 1.0}}});
+    REQUIRE(result.diagnostics.size() == 1);
+    CHECK((!result.applied && result.diagnostics.front().code == diagnostic_code_t::invalid_resolution &&
+           result.diagnostics.front().message == "semantic layer ID sequence is exhausted"));
+    CHECK((history.undo.empty() && history.document.revision == 4 &&
+           write_native_project(history.document).value == before));
+}

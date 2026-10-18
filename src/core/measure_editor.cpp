@@ -39,17 +39,6 @@ auto validate_definition(const chart_document_t& chart, const measure_definition
     return true;
 }
 
-auto next_measure_id(const chart_document_t& chart) -> std::optional<measure_id_t> {
-    std::uint64_t maximum{};
-    for (const auto& measure : chart.measures) {
-        maximum = std::max(maximum, measure.id.value);
-    }
-    if (maximum == std::numeric_limits<std::uint64_t>::max()) {
-        return std::nullopt;
-    }
-    return measure_id_t{maximum + 1};
-}
-
 constexpr std::string_view unknown_measure_message = "measure edit refers to an unknown measure";
 constexpr target_query_policy_t measure_target_policy{
     .messages = {unknown_measure_message,
@@ -281,7 +270,7 @@ auto apply_measure_action(measure_edit_context_t& context,
     if (!validate_definition(*chart, edit.definition, context.limits, context.result)) {
         return;
     }
-    const auto id = next_measure_id(*chart);
+    const auto id = id_ceiling_t<measure_id_t>::from(*chart).next();
     if (!id) {
         reject(context.result, diagnostic_code_t::invalid_id, "measure ID sequence is exhausted");
         return;
@@ -370,7 +359,7 @@ auto append_default_measures(chart_document_t& chart, std::size_t count,
                              const measure_edit_limits_t& limits) -> bool {
     if (count > limits.maximum_measures) return false;
     while (chart.measures.size() < count) {
-        const auto id = next_measure_id(chart);
+        const auto id = id_ceiling_t<measure_id_t>::from(chart).next();
         if (!id) return false;
         chart.measures.push_back(measure_chunk_t{.id = *id});
     }
@@ -664,7 +653,7 @@ auto split_measures_at(chart_document_t& chart, const measure_index_t& before,
     if (!lift_bucketed_objects(chart, before, 0, notes, bgm) ||
         !collect_free_rows(chart, before, free_rows)) return false;
     for (const auto& position : descending) {
-        const auto id = next_measure_id(chart);
+        const auto id = id_ceiling_t<measure_id_t>::from(chart).next();
         const auto* measure = chart.find_measure(position.measure);
         if (!id || measure == nullptr) return false;
         const auto at = static_cast<std::size_t>(measure - chart.measures.data());
@@ -1217,10 +1206,9 @@ auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_
     if (!std::isfinite(extra) || extra < 1 || chart.measures.size() > limits.maximum_measures ||
         extra > limits.maximum_measures - chart.measures.size() ||
         chart.divisions_per_standard_measure > limits.maximum_rows_per_measure) return false;
-    const auto first = next_measure_id(chart);
     const auto count = static_cast<std::size_t>(extra);
-    if (!first || count - 1 > std::numeric_limits<std::uint64_t>::max() - first->value)
-        return false;
+    const auto first = id_ceiling_t<measure_id_t>::from(chart).next(count);
+    if (!first) return false;
     chart.measures.reserve(chart.measures.size() + count);
     for (std::size_t index = 0; index < count; ++index)
         chart.measures.push_back({.id = measure_id_t{first->value + index}});

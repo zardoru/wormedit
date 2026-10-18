@@ -23,8 +23,6 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
                                    const wormedit::chart_indices_t& indices, double fraction,
                                    std::uint64_t active_denominator)
     -> std::optional<wormedit::local_position_t>;
-auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
-    -> std::optional<wormedit::timing_lane_kind_t>;
 auto begin_timing_stage(const WormUiWorkspaceAction& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked,

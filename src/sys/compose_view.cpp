@@ -1,3 +1,4 @@
+#include "sys/timing_lane_ui.h"
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose_view.h"
 #include "sys/compose_area_actions.h"
@@ -801,28 +802,6 @@ auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> boo
            });
 }
 
-auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLaneKind {
-    using kind_t = wormedit::timing_lane_kind_t;
-    switch (lane) {
-    case kind_t::bpm:
-        return WORM_UI_TIMING_LANE_BPM;
-    case kind_t::scroll:
-        return WORM_UI_TIMING_LANE_SCROLL;
-    case kind_t::speed:
-        return WORM_UI_TIMING_LANE_SPEED;
-    case kind_t::stop:
-        return WORM_UI_TIMING_LANE_STOP;
-    case kind_t::delay:
-        return WORM_UI_TIMING_LANE_DELAY;
-    case kind_t::warp:
-        return WORM_UI_TIMING_LANE_WARP;
-    case kind_t::kiai:
-        return WORM_UI_TIMING_LANE_KIAI;
-    case kind_t::anchor:
-        return WORM_UI_TIMING_LANE_ANCHOR;
-    }
-    return WORM_UI_TIMING_LANE_BPM;
-}
 
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t {
     using wormedit::physical_key_t;
@@ -2123,32 +2102,16 @@ void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snap
                                 std::max(first, last)});
 }
 
-auto area_timing_kind(WormUiTimingLaneKind lane)
-    -> std::optional<wormedit::editor_selection_object_kind_t> {
-    using kind = wormedit::editor_selection_object_kind_t;
-    switch (lane) {
-    case WORM_UI_TIMING_LANE_BPM: return kind::bpm_event;
-    case WORM_UI_TIMING_LANE_SCROLL: return kind::scroll_event;
-    case WORM_UI_TIMING_LANE_SPEED: return kind::speed_event;
-    case WORM_UI_TIMING_LANE_STOP: return kind::stop_event;
-    case WORM_UI_TIMING_LANE_DELAY: return kind::delay_event;
-    case WORM_UI_TIMING_LANE_WARP: return kind::warp_event;
-    case WORM_UI_TIMING_LANE_KIAI: return kind::kiai_event;
-    case WORM_UI_TIMING_LANE_ANCHOR: return kind::timing_anchor;
-    case WORM_UI_TIMING_LANE_COUNT: return std::nullopt;
-    }
-    return std::nullopt;
-}
 
 void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                 const WormUiComposeView& view, bool downscroll) {
     for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
         const auto& marker = view.timing_markers[i];
-        const auto kind = area_timing_kind(marker.lane);
-        if (!kind || marker.object_id == 0) continue;
+        const auto* lane = ui_codec<WormUiTimingLaneKind>::descriptor(marker.lane);
+        if (!lane || marker.object_id == 0) continue;
         const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, marker);
         if (bounds.right <= bounds.left) continue;
-        append_area_object_geometry(snapshot, {*kind, wormedit::object_id_t{marker.object_id}},
+        append_area_object_geometry(snapshot, {lane->selection_kind, wormedit::object_id_t{marker.object_id}},
                                      bounds, view, downscroll);
     }
 }
@@ -2220,7 +2183,7 @@ auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
     return std::visit([](const auto& event) -> std::optional<WormUiTimingLaneKind> {
         using access = wormedit::timing_event_access_t<std::remove_cvref_t<decltype(event)>>;
         if constexpr (requires { access::kind(event); })
-            return timing_lane_kind_to_ui(access::kind(event));
+            return ui_codec<WormUiTimingLaneKind>::from(access::kind(event));
         else return std::nullopt;
     }, object);
 }

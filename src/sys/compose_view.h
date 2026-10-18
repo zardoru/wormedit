@@ -818,7 +818,6 @@ auto maximum_layout_lane_count(const wormedit::chart_document_t& chart) -> std::
 auto compose_physical_scancode(wormedit::physical_key_t key) -> std::uint32_t;
 auto has_beat_marker_navigation(const wormedit::chart_document_t& chart) -> bool;
 auto has_audio_marker_navigation(const wormedit::chart_document_t& chart) -> bool;
-auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLaneKind;
 auto requested_snap_denominator(const application_command_state_t& application_state,
                                 wormedit::chart_id_t chart) -> std::uint64_t;
 auto compose_snap_preferences(const application_command_state_t& state, wormedit::chart_id_t chart)

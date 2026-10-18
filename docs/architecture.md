@@ -94,14 +94,51 @@ Rules for writing each piece: [code style](chart-editor-plan/decisions/code-styl
 
 New specialized lanes should add their domain data/projection, named drawing and targeting,
 and edit/gesture payloads through the existing transaction. Common lane metadata and input
-participation facts need one owner; point/span/handle geometry, musical versus audio coordinates,
+participation facts have their own owners; point/span/handle geometry, musical versus audio coordinates,
 resource requirements, snapping and lock policies remain explicit.
 
-New UI gestures reuse `compose_drag_capture_t`, live `compose_input_queries_t`, the shared
-cancellation inventory and the core gesture/proposal runner. Declare capture participation once
-where facts coincide, preserve named input priority and per-domain release rules, and add the
-production-emitter interruption/late-release case with the gesture. Audio-offset cancellation
-keeps its separate stamp and deferred action.
+For a new specialized lane, start with the contrasting families in the
+[extension inventory](chart-editor-plan/tasks/extension-friction.md#lane-and-gesture-execution-inventory-2026-10-18)
+and follow these extension sites:
+
+1. Add its durable data, validation and typed edit at the core domain owner. Timing events use
+   `timing_event_access_t` and the timing-lane controller; BGA resources, measure boundaries and
+   audio sources retain their own editors and transactions.
+2. Add the projected view at the matching sys owner: timing markers in `compose_marker_view.cpp`,
+   SPEEDS spans in `compose_speed_spans.cpp`, BGA in `compose_scene_view.cpp`, measure/grid in
+   `compose_view.cpp`, and audio overlays in `compose_waveform_overlays.cpp`. Retain the current
+   scene-cache keys and frame-storage lifetimes.
+3. Put each geometry fact at its existing shared owner and use it from drawing and targeting.
+   `compose_timing_geometry.h` owns timing partitions and marker/bar-line bounds. Point heads,
+   span bodies, handles, resource stacks and audio coordinates keep their distinct policies.
+4. For a timing family, add the core catalog descriptor and its UI enum correspondence in
+   `sys/timing_lane_ui.h`. The codec's descriptor query derives selection identity from
+   `core/timing_lane_catalog.h`; staging, marker projection, marker selection, area geometry and
+   paste ghosts use these owners. Labels come from the core catalog, widths from timing geometry,
+   and icons/theme from rendering. Other specialized lanes do not enter this timing catalog.
+5. Add named drawing and ordered pointer handlers, selection/area participation and one action
+   route or gesture kind through the existing edit pipeline. Preserve visibility, locks, snapping,
+   resource resolution and overlap priorities. Verify projection plus actual input emission;
+   use isolated Xvfb for the resulting layout.
+
+For a new UI gesture:
+
+1. Keep its capture fields in the matching lifetime group in `compose_state.h`; use
+   `compose_drag_capture_t` for the existing stamp, threshold and continuation decisions. Choose
+   its domain release policy explicitly. Core edits use the core gesture/proposal runner.
+2. Declare any hover/paint reservation in the participation table in `compose_input_queries_t`.
+   Active and candidate flags may differ: a BMSON candidate reserves paint, while a hold candidate
+   reserves hover. Captures handled entirely by an ordered consumer need no blanket reservation.
+   Inline editors, popups and bookmark rename keep their separate editor/input gates.
+3. Add the named consumer in the existing ordered routing path. Query participation again after
+   earlier handlers can acquire input; never cache the query result across those handlers.
+4. Register capture and candidate reset hooks with `cancel_compose_gestures` in
+   `compose_input_panel.cpp`. The cancellation inventory owns cleanup, while the participation
+   table owns consumer policy. Preserve capture evidence until hooks observe it; retain the
+   separate stamp and deferred cancellation for audio-offset edits.
+5. Add the actual production emitter to the lifecycle event fixture and its interruption/late
+   release matrix. Check both its hover/paint policy and its distinct click/release/source-validity
+   behavior. Navigation and view-only captures retain their own effects.
 
 SV compilation uses `sv_recipe_prepared_t` in `core/sv_recipe.h`: pure built-ins keep exact
 random-access values, while an already-evaluated emission batch holds its preceding value
@@ -113,5 +150,4 @@ checks above. Lua execution and stored post-processing stages remain separate fe
 
 The [extension checkpoints](chart-editor-plan/tasks/extension-friction.md) record the current
 SV capability references, cross-cycle state direction, bounded lane/gesture findings,
-the T-681 implementation and proposed T-682–T-683 scopes. Lane and gesture extractions remain
-extension goals until their checkpoints land.
+the T-681–T-683 implementation scopes and their bounded verification evidence.

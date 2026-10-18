@@ -7,6 +7,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <array>
+#include <tuple>
 
 namespace {
 auto lifecycle_key(SDL_Keycode key, SDL_Scancode scan, bool down = true) -> SDL_Event {
@@ -676,4 +677,42 @@ TEST_CASE("Compose input claims preserve consumer differences and read live stat
         lifecycle_check(claims.is_context_invocation_blocked());
         lifecycle_check(!claims.is_canvas_input_blocked());
     }
+}
+
+TEST_CASE("Production Compose captures preserve hover and paint participation",
+          "[frontend-state][event-harness][compose-input-queries]") {
+    const auto [family, hover, paint] = GENERATE(
+        std::tuple{lifecycle_family::paint, true, true},
+        std::tuple{lifecycle_family::erase, false, false},
+        std::tuple{lifecycle_family::semantic, true, true},
+        std::tuple{lifecycle_family::pointer_hold, true, false},
+        std::tuple{lifecycle_family::lane_hold, true, false},
+        std::tuple{lifecycle_family::range, false, false},
+        std::tuple{lifecycle_family::area, true, false},
+        std::tuple{lifecycle_family::move, true, false},
+        std::tuple{lifecycle_family::kiai, true, true},
+        std::tuple{lifecycle_family::speed, true, true},
+        std::tuple{lifecycle_family::recipe, true, true},
+        std::tuple{lifecycle_family::timing_marker, true, false},
+        std::tuple{lifecycle_family::timing_stage, true, true},
+        std::tuple{lifecycle_family::beat_fit, false, false},
+        std::tuple{lifecycle_family::offset_fit, false, false},
+        std::tuple{lifecycle_family::overview, true, false},
+        std::tuple{lifecycle_family::measure, false, false},
+        std::tuple{lifecycle_family::stem, false, false},
+        std::tuple{lifecycle_family::bga, false, false},
+        std::tuple{lifecycle_family::bookmark, false, false},
+        std::tuple{lifecycle_family::bmson, true, true},
+        std::tuple{lifecycle_family::beat_zero, true, false},
+        std::tuple{lifecycle_family::chip, false, false},
+        std::tuple{lifecycle_family::mix, false, false},
+        std::tuple{lifecycle_family::razor, true, true},
+        std::tuple{lifecycle_family::navigation, false, false});
+    CAPTURE(family);
+    lifecycle_fixture_t fixture{family};
+    const compose_input_queries_t claims{worm_ui_nuklear_compose_state()};
+    (void)fixture.begin();
+    REQUIRE(fixture.active());
+    CHECK(claims.is_canvas_hover_blocked() == hover);
+    CHECK(claims.is_paint_blocked() == paint);
 }

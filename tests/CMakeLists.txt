@@ -728,6 +728,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/components.cpp
         sys/bga_lane_projection_tests.cpp
         sys/compose_hover_timing_tests.cpp
+        sys/timing_lane_ui_tests.cpp
         ../src/sys/compose_hover_timing.cpp
         sys/frame_timing_tests.cpp
         sys/compose_notification_tests.cpp

@@ -1,3 +1,4 @@
+#include "sys/timing_lane_ui.h"
 #include "core/text_util.h"
 #include "sys/catalog_view.h"
 #include "sys/application.h"
@@ -183,7 +184,6 @@ bool open_bookmark_chooser_backend(void*, std::uint64_t project, std::uint64_t c
 
 using wormedit::sys::begin_timing_stage;
 using wormedit::sys::compose_action_outcome_t;
-using wormedit::sys::timing_lane_kind_from_ui;
 using wormedit::sys::timing_position_from_fraction;
 using wormedit::sys::timing_stage_value;
 
@@ -217,7 +217,6 @@ using wormedit::sys::compose_surface_height;
 using wormedit::sys::maximum_layout_lane_count;
 using wormedit::sys::populate_compose_view;
 using wormedit::sys::requested_snap_denominator;
-using wormedit::sys::timing_lane_kind_to_ui;
 using wormedit::sys::compose_result_status;
 using wormedit::sys::dispatch_compose_input_action;
 using wormedit::sys::dispatch_compose_navigation_actions;
@@ -1015,7 +1014,7 @@ void delete_staged_timing_event(const WormUiWorkspaceAction& action,
                                 wormedit::document_history_t& history, bool timing_locked,
                                 wormedit::timing_lane_pseudonote_outcome_t& stage,
                                 wormedit::notification_sink_t& notifications) {
-    const auto kind = timing_lane_kind_from_ui(action.timing_lane);
+    const auto kind = wormedit::sys::ui_codec<WormUiTimingLaneKind>::into(action.timing_lane);
     if (!stage.report()->existing_event || !kind || *kind != stage.report()->kind) {
         post_edit_rejection(notifications, {}, "The selected timing event cannot be deleted.");
     } else {

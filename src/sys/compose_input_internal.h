@@ -1264,16 +1264,6 @@ auto select_compose_bgm_event(const WormUiComposeInputAction& input,
                               wormedit::editor_interaction_result_t& result,
                               std::string_view& accepted) -> std::optional<std::string>;
 
-struct compose_timing_identity_t {
-    wormedit::timing_lane_kind_t lane;
-    wormedit::editor_selection_object_kind_t selection;
-};
-
-auto compose_timing_identity(WormUiTimingLaneKind lane) -> std::optional<compose_timing_identity_t>;
-
-auto compose_timing_lane_for_selection(wormedit::editor_selection_object_kind_t selection)
-    -> std::optional<wormedit::timing_lane_kind_t>;
-
 auto select_compose_timing_marker(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,

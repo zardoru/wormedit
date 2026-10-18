@@ -495,9 +495,6 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
 
 void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened);
 
-auto compose_marker_selection_kind(WormUiTimingLaneKind lane)
-    -> wormedit::editor_selection_object_kind_t;
-
 auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
                                     WormUiTimingLaneKind lane, std::uint64_t id) -> bool;
 
@@ -989,9 +986,6 @@ void append_area_object_geometry(wormedit::editor_area_geometry_snapshot_t& snap
                                  wormedit::editor_selection_object_t object,
                                  WormUiComposeRect bounds, const WormUiComposeView& view,
                                  bool downscroll);
-
-auto area_timing_kind(WormUiTimingLaneKind lane)
-    -> std::optional<wormedit::editor_selection_object_kind_t>;
 
 void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snapshot,
                                  const WormUiComposeView& view, bool downscroll);

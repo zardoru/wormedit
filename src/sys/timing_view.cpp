@@ -1,3 +1,4 @@
+#include "sys/timing_lane_ui.h"
 #include <wormedit/core/rational.h>
 #include "sys/timing_view.h"
 #include "sys/recipe_form.h"
@@ -91,28 +92,6 @@ auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
     return chart.divisions_per_standard_measure / active_denominator;
 }
 
-auto timing_lane_kind_to_ui(wormedit::timing_lane_kind_t lane) -> WormUiTimingLaneKind {
-    using kind_t = wormedit::timing_lane_kind_t;
-    switch (lane) {
-    case kind_t::bpm:
-        return WORM_UI_TIMING_LANE_BPM;
-    case kind_t::scroll:
-        return WORM_UI_TIMING_LANE_SCROLL;
-    case kind_t::speed:
-        return WORM_UI_TIMING_LANE_SPEED;
-    case kind_t::stop:
-        return WORM_UI_TIMING_LANE_STOP;
-    case kind_t::delay:
-        return WORM_UI_TIMING_LANE_DELAY;
-    case kind_t::warp:
-        return WORM_UI_TIMING_LANE_WARP;
-    case kind_t::kiai:
-        return WORM_UI_TIMING_LANE_KIAI;
-    case kind_t::anchor:
-        return WORM_UI_TIMING_LANE_ANCHOR;
-    }
-    return WORM_UI_TIMING_LANE_BPM;
-}
 
 auto timing_pause_unit_to_ui(wormedit::pause_unit_t unit) -> WormUiTimingPauseUnit {
     using unit_t = wormedit::pause_unit_t;
@@ -222,7 +201,7 @@ void populate_timing_stage_view(
         view.stage_valid = stage->value.has_value();
         view.stage_existing_object_id =
             report->existing_event.has_value() ? report->existing_event->value : 0;
-        view.stage_lane = timing_lane_kind_to_ui(report->kind);
+        view.stage_lane = ui_codec<WormUiTimingLaneKind>::from(report->kind);
         const auto stage_row =
             measures ? (*measures).row_of(report->position) : std::nullopt;
         view.stage_marker_y_pixels =

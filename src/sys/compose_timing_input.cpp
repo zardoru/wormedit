@@ -1,50 +1,14 @@
+#include "sys/timing_lane_ui.h"
 #include <wormedit/core/timing.h>
 #include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
-auto compose_timing_identity(WormUiTimingLaneKind lane)
-    -> std::optional<compose_timing_identity_t> {
-    using lane_t = wormedit::timing_lane_kind_t;
-    using selection_t = wormedit::editor_selection_object_kind_t;
-    switch (lane) {
-    case WORM_UI_TIMING_LANE_BPM:
-        return compose_timing_identity_t{lane_t::bpm, selection_t::bpm_event};
-    case WORM_UI_TIMING_LANE_SCROLL:
-        return compose_timing_identity_t{lane_t::scroll, selection_t::scroll_event};
-    case WORM_UI_TIMING_LANE_SPEED:
-        return compose_timing_identity_t{lane_t::speed, selection_t::speed_event};
-    case WORM_UI_TIMING_LANE_STOP:
-        return compose_timing_identity_t{lane_t::stop, selection_t::stop_event};
-    case WORM_UI_TIMING_LANE_DELAY:
-        return compose_timing_identity_t{lane_t::delay, selection_t::delay_event};
-    case WORM_UI_TIMING_LANE_WARP:
-        return compose_timing_identity_t{lane_t::warp, selection_t::warp_event};
-    case WORM_UI_TIMING_LANE_KIAI:
-        return compose_timing_identity_t{lane_t::kiai, selection_t::kiai_event};
-    case WORM_UI_TIMING_LANE_ANCHOR:
-        return compose_timing_identity_t{lane_t::anchor, selection_t::timing_anchor};
-    case WORM_UI_TIMING_LANE_COUNT:
-        break;
-    }
-    return std::nullopt;
-}
-
-auto compose_timing_lane_for_selection(wormedit::editor_selection_object_kind_t selection)
-    -> std::optional<wormedit::timing_lane_kind_t> {
-    for (unsigned ordinal = 0; ordinal < WORM_UI_TIMING_LANE_COUNT; ++ordinal) {
-        const auto identity = compose_timing_identity(static_cast<WormUiTimingLaneKind>(ordinal));
-        if (identity && identity->selection == selection)
-            return identity->lane;
-    }
-    return std::nullopt;
-}
-
 auto select_compose_timing_marker(const WormUiComposeInputAction& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
-    const auto identity = compose_timing_identity(input.timing_lane);
+    const auto identity = ui_codec<WormUiTimingLaneKind>::descriptor(input.timing_lane);
     const auto mode = context.selection_mode(input.selection_mode);
     if (!identity || !mode || input.object_id == 0)
         return "Timing marker selection is stale or invalid.";
@@ -53,7 +17,7 @@ auto select_compose_timing_marker(const WormUiComposeInputAction& input,
     result = dispatch_editor_action(
         context.environment.document.history, context.state,
         select_editor_objects_action_t{
-            .objects = {{identity->selection, object_id_t{input.object_id}}}, .mode = *mode});
+            .objects = {{identity->selection_kind, object_id_t{input.object_id}}}, .mode = *mode});
     accepted = "Timing marker selected.";
     return std::nullopt;
 }
@@ -79,7 +43,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
-    const auto identity = compose_timing_identity(input.timing_lane);
+    const auto identity = ui_codec<WormUiTimingLaneKind>::descriptor(input.timing_lane);
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!identity || !chart || !view || !std::isfinite(input.y_pixels))
@@ -87,7 +51,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     if (!context.is_timing_input_current(input))
         return stale_action_message("Timing marker move");
     const auto clicked =
-        editor_selection_object_t{identity->selection, object_id_t{input.object_id}};
+        editor_selection_object_t{identity->selection_kind, object_id_t{input.object_id}};
     if (std::ranges::find(context.state.selected_objects, clicked) ==
         context.state.selected_objects.end())
         return "Select the timing marker before dragging it.";
@@ -103,7 +67,7 @@ auto move_compose_timing_selection(const WormUiComposeInputAction& input,
     std::vector<timing_lane_event_ref_t> selected;
     selected.reserve(context.state.selected_objects.size());
     for (const auto& object : context.state.selected_objects) {
-        const auto lane = compose_timing_lane_for_selection(object.kind);
+        const auto lane = timing_lane_for_selection(object.kind);
         if (lane)
             selected.push_back({*lane, object.id});
     }

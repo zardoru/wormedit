@@ -1,3 +1,4 @@
+#include "sys/timing_lane_ui.h"
 #include "sys/application_timing_stage.h"
 #include "sys/application_edit_inputs.h"
 #include "sys/timing_edit_runtime.h"
@@ -84,32 +85,6 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
     return measures->position_at(snapped_row);
 }
 
-auto timing_lane_kind_from_ui(WormUiTimingLaneKind lane)
-    -> std::optional<wormedit::timing_lane_kind_t> {
-    using kind_t = wormedit::timing_lane_kind_t;
-    switch (lane) {
-    case WORM_UI_TIMING_LANE_BPM:
-        return kind_t::bpm;
-    case WORM_UI_TIMING_LANE_SCROLL:
-        return kind_t::scroll;
-    case WORM_UI_TIMING_LANE_SPEED:
-        return kind_t::speed;
-    case WORM_UI_TIMING_LANE_STOP:
-        return kind_t::stop;
-    case WORM_UI_TIMING_LANE_DELAY:
-        return kind_t::delay;
-    case WORM_UI_TIMING_LANE_WARP:
-        return kind_t::warp;
-    case WORM_UI_TIMING_LANE_KIAI:
-        return kind_t::kiai;
-    case WORM_UI_TIMING_LANE_ANCHOR:
-        return kind_t::anchor;
-    case WORM_UI_TIMING_LANE_COUNT:
-        break;
-    }
-    return std::nullopt;
-}
-
 auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
     -> std::optional<wormedit::pause_unit_t> {
     using unit_t = wormedit::pause_unit_t;
@@ -179,7 +154,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         history.document.revision != action.timing_document_revision) {
         return rejected;
     }
-    const auto requested_kind = timing_lane_kind_from_ui(action.timing_lane);
+    const auto requested_kind = ui_codec<WormUiTimingLaneKind>::into(action.timing_lane);
     if (!requested_kind) {
         return rejected;
     }

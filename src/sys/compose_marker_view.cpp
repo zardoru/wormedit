@@ -1,3 +1,4 @@
+#include "sys/timing_lane_ui.h"
 #include <wormedit/core/rational.h>
 #include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
@@ -318,37 +319,13 @@ void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened
     }
 }
 
-auto compose_marker_selection_kind(WormUiTimingLaneKind lane)
-    -> wormedit::editor_selection_object_kind_t {
-    using kind_t = wormedit::editor_selection_object_kind_t;
-    switch (lane) {
-    case WORM_UI_TIMING_LANE_BPM:
-        return kind_t::bpm_event;
-    case WORM_UI_TIMING_LANE_SCROLL:
-        return kind_t::scroll_event;
-    case WORM_UI_TIMING_LANE_SPEED:
-        return kind_t::speed_event;
-    case WORM_UI_TIMING_LANE_STOP:
-        return kind_t::stop_event;
-    case WORM_UI_TIMING_LANE_DELAY:
-        return kind_t::delay_event;
-    case WORM_UI_TIMING_LANE_WARP:
-        return kind_t::warp_event;
-    case WORM_UI_TIMING_LANE_KIAI:
-        return kind_t::kiai_event;
-    case WORM_UI_TIMING_LANE_ANCHOR:
-        return kind_t::timing_anchor;
-    case WORM_UI_TIMING_LANE_COUNT:
-        break;
-    }
-    return kind_t::bpm_event;
-}
-
 auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
                                     WormUiTimingLaneKind lane, std::uint64_t id) -> bool {
     if (id == 0)
         return false;
-    const auto kind = compose_marker_selection_kind(lane);
+    const auto* descriptor = ui_codec<WormUiTimingLaneKind>::descriptor(lane);
+    const auto kind = descriptor ? descriptor->selection_kind
+                                 : wormedit::editor_selection_object_kind_t::bpm_event;
     return std::ranges::any_of(interaction.selected_objects, [kind, id](const auto& object) {
         return object.kind == kind && object.id.value == id;
     });
@@ -539,7 +516,7 @@ void populate_compose_timing_markers(
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
                 view.timing_stage_valid = timing_stage->value.has_value();
-                view.timing_stage_lane = timing_lane_kind_to_ui(stage_report->kind);
+                view.timing_stage_lane = ui_codec<WormUiTimingLaneKind>::from(stage_report->kind);
                 view.timing_stage_y_pixels = y;
             }
         }

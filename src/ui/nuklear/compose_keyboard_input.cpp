@@ -38,7 +38,7 @@
 #include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/compose_area_menu.h"
 
-void queue_compose_key_input(std::uint32_t keycode, std::uint32_t scancode,
+void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scancode,
                                        std::uint16_t modifiers, bool down, bool repeat) {
     if (state.input_queue.cancel_pending) {
         return;

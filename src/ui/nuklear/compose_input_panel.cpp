@@ -174,7 +174,7 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
     state.input_queue.pointer_press_modifiers.reset();
     state.range_selection.alt_wheel_last_event_ms.reset();
     cancel_compose_navigation(action);
-    discard_compose_frame_input();
+    worm_ui_nuklear_compose_discard_frame_input();
     if (action) {
         action->minimap_window_capture_active = false;
         if (pending) append_compose_cancel_once(action);
@@ -349,7 +349,7 @@ void append_compose_cancel_once(WormUiWorkspaceAction* action) {
     }
 }
 
-void queue_compose_wheel_input(double delta_x, double delta_y, double mouse_x,
+void worm_ui_nuklear_queue_compose_wheel(double delta_x, double delta_y, double mouse_x,
                                          double mouse_y, std::uint16_t modifiers,
                                          bool coarse_steps) {
     if (state.input_queue.wheel_event_count == state.input_queue.wheel_events.size()) {
@@ -376,19 +376,19 @@ void queue_compose_pinch_input(worm_ui_nuklear_pinch_phase_t phase,
                                state.document_context.last_project_id, state.document_context.last_chart_id);
 }
 
-void queue_compose_middle_click_input(float x, float y) {
+void worm_ui_nuklear_queue_compose_middle_click(float x, float y) {
     state.input_queue.middle_click_pending = true;
     state.input_queue.middle_click_x = x;
     state.input_queue.middle_click_y = y;
 }
 
-void compose_handle_focus_lost_input() {
+void worm_ui_nuklear_compose_handle_focus_lost() {
     cancel_compose_gestures(nullptr);
     state.input_queue.key_event_count = 0;
     state.input_queue.keyboard_focus = false;
 }
 
-void discard_compose_frame_input() {
+void worm_ui_nuklear_compose_discard_frame_input() {
     state.pinch.pinch = {};
     state.input_queue.wheel_event_count = 0;
     state.input_queue.middle_click_pending = false;
@@ -601,7 +601,7 @@ static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
     }
 }
 
-void prepare_compose_panel_input(const WormUiComposeView* view, bool compose_tab_active,
+void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
     state.input_queue.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
     retain_compose_core_gesture_presence(view, compose_tab_active);

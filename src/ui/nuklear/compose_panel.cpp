@@ -52,34 +52,6 @@ void worm_ui_nuklear_reset_compose_panel() {
     worm_ui_nuklear_reset_compose_state();
 }
 
-void worm_ui_nuklear_queue_compose_key(std::uint32_t keycode, std::uint32_t scancode,
-                                       std::uint16_t modifiers, bool down, bool repeat) {
-    queue_compose_key_input(keycode, scancode, modifiers, down, repeat);
-}
-
-void worm_ui_nuklear_queue_compose_wheel(double delta_x, double delta_y, double mouse_x,
-                                         double mouse_y, std::uint16_t modifiers,
-                                         bool coarse_steps) {
-    queue_compose_wheel_input(delta_x, delta_y, mouse_x, mouse_y, modifiers, coarse_steps);
-}
-
-void worm_ui_nuklear_queue_compose_middle_click(float x, float y) {
-    queue_compose_middle_click_input(x, y);
-}
-
-void worm_ui_nuklear_compose_handle_focus_lost() {
-    compose_handle_focus_lost_input();
-}
-
-void worm_ui_nuklear_compose_discard_frame_input() {
-    discard_compose_frame_input();
-}
-
-void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
-                                           bool window_focused, WormUiWorkspaceAction* action) {
-    prepare_compose_panel_input(view, compose_tab_active, window_focused, action);
-}
-
 static int compose_rect_valid(const WormUiComposeRect* rect) {
     if (!rect || !std::isfinite(rect->left) || !std::isfinite(rect->top) ||
         !std::isfinite(rect->right) || !std::isfinite(rect->bottom) || rect->right < rect->left ||

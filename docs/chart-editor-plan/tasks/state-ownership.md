@@ -1557,7 +1557,7 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 
 ## T-677 Put Compose input entry points at their implementations
 
-- **Status:** In progress (2026-10-18; owner approved the parallel T-673/T-674/T-677 implementation batch)
+- **Status:** Done (2026-10-18; verified parallel T-673/T-674/T-677 batch)
 - **Outcome:** The six Compose key/wheel/middle/focus/discard/prepare entry points each have one canonical name/declaration/implementation at the input owner, without facade functions in `compose_panel.cpp`.
 - **Read first:** `src/ui/nuklear/compose_panel.h`; `src/ui/nuklear/compose_panel.cpp`; `src/ui/nuklear/compose_input_panel.h`; `src/ui/nuklear/compose_keyboard_input.h`; shrink-wrap UI facade finding.
 - **Files owned:** `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/compose_panel.h`, `src/ui/nuklear/compose_input_panel.cpp`, `src/ui/nuklear/compose_input_panel.h`, `src/ui/nuklear/compose_keyboard_input.cpp`, `src/ui/nuklear/compose_keyboard_input.h`.
@@ -1570,6 +1570,8 @@ Baseline `6fb21cd`. The useful removals are duplicate contracts, algorithms and 
 - **Reject/failure behavior:** If canonical-name relocation changes binding, exposes private transitive dependencies or reveals wrapper policy, preserve that boundary and report the exact exception.
 - **Verify:** GATE (`scripts/gate.sh --jobs 4`); `cmake --preset linux-clang`; `scripts/gate.sh build-clang --jobs 4`; `clang-tidy -p build` on affected .cpp files. Existing event harness; no facade-specific tests.
 - **Out of scope:** Keyboard-overflow policy changes, modal helper flattening, reset coordinator removal, C ABI migration and T-642 retained wrappers.
+- **Completion (2026-10-18):** Six facade definitions and their redundant private declarations are gone. Existing public names/declarations in the lightweight `compose_panel.h` remain; the actual input owners now implement those names. The sole internal discard call was updated. Public header/frontend callers, the three-reset coordinator, all implementation logic and dependencies are unchanged. AST-aware `clang-refactor local-rename` performed symbol renames; independent complete-file comparisons against baseline verify exactly the six canonical name changes, the internal discard call, and facade removals. No new header or policy runner. Old private names have no source/include/test references. Three affected .cpp files have zero clang-tidy warning/error diagnostics before and after; logs `/tmp/t677-{before,after}-*.log`, verifier `/tmp/t677-verify-bodies.py` and `/tmp/t677-body-equivalence.log`.
+- **Integrated verification:** Shared final-source batch GATE: GCC `/tmp/wormedit-gate.EjgYv7` and linux-clang `/tmp/wormedit-gate.5rs6OK` both report `pass build`, `pass ctest`, `pass whitespace`, `100% tests passed out of 4103`, `gate: passed` (CTest 69.12 s / 69.97 s respectively). `cmake --preset linux-clang` exit 0. No discovery errors, aborted or unrun test binaries. Separate event harness: `100% tests passed out of 526` (17.38 s), `/tmp/shrink-batch-events.log`. Coordinator reviewed the final diff and code-style checklist. Final card documentation check is recorded in the commit body; no source-shape tests added.
 
 ## T-678 Remove unused legacy Chart and Field models
 

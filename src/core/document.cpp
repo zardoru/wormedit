@@ -74,6 +74,24 @@ void song_document_t::reset_chart_indices() noexcept {
 }
 auto song_document_t::find_audio_asset(asset_id_t id) -> audio_asset_t* { return find_id(audio_assets, id); }
 auto song_document_t::find_audio_asset(asset_id_t id) const -> const audio_asset_t* { return find_id(audio_assets, id); }
+auto song_document_t::longest_music_or_bgm_stream() const -> const audio_stream_info_t* {
+    const audio_stream_info_t* longest{};
+    long double duration{};
+    for (const auto& resource : resources) {
+        if (!resource.has_role(resource_role_t::music) && !resource.has_role(resource_role_t::bgm))
+            continue;
+        const auto* asset = find_audio_asset(resource.asset);
+        if (asset == nullptr || !asset->stream.frame_count || asset->stream.sample_rate == 0)
+            continue;
+        const auto seconds = static_cast<long double>(*asset->stream.frame_count) /
+                             asset->stream.sample_rate;
+        if (seconds > duration) {
+            duration = seconds;
+            longest = &asset->stream;
+        }
+    }
+    return longest;
+}
 auto chart_document_t::find_measure(measure_id_t id) -> measure_chunk_t* { return find_id(measures, id); }
 auto chart_document_t::find_measure(measure_id_t id) const -> const measure_chunk_t* { return find_id(measures, id); }
 auto chart_document_t::find_note(object_id_t id) -> note_t* { return find_measure_object(*this, id, &measure_chunk_t::notes); }

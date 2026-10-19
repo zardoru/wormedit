@@ -1,4 +1,5 @@
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/measure_editor.h>
 
 #include <algorithm>
 #include <limits>
@@ -179,6 +180,10 @@ auto commit_empty_chart(document_history_t& history, lane_input_profile_t profil
         .input_profile = std::move(profile.input),
         .bpms = {{.id = object_id_t{2}, .position = {measure_id_t{1}, 0},
                   .beats_per_minute = {120, 1}}}};
+    if (const auto* stream = history.document.longest_music_or_bgm_stream();
+        stream && !extend_chart_to_audio_end(chart, *stream))
+        return {.command = document_command_transaction_t::rejection(history.document.revision,
+            diagnostic_code_t::invalid_measure, "new chart cannot cover the linked music/BGM duration")};
     chart_id_remap_t remap{.next = ceiling + 1};
     visit_chart_ids(chart, remap);
     if (remap.exhausted) return {.command = document_command_transaction_t::rejection(history.document.revision, diagnostic_code_t::invalid_id, "chart ID sequence is exhausted")};

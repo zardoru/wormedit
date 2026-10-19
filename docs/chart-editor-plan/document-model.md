@@ -97,6 +97,32 @@ Initial core event types:
 
 Events need stable IDs so selection, undo/redo, labels, slice references, and validation results do not depend on mutable timestamps or container order.
 
+### Shared timing categories (deferred)
+
+User request (2026-10-19; [T-720](tasks/editing-depth.md#t-720-plan-granular-timing-links-with-copy-on-write-overrides)):
+allow charts/difficulties, including those targeting different compatible file
+formats, to share timing layouts by category. **BPM**, **SV/scroll**, **SPEEDS**,
+**Kiai**, **stops** and **delays** must each be independently linkable, locally
+overridable and relinkable;
+the later design pass will enumerate the remaining timing categories.
+
+A linked category follows its shared timing source. On the first local write,
+copy that category's currently effective data into a local override and apply
+the edit there. Other charts and other linked categories remain linked and
+unchanged. This is **copy-on-write semantics**; the physical storage strategy
+is a later implementation decision. A detached category keeps its own data
+until explicitly relinked. Restoring a link uses the source's current data and
+may discard that category's local timing information; make that consequence
+explicit and require deliberate confirmation when local data would be lost.
+Linking, local edits and relinking must be undoable.
+
+Native persistence must retain the links and overrides, while preview/playback
+and export resolve each category's effective timing consistently. The design
+must cover exact position mapping between charts with different measure IDs,
+resolutions and format capabilities. Source ownership, editing shared sources,
+additional category boundaries and unsupported combinations await the deferred
+planning task; no implementation or immediate queue change is requested.
+
 ### Beat-zero and audio offsets
 
 Use one canonical sign convention in the core: `beat_zero_audio_time` is the signed audio time in seconds at which chart beat zero occurs. A positive `2.34` means beat zero occurs 2.34 seconds after the audio begins, matching the StepMania 3.9 description of `#OFFSET`. Store the value as an exact rational duration with retained source decimal spelling; the timing service applies it before BPM, stops, and warps and exposes conversion to sample frames with an explicit rounding policy.

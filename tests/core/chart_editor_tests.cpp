@@ -4,6 +4,7 @@
 #include <wormedit/formats/stepmania.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <limits>
 #include <source_location>
@@ -332,6 +333,44 @@ TEST_CASE("New chart templates the initial layout without copying later measure 
     expect_chart(chart.lane_layouts[0].layout.profile_id == "stepmania:dance-single");
     expect_chart(chart.input_profile.bindings.size() == 4);
     expect_chart(validate_document(history.document).empty());
+}
+
+TEST_CASE("New chart covers the longest linked music or BGM using its own timing",
+          "[unit][core][chart-editor][audio-extent]") {
+    const auto offset = GENERATE(-1, 1);
+    auto song = chart_song();
+    song.charts.front().beat_zero_audio_offset_seconds = {offset, 1};
+    song.audio_assets.front().stream = {48'000, 2, 48'000 * 100, true};
+    song.audio_assets.push_back({.id = asset_id_t{60}, .stream = {192'000, 2, 192'000 * 5, true}});
+    song.audio_assets.push_back({.id = asset_id_t{62}, .stream = {48'000, 2, 48'000 * 14, true}});
+    song.audio_assets.push_back({.id = asset_id_t{64}, .stream = {48'000, 2, 48'000 * 200, true}});
+    song.resources.push_back({.id = resource_id_t{61}, .asset = asset_id_t{60},
+                              .roles = {resource_role_t::music}});
+    song.resources.push_back({.id = resource_id_t{63}, .asset = asset_id_t{62},
+                              .roles = {resource_role_t::bgm}});
+    auto history = document_history_t::from(std::move(song));
+    const auto added = apply_add_chart_command(history, history.document.charts.front().id);
+    require_chart(static_cast<bool>(added));
+    const auto& chart = history.document.charts.back();
+    expect_chart(chart.measures.size() == (offset < 0 ? 8 : 7));
+    expect_chart(chart.bpms.size() == 1 && chart.pauses.empty() && chart.warps.empty());
+    expect_chart(chart.beat_zero_audio_offset_seconds == signed_rational_t{offset, 1});
+    expect_chart(validate_document(history.document).empty());
+}
+
+TEST_CASE("New chart refuses excessive linked audio without publishing a partial chart",
+          "[unit][core][chart-editor][audio-extent]") {
+    auto song = chart_song();
+    song.audio_assets.front().stream = {1, 2, 2'000'001, true};
+    song.resources.front().roles = {resource_role_t::music};
+    auto history = document_history_t::from(std::move(song));
+    const auto before = write_native_project(history.document).value;
+    const auto added = apply_add_chart_command(history, history.document.charts.front().id);
+    expect_chart(!added.command.applied && !added.payload.chart);
+    require_chart(!added.command.diagnostics.empty());
+    expect_chart(added.command.diagnostics.front().code == diagnostic_code_t::invalid_measure);
+    expect_chart(write_native_project(history.document).value == before);
+    expect_chart(history.undo.empty() && history.redo.empty());
 }
 
 TEST_CASE("Output group CRUD is atomic and undoable without altering chart content", "[unit][output-groups]") {

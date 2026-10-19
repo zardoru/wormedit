@@ -1,5 +1,7 @@
 #include "sys/project_view.h"
+#include "sys/application_defaults.h"
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <chrono>
 #include <latch>
 #include <semaphore>
@@ -175,6 +177,32 @@ TEST_CASE("Project New allows an empty document fallback and rejects a missing a
                                             .chart = chart_id_t{9999}});
     expect_project(!rejected.command.applied && !rejected.command.diagnostics.empty());
     expect_project(empty.document.charts.size() == 1 && empty.document.revision == before);
+}
+
+TEST_CASE("Project New chart follows the new audio project's measure extent",
+          "[unit][project-view][audio-extent]") {
+    const auto layout = GENERATE("osu-mania-7k", "osu-mania-11k",
+                                 "stepmania:pump-single", "bme-7k-outside-scratch");
+    auto document = make_audio_project_document(song_id_t{123}, "/tmp/track.ogg", "Track", "Artist",
+                                               layout, {48'000, 2, 48'000 * 13, true});
+    require_project(document.has_value());
+    const auto expected_measures = document->charts.front().measures.size();
+    expect_project(expected_measures == 7);
+    auto& source = document->charts.front();
+    source.measures.push_back({.id = measure_id_t{source.measures.back().id.value + 1}});
+    const auto source_id = source.id;
+    auto history = document_history_t::from(std::move(*document));
+    project_chart_runtime_t runtime;
+    const auto added = apply_project_chart_ui_action(runtime, history,
+        {.kind = WORM_UI_PROJECT_CHART_NEW, .document_revision = history.document.revision,
+         .session_generation = runtime.session_generation}, source_id);
+    require_project(added.applied && added.open_chart.has_value());
+    const auto& chart = history.document.charts.back();
+    expect_project(chart.id == *added.open_chart);
+    expect_project(chart.measures.size() == expected_measures);
+    expect_project(chart.measures.back().notes.empty() && chart.measures.back().bgm_events.empty());
+    expect_project(history.document.charts.front().measures.size() == expected_measures + 1);
+    expect_project(validate_document(history.document).empty());
 }
 
 namespace {

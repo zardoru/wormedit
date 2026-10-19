@@ -1025,6 +1025,8 @@ struct song_document_t {
     [[nodiscard]] auto find_chart(chart_id_t id) -> chart_document_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) const -> const audio_asset_t*;
     [[nodiscard]] auto find_audio_asset(asset_id_t id) -> audio_asset_t*;
+    // Longest known positive duration among linked Music/BGM resources.
+    [[nodiscard]] auto longest_music_or_bgm_stream() const -> const audio_stream_info_t*;
     void reset_chart_indices() noexcept;
 };
 

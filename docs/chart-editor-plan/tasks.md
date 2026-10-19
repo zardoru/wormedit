@@ -95,7 +95,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Resources and audio: catalog safety, usage, slices, preview audio export](tasks/resources-audio.md)
 - [Export and conversion: preview/publish UI, loss gates, blocked profiles](tasks/export.md)
 - [Persistence and metadata: recovery journal, migrations, metadata forms](tasks/persistence-metadata.md)
-- [Editing depth and performance (stage 6)](tasks/editing-depth.md)
+- [Editing depth, performance and deferred timing links (stage 6)](tasks/editing-depth.md)
 - [Storyboard, Lua, MIDI, SV recipes, video (stage 7)](tasks/scripting-storyboard.md)
 - [Late compatibility: Quaver, rolls, ticked holds (stage 8)](tasks/late-compat.md)
 - [OSBX Lua DSL and Lua SV curves](tasks/osbx.md)
@@ -105,7 +105,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [GPU workload: Compose field renderer outside Nuklear](tasks/rendering.md)
 - [Options window and project chart management](tasks/options-charts.md)
 - [Frame time during live transport](tasks/live-transport.md)
-- [Bookmark shortcuts and labels](tasks/markers.md)
+- [Bookmark shortcuts, labels and deferred export-cut sections](tasks/markers.md)
 - [Compose timing: retire the Timing screen](tasks/compose-timing.md)
 - [Sounds tab: library, bulk import, zoomable waveform, slicer](tasks/sounds-tab.md)
 - [Compose color views and semantic-layer UX](tasks/semantic-layers.md)
@@ -132,7 +132,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Workflow blockers found by the user walkthrough](tasks/workflow-blockers.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-718.
+every number above T-720.
 
 ## Rules for whoever executes a card
 

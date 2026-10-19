@@ -8,6 +8,20 @@ Store UTF-8 search tags as ordered metadata with normalized lookup plus retained
 
 Provide a marker/section lane and a searchable section list. A marker may be an unlabeled point bookmark or a labeled point/range such as `Intro`, `Verse 1`, `Chorus`, `Bridge`, or `Outro`. Commands add a marker at the cursor, set a range from the current selection, jump previous/next, loop a section, rename/recolor, and select the section's chart events. Markers may be beat-anchored or audio-time-anchored, and timing edits show which will move.
 
+Deferred user request (2026-10-19): create a section from the current selection
+and allow that section to designate a portion of the song to **cut out on
+export**. The native project retains the full source song and section. Display
+cut-out spans only in **Timing focus mode**, with the same visual language as
+warp dead-spans and a dedicated, distinct color. In ordinary **Compose mode**,
+skip these intervals entirely: the waveform and displayed timeline close up
+across each cut as though that portion never existed, and playback/navigation
+skip from the preceding retained portion to the following one. Timing focus
+exposes the original intervals so their boundaries remain editable; switching
+modes preserves the source song and cut definitions. Export/audio splicing,
+timeline rebasing, scope across charts/output groups, boundary handling and
+Timing-focus audition policy need a later design pass; this is not immediate
+implementation work. See [T-719](../tasks/markers.md#t-719-plan-selection-created-export-cut-sections).
+
 osu! `[Editor]` bookmarks are integer millisecond points and carry no label or range. Import them as audio-time point markers. Export every compatible point marker, plus the start of a labeled range when requested; retain labels, colors, range ends, and beat anchors in the native project and diagnose that loss when producing standalone `.osu`. MIDI export may emit labeled markers as marker meta-events.
 
 ### BMS channel maps and MIDI destinations

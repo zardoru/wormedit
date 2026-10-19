@@ -1232,21 +1232,7 @@ auto extend_chart_to_audio_end(chart_document_t& chart, const audio_stream_info_
 }
 
 auto extend_native_charts_to_audio_end(song_document_t& document) -> bool {
-    const audio_stream_info_t* longest{};
-    long double duration{};
-    for (const auto& resource : document.resources) {
-        if (std::ranges::find(resource.roles, resource_role_t::music) == resource.roles.end() &&
-            std::ranges::find(resource.roles, resource_role_t::bgm) == resource.roles.end()) continue;
-        const auto asset = document.find_audio_asset(resource.asset);
-        if (asset == nullptr || !asset->stream.frame_count ||
-            asset->stream.sample_rate == 0) continue;
-        const auto seconds = static_cast<long double>(*asset->stream.frame_count) /
-                             asset->stream.sample_rate;
-        if (seconds > duration) {
-            duration = seconds;
-            longest = &asset->stream;
-        }
-    }
+    const auto* longest = document.longest_music_or_bgm_stream();
     if (!longest) return true;
     for (auto& chart : document.charts) {
         if (chart.source_family == format_family_t::native_project &&

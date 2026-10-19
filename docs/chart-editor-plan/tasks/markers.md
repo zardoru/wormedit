@@ -67,3 +67,20 @@ Bookmark editing already exists in the Markers panel
 - **Reject/failure behavior:** a null or invalid UTF-8 label draws nothing for that bookmark.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^frontend-state\.|compose_bookmark_label|^documentation\.'`; `clang-tidy -p build src/ui/nuklear/compose_canvas.cpp`; isolated Xvfb capture of a chart with a named, an unnamed, and a very long bookmark, then open the PNG.
 - **Out of scope:** section labels, editing names in the field, label color preferences.
+
+## T-719 Plan selection-created export-cut sections
+
+- **Status:** deferred (was: ready; user request 2026-10-19, not immediate work)
+- **Outcome:** A reviewed design and bounded implementation cards cover creating a section from a selection, marking it as a song interval cut out on export, skipping it entirely in ordinary Compose waveform/timeline/playback/navigation, and exposing its distinct dead-span overlay only in Timing focus mode.
+- **Read first:** `docs/chart-editor-plan/editing/metadata-interop.md`; `src/sys/compose_bookmark_actions.cpp`; `src/ui/nuklear/compose_area_menu.cpp`; `src/sys/compose_dead_spans.cpp`; `src/sys/output_group_export.cpp`.
+- **Files owned:** `docs/chart-editor-plan/editing/metadata-interop.md`, `docs/chart-editor-plan/tasks/markers.md`, `docs/chart-editor-plan/tasks.md`; future implementation-card files only after recording their paths here.
+- **Steps:**
+  1. Start only when the user explicitly picks up T-719; preserve the current immediate-work queue.
+  2. Audit the existing Create section area-menu action (T-200) and section editor; identify what selection-to-section behavior can be reused.
+  3. Resolve the design questions below with the owner before assigning implementation defaults.
+  4. Write separate bounded cards for section persistence/actions, export transformation/audio handling, Compose cut-timeline projection/playback/navigation, and Timing-focus visualization, with exact file ownership and verification.
+- **Invariants:** The saved feature request includes selection-to-section creation, an export-cut designation, Timing-focus-only cut-out visualization, warp dead-span-like styling and a dedicated color distinct from warps. Ordinary Compose collapses each cut out of the waveform and displayed timeline, with playback/navigation skipping it as though it never existed. Timing focus exposes the original interval for editing. Mode switches retain the full authored source song and cut definitions; exported songs exclude designated intervals. Ordinary section behavior remains available.
+- **Reject/failure behavior:** Unresolved policies keep implementation deferred; an eventual rejected cut/export must preserve the source project and previously published output.
+- **Verify:** For this planning record, `ctest --test-dir build/release -R '^documentation\.chart_editor_state$' --output-on-failure` and `git diff --check` pass. Future implementation cards must specify GATE, native-project round-trip/Undo checks, export/audio boundary cases, continuous Compose waveform/skip playback/navigation checks, and mode-switch/Timing-focus visibility/color checks.
+- **Design questions for pickup:** Are cuts song-wide across difficulties or scoped to charts/output groups? How are exported audio and chart timelines spliced/rebased together? What happens to holds, keysounds/BGM, BGA and timing state crossing a cut, and to overlapping/adjacent cuts? How does Timing-focus audition handle the original intervals (ordinary Compose skips them)? What selection and anchoring rules apply?
+- **Out of scope:** Implementing the feature or selecting it as immediate work (explicit user deferral, 2026-10-19); final audio, boundary and export policies await the design pass above. Existing ordinary section creation is covered by T-200.

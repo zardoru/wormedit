@@ -18,6 +18,8 @@ bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingR
 bool worm_ui_frontend_hide_notification_history_for_testing(void);
 // Invalidates project-owned import payloads and outstanding picker callbacks.
 void worm_ui_frontend_begin_project_session(void);
+// Copies the active project directory for project-relative native pickers.
+void worm_ui_frontend_set_project_directory(const char* path);
 void worm_ui_frontend_shutdown(void);
 void worm_ui_frontend_begin_input(void);
 bool worm_ui_frontend_handle_event(const SDL_Event* event);

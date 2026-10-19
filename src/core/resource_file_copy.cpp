@@ -677,18 +677,31 @@ auto inspect_project_asset_file(const project_asset_copy_request_t& request, std
 
 auto export_asset_directory(const std::filesystem::path& relative_output_path)
     -> std::optional<std::filesystem::path> {
+    return export_asset_directory(
+        relative_output_path, relative_output_path.has_extension()
+                                  ? output_destination_kind_t::file
+                                  : output_destination_kind_t::directory);
+}
+
+auto export_asset_directory(const std::filesystem::path& relative_output_path,
+                            output_destination_kind_t destination_kind)
+    -> std::optional<std::filesystem::path> {
     if (!is_valid_relative(relative_output_path) || relative_output_path.filename().empty() ||
         relative_output_path.filename() == "." || relative_output_path.filename() == "..")
         return std::nullopt;
-    return (relative_output_path.has_extension() ? relative_output_path.parent_path()
-                                                 : relative_output_path) /
+    return (destination_kind == output_destination_kind_t::file
+                ? relative_output_path.parent_path()
+                : relative_output_path) /
            "assets";
 }
 
 auto export_asset_reference_path(const std::filesystem::path& relative_output_path,
-                                 const std::filesystem::path& copied_project_relative_path)
+                                 const std::filesystem::path& copied_project_relative_path,
+                                 std::optional<output_destination_kind_t> destination_kind)
     -> std::optional<std::filesystem::path> {
-    const auto directory = export_asset_directory(relative_output_path);
+    const auto directory = destination_kind
+                               ? export_asset_directory(relative_output_path, *destination_kind)
+                               : export_asset_directory(relative_output_path);
     if (!directory || !is_valid_relative(copied_project_relative_path) ||
         copied_project_relative_path.parent_path() != *directory ||
         copied_project_relative_path.filename().empty())
@@ -698,7 +711,10 @@ auto export_asset_reference_path(const std::filesystem::path& relative_output_pa
 
 auto create_export_asset_copy(const export_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
-    const auto directory = export_asset_directory(request.relative_output_path);
+    const auto directory = request.destination_kind
+                               ? export_asset_directory(request.relative_output_path,
+                                                        *request.destination_kind)
+                               : export_asset_directory(request.relative_output_path);
     if (!directory) {
         return std::unexpected(error_t<failure_code_t>{
             failure_code_t::invalid_request,
@@ -717,7 +733,10 @@ auto create_export_asset_copy(const export_asset_copy_request_t& request, std::s
 
 auto inspect_export_asset_file(const export_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
-    const auto directory = export_asset_directory(request.relative_output_path);
+    const auto directory = request.destination_kind
+                               ? export_asset_directory(request.relative_output_path,
+                                                        *request.destination_kind)
+                               : export_asset_directory(request.relative_output_path);
     if (!directory)
         return std::unexpected(error_t<failure_code_t>{
             failure_code_t::invalid_request,

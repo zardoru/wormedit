@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cctype>
 #include <filesystem>
 #include <map>
 #include <set>
@@ -174,7 +175,68 @@ auto migrate_v7_to_v8(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 7> released_migrations{{
+auto legacy_output_slug(std::string_view label, std::size_t capacity) -> std::string {
+    std::string slug;
+    bool separator{};
+    for (const auto byte : label) {
+        const auto value = static_cast<unsigned char>(byte);
+        if (std::isalnum(value) != 0) {
+            if (separator && !slug.empty() && slug.size() < capacity) slug.push_back('-');
+            separator = false;
+            if (slug.size() < capacity)
+                slug.push_back(static_cast<char>(std::tolower(value)));
+        } else {
+            separator = true;
+        }
+        if (slug.size() >= capacity) break;
+    }
+    while (!slug.empty() && slug.back() == '-') slug.pop_back();
+    if (slug.empty()) slug.assign(std::string_view{"project"}.substr(0, capacity));
+    return slug;
+}
+
+auto migrate_legacy_file_destination(const nlohmann::json& document, nlohmann::json& group,
+                                     std::uint64_t family) -> std::string {
+    if (!group.contains("relative_output_path") ||
+        !group.at("relative_output_path").is_string())
+        return "file output group path must be a string";
+    auto path = std::filesystem::path{group.at("relative_output_path").get<std::string>()};
+    if (path.has_extension()) return {};
+    if (!document.contains("metadata") || !document.at("metadata").is_object() ||
+        !document.contains("id") || !document.at("id").is_number_unsigned())
+        return "document identity and metadata are required to migrate file output groups";
+    std::uint64_t stepmania_profile{1};
+    if (group.contains("stepmania") && group.at("stepmania").is_object())
+        stepmania_profile = group.at("stepmania").value("file_profile", std::uint64_t{1});
+    const auto extension = family == std::uint64_t{0}
+                               ? std::string{".wormedit"}
+                               : stepmania_profile == std::uint64_t{0} ? std::string{".sm"}
+                                                                       : std::string{".ssc"};
+    const auto suffix = "-" + std::to_string(document.at("id").get<std::uint64_t>()) + extension;
+    const auto title = document.at("metadata").value("title", std::string{});
+    path /= legacy_output_slug(title, 240 - suffix.size()) + suffix;
+    group["relative_output_path"] = path.generic_string();
+    return {};
+}
+
+auto migrate_v8_to_v9(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups")) return {};
+    if (!document.at("output_groups").is_array())
+        return "document output_groups must be an array";
+    for (auto& group : document.at("output_groups")) {
+        if (!group.is_object()) return "output group must be an object";
+        if (group.contains("destination_kind")) continue;
+        const auto family = group.value("family", std::uint64_t{});
+        const auto file = family == std::uint64_t{0} || family == std::uint64_t{2};
+        group["destination_kind"] = file ? std::uint64_t{1} : std::uint64_t{0};
+        if (file)
+            if (const auto error = migrate_legacy_file_destination(document, group, family);
+                !error.empty()) return error;
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 8> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
@@ -182,6 +244,7 @@ constexpr std::array<migration_t, 7> released_migrations{{
     {5, &migrate_v5_to_v6},
     {6, &migrate_v6_to_v7},
     {7, &migrate_v7_to_v8},
+    {8, &migrate_v8_to_v9},
 }};
 
 } // namespace

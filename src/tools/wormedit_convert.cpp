@@ -254,6 +254,7 @@ auto publish_cli_slices(const song_document_t& song, const cli_request_t& reques
     output_group_t group;
     group.family = request.conversion.target;
     group.relative_output_path = directory.filename();
+    group.destination_kind = output_destination_kind_t::directory;
     conversion_publication_options_t options;
     options.destination_is_directory = true;
     options.stage_generated_files = [&](const auto& staging) {

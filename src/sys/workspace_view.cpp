@@ -531,7 +531,8 @@ auto append_compose_output_group(frontend_workspace_view_t& result, frame_arena_
                                  std::size_t document_index) -> bool {
     const auto* name = arena_string(arena, group.name);
     const auto* path = arena_string(arena, group.relative_output_path.generic_string());
-    const auto directory = wormedit::export_asset_directory(group.relative_output_path);
+    const auto directory = wormedit::export_asset_directory(group.relative_output_path,
+                                                             group.destination_kind);
     const auto* assets = arena_string(arena,
         directory ? directory->generic_string() : std::string{});
     if (!name || !path || !assets) return false;

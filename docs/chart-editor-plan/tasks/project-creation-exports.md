@@ -197,7 +197,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-726 Choose typed destinations and show the complete export plan
 
-- **Status:** blocked-on T-725
+- **Status:** done
 - **Outcome:** An export target chooses a folder for one-file-per-chart formats and a song file for
   StepMania; WormEdit derives and displays every chart, generated and copied-asset destination, and
   Preview expands the card into per-file **new / replace / reuse / copy** rows with byte sizes plus
@@ -215,6 +215,23 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `tests/formats/native_project_tests.cpp`, `tests/sys/project_view_tests.cpp`,
   `tests/sys/resource_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.
+- **Supporting-file extensions (2026-10-19):**
+  `include/wormedit/core/resource_file_copy.h`,
+  `include/wormedit/formats/conversion_publication.h`, `src/core/lane_profiles.cpp`,
+  `src/core/resource_file_copy.cpp`, `src/formats/conversion_publication_storage.cpp`,
+  `src/formats/native_project_storage.cpp`, `src/sys/metadata_view.cpp`,
+  `src/sys/workspace_view.cpp`, `src/tools/wormedit_convert.cpp`,
+  `src/ui/frontend/runtime.h`, and `src/ui/nuklear/setup_panel.h` carry the typed destination
+  through existing asset, storage, projection, CLI and picker boundaries. The corresponding
+  storage/default tests plus `tests/sys/compose_action_notification_tests.cpp`,
+  `tests/sys/frame_projection_arena_tests.cpp`, and both walkthrough event-harness files update
+  fixtures that previously inferred file versus folder from an extension. The reviewed
+  `cmake/complexity_baseline.txt` changes lower three existing test-function scores; no allowance
+  increases.
+- **Migration fallback:** Schema-8 directory-format paths retain the same folder. StepMania and
+  native paths become file destinations; an old extensionless folder target appends exactly the
+  filename the old publication plan derived, so the resolved output path is unchanged. Explicit
+  `.sm`, `.ssc`, and `.wormedit` paths remain unchanged.
 - **Steps:**
   1. Stale-plan check: inventory how each format interprets `relative_output_path` and how
      `conversion_publication_plan_payload_t` already classifies destinations.

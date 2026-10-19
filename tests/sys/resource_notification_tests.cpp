@@ -500,7 +500,9 @@ TEST_CASE("output preview and publication share format request policy",
           "[unit][sys][resource-notification]") {
     song_document_t document;
     output_group_t group{.family = format_family_t::stepmania,
-                         .charts = {chart_id_t{42}}, .relative_output_path = "sm",
+                         .charts = {chart_id_t{42}},
+                         .destination_kind = output_destination_kind_t::file,
+                         .relative_output_path = "sm",
                          .stepmania =
                              stepmania_export_policy_t{.file_profile = stepmania_profile_t::sm}};
     auto plan = output_group_export_plan_t::from(document, group, existing_files_policy_t::replace);
@@ -529,11 +531,12 @@ TEST_CASE("output preview and publication share format request policy",
     check_resource_notification(plan.request.charts.empty());
 
     group.family = format_family_t::bms;
+    group.destination_kind = output_destination_kind_t::directory;
     for (const auto* profile : {"bme", "bml", "pms"}) {
         group.relative_output_path = std::string{"chart."} + profile;
         plan = output_group_export_plan_t::from(document, group);
         check_resource_notification(plan.request.target_profile.empty());
-        check_resource_notification(plan.request.bms_output_extension == std::string{"."} + profile);
+        check_resource_notification(plan.request.bms_output_extension.empty());
         document.charts.push_back({.id = chart_id_t{42},
                                    .source_family = format_family_t::bmson});
         plan = output_group_export_plan_t::from(document, group);
@@ -542,11 +545,10 @@ TEST_CASE("output preview and publication share format request policy",
     }
     document.charts.push_back({.id = chart_id_t{42}, .source_family = format_family_t::bmson});
     group.relative_output_path = "foreign-extension/chart.osu";
-    const auto refused = run_output_group_export({.document = document,
-        .plan = output_group_export_plan_t::from(document, group),
-        .asset_base = std::filesystem::temp_directory_path()}, {});
-    check_resource_notification(!refused.published);
-    check_resource_notification(refused.message == "Output extension does not match the BMS format family");
+    plan = output_group_export_plan_t::from(document, group);
+    check_resource_notification(plan.group.destination_kind ==
+                                output_destination_kind_t::directory);
+    check_resource_notification(plan.request.bms_output_extension.empty());
 }
 
 TEST_CASE("Rejected music export creates no destination", "[unit][sys][resource-notification]") {
@@ -571,6 +573,7 @@ TEST_CASE("Ask Replace Keep and all-target preflight share one publication path"
     output_group_t group{.name = "Native",
                          .family = format_family_t::native_project,
                          .charts = {chart_id_t{1}},
+                         .destination_kind = output_destination_kind_t::file,
                          .relative_output_path = "exports/song.wormedit",
                          .existing_files = existing_files_policy_t::ask};
     const auto run = [&](std::optional<existing_files_policy_t> one_run = std::nullopt) {
@@ -608,6 +611,7 @@ TEST_CASE("Ask Replace Keep and all-target preflight share one publication path"
                                 output_group_t{.name = "Deferred",
                                                .family = format_family_t::native_project,
                                                .charts = {chart_id_t{1}},
+                                               .destination_kind = output_destination_kind_t::file,
                                                .relative_output_path = "batch/deferred.wormedit",
                                                .existing_files = existing_files_policy_t::replace}};
     const auto ask_plan =
@@ -624,12 +628,13 @@ TEST_CASE("Ask Replace Keep and all-target preflight share one publication path"
     const std::array groups{output_group_t{.name = "First",
                                            .family = format_family_t::native_project,
                                            .charts = {chart_id_t{1}},
+                                           .destination_kind = output_destination_kind_t::file,
                                            .relative_output_path = "batch/first.wormedit",
                                            .existing_files = existing_files_policy_t::replace},
                             output_group_t{.name = "Invalid",
                                            .family = format_family_t::bms,
                                            .charts = {chart_id_t{1}},
-                                           .relative_output_path = "batch/invalid.txt",
+                                           .relative_output_path = "/invalid",
                                            .existing_files = existing_files_policy_t::replace}};
     const auto batch_plan = output_group_export_plan_t::from_all(fixture.history.document, groups);
     require_resource_notification(batch_plan.has_value());
@@ -657,7 +662,12 @@ TEST_CASE("Music export publishes its chart and automatic asset together", "[uni
         {.document = *song, .plan = std::move(plan), .asset_base = fixture.root}, {});
     INFO(result.message);
     REQUIRE(result.published);
-    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/song.osu"));
-    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/assets" /
+    const auto output_directory = fixture.root / "exports/song.osu";
+    REQUIRE(std::filesystem::is_directory(output_directory));
+    REQUIRE(std::ranges::any_of(std::filesystem::directory_iterator{output_directory},
+                               [](const auto& entry) {
+                                   return entry.path().extension() == ".osu";
+                               }));
+    REQUIRE(std::filesystem::is_regular_file(output_directory / "assets" /
                                              fixture.source.filename()));
 }

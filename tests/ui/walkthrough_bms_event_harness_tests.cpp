@@ -412,7 +412,8 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     const auto converted = convert_document(request.document, request.plan.request);
     require_step(converted);
     require_step(converted.outputs.size() == 1);
-    const auto output = directory / group.relative_output_path;
+    const auto output = directory / group.relative_output_path /
+                        converted.outputs.front().suggested_filename;
     const auto bytes = read_file(output);
     check_step(bytes.find("#WAV01 ") != std::string::npos);
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
@@ -461,7 +462,7 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     (void)harness.frame();
     (void)click_text(harness, "Edit");
     (void)harness.frame();
-    require_step(harness.drawn_text_center("Destination"));
+    require_step(harness.drawn_text_center("Save to"));
     const auto saved = click_text(harness, "Save");
     check_step(saved.front().get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE);
     check_step(std::string_view{saved.front().get().project_output_group.path} == "song/normal.bme");
@@ -705,10 +706,10 @@ TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target"
 }
 
 
-TEST_CASE("BMS walkthrough exports explicit extensions independently of new chart layouts",
+TEST_CASE("BMS walkthrough treats dotted and extensionless destinations as folders",
           "[frontend-state][event-harness][walkthrough-bms]") {
     const auto* layout = GENERATE("bme-7k-outside-scratch", "pms-standard-9button");
-    const auto* path = GENERATE("song/normal.bme", "song/normal.bms", "song/normal.pms", "song/normal.osu", "song");
+    const auto* path = GENERATE("song/normal.bme", "song");
     auto document = make_initial_document(song_id_t{1}, layout);
     require_step(document);
     auto group = document->output_groups.front();
@@ -722,24 +723,18 @@ TEST_CASE("BMS walkthrough exports explicit extensions independently of new char
     const auto exported = run_output_group_export(
         {.document = *document, .plan = plan, .asset_base = directory}, {});
     INFO(exported.message);
-    if (group.relative_output_path.extension() == ".osu") {
-        check_false_step(exported.published);
-        check_false_step(std::filesystem::exists(directory / "song"));
-    } else {
-        require_step(converted);
-        require_step(exported.published);
-        const auto output = group.relative_output_path.has_extension()
-            ? directory / group.relative_output_path
-            : directory / "song" / converted.outputs.front().suggested_filename;
-        check_step(std::filesystem::is_regular_file(output));
-        const auto expected = std::string_view{layout}.starts_with("pms") ? ".pms" : ".bme";
-        if (!group.relative_output_path.has_extension()) check_step(output.extension() == expected);
-        const auto bytes = read_file(output);
-        const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
-            {.file_extension = expected, .lane_profile_id = layout});
-        require_step(parsed.value.song);
-        check_step(parsed.value.song->charts.front().lane_layouts.front().layout.profile_id == layout);
-    }
+    require_step(converted);
+    require_step(exported.published);
+    const auto output = directory / group.relative_output_path /
+                        converted.outputs.front().suggested_filename;
+    check_step(std::filesystem::is_regular_file(output));
+    const auto expected = std::string_view{layout}.starts_with("pms") ? ".pms" : ".bme";
+    check_step(output.extension() == expected);
+    const auto bytes = read_file(output);
+    const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
+        {.file_extension = expected, .lane_profile_id = layout});
+    require_step(parsed.value.song);
+    check_step(parsed.value.song->charts.front().lane_layouts.front().layout.profile_id == layout);
     std::filesystem::remove_all(directory);
 }
 

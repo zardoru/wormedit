@@ -331,20 +331,32 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes both groups with song a
         const auto preview = preview_group(history, index, root);
         INFO(preview);
         expect(preview.starts_with("Preview: "));
-        expect(preview.find("\nWrite: " + group.relative_output_path.generic_string() + "/") != std::string::npos);
-        expect(preview.find("\nCopy: " + group.relative_output_path.generic_string() + "/assets/") != std::string::npos);
+        const output_group_export_request_t request{.document = history.document,
+            .plan = output_group_export_plan_t::from(history.document, group), .asset_base = root};
+        const auto prepared = output_group_export_preparation_t::from(request, {});
+        expect(prepared);
+        expect(std::ranges::any_of(prepared->files, [](const auto& file) {
+            return file.action == output_group_export_file_action_t::copy;
+        }));
         expect(!std::filesystem::exists(root / group.relative_output_path));
-        const auto result = run_output_group_export({.document = history.document,
-            .plan = output_group_export_plan_t::from(history.document, group), .asset_base = root}, {});
+        const auto result = run_output_group_export(request, {});
         INFO(group.name << ": " << result.message);
         expect(result.published);
         const project_asset_copy_request_t music{.source_path = song_path(),
             .asset = history.document.audio_assets.front().id};
-        expect(std::filesystem::is_regular_file(root / group.relative_output_path /
-                                                "assets" / music.source_path.filename()));
+        const auto asset_directory = export_asset_directory(group.relative_output_path,
+                                                             group.destination_kind);
+        expect(asset_directory);
+        expect(std::filesystem::is_regular_file(root / *asset_directory /
+                                                music.source_path.filename()));
     }
-    expect(std::filesystem::is_regular_file(root / "ssc/walkthrough-41.ssc"));
-    expect(read_text(root / "ssc/walkthrough-41.ssc").find("#MUSIC:assets/") != std::string::npos);
+    const auto stepmania = std::ranges::find(history.document.output_groups,
+                                              format_family_t::stepmania,
+                                              &output_group_t::family);
+    expect(stepmania != history.document.output_groups.end());
+    const auto stepmania_path = root / stepmania->relative_output_path;
+    expect(std::filesystem::is_regular_file(stepmania_path));
+    expect(read_text(stepmania_path).find("#MUSIC:assets/") != std::string::npos);
 }
 
 TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previews conversion",
@@ -374,9 +386,7 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     std::filesystem::create_directories(root);
     const auto status = preview_group(history, 0, root);
     INFO(status);
-    expect(status.starts_with("Preview: 1 file(s), 0 conversion warning(s)."));
-    expect(status.find("\nWrite: osu/") != std::string::npos);
-    expect(status.find("\nCopy: osu/assets/") != std::string::npos);
+    expect(status.starts_with("Preview: 2 file(s), 0 conversion warning(s), 0 conversion error(s)."));
     expect(std::filesystem::is_empty(root));
     // Render the production preview text through the Project tab surface.
     const auto chart = history.document.charts.front().id.value;
@@ -389,8 +399,7 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     setup.output_groups = &group;
     setup.output_group_count = 1;
     (void)harness.frame();
-    expect(harness.drawn_text().find("Preview: 1 file(s), 0 conversion warning(s).") != std::string::npos);
-    expect(harness.drawn_text().find("Copy: osu/assets/") == std::string::npos);
+    expect(harness.drawn_text().find("Preview: 2 file(s)") != std::string::npos);
     const output_group_export_request_t request{.document = history.document,
         .plan = output_group_export_plan_t::from(history.document, history.document.output_groups.front()),
         .asset_base = root};
@@ -398,7 +407,7 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     const auto asked = run_output_group_export(request, {});
     expect(!asked.published);
     expect(asked.confirmation_required);
-    expect(preview_group(history, 0, root).starts_with("Preview: 1 file(s)"));
+    expect(preview_group(history, 0, root).starts_with("Preview: 2 file(s)"));
     history.document.audio_assets.front().source_path = "/missing/walkthrough-song.ogg";
     history.document.output_groups.front().relative_output_path = "missing-output";
     ++history.document.revision;
@@ -505,7 +514,16 @@ TEST_CASE("Osu StepMania walkthrough preview receives incompatible StepMania tar
         .timing_syntax = stepmania_timing_syntax_t::legacy_negative_stop,
         .implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1};
     const auto status = preview_group(history, 1, std::filesystem::temp_directory_path(), policy);
-    expect(status.find("audited only with native WARPS") != std::string::npos);
+    expect(status.starts_with("Preview: "));
+    const output_group_export_request_t request{.document = history.document,
+        .plan = output_group_export_plan_t::from(history.document,
+                                                 history.document.output_groups[1]),
+        .asset_base = std::filesystem::temp_directory_path()};
+    const auto prepared = output_group_export_preparation_t::from(request, {});
+    expect(prepared);
+    expect(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("audited only with native WARPS") != std::string::npos;
+    }));
 }
 
 TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
@@ -518,8 +536,17 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     std::filesystem::create_directories(root);
     const auto status = preview_group(history, 0, root);
     INFO(status);
-    expect(status.find("\nWrite: ") != std::string::npos);
-    expect(status.find("\nWarning: BMS measure ratios") != std::string::npos);
+    expect(status.find("1 conversion warning(s)") != std::string::npos);
+    const output_group_export_request_t request{.document = history.document,
+        .plan = output_group_export_plan_t::from(history.document,
+                                                 history.document.output_groups.front()),
+        .asset_base = root};
+    const auto prepared = output_group_export_preparation_t::from(request, {});
+    expect(prepared);
+    expect(!prepared->files.empty());
+    expect(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.message.find("BMS measure ratios") != std::string::npos;
+    }));
     expect(std::filesystem::is_empty(root));
     nuklear_event_harness_t harness{1280, 1000};
     expect(harness.ready());
@@ -531,7 +558,9 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     harness.view().setup.output_groups = &group;
     harness.view().setup.output_group_count = 1;
     (void)harness.frame();
-    expect(harness.drawn_text().find("Preview: 1 file(s), 1 conversion warning(s).") != std::string::npos);
+    expect(harness.drawn_text().find(
+               "Preview: 1 file(s), 1 conversion warning(s), 0 conversion error(s).") !=
+           std::string::npos);
     expect(harness.drawn_text().find("Warning: BMS measure ratios") == std::string::npos);
     std::filesystem::remove_all(root);
 }

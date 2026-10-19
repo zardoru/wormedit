@@ -594,6 +594,27 @@ auto reserve_publication_staging(const fs::path& parent, const fs::path& destina
     return "Could not reserve an export staging directory.";
 }
 
+auto ensure_publication_parent(const fs::path& project_directory, const fs::path& parent)
+    -> std::optional<std::string> {
+    const auto relative = parent.lexically_relative(project_directory);
+    if (relative.empty()) return std::nullopt;
+    std::error_code error;
+    auto current = project_directory;
+    for (const auto& component : relative) {
+        current /= component;
+        auto status = fs::symlink_status(current, error);
+        if (error == std::errc::no_such_file_or_directory) {
+            error.clear();
+            if (!fs::create_directory(current, error) || error)
+                return "Could not create the output group parent.";
+            status = fs::symlink_status(current, error);
+        }
+        if (error || fs::is_symlink(status) || !fs::is_directory(status))
+            return "Output group parent is unavailable or is a symlink.";
+    }
+    return std::nullopt;
+}
+
 struct publication_commit_t {
     const conversion_publication_plan_payload_t& plan;
     const conversion_publication_options_t& options;
@@ -671,7 +692,11 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
                                      conversion_publication_options_t options)
     -> conversion_publication_outcome_t {
     conversion_publication_outcome_t result{};
-    auto planned = conversion_publication_plan_payload_t::from(project_directory, group, request, converted, options.destination_is_directory, options.pending_assets);
+    auto effective_group = group;
+    if (options.destination_is_directory)
+        effective_group.destination_kind = output_destination_kind_t::directory;
+    auto planned = conversion_publication_plan_payload_t::from(
+        project_directory, effective_group, request, converted, options.pending_assets);
     if (!planned) {
         result.diagnostics.errors.push_back(std::move(planned.error().message));
         return result;
@@ -686,7 +711,7 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
         result.diagnostics.errors.emplace_back("Generated audio staging callback is required.");
         return result;
     }
-    const auto relative_directory = (!options.destination_is_directory && group.relative_output_path.has_extension())
+    const auto relative_directory = effective_group.destination_kind == output_destination_kind_t::file
                                         ? group.relative_output_path.parent_path()
                                         : group.relative_output_path;
     if (relative_directory.empty() || options.maximum_existing_bytes == 0 ||
@@ -697,6 +722,10 @@ auto create_conversion_group(const fs::path& project_directory, const output_gro
     }
     const auto destination = project_directory / relative_directory;
     const auto parent = destination.parent_path();
+    if (auto parent_failure = ensure_publication_parent(project_directory, parent)) {
+        result.diagnostics.errors.push_back(std::move(*parent_failure));
+        return result;
+    }
     temporary_directory_t staging;
     bool destination_exists{};
     if (auto staging_failure =

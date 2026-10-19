@@ -629,6 +629,10 @@ void worm_ui_frontend_begin_project_session() {
     worm_ui_nuklear_reset_sound_import();
 }
 
+void worm_ui_frontend_set_project_directory(const char* path) {
+    worm_ui_nuklear_set_project_directory(path);
+}
+
 static auto initialize_frontend(SDL_Window* window, SDL_Renderer* renderer,
                                 int width, int height, bool headless) -> bool {
     if (g_context || (headless ? width <= 0 || height <= 0 : !window || !renderer))

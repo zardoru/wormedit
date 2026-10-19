@@ -44,10 +44,9 @@ struct project_asset_copy_request_t {
 struct export_asset_copy_request_t {
     std::filesystem::path project_directory;
     std::filesystem::path source_path;
-    // The selected output group's project-relative file or directory path.
-    // A path with a filename extension names a chart file; otherwise it names
-    // the output directory.
+    // The selected output group's typed project-relative file or directory path.
     std::filesystem::path relative_output_path;
+    std::optional<output_destination_kind_t> destination_kind;
     asset_id_t asset;
     std::uintmax_t maximum_bytes{64ULL * 1024ULL * 1024ULL * 1024ULL};
     std::function<bool(const std::filesystem::path&)> validate_temporary{};
@@ -55,12 +54,16 @@ struct export_asset_copy_request_t {
 
 [[nodiscard]] auto export_asset_directory(const std::filesystem::path& relative_output_path)
     -> std::optional<std::filesystem::path>;
+[[nodiscard]] auto export_asset_directory(const std::filesystem::path& relative_output_path,
+                                          output_destination_kind_t destination_kind)
+    -> std::optional<std::filesystem::path>;
 
 // Converts the copy result's project-relative path to the reference a chart
 // file writes from its output directory. Rejects a path outside that folder.
 [[nodiscard]] auto
 export_asset_reference_path(const std::filesystem::path& relative_output_path,
-                            const std::filesystem::path& copied_project_relative_path)
+                            const std::filesystem::path& copied_project_relative_path,
+                            std::optional<output_destination_kind_t> destination_kind = std::nullopt)
     -> std::optional<std::filesystem::path>;
 
 struct project_asset_copy_receipt_t {

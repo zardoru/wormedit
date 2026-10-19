@@ -35,7 +35,7 @@ struct output_group_export_plan_t {
     std::vector<output_group_export_target_t> additional_targets;
 };
 
-inline auto output_group_export_plan_t::from(const song_document_t& document, output_group_t group,
+inline auto output_group_export_plan_t::from(const song_document_t&, output_group_t group,
                                              std::optional<existing_files_policy_t> one_run_policy)
     -> output_group_export_plan_t {
     const auto existing_files = one_run_policy.value_or(group.existing_files);
@@ -47,9 +47,6 @@ inline auto output_group_export_plan_t::from(const song_document_t& document, ou
     request.loss_policy = loss_policy_t::warn;
     if (group.family == format_family_t::stepmania) {
         request.stepmania = group.stepmania;
-    } else if (group.family == format_family_t::bms) {
-        if (!is_conversion_needs_slice_spans(document, request))
-            request.bms_output_extension = group.relative_output_path.extension().string();
     }
     return {
         .group = std::move(group), .request = std::move(request), .existing_files = existing_files};
@@ -60,6 +57,19 @@ struct output_group_export_request_t {
     output_group_export_plan_t plan;
     std::filesystem::path asset_base;
     std::shared_ptr<job_progress_t> progress;
+};
+
+enum class output_group_export_file_action_t {
+    new_file,
+    replace,
+    reuse,
+    copy,
+};
+
+struct output_group_export_file_plan_t {
+    std::filesystem::path path;
+    output_group_export_file_action_t action{output_group_export_file_action_t::new_file};
+    std::uintmax_t bytes{};
 };
 
 // Shared, read-only preparation for Preview and Export. Files are written only
@@ -73,6 +83,8 @@ struct output_group_export_preparation_t {
     std::vector<project_asset_copy_request_t> pending_assets;
     conversion_publication_plan_payload_t publication;
     std::vector<std::filesystem::path> conflicts;
+    std::vector<output_group_export_file_plan_t> files;
+    std::string blocking_error;
 };
 
 struct output_group_export_task_result_t {

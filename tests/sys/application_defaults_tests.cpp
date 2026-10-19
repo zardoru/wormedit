@@ -64,7 +64,8 @@ void check_lane_count_case(std::uint32_t lanes) {
 
 void check_default_stepmania_group(const wormedit::output_group_t& group) {
     CHECK(group.family == wormedit::format_family_t::stepmania);
-    CHECK(group.relative_output_path == "ssc");
+    CHECK(group.destination_kind == wormedit::output_destination_kind_t::file);
+    CHECK(group.relative_output_path == "exports/stepmania/song.ssc");
     REQUIRE(group.stepmania);
     CHECK(group.stepmania->file_profile == wormedit::stepmania_profile_t::ssc);
 }
@@ -97,7 +98,9 @@ TEST_CASE("audio project starts with playable lanes and a linked music resource"
     CHECK(valid_audio_project(*document, audio_path));
     REQUIRE(document->output_groups.size() == 2);
     CHECK(document->output_groups[0].family == wormedit::format_family_t::osu_mania);
-    CHECK(document->output_groups[0].relative_output_path == "osu");
+    CHECK(document->output_groups[0].destination_kind ==
+          wormedit::output_destination_kind_t::directory);
+    CHECK(document->output_groups[0].relative_output_path == "exports/osu");
     check_default_stepmania_group(document->output_groups[1]);
     for (const auto& group : document->output_groups)
         CHECK(group.charts == std::vector{document->charts.front().id});

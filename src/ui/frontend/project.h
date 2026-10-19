@@ -1,6 +1,7 @@
 #pragma once
 #include "common.h"
 #include "catalog.h"
+#include <span>
 
 typedef enum WormUiRecoveryAction {
     WORM_UI_RECOVERY_ACTION_INSPECT = 1 << 0,
@@ -135,6 +136,29 @@ typedef enum WormUiExistingFilesChoice {
     WORM_UI_EXISTING_FILES_SAVED = 255,
 } WormUiExistingFilesChoice;
 
+typedef enum WormUiOutputDestinationKind {
+    WORM_UI_OUTPUT_DESTINATION_DIRECTORY = 0,
+    WORM_UI_OUTPUT_DESTINATION_FILE,
+} WormUiOutputDestinationKind;
+
+typedef enum WormUiOutputPlanAction {
+    WORM_UI_OUTPUT_PLAN_NEW = 0,
+    WORM_UI_OUTPUT_PLAN_REPLACE,
+    WORM_UI_OUTPUT_PLAN_REUSE,
+    WORM_UI_OUTPUT_PLAN_COPY,
+} WormUiOutputPlanAction;
+
+struct WormUiOutputPlanRow {
+    const char* path;
+    WormUiOutputPlanAction action;
+    uint64_t bytes;
+};
+
+struct WormUiOutputDiagnosticRow {
+    const char* message;
+    uint8_t severity;
+};
+
 typedef struct WormUiProjectChartRow {
     uint64_t chart_id;
     const char* name;
@@ -182,6 +206,7 @@ typedef struct WormUiProjectOutputGroupView {
     const char* name;
     uint8_t family;
     const char* path;
+    WormUiOutputDestinationKind destination_kind;
     const uint64_t* chart_ids;
     size_t chart_count;
     const char* preview_status;
@@ -190,6 +215,10 @@ typedef struct WormUiProjectOutputGroupView {
     WormUiStepmaniaFileProfile stepmania_file_profile;
     WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
     WormUiStepmaniaImplementation stepmania_implementation;
+    std::span<const WormUiOutputPlanRow> plan_rows;
+    bool plan_rows_truncated;
+    std::span<const WormUiOutputDiagnosticRow> diagnostics;
+    bool diagnostics_truncated;
 } WormUiProjectOutputGroupView;
 
 typedef enum WormUiProjectOutputGroupActionKind {
@@ -209,6 +238,7 @@ typedef struct WormUiProjectOutputGroupAction {
     const char* name;
     const char* path;
     uint8_t family;
+    WormUiOutputDestinationKind destination_kind;
     WormUiExistingFilesChoice existing_files;
     bool has_stepmania_policy;
     WormUiStepmaniaFileProfile stepmania_file_profile;

@@ -249,7 +249,8 @@ void populate_metadata_output_groups(frontend_workspace_view_t& flattened,
         }
         const auto* name = metadata_frame_text(flattened, group.name);
         const auto* path = metadata_frame_text(flattened, group.relative_output_path.generic_string());
-        const auto directory = wormedit::export_asset_directory(group.relative_output_path);
+        const auto directory = wormedit::export_asset_directory(group.relative_output_path,
+                                                                 group.destination_kind);
         const auto* assets = metadata_frame_text(flattened,
             directory ? directory->generic_string() : std::string{});
         if (!name || !path || !assets) {

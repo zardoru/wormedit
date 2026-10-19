@@ -67,10 +67,10 @@ auto append_conversion_files(const std::filesystem::path& project_directory,
                             const output_group_t& group, const conversion_request_t& request,
                             const conversion_result_t& converted,
                             conversion_publication_plan_payload_t& plan,
-                            std::set<std::filesystem::path>& destinations, bool destination_is_directory)
+                            std::set<std::filesystem::path>& destinations)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
-    const bool file_path = (!destination_is_directory && group.relative_output_path.has_extension());
+    const bool file_path = group.destination_kind == output_destination_kind_t::file;
     const auto output_directory =
         file_path ? group.relative_output_path.parent_path() : group.relative_output_path;
     for (std::size_t index = 0; index < converted.outputs.size(); ++index) {
@@ -121,8 +121,8 @@ auto append_generated_file(const std::filesystem::path& name,
 auto append_generated_files(const std::filesystem::path& project_directory,
     const output_group_t& group, const conversion_request_t& request,
     const conversion_result_t& converted, conversion_publication_plan_payload_t& plan,
-    std::set<std::filesystem::path>& destinations, bool destination_is_directory) -> std::optional<std::string> {
-    const auto directory = (!destination_is_directory && group.relative_output_path.has_extension())
+    std::set<std::filesystem::path>& destinations) -> std::optional<std::string> {
+    const auto directory = group.destination_kind == output_destination_kind_t::file
         ? group.relative_output_path.parent_path() : group.relative_output_path;
     for (const auto& slice_plan : converted.slice_plans)
         for (const auto& span : slice_plan.value.spans)
@@ -155,18 +155,19 @@ auto validate_pending_assets(const conversion_request_t& request,
 auto append_staged_assets(const std::filesystem::path& project_directory,
                           const output_group_t& group, const conversion_request_t& request,
                           conversion_publication_plan_payload_t& plan,
-                          std::set<std::filesystem::path>& destinations, bool destination_is_directory,
+                          std::set<std::filesystem::path>& destinations,
                           std::span<const project_asset_copy_request_t> pending_assets)
     -> std::optional<std::string> {
     namespace fs = std::filesystem;
-    const auto asset_directory = destination_is_directory
-        ? std::optional{group.relative_output_path / "assets"} : export_asset_directory(group.relative_output_path);
+    const auto asset_directory = group.destination_kind == output_destination_kind_t::directory
+        ? std::optional{group.relative_output_path / "assets"}
+        : export_asset_directory(group.relative_output_path, group.destination_kind);
     if (!asset_directory) {
         return "Output asset directory is invalid.";
     }
     std::set<asset_id_t> asset_ids;
     std::set<fs::path> asset_destinations;
-    const auto output_directory = (!destination_is_directory && group.relative_output_path.has_extension())
+    const auto output_directory = group.destination_kind == output_destination_kind_t::file
                                       ? group.relative_output_path.parent_path()
                                       : group.relative_output_path;
     for (const auto& staged : request.staged_assets) {
@@ -214,11 +215,13 @@ auto append_discovered_asset(const song_document_t& song, const output_group_t& 
         return std::unexpected(std::string{"A resource has no unique source asset."});
     const auto& source = audio != nullptr ? audio->source_path : visual->source_path;
     const auto inspected = inspect_export_asset_file({.project_directory = project_directory,
-        .source_path = source, .relative_output_path = group.relative_output_path, .asset = asset}, stop);
+        .source_path = source, .relative_output_path = group.relative_output_path,
+        .destination_kind = group.destination_kind, .asset = asset}, stop);
     if (!inspected && inspected.error().code == failure_code_t::not_found) return {};
     if (!inspected)
         return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + " (" + source.string() + "): " + inspected.error().message});
-    const auto relative = export_asset_reference_path(group.relative_output_path, inspected->relative_path);
+    const auto relative = export_asset_reference_path(
+        group.relative_output_path, inspected->relative_path, group.destination_kind);
     if (!relative)
         return std::unexpected(std::string{"Verified export asset has an invalid chart-relative path."});
     mappings.push_back({asset, *relative});
@@ -233,7 +236,8 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
     if (group.family != format_family_t::bms && group.family != format_family_t::bmson &&
         group.family != format_family_t::osu_mania && group.family != format_family_t::stepmania)
         return mappings;
-    if (!project_directory.is_absolute() || !export_asset_directory(group.relative_output_path))
+    if (!project_directory.is_absolute() ||
+        !export_asset_directory(group.relative_output_path, group.destination_kind))
         return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), "Export asset directory is invalid."));
     auto referenced = referenced_export_assets(song, group);
     if (!referenced) return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), std::move(referenced.error())));
@@ -263,7 +267,7 @@ auto plan_pending_export_assets(const song_document_t& song, const output_group_
         pending.push_back({.project_directory = project_directory,
             .source_path = audio ? audio->source_path : visual->source_path, .asset = id});
     }
-    const auto directory = export_asset_directory(group.relative_output_path);
+    const auto directory = export_asset_directory(group.relative_output_path, group.destination_kind);
     if (!directory)
         return std::unexpected("Export asset directory is invalid.");
     auto planned = plan_project_asset_copies(pending, *directory);
@@ -274,7 +278,7 @@ auto plan_pending_export_assets(const song_document_t& song, const output_group_
 
 auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,
                                  const output_group_t& group, const conversion_request_t& request,
-                                 const conversion_result_t& converted, bool destination_is_directory,
+                                 const conversion_result_t& converted,
                                  std::span<const project_asset_copy_request_t> pending_assets)
     -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t> {
     namespace fs = std::filesystem;
@@ -283,12 +287,12 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
         group.family != request.target || !converted || converted.outputs.empty()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "Project, output group, or conversion result is invalid."));
     }
-    if ((!destination_is_directory && group.relative_output_path.has_extension()) && converted.outputs.size() != 1) {
+    if (group.destination_kind == output_destination_kind_t::file && converted.outputs.size() != 1) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "A single chart filename cannot hold multiple outputs."));
     }
-    const auto asset_directory = destination_is_directory
+    const auto asset_directory = group.destination_kind == output_destination_kind_t::directory
         ? std::optional{group.relative_output_path / "assets"}
-        : export_asset_directory(group.relative_output_path);
+        : export_asset_directory(group.relative_output_path, group.destination_kind);
     if (!asset_directory)
         return std::unexpected(conversion_publication_plan_error_t::from(
             std::move(plan), "Output asset directory is invalid."));
@@ -298,17 +302,17 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
             std::move(plan), planned_assets.error().message));
     std::set<fs::path> destinations;
     if (auto error = append_conversion_files(project_directory, group, request, converted, plan,
-                                             destinations, destination_is_directory);
+                                             destinations);
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
-    if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations, destination_is_directory);
+    if (auto error = append_generated_files(project_directory, group, request, converted, plan, destinations);
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
     if (auto error = validate_pending_assets(request, *planned_assets))
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), *error));
-    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory, *planned_assets);
+    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, *planned_assets);
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }

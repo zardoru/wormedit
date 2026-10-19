@@ -4675,6 +4675,8 @@ struct application_t::implementation_t {
 #if defined(WORMEDIT_HAS_MACOS_MENU)
         wormedit::sys::refresh_macos_menu_shortcuts(command_registry);
 #endif
+        const auto project_directory = session.project_identity.asset_base.generic_string();
+        worm_ui_frontend_set_project_directory(project_directory.c_str());
         auto action = worm_ui_frontend_compose(&flattened.view);
         refresh_sound_selection_context(action, commands);
         dispatch_menu_command(action);

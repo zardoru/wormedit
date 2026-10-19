@@ -84,7 +84,8 @@ struct output_preview_identity_t {
     auto operator==(const output_preview_identity_t&) const -> bool = default;
 };
 using output_preview_job_t =
-    async_job_t<output_group_export_request_t, std::string, output_preview_identity_t>;
+    async_job_t<output_group_export_request_t, output_group_export_preparation_t,
+                output_preview_identity_t>;
 
 class project_chart_runtime_t {
   public:
@@ -98,6 +99,11 @@ class project_chart_runtime_t {
     std::vector<std::vector<uint64_t>> output_group_charts;
     std::vector<std::string> output_group_status;
     std::vector<std::string> output_group_paths;
+    std::vector<std::optional<output_group_export_preparation_t>> output_group_previews;
+    std::vector<std::vector<WormUiOutputPlanRow>> output_group_plan_rows;
+    std::vector<std::vector<std::string>> output_group_plan_paths;
+    std::vector<std::vector<WormUiOutputDiagnosticRow>> output_group_diagnostic_rows;
+    std::vector<std::vector<std::string>> output_group_diagnostic_messages;
     song_id_t output_group_song;
     uint64_t output_group_revision{};
     [[nodiscard]] auto preview_job() noexcept -> output_preview_job_t* {

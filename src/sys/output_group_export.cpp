@@ -56,7 +56,8 @@ auto prepare_output_assets(const output_group_export_request_t& input,
         });
     });
     if (!pending->empty() && pending->front().planned_filename.empty()) {
-        const auto directory = export_asset_directory(input.plan.group.relative_output_path);
+        const auto directory = export_asset_directory(input.plan.group.relative_output_path,
+                                                       input.plan.group.destination_kind);
         if (!directory) return std::unexpected("Export asset directory is invalid.");
         auto planned = plan_project_asset_copies(*pending, *directory, stop);
         if (!planned) return std::unexpected(planned.error().message);
@@ -99,28 +100,6 @@ void report_output_conversion_losses(const wormedit::conversion_result_t& conver
     wormedit::truncate_notification_text(completed.message,
                                          wormedit::notification_message_max_bytes);
     completed.severity = wormedit::notification_severity_t::warning;
-}
-
-auto sliced_bms_destination_error(const wormedit::song_document_t& snapshot,
-                                  const wormedit::output_group_t& group,
-                                  const wormedit::conversion_request_t& request,
-                                  const wormedit::conversion_result_t& converted)
-    -> std::optional<std::string> {
-    if (group.family != wormedit::format_family_t::bms ||
-        !wormedit::is_conversion_needs_slice_spans(snapshot, request) ||
-        !group.relative_output_path.has_extension())
-        return std::nullopt;
-    const auto requested = group.relative_output_path.extension();
-    for (const auto& output : converted.outputs) {
-        const auto inferred = std::filesystem::path(output.suggested_filename).extension();
-        const bool incompatible =
-            requested == ".pms" ? inferred != ".pms"
-                                : inferred == ".pms" || (requested == ".bme" && inferred != ".bme");
-        if (incompatible)
-            return "BMSON lane layout requires " + inferred.string() + " output; selected " +
-                   requested.string() + " filename is incompatible.";
-    }
-    return std::nullopt;
 }
 
 void complete_output_publication(const wormedit::conversion_publication_result_t& published,
@@ -184,6 +163,79 @@ auto existing_publication_files(const std::filesystem::path& project_directory,
     return conflicts;
 }
 
+auto file_size_or_zero(const std::filesystem::path& path) -> std::uintmax_t {
+    std::error_code error;
+    const auto bytes = std::filesystem::file_size(path, error);
+    return error ? 0 : bytes;
+}
+
+auto generated_file_bytes(const output_group_export_request_t& input,
+                          const conversion_result_t& converted,
+                          const std::filesystem::path& relative) -> std::uintmax_t {
+    const auto name = relative.filename();
+    for (const auto& plan : converted.slice_plans)
+        for (const auto& span : plan.value.spans)
+            if (span.filename == name)
+                return 56 + (span.end_frame - span.begin_frame) * 2 * sizeof(float);
+    if (std::ranges::find(converted.silent_files, name) != converted.silent_files.end())
+        return 56 + 2 * sizeof(float);
+    const auto copied = std::ranges::find(converted.asset_copies, name,
+                                          &conversion_asset_copy_t::relative_path);
+    if (copied == converted.asset_copies.end()) return 0;
+    const auto* audio = input.document.find_audio_asset(copied->asset);
+    const auto visual = std::ranges::find(input.document.visual_assets, copied->asset,
+                                          &visual_asset_t::id);
+    const auto source = audio ? audio->source_path
+                              : visual == input.document.visual_assets.end()
+                                    ? std::filesystem::path{}
+                                    : visual->source_path;
+    return file_size_or_zero(source.is_absolute() ? source : input.asset_base / source);
+}
+
+void build_file_plan(const output_group_export_request_t& input,
+                     output_group_export_preparation_t& prepared) {
+    const auto exists = [&](const std::filesystem::path& path) {
+        return std::ranges::find(prepared.conflicts, path) != prepared.conflicts.end();
+    };
+    prepared.files.reserve(prepared.publication.files.size() +
+                           prepared.publication.generated_files.size() +
+                           prepared.publication.assets.size());
+    for (const auto& file : prepared.publication.files) {
+        prepared.files.push_back(
+            {.path = file.project_relative_path,
+             .action = exists(file.project_relative_path)
+                           ? output_group_export_file_action_t::replace
+                           : output_group_export_file_action_t::new_file,
+             .bytes = prepared.converted.outputs[file.output_index].bytes.size()});
+    }
+    for (const auto& file : prepared.publication.generated_files) {
+        const auto copied = std::ranges::find(prepared.converted.asset_copies, file.filename(),
+                                              &conversion_asset_copy_t::relative_path) !=
+                            prepared.converted.asset_copies.end();
+        prepared.files.push_back(
+            {.path = file,
+             .action = exists(file) ? output_group_export_file_action_t::replace
+                                    : copied ? output_group_export_file_action_t::copy
+                                             : output_group_export_file_action_t::new_file,
+             .bytes = generated_file_bytes(input, prepared.converted, file)});
+    }
+    for (const auto& asset : prepared.publication.assets) {
+        const auto pending = std::ranges::find(
+            prepared.pending_assets, asset.asset, &project_asset_copy_request_t::asset);
+        const auto copied = pending != prepared.pending_assets.end();
+        const auto source = copied
+                                ? (pending->source_path.is_absolute()
+                                       ? pending->source_path
+                                       : input.asset_base / pending->source_path)
+                                : input.asset_base / asset.project_relative_path;
+        prepared.files.push_back(
+            {.path = asset.project_relative_path,
+             .action = copied ? output_group_export_file_action_t::copy
+                              : output_group_export_file_action_t::reuse,
+             .bytes = file_size_or_zero(source)});
+    }
+}
+
 auto publish_prepared_output(const output_group_export_request_t& input,
                              const output_group_export_preparation_t& prepared,
                              std::stop_token stop) -> output_group_export_task_result_t {
@@ -205,6 +257,42 @@ auto publish_prepared_output(const output_group_export_request_t& input,
     output_group_export_task_result_t completed;
     complete_output_publication(published, prepared.converted, stop, completed);
     return completed;
+}
+
+struct prepared_output_batch_t {
+    std::vector<output_group_export_preparation_t> preparations;
+    std::string conflicts;
+};
+
+auto prepare_output_targets(const output_group_export_request_t& input,
+                            std::span<const output_group_export_target_t> targets,
+                            std::stop_token stop)
+    -> result_t<prepared_output_batch_t, output_group_export_task_result_t> {
+    prepared_output_batch_t batch;
+    batch.preparations.reserve(targets.size());
+    for (const auto& target : targets) {
+        auto target_request = input;
+        target_request.plan = single_target_plan(target);
+        auto prepared = output_group_export_preparation_t::from(target_request, stop);
+        const auto prefix = target.group.name.empty() ? std::string{} : target.group.name + ": ";
+        if (!prepared)
+            return std::unexpected(output_group_export_task_result_t{
+                .message = prefix + prepared.error(),
+                .severity = stop.stop_requested() ? notification_severity_t::info
+                                                  : notification_severity_t::error});
+        if (!prepared->blocking_error.empty())
+            return std::unexpected(
+                output_group_export_task_result_t{.message = prefix + prepared->blocking_error});
+        if (target.existing_files == existing_files_policy_t::ask)
+            for (const auto& path : prepared->conflicts)
+                batch.conflicts += target.group.name + ": " + path.generic_string() + "\n";
+        if (!prepared->conflicts.empty() &&
+            target.existing_files == existing_files_policy_t::keep)
+            return std::unexpected(output_group_export_task_result_t{
+                .message = prefix + "Existing files are kept by this export target."});
+        batch.preparations.push_back(std::move(*prepared));
+    }
+    return batch;
 }
 
 } // namespace
@@ -241,10 +329,6 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
     -> result_t<output_group_export_preparation_t, std::string> {
     if (stop.stop_requested()) return std::unexpected("Export cancelled before conversion.");
     if (input.plan.group.charts.empty()) return std::unexpected("Add at least one chart before exporting.");
-    if (input.plan.group.family == format_family_t::bms &&
-        input.plan.group.relative_output_path.has_extension() &&
-        !is_bms_extension(input.plan.group.relative_output_path.extension().string()))
-        return std::unexpected("Output extension does not match the BMS format family");
     output_group_export_preparation_t prepared{.request = input.plan.request};
     if (is_conversion_needs_slice_spans(input.document, prepared.request)) {
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -263,19 +347,17 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
     if (!prepared.converted) {
         const auto error = std::ranges::find(prepared.converted.diagnostics,
             diagnostic_severity_t::error, &conversion_diagnostic_t::severity);
-        return std::unexpected(error == prepared.converted.diagnostics.end()
-                                   ? "Output conversion failed." : error->message);
+        prepared.blocking_error = error == prepared.converted.diagnostics.end()
+                                      ? "Output conversion failed." : error->message;
+        return prepared;
     }
     if (stop.stop_requested()) return std::unexpected("Export cancelled before publication.");
-    if (auto error = sliced_bms_destination_error(input.document, input.plan.group,
-                                                 prepared.request, prepared.converted))
-        return std::unexpected(*error);
     if (auto error = validate_generated_asset_sources(input, prepared.converted))
         return std::unexpected(*error);
     auto planning_request = prepared.request;
     planning_request.overwrite = true;
     auto publication = conversion_publication_plan_payload_t::from(
-        input.asset_base, input.plan.group, planning_request, prepared.converted, false,
+        input.asset_base, input.plan.group, planning_request, prepared.converted,
         prepared.pending_assets);
     if (!publication) return std::unexpected(publication.error().message);
     prepared.publication = std::move(*publication);
@@ -283,8 +365,7 @@ auto output_group_export_preparation_t::from(const output_group_export_request_t
     if (!conflicts)
         return std::unexpected(conflicts.error());
     prepared.conflicts = std::move(*conflicts);
-    if (!prepared.conflicts.empty() && input.plan.existing_files == existing_files_policy_t::keep)
-        return std::unexpected("Existing files are kept by this export target.");
+    build_file_plan(input, prepared);
     return prepared;
 }
 
@@ -293,31 +374,13 @@ auto run_output_group_export(const output_group_export_request_t& input, std::st
     std::vector<output_group_export_target_t> targets{export_target(input.plan)};
     targets.insert(targets.end(), input.plan.additional_targets.begin(),
                    input.plan.additional_targets.end());
-    std::vector<output_group_export_preparation_t> preparations;
-    preparations.reserve(targets.size());
-    std::string conflicts;
-    for (const auto& target : targets) {
-        auto target_request = input;
-        target_request.plan = single_target_plan(target);
-        auto prepared = output_group_export_preparation_t::from(target_request, stop);
-        if (!prepared) {
-            const auto prefix =
-                target.group.name.empty() ? std::string{} : target.group.name + ": ";
-            return {.message = prefix + prepared.error(),
-                    .severity = stop.stop_requested() ? notification_severity_t::info
-                                                      : notification_severity_t::error};
-        }
-        if (target.existing_files == existing_files_policy_t::ask) {
-            for (const auto& path : prepared->conflicts)
-                conflicts += target.group.name + ": " + path.generic_string() + "\n";
-        }
-        preparations.push_back(std::move(*prepared));
-    }
-    if (!conflicts.empty())
+    auto prepared = prepare_output_targets(input, targets, stop);
+    if (!prepared) return std::move(prepared.error());
+    if (!prepared->conflicts.empty())
         return {.confirmation_required = true,
                 .message = "Replace existing files?",
                 .severity = notification_severity_t::warning,
-                .detail = std::move(conflicts)};
+                .detail = std::move(prepared->conflicts)};
     output_group_export_task_result_t completed{
         .published = true,
         .message = targets.size() == 1
@@ -327,7 +390,7 @@ auto run_output_group_export(const output_group_export_request_t& input, std::st
     for (std::size_t index = 0; index < targets.size(); ++index) {
         auto target_request = input;
         target_request.plan = single_target_plan(targets[index]);
-        auto result = publish_prepared_output(target_request, preparations[index], stop);
+        auto result = publish_prepared_output(target_request, prepared->preparations[index], stop);
         if (!result.published) {
             result.message = targets[index].group.name + ": " + result.message;
             result.published = index != 0;

@@ -335,6 +335,7 @@ TEST_CASE("Project StepMania targets keep independent policies and undo policy e
         .name = "Legacy SM",
         .path = "sm",
         .family = static_cast<std::uint8_t>(format_family_t::stepmania),
+        .destination_kind = WORM_UI_OUTPUT_DESTINATION_FILE,
         .existing_files = WORM_UI_EXISTING_FILES_ASK,
         .has_stepmania_policy = true,
         .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SM,
@@ -370,6 +371,7 @@ TEST_CASE("Project StepMania targets keep independent policies and undo policy e
 TEST_CASE("Project conversion preview runs through the worker service and retires on document changes", "[unit][project-view][output-groups]") {
     auto history = document_history_t::from(project_song());
     history.document.output_groups[0].family = format_family_t::native_project;
+    history.document.output_groups[0].destination_kind = output_destination_kind_t::file;
     history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
@@ -387,6 +389,11 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     }
     build_project_chart_view(runtime, history.document, view);
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
+    require_project(view.output_groups[0].plan_rows.size() == 1);
+    expect_project(view.output_groups[0].plan_rows[0].action == WORM_UI_OUTPUT_PLAN_NEW);
+    expect_project(view.output_groups[0].plan_rows[0].bytes > 0);
+    expect_project(std::string_view{view.output_groups[0].plan_rows[0].path} ==
+                   "exports/song.wormedit");
     expect_project(history.document.revision == before);
     expect_project(history.undo.empty());
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path());
@@ -400,6 +407,7 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
           "[unit][project-view][output-groups]") {
     auto history = document_history_t::from(project_song());
     history.document.output_groups[0].family = format_family_t::native_project;
+    history.document.output_groups[0].destination_kind = output_destination_kind_t::file;
     history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
     project_chart_runtime_t runtime;
     std::latch started{1}, release{1};
@@ -441,6 +449,7 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
 TEST_CASE("Conversion preview Cancel retains busy state and discards its result", "[unit][project-view][output-groups]") {
     auto history = document_history_t::from(project_song());
     history.document.output_groups[0].family = format_family_t::native_project;
+    history.document.output_groups[0].destination_kind = output_destination_kind_t::file;
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
     WormUiSetupView view{.visible = true};

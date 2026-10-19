@@ -6418,18 +6418,28 @@ struct output_group_fixture_t {
         {.chart_id = 10, .name = "First difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "SSC", .length = "1 s", .diagnostic = ""},
         {.chart_id = 11, .name = "Second difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "1 s", .diagnostic = ""}}};
     const uint64_t included{10};
+    std::array<WormUiOutputPlanRow, 2> plan{{
+        {.path = "exports/song.ssc", .action = WORM_UI_OUTPUT_PLAN_NEW, .bytes = 123},
+        {.path = "exports/assets/music.ogg", .action = WORM_UI_OUTPUT_PLAN_COPY, .bytes = 456},
+    }};
+    std::array<WormUiOutputDiagnosticRow, 1> diagnostics{{
+        {.message = "A complete conversion warning", .severity = 1},
+    }};
     WormUiProjectOutputGroupView group{
         .document_index = 3,
         .name = "SSC release",
         .family = 2,
         .path = "exports/song.ssc",
+        .destination_kind = WORM_UI_OUTPUT_DESTINATION_FILE,
         .chart_ids = &included,
         .chart_count = 1,
         .preview_status = "Preview not run",
         .has_stepmania_policy = true,
         .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC,
         .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS,
-        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
+        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY,
+        .plan_rows = plan,
+        .diagnostics = diagnostics};
     explicit output_group_fixture_t(bool existing) {
         auto& view = harness.view();
         view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -6473,8 +6483,10 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     require_project_access(action.document_revision == f.harness.view().document_revision);
     require_project_access(action.session_generation == 8);
     require_project_access(std::string_view{action.name} == "New export target");
-    require_project_access(std::string_view{action.path} == "exports/chart.bmson");
-    require_project_access(action.family == 4 && action.chart_count == 1 && action.chart_ids[0] == 10);
+    require_project_access(std::string_view{action.path} == "exports/bmson");
+    require_project_access(action.family == 4 &&
+                           action.destination_kind == WORM_UI_OUTPUT_DESTINATION_DIRECTORY &&
+                           action.chart_count == 1 && action.chart_ids[0] == 10);
     require_project_access(action.existing_files == WORM_UI_EXISTING_FILES_ASK);
 }
 
@@ -6483,7 +6495,7 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     output_group_fixture_t f{true};
     require_project_access(f.harness.drawn_text_center("SSC").has_value());
     require_project_access(f.harness.drawn_text_center("First difficulty").has_value());
-    require_project_access(f.harness.drawn_text_center("→ exports/song.ssc").has_value());
+    require_project_access(f.harness.drawn_text_center("→ File · exports/song.ssc").has_value());
     (void)f.click("⋯");
     (void)f.harness.frame();
     (void)f.click("Edit");
@@ -6492,6 +6504,8 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     require_project_access(f.harness.drawn_text_center("File profile").has_value());
     require_project_access(f.harness.drawn_text_center("Timing syntax").has_value());
     require_project_access(f.harness.drawn_text_center("Implementation").has_value());
+    require_project_access(f.harness.drawn_text_center("Save to").has_value());
+    require_project_access(f.harness.drawn_text_center("Browse…").has_value());
     (void)f.click("Second difficulty");
     const auto saved = f.click("Save");
     const auto found = std::ranges::find_if(saved, [](const auto& frame) {
@@ -6527,6 +6541,11 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
             frame.get().project_output_group.group_index == 3;
     }));
     (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("new").has_value());
+    require_project_access(f.harness.drawn_text_center("copy").has_value());
+    require_project_access(f.harness.drawn_text_center("123 bytes").has_value());
+    require_project_access(
+        f.harness.drawn_text_center("A complete conversion warning").has_value());
     const auto exported = f.click("Export");
     const auto found = std::ranges::find_if(exported, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;

@@ -474,10 +474,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 8 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 9 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 8;
+constexpr std::uint32_t native_project_schema_version = 9;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     return text_util::path_utf8(path);
@@ -683,6 +683,7 @@ void to_json(json& value, const output_group_t& group) {
     value = json{{"name", group.name},
                  {"family", group.family},
                  {"charts", group.charts},
+                 {"destination_kind", group.destination_kind},
                  {"relative_output_path", path_to_utf8(group.relative_output_path)},
                  {"existing_files", group.existing_files},
                  {"stepmania", group.stepmania}};
@@ -692,6 +693,7 @@ void from_json(const json& value, output_group_t& group) {
     value.at("name").get_to(group.name);
     value.at("family").get_to(group.family);
     value.at("charts").get_to(group.charts);
+    value.at("destination_kind").get_to(group.destination_kind);
     group.relative_output_path =
         path_from_utf8(value.at("relative_output_path").get<std::string>());
     value.at("existing_files").get_to(group.existing_files);
@@ -1005,6 +1007,7 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
                  is_enum_at_most(group.stepmania->implementation_profile,
                                  stepmania_implementation_profile_t::etterna_0_75_1));
             return static_cast<std::size_t>(group.family) < format_family_count &&
+                   is_enum_at_most(group.destination_kind, output_destination_kind_t::file) &&
                    is_enum_at_most(group.existing_files, existing_files_policy_t::keep) &&
                    valid_policy &&
                    (group.family != format_family_t::stepmania || group.stepmania.has_value());

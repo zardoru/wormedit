@@ -1238,8 +1238,10 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
                entry.detail.find("hold tail") != std::string::npos &&
                entry.detail.find("Chart ") != std::string::npos;
     }));
+    const auto output_directory =
+        directory / fixture.history.document.output_groups.front().relative_output_path;
     std::size_t charts{}, sounds{};
-    for (const auto& file : std::filesystem::directory_iterator(directory / "exports")) {
+    for (const auto& file : std::filesystem::directory_iterator(output_directory)) {
         charts += file.path().extension() == (target == format_family_t::osu_mania ? ".osu" : ".bme");
         sounds += file.path().extension() == ".wav";
     }
@@ -1250,9 +1252,9 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     check_action(std::filesystem::file_size(directory / "stem.wav") == wav.size());
 }
 
-TEST_CASE("BMSON editor BMS export materializes silent gameplay in private staging",
+TEST_CASE("BMSON editor BMS export materializes silent gameplay in typed folders",
           "[unit][sys][conversion][publication]") {
-    const auto incompatible_name = GENERATE(false, true);
+    const auto dotted_destination = GENERATE(false, true);
     action_notification_fixture_t fixture;
     const auto directory = std::filesystem::temp_directory_path() /
         ("wormedit-app-silent-bms-" + std::to_string(
@@ -1275,7 +1277,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
         .position = {chart.measures.front().id, 0}, .lane = lane->id}};
     fixture.history.document.output_groups = {{.family = format_family_t::bms,
         .charts = {chart.id},
-        .relative_output_path = incompatible_name ? "exports/chart.pms" : "exports"}};
+        .relative_output_path = dotted_destination ? "exports/chart.pms" : "exports"}};
     const auto workspace = workspace_controller_t::from(fixture.history);
     require_action(static_cast<bool>((workspace.value && workspace.diagnostics.empty())));
     fixture.workspace = *workspace.value;
@@ -1290,17 +1292,12 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
                    "Export target preparation started in the background.");
     const auto completed = wait_for_slice_export(fixture);
     require_action(completed.has_value());
-    if (incompatible_name) {
-        check_action(completed->find("filename is incompatible") != std::string::npos);
-        check_action_false(std::filesystem::exists(directory / "exports"));
-        check_action(fixture.history.document.revision == revision);
-        check_action(fixture.history.undo.empty());
-        return;
-    }
     check_action(completed->starts_with("Output target published"));
-    check_action(std::filesystem::exists(directory / "exports" / "conversion-silence.wav"));
+    const auto output_directory =
+        directory / fixture.history.document.output_groups.front().relative_output_path;
+    check_action(std::filesystem::exists(output_directory / "conversion-silence.wav"));
     std::size_t charts{}, sounds{};
-    for (const auto& file : std::filesystem::directory_iterator(directory / "exports")) {
+    for (const auto& file : std::filesystem::directory_iterator(output_directory)) {
         charts += file.path().extension() == ".bme";
         sounds += file.path().extension() == ".wav";
     }
@@ -2940,9 +2937,10 @@ TEST_CASE("New project exports group charts with an excluded difficulty active",
         require_action(completed.has_value());
         INFO(*completed);
         check_action(completed->starts_with("Output target published"));
-        check_action(std::filesystem::is_directory(root / "osu"));
+        const auto output = root / "exports/osu";
+        check_action(std::filesystem::is_directory(output));
         std::size_t charts{};
-        for (const auto& entry : std::filesystem::directory_iterator(root / "osu"))
+        for (const auto& entry : std::filesystem::directory_iterator(output))
             if (entry.path().extension() == ".osu") ++charts;
         check_action(charts == 1);
     }

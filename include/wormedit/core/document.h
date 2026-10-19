@@ -963,6 +963,11 @@ enum class existing_files_policy_t {
     keep,
 };
 
+enum class output_destination_kind_t {
+    directory,
+    file,
+};
+
 enum class stepmania_profile_t {
     sm,
     ssc,
@@ -993,6 +998,7 @@ struct output_group_t {
     std::string name;
     format_family_t family{format_family_t::native_project};
     std::vector<chart_id_t> charts;
+    output_destination_kind_t destination_kind{output_destination_kind_t::directory};
     std::filesystem::path relative_output_path;
     existing_files_policy_t existing_files{existing_files_policy_t::ask};
     std::optional<stepmania_export_policy_t> stepmania;
@@ -1041,7 +1047,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{8};
+    std::uint32_t schema_version{9};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

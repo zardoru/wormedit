@@ -21,6 +21,12 @@
 #include <utility>
 
 #include <SDL3/SDL_keyboard.h>
+#include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_error.h>
+#include <SDL3/SDL_video.h>
+
+#include <filesystem>
+#include <mutex>
 
 namespace {
 
@@ -63,8 +69,98 @@ struct project_panel_state_t {
     wormedit::ui::chrome::Dialog group_delete_dialog;
     size_t group_menu_index{};
     bool group_delete_pending{};
+    size_t group_plan_index{};
+    bool group_plan_expanded{};
+    std::string group_picker_error;
+    std::string project_directory;
 };
 project_panel_state_t project_state;
+
+struct output_destination_picker_t {
+    std::mutex mutex;
+    bool active{};
+    bool ready{};
+    std::string project_directory;
+    std::string path;
+    std::string error;
+};
+output_destination_picker_t output_destination_picker;
+
+void output_destination_picked(void*, const char* const* files, int) {
+    std::lock_guard lock{output_destination_picker.mutex};
+    output_destination_picker.ready = true;
+    if (!files) {
+        const auto* error = SDL_GetError();
+        output_destination_picker.error = error && error[0] ? error : "Destination picker failed.";
+    } else if (files[0]) {
+        output_destination_picker.path = files[0];
+    }
+}
+
+void open_output_destination_picker() {
+    {
+        std::lock_guard lock{output_destination_picker.mutex};
+        if (output_destination_picker.active || project_state.project_directory.empty())
+            return;
+        output_destination_picker.active = true;
+        output_destination_picker.ready = false;
+        output_destination_picker.project_directory = project_state.project_directory;
+        output_destination_picker.path.clear();
+        output_destination_picker.error.clear();
+    }
+    project_state.group_picker_error.clear();
+    const auto file = project_state.group_family == 0 || project_state.group_family == 2;
+    if (!file) {
+        SDL_ShowOpenFolderDialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(),
+                                 project_state.project_directory.c_str(), false);
+        return;
+    }
+    static constexpr SDL_DialogFileFilter native_filter[] = {
+        {"wormedit project", "wormedit"},
+    };
+    static constexpr SDL_DialogFileFilter stepmania_filter[] = {
+        {"StepMania song", "sm;ssc"},
+    };
+    const auto* filter = project_state.group_family == 0 ? native_filter : stepmania_filter;
+    const auto suggested = (std::filesystem::path{project_state.project_directory} /
+                            (project_state.group_family == 0 ? "song.wormedit" : "song.ssc"))
+                               .string();
+    SDL_ShowSaveFileDialog(output_destination_picked, nullptr, SDL_GetKeyboardFocus(), filter, 1,
+                           suggested.c_str());
+}
+
+void consume_output_destination_picker() {
+    std::lock_guard lock{output_destination_picker.mutex};
+    if (!output_destination_picker.active || !output_destination_picker.ready) return;
+    output_destination_picker.active = false;
+    output_destination_picker.ready = false;
+    if (!output_destination_picker.error.empty()) {
+        project_state.group_picker_error = std::move(output_destination_picker.error);
+        return;
+    }
+    if (output_destination_picker.path.empty() ||
+        output_destination_picker.project_directory != project_state.project_directory)
+        return;
+    const auto base =
+        std::filesystem::path{output_destination_picker.project_directory}.lexically_normal();
+    const auto picked = std::filesystem::path{output_destination_picker.path}.lexically_normal();
+    const auto relative = picked.lexically_relative(base);
+    if (relative.empty() || relative.is_absolute() || *relative.begin() == "..") {
+        project_state.group_picker_error = "Choose a destination inside the project folder.";
+        return;
+    }
+    const auto text = relative.generic_string();
+    if (text.size() >= sizeof(project_state.group_path)) {
+        project_state.group_picker_error = "The selected destination path is too long.";
+        return;
+    }
+    std::snprintf(project_state.group_path, sizeof(project_state.group_path), "%s", text.c_str());
+}
+
+auto can_open_output_destination_picker() -> bool {
+    std::lock_guard lock{output_destination_picker.mutex};
+    return !project_state.project_directory.empty() && !output_destination_picker.active;
+}
 
 void publish_chart_action(const WormUiSetupView& view, WormUiWorkspaceAction& action,
     WormUiProjectChartActionKind kind, uint64_t chart) {
@@ -434,7 +530,8 @@ void load_output_group_draft(const WormUiSetupView& view, const WormUiProjectOut
     state.group_editor_dialog = {};
     std::snprintf(state.group_name, sizeof(state.group_name), "%s",
                   group ? group->name : "New export target");
-    std::snprintf(state.group_path, sizeof(state.group_path), "%s", group ? group->path : "exports/chart.bmson");
+    std::snprintf(state.group_path, sizeof(state.group_path), "%s",
+                  group ? group->path : "exports/bmson");
     state.group_charts.fill(false);
     for (size_t i = 0; i < std::min(view.chart_row_count, size_t{WORM_UI_PROJECT_CHART_CAPACITY}); ++i) {
         state.group_charts[i] = group ? std::ranges::find(
@@ -478,6 +575,9 @@ void publish_output_group_action(const WormUiSetupView& view, WormUiWorkspaceAct
     output.name = project_state.group_name;
     output.path = project_state.group_path;
     output.family = static_cast<uint8_t>(project_state.group_family);
+    output.destination_kind = project_state.group_family == 0 || project_state.group_family == 2
+                                  ? WORM_UI_OUTPUT_DESTINATION_FILE
+                                  : WORM_UI_OUTPUT_DESTINATION_DIRECTORY;
     output.existing_files =
         static_cast<WormUiExistingFilesChoice>(project_state.group_existing_files);
     output.has_stepmania_policy = project_state.group_family == 2;
@@ -568,10 +668,67 @@ void render_stepmania_policy(nk_context* context) {
         state.group_stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
     }
 }
+
+void render_output_destination(nk_context* context) {
+    using namespace wormedit::ui::chrome;
+    auto& state = project_state;
+    constexpr float destination_fields[]{0.22f, 0.58f, 0.20f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 3, destination_fields);
+    nk_label(context, "Save to", NK_TEXT_LEFT);
+    worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_path,
+                               sizeof(state.group_path), nk_filter_default);
+    const auto can_browse = can_open_output_destination_picker();
+    if (Button{"Browse…", ButtonKind::secondary, nullptr, can_browse}.render(context))
+        open_output_destination_picker();
+    if (!state.group_picker_error.empty())
+        dialog_text(state.group_editor_dialog, context, state.group_picker_error.c_str(),
+                    color(UiColor::conflict));
+    std::string resolved{"Resolved "};
+    resolved += state.group_family == 0 || state.group_family == 2 ? "file · " : "folder · ";
+    resolved += state.group_path;
+    dialog_text(state.group_editor_dialog, context, resolved.c_str(), color(UiColor::text_muted));
+}
+
+void render_output_group_form(nk_context* context, const WormUiSetupView& view) {
+    using namespace wormedit::ui::chrome;
+    auto& state = project_state;
+    constexpr float fields[]{0.22f, 0.78f};
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Name", NK_TEXT_LEFT);
+    worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_name,
+                               sizeof(state.group_name), nk_filter_default);
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Format", NK_TEXT_LEFT);
+    const auto previous_family = state.group_family;
+    state.group_family = render_output_family_picker(context, view.output_families,
+                                                      state.group_family);
+    if (state.group_family != previous_family) {
+        const auto* suggested = state.group_family == 0 ? "exports/native/song.wormedit"
+                               : state.group_family == 1 ? "exports/bms"
+                               : state.group_family == 2 ? "exports/stepmania/song.ssc"
+                               : state.group_family == 3 ? "exports/osu"
+                                                        : "exports/bmson";
+        std::snprintf(state.group_path, sizeof(state.group_path), "%s", suggested);
+    }
+    render_output_destination(context);
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Existing files", NK_TEXT_LEFT);
+    state.group_existing_files = render_existing_files_picker(context, state.group_existing_files);
+    if (state.group_family == 2) render_stepmania_policy(context);
+    dialog_text(
+        state.group_editor_dialog, context,
+        state.group_family == 0 || state.group_family == 2
+            ? "Song file inside the project. Preview shows copied assets beside it."
+            : "Folder inside the project. Chart and asset filenames are derived in Preview.",
+        color(UiColor::text_muted));
+    render_output_group_members(context, view);
+}
+
 void render_output_group_editor(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
     using namespace wormedit::ui::chrome;
     auto& state = project_state;
     if (!state.group_editor_open) return;
+    consume_output_destination_picker();
     if (state.group_revision != view.document_revision) { state.group_editor_open = false; return; }
     char title[sizeof(state.group_name) + 32];
     std::snprintf(title, sizeof(title), state.group_create ? "Create export target" : "Edit export · %s",
@@ -580,28 +737,7 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
     bool save_requested = false;
     if (dialog_begin(state.group_editor_dialog, context, "Export target editor", title,
                      {.width = 560.0f, .enter_confirms = false})) {
-        constexpr float fields[]{0.22f, 0.78f};
-        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-        nk_label(context, "Name", NK_TEXT_LEFT);
-        worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_name,
-                                   sizeof(state.group_name), nk_filter_default);
-        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-        nk_label(context, "Format", NK_TEXT_LEFT);
-        state.group_family = render_output_family_picker(context, view.output_families, state.group_family);
-        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-        nk_label(context, "Destination", NK_TEXT_LEFT);
-        worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_path,
-                                   sizeof(state.group_path), nk_filter_default);
-        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-        nk_label(context, "Existing files", NK_TEXT_LEFT);
-        state.group_existing_files =
-            render_existing_files_picker(context, state.group_existing_files);
-        if (state.group_family == 2)
-            render_stepmania_policy(context);
-        dialog_text(state.group_editor_dialog, context,
-                    "Project-relative file or directory; use a directory for multiple BMS, BMSON or osu! charts.",
-                    color(UiColor::text_muted));
-        render_output_group_members(context, view);
+        render_output_group_form(context, view);
         dialog_footer_begin(state.group_editor_dialog, context, state.group_create ? 2 : 3,
                             !state.group_create);
         if (!state.group_create)
@@ -710,6 +846,8 @@ void render_output_group_card(nk_context* context, const WormUiSetupView& view,
     text_cell(context, group.name, name_width);
     nk_layout_space_push(context, nk_rect(path_x, 8.0f, std::max(1.0f, action_x - path_x - 8.0f), 22.0f));
     std::string destination{"→ "};
+    destination += group.destination_kind == WORM_UI_OUTPUT_DESTINATION_FILE ? "File · "
+                                                                             : "Folder · ";
     destination += group.path;
     text_cell(context, destination.c_str(), std::max(1.0f, action_x - path_x - 8.0f));
     nk_layout_space_push(context, nk_rect(action_x, 5.0f, 96.0f, 28.0f));
@@ -731,6 +869,33 @@ void render_output_group_card(nk_context* context, const WormUiSetupView& view,
     std::string status_line{first_line.empty() ? "Preview not run" : first_line};
     text_cell(context, status_line.c_str(), std::max(1.0f, width - 100.0f));
     nk_layout_space_end(context);
+    if (project_state.group_plan_expanded &&
+        project_state.group_plan_index == group.document_index) {
+        constexpr std::array action_labels{"new", "replace", "reuse", "copy"};
+        for (size_t index = 0; index < group.plan_rows.size(); ++index) {
+            const auto& row = group.plan_rows[index];
+            char bytes[64];
+            std::snprintf(bytes, sizeof(bytes), "%llu bytes",
+                          static_cast<unsigned long long>(row.bytes));
+            constexpr float columns[]{0.13f, 0.67f, 0.20f};
+            nk_layout_row(context, NK_DYNAMIC, 22, 3, columns);
+            nk_label(context, action_labels[static_cast<size_t>(row.action)], NK_TEXT_LEFT);
+            text_cell(context, row.path, 360.0f);
+            nk_label(context, bytes, NK_TEXT_RIGHT);
+        }
+        for (size_t index = 0; index < group.diagnostics.size(); ++index) {
+            nk_layout_row_dynamic(context, 22, 1);
+            nk_label_colored(context, group.diagnostics[index].message, NK_TEXT_LEFT,
+                             color(group.diagnostics[index].severity == 2
+                                       ? UiColor::conflict
+                                       : UiColor::text_muted));
+        }
+        if (group.plan_rows_truncated || group.diagnostics_truncated) {
+            nk_layout_row_dynamic(context, 22, 1);
+            nk_label_colored(context, "Preview rows truncated.", NK_TEXT_LEFT,
+                             color(UiColor::status));
+        }
+    }
 }
 auto find_output_group(const WormUiSetupView& view, size_t index)
     -> const WormUiProjectOutputGroupView* {
@@ -745,7 +910,7 @@ void render_output_group_menu(nk_context* context, const WormUiSetupView& view,
     if (!group) { context_menu_reset(project_state.group_menu); return; }
     auto& menu = project_state.group_menu;
     if (!context_menu_begin(menu, context, PopupContextStamp::from(view, group->document_index + 1),
-                            nk_vec2(260.0f, context_menu_height(6))))
+                            nk_vec2(260.0f, context_menu_height(7))))
         return;
     const auto* edit_reason = output_group_editable(view, *group) ? nullptr
         : "This target exceeds the editable Project view limits.";
@@ -754,8 +919,24 @@ void render_output_group_menu(nk_context* context, const WormUiSetupView& view,
     if (context_menu_item(menu, context, "Export · Keep existing"))
         export_project_group(view, action, group->document_index, WORM_UI_EXISTING_FILES_KEEP);
     if (context_menu_item(menu, context, "Edit", edit_reason)) begin_output_group_editor(view, group);
-    if (context_menu_item(menu, context, "Preview"))
+    if (context_menu_item(menu, context, "Preview")) {
         publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group->document_index);
+        project_state.group_plan_index = group->document_index;
+        project_state.group_plan_expanded = true;
+    }
+    const auto plan_label = project_state.group_plan_expanded &&
+                                    project_state.group_plan_index == group->document_index
+                                ? "Hide plan"
+                                : "Show plan";
+    if (context_menu_item(menu, context, plan_label,
+                          !group->plan_rows.empty() || !group->diagnostics.empty()
+                              ? nullptr
+                              : "Run Preview first.")) {
+        const auto was_open = project_state.group_plan_expanded &&
+                              project_state.group_plan_index == group->document_index;
+        project_state.group_plan_index = group->document_index;
+        project_state.group_plan_expanded = !was_open;
+    }
     if (context_menu_item(menu, context, "Duplicate", edit_reason)) begin_output_group_duplicate(view, *group);
     if (context_menu_item(menu, context, "Delete…")) begin_output_group_delete(view, group->document_index);
     context_menu_end(menu, context);
@@ -839,11 +1020,13 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupVie
         if (context && project_state.delete_dialog.open) nk_window_close(context, "Delete chart");
         auto retired_menu = project_state.row_menu;
         auto retired_group_menu = project_state.group_menu;
+        auto project_directory = std::move(project_state.project_directory);
         wormedit::ui::chrome::context_menu_abandon(retired_menu);
         wormedit::ui::chrome::context_menu_abandon(retired_group_menu);
         project_state = {};
         project_state.row_menu = retired_menu;
         project_state.group_menu = retired_group_menu;
+        project_state.project_directory = std::move(project_directory);
     } else {
         worm_ui_nuklear_reconcile_project_selection(project_state.selection, *view);
         worm_ui_nuklear_reconcile_chart_drag(project_state.drag, *view);
@@ -878,4 +1061,8 @@ void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const WormUiSetup
 
 void worm_ui_nuklear_cancel_setup_drag() {
     project_state.drag = {};
+}
+
+void worm_ui_nuklear_set_project_directory(const char* path) {
+    project_state.project_directory = path ? path : "";
 }

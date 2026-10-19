@@ -2,10 +2,19 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-726](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-726-choose-typed-destinations-and-show-the-complete-export-plan)**
-adds typed destinations and a complete file preview to each export target. T-727
-membership/empty-state work and T-728, the grouped new-project layout picker, remain independently
-ready but do not displace T-726.
+**Next: [T-727](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-727-edit-compatible-target-membership-and-improve-the-empty-state)**
+adds compatible membership editing from target chips and chart rows plus layout-derived empty-state
+suggestions. T-728, the grouped new-project layout picker, remains ready after it.
+
+Completed **T-726** (2026-10-19): export targets now persist directory destinations for
+BMS/BMSON/osu!mania and file destinations for StepMania/native. The Project target editor provides
+Save to, a native file/folder picker, format-specific help and a resolved-output summary. Preview
+and Export share one preparation that projects bounded new/replace/reuse/copy rows with exact byte
+counts and every conversion diagnostic. Schema 9 preserves every schema-8 resolved output,
+including extensionless StepMania/native targets; dotted directory names no longer masquerade as
+files. Focused conversion, migration, project-view, event-harness and publication suites pass;
+GATE passes 4,242/4,242 (`/tmp/wormedit-gate.nElhMa`), affected clang-tidy and complexity pass,
+and the isolated-Xvfb target capture is `/tmp/t726-targets.png`.
 
 Completed **T-725** (2026-10-19): StepMania file profile, timing syntax and implementation target
 are persisted on each export target and shared by Preview and Export; the separate project-wide

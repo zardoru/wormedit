@@ -33,7 +33,7 @@ struct conversion_publication_plan_error_t;
 struct conversion_publication_plan_payload_t {
     [[nodiscard]] static auto from(const std::filesystem::path& project_directory,
         const output_group_t& group, const conversion_request_t& request,
-        const conversion_result_t& converted, bool destination_is_directory = false,
+        const conversion_result_t& converted,
         std::span<const project_asset_copy_request_t> pending_assets = {})
         -> result_t<conversion_publication_plan_payload_t, conversion_publication_plan_error_t>;
     std::vector<conversion_publication_file_t> files;

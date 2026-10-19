@@ -408,7 +408,8 @@ void check_metadata_text(const WormUiMetadataView& view) {
     REQUIRE(view.output_group_count == 1);
     check_frame_storage(std::strcmp(view.output_groups[0].name, "Long retained output group name") == 0);
     check_frame_storage(std::strcmp(view.output_groups[0].relative_output_path, "exports/chart.bms") == 0);
-    check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory, "exports/assets") == 0);
+    check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory,
+                                    "exports/chart.bms/assets") == 0);
     check_frame_storage(view.output_groups[0].document_index == 0);
 }
 }
@@ -670,7 +671,8 @@ void check_compose_output_group(const WormUiComposeOutputGroupView& group) {
     check_frame_storage(group.document_index == 1);
     check_frame_storage(std::strcmp(group.name, "Independently owned Compose output group") == 0);
     check_frame_storage(std::strcmp(group.relative_output_path, "exports/chart.bms") == 0);
-    check_frame_storage(std::strcmp(group.relative_asset_directory, "exports/assets") == 0);
+    check_frame_storage(std::strcmp(group.relative_asset_directory,
+                                    "exports/chart.bms/assets") == 0);
 }
 }
 

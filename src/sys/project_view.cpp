@@ -299,6 +299,8 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
     if (runtime.output_group_song != doc.id || runtime.output_group_revision != doc.revision) {
         runtime.cancel_preview();
         runtime.output_group_status.assign(doc.output_groups.size(), "Preview not run");
+        runtime.output_group_previews.clear();
+        runtime.output_group_previews.resize(doc.output_groups.size());
         runtime.output_group_song = doc.id;
         runtime.output_group_revision = doc.revision;
     }
@@ -308,10 +310,67 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
     if (!result) return;
     const auto index =
         result->has_value() ? result->value().identity.index : result->error().identity.index;
-    runtime.output_group_status[index] =
-        runtime.is_preview_cancelling() ? "Conversion preview cancelled."
-        : result->has_value() ? *result->value().payload : result->error().cause.message;
+    if (runtime.is_preview_cancelling()) {
+        runtime.output_group_status[index] = "Conversion preview cancelled.";
+    } else if (!result->has_value()) {
+        runtime.output_group_status[index] = result->error().cause.message;
+    } else {
+        runtime.output_group_previews[index] = std::move(*result->value().payload);
+        const auto& preview = *runtime.output_group_previews[index];
+        const auto warnings = std::ranges::count(
+            preview.converted.diagnostics, diagnostic_severity_t::warning,
+            &conversion_diagnostic_t::severity);
+        const auto errors = std::ranges::count(
+            preview.converted.diagnostics, diagnostic_severity_t::error,
+            &conversion_diagnostic_t::severity);
+        runtime.output_group_status[index] = "Preview: " +
+            std::to_string(preview.files.size()) + " file(s), " + std::to_string(warnings) +
+            " conversion warning(s), " + std::to_string(errors) + " conversion error(s).";
+    }
 }
+
+auto ui_plan_action(output_group_export_file_action_t action) -> WormUiOutputPlanAction {
+    switch (action) {
+    case output_group_export_file_action_t::new_file: return WORM_UI_OUTPUT_PLAN_NEW;
+    case output_group_export_file_action_t::replace: return WORM_UI_OUTPUT_PLAN_REPLACE;
+    case output_group_export_file_action_t::reuse: return WORM_UI_OUTPUT_PLAN_REUSE;
+    case output_group_export_file_action_t::copy: return WORM_UI_OUTPUT_PLAN_COPY;
+    }
+    return WORM_UI_OUTPUT_PLAN_NEW;
+}
+
+void build_output_preview_view(project_chart_runtime_t& runtime, std::size_t index) {
+    constexpr std::size_t maximum_plan_rows = 512;
+    auto& paths = runtime.output_group_plan_paths[index];
+    auto& rows = runtime.output_group_plan_rows[index];
+    auto& messages = runtime.output_group_diagnostic_messages[index];
+    auto& diagnostics = runtime.output_group_diagnostic_rows[index];
+    paths.clear();
+    rows.clear();
+    messages.clear();
+    diagnostics.clear();
+    if (!runtime.output_group_previews[index]) return;
+    const auto& preview = *runtime.output_group_previews[index];
+    const auto file_count = std::min(preview.files.size(), maximum_plan_rows);
+    paths.reserve(file_count);
+    rows.reserve(file_count);
+    for (std::size_t row = 0; row < file_count; ++row)
+        paths.push_back(preview.files[row].path.generic_string());
+    for (std::size_t row = 0; row < file_count; ++row)
+        rows.push_back({paths[row].c_str(), ui_plan_action(preview.files[row].action),
+                        preview.files[row].bytes});
+    const auto diagnostic_count =
+        std::min(preview.converted.diagnostics.size(), maximum_plan_rows);
+    messages.reserve(diagnostic_count);
+    diagnostics.reserve(diagnostic_count);
+    for (std::size_t row = 0; row < diagnostic_count; ++row)
+        messages.push_back(preview.converted.diagnostics[row].message);
+    for (std::size_t row = 0; row < diagnostic_count; ++row)
+        diagnostics.push_back(
+            {messages[row].c_str(),
+             static_cast<std::uint8_t>(preview.converted.diagnostics[row].severity)});
+}
+
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
                              WormUiSetupView& view) {
     poll_output_group_preview(runtime, doc);
@@ -319,6 +378,10 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
     const auto count = std::min(doc.output_groups.size(), maximum_project_chart_rows);
     runtime.output_group_charts.resize(count);
     runtime.output_group_paths.resize(count);
+    runtime.output_group_plan_rows.resize(count);
+    runtime.output_group_plan_paths.resize(count);
+    runtime.output_group_diagnostic_rows.resize(count);
+    runtime.output_group_diagnostic_messages.resize(count);
     runtime.output_groups.clear();
     runtime.output_groups.reserve(count);
     for (size_t i = 0; i < count; ++i) {
@@ -327,9 +390,15 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
         charts.clear();
         for (const auto id : group.charts) charts.push_back(id.value);
         runtime.output_group_paths[i] = group.relative_output_path.generic_string();
+        build_output_preview_view(runtime, i);
+        const auto& plan_rows = runtime.output_group_plan_rows[i];
+        const auto& diagnostics = runtime.output_group_diagnostic_rows[i];
+        const auto* preview = runtime.output_group_previews[i] ? &*runtime.output_group_previews[i]
+                                                               : nullptr;
         runtime.output_groups.push_back(
             {i, group.name.c_str(), static_cast<uint8_t>(group.family),
-             runtime.output_group_paths[i].c_str(), charts.data(), charts.size(),
+             runtime.output_group_paths[i].c_str(),
+             static_cast<WormUiOutputDestinationKind>(group.destination_kind), charts.data(), charts.size(),
              runtime.output_group_status[i].c_str(),
              static_cast<WormUiExistingFilesChoice>(group.existing_files),
              group.stepmania.has_value(),
@@ -339,40 +408,26 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
                                                  : stepmania_timing_syntax_t::native_warps),
              static_cast<WormUiStepmaniaImplementation>(
                  group.stepmania ? group.stepmania->implementation_profile
-                                 : stepmania_implementation_profile_t::unspecified)});
+                                 : stepmania_implementation_profile_t::unspecified),
+             plan_rows, preview && preview->files.size() != plan_rows.size(),
+             diagnostics,
+             preview && preview->converted.diagnostics.size() != diagnostics.size()});
     }
     view.output_groups = runtime.output_groups.data();
     view.output_group_count = count;
     view.output_groups_truncated = count != doc.output_groups.size();
-}
-auto output_preview(const output_group_export_request_t& input, std::stop_token stop) -> std::string {
-    const auto prepared = output_group_export_preparation_t::from(input, stop);
-    if (!prepared) return "Cannot export: " + prepared.error();
-    const auto& converted = prepared->converted;
-    const auto losses = std::ranges::count(converted.diagnostics, true, &conversion_diagnostic_t::loss);
-    auto status = "Preview: " + std::to_string(converted.outputs.size()) + " file(s), " +
-        std::to_string(losses) + " conversion warning(s).";
-    for (const auto& file : prepared->publication.files)
-        status += "\nWrite: " + file.project_relative_path.generic_string();
-    for (const auto& file : prepared->publication.generated_files)
-        status += "\nWrite: " + file.generic_string();
-    for (const auto& asset : prepared->publication.assets) {
-        const bool pending = std::ranges::any_of(prepared->pending_assets, [&](const auto& copy) {
-            return copy.asset == asset.asset;
-        });
-        status += std::string{pending ? "\nCopy: " : "\nReuse: "} + asset.project_relative_path.generic_string();
-    }
-    for (const auto& diagnostic : converted.diagnostics)
-        if (diagnostic.severity == diagnostic_severity_t::warning)
-            status += "\nWarning: " + diagnostic.message;
-    return status;
 }
 auto run_output_preview(const output_group_export_request_t& request, std::stop_token stop)
     -> output_preview_job_t::work_outcome_t {
     if (stop.stop_requested())
         return std::unexpected(
             error_t<failure_code_t>{failure_code_t::cancelled, "Preview cancelled."});
-    return output_preview(request, stop);
+    auto prepared = output_group_export_preparation_t::from(request, stop);
+    if (!prepared)
+        return std::unexpected(
+            error_t<failure_code_t>{failure_code_t::invalid_request,
+                                    "Cannot export: " + prepared.error()});
+    return std::move(*prepared);
 }
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
     size_t index, task_scheduler_t& scheduler,
@@ -394,6 +449,7 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
     if (!started)
         return {.status = started.error().message};
     runtime.begin_preview(std::move(progress));
+    runtime.output_group_previews[index].reset();
     runtime.output_group_status[index] = "Preview running…";
     return {.status = "Conversion preview started.", .severity = notification_severity_t::info};
 }
@@ -422,6 +478,8 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
             return {.status = "Output group fields or membership are invalid."};
         output_group_t group{.name = action.name,
                              .family = static_cast<format_family_t>(action.family),
+                             .destination_kind = static_cast<output_destination_kind_t>(
+                                 action.destination_kind),
                              .relative_output_path = action.path,
                              .existing_files =
                                  static_cast<existing_files_policy_t>(action.existing_files),

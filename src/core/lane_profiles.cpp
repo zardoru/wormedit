@@ -1136,18 +1136,19 @@ constexpr std::array step_types{
     stepmania_step_type_descriptor_t{"para-single", 5, false},
 };
 constexpr std::array mania_outputs{
-    new_project_output_group_descriptor_t{"osu!mania", format_family_t::osu_mania, "osu"},
+    new_project_output_group_descriptor_t{"osu!mania", format_family_t::osu_mania, "exports/osu"},
 };
 constexpr std::array mania_step_outputs{
     mania_outputs[0],
-    new_project_output_group_descriptor_t{"StepMania", format_family_t::stepmania, "ssc",
+    new_project_output_group_descriptor_t{"StepMania", format_family_t::stepmania,
+                                          "exports/stepmania/song.ssc",
                                           stepmania_export_policy_t{}},
 };
 constexpr std::array bms_outputs{
-    new_project_output_group_descriptor_t{"BMS", format_family_t::bms, "bms"},
+    new_project_output_group_descriptor_t{"BMS", format_family_t::bms, "exports/bms"},
 };
 constexpr std::array bmson_outputs{
-    new_project_output_group_descriptor_t{"BMSON", format_family_t::bmson, "bmson"},
+    new_project_output_group_descriptor_t{"BMSON", format_family_t::bmson, "exports/bmson"},
 };
 constexpr std::array step_outputs{mania_step_outputs[1]};
 
@@ -1317,7 +1318,12 @@ auto make_new_project_output_groups(const new_project_layout_descriptor_t& layou
     groups.reserve(layout.default_output_groups.size());
     for (const auto& entry : layout.default_output_groups)
         groups.push_back({.name = std::string(entry.label), .family = entry.family,
-                          .charts = {chart}, .relative_output_path = std::string(entry.relative_output_path),
+                          .charts = {chart},
+                          .destination_kind = entry.family == format_family_t::stepmania ||
+                                                      entry.family == format_family_t::native_project
+                                                  ? output_destination_kind_t::file
+                                                  : output_destination_kind_t::directory,
+                          .relative_output_path = std::string(entry.relative_output_path),
                           .stepmania = entry.stepmania});
     return groups;
 }

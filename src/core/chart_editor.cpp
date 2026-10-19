@@ -289,6 +289,22 @@ auto is_output_group_path_valid(const std::filesystem::path& path) -> bool {
     }
     return true;
 }
+auto output_destination_error(const output_group_t& group) -> std::string {
+    const auto expected = group.family == format_family_t::stepmania ||
+                                  group.family == format_family_t::native_project
+                              ? output_destination_kind_t::file
+                              : output_destination_kind_t::directory;
+    if (group.destination_kind != expected)
+        return expected == output_destination_kind_t::file
+                   ? "This output format requires a song file destination."
+                   : "This output format requires a folder destination.";
+    if (!is_output_group_path_valid(group.relative_output_path))
+        return "Output path must be a safe project-relative path.";
+    if (expected == output_destination_kind_t::file &&
+        group.relative_output_path.filename().empty())
+        return "Output file destination needs a filename.";
+    return {};
+}
 auto output_group_error(const song_document_t& doc, std::optional<std::size_t> index,
     const output_group_t& group) -> std::string {
     if (index && *index >= doc.output_groups.size()) return "Output group is no longer available.";
@@ -300,16 +316,13 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     if (group.existing_files < existing_files_policy_t::ask ||
         group.existing_files > existing_files_policy_t::keep)
         return "Existing-files policy is not supported.";
+    if (const auto error = output_destination_error(group); !error.empty()) return error;
     if (group.family == format_family_t::stepmania) {
         if (!group.stepmania)
             return "StepMania export policy is required.";
         if (const auto policy = stepmania_write_options_t::from(*group.stepmania); !policy)
             return policy.error().message;
     }
-    if (!is_output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
-    if (group.relative_output_path.has_extension() && group.charts.size() > 1 &&
-        group.family != format_family_t::stepmania && group.family != format_family_t::native_project)
-        return "Use an output directory for multiple chart files.";
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
         if (doc.find_chart(chart) == nullptr) return "Output group contains an unknown chart.";

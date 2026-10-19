@@ -101,6 +101,7 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
         {.project_directory = temporary.path,
          .source_path = "tone.wav",
          .relative_output_path = group.relative_output_path,
+         .destination_kind = group.destination_kind,
          .asset = wormedit::asset_id_t{5}});
     REQUIRE(copied);
     const auto recovered = wormedit::discover_staged_export_assets(song, group, temporary.path);
@@ -112,6 +113,7 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
         {.project_directory = temporary.path,
          .source_path = "bgm.wav",
          .relative_output_path = group.relative_output_path,
+         .destination_kind = group.destination_kind,
          .asset = wormedit::asset_id_t{6}}));
     const auto both = wormedit::discover_staged_export_assets(song, group, temporary.path);
     REQUIRE(both);
@@ -133,11 +135,14 @@ TEST_CASE("StepMania output discovery maps a staged music file beside the chart"
     song.charts.push_back({.id = wormedit::chart_id_t{1}});
     const wormedit::output_group_t group{.family = wormedit::format_family_t::stepmania,
                                          .charts = {wormedit::chart_id_t{1}},
-                                         .relative_output_path = "ssc"};
+                                         .destination_kind =
+                                             wormedit::output_destination_kind_t::file,
+                                         .relative_output_path = "song.ssc"};
     REQUIRE(wormedit::create_export_asset_copy(
         {.project_directory = temporary.path,
          .source_path = "music.ogg",
          .relative_output_path = group.relative_output_path,
+         .destination_kind = group.destination_kind,
          .asset = wormedit::asset_id_t{5}}));
     const auto discovered = wormedit::discover_staged_export_assets(song, group, temporary.path);
     REQUIRE(discovered);
@@ -158,6 +163,7 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
             {.project_directory = temporary.path,
              .source_path = music,
              .relative_output_path = group.relative_output_path,
+             .destination_kind = group.destination_kind,
              .asset = document->audio_assets.front().id});
         REQUIRE(copied);
         const auto staged =
@@ -169,10 +175,7 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
         request.charts = group.charts;
         request.staged_assets = staged.mappings;
         if (group.family == wormedit::format_family_t::stepmania) {
-            request.stepmania = wormedit::stepmania_export_policy_t{
-                .file_profile = group.relative_output_path == "sm"
-                                    ? wormedit::stepmania_profile_t::sm
-                                    : wormedit::stepmania_profile_t::ssc};
+            request.stepmania = group.stepmania;
         }
         const auto converted = wormedit::convert_document(*document, request);
         std::string diagnostics;
@@ -183,8 +186,11 @@ TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music fi
         const auto published = wormedit::publish_conversion_group_atomic(
             temporary.path, group, request, converted);
         REQUIRE(published.published);
-        CHECK(std::filesystem::exists(
-            temporary.path / group.relative_output_path / converted.outputs.front().suggested_filename));
+        const auto chart_path = group.destination_kind == wormedit::output_destination_kind_t::file
+                                    ? group.relative_output_path
+                                    : group.relative_output_path /
+                                          converted.outputs.front().suggested_filename;
+        CHECK(std::filesystem::exists(temporary.path / chart_path));
         CHECK(std::filesystem::exists(temporary.path / copied->relative_path));
     }
 }
@@ -519,7 +525,7 @@ TEST_CASE("generated audio replacement protects edits and preserves unowned file
     check_publication(read(temporary.path / "exports/song.bmson") == "{}");
 }
 
-TEST_CASE("generated audio rejects missing staging and another group's ownership",
+TEST_CASE("generated audio rejects missing staging and isolates a dotted directory",
           "[unit][format][publication][sliced-conversion]") {
     temporary_directory_t temporary;
     const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
@@ -533,9 +539,11 @@ TEST_CASE("generated audio rejects missing staging and another group's ownership
     request.overwrite = true;
     const wormedit::output_group_t other{.family = wormedit::format_family_t::bmson,
                                        .relative_output_path = "exports/other.bmson"};
-    CHECK_FALSE(wormedit::publish_conversion_group_atomic(temporary.path, other, request,
+    CHECK(wormedit::publish_conversion_group_atomic(temporary.path, other, request,
         sliced_publication(), generated_audio_options()).published);
     check_publication(read(temporary.path / "exports/slice.wav") == "generated pcm");
+    check_publication(read(temporary.path / "exports/other.bmson/slice.wav") ==
+                      "generated pcm");
 }
 
 TEST_CASE("retained assets cannot collide with generated span filenames",
@@ -581,7 +589,8 @@ TEST_CASE("generated audio staging rejects symlinks without touching the source"
 TEST_CASE("conversion publication distinguishes dotted directories from chart filenames",
           "[unit][format][publication][conversion]") {
     temporary_directory_t temporary;
-    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+    wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+        .destination_kind = wormedit::output_destination_kind_t::file,
         .relative_output_path = "kick-v1.2"};
     const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
     auto result = converted("first.bmson");
@@ -589,7 +598,8 @@ TEST_CASE("conversion publication distinguishes dotted directories from chart fi
     result.outputs.back().suggested_filename = "second.bmson";
     const auto file_plan = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, result);
     check_publication(!file_plan);
-    const auto directory_plan = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, result, true);
+    group.destination_kind = wormedit::output_destination_kind_t::directory;
+    const auto directory_plan = wormedit::conversion_publication_plan_payload_t::from(temporary.path, group, request, result);
     require_publication(static_cast<bool>(directory_plan));
     check_publication(directory_plan.value().files.front().project_relative_path == "kick-v1.2/first.bmson");
     const auto published = wormedit::publish_conversion_group_atomic(temporary.path, group, request,
@@ -633,6 +643,39 @@ TEST_CASE("conversion primary publication preflight returns complete paths", "[u
     require_publication(outcome->files.size() == 1);
     check_publication(outcome->files.front().project_relative_path == "exports/song.bmson");
     check_publication(!std::filesystem::exists(temporary.path / "exports"));
+}
+
+TEST_CASE("conversion plan keeps two same-basename assets as distinct copy destinations",
+          "[unit][publication][results][assets]") {
+    temporary_directory_t temporary;
+    std::filesystem::create_directories(temporary.path / "one");
+    std::filesystem::create_directories(temporary.path / "two");
+    std::ofstream(temporary.path / "one/kick.wav") << "first";
+    std::ofstream(temporary.path / "two/kick.wav") << "second";
+    const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
+                                         .relative_output_path = "exports"};
+    std::vector<wormedit::project_asset_copy_request_t> pending{
+        {.project_directory = temporary.path,
+         .source_path = "one/kick.wav",
+         .asset = wormedit::asset_id_t{1}},
+        {.project_directory = temporary.path,
+         .source_path = "two/kick.wav",
+         .asset = wormedit::asset_id_t{2}},
+    };
+    const auto planned = wormedit::plan_project_asset_copies(pending, "exports/assets");
+    REQUIRE(planned);
+    wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson};
+    for (const auto& copy : *planned)
+        request.staged_assets.push_back(
+            {copy.asset, std::filesystem::path{"assets"} / copy.destination_filename()});
+    const auto outcome = wormedit::conversion_publication_plan_payload_t::from(
+        temporary.path, group, request, converted(), *planned);
+    REQUIRE(outcome);
+    REQUIRE(outcome->assets.size() == 2);
+    CHECK(outcome->assets[0].project_relative_path !=
+          outcome->assets[1].project_relative_path);
+    CHECK(outcome->assets[0].project_relative_path.filename() == "kick.wav");
+    CHECK(outcome->assets[1].project_relative_path.filename() == "2-kick.wav");
 }
 
 TEST_CASE("staged primary discovery accepts a quiet unsupported output family", "[unit][publication][results]") {

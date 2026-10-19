@@ -495,6 +495,12 @@ traces found the required boundaries. The quantize trace confirmed the typed-req
 round trip, while the bar-line trace showed how route-owned refresh makes correct publication easy
 to misread. The observation is qualitative evidence, not a timing benchmark or gate.
 
+**Owner decision (2026-10-19):** T-722 completed the bounded quantize extraction, but its repeated
+navigation exercise did not demonstrate enough general value to continue this refactoring series.
+The remaining navigation-driven paste, measure, composition and gesture extractions are deferred.
+A concrete correctness defect or independently valuable feature may reactivate a bounded owner
+change; navigation cleanup alone does not currently justify it.
+
 ## Walkthrough results (2026-10-18)
 
 The user-facing walkthrough ran as decided under R10. Its evidence is in

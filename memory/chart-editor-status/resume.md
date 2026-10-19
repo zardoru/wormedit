@@ -1,13 +1,13 @@
 # Status: resume checklist
 
-Next: revise the remaining workflow-navigation scopes from their concrete ownership defects before
-approving another extraction; T-722 does not validate broad file splitting as a navigation remedy.
-T-722's registered quantize command now enters one typed sys workflow without constructing a
-frontend action. Its before/after exercise removed that false detour but changed the target trace
-from 9 files / 1 wrong guess to 13 / 0, while untouched controls also varied substantially. The
-cleanup is retained for its type boundary and ratcheted invariant, not as proof of a general
-navigation gain. Final T-722 GATE passes 4,230/4,230 tests (`/tmp/wormedit-gate.1kQR7r`). T-658 is
-complete, and commit `1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
+The broader workflow-navigation refactoring is deferred by owner decision: T-722 removed a real
+typed-request/frontend-action round trip, but its before/after exercise did not show enough general
+navigation value to continue the series. Do not schedule the audit's remaining paste, measure,
+composition or gesture extractions for navigation cleanup alone; a concrete correctness defect or
+independently valuable feature may justify a bounded owner change later. T-722's target trace moved
+from 9 files / 1 wrong guess to 13 / 0, while untouched controls also varied substantially. Final
+T-722 GATE passes 4,230/4,230 tests (`/tmp/wormedit-gate.1kQR7r`). T-658 is complete, and commit
+`1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
 
 Completed **T-146–T-147 cancellable import/export** (2026-10-18): interactive opening, export and conversion preview expose progress/Cancel; automatic music copies join private atomic staging. GCC and Linux Clang GATE each pass 4,158/4,158, with configured clang-tidy, unchanged complexity allowances and inspected isolated Xvfb Compose layout. Remaining state-ownership and feature-friction checkpoints retain their card statuses; T-621 folder moves still run last. Verification evidence and cancellation limits are recorded on the [completed cards](../../docs/chart-editor-plan/tasks/editing-depth.md#t-146-report-progress-and-allow-cancel-for-chart-import).
 

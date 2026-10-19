@@ -8,20 +8,27 @@
 
 TEST_CASE("Nuklear setup view bounds every scalar export choice",
           "[unit][frontend][setup]") {
-    WormUiSetupView view{
-        .visible = true,
+    WormUiProjectOutputGroupView group{
+        .name = "StepMania",
+        .family = 2,
+        .path = "ssc",
+        .preview_status = "Ready",
+        .has_stepmania_policy = true,
         .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC,
         .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS,
         .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1,
-        .stepmania_policy_valid = true,
-        .stepmania_policy_status = "Ready",
+        };
+    WormUiSetupView view{
+        .visible = true,
+        .output_groups = &group,
+        .output_group_count = 1,
     };
     CHECK(worm_ui_nuklear_setup_view_valid(&view));
 
-    view.stepmania_file_profile = static_cast<WormUiStepmaniaFileProfile>(99);
+    group.stepmania_file_profile = static_cast<WormUiStepmaniaFileProfile>(99);
     CHECK_FALSE(worm_ui_nuklear_setup_view_valid(&view));
-    view.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
-    view.stepmania_policy_status = nullptr;
+    group.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
+    group.has_stepmania_policy = false;
     CHECK_FALSE(worm_ui_nuklear_setup_view_valid(&view));
 
     WormUiSetupView hidden{};
@@ -33,7 +40,7 @@ namespace {
 void expect_project_state(bool value) { CHECK(value); }
 auto selection_view(WormUiProjectChartRow* rows, size_t count) -> WormUiSetupView {
     return {.visible = true, .song_id = 1, .document_revision = 4, .session_generation = 1,
-        .charts = rows, .chart_row_count = count, .stepmania_policy_status = "Ready"};
+        .charts = rows, .chart_row_count = count};
 }
 }
 

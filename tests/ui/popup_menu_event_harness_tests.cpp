@@ -381,8 +381,6 @@ TEST_CASE("Project chart keyboard menu opens the focused row and respects Option
     setup.visible = true;
     setup.song_id = 1;
     setup.session_generation = 1;
-    setup.stepmania_policy_status = "Ready";
-    setup.stepmania_policy_valid = true;
     setup.charts = &row;
     setup.chart_row_count = setup.chart_count = 1;
     (void)harness.frame();

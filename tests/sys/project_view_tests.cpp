@@ -302,6 +302,71 @@ TEST_CASE("Project output group actions project complete editable membership and
     expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
 }
 
+namespace {
+void check_independent_stepmania_views(const WormUiSetupView& view) {
+    REQUIRE(view.output_group_count == 2);
+    CHECK(view.output_groups[0].stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SM);
+    CHECK(view.output_groups[0].stepmania_timing_syntax ==
+          WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP);
+    CHECK(view.output_groups[1].stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SSC);
+    CHECK(view.output_groups[1].stepmania_implementation ==
+          WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1);
+}
+
+void check_undone_stepmania_policy(const document_history_t& history) {
+    REQUIRE(history.document.output_groups[0].stepmania);
+    CHECK(history.document.output_groups[0].stepmania->file_profile == stepmania_profile_t::sm);
+    CHECK(history.document.output_groups[1].stepmania->implementation_profile ==
+          stepmania_implementation_profile_t::etterna_0_75_1);
+}
+} // namespace
+
+TEST_CASE("Project StepMania targets keep independent policies and undo policy edits",
+          "[unit][project-view][output-groups][stepmania]") {
+    auto history = document_history_t::from(project_song());
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    const auto chart = history.document.charts.front().id.value;
+    WormUiProjectOutputGroupAction action{
+        .kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
+        .project_id = history.document.id.value,
+        .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation,
+        .name = "Legacy SM",
+        .path = "sm",
+        .family = static_cast<std::uint8_t>(format_family_t::stepmania),
+        .existing_files = WORM_UI_EXISTING_FILES_ASK,
+        .has_stepmania_policy = true,
+        .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SM,
+        .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP,
+        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY,
+        .chart_count = 1};
+    action.chart_ids[0] = chart;
+    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+
+    action.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    action.document_revision = history.document.revision;
+    action.name = "Etterna SSC";
+    action.path = "ssc";
+    action.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
+    action.stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    action.stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
+    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+
+    WormUiSetupView view{.visible = true};
+    build_project_chart_view(runtime, history.document, view);
+    check_independent_stepmania_views(view);
+
+    action.kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    action.group_index = 0;
+    action.document_revision = history.document.revision;
+    action.name = "Updated SSC";
+    action.stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
+    REQUIRE(undo_document_command(history));
+    check_undone_stepmania_policy(history);
+}
+
 TEST_CASE("Project conversion preview runs through the worker service and retires on document changes", "[unit][project-view][output-groups]") {
     auto history = document_history_t::from(project_song());
     history.document.output_groups[0].family = format_family_t::native_project;
@@ -314,8 +379,7 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
     const auto before = history.document.revision;
-    (void)apply_project_output_group_ui_action(
-        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path());
     require_project(runtime.preview_job() && runtime.preview_job()->is_busy());
     for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
         build_project_chart_view(runtime, history.document, view);
@@ -325,8 +389,7 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
     expect_project(history.document.revision == before);
     expect_project(history.undo.empty());
-    (void)apply_project_output_group_ui_action(
-        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path());
     ++history.document.revision;
     build_project_chart_view(runtime, history.document, view);
     expect_project(!runtime.preview_job());
@@ -357,7 +420,7 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
                                                 .document_revision = history.document.revision,
                                                 .session_generation = runtime.session_generation};
     const auto result = apply_project_output_group_ui_action(
-        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
+        runtime, history, action, scheduler, std::filesystem::temp_directory_path());
     const auto before_reset = scheduler.outstanding_tasks();
     std::binary_semaphore reset_done{0};
     std::jthread resetter([&runtime, &reset_done] {
@@ -385,8 +448,7 @@ TEST_CASE("Conversion preview Cancel retains busy state and discards its result"
     const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
-    REQUIRE(apply_project_output_group_ui_action(
-        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path()).status ==
+    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path()).status ==
             "Conversion preview started.");
     runtime.request_cancel_preview();
     REQUIRE(runtime.preview_view().active);

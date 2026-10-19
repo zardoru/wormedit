@@ -57,7 +57,6 @@ void check_dispatch(std::string_view menu, std::string_view label, std::string_v
     harness.view().active_tab = tab;
     harness.view().compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     harness.view().setup.visible = tab == WORM_UI_WORKSPACE_TAB_SETUP;
-    harness.view().setup.stepmania_policy_status = "Ready";
     harness.view().metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
     int invocations = 0;
     const auto registry = wormedit::command_registry_t::from([&](const auto& invocation) {
@@ -295,8 +294,7 @@ TEST_CASE("Menu dismissal captures the held pointer and release above a Project 
     view.compose.visible = false;
     view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
     view.setup = {.visible = true, .song_id = 1, .document_revision = 1, .session_generation = 1,
-        .charts = &row, .chart_row_count = 1, .chart_count = 1,
-        .stepmania_policy_valid = true, .stepmania_policy_status = "Ready"};
+        .charts = &row, .chart_row_count = 1, .chart_count = 1};
     (void)harness.frame();
     const auto target = harness.drawn_text_center(row.name);
     require_menu(target.has_value());

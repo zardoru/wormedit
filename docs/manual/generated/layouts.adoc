@@ -6,14 +6,14 @@
 |Layout |Lanes |Default lane keys (left to right) |Default output groups
 |1K |1 |`+1+` |osu!mania
 |2K |2 |`+1 2+` |osu!mania
-|3K |3 |`+1 2 3+` |osu!mania, StepMania SM, StepMania SSC
-|4K |4 |`+1 2 3 4+` |osu!mania, StepMania SM, StepMania SSC
-|5K |5 |`+1 2 3 4 5+` |osu!mania, StepMania SM, StepMania SSC
-|6K |6 |`+1 2 3 4 5 6+` |osu!mania, StepMania SM, StepMania SSC
-|7K |7 |`+1 2 3 4 5 6 7+` |osu!mania, StepMania SM, StepMania SSC
-|8K |8 |`+1 2 3 4 5 6 7 8+` |osu!mania, StepMania SM, StepMania SSC
+|3K |3 |`+1 2 3+` |osu!mania, StepMania
+|4K |4 |`+1 2 3 4+` |osu!mania, StepMania
+|5K |5 |`+1 2 3 4 5+` |osu!mania, StepMania
+|6K |6 |`+1 2 3 4 5 6+` |osu!mania, StepMania
+|7K |7 |`+1 2 3 4 5 6 7+` |osu!mania, StepMania
+|8K |8 |`+1 2 3 4 5 6 7 8+` |osu!mania, StepMania
 |9K |9 |`+1 2 3 4 5 6 7 8 9+` |osu!mania
-|10K |10 |`+1 2 3 4 5 6 7 8 9 0+` |osu!mania, StepMania SM, StepMania SSC
+|10K |10 |`+1 2 3 4 5 6 7 8 9 0+` |osu!mania, StepMania
 |11K |11 |none by default |osu!mania
 |12K |12 |`+1 Q 2 W 3 E Y 7 U 8 I 9+` |osu!mania
 |13K |13 |none by default |osu!mania
@@ -62,9 +62,9 @@
 |BMS Double Scratch / FPP |9 |`+1 2 3 4 5 6 7 8 9+` |BMS
 |BMS Octave / Foot Pedal |16 |none by default |BMS
 |Project2DX 7K |8 |`+1 2 3 4 5 6 7 8+` |BMS
-|Pump 5K (pump-single) |5 |`+1 2 3 4 5+` |StepMania SM, StepMania SSC
-|Pump 10K (pump-double) |10 |`+1 2 3 4 5 6 7 8 9 0+` |StepMania SM, StepMania SSC
-|Solo 6K (dance-solo) |6 |`+1 2 3 4 5 6+` |StepMania SM, StepMania SSC
+|Pump 5K (pump-single) |5 |`+1 2 3 4 5+` |StepMania
+|Pump 10K (pump-double) |10 |`+1 2 3 4 5 6 7 8 9 0+` |StepMania
+|Solo 6K (dance-solo) |6 |`+1 2 3 4 5 6+` |StepMania
 |BMSON generic 24K |24 |none by default |BMSON
 |BMSON generic 48K |48 |none by default |BMSON
 |===

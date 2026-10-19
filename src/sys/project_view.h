@@ -132,7 +132,6 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
 
 [[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
-    task_scheduler_t& scheduler, stepmania_export_policy_t stepmania_policy = {},
-    const std::filesystem::path& asset_base = {}) -> project_chart_ui_result_t;
+    task_scheduler_t& scheduler, const std::filesystem::path& asset_base = {}) -> project_chart_ui_result_t;
 
 } // namespace wormedit::sys

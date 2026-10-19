@@ -1,6 +1,8 @@
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/measure_editor.h>
 
+#include <wormedit/formats/stepmania.h>
+
 #include <algorithm>
 #include <limits>
 #include <map>
@@ -298,6 +300,12 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     if (group.existing_files < existing_files_policy_t::ask ||
         group.existing_files > existing_files_policy_t::keep)
         return "Existing-files policy is not supported.";
+    if (group.family == format_family_t::stepmania) {
+        if (!group.stepmania)
+            return "StepMania export policy is required.";
+        if (const auto policy = stepmania_write_options_t::from(*group.stepmania); !policy)
+            return policy.error().message;
+    }
     if (!is_output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
     if (group.relative_output_path.has_extension() && group.charts.size() > 1 &&
         group.family != format_family_t::stepmania && group.family != format_family_t::native_project)

@@ -1719,20 +1719,19 @@ namespace { void expect_keep_pitch(bool value) { CHECK(value); } }
 
 TEST_CASE("Keep pitch dispatch accepts backend preferences without changing documents", "[unit][sys][commands][keep-pitch]") {
     application_command_state_t state;
-    wormedit::stepmania_export_policy_t policy;
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
     action.transport_keep_pitch = true;
-    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
+    expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     state.preferences.transport_keep_pitch_available = true;
     bool requested{};
     state.services.transport_set_keep_pitch = [&](bool value) { requested = value; return true; };
-    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch enabled.");
+    expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch enabled.");
     expect_keep_pitch(requested);
     expect_keep_pitch(state.preferences.transport_keep_pitch);
     state.services.transport_set_keep_pitch = [](bool) { return false; };
     action.transport_keep_pitch = false;
-    expect_keep_pitch(dispatch_transport_player_action(action, state, policy) == "Keep pitch is unavailable.");
+    expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
     expect_keep_pitch(state.preferences.transport_keep_pitch);
 }
 
@@ -1789,10 +1788,9 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     notification_center_t center;
     notification_sink_t sink{center};
     application_command_state_t state;
-    stepmania_export_policy_t policy;
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
-    const auto rejected = dispatch_transport_player_action(action, state, policy, sink);
+    const auto rejected = dispatch_transport_player_action(action, state, sink);
     check_transport_notification(rejected == "Keep pitch is unavailable.");
     check_transport_notification(!state.preferences.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
@@ -1803,13 +1801,13 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     state.preferences.transport_keep_pitch_available = true;
     state.services.transport_set_keep_pitch = [](bool) { return true; };
     action.transport_keep_pitch = true;
-    check_transport_notification(dispatch_transport_player_action(action, state, policy, sink) == "Keep pitch enabled.");
+    check_transport_notification(dispatch_transport_player_action(action, state, sink) == "Keep pitch enabled.");
     check_transport_notification(state.preferences.transport_keep_pitch);
     center.drain_inbox(notification_time_t{0});
     entries = center.snapshot(notification_capacity);
     require_transport_notification(entries.size() == 2);
     check_transport_notification(entries[0].severity == notification_severity_t::success);
-    check_transport_notification(!dispatch_transport_player_action(WormUiWorkspaceAction{}, state, policy, sink));
+    check_transport_notification(!dispatch_transport_player_action(WormUiWorkspaceAction{}, state, sink));
     center.drain_inbox(notification_time_t{0});
     check_transport_notification(center.snapshot(notification_capacity).size() == 2);
 }
@@ -1819,14 +1817,13 @@ TEST_CASE("transport UI playback callback owns notification publication", "[unit
     notification_center_t center;
     notification_sink_t sink{center};
     application_command_state_t state;
-    stepmania_export_policy_t policy;
     state.services.transport_play_pause = [&] {
         sink.post(notification_severity_t::error, notification_source_t::audio, "device failed");
         return std::string{"device failed"};
     };
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
-    check_transport_notification(dispatch_transport_player_action(action, state, policy, sink) == "device failed");
+    check_transport_notification(dispatch_transport_player_action(action, state, sink) == "device failed");
     center.drain_inbox(notification_time_t{0});
     const auto entries = center.snapshot(notification_capacity);
     require_transport_notification(entries.size() == 1);
@@ -2280,18 +2277,17 @@ TEST_CASE("Toolbar stop is transient while genuine audio failure remains durable
     notification_center_t center{[] { return notification_time_t{0}; }};
     notification_sink_t sink{center};
     application_command_state_t state;
-    stepmania_export_policy_t policy;
     int stops{};
     state.services.transport_stop = [&] { ++stops; };
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
-    check_transient_transport(dispatch_transport_player_action(action, state, policy, sink) == "Audio preview stopped.");
+    check_transient_transport(dispatch_transport_player_action(action, state, sink) == "Audio preview stopped.");
     center.drain_inbox(notification_time_t{0});
     check_transient_transport(stops == 1 && center.size() == 0);
     require_transient_transport(center.current_line() != nullptr);
     check_transient_transport(center.current_line()->message == "Audio preview stopped.");
     state.services.transport_stop = {};
-    check_transient_transport(dispatch_transport_player_action(action, state, policy, sink) == "Audio preview is unavailable.");
+    check_transient_transport(dispatch_transport_player_action(action, state, sink) == "Audio preview is unavailable.");
     center.drain_inbox(notification_time_t{0});
     const auto entries = center.snapshot(256);
     require_transient_transport(entries.size() == 1);
@@ -3200,9 +3196,8 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
     action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
-    wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy,
-                                                         wormedit::notification_sink_t::muted());
+    const auto status =
+        dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate changed."));
     CHECK(catalog_requested_rate == entry.rate);
     CHECK(state.preferences.transport_rate_index == static_cast<std::size_t>(entry.id));
@@ -3221,9 +3216,8 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     WormUiWorkspaceAction action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_id = 255;
-    wormedit::stepmania_export_policy_t policy;
-    const auto status = dispatch_transport_player_action(action, state, policy,
-                                                         wormedit::notification_sink_t::muted());
+    const auto status =
+        dispatch_transport_player_action(action, state, wormedit::notification_sink_t::muted());
     CHECK((status && *status == "Playback rate unchanged."));
     CHECK(catalog_requested_rate == wormedit::rational_t{});
 }
@@ -3383,18 +3377,16 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
     const auto measure = chart.measures.front().id;
     chart.warps.push_back({.id = object_id_t{900},
         .span = {.begin = {measure, 240}, .end = {measure, 480}}});
-    application_command_state_t application;
-    stepmania_export_policy_t policy;
-    WormUiWorkspaceAction action{.kind = WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY};
-    action.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
-    action.stepmania_timing_syntax = legacy ? WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP
-                                          : WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
-    action.stepmania_implementation = legacy ? WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY
-                                            : WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
-    check_export_policy(dispatch_transport_player_action(action, application, policy).has_value());
+    stepmania_export_policy_t policy{
+        .file_profile = stepmania_profile_t::ssc,
+        .timing_syntax = legacy ? stepmania_timing_syntax_t::legacy_negative_stop
+                                : stepmania_timing_syntax_t::native_warps,
+        .implementation_profile = legacy ? stepmania_implementation_profile_t::unspecified
+                                         : stepmania_implementation_profile_t::etterna_0_75_1};
     auto group = document->output_groups.back();
     group.relative_output_path = "exports/song.ssc";
-    const auto plan = output_group_export_plan_t::from(*document, group, std::nullopt, policy);
+    group.stepmania = policy;
+    const auto plan = output_group_export_plan_t::from(*document, group);
     check_export_policy(plan.request.stepmania->timing_syntax == policy.timing_syntax);
     check_export_policy(plan.request.stepmania->implementation_profile == policy.implementation_profile);
     const auto converted = convert_document(*document, plan.request);
@@ -3412,12 +3404,14 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
     const std::string written{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
     check_export_policy(written == bytes);
     group.relative_output_path = "rejected/song.sm";
+    policy.file_profile = stepmania_profile_t::sm;
     policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
-    const auto refused = run_output_group_export(
-        {.document = *document,
-         .plan = output_group_export_plan_t::from(*document, group, std::nullopt, policy),
-         .asset_base = root},
-        {});
+    group.stepmania = policy;
+    const auto refused =
+        run_output_group_export({.document = *document,
+                                 .plan = output_group_export_plan_t::from(*document, group),
+                                 .asset_base = root},
+                                {});
     check_export_policy(!refused.published);
     check_export_policy(!std::filesystem::exists(root / "rejected"));
     std::filesystem::remove_all(root);

@@ -484,7 +484,7 @@ auto explicit_stem_round_trip_is_lossless() -> bool {
     if (!written.value) return false;
     const auto json = nlohmann::json::parse(*written.value);
     const auto& lanes = json["document"]["charts"][0]["bgm_source_lanes"];
-    if (json["document"]["schema_version"] != 7 || lanes.size() != 3 ||
+    if (json["document"]["schema_version"] != 8 || lanes.size() != 3 ||
         !lanes[0].contains("stem_channel") || lanes[1].contains("stem_channel") ||
         !lanes[2].contains("stem_channel"))
         return false;
@@ -606,7 +606,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
     const auto written = wormedit::write_native_project(song);
     require_bmson_condition(written.value.has_value());
     auto root = nlohmann::json::parse(*written.value);
-    check_bmson_condition(root["document"]["schema_version"] == 7);
+    check_bmson_condition(root["document"]["schema_version"] == 8);
     require_bmson_condition(root["document"]["charts"][0]["measures"][0]["bgm_events"][0]["end"]
                                 .is_object());
     const auto parsed = wormedit::parse_native_project(root.dump());
@@ -625,7 +625,7 @@ TEST_CASE("native schema 6 preserves BGM tails and upgrades absent legacy ends",
     legacy["document"]["charts"][0]["measures"][0]["bgm_events"][0].erase("end");
     const auto upgraded = wormedit::parse_native_project(legacy.dump());
     require_bmson_condition(upgraded.value.has_value());
-    check_bmson_condition(upgraded.value->schema_version == 7);
+    check_bmson_condition(upgraded.value->schema_version == 8);
     check_bmson_condition(!upgraded.value->charts.front().measures.front().bgm_events.front().end);
 
     auto legacy_with_end = root;
@@ -870,7 +870,7 @@ TEST_CASE("native project rejects malformed, unsupported, over-limit, and invali
                    wormedit::native_project_diagnostic_code_t::unsupported_version));
 
     auto unsupported_document_json = nlohmann::json::parse(*written.value);
-    unsupported_document_json["document"]["schema_version"] = 8;
+    unsupported_document_json["document"]["schema_version"] = 9;
     const auto unsupported_document =
         wormedit::parse_native_project(unsupported_document_json.dump());
     CHECK_FALSE(unsupported_document.value.has_value());
@@ -1031,13 +1031,13 @@ auto legacy_project_bytes() -> std::string {
 TEST_CASE("native project migrations: the current schema passes through the default table",
           "[unit][format][native-project][migration]") {
     CHECK(internal::default_migrations().front().from_version == 1);
-    CHECK(internal::default_migrations().back().from_version == 6);
+    CHECK(internal::default_migrations().back().from_version == 7);
     const auto written = wormedit::write_native_project(rich_bmson_song());
     REQUIRE(written.value.has_value());
     auto document = nlohmann::json::parse(*written.value).at("document");
-    REQUIRE(document.at("schema_version") == 7);
+    REQUIRE(document.at("schema_version") == 8);
     const auto before = document;
-    const auto outcome = internal::migrate_document(document, 7, internal::default_migrations());
+    const auto outcome = internal::migrate_document(document, 8, internal::default_migrations());
     CHECK(outcome.value() == internal::migration_phase_t::unchanged);
     CHECK(document == before);
 }
@@ -1057,10 +1057,113 @@ TEST_CASE("native schema 6 output groups migrate to Ask existing-files policy",
     const auto parsed = wormedit::parse_native_project(root.dump());
     INFO((parsed.diagnostics.empty() ? "no diagnostic" : parsed.diagnostics.front().message));
     REQUIRE(parsed.value.has_value());
-    REQUIRE(parsed.value->schema_version == 7);
+    REQUIRE(parsed.value->schema_version == 8);
     REQUIRE_FALSE(parsed.value->output_groups.empty());
     CHECK(parsed.value->output_groups.front().existing_files ==
           wormedit::existing_files_policy_t::ask);
+}
+
+namespace {
+void check_migrated_stepmania_profiles(const wormedit::song_document_t& song) {
+    REQUIRE(song.schema_version == 8);
+    REQUIRE(song.output_groups.size() == 4);
+    CHECK(song.output_groups[0].stepmania->file_profile == wormedit::stepmania_profile_t::sm);
+    CHECK(song.output_groups[1].stepmania->file_profile == wormedit::stepmania_profile_t::sm);
+    CHECK(song.output_groups[2].stepmania->file_profile == wormedit::stepmania_profile_t::ssc);
+}
+
+void check_migrated_stepmania_defaults(const wormedit::song_document_t& song) {
+    CHECK(song.output_groups[2].stepmania->timing_syntax ==
+          wormedit::stepmania_timing_syntax_t::native_warps);
+    CHECK(song.output_groups[2].stepmania->implementation_profile ==
+          wormedit::stepmania_implementation_profile_t::unspecified);
+    CHECK_FALSE(song.output_groups[3].stepmania);
+}
+
+void check_independent_stepmania_policies(const wormedit::song_document_t& expected,
+                                          std::string_view bytes) {
+    const auto parsed = wormedit::parse_native_project(bytes);
+    REQUIRE(parsed.value);
+    REQUIRE(parsed.value->output_groups.size() == 2);
+    CHECK(parsed.value->output_groups[0].stepmania == expected.output_groups[0].stepmania);
+    CHECK(parsed.value->output_groups[1].stepmania == expected.output_groups[1].stepmania);
+}
+
+void check_invalid_stepmania_policies_reject(std::string_view bytes) {
+    auto root = nlohmann::json::parse(bytes);
+    root["document"]["output_groups"][0]["stepmania"] = nullptr;
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).value);
+    root = nlohmann::json::parse(bytes);
+    root["document"]["output_groups"][0]["stepmania"]["timing_syntax"] = 99;
+    CHECK_FALSE(wormedit::parse_native_project(root.dump()).value);
+}
+} // namespace
+
+TEST_CASE("native schema 7 derives explicit StepMania target policies",
+          "[unit][format][native-project][migration][output-group][stepmania]") {
+    const auto written = wormedit::write_native_project(rich_bmson_song());
+    REQUIRE(written.value);
+    auto root = nlohmann::json::parse(*written.value);
+    auto& document = root["document"];
+    document["schema_version"] = 7;
+    const auto chart = document["charts"][0]["id"];
+    document["output_groups"] = nlohmann::json::array({
+        {{"name", "SM directory"},
+         {"family", 2},
+         {"charts", {chart}},
+         {"relative_output_path", "sm"},
+         {"existing_files", 0}},
+        {{"name", "SM file"},
+         {"family", 2},
+         {"charts", {chart}},
+         {"relative_output_path", "exports/chart.sm"},
+         {"existing_files", 0}},
+        {{"name", "SSC"},
+         {"family", 2},
+         {"charts", {chart}},
+         {"relative_output_path", "exports/chart.ssc"},
+         {"existing_files", 0}},
+        {{"name", "BMSON"},
+         {"family", 4},
+         {"charts", {chart}},
+         {"relative_output_path", "exports/chart.bmson"},
+         {"existing_files", 0}},
+    });
+
+    const auto parsed = wormedit::parse_native_project(root.dump());
+    INFO((parsed.diagnostics.empty() ? "no diagnostic" : parsed.diagnostics.front().message));
+    REQUIRE(parsed.value);
+    check_migrated_stepmania_profiles(*parsed.value);
+    check_migrated_stepmania_defaults(*parsed.value);
+}
+
+TEST_CASE("native StepMania target policies round trip independently and reject missing values",
+          "[unit][format][native-project][output-group][stepmania]") {
+    auto song = rich_bmson_song();
+    const auto chart = song.charts.front().id;
+    song.output_groups = {
+        {.name = "SM",
+         .family = wormedit::format_family_t::stepmania,
+         .charts = {chart},
+         .relative_output_path = "sm",
+         .stepmania =
+             wormedit::stepmania_export_policy_t{
+                 .file_profile = wormedit::stepmania_profile_t::sm,
+                 .timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_stop}},
+        {.name = "SSC",
+         .family = wormedit::format_family_t::stepmania,
+         .charts = {chart},
+         .relative_output_path = "ssc",
+         .stepmania =
+             wormedit::stepmania_export_policy_t{
+                 .file_profile = wormedit::stepmania_profile_t::ssc,
+                 .implementation_profile =
+                     wormedit::stepmania_implementation_profile_t::stepmania_5_1}},
+    };
+    const auto written = wormedit::write_native_project(song);
+    REQUIRE(written.value);
+    check_independent_stepmania_policies(song, *written.value);
+    check_invalid_stepmania_policies_reject(*written.value);
 }
 
 TEST_CASE("native project migrations: schema 1 documents gain current default fields",
@@ -1074,7 +1177,7 @@ TEST_CASE("native project migrations: schema 1 documents gain current default fi
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
-    CHECK(parsed.value->schema_version == 7);
+    CHECK(parsed.value->schema_version == 8);
     CHECK(parsed.value->charts.front().sv_recipes.front().expression_source.empty());
     const auto rewritten = wormedit::write_native_project(*parsed.value);
     REQUIRE(rewritten.value.has_value());
@@ -1107,7 +1210,7 @@ TEST_CASE("native project schema 2 migration adds an empty preset list",
 
     const auto parsed = wormedit::parse_native_project(root.dump());
     REQUIRE(parsed.value.has_value());
-    CHECK(parsed.value->schema_version == 7);
+    CHECK(parsed.value->schema_version == 8);
     CHECK(parsed.value->quantization_presets.empty());
 }
 
@@ -1118,7 +1221,7 @@ TEST_CASE("native project upgrades schema 2 in-memory documents without losing p
     const auto written = wormedit::write_native_project(song);
     REQUIRE(written.value.has_value());
     const auto root = nlohmann::json::parse(*written.value);
-    CHECK(root["document"]["schema_version"] == 7);
+    CHECK(root["document"]["schema_version"] == 8);
     const auto parsed = wormedit::parse_native_project(*written.value);
     REQUIRE(parsed.value.has_value());
     CHECK(parsed.value->quantization_presets == song.quantization_presets);

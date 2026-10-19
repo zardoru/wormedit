@@ -134,6 +134,8 @@ auto read_text(const std::filesystem::path& path) -> std::string {
 }
 auto preview_group(document_history_t& history, std::size_t index,
                    const std::filesystem::path& root, stepmania_export_policy_t policy = {}) -> std::string {
+    if (history.document.output_groups[index].family == format_family_t::stepmania)
+        history.document.output_groups[index].stepmania = policy;
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
     WormUiSetupView view{.visible = true};
@@ -141,7 +143,7 @@ auto preview_group(document_history_t& history, std::size_t index,
     const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation, .group_index = index};
-    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, policy, root);
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, root);
     expect(runtime.preview_job());
     for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
         build_project_chart_view(runtime, history.document, view);
@@ -302,20 +304,20 @@ TEST_CASE("Osu StepMania walkthrough places plain taps and keyboard holds throug
     expect(flow.history.document.charts.front().bpms.front().beats_per_minute == signed_rational_t{120, 1});
 }
 
-TEST_CASE("Osu StepMania walkthrough saves and publishes all three groups with song audio",
+TEST_CASE("Osu StepMania walkthrough saves and publishes both groups with song audio",
           "[frontend-state][event-harness][walkthrough-osu-stepmania]") {
     charting_t flow;
     (void)flow.send(key(SDLK_1, SDL_SCANCODE_1));
     (void)flow.send(key(SDLK_1, SDL_SCANCODE_1, false));
     auto& history = flow.history;
-    expect(history.document.output_groups.size() == 3);
+    expect(history.document.output_groups.size() == 2);
     const auto duplicate = apply_duplicate_chart_command(history, history.document.charts.front().id);
     expect(duplicate.command.applied);
     expect(duplicate.payload.chart);
     const auto added = apply_add_chart_command(history, history.document.charts.front().id);
     expect(added.command.applied);
     expect(added.payload.chart);
-    for (std::size_t index = 0; index < 3; ++index) {
+    for (std::size_t index = 0; index < 2; ++index) {
         auto group = history.document.output_groups[index];
         group.charts = {history.document.charts.front().id, *duplicate.payload.chart, *added.payload.chart};
         expect(apply_set_output_group_command(history, index, std::move(group)).applied);
@@ -341,9 +343,7 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes all three groups with s
         expect(std::filesystem::is_regular_file(root / group.relative_output_path /
                                                 "assets" / music.source_path.filename()));
     }
-    expect(std::filesystem::is_regular_file(root / "sm/walkthrough-41.sm"));
     expect(std::filesystem::is_regular_file(root / "ssc/walkthrough-41.ssc"));
-    expect(read_text(root / "sm/walkthrough-41.sm").find("#MUSIC:assets/") != std::string::npos);
     expect(read_text(root / "ssc/walkthrough-41.ssc").find("#MUSIC:assets/") != std::string::npos);
 }
 
@@ -388,7 +388,6 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     setup.visible = true;
     setup.output_groups = &group;
     setup.output_group_count = 1;
-    setup.stepmania_policy_status = "Ready";
     (void)harness.frame();
     expect(harness.drawn_text().find("Preview: 1 file(s), 0 conversion warning(s).") != std::string::npos);
     expect(harness.drawn_text().find("Copy: osu/assets/") == std::string::npos);
@@ -505,7 +504,7 @@ TEST_CASE("Osu StepMania walkthrough preview receives incompatible StepMania tar
     const stepmania_export_policy_t policy{
         .timing_syntax = stepmania_timing_syntax_t::legacy_negative_stop,
         .implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1};
-    const auto status = preview_group(history, 2, std::filesystem::temp_directory_path(), policy);
+    const auto status = preview_group(history, 1, std::filesystem::temp_directory_path(), policy);
     expect(status.find("audited only with native WARPS") != std::string::npos);
 }
 
@@ -531,7 +530,6 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     harness.view().setup.visible = true;
     harness.view().setup.output_groups = &group;
     harness.view().setup.output_group_count = 1;
-    harness.view().setup.stepmania_policy_status = "Ready";
     (void)harness.frame();
     expect(harness.drawn_text().find("Preview: 1 file(s), 1 conversion warning(s).") != std::string::npos);
     expect(harness.drawn_text().find("Warning: BMS measure ratios") == std::string::npos);

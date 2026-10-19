@@ -131,7 +131,13 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-725 Store StepMania export policy on each export target
 
-- **Status:** ready
+- **Status:** done
+- **Completed:** StepMania SM/SSC, timing-syntax and implementation choices now belong to each
+  export target and travel through the same preview/export plan. The global setup policy and
+  application-lifetime state are removed. Native schema 8 migrates old targets, compatible new
+  projects create one explicit SSC target, and target edits remain one undoable transaction. GATE,
+  affected clang-tidy and complexity pass; isolated Xvfb shows two targets with independent editor
+  values.
 - **Outcome:** A StepMania export target stores its SM/SSC file profile, timing syntax and target
   implementation; its edit dialog shows those fields, the separate project-wide StepMania policy
   section is removed, and new compatible projects create one StepMania target instead of parallel
@@ -150,6 +156,23 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `docs/manual/chapters/walkthrough-bms.adoc`,
   `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, this card and
   `memory/chart-editor-status/resume.md`.
+- **Supporting-file extensions (2026-10-19):** `src/formats/native_project_storage.cpp` and
+  `tests/formats/native_project_storage_tests.cpp` advance recovery support with native schema 8;
+  `src/sys/application.cpp`, `src/sys/application_edit_inputs.h`,
+  `src/sys/application_frame_view.{h,cpp}`, `src/sys/compose_resource_actions.cpp`,
+  `src/sys/project_view.h`, and `src/sys/transport_player_actions.{h,cpp}` remove the obsolete
+  application-lifetime export policy and pass target-owned policy through the existing routes.
+  `src/ui/frontend/actions.h`, `src/ui/nuklear/setup_state.{h,cpp}` and
+  `tests/ui/nuklear_setup_state_tests.cpp` move validation from the retired global form to target
+  rows. `tests/sys/resource_notification_tests.cpp`, `tests/sys/frame_projection_arena_tests.cpp`,
+  `tests/sys/application_dispatch_fixture.h`, `tests/ui/menu_bar_event_harness_tests.cpp`,
+  `tests/ui/popup_menu_event_harness_tests.cpp`, and the two walkthrough event-harness files follow
+  those changed projection/dispatch contracts and labels.
+- **Migration fallback:** Schema-7 targets whose path is exactly `sm` or has a `.sm` extension
+  become SM; every other StepMania path becomes SSC. Timing defaults to native WARPS and the
+  implementation remains syntax-only/unspecified, matching the former application-session
+  defaults. A nondefault runtime-only session choice was never persisted and therefore cannot be
+  recovered from an older project.
 - **Steps:**
   1. Stale-plan check: locate every read/write of the application-lifetime
      `stepmania_export_policy`; classify export, preview and unrelated preference uses.

@@ -500,7 +500,9 @@ TEST_CASE("output preview and publication share format request policy",
           "[unit][sys][resource-notification]") {
     song_document_t document;
     output_group_t group{.family = format_family_t::stepmania,
-                         .charts = {chart_id_t{42}}, .relative_output_path = "sm"};
+                         .charts = {chart_id_t{42}}, .relative_output_path = "sm",
+                         .stepmania =
+                             stepmania_export_policy_t{.file_profile = stepmania_profile_t::sm}};
     auto plan = output_group_export_plan_t::from(document, group, existing_files_policy_t::replace);
     require_resource_notification(plan.request.stepmania.has_value());
     check_resource_notification(plan.request.stepmania->file_profile == stepmania_profile_t::sm);
@@ -516,6 +518,7 @@ TEST_CASE("output preview and publication share format request policy",
     check_resource_notification(plan.existing_files == existing_files_policy_t::replace);
     check_resource_notification(plan.group.existing_files == existing_files_policy_t::keep);
     group.relative_output_path = "chart.ssc";
+    group.stepmania->file_profile = stepmania_profile_t::ssc;
     group.existing_files = existing_files_policy_t::ask;
     plan = output_group_export_plan_t::from(document, group);
     require_resource_notification(plan.request.stepmania.has_value());

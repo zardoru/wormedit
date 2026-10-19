@@ -191,6 +191,7 @@ struct new_project_output_group_descriptor_t {
     std::string_view label;
     format_family_t family;
     std::string_view relative_output_path;
+    std::optional<stepmania_export_policy_t> stepmania;
 };
 struct new_project_layout_descriptor_t {
     // The layout's profile with lane_keys bound left to right in display order. A layout without

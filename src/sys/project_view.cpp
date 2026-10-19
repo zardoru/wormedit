@@ -16,6 +16,66 @@
 
 namespace wormedit::sys {
 namespace {
+auto ui_stepmania_timing(stepmania_timing_syntax_t timing) -> WormUiStepmaniaTimingSyntax {
+    switch (timing) {
+    case stepmania_timing_syntax_t::native_warps:
+        return WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    case stepmania_timing_syntax_t::legacy_negative_bpm:
+        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM;
+    case stepmania_timing_syntax_t::legacy_negative_stop:
+        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP;
+    case stepmania_timing_syntax_t::unspecified:
+        break;
+    }
+    return static_cast<WormUiStepmaniaTimingSyntax>(255);
+}
+
+auto stepmania_policy_from(const WormUiProjectOutputGroupAction& action)
+    -> std::optional<stepmania_export_policy_t> {
+    if (!action.has_stepmania_policy)
+        return std::nullopt;
+    stepmania_export_policy_t policy;
+    switch (action.stepmania_file_profile) {
+    case WORM_UI_STEPMANIA_FILE_SM:
+        policy.file_profile = stepmania_profile_t::sm;
+        break;
+    case WORM_UI_STEPMANIA_FILE_SSC:
+        policy.file_profile = stepmania_profile_t::ssc;
+        break;
+    default:
+        policy.file_profile = static_cast<stepmania_profile_t>(255);
+        break;
+    }
+    switch (action.stepmania_timing_syntax) {
+    case WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS:
+        policy.timing_syntax = stepmania_timing_syntax_t::native_warps;
+        break;
+    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM:
+        policy.timing_syntax = stepmania_timing_syntax_t::legacy_negative_bpm;
+        break;
+    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP:
+        policy.timing_syntax = stepmania_timing_syntax_t::legacy_negative_stop;
+        break;
+    default:
+        policy.timing_syntax = stepmania_timing_syntax_t::unspecified;
+        break;
+    }
+    switch (action.stepmania_implementation) {
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY:
+        policy.implementation_profile = stepmania_implementation_profile_t::unspecified;
+        break;
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1:
+        policy.implementation_profile = stepmania_implementation_profile_t::stepmania_5_1;
+        break;
+    case WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1:
+        policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
+        break;
+    default:
+        policy.implementation_profile = static_cast<stepmania_implementation_profile_t>(255);
+        break;
+    }
+    return policy;
+}
 auto display_text(std::string_view text) -> std::string {
     constexpr std::size_t capacity = 4096;
     if (text.size() <= capacity) return std::string{text};
@@ -271,7 +331,15 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
             {i, group.name.c_str(), static_cast<uint8_t>(group.family),
              runtime.output_group_paths[i].c_str(), charts.data(), charts.size(),
              runtime.output_group_status[i].c_str(),
-             static_cast<WormUiExistingFilesChoice>(group.existing_files)});
+             static_cast<WormUiExistingFilesChoice>(group.existing_files),
+             group.stepmania.has_value(),
+             static_cast<WormUiStepmaniaFileProfile>(group.stepmania ? group.stepmania->file_profile
+                                                                     : stepmania_profile_t::ssc),
+             ui_stepmania_timing(group.stepmania ? group.stepmania->timing_syntax
+                                                 : stepmania_timing_syntax_t::native_warps),
+             static_cast<WormUiStepmaniaImplementation>(
+                 group.stepmania ? group.stepmania->implementation_profile
+                                 : stepmania_implementation_profile_t::unspecified)});
     }
     view.output_groups = runtime.output_groups.data();
     view.output_group_count = count;
@@ -308,18 +376,16 @@ auto run_output_preview(const output_group_export_request_t& request, std::stop_
 }
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
     size_t index, task_scheduler_t& scheduler,
-    stepmania_export_policy_t stepmania_policy,
     const std::filesystem::path& asset_base) -> project_chart_ui_result_t {
     poll_output_group_preview(runtime, doc);
     if (runtime.preview_job() && runtime.preview_job()->is_busy())
         return {.status = "Wait for the current conversion preview."};
     auto progress = std::make_shared<job_progress_t>();
     const auto started = runtime.preview_job(scheduler).request(
-        [&doc, index, &progress, stepmania_policy, &asset_base] {
+        [&doc, index, &progress, &asset_base] {
             return output_group_export_request_t{
                 .document = doc,
-                .plan = output_group_export_plan_t::from(doc, doc.output_groups[index],
-                                                         std::nullopt, stepmania_policy),
+                .plan = output_group_export_plan_t::from(doc, doc.output_groups[index]),
                 .asset_base = asset_base,
                 .progress = progress};
         },
@@ -335,7 +401,7 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
 
 auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
-    task_scheduler_t& scheduler, stepmania_export_policy_t stepmania_policy,
+    task_scheduler_t& scheduler,
     const std::filesystem::path& asset_base) -> project_chart_ui_result_t {
     const document_stamp_t stamp{.project = song_id_t{action.project_id},
                                  .revision = action.document_revision};
@@ -345,7 +411,7 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     if (!create && action.group_index >= history.document.output_groups.size())
         return {.status = "Output group is no longer available."};
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW)
-        return start_output_preview(runtime, history.document, action.group_index, scheduler, stepmania_policy, asset_base);
+        return start_output_preview(runtime, history.document, action.group_index, scheduler, asset_base);
     document_command_result_t result;
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE)
         result = apply_delete_output_group_command(history, action.group_index);
@@ -358,7 +424,8 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
                              .family = static_cast<format_family_t>(action.family),
                              .relative_output_path = action.path,
                              .existing_files =
-                                 static_cast<existing_files_policy_t>(action.existing_files)};
+                                 static_cast<existing_files_policy_t>(action.existing_files),
+                             .stepmania = stepmania_policy_from(action)};
         for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
         result = apply_set_output_group_command(
             history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));

@@ -113,8 +113,7 @@ struct walkthrough_t {
         require_step(source.value);
         WormUiKeysoundDockRequest dock{};
         worm_ui_frontend_keysound_dock_request(&dock);
-        flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready",
-            {}, false, {}, nullptr, dock_sort_t::natural_name, dock);
+        flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready", {}, false, nullptr, dock_sort_t::natural_name, dock);
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *workspace.value, cache, 1600, 1000,
                               interaction, application, nullptr);
@@ -177,8 +176,7 @@ void check_bms_metadata(walkthrough_t& flow) {
     const auto model = workspace_view_t::from(*flow.workspace.value, flow.history.document,
                                              workspace_tab_t::metadata);
     require_step(model.value);
-    auto metadata = frontend_workspace_view_t::from(*model.value, flow.history.document,
-                                                   "", {}, false, {});
+    auto metadata = frontend_workspace_view_t::from(*model.value, flow.history.document, "", {}, false);
     check_step(metadata.view.metadata.has_chart);
     check_step(metadata.view.metadata.selected_chart_source_family ==
                static_cast<std::uint8_t>(format_family_t::bms));
@@ -458,7 +456,6 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     view.setup.chart_count = view.setup.chart_row_count = 1;
     view.setup.output_groups = &group;
     view.setup.output_group_count = 1;
-    view.setup.stepmania_policy_status = "Ready";
     (void)harness.frame();
     (void)click_text(harness, "⋯");
     (void)harness.frame();

@@ -1,6 +1,5 @@
 #include "sys/transport_player_actions.h"
 
-#include <wormedit/formats/stepmania.h>
 
 namespace wormedit::sys {
 namespace {
@@ -11,51 +10,6 @@ auto publish_transport_feedback(const notification_sink_t& notifications,
     -> std::string {
     notifications.post_feedback(severity, source, message);
     return message;
-}
-
-auto stepmania_policy_from_ui(const WormUiWorkspaceAction& action)
-    -> std::optional<wormedit::stepmania_export_policy_t> {
-    wormedit::stepmania_export_policy_t policy;
-    switch (action.stepmania_file_profile) {
-    case WORM_UI_STEPMANIA_FILE_SM:
-        policy.file_profile = wormedit::stepmania_profile_t::sm;
-        break;
-    case WORM_UI_STEPMANIA_FILE_SSC:
-        policy.file_profile = wormedit::stepmania_profile_t::ssc;
-        break;
-    default:
-        return std::nullopt;
-    }
-    switch (action.stepmania_timing_syntax) {
-    case WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::native_warps;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_bpm;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP:
-        policy.timing_syntax = wormedit::stepmania_timing_syntax_t::legacy_negative_stop;
-        break;
-    default:
-        return std::nullopt;
-    }
-    switch (action.stepmania_implementation) {
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::unspecified;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::stepmania_5_1;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1:
-        policy.implementation_profile =
-            wormedit::stepmania_implementation_profile_t::etterna_0_75_1;
-        break;
-    default:
-        return std::nullopt;
-    }
-    return policy;
 }
 
 auto toggle_metronome_status(application_command_state_t& state,
@@ -70,7 +24,6 @@ auto toggle_metronome_status(application_command_state_t& state,
 
 auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
                                       application_command_state_t& application_state,
-                                      wormedit::stepmania_export_policy_t& stepmania_export_policy,
                                       notification_sink_t notifications)
     -> std::optional<std::string> {
     switch (action.kind) {
@@ -117,20 +70,6 @@ auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
         application_state.project.compose_view.player_preview_skin =
             static_cast<wormedit::player_preview_skin_t>(action.player_preview_skin);
         return publish_transport_feedback(notifications, notification_severity_t::success, "Player-preview skin changed.");
-    case WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY: {
-        const auto candidate = stepmania_policy_from_ui(action);
-        if (!candidate) {
-            return publish_transport_feedback(notifications, notification_severity_t::warning,
-                "Unknown StepMania export policy ignored.", notification_source_t::export_);
-        }
-        stepmania_export_policy = *candidate;
-        const auto resolved =
-            wormedit::stepmania_write_options_t::from(stepmania_export_policy);
-        return publish_transport_feedback(notifications, resolved ? notification_severity_t::success
-                                                                : notification_severity_t::warning,
-            resolved ? "StepMania export policy updated." : "StepMania policy needs attention: " + resolved.error().message,
-            notification_source_t::export_);
-    }
     default:
         return std::nullopt;
     }

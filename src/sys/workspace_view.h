@@ -100,10 +100,6 @@ struct frontend_workspace_view_t {
         bool truncated{};
     } summary;
     struct {
-        const char* policy_status{""};
-        bool text_truncated{};
-    } setup;
-    struct {
         frame_span<const char*> search_tag;
         frame_span<std::size_t> search_tag_length;
         frame_span<WormUiMetadataFormatFieldView> format_field;
@@ -209,9 +205,7 @@ struct frontend_workspace_view_t {
                                    const song_document_t& document, const std::string& status,
                                    const native_project_recovery_controller_view_t& recovery,
                                    bool recovery_scan_configured,
-                                   const stepmania_export_policy_t& stepmania_policy,
-                                   frame_arena_t* arena = nullptr,
-                                   dock_sort_t keysound_sort = dock_sort_t::natural_name,
+                                   frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
                                    WormUiKeysoundDockRequest keysound_request = {},
                                    WormUiSoundUsageRequest sound_usage_request = {},
                                    WormUiBookmarkChooserRequest bookmark_chooser_request = {},

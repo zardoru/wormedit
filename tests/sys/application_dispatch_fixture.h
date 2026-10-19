@@ -13,7 +13,6 @@
 #include "sys/timing_view.h"
 #include <wormedit/core/autosave_loop.h>
 #include <wormedit/core/recovery_controller.h>
-#include <wormedit/formats/stepmania.h>
 namespace wormedit::sys {
 namespace test_dispatch {
 struct defaults_t {
@@ -26,7 +25,6 @@ struct defaults_t {
     workspace_controller_t workspace{};
     project_identity_t project_identity;
     application_command_state_t application_command_state{};
-    stepmania_export_policy_t stepmania_export_policy{};
     std::optional<proposal_t<audio_offset_drag_t>> audio_offset_drag{};
     std::optional<workspace_tab_t> audio_offset_drag_tab{};
     command_registry_t command_registry{};

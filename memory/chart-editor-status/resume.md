@@ -2,11 +2,19 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-725](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-725-store-stepmania-export-policy-on-each-export-target)**
-moves StepMania export policy from the project-wide form onto each compatible export target.
-Continue the ordered export lane with T-726 (typed destinations and complete file preview). T-727
+**Next: [T-726](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-726-choose-typed-destinations-and-show-the-complete-export-plan)**
+adds typed destinations and a complete file preview to each export target. T-727
 membership/empty-state work and T-728, the grouped new-project layout picker, remain independently
-ready but do not displace T-725.
+ready but do not displace T-726.
+
+Completed **T-725** (2026-10-19): StepMania file profile, timing syntax and implementation target
+are persisted on each export target and shared by Preview and Export; the separate project-wide
+form and runtime state are gone. Native schema 8 derives old SM targets only from `sm`/`.sm`, uses
+SSC otherwise, and applies the former native-WARPS/syntax-only defaults. Compatible new projects
+start with one explicit SSC target. Independent two-target policies, invalid/missing policy
+rejection and Undo are covered. GATE passes 4,240/4,240 (`/tmp/wormedit-gate.GwVf04`), affected
+clang-tidy and complexity pass, and isolated Xvfb editor captures are
+`/tmp/t725-first-editor.png` and `/tmp/t725-second-editor.png`.
 
 Completed **T-724** (2026-10-19): every export target persists Ask/Replace/Keep and uses one
 background preflight/confirmation path from its card or File → Export. Card overflow choices

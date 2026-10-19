@@ -3056,7 +3056,8 @@ void project_static_source_arena_frame(compose_test_fixture_t& fixture, wormedit
     workspace_view_t model;
     model.active_tab = workspace_tab_t::compose;
     model.tab_view = workspace_compose_view_t{.chart = chart_id_t{1}};
-    fixture.flattened = frontend_workspace_view_t::from(model, fixture.history.document, "ready", {}, false, {}, &arena);
+    fixture.flattened =
+        frontend_workspace_view_t::from(model, fixture.history.document, "ready", {}, false, &arena);
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     expect_compose_test(fixture.flattened.view.compose.scene_available);
@@ -5374,8 +5375,8 @@ void t475_project(compose_test_fixture_t& fixture) {
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
-    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, {},
-        nullptr, dock_sort_t::natural_name, {}, {}, {}, &fixture.cache.keysound_list_cache);
+    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, nullptr, dock_sort_t::natural_name,
+        {}, {}, {}, &fixture.cache.keysound_list_cache);
     fixture.flattened.rebind_view_pointers();
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
@@ -5887,8 +5888,8 @@ void project_chip_request(compose_test_fixture_t& fixture, WormUiKeysoundDockReq
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
-    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, {},
-        nullptr, dock_sort_t::natural_name, request, {}, {}, &fixture.cache.keysound_list_cache);
+    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, nullptr, dock_sort_t::natural_name,
+        request, {}, {}, &fixture.cache.keysound_list_cache);
     fixture.flattened.rebind_view_pointers();
     populate_compose_view(fixture.flattened, fixture.history, *fixture.binding.value,
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
@@ -6380,7 +6381,7 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     wormedit::test::require_workspace_result(rebind_workspace(*fixture.binding.value, fixture.history));
     const auto model = workspace_view_t::from(*fixture.binding.value, fixture.history.document);
     t475_require(model.value.has_value());
-    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false, {});
+    fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false);
     const auto& audio = fixture.flattened.view.audio_slices;
     const auto rows = std::span(audio.sound_rows, audio.sound_row_count);
     const auto offline = std::ranges::find(rows, uint64_t{101}, &WormUiSoundRowView::resource_id);

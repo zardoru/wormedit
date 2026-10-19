@@ -4993,8 +4993,6 @@ namespace {
 // Compose" and sits under the Tap timing window's rectangle at this window size.
 void configure_project_row(nuklear_event_harness_t& harness, WormUiProjectChartRow* row) {
     harness.view().setup.visible = true;
-    harness.view().setup.stepmania_policy_status = "Ready";
-    harness.view().setup.stepmania_policy_valid = true;
     harness.view().setup.charts = row;
     harness.view().setup.chart_row_count = 1;
     harness.view().setup.chart_count = 1;
@@ -5588,8 +5586,6 @@ TEST_CASE("Project tab Import chart button starts the import dialog",
     nuklear_event_harness_t harness{1280, 720};
     REQUIRE(harness.ready());
     harness.view().setup.visible = true;
-    harness.view().setup.stepmania_policy_status = "Ready";
-    harness.view().setup.stepmania_policy_valid = true;
     harness.view().setup.charts = &row;
     harness.view().setup.chart_row_count = 1;
     harness.view().setup.chart_count = 1;
@@ -6312,7 +6308,6 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     auto& view = harness.view();
     view.active_tab = tab;
     view.setup.visible = tab == WORM_UI_WORKSPACE_TAB_SETUP;
-    view.setup.stepmania_policy_status = "Ready";
     view.metadata.visible = tab == WORM_UI_WORKSPACE_TAB_METADATA;
     view.compose.visible = tab == WORM_UI_WORKSPACE_TAB_COMPOSE;
     view.audio_slices.visible = tab == WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
@@ -6423,8 +6418,18 @@ struct output_group_fixture_t {
         {.chart_id = 10, .name = "First difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "SSC", .length = "1 s", .diagnostic = ""},
         {.chart_id = 11, .name = "Second difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "1 s", .diagnostic = ""}}};
     const uint64_t included{10};
-    WormUiProjectOutputGroupView group{.document_index = 3, .name = "SSC release", .family = 2,
-        .path = "exports/song.ssc", .chart_ids = &included, .chart_count = 1, .preview_status = "Preview not run"};
+    WormUiProjectOutputGroupView group{
+        .document_index = 3,
+        .name = "SSC release",
+        .family = 2,
+        .path = "exports/song.ssc",
+        .chart_ids = &included,
+        .chart_count = 1,
+        .preview_status = "Preview not run",
+        .has_stepmania_policy = true,
+        .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC,
+        .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS,
+        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
     explicit output_group_fixture_t(bool existing) {
         auto& view = harness.view();
         view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -6439,7 +6444,6 @@ struct output_group_fixture_t {
         view.setup.chart_row_count = charts.size();
         view.setup.output_groups = existing ? &group : nullptr;
         view.setup.output_group_count = existing ? 1 : 0;
-        view.setup.stepmania_policy_status = "Ready";
         (void)harness.frame();
     }
     auto click(const char* label) {
@@ -6485,6 +6489,9 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     (void)f.click("Edit");
     (void)f.harness.frame();
     require_project_access(f.harness.drawn_text_center("Edit export · SSC release").has_value());
+    require_project_access(f.harness.drawn_text_center("File profile").has_value());
+    require_project_access(f.harness.drawn_text_center("Timing syntax").has_value());
+    require_project_access(f.harness.drawn_text_center("Implementation").has_value());
     (void)f.click("Second difficulty");
     const auto saved = f.click("Save");
     const auto found = std::ranges::find_if(saved, [](const auto& frame) {
@@ -6493,6 +6500,8 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     require_project_access(found != saved.end());
     const auto& action = found->get().project_output_group;
     require_project_access(action.group_index == 3 && action.family == 2);
+    require_project_access(action.has_stepmania_policy &&
+                           action.stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SSC);
     require_project_access(action.chart_count == 2 && action.chart_ids[0] == 10 && action.chart_ids[1] == 11);
     (void)f.harness.frame();
     (void)f.click("⋯");
@@ -6553,6 +6562,7 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(std::string_view{copy->get().project_output_group.name} == "SSC release copy");
     require_project_access(std::string_view{copy->get().project_output_group.path} == "exports/song.ssc");
     require_project_access(copy->get().project_output_group.family == 2);
+    require_project_access(copy->get().project_output_group.has_stepmania_policy);
     require_project_access(copy->get().project_output_group.chart_count == 1 &&
                            copy->get().project_output_group.chart_ids[0] == 10);
 }

@@ -2122,7 +2122,6 @@ struct application_t::implementation_t {
         chart_import_session_t chart_import{};
         pending_close_t pending_close{};
         inline_preview_cursor_t inline_preview_cursor{};
-        stepmania_export_policy_t stepmania_export_policy{};
         tap_timing_runtime_t tap_runtime{};
         std::optional<tap_timing_assist_publication_t> published_assist{};
         std::optional<std::uint64_t> last_tap_event_ns{};
@@ -2197,7 +2196,7 @@ struct application_t::implementation_t {
                 compose_resource_inputs_t{
                     session.project_identity.asset_base,
                     {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
-                    {views.metadata_drop, jobs.metadata_asset_runtime}, views.stepmania_export_policy}};
+                    {views.metadata_drop, jobs.metadata_asset_runtime}}};
     }
     auto compose_inputs() -> compose_input_inputs_t {
         return {document_inputs(),
@@ -3030,7 +3029,6 @@ struct application_t::implementation_t {
         auto& history = session.history;
         auto& workspace = session.workspace;
         auto& application_command_state = commands;
-        auto& stepmania_export_policy = views.stepmania_export_policy;
         auto& command_registry = this->command_registry;
         auto& compose_interaction_state = views.compose_interaction_state;
         auto& metadata_asset_runtime = jobs.metadata_asset_runtime;
@@ -3057,8 +3055,7 @@ struct application_t::implementation_t {
             static_cast<void>(dispatch_audio_offset_drag_action(
                 action, application_command_state.audio_offset_edits_locked(), sample_rate));
         } else if (const auto common_status = wormedit::sys::dispatch_transport_player_action(
-                       action, application_command_state, stepmania_export_policy,
-                       platform.notification_sink)) {
+                       action, application_command_state, platform.notification_sink)) {
             // Typed producer callbacks already publish this transport outcome.
         } else if (action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE) {
             static_cast<void>(dispatch_sound_usage_jump(
@@ -3530,13 +3527,12 @@ struct application_t::implementation_t {
             return true;
         }
         const auto previous_chart = workspace.selected_chart;
-        auto result = group_action
-                          ? wormedit::sys::apply_project_output_group_ui_action(runtime, history,
-                                                                                group, scheduler,
-                                                                                views.stepmania_export_policy,
-                                                                                session.project_identity.asset_base)
-                          : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
-                                                                         workspace.selected_chart);
+        auto result =
+            group_action
+                ? wormedit::sys::apply_project_output_group_ui_action(
+                      runtime, history, group, scheduler, session.project_identity.asset_base)
+                : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
+                                                               workspace.selected_chart);
         auto outcome =
             compose_action_outcome_t::from(std::move(result.status), result.severity,
                                            notification_source_t::document, result.applied);
@@ -4518,7 +4514,6 @@ struct application_t::implementation_t {
             .frame_arena = &views.frame_projection_arena,
             .recovery_controller = session.recovery_controller,
             .recovery_scan_configured = session.recovery_scan_configured,
-            .stepmania_export_policy = views.stepmania_export_policy,
             .asset_base = session.project_identity.asset_base,
             .timing_grid = views.timing_grid,
             .timing_scene_cache = views.timing_scene_cache,

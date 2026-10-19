@@ -963,12 +963,39 @@ enum class existing_files_policy_t {
     keep,
 };
 
+enum class stepmania_profile_t {
+    sm,
+    ssc,
+};
+
+enum class stepmania_timing_syntax_t {
+    unspecified,
+    native_warps,
+    legacy_negative_bpm,
+    legacy_negative_stop,
+};
+
+enum class stepmania_implementation_profile_t {
+    unspecified,
+    stepmania_5_1,
+    etterna_0_75_1,
+};
+
+struct stepmania_export_policy_t {
+    stepmania_profile_t file_profile{stepmania_profile_t::ssc};
+    stepmania_timing_syntax_t timing_syntax{stepmania_timing_syntax_t::native_warps};
+    stepmania_implementation_profile_t implementation_profile{
+        stepmania_implementation_profile_t::unspecified};
+    auto operator==(const stepmania_export_policy_t&) const -> bool = default;
+};
+
 struct output_group_t {
     std::string name;
     format_family_t family{format_family_t::native_project};
     std::vector<chart_id_t> charts;
     std::filesystem::path relative_output_path;
     existing_files_policy_t existing_files{existing_files_policy_t::ask};
+    std::optional<stepmania_export_policy_t> stepmania;
 };
 
 struct song_metadata_t {
@@ -1014,7 +1041,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{7};
+    std::uint32_t schema_version{8};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

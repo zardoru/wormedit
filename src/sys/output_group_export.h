@@ -23,11 +23,10 @@ struct output_group_export_target_t {
 struct output_group_export_plan_t {
     [[nodiscard]] static auto
     from(const song_document_t& document, output_group_t group,
-         std::optional<existing_files_policy_t> one_run_policy = std::nullopt,
-         stepmania_export_policy_t stepmania_policy = {}) -> output_group_export_plan_t;
+         std::optional<existing_files_policy_t> one_run_policy = std::nullopt)
+        -> output_group_export_plan_t;
     [[nodiscard]] static auto from_all(const song_document_t& document,
-                                       std::span<const output_group_t> groups,
-                                       stepmania_export_policy_t stepmania_policy = {})
+                                       std::span<const output_group_t> groups)
         -> std::optional<output_group_export_plan_t>;
     void replace_asked_files();
     output_group_t group;
@@ -37,8 +36,7 @@ struct output_group_export_plan_t {
 };
 
 inline auto output_group_export_plan_t::from(const song_document_t& document, output_group_t group,
-                                             std::optional<existing_files_policy_t> one_run_policy,
-                                             stepmania_export_policy_t stepmania_policy)
+                                             std::optional<existing_files_policy_t> one_run_policy)
     -> output_group_export_plan_t {
     const auto existing_files = one_run_policy.value_or(group.existing_files);
     conversion_request_t request;
@@ -48,12 +46,7 @@ inline auto output_group_export_plan_t::from(const song_document_t& document, ou
     request.overwrite = existing_files == existing_files_policy_t::replace;
     request.loss_policy = loss_policy_t::warn;
     if (group.family == format_family_t::stepmania) {
-        // The group owns its file family; target and timing syntax are session policy.
-        stepmania_policy.file_profile = group.relative_output_path.extension() == ".sm" ||
-                                                group.relative_output_path == "sm"
-                                            ? stepmania_profile_t::sm
-                                            : stepmania_profile_t::ssc;
-        request.stepmania = stepmania_policy;
+        request.stepmania = group.stepmania;
     } else if (group.family == format_family_t::bms) {
         if (!is_conversion_needs_slice_spans(document, request))
             request.bms_output_extension = group.relative_output_path.extension().string();

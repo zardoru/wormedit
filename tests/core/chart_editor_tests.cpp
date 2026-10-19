@@ -386,6 +386,7 @@ TEST_CASE("Output group CRUD is atomic and undoable without altering chart conte
     group.family = format_family_t::stepmania;
     group.relative_output_path = "release/song.ssc";
     group.existing_files = existing_files_policy_t::replace;
+    group.stepmania = stepmania_export_policy_t{};
     require_chart(apply_set_output_group_command(history, 0, group).applied);
     expect_chart(history.document.output_groups[0].name == "Renamed");
     require_chart(undo_document_command(history));
@@ -423,7 +424,15 @@ TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid mem
     group.charts = {chart_id_t{2}};
     group.family = format_family_t::quaver;
     expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
+    group.family = format_family_t::stepmania;
+    group.stepmania.reset();
+    expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
+    group.stepmania = stepmania_export_policy_t{
+        .file_profile = stepmania_profile_t::sm,
+        .implementation_profile = stepmania_implementation_profile_t::stepmania_5_1};
+    expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
     group.family = format_family_t::bmson;
+    group.stepmania.reset();
     group.existing_files = static_cast<existing_files_policy_t>(99);
     expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
     group.existing_files = existing_files_policy_t::ask;
@@ -452,6 +461,7 @@ TEST_CASE("Output groups permit drafts and multiple memberships with format-awar
     group.name = "Shared SSC";
     group.family = format_family_t::stepmania;
     group.relative_output_path = "exports/song.ssc";
+    group.stepmania = stepmania_export_policy_t{};
     require_chart(apply_set_output_group_command(history, std::nullopt, group).applied);
     expect_chart(history.document.output_groups[1].charts == history.document.output_groups[2].charts);
     expect_chart(!apply_set_output_group_command(history, std::nullopt, group));

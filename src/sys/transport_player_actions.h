@@ -56,11 +56,10 @@ inline auto play_stop_transport(application_command_state_t& state)
     return state.services.transport_play_pause();
 }
 
-// Returns a status when the action belongs to transport/player/export-policy
+// Returns a status when the action belongs to transport/player
 // handling, and nullopt when the caller should try another action dispatcher.
 [[nodiscard]] auto dispatch_transport_player_action(
     const WormUiWorkspaceAction& action, application_command_state_t& application_state,
-    wormedit::stepmania_export_policy_t& stepmania_export_policy,
     notification_sink_t notifications = notification_sink_t::muted()) -> std::optional<std::string>;
 
 } // namespace wormedit::sys

@@ -57,9 +57,16 @@ void check_lane_count_case(std::uint32_t lanes) {
     REQUIRE(document);
     CHECK(valid_initial_layout(*document, lanes));
     CHECK(supported_exports(*document, lanes));
-    const auto expected_groups = lanes == 9 || lanes == 14 ? 1U : 3U;
+    const auto expected_groups = lanes == 9 || lanes == 14 ? 1U : 2U;
     REQUIRE(document->output_groups.size() == expected_groups);
     CHECK(document->output_groups.front().family == wormedit::format_family_t::osu_mania);
+}
+
+void check_default_stepmania_group(const wormedit::output_group_t& group) {
+    CHECK(group.family == wormedit::format_family_t::stepmania);
+    CHECK(group.relative_output_path == "ssc");
+    REQUIRE(group.stepmania);
+    CHECK(group.stepmania->file_profile == wormedit::stepmania_profile_t::ssc);
 }
 
 } // namespace
@@ -88,12 +95,10 @@ TEST_CASE("audio project starts with playable lanes and a linked music resource"
         wormedit::song_id_t{123}, audio_path, "Title from tag", "Artist from tag", 7);
     REQUIRE(document);
     CHECK(valid_audio_project(*document, audio_path));
-    REQUIRE(document->output_groups.size() == 3);
+    REQUIRE(document->output_groups.size() == 2);
     CHECK(document->output_groups[0].family == wormedit::format_family_t::osu_mania);
     CHECK(document->output_groups[0].relative_output_path == "osu");
-    CHECK(document->output_groups[1].family == wormedit::format_family_t::stepmania);
-    CHECK(document->output_groups[1].relative_output_path == "sm");
-    CHECK(document->output_groups[2].relative_output_path == "ssc");
+    check_default_stepmania_group(document->output_groups[1]);
     for (const auto& group : document->output_groups)
         CHECK(group.charts == std::vector{document->charts.front().id});
     const auto nine_lanes = wormedit::sys::make_audio_project_document(
@@ -145,6 +150,7 @@ auto is_catalog_output(const wormedit::output_group_t& actual,
                        const wormedit::new_project_output_group_descriptor_t& expected) -> bool {
     return actual.family == expected.family && actual.name == expected.label &&
            actual.relative_output_path == expected.relative_output_path &&
+           actual.stepmania == expected.stepmania &&
            actual.charts == std::vector{wormedit::chart_id_t{2}};
 }
 

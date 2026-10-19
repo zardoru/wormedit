@@ -494,9 +494,6 @@ typedef struct WormUiWorkspaceAction {
     bool sound_usage_position_valid;
     uint64_t visual_asset_id;
     WormUiPlayerPreviewSkin player_preview_skin;
-    WormUiStepmaniaFileProfile stepmania_file_profile;
-    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
-    WormUiStepmaniaImplementation stepmania_implementation;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
     uint64_t audio_offset_drag_chart_id;
     uint64_t audio_offset_drag_document_revision;

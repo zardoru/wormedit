@@ -970,8 +970,12 @@ void check_project_layout(const new_project_layout_descriptor_t& entry) {
     check_catalog(groups.size() == entry.default_output_groups.size());
     for (const auto& group : groups) {
         check_catalog(group.charts == std::vector{chart_id_t{42}});
-        if (group.family == format_family_t::stepmania)
+        if (group.family == format_family_t::stepmania) {
+            check_catalog(group.stepmania.has_value());
             check_catalog(stepmania_key_count(entry.step_type) == profile.layout.lanes.size());
+        } else {
+            check_catalog(!group.stepmania.has_value());
+        }
     }
 }
 }

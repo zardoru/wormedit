@@ -31,21 +31,6 @@ void project_section_heading(nk_context* context, const char* text) {
     nk_label_colored(context, text, NK_TEXT_LEFT, color(UiColor::text_bright));
 }
 
-void publish_policy_action(WormUiWorkspaceAction* action, int file_profile, int timing_syntax,
-                           int implementation) {
-    if (!action || action->kind != WORM_UI_WORKSPACE_ACTION_NONE)
-        return;
-    const auto file = static_cast<WormUiStepmaniaFileProfile>(file_profile);
-    const auto timing = static_cast<WormUiStepmaniaTimingSyntax>(timing_syntax);
-    const auto target = static_cast<WormUiStepmaniaImplementation>(implementation);
-    if (!worm_ui_nuklear_setup_policy_values_valid(file, timing, target))
-        return;
-    action->kind = WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY;
-    action->stepmania_file_profile = file;
-    action->stepmania_timing_syntax = timing;
-    action->stepmania_implementation = target;
-}
-
 struct project_panel_state_t {
     project_chart_selection_t selection;
     project_chart_drag_t drag;
@@ -69,6 +54,9 @@ struct project_panel_state_t {
     char group_path[1024]{};
     int group_family{4};
     int group_existing_files{};
+    int group_stepmania_file{WORM_UI_STEPMANIA_FILE_SSC};
+    int group_stepmania_timing{WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS};
+    int group_stepmania_implementation{WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY};
     std::array<nk_bool, WORM_UI_PROJECT_CHART_CAPACITY> group_charts{};
     wormedit::ui::chrome::ContextMenu group_menu{.title = "Export target actions"};
     wormedit::ui::chrome::Dialog group_editor_dialog;
@@ -434,6 +422,15 @@ void load_output_group_draft(const WormUiSetupView& view, const WormUiProjectOut
     state.group_revision = view.document_revision;
     state.group_family = group && group->family <= 4 ? group->family : 4;
     state.group_existing_files = group ? group->existing_files : WORM_UI_EXISTING_FILES_ASK;
+    state.group_stepmania_file = group && group->has_stepmania_policy
+                                     ? group->stepmania_file_profile
+                                     : WORM_UI_STEPMANIA_FILE_SSC;
+    state.group_stepmania_timing = group && group->has_stepmania_policy
+                                       ? group->stepmania_timing_syntax
+                                       : WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    state.group_stepmania_implementation = group && group->has_stepmania_policy
+                                               ? group->stepmania_implementation
+                                               : WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
     state.group_editor_dialog = {};
     std::snprintf(state.group_name, sizeof(state.group_name), "%s",
                   group ? group->name : "New export target");
@@ -483,6 +480,13 @@ void publish_output_group_action(const WormUiSetupView& view, WormUiWorkspaceAct
     output.family = static_cast<uint8_t>(project_state.group_family);
     output.existing_files =
         static_cast<WormUiExistingFilesChoice>(project_state.group_existing_files);
+    output.has_stepmania_policy = project_state.group_family == 2;
+    output.stepmania_file_profile =
+        static_cast<WormUiStepmaniaFileProfile>(project_state.group_stepmania_file);
+    output.stepmania_timing_syntax =
+        static_cast<WormUiStepmaniaTimingSyntax>(project_state.group_stepmania_timing);
+    output.stepmania_implementation =
+        static_cast<WormUiStepmaniaImplementation>(project_state.group_stepmania_implementation);
     for (size_t i = 0; i < std::min(view.chart_row_count, size_t{WORM_UI_PROJECT_CHART_CAPACITY}); ++i)
         if (project_state.group_charts[i]) output.chart_ids[output.chart_count++] = view.charts[i].chart_id;
 }
@@ -534,6 +538,36 @@ auto render_existing_files_picker(nk_context* context, int selected) -> int {
     }
     return selected;
 }
+void render_stepmania_policy(nk_context* context) {
+    constexpr std::array file_labels{"SM", "SSC"};
+    constexpr std::array timing_labels{"Native WARPS", "Legacy negative BPM",
+                                       "Legacy negative STOP"};
+    constexpr std::array implementation_labels{"Syntax only", "StepMania 5.1", "Etterna 0.75.1"};
+    constexpr float fields[]{0.22f, 0.78f};
+    auto& state = project_state;
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "File profile", NK_TEXT_LEFT);
+    state.group_stepmania_file =
+        wormedit::ui::chrome::safe_combo(context, file_labels.data(), file_labels.size(),
+                                         state.group_stepmania_file, 24, nk_vec2(280, 100));
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Timing syntax", NK_TEXT_LEFT);
+    state.group_stepmania_timing =
+        wormedit::ui::chrome::safe_combo(context, timing_labels.data(), timing_labels.size(),
+                                         state.group_stepmania_timing, 24, nk_vec2(280, 120));
+    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+    nk_label(context, "Implementation", NK_TEXT_LEFT);
+    state.group_stepmania_implementation = wormedit::ui::chrome::safe_combo(
+        context, implementation_labels.data(), implementation_labels.size(),
+        state.group_stepmania_implementation, 24, nk_vec2(280, 120));
+    if (state.group_stepmania_implementation != WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY) {
+        state.group_stepmania_file = WORM_UI_STEPMANIA_FILE_SSC;
+        state.group_stepmania_timing = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    } else if (state.group_stepmania_file == WORM_UI_STEPMANIA_FILE_SM ||
+               state.group_stepmania_timing != WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS) {
+        state.group_stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    }
+}
 void render_output_group_editor(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
     using namespace wormedit::ui::chrome;
     auto& state = project_state;
@@ -562,6 +596,8 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
         nk_label(context, "Existing files", NK_TEXT_LEFT);
         state.group_existing_files =
             render_existing_files_picker(context, state.group_existing_files);
+        if (state.group_family == 2)
+            render_stepmania_policy(context);
         dialog_text(state.group_editor_dialog, context,
                     "Project-relative file or directory; use a directory for multiple BMS, BMSON or osu! charts.",
                     color(UiColor::text_muted));
@@ -830,54 +866,6 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
               view->audio_asset_count, view->visual_asset_count);
     render_project_charts(context, *view, *action);
     render_output_groups(context, *view, *action);
-    // Breathing room so the policy form reads as its own section, not as chart-list rows.
-    nk_layout_row_dynamic(context, 18, 1);
-    nk_spacing(context, 1);
-    nk_layout_row_dynamic(context, 26, 1);
-    project_section_heading(context, "StepMania export policy");
-    nk_layout_row_dynamic(context, 32, 1);
-    nk_label_wrap(context, "Groups choose SM/SSC from their output paths. Target and timing syntax apply to both.");
-
-    constexpr std::array file_labels{"SM", "SSC"};
-    constexpr std::array timing_labels{"Native WARPS", "Legacy negative BPM",
-                                       "Legacy negative STOP"};
-    constexpr std::array implementation_labels{"Syntax only", "StepMania 5.1",
-                                                "Etterna 0.75.1"};
-    int file_profile = static_cast<int>(view->stepmania_file_profile);
-    int timing_syntax = static_cast<int>(view->stepmania_timing_syntax);
-    int implementation = static_cast<int>(view->stepmania_implementation);
-
-    constexpr float policy_ratios[]{0.28f, 0.72f};
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, policy_ratios);
-    nk_label(context, "File family", NK_TEXT_LEFT);
-    const auto next_file = wormedit::ui::chrome::safe_combo(context, file_labels.data(), file_labels.size(), file_profile,
-                                    24, nk_vec2(280, 100));
-
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, policy_ratios);
-    nk_label(context, "Timing syntax", NK_TEXT_LEFT);
-    const auto next_timing =
-        wormedit::ui::chrome::safe_combo(context, timing_labels.data(), timing_labels.size(), timing_syntax, 24,
-                 nk_vec2(280, 120));
-
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, policy_ratios);
-    nk_label(context, "Implementation target", NK_TEXT_LEFT);
-    const auto next_implementation =
-        wormedit::ui::chrome::safe_combo(context, implementation_labels.data(), implementation_labels.size(),
-                 implementation, 24, nk_vec2(280, 120));
-
-    if (next_file != file_profile || next_timing != timing_syntax ||
-        next_implementation != implementation) {
-        publish_policy_action(action, next_file, next_timing, next_implementation);
-    }
-
-    nk_layout_row_dynamic(context, 22, 1);
-    nk_label_colored(context, view->stepmania_policy_status, NK_TEXT_LEFT,
-                     view->stepmania_policy_valid ? nk_rgb(120, 210, 150)
-                                                  : nk_rgb(235, 150, 120));
-    nk_layout_row_dynamic(context, 38, 1);
-    nk_label_wrap(context,
-                  "These choices stage a typed conversion request. Export destination and "
-                  "publication remain separate transactional steps.");
 }
 
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const WormUiSetupView& view,

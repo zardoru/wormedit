@@ -126,7 +126,7 @@ TEST_CASE("Workspace summary uses the application arena with stable contents and
     const std::string status = "ready";
     auto fill = [&] {
         arena.reset();
-        return frontend_workspace_view_t::from(model, document, status, {}, false, {}, &arena);
+        return frontend_workspace_view_t::from(model, document, status, {}, false, &arena);
     };
     const auto first = fill();
     const auto used = arena.used_bytes();
@@ -148,12 +148,12 @@ TEST_CASE("Standalone workspace summary owns persistent arena storage after a mo
     const auto model = frame_summary_model();
     const wormedit::song_document_t document;
     const std::string status = "ready";
-    auto projection = frontend_workspace_view_t::from(model, document, status, {}, false, {});
+    auto projection = frontend_workspace_view_t::from(model, document, status, {}, false);
     auto retained = std::move(projection);
     retained.rebind_view_pointers();
     check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
     frame_arena_t frame({.chunk_bytes = 64, .maximum_bytes = 64});
-    const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, {}, &frame);
+    const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, &frame);
     check_frame_storage(limited.summary.truncated);
     check_frame_storage(limited.view.summary_line_count < 5);
     check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
@@ -168,14 +168,14 @@ TEST_CASE("Audio asset view publishes arena IDs and truncates only its exhausted
     const wormedit::song_document_t document;
     const std::string status = "ready";
     frame_arena_t arena({.chunk_bytes = 1024, .maximum_bytes = 4096});
-    auto projection = frontend_workspace_view_t::from(model, document, status, {}, false, {}, &arena);
+    auto projection = frontend_workspace_view_t::from(model, document, status, {}, false, &arena);
     projection.rebind_view_pointers();
     REQUIRE(projection.view.audio_slices.asset_ids);
     check_frame_storage(projection.view.audio_slices.asset_count == 2);
     check_frame_storage(projection.view.audio_slices.asset_ids[0] == 7);
     check_frame_storage(projection.view.audio_slices.asset_ids[1] == 9);
     frame_arena_t exhausted({.chunk_bytes = 8, .maximum_bytes = 8});
-    const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, {}, &exhausted);
+    const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, &exhausted);
     check_frame_storage(limited.view.audio_slices.assets_truncated);
     check_frame_storage(limited.view.audio_slices.asset_count == 0);
     check_frame_storage(limited.view.audio_slices.asset_ids == nullptr);
@@ -212,7 +212,7 @@ auto metadata_arena_document() -> wormedit::song_document_t {
 auto project_metadata_arena(const wormedit::workspace_view_t& model,
                             const wormedit::song_document_t& document,
                             frame_arena_t* arena = nullptr) -> frontend_workspace_view_t {
-    return frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, arena);
+    return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena);
 }
 void check_metadata_fields(const WormUiMetadataFormatFieldView& field) {
     check_frame_storage(field.chart_scoped);
@@ -538,10 +538,8 @@ auto recovery_arena_model() -> wormedit::native_project_recovery_controller_view
     return recovery;
 }
 auto project_setup_recovery(const wormedit::native_project_recovery_controller_view_t& recovery,
-                            frame_arena_t* arena = nullptr,
-                            const wormedit::stepmania_export_policy_t& policy = {})
-    -> frontend_workspace_view_t {
-    return frontend_workspace_view_t::from(setup_arena_model(), {}, "ready", recovery, true, policy, arena);
+                            frame_arena_t* arena = nullptr) -> frontend_workspace_view_t {
+    return frontend_workspace_view_t::from(setup_arena_model(), {}, "ready", recovery, true, arena);
 }
 void check_recovery_arena_rows(const WormUiWorkspaceView& view) {
     REQUIRE(view.recovery_candidate_count == 2);
@@ -580,33 +578,6 @@ TEST_CASE("Setup and Recovery arena text preserves source-independent ordering a
         "First retained recovery diagnostic (recovery/candidate.wormedit)") == 0);
     check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[1],
         "Second retained recovery diagnostic") == 0);
-    check_frame_storage(moved.view.setup.stepmania_policy_valid);
-    check_frame_storage(std::strcmp(moved.view.setup.stepmania_policy_status,
-        "Compatible StepMania export policy.") == 0);
-}
-
-TEST_CASE("Setup arena text preserves warnings and rejected policy semantics",
-          "[sys][frame-arena][setup-recovery]") {
-    frontend_workspace_view_t hidden;
-    hidden.rebind_view_pointers();
-    auto moved_hidden = std::move(hidden);
-    moved_hidden.rebind_view_pointers();
-    REQUIRE(moved_hidden.view.setup.stepmania_policy_status);
-    check_frame_storage(!moved_hidden.view.setup.visible);
-    check_frame_storage(moved_hidden.view.setup.stepmania_policy_status[0] == '\0');
-    wormedit::stepmania_export_policy_t policy;
-    policy.file_profile = wormedit::stepmania_profile_t::sm;
-    auto warning = project_setup_recovery({}, nullptr, policy);
-    check_frame_storage(warning.view.setup.stepmania_policy_valid);
-    check_frame_storage(std::strcmp(warning.view.setup.stepmania_policy_status,
-        "Valid syntax policy; SM charts containing warps require a legacy encoding instead.") == 0);
-    policy.timing_syntax = wormedit::stepmania_timing_syntax_t::unspecified;
-    auto rejected = project_setup_recovery({}, nullptr, policy);
-    auto moved = std::move(rejected);
-    moved.rebind_view_pointers();
-    check_frame_storage(!moved.view.setup.stepmania_policy_valid);
-    check_frame_storage(std::strcmp(moved.view.setup.stepmania_policy_status,
-        "Select a StepMania timing syntax explicitly") == 0);
 }
 
 TEST_CASE("Recovery arena summaries retain maximum numeric values and disabled action reasons",
@@ -638,15 +609,11 @@ TEST_CASE("Setup and Recovery exhaustion retains immutable notices and only comp
     const auto failed = project_setup_recovery(recovery, &tiny);
     check_frame_storage(failed.view.recovery_candidate_count == 0);
     check_frame_storage(failed.view.recovery_rows_truncated);
-    check_frame_storage(failed.setup.text_truncated);
-    check_frame_storage(failed.view.setup.stepmania_policy_valid);
     const auto* notice = failed.view.recovery_notice;
     const auto* diagnostic = failed.view.recovery_diagnostics[0];
-    const auto* setup = failed.view.setup.stepmania_policy_status;
     tiny.reset();
     check_frame_storage(std::strcmp(notice, "Recovery display text truncated (frame storage limit).") == 0);
     check_frame_storage(std::strcmp(diagnostic, "Recovery display text truncated (frame storage limit).") == 0);
-    check_frame_storage(std::strcmp(setup, "Setup display text truncated (frame storage limit).") == 0);
     auto prefix_model = recovery_arena_model();
     prefix_model.rows[0].path_label.assign(4096, 'p');
     frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
@@ -664,7 +631,7 @@ TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 p
     const wormedit::song_document_t document;
     const std::string status = "ready";
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    auto project = [&] { return frontend_workspace_view_t::from(model, document, status, recovery, true, {}, &arena); };
+    auto project = [&] { return frontend_workspace_view_t::from(model, document, status, recovery, true, &arena); };
     (void)project();
     const auto used = arena.used_bytes();
     const auto committed = arena.committed_bytes();
@@ -677,7 +644,7 @@ TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 p
         const auto finish = frame_heap_allocation_snapshot();
         zero_new = zero_new && finish.count == start.count;
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            frame.view.recovery_candidate_count == 2 && !frame.setup.text_truncated;
+            frame.view.recovery_candidate_count == 2;
     }
     check_frame_storage(zero_new);
     check_frame_storage(stable);
@@ -697,7 +664,7 @@ auto project_compose_output_groups(const wormedit::song_document_t& document,
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::compose;
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
-    return frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, arena);
+    return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena);
 }
 void check_compose_output_group(const WormUiComposeOutputGroupView& group) {
     check_frame_storage(group.document_index == 1);
@@ -840,7 +807,7 @@ auto project_resource_rows(const wormedit::song_document_t& document,
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{1}};
     model.transport.audio_asset = wormedit::asset_id_t{1};
     model.selected_visual_asset = wormedit::asset_id_t{7};
-    return frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, arena,
+    return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena,
                              dock_sort_t::natural_name, request);
 }
 }
@@ -1009,7 +976,7 @@ auto branch_arena_model(std::size_t count = 3) -> wormedit::workspace_view_t {
 }
 auto project_branch_arena(const wormedit::workspace_view_t& model, frame_arena_t* arena = nullptr)
     -> frontend_workspace_view_t {
-    return frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, arena);
+    return frontend_workspace_view_t::from(model, {}, "ready", {}, false, arena);
 }
 auto branch_outline(wormedit::workspace_view_t& model)
     -> wormedit::workspace_bms_branch_outline_view_t& {
@@ -1319,8 +1286,7 @@ TEST_CASE("Sound usage rows and labels remain arena owned after source changes a
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::audio_slices;
     model.tab_view = wormedit::workspace_audio_slices_view_t{};
-    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, nullptr,
-        dock_sort_t::natural_name, {}, {.selected_project_id = 8, .selected_resource_id = 1, .find_uses_open = true});
+    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, nullptr, dock_sort_t::natural_name, {}, {.selected_project_id = 8, .selected_resource_id = 1, .find_uses_open = true});
     REQUIRE(frame.view.audio_slices.usage_row_count == 1);
     document.charts.front().metadata.name = "Changed";
     document.charts.front().measures.clear();
@@ -1350,7 +1316,7 @@ auto project_bookmark_arena(const wormedit::song_document_t& document, frame_are
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::compose;
     model.tab_view = wormedit::workspace_compose_view_t{.chart = wormedit::chart_id_t{2}};
-    return frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, arena,
+    return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena,
         dock_sort_t::natural_name, {}, {}, {.first_row = 0, .row_limit = 12, .open = true});
 }
 }
@@ -1420,7 +1386,7 @@ TEST_CASE("Project export catalog includes groups outside the selected Compose d
     auto document = compose_output_group_document();
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::setup;
-    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, {}, nullptr);
+    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, nullptr);
     REQUIRE(frame.view.compose.output_group_count == document.output_groups.size());
     check_frame_storage(frame.view.compose.output_groups[0].document_index == 0);
     check_frame_storage(frame.view.compose.output_groups[1].document_index == 1);
@@ -1430,7 +1396,7 @@ TEST_CASE("Project export catalog includes groups outside the selected Compose d
 TEST_CASE("Workspace projection uses the canonical Audio Slices tab label", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::audio_slices;
-    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     CHECK(std::string_view{frame.view.tabs[WORM_UI_WORKSPACE_TAB_AUDIO_SLICES].label} == "Audio Slices");
     CHECK(std::string_view{frame.view.tab_heading} == "Audio Slices");
 }
@@ -1445,7 +1411,7 @@ void check_new_project_catalog_entry(const WormUiStringDescriptorView& actual,
 
 TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
-    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     const auto& view = frame.view.new_project_layouts;
     REQUIRE(view.count == wormedit::new_project_layouts().size());
     for (std::size_t i = 0; i < view.count; ++i)
@@ -1462,7 +1428,7 @@ void check_playback_rate_catalog_entry(const WormUiKindDescriptorView& actual,
 
 TEST_CASE("Workspace projects playback rate ids and labels from the catalog", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
-    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     REQUIRE(frame.view.playback_rates.count == wormedit::audio::playback_rate_catalog.size());
     for (std::size_t i = 0; i < frame.view.playback_rates.count; ++i)
         check_playback_rate_catalog_entry(frame.view.playback_rates.entries[i], wormedit::audio::playback_rate_catalog[i]);
@@ -1470,7 +1436,7 @@ TEST_CASE("Workspace projects playback rate ids and labels from the catalog", "[
 
 TEST_CASE("Workspace offers supported BMS encodings with stable ids and language hints", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
-    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     std::size_t index = 0;
     for (const auto& encoding : wormedit::bms_text_encodings) {
         if (!encoding.offered || !wormedit::is_bms_text_encoding_supported(encoding.kind)) continue;
@@ -1484,7 +1450,7 @@ TEST_CASE("Workspace offers supported BMS encodings with stable ids and language
 
 TEST_CASE("Workspace output families preserve SM SSC presentation and D9 exclusions", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
-    const auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    const auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     const auto& output = frame.view.setup.output_families;
     std::size_t index = 0;
     for (const auto& family : wormedit::format_families) {
@@ -1512,7 +1478,7 @@ void check_timing_catalog_entry(const WormUiComposeView& view, std::size_t index
 }
 TEST_CASE("Workspace projects timing and note presentation with catalog identities", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
-    const auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, {}, nullptr);
+    const auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     const auto& view = frame.view.compose;
     REQUIRE(view.timing_lanes.count == wormedit::timing_lanes.size());
     REQUIRE(view.timing_lane_captions.count == wormedit::timing_lanes.size());

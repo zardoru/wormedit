@@ -305,8 +305,7 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
             return compose_action_outcome_t::blocked(
                 "Every export target must contain matching charts.",
                 notification_source_t::export_);
-        plan = *output_group_export_plan_t::from_all(
-            doc, doc.output_groups, context.environment.resources->stepmania_policy);
+        plan = *output_group_export_plan_t::from_all(doc, doc.output_groups);
         return std::nullopt;
     }
     if (context.action.compose_output_group_index >= doc.output_groups.size())
@@ -333,8 +332,7 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
         return compose_action_outcome_t::blocked("The existing-files choice is invalid.",
                                                  notification_source_t::export_);
     }
-    plan = output_group_export_plan_t::from(doc, std::move(group), one_run_policy,
-                                            context.environment.resources->stepmania_policy);
+    plan = output_group_export_plan_t::from(doc, std::move(group), one_run_policy);
     return std::nullopt;
 }
 

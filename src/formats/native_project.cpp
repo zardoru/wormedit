@@ -474,10 +474,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 7 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 8 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 7;
+constexpr std::uint32_t native_project_schema_version = 8;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     return text_util::path_utf8(path);
@@ -667,12 +667,25 @@ void from_json(const json& value, generator_recipe_t& recipe) {
     value.at("source_hash").get_to(recipe.source_hash);
 }
 
+void to_json(json& value, const stepmania_export_policy_t& policy) {
+    value = json{{"file_profile", policy.file_profile},
+                 {"timing_syntax", policy.timing_syntax},
+                 {"implementation_profile", policy.implementation_profile}};
+}
+
+void from_json(const json& value, stepmania_export_policy_t& policy) {
+    value.at("file_profile").get_to(policy.file_profile);
+    value.at("timing_syntax").get_to(policy.timing_syntax);
+    value.at("implementation_profile").get_to(policy.implementation_profile);
+}
+
 void to_json(json& value, const output_group_t& group) {
     value = json{{"name", group.name},
                  {"family", group.family},
                  {"charts", group.charts},
                  {"relative_output_path", path_to_utf8(group.relative_output_path)},
-                 {"existing_files", group.existing_files}};
+                 {"existing_files", group.existing_files},
+                 {"stepmania", group.stepmania}};
 }
 
 void from_json(const json& value, output_group_t& group) {
@@ -682,6 +695,7 @@ void from_json(const json& value, output_group_t& group) {
     group.relative_output_path =
         path_from_utf8(value.at("relative_output_path").get<std::string>());
     value.at("existing_files").get_to(group.existing_files);
+    value.at("stepmania").get_to(group.stepmania);
 }
 
 void to_json(json& value, const chart_document_t& chart) {
@@ -983,8 +997,17 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
             song.visual_assets,
             [](const auto& asset) { return is_enum_at_most(asset.kind, asset_kind_t::midi); }) ||
         !std::ranges::all_of(song.output_groups, [](const auto& group) {
+            const bool valid_policy =
+                !group.stepmania ||
+                (is_enum_at_most(group.stepmania->file_profile, stepmania_profile_t::ssc) &&
+                 is_enum_at_most(group.stepmania->timing_syntax,
+                                 stepmania_timing_syntax_t::legacy_negative_stop) &&
+                 is_enum_at_most(group.stepmania->implementation_profile,
+                                 stepmania_implementation_profile_t::etterna_0_75_1));
             return static_cast<std::size_t>(group.family) < format_family_count &&
-                   is_enum_at_most(group.existing_files, existing_files_policy_t::keep);
+                   is_enum_at_most(group.existing_files, existing_files_policy_t::keep) &&
+                   valid_policy &&
+                   (group.family != format_family_t::stepmania || group.stepmania.has_value());
         })) {
         return false;
     }

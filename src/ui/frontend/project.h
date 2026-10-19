@@ -48,7 +48,6 @@ typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD,
     WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE,
-    WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY,
     WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT,
     WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART,
     WORM_UI_WORKSPACE_ACTION_COMPARE_SCROLL,
@@ -187,6 +186,10 @@ typedef struct WormUiProjectOutputGroupView {
     size_t chart_count;
     const char* preview_status;
     WormUiExistingFilesChoice existing_files;
+    bool has_stepmania_policy;
+    WormUiStepmaniaFileProfile stepmania_file_profile;
+    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
+    WormUiStepmaniaImplementation stepmania_implementation;
 } WormUiProjectOutputGroupView;
 
 typedef enum WormUiProjectOutputGroupActionKind {
@@ -207,6 +210,10 @@ typedef struct WormUiProjectOutputGroupAction {
     const char* path;
     uint8_t family;
     WormUiExistingFilesChoice existing_files;
+    bool has_stepmania_policy;
+    WormUiStepmaniaFileProfile stepmania_file_profile;
+    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
+    WormUiStepmaniaImplementation stepmania_implementation;
     size_t chart_count;
     uint64_t chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
 } WormUiProjectOutputGroupAction;
@@ -227,9 +234,4 @@ typedef struct WormUiSetupView {
     size_t chart_count;
     size_t audio_asset_count;
     size_t visual_asset_count;
-    WormUiStepmaniaFileProfile stepmania_file_profile;
-    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
-    WormUiStepmaniaImplementation stepmania_implementation;
-    bool stepmania_policy_valid;
-    const char* stepmania_policy_status;
 } WormUiSetupView;

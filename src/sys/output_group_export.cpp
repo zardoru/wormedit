@@ -210,15 +210,14 @@ auto publish_prepared_output(const output_group_export_request_t& input,
 } // namespace
 
 auto output_group_export_plan_t::from_all(const song_document_t& document,
-                                          std::span<const output_group_t> groups,
-                                          stepmania_export_policy_t stepmania_policy)
+                                          std::span<const output_group_t> groups)
     -> std::optional<output_group_export_plan_t> {
     if (groups.empty())
         return std::nullopt;
-    auto plan = from(document, groups.front(), std::nullopt, stepmania_policy);
+    auto plan = from(document, groups.front());
     plan.additional_targets.reserve(groups.size() - 1);
     for (const auto& group : groups.subspan(1)) {
-        auto target = from(document, group, std::nullopt, stepmania_policy);
+        auto target = from(document, group);
         plan.additional_targets.push_back(export_target(target));
     }
     return plan;

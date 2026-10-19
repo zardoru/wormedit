@@ -22,13 +22,26 @@ bool project_rows_valid(const WormUiSetupView& view) {
     }
     return true;
 }
+
+bool output_group_rows_valid(const WormUiSetupView& view) {
+    if (view.output_group_count != 0 && !view.output_groups) return false;
+    for (size_t index = 0; index < view.output_group_count; ++index) {
+        const auto& group = view.output_groups[index];
+        if (!group.name || !group.path || !group.preview_status ||
+            (group.chart_count != 0 && !group.chart_ids)) return false;
+        if (group.family == 2 &&
+            (!group.has_stepmania_policy ||
+             !worm_ui_nuklear_setup_policy_values_valid(
+                 group.stepmania_file_profile, group.stepmania_timing_syntax,
+                 group.stepmania_implementation))) return false;
+    }
+    return true;
+}
 }
 
 bool worm_ui_nuklear_setup_view_valid(const WormUiSetupView* view) {
-    return view && (!view->visible ||
-        (view->stepmania_policy_status && project_rows_valid(*view) &&
-         worm_ui_nuklear_setup_policy_values_valid(view->stepmania_file_profile,
-            view->stepmania_timing_syntax, view->stepmania_implementation)));
+    return view &&
+           (!view->visible || (project_rows_valid(*view) && output_group_rows_valid(*view)));
 }
 
 #include <algorithm>

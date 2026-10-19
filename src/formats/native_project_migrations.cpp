@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <array>
+#include <filesystem>
 #include <map>
 #include <set>
 #include <string>
@@ -145,13 +146,42 @@ auto migrate_v6_to_v7(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 6> released_migrations{{
+auto migrate_v7_to_v8(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups"))
+        return {};
+    if (!document.at("output_groups").is_array())
+        return "document output_groups must be an array";
+    for (auto& group : document.at("output_groups")) {
+        if (!group.is_object())
+            return "output group must be an object";
+        if (group.contains("stepmania"))
+            continue;
+        if (group.value("family", std::uint64_t{}) != std::uint64_t{2}) {
+            group["stepmania"] = nullptr;
+            continue;
+        }
+        if (!group.contains("relative_output_path") ||
+            !group.at("relative_output_path").is_string())
+            return "StepMania output group path must be a string";
+        const auto path =
+            std::filesystem::path{group.at("relative_output_path").get<std::string>()};
+        const auto file_profile =
+            path.extension() == ".sm" || path == "sm" ? std::uint64_t{0} : std::uint64_t{1};
+        group["stepmania"] = {{"file_profile", file_profile},
+                              {"timing_syntax", std::uint64_t{1}},
+                              {"implementation_profile", std::uint64_t{0}}};
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 7> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
     {4, &migrate_v4_to_v5},
     {5, &migrate_v5_to_v6},
     {6, &migrate_v6_to_v7},
+    {7, &migrate_v7_to_v8},
 }};
 
 } // namespace

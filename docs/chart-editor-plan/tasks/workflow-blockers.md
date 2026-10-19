@@ -131,7 +131,7 @@ feedback). T-716 updates the manual after the others land.
 - **Read first:** osu!mania/StepMania walkthrough finding 5; `src/sys/application.cpp` (save path), `src/sys/project_save_paths.cpp`, `src/core/resource_file_copy.cpp` and `src/sys/resource_job_state.cpp` (the existing project-copy job).
 - **Files owned:** `src/sys/application.cpp` (save only), `src/sys/project_save_paths.cpp`, the resource copy runtime, tests, this card.
 - **Steps:**
-  1. **STOP:** confirm with the owner: copy every external asset automatically on each save, or ask once per project; and whether copies are made for files already under the project directory's parent folders.
+  1. Owner decision (2026-10-18): every save copies every asset outside the project folder into `assets/` and relinks it, silently; identical files are reused, so a repeat save copies nothing. The status message lists what was copied.
   2. Reuse the existing resource copy job (atomic copy, relink, reuse of identical files) after the native file is written.
   3. Tests: audio-started project saved elsewhere ends with relative asset paths and copied files; a second save copies nothing new.
 - **Invariants:** Save stays atomic for the project file; a failed copy never loses the link.

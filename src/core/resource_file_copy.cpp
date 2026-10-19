@@ -6,6 +6,7 @@
 #include <cerrno>
 #include <chrono>
 #include <fstream>
+#include <set>
 #include <string>
 #include <system_error>
 #include <utility>
@@ -128,8 +129,12 @@ auto discard_unlinked_copy(const project_asset_copy_request_t& request,
         !request.project_directory.is_absolute() || !is_valid_relative(relative_directory) ||
         request.source_path.filename().empty())
         return false;
-    const auto relative = relative_directory / request.destination_filename();
-    if (copy.relative_path != relative ||
+    const auto basename = request.source_path.filename();
+    const auto fallback = std::filesystem::path{
+        std::to_string(request.asset.value) + "-" + basename.string()};
+    const auto relative = copy.relative_path;
+    if (relative.parent_path() != relative_directory ||
+        (relative.filename() != basename && relative.filename() != fallback) ||
         copy.absolute_path != request.project_directory / relative)
         return false;
     std::error_code error;
@@ -288,6 +293,124 @@ auto prepare_copy_directory(const std::filesystem::path& project_directory,
     return {};
 }
 
+enum class destination_state_t { available, identical, occupied };
+
+auto inspect_copy_candidate(const project_asset_copy_request_t& request,
+                            const std::filesystem::path& relative_directory,
+                            const std::filesystem::path& filename, std::stop_token stop)
+    -> result_t<destination_state_t, error_t<failure_code_t>> {
+    namespace fs = std::filesystem;
+    fs::path directory;
+    auto prepared = prepare_copy_directory(request.project_directory, relative_directory, true,
+                                           directory);
+    if (!prepared) {
+        if (prepared.error().code == failure_code_t::not_found)
+            return destination_state_t::available;
+        return std::unexpected(std::move(prepared.error()));
+    }
+    const auto destination = directory / filename;
+    std::error_code error;
+    const auto status = fs::symlink_status(destination, error);
+    if (error == std::errc::no_such_file_or_directory)
+        return destination_state_t::available;
+    if (error)
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::io_failed, "Could not inspect asset destination " + destination.string() + "."});
+    if (!fs::is_symlink(status) && fs::is_regular_file(status) &&
+        file_bytes_equal(request.source_path.is_absolute()
+                             ? request.source_path
+                             : request.project_directory / request.source_path,
+                         destination, stop))
+        return destination_state_t::identical;
+    if (stop.stop_requested())
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
+                                                        "Copy cancelled."});
+    return destination_state_t::occupied;
+}
+
+auto valid_copy_source(const project_asset_copy_request_t& request)
+    -> result_t<std::filesystem::path, error_t<failure_code_t>> {
+    namespace fs = std::filesystem;
+    if (!request.project_directory.is_absolute() || request.asset.value == 0 ||
+        (!request.source_path.is_absolute() && !is_valid_relative(request.source_path)) ||
+        request.source_path.filename().empty() || request.maximum_bytes == 0)
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, "Asset, project directory, or source path is invalid."});
+    const auto source = request.source_path.is_absolute()
+                            ? request.source_path
+                            : request.project_directory / request.source_path;
+    std::error_code error;
+    const auto root = fs::symlink_status(request.project_directory, error);
+    if (error || fs::is_symlink(root) || !fs::is_directory(root))
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, "Project directory is unavailable or is a symlink."});
+    if (!fs::is_regular_file(source, error) || error)
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::unavailable, "Source file is unavailable."});
+    if (fs::file_size(source, error) > request.maximum_bytes || error)
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request,
+            "Source file exceeds the copy limit or cannot be measured."});
+    return source;
+}
+
+auto can_select_copy_candidate(const project_asset_copy_request_t& request,
+                              const std::filesystem::path& relative_directory,
+                              const std::filesystem::path& candidate,
+                              const std::set<std::filesystem::path>& reserved,
+                              std::stop_token stop)
+    -> result_t<bool, error_t<failure_code_t>> {
+    if (reserved.contains(candidate))
+        return false;
+    auto state = inspect_copy_candidate(request, relative_directory, candidate, stop);
+    if (!state)
+        return std::unexpected(std::move(state.error()));
+    return *state != destination_state_t::occupied;
+}
+
+auto select_copy_candidate(const project_asset_copy_request_t& request,
+                           const std::filesystem::path& relative_directory,
+                           const std::set<std::filesystem::path>& reserved,
+                           std::stop_token stop)
+    -> result_t<std::filesystem::path, error_t<failure_code_t>> {
+    const auto basename = request.source_path.filename();
+    if (!request.planned_filename.empty()) {
+        if (request.planned_filename.has_parent_path() ||
+            request.planned_filename.filename() != request.planned_filename ||
+            reserved.contains(request.planned_filename))
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::conflict, "Planned asset destination is invalid or duplicated."});
+        auto state = inspect_copy_candidate(request, relative_directory,
+                                            request.planned_filename, stop);
+        if (!state)
+            return std::unexpected(std::move(state.error()));
+        if (*state == destination_state_t::occupied)
+            return std::unexpected(error_t<failure_code_t>{
+                failure_code_t::conflict,
+                "Planned asset destination contains different data: " +
+                    request.planned_filename.string() + "."});
+        return request.planned_filename;
+    }
+    const auto fallback = std::filesystem::path{
+        std::to_string(request.asset.value) + "-" + basename.string()};
+    auto preferred = can_select_copy_candidate(request, relative_directory, basename, reserved,
+                                                stop);
+    if (!preferred)
+        return std::unexpected(std::move(preferred.error()));
+    if (*preferred)
+        return basename;
+    auto alternative = can_select_copy_candidate(request, relative_directory, fallback, reserved,
+                                                  stop);
+    if (!alternative)
+        return std::unexpected(std::move(alternative.error()));
+    if (*alternative)
+        return fallback;
+    return std::unexpected(error_t<failure_code_t>{
+        failure_code_t::conflict,
+        "Both asset destination names are occupied: " + basename.string() + " and " +
+            fallback.string() + "."});
+}
+
 struct copy_location_t {
     std::filesystem::path source;
     std::filesystem::path directory;
@@ -386,6 +509,34 @@ auto project_asset_copy_receipt_t::from(const std::filesystem::path& relative_pa
                                       : std::nullopt};
 }
 
+auto plan_project_asset_copies(std::span<const project_asset_copy_request_t> requests,
+                               const std::filesystem::path& relative_directory,
+                               std::stop_token stop)
+    -> result_t<std::vector<project_asset_copy_request_t>, error_t<failure_code_t>> {
+    if (!is_valid_relative(relative_directory))
+        return std::unexpected(error_t<failure_code_t>{
+            failure_code_t::invalid_request, "Asset destination directory is invalid."});
+    std::vector<project_asset_copy_request_t> planned;
+    std::set<std::filesystem::path> reserved;
+    planned.reserve(requests.size());
+    for (const auto& request : requests) {
+        auto source = valid_copy_source(request);
+        if (!source)
+            return std::unexpected(std::move(source.error()));
+        if (stop.stop_requested())
+            return std::unexpected(error_t<failure_code_t>{failure_code_t::cancelled,
+                                                            "Copy cancelled."});
+        auto selected = select_copy_candidate(request, relative_directory, reserved, stop);
+        if (!selected)
+            return std::unexpected(std::move(selected.error()));
+        auto copy = request;
+        copy.planned_filename = *selected;
+        reserved.insert(*selected);
+        planned.push_back(std::move(copy));
+    }
+    return planned;
+}
+
 static auto copy_resource_file_to_relative_directory(
     const project_asset_copy_request_t& request, const std::filesystem::path& relative_directory,
     std::stop_token stop, bool inspect_only = false) -> project_asset_copy_outcome_t {
@@ -393,6 +544,9 @@ static auto copy_resource_file_to_relative_directory(
     if (!request.asset || !request.project_directory.is_absolute() || request.source_path.empty() ||
         request.maximum_bytes == 0 ||
         (!request.source_path.is_absolute() && !is_valid_relative(request.source_path)) ||
+        (!request.planned_filename.empty() &&
+         (request.planned_filename.has_parent_path() ||
+          request.planned_filename.filename() != request.planned_filename)) ||
         !is_valid_relative(relative_directory)) {
         return std::unexpected(error_t<failure_code_t>{
             failure_code_t::invalid_request,
@@ -489,19 +643,36 @@ static auto find_identical_project_copy(const project_asset_copy_request_t& requ
 
 auto create_project_asset_copy(const project_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
-    if (request.reuse_identical_files) {
-        auto inspected = inspect_project_asset_file(request, stop);
-        if (inspected || (inspected.error().code != failure_code_t::not_found &&
-                          inspected.error().code != failure_code_t::conflict)) return inspected;
-        if (auto identical = find_identical_project_copy(request, stop)) return std::move(*identical);
-        if (inspected.error().code == failure_code_t::conflict) return inspected;
+    auto planned = request.planned_filename.empty()
+                       ? plan_project_asset_copies(std::span{&request, std::size_t{1}}, "assets", stop)
+                       : result_t<std::vector<project_asset_copy_request_t>, error_t<failure_code_t>>{
+                             std::vector<project_asset_copy_request_t>{request}};
+    if (!planned) {
+        if (request.reuse_identical_files &&
+            planned.error().code == failure_code_t::conflict) {
+            if (auto identical = find_identical_project_copy(request, stop))
+                return std::move(*identical);
+        }
+        return std::unexpected(std::move(planned.error()));
     }
-    return copy_resource_file_to_relative_directory(request, "assets", stop);
+    const auto& selected = planned->front();
+    if (request.reuse_identical_files) {
+        auto inspected = copy_resource_file_to_relative_directory(selected, "assets", stop, true);
+        if (inspected || inspected.error().code != failure_code_t::not_found)
+            return inspected;
+        if (auto identical = find_identical_project_copy(request, stop)) return std::move(*identical);
+    }
+    return copy_resource_file_to_relative_directory(selected, "assets", stop);
 }
 
 auto inspect_project_asset_file(const project_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
-    return copy_resource_file_to_relative_directory(request, "assets", stop, true);
+    if (!request.planned_filename.empty())
+        return copy_resource_file_to_relative_directory(request, "assets", stop, true);
+    auto planned = plan_project_asset_copies(std::span{&request, std::size_t{1}}, "assets", stop);
+    if (!planned)
+        return std::unexpected(std::move(planned.error()));
+    return copy_resource_file_to_relative_directory(planned->front(), "assets", stop, true);
 }
 
 auto export_asset_directory(const std::filesystem::path& relative_output_path)
@@ -538,7 +709,10 @@ auto create_export_asset_copy(const export_asset_copy_request_t& request, std::s
                                             .asset = request.asset,
                                             .maximum_bytes = request.maximum_bytes,
                                             .validate_temporary = request.validate_temporary};
-    return copy_resource_file_to_relative_directory(copy, *directory, stop);
+    auto planned = plan_project_asset_copies(std::span{&copy, std::size_t{1}}, *directory, stop);
+    if (!planned)
+        return std::unexpected(std::move(planned.error()));
+    return copy_resource_file_to_relative_directory(planned->front(), *directory, stop);
 }
 
 auto inspect_export_asset_file(const export_asset_copy_request_t& request, std::stop_token stop)
@@ -552,7 +726,10 @@ auto inspect_export_asset_file(const export_asset_copy_request_t& request, std::
                                                .source_path = request.source_path,
                                                .asset = request.asset,
                                                .maximum_bytes = request.maximum_bytes};
-    return copy_resource_file_to_relative_directory(inspect, *directory, stop, true);
+    auto planned = plan_project_asset_copies(std::span{&inspect, std::size_t{1}}, *directory, stop);
+    if (!planned)
+        return std::unexpected(std::move(planned.error()));
+    return copy_resource_file_to_relative_directory(planned->front(), *directory, stop, true);
 }
 
 auto discard_unlinked_project_asset_copy(const project_asset_copy_request_t& request,

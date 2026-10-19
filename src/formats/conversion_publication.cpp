@@ -263,7 +263,13 @@ auto plan_pending_export_assets(const song_document_t& song, const output_group_
         pending.push_back({.project_directory = project_directory,
             .source_path = audio ? audio->source_path : visual->source_path, .asset = id});
     }
-    return pending;
+    const auto directory = export_asset_directory(group.relative_output_path);
+    if (!directory)
+        return std::unexpected("Export asset directory is invalid.");
+    auto planned = plan_project_asset_copies(pending, *directory);
+    if (!planned)
+        return std::unexpected(planned.error().message);
+    return std::move(*planned);
 }
 
 auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,
@@ -280,6 +286,16 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
     if ((!destination_is_directory && group.relative_output_path.has_extension()) && converted.outputs.size() != 1) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), "A single chart filename cannot hold multiple outputs."));
     }
+    const auto asset_directory = destination_is_directory
+        ? std::optional{group.relative_output_path / "assets"}
+        : export_asset_directory(group.relative_output_path);
+    if (!asset_directory)
+        return std::unexpected(conversion_publication_plan_error_t::from(
+            std::move(plan), "Output asset directory is invalid."));
+    auto planned_assets = plan_project_asset_copies(pending_assets, *asset_directory);
+    if (!planned_assets)
+        return std::unexpected(conversion_publication_plan_error_t::from(
+            std::move(plan), planned_assets.error().message));
     std::set<fs::path> destinations;
     if (auto error = append_conversion_files(project_directory, group, request, converted, plan,
                                              destinations, destination_is_directory);
@@ -290,9 +306,9 @@ auto conversion_publication_plan_payload_t::from(const std::filesystem::path& pr
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }
-    if (auto error = validate_pending_assets(request, pending_assets))
+    if (auto error = validate_pending_assets(request, *planned_assets))
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), *error));
-    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory, pending_assets);
+    if (auto error = append_staged_assets(project_directory, group, request, plan, destinations, destination_is_directory, *planned_assets);
         error.has_value()) {
         return std::unexpected(conversion_publication_plan_error_t::from(std::move(plan), std::move(*error)));
     }

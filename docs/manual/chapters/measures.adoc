@@ -34,8 +34,9 @@ by accident.
 kbd:[Ctrl+M] (*Toggle Measure Line at Cursor*) works without the measure lane and without the
 mouse:
 
-* With the cursor _inside_ a measure, it adds a bar line at the cursor, splitting the measure
-there. The cursor ends up on the new bar line.
+* With the cursor _inside an authored measure_, it adds a bar line at the cursor, splitting the
+measure there. The cursor ends up on the new bar line. In empty virtual space, place a note first
+to materialize the measure; Ctrl+M cannot split virtual measures.
 * With the cursor _on_ a bar line, it removes it, merging that measure into the one before it. The
 cursor keeps its place in the music.
 

@@ -2314,38 +2314,85 @@ TEST_CASE("Unavailable command feedback uses display names and a generic missing
           "Command is currently unavailable.");
 }
 
-TEST_CASE("Timing focus refusal feedback names F4 only for commands disabled by that focus",
+auto check_timing_focus_command_policy(
+    const wormedit::command_registry_t& registry,
+    const wormedit::command_registry_t& timing_registry,
+    const wormedit::command_t& command,
+    application_command_state_t& state) -> bool {
+    using namespace wormedit;
+    const auto parsed = parse_application_command(command.definition.id.value);
+    REQUIRE(parsed);
+    const bool disabled = application_command_disabled_by_timing_focus(parsed->kind);
+    const auto* timing_command = find_command(timing_registry, command.definition.id);
+    REQUIRE(timing_command);
+    INFO(command.definition.id.value);
+    CHECK(timing_command->definition.enabled == (command.definition.enabled && !disabled));
+    CHECK(unavailable_application_command_message(registry, command.definition.id, state) ==
+          (disabled ? "Timing focus is on: press F4 to edit notes."
+                    : "Command is currently unavailable: " + command.definition.display_name));
+    return disabled;
+}
+
+auto check_timing_focus_registry_policy(
+    const wormedit::command_registry_t& registry,
+    const wormedit::command_registry_t& timing_registry,
+    application_command_state_t& state) -> std::size_t {
+    std::size_t disabled_count{};
+    for (const auto& command : registry.commands)
+        disabled_count += check_timing_focus_command_policy(
+            registry, timing_registry, command, state);
+    return disabled_count;
+}
+
+void check_compose_registry_policy(const wormedit::command_registry_t& registry,
+                                   const wormedit::command_registry_t& compose_registry) {
+    using namespace wormedit;
+    for (const auto& command : registry.commands) {
+        const auto* compose_command = find_command(compose_registry, command.definition.id);
+        REQUIRE(compose_command);
+        CHECK(compose_command->definition.enabled ==
+              (command.definition.enabled && command.definition.id.value != "edit.tool_select"));
+    }
+}
+
+void check_compose_refusal_messages(const wormedit::command_registry_t& registry,
+                                    application_command_state_t& state) {
+    for (const auto& command : registry.commands)
+        CHECK(unavailable_application_command_message(registry, command.definition.id, state) ==
+              "Command is currently unavailable: " + command.definition.display_name);
+}
+
+TEST_CASE("Timing focus policy controls production registry enablement and refusal feedback",
           "[sys][application_commands][command-feedback]") {
-    const auto id = GENERATE("edit.tool_draw", "edit.tool_layer", "edit.toggle_quantize_preview",
-                            "edit.apply_quantize", "view.open_layers", "semantic_layer.create",
-                            "view.toggle_sounds");
-    const auto registry = wormedit::command_registry_t::from({});
+    using namespace wormedit;
+    const auto registry = command_registry_t::from({});
+    auto timing_registry = registry;
+    apply_timing_focus_command_policy(timing_registry, false);
+    auto compose_registry = registry;
+    (void)update_command_state(compose_registry, command_id_t{"edit.tool_select"}, false,
+                               std::nullopt);
+    apply_timing_focus_command_policy(compose_registry, true);
     application_command_state_t state;
     state.project.compose_view.compose_timing_focus = true;
-    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{id}, state) ==
-          "Timing focus is on: press F4 to edit notes.");
-    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{"history.undo"}, state) ==
-          "Command is currently unavailable: Undo");
+    CHECK(check_timing_focus_registry_policy(registry, timing_registry, state) == 7);
+    check_compose_registry_policy(registry, compose_registry);
+
     state.project.compose_view.compose_timing_focus = false;
-    const auto* command = wormedit::find_command(registry, {id});
-    REQUIRE(command);
-    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{id}, state) ==
-          "Command is currently unavailable: " + command->definition.display_name);
+    check_compose_refusal_messages(registry, state);
 }
 
 TEST_CASE("Timing focus refusals explain the same F4 remedy at the direct command boundary",
           "[sys][application_commands][command-feedback]") {
-    const auto kind = GENERATE(application_command_kind_t::edit_tool_draw,
-        application_command_kind_t::edit_tool_layer,
-        application_command_kind_t::edit_toggle_quantize_preview,
-        application_command_kind_t::edit_apply_quantize,
-        application_command_kind_t::view_open_layers,
-        application_command_kind_t::semantic_layer_create,
-        application_command_kind_t::view_toggle_sounds);
+    const auto registry = wormedit::command_registry_t::from({});
     TimingInsertFixture fixture;
     fixture.application_state.project.compose_view.compose_timing_focus = true;
-    CHECK_FALSE(fixture.invoke(kind).value);
-    CHECK(fixture.latest_message() == "Timing focus is on: press F4 to edit notes.");
+    for (const auto& command : registry.commands) {
+        const auto parsed = parse_application_command(command.definition.id.value);
+        REQUIRE(parsed);
+        if (!application_command_disabled_by_timing_focus(parsed->kind)) continue;
+        CHECK_FALSE(fixture.invoke(parsed->kind).value);
+        CHECK(fixture.latest_message() == "Timing focus is on: press F4 to edit notes.");
+    }
 }
 
 TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note kind or history",

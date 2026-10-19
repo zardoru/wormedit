@@ -693,7 +693,7 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     using namespace wormedit;
     const auto paint_active = application.project.compose_gesture.note_paint_mode_active;
     const auto layer_active = application.project.compose_gesture.semantic_layer_paint_mode_active;
-    const auto tools_ready = compose_ready && !application.project.compose_view.compose_timing_focus;
+    const auto tools_ready = compose_ready;
     const auto layer_ready = tools_ready &&
         layer_tool_target_editable(chart, application.project.semantic_layer.semantic_layer_target);
     (void)update_command_state(registry, command_id_t{"edit.tool_select"}, compose_ready,
@@ -771,7 +771,7 @@ void refresh_same_sound_command(wormedit::command_registry_t& registry,
 void refresh_quantize_commands(wormedit::command_registry_t& registry, bool ready, bool pending,
     const std::optional<wormedit::editor_interaction_state_t>& state,
     const wormedit::document_history_t& history, const application_command_state_t& application) {
-    const bool enabled = ready && !pending && !application.project.compose_view.compose_timing_focus && !application.project.clipboard.paste_session;
+    const bool enabled = ready && !pending && !application.project.clipboard.paste_session;
     const bool checked = enabled && application.project.quantize.quantize_editor &&
         application.project.quantize.quantize_editor->stamp.is_identity_current(history.document, state->chart) && application.project.quantize.quantize_editor->preview_enabled;
     (void)wormedit::update_command_state(registry, {"edit.toggle_quantize_preview"}, enabled, checked);
@@ -781,8 +781,7 @@ void refresh_quantize_commands(wormedit::command_registry_t& registry, bool read
 
 void refresh_compose_dock_commands(wormedit::command_registry_t& registry, bool compose_ready,
                                     bool pending, const application_command_state_t& application) {
-    const bool enabled = compose_ready && !pending && !application.project.compose_view.compose_timing_focus &&
-                         !application.project.clipboard.paste_session;
+    const bool enabled = compose_ready && !pending && !application.project.clipboard.paste_session;
     for (const auto id : {"view.open_layers", "semantic_layer.create", "view.toggle_sounds"})
         (void)wormedit::update_command_state(registry, {id}, enabled, std::nullopt);
 }
@@ -919,6 +918,8 @@ void refresh_application_command_states(
                                           application_state, compose_state);
     set("audio.paint_hitsound", false);
     set("audio.toggle_click_audition", true, application_state.preferences.editor_preferences.audition_on_click);
+    wormedit::sys::apply_timing_focus_command_policy(
+        registry, !application_state.project.compose_view.compose_timing_focus);
 }
 
 auto application_command_focus(const WormUiWorkspaceAction& action,
@@ -2001,9 +2002,7 @@ void publish_project_portability_notice(wormedit::sys::project_portability_notic
     if (notice.update(history.document, session))
         sink.post(wormedit::notification_severity_t::warning,
                   wormedit::notification_source_t::document,
-                  "Some assets are linked by absolute paths or paths outside the project folder. "
-                  "Moving this project to another environment may break those links. Copy the "
-                  "assets into the project to make it portable.");
+                  wormedit::sys::project_portability_notice_t::warning_message());
 }
 
 } // namespace

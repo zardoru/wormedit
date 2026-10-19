@@ -27,7 +27,8 @@ only.
 
 . Click *BMS slots* at the top of the Sounds dock. The list shows the slots `01` to `ZZ` (1295 of
 them, in base 36) and which sound each holds. The search box finds a slot or a sound.
-. Click the slot where the import should start. An empty slot is fine.
+. Click the slot where the import should start. An empty slot is fine. Choosing a slot also sets the
+start for a multi-file import; with no chosen slot, new sounds use Automatic IDs.
 . Click *+* (_Choose files for consecutive BMS WAV slots_) and pick the files, or drop them onto the
 list:
 ** *One file* goes into the selected slot. If the slot already holds a sound, Wormedit asks
@@ -36,7 +37,7 @@ before replacing it (*Replace occupied WAV slot … with this file?*).
 planned for each file for review before importing, and refuses an import that would run past `ZZ`.
 
 .BMS slots mode with the empty slot 09 selected as the import target (captured at {shot-bms-slots-revision})
-image::bms-slots.png[The Sounds dock listing WAV slots 01 to 0G, slots 01 to 04 filled and slot 09 selected]
+image::bms-slots.png[The Sounds dock in a new BME project, listing empty WAV slots 01 to 0G with slot 09 selected]
 
 Each import is one Undo step. Switch back with *Automatic IDs*, where new sounds take the next free
 IDs.

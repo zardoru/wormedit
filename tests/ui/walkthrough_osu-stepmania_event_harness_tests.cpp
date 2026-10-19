@@ -339,7 +339,7 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes all three groups with s
         const project_asset_copy_request_t music{.source_path = song_path(),
             .asset = history.document.audio_assets.front().id};
         expect(std::filesystem::is_regular_file(root / group.relative_output_path /
-                                                "assets" / music.destination_filename()));
+                                                "assets" / music.source_path.filename()));
     }
     expect(std::filesystem::is_regular_file(root / "sm/walkthrough-41.sm"));
     expect(std::filesystem::is_regular_file(root / "ssc/walkthrough-41.ssc"));

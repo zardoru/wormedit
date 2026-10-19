@@ -1,8 +1,8 @@
 [#navigating]
 = Moving around a chart
 
-.Compose with the tutorial chart: timing lanes on the left, the playable lanes, BGM columns and the Sounds dock (captured at {shot-compose-overview-revision})
-image::compose-overview.png[Compose showing the timing lanes, eight playable lanes with keysounded notes, a BGM column and the Sounds dock]
+.Compose in a new BME project: timing lanes on the left, eight playable lanes and the Sounds dock (captured at {shot-compose-overview-revision})
+image::compose-overview.png[Compose showing BMS measure labels, timing lanes, eight playable lanes, BGM column controls and the Sounds dock]
 
 The yellow horizontal line is the *edit cursor*. Keyboard navigation moves the chart under it; the
 line itself stays at the same place on screen. Lane keys, keyboard holds and range selections all

@@ -11,7 +11,7 @@ as a new project?* with the layout list: choose *7K* (or *4K*, …) and click *C
 file becomes the song audio.
 
 You can also create the project with kbd:[Ctrl+N] and drop the song onto the audio field of the
-*Metadata* tab (kbd:[F2]) afterwards.
+*Metadata* tab (kbd:[F2]) afterwards. Expand *Audio and export*, then click *Use as song audio*.
 
 Layouts 3K to 8K and 10K start with three output groups, *osu!mania*, *StepMania SM* and *StepMania
 SSC*, all including the new chart. Other key counts start with osu!mania only (see the
@@ -27,7 +27,8 @@ kbd:[T] on the beat while the song plays.
 the audio; the BPM snap buttons in the toolbar set the step (kbd:[Ctrl] + wheel while dragging
 changes it).
 
-Lock the timing with kbd:[Ctrl+Shift+T] once it is right, so later edits cannot move it.
+In Timing focus (kbd:[F3]), lock the timing with kbd:[Ctrl+Shift+T] once it is right, so later
+edits cannot move it. Press kbd:[F4] to return to Compose before charting; the lock stays active.
 
 == 3. Chart
 
@@ -40,16 +41,18 @@ and the Draw tool place plain notes.
 key while walking for a hold note.
 . kbd:[Space] to listen from the cursor; kbd:[Ctrl+F11]/kbd:[Ctrl+F12] to slow down or speed up
 playback while you check a dense part.
-. Fix with the mouse: drag to move, right-drag with Draw to erase, kbd:[Alt]-drag for holds.
+. Fix with the mouse: press kbd:[Alt+1] and drag a note to move it; press kbd:[Alt+2] for Draw,
+then right-drag to erase. kbd:[Alt]-drag on an empty lane draws a hold.
 
 StepMania mines, lifts, fakes and rolls are on kbd:[Alt+4] to kbd:[Alt+8] when the chart's formats
 support them.
 
 == 4. More difficulties
 
-On the *Project* tab (kbd:[F1]), *Duplicate* copies a chart as a starting point for another
-difficulty, and *New chart* (kbd:[Ctrl+Shift+N]) adds an empty one. Add each chart to the output
-groups that should export it.
+On the *Project* tab (kbd:[F1]), open the chart's *⋯* menu and choose *Duplicate* to start another
+difficulty; it keeps the chart's timing. The *+* button (*New chart*, kbd:[Ctrl+Shift+N]) adds a
+chart with 120 BPM and one measure, carrying over the layout and audio offset. Add each chart to the
+output groups that should export it.
 
 == 5. Save and export
 
@@ -58,8 +61,14 @@ groups that should export it.
 for example `osu/song.osu` and `sm/song.sm`, or a folder when a group exports several osu!mania
 charts.
 . For the StepMania groups, the *StepMania export policy* chooses the target (StepMania 5.1 or
-Etterna 0.75.1) and how timing is written (*Timing syntax*).
-. Select a group and click *Export…*; *Preview* shows what will be written first.
+  Etterna 0.75.1) and how timing is written (*Timing syntax*); Preview and Export use those
+  choices. SM or SSC is inferred from the output path.
+. Click a group's *Export* button, or use *Export…* to choose a group and overwrite policy. *Preview*
+  lists the files, asset copies and warnings that the same export plan would publish; it does not
+  write files. It also reports the plan's conversion and publication refusals.
 
-osu!mania and StepMania exports copy the song audio next to the chart file. A project with more
-than one music file cannot be exported to them; Wormedit says so when you export.
+Save the project before exporting. Saving copies linked assets outside the project directory into
+*assets/* and relinks them; a failed copy keeps the original link and reports the file. osu!mania and
+StepMania exports copy the song audio next to the chart file. A project with more than one music
+resource cannot be exported to them, even if the resources refer to the same file; Wormedit reports
+the refusal without publishing partial files.

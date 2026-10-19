@@ -12,6 +12,18 @@
 
 namespace {
 
+void check_changed_export_source_keeps_other_verified_mapping(
+    wormedit::song_document_t& song, const wormedit::output_group_t& group,
+    const std::filesystem::path& project_directory) {
+    std::ofstream(project_directory / "tone.wav") << "changed";
+    const auto changed =
+        wormedit::discover_staged_export_assets(song, group, project_directory);
+    REQUIRE(changed);
+    REQUIRE(changed.mappings.size() == 1);
+    CHECK(changed.mappings.front().asset == wormedit::asset_id_t{6});
+    CHECK(changed.mappings.front().relative_path == "assets/bgm.wav");
+}
+
 struct temporary_directory_t {
     std::filesystem::path path =
         std::filesystem::temp_directory_path() /
@@ -95,7 +107,7 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
     REQUIRE(recovered);
     REQUIRE(recovered.mappings.size() == 1);
     CHECK(recovered.mappings.front().asset == wormedit::asset_id_t{5});
-    CHECK(recovered.mappings.front().relative_path == "assets/5-tone.wav");
+    CHECK(recovered.mappings.front().relative_path == "assets/tone.wav");
     REQUIRE(wormedit::create_export_asset_copy(
         {.project_directory = temporary.path,
          .source_path = "bgm.wav",
@@ -104,11 +116,8 @@ TEST_CASE("export asset discovery recovers verified resource copies after sessio
     const auto both = wormedit::discover_staged_export_assets(song, group, temporary.path);
     REQUIRE(both);
     REQUIRE(both.mappings.size() == 2);
-    CHECK(both.mappings.back().relative_path == "assets/6-bgm.wav");
-    std::ofstream(temporary.path / "tone.wav") << "changed";
-    const auto stale = wormedit::discover_staged_export_assets(song, group, temporary.path);
-    CHECK_FALSE(stale);
-    CHECK(stale.mappings.empty());
+    CHECK(both.mappings.back().relative_path == "assets/bgm.wav");
+    check_changed_export_source_keeps_other_verified_mapping(song, group, temporary.path);
 }
 
 TEST_CASE("StepMania output discovery maps a staged music file beside the chart",
@@ -133,7 +142,7 @@ TEST_CASE("StepMania output discovery maps a staged music file beside the chart"
     const auto discovered = wormedit::discover_staged_export_assets(song, group, temporary.path);
     REQUIRE(discovered);
     REQUIRE(discovered.mappings.size() == 1);
-    CHECK(discovered.mappings.front().relative_path == "assets/5-music.ogg");
+    CHECK(discovered.mappings.front().relative_path == "assets/music.ogg");
 }
 
 TEST_CASE("new audio project publishes osu, SM, and SSC with the staged music file",
@@ -712,7 +721,7 @@ TEST_CASE("Automatic export music is copied only inside atomic staging", "[unit]
     const wormedit::output_group_t group{.family = wormedit::format_family_t::bmson,
         .charts = {wormedit::chart_id_t{1}}, .relative_output_path = "exports"};
     const wormedit::conversion_request_t request{.target = wormedit::format_family_t::bmson,
-        .staged_assets = {{wormedit::asset_id_t{5}, "assets/5-music.wav"}}};
+        .staged_assets = {{wormedit::asset_id_t{5}, "assets/music.wav"}}};
     const auto outputs = converted();
     wormedit::conversion_publication_options_t options;
     options.pending_assets.push_back({.project_directory = temporary.path,
@@ -735,6 +744,6 @@ TEST_CASE("Automatic export music is copied only inside atomic staging", "[unit]
     const auto published = wormedit::publish_conversion_group_atomic(
         temporary.path, group, request, outputs, options);
     require_publication(static_cast<bool>(published.published));
-    require_publication(static_cast<bool>(read(temporary.path / "exports/assets/5-music.wav") == "audio"));
+    require_publication(static_cast<bool>(read(temporary.path / "exports/assets/music.wav") == "audio"));
     require_publication(static_cast<bool>(read(temporary.path / "exports/song.bmson") == "{}"));
 }

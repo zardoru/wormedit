@@ -125,6 +125,13 @@ TEST_CASE("Portability warning scans revisions and avoids repeated notices on or
     CHECK(notice.update(document,2));
 }
 
+TEST_CASE("Portability warning explains Save copying and failed-copy retention",
+          "[sys][project-save-paths][portability]") {
+    CHECK(wormedit::sys::project_portability_notice_t::warning_message() ==
+          "Some assets are linked outside the project folder. Save or Save As copies them into "
+          "assets/ and relinks the project. If a copy fails, the original link is retained.");
+}
+
 namespace {
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -237,6 +244,30 @@ TEST_CASE("project save reuses identical existing files and shared external sour
         check_save(asset.source_path == "assets/existing.ogg");
 }
 
+TEST_CASE("project save keeps a free source basename and resolves a conflicting basename",
+          "[sys][project-save-paths][project-save]") {
+    project_save_fixture_t fixture;
+    const auto other_directory = fixture.root / "alternate";
+    std::filesystem::create_directories(other_directory);
+    const auto second_music = other_directory / fixture.music.filename();
+    fixture.write(second_music, "different song bytes");
+    fixture.document.audio_assets.push_back({.id = asset_id_t{8}, .source_path = second_music});
+    const auto saved = fixture.save();
+    require_save(saved.storage.value);
+    check_save(saved.copy_errors.empty());
+    const auto reopened = fixture.reopen();
+    require_save(reopened.audio_assets.size() == 2);
+    check_save(reopened.audio_assets[0].source_path == "assets/music.ogg");
+    check_save(reopened.audio_assets[1].source_path == "assets/8-music.ogg");
+    check_save(fixture.read(fixture.project / reopened.audio_assets[0].source_path) == "song bytes");
+    check_save(fixture.read(fixture.project / reopened.audio_assets[1].source_path) ==
+               "different song bytes");
+    const auto again = create_project_save({.document = reopened, .source_base = fixture.project,
+        .destination = fixture.destination()});
+    require_save(again.storage.value);
+    check_save(again.copied_files.empty());
+}
+
 TEST_CASE("project save retains external links and names missing or conflicting copies",
           "[sys][project-save-paths][project-save]") {
     const bool missing = GENERATE(true, false);
@@ -244,6 +275,7 @@ TEST_CASE("project save retains external links and names missing or conflicting 
     if (missing) std::filesystem::remove(fixture.music);
     else {
         std::filesystem::create_directory(fixture.project / "assets");
+        fixture.write(fixture.project / "assets/music.ogg", "different bytes");
         fixture.write(fixture.project / "assets/6-music.ogg", "different bytes");
     }
     const auto saved = fixture.save();
@@ -304,9 +336,9 @@ TEST_CASE("project save relinks history without reverting newer edits or unrelat
     saved.publish_paths(history, fixture.root);
     check_save(history.document.metadata.title == "Newer title");
     check_save(history.document.revision == fixture.document.revision + 1);
-    check_save(history.undo.front().before.audio_assets.front().source_path == "assets/6-music.ogg");
+    check_save(history.undo.front().before.audio_assets.front().source_path == "assets/music.ogg");
     check_save(history.redo.front().after.audio_assets.front().source_path == fixture.root / "other.ogg");
-    check_save(history.document.audio_assets.front().source_path == "assets/6-music.ogg");
+    check_save(history.document.audio_assets.front().source_path == "assets/music.ogg");
 }
 
 TEST_CASE("project save copies symlinks that resolve outside the project folder",
@@ -319,8 +351,8 @@ TEST_CASE("project save copies symlinks that resolve outside the project folder"
     const auto saved = fixture.save();
     require_save(saved.storage.value);
     check_save(saved.copied_files.size() == 1);
-    check_save(fixture.reopen().audio_assets.front().source_path == "assets/6-music.ogg");
-    check_save(!std::filesystem::is_symlink(fixture.project / "assets/6-music.ogg"));
+    check_save(fixture.reopen().audio_assets.front().source_path == "assets/music.ogg");
+    check_save(!std::filesystem::is_symlink(fixture.project / "assets/music.ogg"));
 }
 
 TEST_CASE("project save persists successful copies while keeping a failed asset linked externally",
@@ -334,7 +366,7 @@ TEST_CASE("project save persists successful copies while keeping a failed asset 
     check_save(saved.copy_errors.front().code == failure_code_t::unavailable);
     check_save(saved.copied_files.size() == 1);
     const auto reopened = fixture.reopen();
-    check_save(reopened.audio_assets.front().source_path == "assets/6-music.ogg");
+    check_save(reopened.audio_assets.front().source_path == "assets/music.ogg");
     check_save(reopened.visual_assets.front().source_path == missing);
     check_save(saved.status_message().find(missing.string()) != std::string::npos);
 }

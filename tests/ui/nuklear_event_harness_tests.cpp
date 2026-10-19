@@ -4836,6 +4836,43 @@ TEST_CASE("Mixed move conflict status describes the whole selection", "[frontend
     expect_lane_key(fixture.harness.drawn_text().find("Selected objects cannot move here") != std::string::npos);
 }
 
+TEST_CASE("Idle Compose hint names BGM movement for the active chart family",
+          "[frontend-state][event-harness][status-hint]") {
+    const auto bms = GENERATE(false, true);
+    const auto bmson = GENERATE(false, true);
+    if (bms && bmson) return;
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view().compose;
+    view.bms_measure_labels = bms;
+    view.bmson_tools_available = bmson;
+    (void)harness.frame();
+    const auto text = harness.drawn_text();
+    const auto expected = bms ? "drag BMS BGM to move"
+        : bmson ? "drag BMSON BGM to move" : "drag BGM to move";
+    CHECK(text.find(expected) != std::string::npos);
+}
+
+TEST_CASE("Compose move and paste hints keep priority over the idle BGM hint",
+          "[frontend-state][event-harness][status-hint]") {
+    const auto priority = GENERATE(0, 1, 2);
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view().compose;
+    view.bms_measure_labels = true;
+    view.paste_active = true;
+    view.paste_valid = true;
+    if (priority == 0) view.move_to_bgm_count = 2;
+    if (priority == 1) {
+        view.move_conflict_count = 1;
+        view.selected_bgm_event_count = 1;
+    }
+    (void)harness.frame();
+    const auto text = harness.drawn_text();
+    const auto expected = priority == 0 ? "2 notes will move to BGM"
+        : priority == 1 ? "Selected objects cannot move here"
+                        : "Paste preview · click or Enter commits · Esc cancels";
+    CHECK(text.find(expected) != std::string::npos);
+}
+
 TEST_CASE("Area menu loops a committed selection and rejects virtual or unavailable audio", "[frontend-state][event-harness][loop-selection]") {
     const bool virtual_range = GENERATE(false, true);
     const bool output_available = GENERATE(false, true);

@@ -396,7 +396,7 @@ TEST_CASE("resource copy links a real successful copy and canceled fallback rema
     require_resource_notification(entries.size() == 2);
     expect_notification(entries[0], notification_severity_t::success, notification_source_t::import_, *completed);
     check_resource_notification(fixture.history.document.audio_assets[0].source_path ==
-                                "assets/1-source.wav");
+                                "assets/source.wav");
     check_resource_notification(fixture.history.undo.size() == 1);
     require_resource_notification(static_cast<bool>(fixture.resource_copy.start(
         {.target = {.asset = asset_id_t{1},
@@ -538,7 +538,6 @@ TEST_CASE("Music export publishes its chart and automatic asset together", "[uni
     INFO(result.message);
     REQUIRE(result.published);
     REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/song.osu"));
-    const project_asset_copy_request_t copy{.source_path = fixture.source,
-        .asset = song->audio_assets.front().id};
-    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/assets" / copy.destination_filename()));
+    REQUIRE(std::filesystem::is_regular_file(fixture.root / "exports/assets" /
+                                             fixture.source.filename()));
 }

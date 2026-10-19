@@ -45,6 +45,13 @@ auto prepare_output_assets(const output_group_export_request_t& input,
             return staged.asset == copy.asset;
         });
     });
+    if (!pending->empty() && pending->front().planned_filename.empty()) {
+        const auto directory = export_asset_directory(input.plan.group.relative_output_path);
+        if (!directory) return std::unexpected("Export asset directory is invalid.");
+        auto planned = plan_project_asset_copies(*pending, *directory, stop);
+        if (!planned) return std::unexpected(planned.error().message);
+        *pending = std::move(*planned);
+    }
     for (const auto& copy : *pending)
         request.staged_assets.push_back({copy.asset, std::filesystem::path{"assets"} / copy.destination_filename()});
     return pending;

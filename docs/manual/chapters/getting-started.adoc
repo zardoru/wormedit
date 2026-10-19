@@ -89,8 +89,10 @@ end of the toolbar).
 
 === Song audio
 
-The song's main audio is set on the *Metadata* tab (kbd:[F2]): drop the file onto its audio field.
-Once the project is saved, Wormedit copies the file into the project's assets.
+The song's main audio is set on the *Metadata* tab (kbd:[F2]): drop the file onto its audio field,
+expand *Audio and export*, then click *Use as song audio*. Saving copies linked audio outside the
+project directory into *assets/* and relinks it; a failed copy keeps the original link and reports
+the file.
 
 TIP: With no project open, dropping an MP3 or Ogg file onto the window offers to start a new
 project from it: the same wizard opens, titled *Import audio as a new project?*, and the file

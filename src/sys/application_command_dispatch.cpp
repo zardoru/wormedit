@@ -41,24 +41,43 @@ void reset_application_project_edit_state(application_command_state_t& current) 
     current.project = {};
 }
 
+auto application_command_disabled_by_timing_focus(application_command_kind_t kind) noexcept
+    -> bool {
+    using kind_t = application_command_kind_t;
+    switch (kind) {
+    case kind_t::edit_tool_draw:
+    case kind_t::edit_tool_layer:
+    case kind_t::edit_toggle_quantize_preview:
+    case kind_t::edit_apply_quantize:
+    case kind_t::view_open_layers:
+    case kind_t::semantic_layer_create:
+    case kind_t::view_toggle_sounds:
+        return true;
+    default:
+        return false;
+    }
+}
+
+void apply_timing_focus_command_policy(command_registry_t& registry,
+                                       bool compose_notes_editable) {
+    if (compose_notes_editable) return;
+    for (const auto& command : registry.commands) {
+        const auto parsed = parse_application_command(command.definition.id.value);
+        if (!parsed || !application_command_disabled_by_timing_focus(parsed->kind)) continue;
+        (void)update_command_state(registry, command.definition.id, false,
+                                   command.definition.checked);
+    }
+}
+
 namespace {
 
 auto timing_focus_command_refusal(application_command_t command,
                                   const application_command_state_t& state)
     -> std::optional<std::string_view> {
-    if (wormedit::ui::compose_notes_editable(compose_mode_of(state))) return std::nullopt;
-    switch (command.kind) {
-    case application_command_kind_t::edit_tool_draw:
-    case application_command_kind_t::edit_tool_layer:
-    case application_command_kind_t::edit_toggle_quantize_preview:
-    case application_command_kind_t::edit_apply_quantize:
-    case application_command_kind_t::view_open_layers:
-    case application_command_kind_t::semantic_layer_create:
-    case application_command_kind_t::view_toggle_sounds:
-        return "Timing focus is on: press F4 to edit notes.";
-    default:
+    if (wormedit::ui::compose_notes_editable(compose_mode_of(state)) ||
+        !application_command_disabled_by_timing_focus(command.kind))
         return std::nullopt;
-    }
+    return "Timing focus is on: press F4 to edit notes.";
 }
 
 void remember_snap_denominator(application_command_state_t& state, wormedit::chart_id_t chart,

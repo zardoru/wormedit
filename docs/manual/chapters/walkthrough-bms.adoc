@@ -2,21 +2,24 @@
 = Walkthrough: a keysounded BMS chart
 
 This chapter makes a BME 7K chart from nothing: a new project, its sounds, timing, notes placed
-the Wormedit way, material brought in from iBMSC or BMSE, and the exported `.bme` file.
+the Wormedit way, material brought in from iBMSC or BMSE, and a published `.bme` file with its
+referenced sounds.
 
 == 1. Create the project
 
 Press kbd:[Ctrl+N], choose *BME 7K (outside scratch)* (the *inside scratch* variant draws the
-scratch lane on the other side of the keys), and click *Create project*. The project starts with one chart and
-a *BMS* output group.
+scratch lane on the other side of the keys), and click *Create project*. The project starts with
+one BMS-family chart and a *BMS* output group. Its BMS measure labels, WAV IDs, BMS slots and BGM
+column controls are available from the start.
 
 Lane keys for BME 7K are kbd:[1] to kbd:[8] on the number row, left to right; with the scratch
 outside, kbd:[1] is the scratch lane.
 
 == 2. Fill in the song details
 
-Open *Metadata* (kbd:[F2]) and fill in the title, artist and genre. Each chart's author and
-rating are set on the *Project* tab (kbd:[F1]).
+Open *Metadata* (kbd:[F2]). Enter the title and artist in *Song*, then click *Apply*. In *Format
+fields* → *BMS fields*, enter *GENRE* and its value, then click *Add* (or *Apply* when editing an
+existing value). Each chart's author and rating are set on the *Project* tab (kbd:[F1]).
 
 == 3. Import the keysounds
 
@@ -33,7 +36,8 @@ fills the numbered slots directly.
 The BPM lane is the first timing lane at the left of the canvas, and the chart's starting BPM sits
 at its bottom. Double-click a BPM marker to type a new value. Double-click an empty row of the lane
 to add a BPM change there. In Timing focus (kbd:[F3]), kbd:[Ctrl]-click an empty row adds one with
-the current BPM.
+the current BPM. Lock timing with kbd:[Ctrl+Shift+T] once it is right; Timing focus then refuses
+timing edits until you unlock it.
 
 == 5. Chart the Wormedit way
 
@@ -54,8 +58,8 @@ switch to Wormedit and press kbd:[Ctrl+V]: the notes appear as a paste preview t
 pointer. Click or press kbd:[Enter] to place them, kbd:[Escape] to cancel. The whole paste is one
 Undo step.
 
-.Notes copied in iBMSC, previewed before placing (captured at {shot-paste-ibmsc-revision})
-image::paste-ibmsc.png[Paste preview of four keys in a staircase and one BGM event, with the status Pasting BMS editor data]
+.Mines copied in iBMSC, previewed before placing (captured at {shot-paste-ibmsc-revision})
+image::paste-ibmsc.png[Paste preview of four resource-free mines in a staircase, with the status Pasting BMS editor data]
 
 Any tool that writes the same text works too: keysound generators, MIDI or pattern converters,
 and scripts that print BMSE or iBMSC clipboard data can feed Wormedit directly through the system
@@ -83,13 +87,14 @@ Accepted formats:
 What to know:
 
 * *Sounds are matched by number.* A note copied with sound `01` uses this project's sound with
-BMS ID `01`. If a number has no sound, nothing is pasted and the message says which.
+BMS ID `01`. If a number has no sound, nothing is pasted and the message reports a missing WAV
+identity.
 * *BGM needs columns.* Add at least as many BGM columns as the copied data uses before pasting.
 * *Positions are exact.* Rows that BMSE and iBMSC store as decimals are recovered as exact
 fractions; long notes keep their exact length.
-* *Wormedit's own clipboard comes first until you copy elsewhere.* If you copy in Wormedit after
-copying in another editor, kbd:[Ctrl+V] pastes Wormedit's copy. Copying again in the other editor
-makes its data the next paste.
+* *Wormedit's own clipboard comes first while the system clipboard text is unchanged.* If you copy
+in Wormedit after copying in another editor, kbd:[Ctrl+V] pastes Wormedit's copy. Copying identical
+text again in the other editor does not change that priority; different system clipboard text does.
 * Paste into measures the chart already has; the empty space past the last measure of a BMS chart
 cannot take a paste yet.
 
@@ -101,9 +106,15 @@ reason and changes nothing.
 
 . Press kbd:[Ctrl+S] and choose where to save the `.wormedit` project. Exporting needs a saved
 project.
-. Open *Project* (kbd:[F1]). Under *Groups*, the *BMS* output group lists the chart. Click *Edit*
-to set its *Output path*, relative to the project: a file name such as `song/normal.bme`, or a
-folder when the group holds several charts.
-. Click *Export…*. *Preview* shows what the export will write first. *Publish this group without
-replacing existing chart files* keeps files that are already there. Wormedit reports what it
-published in the notifications (kbd:[Ctrl+Shift+M]).
+. If an imported sound is linked outside the project, saving copies it into the project's `assets/`
+folder and relinks it. If a copy fails, the original link stays in place and Wormedit reports the
+failure.
+. Open *Project* (kbd:[F1]). Under *Output groups*, click *Edit* on the *BMS* group, set its
+project-relative *Output path* (for example `song/normal.bme`), then click *Save group*.
+. Click *Preview* for the conversion file and warning counts. Preview does not check whether the
+publication destination already exists.
+. Click *Export…*, select *BMS*, leave *Replace existing chart files* unchecked to refuse
+overwriting, and click *Export group*. The row's *Export* action publishes directly and also
+refuses to replace existing chart files. Referenced keysounds are copied beside the chart under
+`assets/`; when a filename conflicts, the copied filename gets the asset ID as a prefix. Read the
+completion or refusal in notifications (kbd:[Ctrl+Shift+M]).

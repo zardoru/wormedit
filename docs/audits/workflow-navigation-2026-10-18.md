@@ -11,9 +11,10 @@ payloads internally, or reconstruct execution outcomes from presentation feedbac
 Improve those seams before reorganizing directories. File length is a useful place
 to investigate, but does not establish that a file needs splitting.
 
-This is a proposed sequence, not authorization to execute pending cards. Existing
-card statuses and the resume queue remain unchanged. Source references below use
-paths and symbols so searches survive later line movement.
+The review sequence and the decision to run the user-facing walkthrough first were accepted by the
+owner on 2026-10-18, as recorded below. Execution remains card-gated: the walkthrough blockers and
+their integration follow-ups finish before T-658 establishes the navigation reference and baseline
+measurement. Source references below use paths and symbols so searches survive later line movement.
 
 ## Scope and evidence
 

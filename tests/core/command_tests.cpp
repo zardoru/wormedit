@@ -8,6 +8,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <algorithm>
+#include <array>
 #include <limits>
 #include <memory>
 #include <ranges>
@@ -22,6 +23,41 @@ static_assert(std::is_aggregate_v<chart_stamp_t>);
 static_assert(!std::is_aggregate_v<document_command_transaction_t>);
 
 namespace {
+
+struct contract_limits_t {
+    std::size_t maximum{1};
+};
+
+struct contract_operation_t : chart_edit_context_t<contract_limits_t> {
+    static constexpr std::string_view invalid_limits_message = "cap must be positive";
+    static constexpr std::string_view unknown_chart_message = "unknown chart";
+    static auto has_valid_limits(const contract_limits_t& limits) -> bool {
+        return limits.maximum != 0;
+    }
+    template <class Edit> auto event_caps(const chart_document_t& chart, const Edit&) const {
+        return std::array{chart_event_cap_t{chart.bpms.size(), limits.maximum, "over cap"}};
+    }
+    template <class Edit> void operator()(chart_document_t&, const Edit&) {}
+};
+
+struct contract_missing_edit_t : contract_operation_t {
+    using contract_operation_t::operator();
+    void operator()(chart_document_t&, const delete_edit_t<bpm_edit_value_t>&) = delete;
+};
+
+struct contract_bad_prepare_t : contract_operation_t {
+    void prepare(chart_document_t&) {}
+};
+
+struct contract_bad_effect_t : contract_operation_t {
+    template <class Edit> auto operator()(chart_document_t&, const Edit&) -> int { return 0; }
+};
+
+static_assert(chart_edit_operation<contract_operation_t, bpm_edit_action_t, contract_limits_t>);
+static_assert(!chart_edit_operation<contract_operation_t, bpm_edit_action_t, bpm_edit_limits_t>);
+static_assert(!chart_edit_operation<contract_missing_edit_t, bpm_edit_action_t, contract_limits_t>);
+static_assert(!chart_edit_operation<contract_bad_prepare_t, bpm_edit_action_t, contract_limits_t>);
+static_assert(!chart_edit_operation<contract_bad_effect_t, bpm_edit_action_t, contract_limits_t>);
 
 auto make_song(std::uint64_t row = 130) -> song_document_t {
     song_document_t song{

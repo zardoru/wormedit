@@ -10,9 +10,14 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-658 Write down the names and paths a cross-layer feature has to find
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Status:** ready (T-716 completed 2026-10-19)
 - **Value:** High for little cost: it is documentation only, and it removes most of the search time the measure lane spent.
-- **Outcome:** `docs/architecture.md` has a glossary mapping each concept to its name per layer, and "Where to look" rows for area selection and paste; `docs/frontend-event-harness.md` describes the pointer press → candidate → release → click sequence; `AGENTS.md` says how to build in parallel; `docs/chart-editor-plan/tasks.md` asks card authors to map the nearest existing feature before listing **Files owned**.
+- **Outcome:** `docs/architecture.md` has a compact feature-to-owner index naming public entry,
+  capability, workflow/session owner, core operation, completion and regression home for paste,
+  quantize, note/BGM conversion and measure editing; its glossary maps each concept to its name per
+  layer. `docs/frontend-event-harness.md` describes the pointer press → candidate → release → click
+  sequence; `AGENTS.md` says how to build in parallel; `docs/chart-editor-plan/tasks.md` asks card
+  authors to map the nearest existing feature before listing **Files owned**.
 - **Read first:** `docs/architecture.md`, `docs/frontend-event-harness.md`, `AGENTS.md`, the retrospective's observations 1, 3, 4, 7 and 15.
 - **Files owned:** `docs/architecture.md`, `docs/frontend-event-harness.md`, `AGENTS.md`, `docs/chart-editor-plan/tasks.md`, `docs/chart-editor-plan/decisions/code-style.md`, this card.
 - **Steps:**
@@ -24,6 +29,9 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
   6. `tasks.md` rules: before writing **Files owned**, grep how the nearest existing feature is wired (for a lane: the BGA lane and timing markers) and list those files.
   7. `code-style.md`: a frontend view of an object the user can select or edit carries the object's ID; display numbers are not keys (see the proposed addition on T-653).
   8. "Adding an X" recipes in `docs/architecture.md`, each a short list of every touchpoint with file and symbol: a selection object kind, a Compose action, a toolbar button, a Compose view field (written the C++ way under `code-style.md` "Frontend boundary", from T-672's worked example; the old C-struct path described only for touching existing fields), a selectable canvas lane. Write each by tracing a recent real addition (`bar_line`, `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE`, the measure-lane toggles and lane). Where a recipe step could instead be a compile error, note it for T-661/T-669 rather than relying on the recipe.
+  9. Record the four fixed navigation exercise prompts from the workflow-navigation audit beside
+     the index. The baseline runs after this card and before the quantize pilot, with identical
+     model, effort, tools and starting context for the post-pilot comparison.
 - **Invariants:** No code change. Every symbol named in the docs exists (grep each).
 - **Reject/failure behavior:** A claim the code contradicts is corrected or dropped, not written.
 - **Verify:** `ctest --test-dir build -R '^documentation\.' --output-on-failure`; grep every symbol the new text names.

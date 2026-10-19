@@ -3136,6 +3136,12 @@ static auto compose_move_status_hint(const WormUiComposeView* view) -> const cha
     return message.c_str();
 }
 
+static auto compose_idle_bgm_move_hint(const WormUiComposeView& view) -> const char* {
+    if (view.bms_measure_labels) return "drag BMS BGM to move";
+    if (view.bmson_tools_available) return "drag BMSON BGM to move";
+    return "drag BGM to move";
+}
+
 auto compose_editor_status_hint(const WormUiComposeView* view, const WormUiTimingView* timing_view)
     -> const char* {
     if (const auto* conflict = compose_move_status_hint(view))
@@ -3170,7 +3176,10 @@ auto compose_editor_status_hint(const WormUiComposeView* view, const WormUiTimin
         return "";
     if (view->waveform_overview_row_count != 0 && !view->waveform_timing_locked)
         return "Drag beat squares in rail to fit BPM · Shift+drag to shift offset · drag beat zero in song overview";
-    return "↑/↓ move · drag selects/moves · Alt-drag hold · drag BMSON BGM to move";
+    static std::string message;
+    message = "↑/↓ move · drag selects/moves · Alt-drag hold · ";
+    message += compose_idle_bgm_move_hint(*view);
+    return message.c_str();
 }
 
 static auto compose_notes_require_direct(const WormUiComposeView& view) -> bool {

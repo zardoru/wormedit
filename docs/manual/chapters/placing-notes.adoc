@@ -80,8 +80,8 @@ image::keyboard-hold.png[A hold three beats long on lane 4 with sound 01]
 The note-kind palette in the toolbar arms what new notes become (*Options › Show note-kind
 palette* hides it). Shortcuts arm the special
 kinds directly: kbd:[Alt+4] mine, kbd:[Alt+5] invisible, kbd:[Alt+6] lift, kbd:[Alt+7] fake,
-kbd:[Alt+8] roll. Only the kinds the chart's format supports are available; choosing one the format
-cannot store falls back to a tap.
+kbd:[Alt+8] roll. Kinds the chart's format cannot store are disabled; an explicit unsupported
+request is refused.
 
 == Moving, copying and deleting
 

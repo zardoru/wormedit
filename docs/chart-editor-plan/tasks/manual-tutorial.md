@@ -62,9 +62,20 @@ scripts so they can be regenerated after UI changes, never by hand.
 - **Status:** partial (2026-10-18)
 - **Done so far:** chapters the-wormedit-way, getting-started, navigating, placing-notes (with Alt-drag lengthening), sounds-and-layers, measures (bar lines as objects in the measure lane; owner emphasis 2026-10-18 on lengthening, page keys with Tab acceleration and bar-line editing); keyboard reference generated from the command registry by `wormedit-manual-reference` (`documentation.manual_reference` keeps it current), with a hand-written table of non-command keys. Gestures were checked against the code, and the keyboard loop, keyboard hold and paste in isolated Xvfb.
 - **Remaining:** step 4 (a reader unfamiliar with Wormedit follows the chapters); screenshots of the Select/Layer tools, the Layers dock and the sound import review.
-- **Outcome:** the Getting started and Compose basics chapters let a new user create a project, import a chart, place, select and move notes, change snaps, and play back, using only the manual. Every screenshot comes from `shots.txt`.
+- **Outcome:** the Getting started and Compose basics chapters let a new user create a project,
+  import a chart, place, select and move notes, change snaps, and play back, using only the manual.
+  Every screenshot has a matching reproducible script in `docs/manual/shots/`.
 - **Read first:** `docs/manual/README.md`, the task cards for the features described (Draw tool, quantize, docks), `docs/chart-editor-plan/editing/interactions.md`.
-- **Files owned:** `docs/manual/getting-started.md`, `docs/manual/compose-basics.md`, `docs/manual/keyboard.md`, `docs/manual/shots.txt`, `docs/manual/images/`, this card.
+- **Files owned:** `docs/manual/chapters/the-wormedit-way.adoc`,
+  `docs/manual/chapters/getting-started.adoc`, `docs/manual/chapters/navigating.adoc`,
+  `docs/manual/chapters/placing-notes.adoc`, `docs/manual/chapters/sounds-and-layers.adoc`,
+  `docs/manual/chapters/measures.adoc`, `docs/manual/chapters/keyboard-reference.adoc`, new
+  `docs/manual/shots/select-layer-tools.sh`, new `docs/manual/shots/layers-dock.sh`, new
+  `docs/manual/shots/sound-import-review.sh`, new `docs/manual/images/select-layer-tools.png`, new
+  `docs/manual/images/layers-dock.png`, new `docs/manual/images/sound-import-review.png`,
+  `docs/manual/images/revisions.adoc`, this card.
+- **Coordination:** while T-716 is active, T-716 exclusively owns its listed corrections to the
+  overlapping chapters. T-432 retains only its reader trial and three missing captures.
 - **Steps:**
   1. Check each documented gesture in the event harness or the real window before describing it. Record anything that differs on this card, rather than documenting the bug.
   2. Write task-oriented sections ("Place notes", "Move notes"), each with a screenshot and its shortcuts.
@@ -81,9 +92,19 @@ scripts so they can be regenerated after UI changes, never by hand.
 - **Done so far:** the BMS walkthrough (with BMSE/iBMSC paste, wired in T-700) and the osu!mania/StepMania walkthrough.
 - **Done so far (2026-10-18, owner's second pass):** timing chapter (lanes, inline editing, Timing focus, tap tempo, beat fitting, offset, lock, the area menu's stop/delay conversion and SV recipes); command palette chapter; importing into specific BMS slots; Ctrl+M toggling (T-701); wide-layout lane keys (T-702) in the generated layout table. Twelve shots captured at `f1dad8d`.
 - **Remaining:** Troubleshooting from notification texts, "try it" exercises, and walkthrough screenshots of the Project tab output groups and export.
-- **Outcome:** the remaining chapters are written: Keysounding BMS charts (Sounds dock, groups, armed sounds with lane keys, move-and-deselect, Move to BGM, select same sound), osu!mania and hitsounds, Timing, Exporting and converting, and Troubleshooting. Each one ends with a short "try it" exercise on a bundled fixture.
+- **Outcome:** both walkthroughs end with a short "try it" exercise on a bundled fixture;
+  Troubleshooting maps the actual notification text to a recovery step; and the Project output-group
+  capture shows Preview and Export where the walkthrough tells the reader to use them.
 - **Read first:** `docs/manual/README.md`, [BMS editing cards](bms-editing.md), the export cards, and the timing cards.
-- **Files owned:** `docs/manual/keysounding.md`, `docs/manual/osu-mania.md`, `docs/manual/timing.md`, `docs/manual/export.md`, `docs/manual/troubleshooting.md`, `docs/manual/shots.txt`, `docs/manual/images/`, this card.
+- **Files owned:** `docs/manual/chapters/walkthrough-bms.adoc`,
+  `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, `docs/manual/chapters/timing.adoc`,
+  new `docs/manual/chapters/troubleshooting.adoc`, new
+  `docs/manual/shots/project-output-groups.sh`, new
+  `docs/manual/images/project-output-groups.png`, `docs/manual/images/revisions.adoc`, this card.
+- **Coordination:** while T-716 is active, T-716 exclusively owns its listed corrections to the
+  three overlapping chapters. T-433 retains only Troubleshooting, the exercises and the missing
+  Project output-group capture. T-432, T-433 and T-716 run their captures serially because each
+  regenerates `docs/manual/images/revisions.adoc`.
 - **Steps:**
   1. Check each workflow in the real window before writing it up.
   2. Add the shots and generate the captures.

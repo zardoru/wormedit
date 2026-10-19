@@ -80,13 +80,15 @@ and every click goes to the timing lanes. Press kbd:[F4] to return to ordinary C
 
 Run *Tap Timing* from the command menu. Start playback and press kbd:[T] (or kbd:[Space]) on every
 beat. After four taps an estimate appears; keep tapping until it settles, pick how to round it
-(*Round to*), and click *Apply BPM*. The song needs a music track, and timing must be unlocked.
+(*Round to*), and click *Apply BPM*. Applying changes both the initial BPM and the song's audio
+offset to match the tapped downbeat; later BPM changes keep their musical positions. The song needs
+a music track, and timing must be unlocked.
 
 === Beat fitting
 
-With the song's waveform shown, drag a beat line of the grid onto the matching hit in the waveform.
-The tempo between the previous BPM change (or anchor) and that beat stretches so the line lands
-where you drop it; release to commit.
+With the song's waveform shown in Timing focus, drag a beat line from the narrow rail immediately
+left of the timing lanes onto the matching hit in the waveform. The tempo between the previous BPM
+change (or anchor) and that beat stretches so the line lands where you drop it; release to commit.
 
 * Hold kbd:[Ctrl] while dragging to snap the BPM to the step chosen with the *BPM snap* buttons
 (0.1, 0.25, 0.33, 0.5, 0.75 or 1 BPM); kbd:[Ctrl] + wheel changes the step mid-drag.
@@ -103,9 +105,10 @@ nudge it by one audio frame or by 10 ms; the lock button stops it from changing 
 
 == Locking timing
 
-kbd:[Ctrl+Shift+T] (*Toggle Timing Lock*) locks every timing event: nothing can create, delete,
-drag, paste or quantize them until you unlock it, whichever tool or shortcut tries. Lock timing as
-soon as it is right.
+kbd:[Ctrl+Shift+T] (*Toggle Timing Lock*) is available in Timing focus (kbd:[F3]) and locks every
+timing event: nothing can create, delete, drag, paste or quantize them until you unlock it,
+whichever tool or shortcut tries. The lock stays active after returning to Compose with kbd:[F4].
+Lock timing as soon as it is right.
 
 [#area-menu]
 == The area menu

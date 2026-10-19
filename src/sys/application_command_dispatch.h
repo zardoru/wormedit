@@ -21,6 +21,13 @@ struct notification_history_runtime_t;
 // Clear chart-specific state while retaining application services and user settings.
 void reset_application_project_edit_state(application_command_state_t& state);
 
+// The command-kind owner defines which application commands require editable
+// Compose notes. Registry state and refusal feedback share this policy.
+[[nodiscard]] auto application_command_disabled_by_timing_focus(
+    application_command_kind_t kind) noexcept -> bool;
+void apply_timing_focus_command_policy(command_registry_t& registry,
+                                       bool compose_notes_editable);
+
 auto unavailable_application_command_message(const command_registry_t& registry,
     const std::optional<command_id_t>& id, const application_command_state_t& state) -> std::string;
 

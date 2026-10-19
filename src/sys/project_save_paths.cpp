@@ -135,6 +135,11 @@ auto project_portability_notice_t::update(const song_document_t& document,
     return warn;
 }
 
+auto project_portability_notice_t::warning_message() noexcept -> std::string_view {
+    return "Some assets are linked outside the project folder. Save or Save As copies them into "
+           "assets/ and relinks the project. If a copy fails, the original link is retained.";
+}
+
 void rebase_project_paths(song_document_t& document,
                           const std::filesystem::path& old_base,
                           const std::filesystem::path& new_base) {

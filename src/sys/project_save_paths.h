@@ -8,6 +8,7 @@
 #include <optional>
 #include <map>
 #include <stop_token>
+#include <string_view>
 
 namespace wormedit::sys {
 
@@ -16,6 +17,7 @@ namespace wormedit::sys {
 // Scan once per revision; warn on a new project or a transition to external assets.
 class project_portability_notice_t {
   public:
+    [[nodiscard]] static auto warning_message() noexcept -> std::string_view;
     [[nodiscard]] auto update(const song_document_t& document, std::uint64_t session_generation) -> bool;
   private:
     std::optional<std::uint64_t> revision_;

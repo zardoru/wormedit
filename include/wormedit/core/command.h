@@ -293,6 +293,55 @@ struct chart_event_cap_t {
     auto operator==(const chart_event_cap_t&) const -> bool = default;
 };
 
+// One typed chart edit handled by an operation, as document_command_transaction_t::stage
+// runs it: current-size caps first, then the edit. A void edit records its effect in the
+// operation's context; otherwise it returns one with changed and command_label.
+template <class Operation, class Edit>
+concept chart_edit_handler_for =
+    requires(Operation& operation, chart_document_t& chart, const Edit& edit) {
+        { edit.chart } -> std::convertible_to<chart_id_t>;
+        { operation.event_caps(chart, edit) } -> std::ranges::input_range;
+        requires std::same_as<std::ranges::range_value_t<decltype(operation.event_caps(chart, edit))>,
+                              chart_event_cap_t>;
+        operation(chart, edit);
+        requires std::is_void_v<decltype(operation(chart, edit))> || requires {
+            { operation(chart, edit).changed } -> std::convertible_to<bool>;
+            operation(chart, edit).command_label;
+        };
+    };
+
+template <class Operation, class Action> inline constexpr bool handles_every_chart_edit_v = false;
+template <class Operation, class... Edits>
+inline constexpr bool handles_every_chart_edit_v<Operation, std::variant<Edits...>> =
+    (chart_edit_handler_for<Operation, Edits> && ...);
+
+// The contract for transaction.stage<Operation>/execute<Operation>(action, limits). The
+// transaction owns limit rejection, chart lookup, cap checks and completion; the operation
+// owns its domain validation, mutation and effect. Optional hooks, checked when declared:
+//   static constexpr bool requires_unique_chart  reject charts whose ID appears twice
+//   bool prepare(chart_document_t&)                 domain setup after the cap checks
+//   bool postvalidate(chart_document_t&, song_document_t&)  after a changed edit
+template <class Operation, class Action, class Limits>
+concept chart_edit_operation =
+    std::derived_from<Operation, chart_edit_context_t<Limits>> &&
+    requires(const Limits& limits) {
+        { Operation::has_valid_limits(limits) } -> std::convertible_to<bool>;
+        { Operation::invalid_limits_message } -> std::convertible_to<std::string_view>;
+        { Operation::unknown_chart_message } -> std::convertible_to<std::string_view>;
+    } &&
+    handles_every_chart_edit_v<Operation, Action> &&
+    (!requires { Operation::requires_unique_chart; } ||
+     std::same_as<std::remove_cv_t<decltype(Operation::requires_unique_chart)>, bool>) &&
+    (!requires(Operation& operation, chart_document_t& chart) { operation.prepare(chart); } ||
+     requires(Operation& operation, chart_document_t& chart) {
+         { operation.prepare(chart) } -> std::convertible_to<bool>;
+     }) &&
+    (!requires(Operation& operation, chart_document_t& chart, song_document_t& document) {
+        operation.postvalidate(chart, document);
+    } || requires(Operation& operation, chart_document_t& chart, song_document_t& document) {
+        { operation.postvalidate(chart, document) } -> std::convertible_to<bool>;
+    });
+
 // A synchronous command owns its working document only after the first edit.
 // Stamped construction creates a rejected transaction when the capture is stale.
 class document_command_transaction_t {
@@ -364,7 +413,31 @@ class document_command_transaction_t {
         });
     }
 
-    // Native typed edits use the same chart-resolution/staging boundary as composite edits.
+    template <class Operation, class Action, class Limits>
+        requires chart_edit_operation<Operation, Action, Limits>
+    [[nodiscard]] auto stage(const Action& action, const Limits& limits)
+        -> attempt_t<document_edit_effect_t> {
+        if (!is_ready())
+            return {.diagnostics = outcome_.diagnostics};
+        if (!Operation::has_valid_limits(limits)) {
+            wormedit::reject(outcome_, diagnostic_code_t::invalid_resolution,
+                             std::string(Operation::invalid_limits_message));
+            finished_ = true;
+            return {.diagnostics = outcome_.diagnostics};
+        }
+        return std::visit(edit_execution_t<Operation, Limits>{*this, limits}, action);
+    }
+
+    template <class Operation, class Action, class Limits>
+        requires chart_edit_operation<Operation, Action, Limits>
+    [[nodiscard]] auto execute(const Action& action, const Limits& limits)
+        -> document_command_result_t {
+        return finish_execution(stage<Operation>(action, limits));
+    }
+
+  private:
+    // The std::visit visitor behind stage<Operation>: one call per edit alternative, through
+    // the same chart-resolution/staging boundary as composite edits.
     template <class Operation, class Limits> struct edit_execution_t {
         document_command_transaction_t& transaction;
         const Limits& limits;
@@ -406,27 +479,6 @@ class document_command_transaction_t {
         }
     };
 
-    template <class Operation, class Action, class Limits>
-    [[nodiscard]] auto stage(const Action& action, const Limits& limits)
-        -> attempt_t<document_edit_effect_t> {
-        if (!is_ready())
-            return {.diagnostics = outcome_.diagnostics};
-        if (!Operation::has_valid_limits(limits)) {
-            wormedit::reject(outcome_, diagnostic_code_t::invalid_resolution,
-                             std::string(Operation::invalid_limits_message));
-            finished_ = true;
-            return {.diagnostics = outcome_.diagnostics};
-        }
-        return std::visit(edit_execution_t<Operation, Limits>{*this, limits}, action);
-    }
-
-    template <class Operation, class Action, class Limits>
-    [[nodiscard]] auto execute(const Action& action, const Limits& limits)
-        -> document_command_result_t {
-        return finish_execution(stage<Operation>(action, limits));
-    }
-
-  private:
     template <class Operation, class Effect>
     [[nodiscard]] auto stage_effect(Operation& operation, Effect&& effect, chart_document_t& chart,
                                     song_document_t& document)

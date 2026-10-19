@@ -24,6 +24,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <set>
 #include <source_location>
 
 namespace {
@@ -754,17 +755,46 @@ TEST_CASE("BMS walkthrough packages declared sounds and images and names missing
     const auto root = std::filesystem::temp_directory_path() / "wormedit-bms-packaging-walkthrough";
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
+    const auto alternate_directory = root / "alternate";
+    std::filesystem::create_directories(alternate_directory);
+    const auto original_sound = flow.history.document.audio_assets.front().source_path;
+    const auto same_basename_sound = alternate_directory / original_sound.filename();
+    std::ofstream(same_basename_sound, std::ios::binary) << "different sound bytes";
+    flow.history.document.audio_assets.push_back(
+        {.id = asset_id_t{600}, .source_path = same_basename_sound});
+    flow.history.document.resources.push_back({.id = resource_id_t{601}, .name = "alternate.wav",
+        .asset = asset_id_t{600}});
     output_group_export_request_t request{.document = flow.history.document,
         .plan = output_group_export_plan_t::from(flow.history.document, group), .asset_base = root};
+    const auto prepared = output_group_export_preparation_t::from(request);
+    require_step(prepared);
+    check_step(prepared->pending_assets.size() == 3);
+    std::set<std::filesystem::path> preview_paths;
+    for (const auto& copy : prepared->pending_assets) {
+        check_step(preview_paths.insert(copy.destination_filename()).second);
+        const auto mapping = std::ranges::find(prepared->request.staged_assets, copy.asset,
+                                               &conversion_request_t::staged_asset_t::asset);
+        require_step(mapping != prepared->request.staged_assets.end());
+        check_step(mapping->relative_path == std::filesystem::path{"assets"} /
+                                                 copy.destination_filename());
+    }
+    const auto source_name = original_sound.filename();
+    check_step(preview_paths.contains(source_name));
+    check_step(preview_paths.contains(std::filesystem::path{"600-" + source_name.string()}));
     const auto exported = run_output_group_export(request, {});
     INFO(exported.message);
     require_step(exported.published);
     for (const auto& asset : request.document.audio_assets) {
-        const project_asset_copy_request_t copy{.source_path = asset.source_path, .asset = asset.id};
-        check_step(read_file(root / "song/assets" / copy.destination_filename()) == read_file(asset.source_path));
+        const auto copied = root / "song/assets" /
+            (asset.id == asset_id_t{600}
+                 ? std::filesystem::path{"600-" + asset.source_path.filename().string()}
+                 : asset.source_path.filename());
+        check_step(read_file(copied) == read_file(asset.source_path));
     }
-    const project_asset_copy_request_t image_copy{.source_path = image, .asset = asset_id_t{500}};
-    check_step(read_file(root / "song/assets" / image_copy.destination_filename()) == read_file(image));
+    check_step(read_file(root / "song/assets" / image.filename()) == read_file(image));
+    for (const auto& copy : prepared->pending_assets)
+        check_step(std::filesystem::is_regular_file(root / "song/assets" /
+                                                    copy.destination_filename()));
     std::filesystem::remove_all(root / "song");
     request.document.visual_assets.front().source_path = "/missing/walkthrough-background.png";
     const auto missing = run_output_group_export(request, {});

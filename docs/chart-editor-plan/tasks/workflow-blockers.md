@@ -8,11 +8,12 @@ author cannot complete. Owner (2026-10-18): "We should really deal with those wo
 "Saving… kinda should copy it." These cards come before the navigation refactors in
 [the workflow navigation audit](../../audits/workflow-navigation-2026-10-18.md).
 
-Every card proves its fix from a **new project**, through the production path, extending the
-walkthrough tests in `tests/ui/walkthrough_{bms,osu-stepmania}_event_harness_tests.cpp`; the
-coordinator confirms user-visible results in isolated Xvfb. Lanes: T-707 and T-715 (project and
-save); T-708, T-709, T-712, T-713, T-714 (export, in that order); T-710, T-711 and T-717 (commands, feedback and the
-Sounds dock). T-716 updates the manual after the others land.
+The original blocker cards prove their fixes from a **new project** through the production path,
+with walkthrough coverage in `tests/ui/walkthrough_{bms,osu-stepmania}_event_harness_tests.cpp` and
+user-visible confirmation in isolated Xvfb. The original blocker lanes are complete.
+The integration follow-ups T-718 (copy naming), T-719 (portability notice), T-720 (format hint),
+T-721 (Timing-focus policy) and the T-716 manual correction are complete. Their shared-file edits
+were assigned explicitly during the parallel batch. T-658 is next.
 
 ## T-707 Create BMS-family projects as BMS charts
 
@@ -157,14 +158,54 @@ Sounds dock). T-716 updates the manual after the others land.
 
 ## T-716 Correct the manual after the blockers land
 
-- **Status:** ready
-- **Outcome:** The manual chapters match the fixed behavior; the corrections listed in both walkthrough reports that remain true after the fixes are applied, and the walkthrough chapters are rerun from a new project.
-- **Read first:** both walkthrough reports ("Manual corrections").
-- **Files owned:** `docs/manual/chapters/*.adoc`, `docs/manual/shots/`, `docs/manual/images/`, this card.
-- **Steps:** 1. Apply the corrections that still hold. 2. Recapture affected shots from a new project, not the imported fixture.
+- **Status:** done
+- **Evidence (2026-10-19):** The two audited walkthroughs and five supporting chapters now use the
+  integrated commands and exact current limits. Three isolated Xvfb captures start in the production
+  wizard, select BME 7K (outside scratch), and visibly show BMS measure labels/BGM controls/Sounds,
+  empty WAV slot 09 as the selected import target, and a four-mine iBMSC paste preview with the live
+  paste status. Manual documentation tests pass 2/2, both production walkthrough suites pass 23/23,
+  the manual target builds, the three scripts pass `bash -n`, and whitespace is clean. The stale-shot
+  audit was run: all 12 existing shots remain listed because this uncommitted integration batch
+  changes UI sources; the three regenerated images are stamped `b4d9b5a+dirty`, while the other nine
+  remain T-432/T-433 capture work. This card does not broaden into those cards.
+- **Outcome:** The two walkthrough chapters and the five supporting chapters below describe the
+  integrated behavior observed from newly created projects. The manual no longer preserves any
+  workaround from the pre-fix audit, and the BMS slot, BGM and paste screenshots no longer hide the
+  new-project path behind an imported BME fixture.
+- **Read first:** the "Manual corrections" and "Needs a real-window check" sections of both
+  walkthrough reports; `docs/manual/index.adoc`; T-432 and T-433.
+- **Files owned:** `docs/manual/chapters/walkthrough-bms.adoc`,
+  `docs/manual/chapters/walkthrough-osu-stepmania.adoc`,
+  `docs/manual/chapters/getting-started.adoc`, `docs/manual/chapters/timing.adoc`,
+  `docs/manual/chapters/placing-notes.adoc`, `docs/manual/chapters/measures.adoc`,
+  `docs/manual/chapters/sounds-and-layers.adoc`, `docs/manual/shots/bms-slots.sh`,
+  `docs/manual/shots/compose-overview.sh`, `docs/manual/shots/paste-ibmsc.sh`,
+  `docs/manual/images/bms-slots.png`, `docs/manual/images/compose-overview.png`,
+  `docs/manual/images/paste-ibmsc.png`, `docs/manual/images/revisions.adoc`, this card.
+- **Supporting-file extension (2026-10-19):** `docs/manual/chapters/navigating.adoc` owns the
+  `compose-overview.png` caption and alt text; both now describe the fresh empty BME state shown by
+  the replacement capture. The referenced `docs/manual/README.md` did not exist.
+- **Coordination:** this card owns only corrections identified by the two 2026-10-18 walkthrough
+  audits. It does not complete T-432's reader trial or missing tool/dock/import-review shots, or
+  T-433's Troubleshooting, exercises and Project output-group shot.
+- **Steps:**
+  1. Re-run both walkthroughs from Ctrl+N through Save/Preview/Export and record any remaining
+     mismatch on this card before changing prose.
+  2. Apply only still-true audit corrections: BMS metadata Apply/Add, exact paste priority and
+     missing-WAV feedback, authored-measure Ctrl+M, song-audio assignment, F3/F4 timing workflow,
+     beat-rail wording, mouse tools, chart creation/duplication, output-group actions and policy,
+     Preview/publication behavior, Save asset copying, Tap tempo, timing lock and unsupported note
+     kinds.
+  3. Change the three named capture scripts so their visible state is created from a new BME
+     project during the capture run; regenerate only their PNGs and the revision table.
 - **Invariants:** Generated tables stay generated.
 - **Reject/failure behavior:** Not applicable.
-- **Verify:** `documentation.manual_*`; `scripts/manual-captures.sh --check-stale`; Asciidoctor `--failure-level WARN`.
+- **Verify:** `ctest --test-dir build -j 8 -R '^documentation\.manual_' --output-on-failure`;
+  `ctest --test-dir build -j 8 -R '^frontend-state\.(BMS|Osu StepMania) walkthrough' --output-on-failure`;
+  `scripts/manual-captures.sh bms-slots compose-overview paste-ibmsc`;
+  inspect `docs/manual/images/{bms-slots,compose-overview,paste-ibmsc}.png` and record that each
+  shows the intended state reached from a newly created BME project;
+  `scripts/manual-captures.sh --check-stale`; `cmake --build build --parallel 8 --target manual`.
 - **Out of scope:** New chapters.
 
 ## T-717 Start sound imports at the selected BMS slot
@@ -185,14 +226,125 @@ Sounds dock). T-716 updates the manual after the others land.
 - **Verify:** GATE; Xvfb: click a slot, *Add sounds…*, and check the slot rows.
 - **Out of scope:** Selecting several slots at once.
 
-## T-718 Follow-ups from the blocker integration
+## T-718 Keep original asset names when they are unambiguous
 
-- **Status:** ready
-- **Outcome:** Four small inconsistencies the coordinator saw in isolated Xvfb on the integrated branch (2026-10-18) are fixed. (1) Copied assets keep their original file name when no other file in the folder has it (`assets/keysound-c4.ogg`, not `assets/36-keysound-c4.ogg`), on Save and in exported BMS folders. (2) The load warning about assets linked outside the project folder says that Save copies them in. (3) The Compose hint line names BGM moves for the chart's own format rather than always saying "drag BMSON BGM to move". (4) The commands refused in Timing focus come from the same fact as their enablement, not from a second hand-written list in `application_command_dispatch.cpp`.
-- **Read first:** `src/core/resource_file_copy.cpp` (`destination_filename`), the project-load asset warning, the Compose hint text, `timing_focus_command_refusal` in `src/sys/application_command_dispatch.cpp` and command enablement in `src/sys/application.cpp`.
-- **Files owned:** those files and their tests, this card.
-- **Steps:** 1. Name a copy after its source and add the ID prefix only when that name is already taken by a different file. 2. Update the warning and hint texts. 3. Derive the Timing-focus refusal from the enablement fact. 4. Tests for each.
+- **Status:** done
+- **Evidence (2026-10-18):** One read-only planner now selects and carries the destination through
+  inspection, Save, Preview and atomic Export publication. Free and identical basenames retain the
+  source name; on-disk and same-plan conflicts use the asset-ID fallback, and a conflict at both
+  candidates refuses without overwrite. The BMS walkthrough verifies two external sounds with the
+  same basename and exact Preview/Export path equality. The focused expression passes 62/62.
+  `scripts/gate.sh --agents 1` passes 4,228/4,228 tests with build, whitespace and changed-C++
+  complexity clean. In isolated Xvfb, production Save created `assets/keysound.ogg` and
+  `assets/38-keysound.ogg`; Project Preview listed those paths and row Export published the BME and
+  matching files. The new-project origin is covered by the production walkthrough; the real-window
+  run used a disposable tutorial-project copy to inject the two absolute same-basename sources.
+- **Outcome:** Save and BMS/BMSON export use the source basename when it is free or already contains
+  identical bytes (`assets/keysound-c4.ogg`). If that basename is claimed by different bytes in the
+  destination or earlier in the same plan, the copy uses the existing deterministic
+  `<asset-id>-<basename>` fallback. Preview reports the same paths that Export publishes.
+- **Read first:** `include/wormedit/core/resource_file_copy.h` (`project_asset_copy_request_t`);
+  `src/core/resource_file_copy.cpp` (`inspect_project_asset_file`, `create_project_asset_copy`);
+  `src/sys/output_group_export.cpp` (`prepare_output_assets`);
+  `src/formats/conversion_publication.cpp` (`validate_pending_assets`).
+- **Files owned:** `include/wormedit/core/resource_file_copy.h`,
+  `src/core/resource_file_copy.cpp`, `src/sys/output_group_export.cpp`,
+  `src/formats/conversion_publication.cpp`,
+  `include/wormedit/formats/conversion_publication.h` if the prepared plan must carry the chosen
+  path, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`,
+  `tests/sys/resource_notification_tests.cpp`,
+  `tests/ui/walkthrough_bms_event_harness_tests.cpp`,
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, this card.
+- **Supporting-file extension (2026-10-18):**
+  `tests/formats/conversion_publication_tests.cpp` owns the existing discovery, atomic-staging and
+  collision expectations that encoded the old prefixed-name contract.
+- **Steps:**
+  1. Make destination selection a shared read-only planning result used by inspection, publication,
+     Save, Preview and Export; do not recompute a filename after planning.
+  2. Prefer the basename, reuse byte-identical destinations, and fall back to the asset-ID-prefixed
+     name for different bytes or a same-plan collision.
+  3. Cover free, identical, conflicting-on-disk and conflicting-in-one-plan basenames on both Save
+     and export, including Preview/Export path equality and repeat Save.
 - **Invariants:** Identical-file reuse and atomic publication stay as they are; existing projects with prefixed names still load.
-- **Reject/failure behavior:** Not applicable.
-- **Verify:** GATE; Xvfb Save and BMS export of the tutorial fixture with external sounds.
+- **Reject/failure behavior:** If both candidate names contain different bytes or cannot be safely
+  inspected, refuse before publication and name the destination; never overwrite either file.
+- **Verify:** `ctest --test-dir build -j 8 -R '^(core\.(project asset copy|export asset copy|export asset discovery|Automatic export music|project save|conversion publication)|frame-arena\.resource copy|frontend-state\.(BMS|Osu StepMania) walkthrough)' --output-on-failure`;
+  GATE; isolated Xvfb Save and BMS export from a new project with two external sounds sharing a
+  basename, followed by inspection of the saved/exported references and files.
 - **Out of scope:** Renaming assets already copied into existing projects.
+
+## T-719 Make the portability notice describe Save
+
+- **Status:** done
+- **Evidence (2026-10-18):** `project_portability_notice_t` owns the exact advice; the application
+  only posts it. The three focused portability cases pass, including exact Save/Save As and
+  failed-copy wording. The integrated GATE passes 4,228/4,228. Isolated Xvfb shows the revised
+  warning on the disposable project with absolute asset links.
+- **Outcome:** On opening a project with outside links, the warning says that Save or Save As copies
+  those assets into `assets/` and relinks the project, and that a failed copy retains the original
+  link. It does not direct the user to a project-copy control that no longer owns this workflow.
+- **Read first:** `src/sys/project_save_paths.h` (`project_portability_notice_t`);
+  `src/sys/project_save_paths.cpp` (`project_portability_notice_t::update`);
+  `src/sys/application.cpp` (`publish_project_portability_notice`).
+- **Files owned:** `src/sys/project_save_paths.h`, `src/sys/project_save_paths.cpp`,
+  `src/sys/application.cpp` (portability notice publication only),
+  `tests/sys/project_save_paths_tests.cpp`, this card.
+- **Steps:** 1. Put the user-facing portability fact beside `project_portability_notice_t`; keep
+  `application.cpp` responsible only for posting it. 2. Test the exact advice plus the existing
+  once-per-session/revision behavior.
+- **Invariants:** Detection of absolute, escaping and revision-carried paths is unchanged.
+- **Reject/failure behavior:** Not applicable.
+- **Verify:** `ctest --test-dir build -j 8 -R '^core\.Portability warning' --output-on-failure`;
+  GATE.
+- **Out of scope:** Changing when automatic asset copying runs.
+
+## T-720 Name BGM movement for the active chart format
+
+- **Status:** done
+- **Evidence (2026-10-18):** The idle hint uses the existing BMS/BMSON family projections and falls
+  back to generic BGM text. Two focused event-harness cases cover all three families and preserve
+  move, conflict and paste priority. Focused tests pass 2/2; clang-tidy and affected complexity
+  pass; the integrated GATE passes 4,228/4,228.
+- **Outcome:** The idle Compose hint says `drag BMS BGM to move` for BMS, `drag BMSON BGM to move`
+  for BMSON, and `drag BGM to move` for other chart families. It uses the existing projected family
+  facts (`bms_measure_labels` and `bmson_tools_available`).
+- **Read first:** `src/ui/nuklear/compose_canvas.cpp` (`compose_editor_status_hint`);
+  `src/ui/frontend/compose.h` (the two family facts); `src/sys/compose_view.cpp` (their projection).
+- **Files owned:** `src/ui/nuklear/compose_canvas.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
+  this card.
+- **Steps:** 1. Build the idle hint from the existing view facts. 2. Test BMS, BMSON and native views,
+  including that higher-priority move/conflict/paste hints still win.
+- **Invariants:** Input behavior and hint priority are unchanged.
+- **Reject/failure behavior:** Not applicable.
+- **Verify:** `ctest --test-dir build -j 8 -R '^frontend-state\.' --output-on-failure`; GATE.
+- **Out of scope:** Rewording other status hints.
+
+## T-721 Share one Timing-focus command policy
+
+- **Status:** done
+- **Evidence (2026-10-18):** One typed application-command policy now drives registry disablement
+  and both refusal paths. The test iterates parsed production registry entries and retains the
+  direct-boundary check for all seven members. The focused expression passes 12/12; affected
+  complexity passes; the integrated GATE passes 4,228/4,228.
+- **Outcome:** One typed policy identifies commands disabled specifically by Timing focus. Registry
+  enablement and both unavailable-command feedback paths query it, so adding or removing a command
+  cannot leave the F4 refusal list out of sync.
+- **Read first:** `src/sys/application_command_dispatch.cpp` (`timing_focus_command_refusal`);
+  `src/sys/application.cpp` (`refresh_note_kind_commands`, `refresh_quantize_commands`,
+  `refresh_compose_dock_commands`); `src/sys/application_commands.h` (command kinds and parser).
+- **Files owned:** `src/sys/application_command_dispatch.h`,
+  `src/sys/application_command_dispatch.cpp`, `src/sys/application.cpp`,
+  `tests/sys/application_commands_tests.cpp`,
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, this card.
+- **Steps:** 1. Define the Timing-focus capability/refusal policy once at the application-command
+  owner. 2. Derive registry enablement and direct/registry refusal feedback from it. 3. Iterate the
+  production registry entries accepted by `parse_application_command`, rather than maintaining a
+  second command list, and prove their policy, enabled state and refusal agree in Compose and Timing
+  focus. Keep the existing direct-boundary test for every command the policy disables.
+- **Invariants:** The seven currently disabled commands and the F4 remedy are unchanged; unrelated
+  disablement reasons keep their existing messages.
+- **Reject/failure behavior:** Not applicable.
+- **Verify:** `ctest --test-dir build -j 8 -R '^(frame-timing\.Timing focus|frontend-state\.Osu StepMania walkthrough)' --output-on-failure`;
+  `scripts/check-complexity.py --build-dir build src/sys/application.cpp src/sys/application_command_dispatch.cpp`;
+  GATE.
+- **Out of scope:** A general command-reason framework or changes to Timing-focus membership.

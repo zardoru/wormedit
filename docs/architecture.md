@@ -31,7 +31,8 @@ There are two paths in and one way to change the document.
   `stage` resolves the working chart and passes the chart/document to an edit without
   publication. Nested stages share one copy; a rejected stage blocks the outer commit while
   retaining working storage until callbacks unwind. Typed `stage<Operation>` adds declared
-  limits, event caps and postvalidation. `execute<Operation>` stages and then publishes once. Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
+  limits, event caps and postvalidation; `chart_edit_operation` in `core/command.h` lists what an
+  operation must declare. `execute<Operation>` stages and then publishes once. Undo stores snapshots, so there is no separate command object. The proposal's payload, or the
   direct command's operation, *is* the edit.
 - **Core edit:** a plain function or `apply(transaction&)` in `src/core` that changes chart data.
   This is where domain logic lives.

@@ -129,9 +129,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Edit publication: one commit tail, one failure shape](tasks/edit-publication.md)
 - [Frontend C++ views: close the boundary migration](tasks/frontend-cxx-views.md)
 - [Feedback from writing the manual](tasks/manual-feedback.md)
+- [Workflow blockers found by the user walkthrough](tasks/workflow-blockers.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-706.
+every number above T-716.
 
 ## Rules for whoever executes a card
 

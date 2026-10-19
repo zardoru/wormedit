@@ -487,3 +487,34 @@ card for the user-facing walkthrough.
 **Owner decision (2026-10-18), R10:** the user-facing walkthrough runs _before_ the quantize pilot.
 It is delegated to Codex lanes whose reports are kept as evidence in `docs/audits/`
 (`user-walkthrough-bms-2026-10-18.md`, `user-walkthrough-osu-stepmania-2026-10-18.md`).
+
+## Walkthrough results (2026-10-18)
+
+The user-facing walkthrough ran as decided under R10. Its evidence is in
+[`user-walkthrough-bms-2026-10-18.md`](user-walkthrough-bms-2026-10-18.md) and
+[`user-walkthrough-osu-stepmania-2026-10-18.md`](user-walkthrough-osu-stepmania-2026-10-18.md):
+Codex source traces and event-harness tests, plus Claude's real-window checks in isolated Xvfb.
+
+Workflow blockers found (cards in [`workflow-blockers.md`](../chart-editor-plan/tasks/workflow-blockers.md)):
+
+- A new BME project is created as a native chart, so BMS IDs, slots, BGM columns, Move to BGM and
+  slot-based paste are unavailable (confirmed in the real window).
+- A `.bme` output path fails export ("requested BMS lane profile is unknown"); exported BMS charts
+  omit their keysounds while reporting success.
+- F3 never reaches Timing focus: `workspace.open_timing` still targets the hidden Timing tab, so
+  `is_eligible` rejects it (found only in the real window; the smoke script's `timing` mode has been
+  passing without reaching Timing focus). *Timing Settings* likewise has no Compose surface.
+- Draw stays unavailable in Timing focus with a refusal that names the command ID, and the
+  walkthrough never says F4.
+- Exporting a group depends on the active chart being one of its charts.
+
+Two of these bear on this audit's navigation findings. The F3 failure is the capability-owner problem
+under "Availability and tests add separate navigation work": availability was projected in
+`application.cpp` while eligibility was decided by a registry field nobody updated when the tab was
+retired. The export active-chart restriction is a capability check living at invocation with a
+different rule from the button that advertises it. Neither changes the agreed order; both argue for
+the T-658 index naming capability owners explicitly.
+
+**Owner decision (2026-10-18):** saving should copy linked song audio and other externally linked
+assets into the project (osu!mania/StepMania walkthrough finding 5), rather than the manual being
+corrected to say it does not.

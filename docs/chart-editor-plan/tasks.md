@@ -130,9 +130,10 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Frontend C++ views: close the boundary migration](tasks/frontend-cxx-views.md)
 - [Feedback from writing the manual](tasks/manual-feedback.md)
 - [Workflow blockers found by the user walkthrough](tasks/workflow-blockers.md)
+- [Project creation and export-target UX](tasks/project-creation-exports.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-722.
+every number above T-728.
 
 ## Rules for whoever executes a card
 

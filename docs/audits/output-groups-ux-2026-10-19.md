@@ -1,9 +1,10 @@
 # Output groups: UI and UX suggestions (2026-10-19)
 
 Feedback: the Project tab's output groups are "confusing". This note lists what a user sees,
-why it confuses, and proposed changes in priority order. The proposal mockup is
-[output-groups.svg](../chart-editor-plan/mockups/output-groups.svg). It is a set of suggestions,
-not approved cards; the owner picks which become cards.
+why it confuses, and proposed changes in priority order. The accepted implementation sequence is
+[T-723–T-727](../chart-editor-plan/tasks/project-creation-exports.md). The proposal mockup is
+[output-groups.svg](../chart-editor-plan/mockups/output-groups.svg). The audit remains the rationale;
+the cards own executable scope, dependencies and verification.
 
 Read against `src/ui/nuklear/setup_panel.cpp` (`render_output_groups`, `render_output_group_row`,
 `render_output_group_editor`, StepMania policy form) and `src/ui/nuklear/compose_resources.cpp`

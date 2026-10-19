@@ -1,13 +1,21 @@
 # Status: resume checklist
 
-The broader workflow-navigation refactoring is deferred by owner decision: T-722 removed a real
+## Active queue (2026-10-19)
+
+**Next: [T-723](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-723-present-output-groups-as-export-target-cards)**
+presents existing output groups as export-target cards and moves editing/deletion into shared
+dialogs. Continue the ordered export lane with T-724 (one Export action and existing-file policy),
+T-725 (per-target StepMania policy), then T-726 (typed destinations and complete file preview).
+After T-723, T-727 membership/empty-state work can run independently. T-728, the grouped
+new-project layout picker, is independent and ready but does not displace T-723.
+
+Deferred by explicit owner decisions: T-719 export-cut sections and T-720 timing links start only
+when named. The broader workflow-navigation refactoring also remains deferred: T-722 removed a real
 typed-request/frontend-action round trip, but its before/after exercise did not show enough general
-navigation value to continue the series. Do not schedule the audit's remaining paste, measure,
-composition or gesture extractions for navigation cleanup alone; a concrete correctness defect or
-independently valuable feature may justify a bounded owner change later. T-722's target trace moved
-from 9 files / 1 wrong guess to 13 / 0, while untouched controls also varied substantially. Final
-T-722 GATE passes 4,230/4,230 tests (`/tmp/wormedit-gate.1kQR7r`). T-658 is complete, and commit
-`1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
+navigation value to continue the series. A concrete correctness defect or independently valuable
+feature may still justify a bounded owner change. T-722's final GATE passed 4,230/4,230 tests
+(`/tmp/wormedit-gate.1kQR7r`). T-658 is complete, and commit `1ab570c` completed T-716 and
+T-718–T-721 with GATE passing 4,228/4,228 tests.
 
 Completed **T-146–T-147 cancellable import/export** (2026-10-18): interactive opening, export and conversion preview expose progress/Cancel; automatic music copies join private atomic staging. GCC and Linux Clang GATE each pass 4,158/4,158, with configured clang-tidy, unchanged complexity allowances and inspected isolated Xvfb Compose layout. Remaining state-ownership and feature-friction checkpoints retain their card statuses; T-621 folder moves still run last. Verification evidence and cancellation limits are recorded on the [completed cards](../../docs/chart-editor-plan/tasks/editing-depth.md#t-146-report-progress-and-allow-cancel-for-chart-import).
 

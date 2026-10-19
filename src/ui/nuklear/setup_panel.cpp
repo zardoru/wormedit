@@ -69,7 +69,11 @@ struct project_panel_state_t {
     char group_path[1024]{};
     int group_family{4};
     std::array<nk_bool, WORM_UI_PROJECT_CHART_CAPACITY> group_charts{};
-    nk_bool confirm_group_delete{};
+    wormedit::ui::chrome::ContextMenu group_menu{.title = "Export target actions"};
+    wormedit::ui::chrome::Dialog group_editor_dialog;
+    wormedit::ui::chrome::Dialog group_delete_dialog;
+    size_t group_menu_index{};
+    bool group_delete_pending{};
 };
 project_panel_state_t project_state;
 
@@ -420,15 +424,17 @@ void render_project_charts(nk_context* context, const WormUiSetupView& view, Wor
 }
 
 
-void begin_output_group_editor(const WormUiSetupView& view, const WormUiProjectOutputGroupView* group) {
+void load_output_group_draft(const WormUiSetupView& view, const WormUiProjectOutputGroupView* group,
+                             bool create) {
     auto& state = project_state;
     state.group_editor_open = true;
-    state.group_create = !group;
+    state.group_create = create;
     state.group_index = group ? group->document_index : 0;
     state.group_revision = view.document_revision;
     state.group_family = group && group->family <= 4 ? group->family : 4;
-    state.confirm_group_delete = false;
-    std::snprintf(state.group_name, sizeof(state.group_name), "%s", group ? group->name : "New output group");
+    state.group_editor_dialog = {};
+    std::snprintf(state.group_name, sizeof(state.group_name), "%s",
+                  group ? group->name : "New export target");
     std::snprintf(state.group_path, sizeof(state.group_path), "%s", group ? group->path : "exports/chart.bmson");
     state.group_charts.fill(false);
     for (size_t i = 0; i < std::min(view.chart_row_count, size_t{WORM_UI_PROJECT_CHART_CAPACITY}); ++i) {
@@ -436,6 +442,30 @@ void begin_output_group_editor(const WormUiSetupView& view, const WormUiProjectO
             std::span{group->chart_ids, group->chart_count}, view.charts[i].chart_id) !=
             std::span{group->chart_ids, group->chart_count}.end() : view.charts[i].chart_id == view.selected_chart_id;
     }
+}
+void begin_output_group_editor(const WormUiSetupView& view, const WormUiProjectOutputGroupView* group) {
+    load_output_group_draft(view, group, group == nullptr);
+}
+auto output_group_name_used(const WormUiSetupView& view, std::string_view name) -> bool {
+    return std::ranges::any_of(std::span{view.output_groups, view.output_group_count},
+        [name](const auto& group) { return group.name && name == group.name; });
+}
+void begin_output_group_duplicate(const WormUiSetupView& view,
+                                  const WormUiProjectOutputGroupView& group) {
+    load_output_group_draft(view, &group, true);
+    const auto source = std::string_view{group.name};
+    const auto kept = std::min(source.size(), sizeof(project_state.group_name) - size_t{16});
+    std::string candidate{source.substr(0, kept)};
+    candidate += " copy";
+    for (int suffix = 2; output_group_name_used(view, candidate); ++suffix)
+        candidate = std::string{source.substr(0, kept)} + " copy " + std::to_string(suffix);
+    std::snprintf(project_state.group_name, sizeof(project_state.group_name), "%s", candidate.c_str());
+}
+void begin_output_group_delete(const WormUiSetupView& view, size_t index) {
+    project_state.group_index = index;
+    project_state.group_revision = view.document_revision;
+    project_state.group_delete_pending = true;
+    project_state.group_delete_dialog = {};
 }
 void publish_output_group_action(const WormUiSetupView& view, WormUiWorkspaceAction& action,
     WormUiProjectOutputGroupActionKind kind, size_t index) {
@@ -476,34 +506,55 @@ auto render_output_family_picker(nk_context* context, const WormUiKindCatalogVie
     return selected;
 }
 void render_output_group_editor(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
+    using namespace wormedit::ui::chrome;
     auto& state = project_state;
     if (!state.group_editor_open) return;
     if (state.group_revision != view.document_revision) { state.group_editor_open = false; return; }
-    nk_layout_row_dynamic(context, 24, 1);
-    nk_label(context, state.group_create ? "Create output group" : "Edit output group", NK_TEXT_LEFT);
-    constexpr float fields[]{0.2f, 0.8f};
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-    nk_label(context, "Name", NK_TEXT_LEFT);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.group_name, sizeof(state.group_name), nk_filter_default);
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-    nk_label(context, "Format", NK_TEXT_LEFT);
-    state.group_family = render_output_family_picker(context, view.output_families, state.group_family);
-    nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
-    nk_label(context, "Output path", NK_TEXT_LEFT);
-    nk_edit_string_zero_terminated(context, NK_EDIT_FIELD, state.group_path, sizeof(state.group_path), nk_filter_default);
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, "Project-relative file or directory; use a directory for multiple BMS/BMSON/osu! charts.", NK_TEXT_LEFT);
-    render_output_group_members(context, view);
-    nk_layout_row_dynamic(context, 28, 2);
-    if (nk_button_label(context, "Cancel group edit")) state.group_editor_open = false;
-    if (nk_button_label(context, "Save group")) publish_output_group_action(view, action,
-        state.group_create ? WORM_UI_PROJECT_OUTPUT_GROUP_CREATE : WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE, state.group_index);
-    if (state.group_create) return;
-    nk_layout_row_dynamic(context, 28, 2);
-    nk_checkbox_label(context, "Confirm group deletion", &state.confirm_group_delete);
-    if (wormedit::ui::chrome::Button{"Delete group", wormedit::ui::chrome::ButtonKind::secondary,
-        "Remove the group; published files are kept", state.confirm_group_delete != 0}.render(context))
-        publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_DELETE, state.group_index);
+    char title[sizeof(state.group_name) + 32];
+    std::snprintf(title, sizeof(title), state.group_create ? "Create export target" : "Edit export · %s",
+                  state.group_create ? "" : state.group_name);
+    bool delete_requested = false;
+    bool save_requested = false;
+    if (dialog_begin(state.group_editor_dialog, context, "Export target editor", title,
+                     {.width = 560.0f, .enter_confirms = false})) {
+        constexpr float fields[]{0.22f, 0.78f};
+        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+        nk_label(context, "Name", NK_TEXT_LEFT);
+        worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_name,
+                                   sizeof(state.group_name), nk_filter_default);
+        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+        nk_label(context, "Format", NK_TEXT_LEFT);
+        state.group_family = render_output_family_picker(context, view.output_families, state.group_family);
+        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+        nk_label(context, "Destination", NK_TEXT_LEFT);
+        worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_path,
+                                   sizeof(state.group_path), nk_filter_default);
+        dialog_text(state.group_editor_dialog, context,
+                    "Project-relative file or directory; use a directory for multiple BMS, BMSON or osu! charts.",
+                    color(UiColor::text_muted));
+        render_output_group_members(context, view);
+        dialog_footer_begin(state.group_editor_dialog, context, state.group_create ? 2 : 3,
+                            !state.group_create);
+        if (!state.group_create)
+            delete_requested = dialog_button(state.group_editor_dialog, context, "Delete…",
+                                              DialogButtonRole::destructive);
+        (void)dialog_button(state.group_editor_dialog, context, "Cancel", DialogButtonRole::secondary);
+        save_requested = dialog_button(state.group_editor_dialog, context, "Save", DialogButtonRole::primary);
+    }
+    const auto result = dialog_end(state.group_editor_dialog, context);
+    if (delete_requested) {
+        state.group_editor_open = false;
+        begin_output_group_delete(view, state.group_index);
+    } else if (save_requested) {
+        publish_output_group_action(view, action,
+            state.group_create ? WORM_UI_PROJECT_OUTPUT_GROUP_CREATE : WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
+            state.group_index);
+        state.group_editor_open = false;
+        state.release_pending = true;
+    } else if (result == DialogResult::cancel || result == DialogResult::secondary) {
+        state.group_editor_open = false;
+        state.release_pending = true;
+    }
 }
 void export_project_group(const WormUiSetupView& view, WormUiWorkspaceAction& action, size_t index) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
@@ -513,69 +564,184 @@ void export_project_group(const WormUiSetupView& view, WormUiWorkspaceAction& ac
     action.compose_input_document_revision = view.document_revision;
     action.compose_output_group_index = index;
 }
-void render_output_group_row(nk_context* context, const WormUiSetupView& view,
-    const WormUiProjectOutputGroupView& group, WormUiWorkspaceAction& action) {
-    constexpr float ratios[]{0.20f, 0.10f, 0.28f, 0.08f, 0.10f, 0.12f, 0.12f};
-    nk_layout_row(context, NK_DYNAMIC, 28, 7, ratios);
-    nk_label(context, group.name, NK_TEXT_LEFT);
-    nk_label(context, wormedit::ui::kind_label(view.output_families, group.family, "Unsupported"), NK_TEXT_LEFT);
-    nk_label(context, group.path, NK_TEXT_LEFT);
-    nk_labelf(context, NK_TEXT_LEFT, "%zu", group.chart_count);
-    const bool editable = !view.charts_truncated && group.chart_count <= WORM_UI_PROJECT_CHART_CAPACITY && std::strlen(group.name) < sizeof(project_state.group_name) &&
+auto output_group_editable(const WormUiSetupView& view,
+                           const WormUiProjectOutputGroupView& group) -> bool {
+    return !view.charts_truncated && group.chart_count <= WORM_UI_PROJECT_CHART_CAPACITY &&
+        std::strlen(group.name) < sizeof(project_state.group_name) &&
         std::strlen(group.path) < sizeof(project_state.group_path);
-    if (wormedit::ui::chrome::Button{"Edit", wormedit::ui::chrome::ButtonKind::secondary,
-        "Edit name, format, output path and charts", editable}.render(context)) begin_output_group_editor(view, &group);
-    if (nk_button_label(context, "Preview"))
-        publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group.document_index);
-    if (wormedit::ui::chrome::Button{"Export", wormedit::ui::chrome::ButtonKind::secondary,
-        "Publish this group without replacing existing chart files", group.chart_count != 0}.render(context))
+}
+auto output_group_chart_name(const WormUiSetupView& view, uint64_t id) -> const char* {
+    const auto* row = std::find_if(view.charts, view.charts + view.chart_row_count,
+        [id](const auto& chart) { return chart.chart_id == id; });
+    return row == view.charts + view.chart_row_count || !row->name || !row->name[0]
+        ? "Untitled chart" : row->name;
+}
+void render_output_group_badge(nk_context* context, const char* label) {
+    struct nk_rect bounds{};
+    if (nk_widget(&bounds, context) == NK_WIDGET_INVALID) return;
+    using namespace wormedit::ui::chrome;
+    nk_fill_rect(nk_window_get_canvas(context), bounds, 4.0f, color(UiColor::surface_active));
+    nk_stroke_rect(nk_window_get_canvas(context), bounds, 4.0f, 1.0f, color(UiColor::border_hover));
+    nk_draw_text(nk_window_get_canvas(context), nk_rect(bounds.x + 6.0f, bounds.y, bounds.w - 12.0f, bounds.h),
+                 label, static_cast<int>(std::strlen(label)), context->style.font,
+                 nk_rgba(0, 0, 0, 0), color(UiColor::text_bright));
+}
+void render_output_group_chips(nk_context* context, const WormUiSetupView& view,
+                               const WormUiProjectOutputGroupView& group, float width) {
+    constexpr size_t maximum_chips = 4;
+    const auto shown = std::min(group.chart_count, maximum_chips);
+    const auto chip_width = std::max(72.0f, std::min(150.0f, width / maximum_chips));
+    float x = 80.0f;
+    for (size_t index = 0; index < shown; ++index) {
+        nk_layout_space_push(context, nk_rect(x, 38.0f, chip_width, 22.0f));
+        (void)wormedit::ui::chrome::Chip{
+            output_group_chart_name(view, group.chart_ids[index])}.render(context);
+        x += chip_width + 4.0f;
+    }
+    if (group.chart_count == 0) {
+        nk_layout_space_push(context, nk_rect(x, 40.0f, 120.0f, 18.0f));
+        nk_label_colored(context, "No charts", NK_TEXT_LEFT,
+                         wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted));
+    } else if (group.chart_count > shown) {
+        char more[32];
+        std::snprintf(more, sizeof(more), "+%zu charts", group.chart_count - shown);
+        nk_layout_space_push(context, nk_rect(x, 40.0f, 100.0f, 18.0f));
+        nk_label(context, more, NK_TEXT_LEFT);
+    }
+}
+void render_output_group_card(nk_context* context, const WormUiSetupView& view,
+                              const WormUiProjectOutputGroupView& group,
+                              WormUiWorkspaceAction& action) {
+    using namespace wormedit::ui::chrome;
+    nk_layout_space_begin(context, NK_STATIC, 88.0f, 10);
+    const auto space = nk_layout_space_bounds(context);
+    const auto origin = nk_layout_space_to_screen(context, nk_vec2(0.0f, 0.0f));
+    const auto card = nk_rect(origin.x, origin.y, space.w, 88.0f);
+    const auto viewport = wormedit::ui::nuklear::tooltip::viewport();
+    const auto width = std::max(1.0f, std::min(card.w, viewport.x + viewport.w - card.x - 8.0f));
+    nk_fill_rect(nk_window_get_canvas(context), card, 6.0f, color(UiColor::surface));
+    nk_stroke_rect(nk_window_get_canvas(context), card, 6.0f, 1.0f, color(UiColor::border));
+    const auto action_x = std::max(290.0f, width - 136.0f);
+    const auto name_width = std::max(80.0f, std::min(180.0f, (action_x - 92.0f) * 0.42f));
+    const auto path_x = 92.0f + name_width + 8.0f;
+    nk_layout_space_push(context, nk_rect(12.0f, 7.0f, 64.0f, 24.0f));
+    render_output_group_badge(context, wormedit::ui::kind_label(view.output_families, group.family,
+                                                                "Unsupported"));
+    nk_layout_space_push(context, nk_rect(84.0f, 8.0f, name_width, 22.0f));
+    text_cell(context, group.name, name_width);
+    nk_layout_space_push(context, nk_rect(path_x, 8.0f, std::max(1.0f, action_x - path_x - 8.0f), 22.0f));
+    std::string destination{"→ "};
+    destination += group.path;
+    text_cell(context, destination.c_str(), std::max(1.0f, action_x - path_x - 8.0f));
+    nk_layout_space_push(context, nk_rect(action_x, 5.0f, 96.0f, 28.0f));
+    if (Button{"Export", ButtonKind::primary,
+               "Publish this target without replacing existing chart files",
+               group.chart_count != 0}.render(context))
         export_project_group(view, action, group.document_index);
-    const float width = std::max(1.0f, nk_window_get_content_region_size(context).x -
-                                          2 * context->style.text.padding.x);
-    const auto lines = wormedit::ui::chrome::wrap_text(context->style.font, group.preview_status,
-        width, wormedit::ui::chrome::text_wrap_policy_t::tooltip_lines);
-    for (const auto& line : lines) {
-        nk_layout_row_dynamic(context, context->style.font->height + 2 * context->style.text.padding.y, 1);
-        nk_label(context, line.c_str(), NK_TEXT_LEFT);
+    nk_layout_space_push(context, nk_rect(action_x + 104.0f, 5.0f, 28.0f, 28.0f));
+    if (Button{"⋯", ButtonKind::secondary, "Export target actions"}.render(context)) {
+        project_state.group_menu_index = group.document_index;
+        context_menu_open(project_state.group_menu, context->input.mouse.pos,
+            PopupContextStamp::from(view, group.document_index + 1));
+    }
+    render_output_group_chips(context, view, group, std::max(1.0f, action_x - 92.0f));
+    nk_layout_space_push(context, nk_rect(84.0f, 65.0f, std::max(1.0f, width - 100.0f), 18.0f));
+    const auto status = std::string_view{group.preview_status ? group.preview_status : ""};
+    const auto first_line = status.substr(0, status.find('\n'));
+    std::string status_line{first_line.empty() ? "Preview not run" : first_line};
+    text_cell(context, status_line.c_str(), std::max(1.0f, width - 100.0f));
+    nk_layout_space_end(context);
+}
+auto find_output_group(const WormUiSetupView& view, size_t index)
+    -> const WormUiProjectOutputGroupView* {
+    const auto* group = std::find_if(view.output_groups, view.output_groups + view.output_group_count,
+        [index](const auto& candidate) { return candidate.document_index == index; });
+    return group == view.output_groups + view.output_group_count ? nullptr : group;
+}
+void render_output_group_menu(nk_context* context, const WormUiSetupView& view,
+                              WormUiWorkspaceAction& action) {
+    using namespace wormedit::ui::chrome;
+    const auto* group = find_output_group(view, project_state.group_menu_index);
+    if (!group) { context_menu_reset(project_state.group_menu); return; }
+    auto& menu = project_state.group_menu;
+    if (!context_menu_begin(menu, context, PopupContextStamp::from(view, group->document_index + 1),
+                            nk_vec2(220.0f, context_menu_height(4)))) return;
+    const auto* edit_reason = output_group_editable(view, *group) ? nullptr
+        : "This target exceeds the editable Project view limits.";
+    if (context_menu_item(menu, context, "Edit", edit_reason)) begin_output_group_editor(view, group);
+    if (context_menu_item(menu, context, "Preview"))
+        publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group->document_index);
+    if (context_menu_item(menu, context, "Duplicate", edit_reason)) begin_output_group_duplicate(view, *group);
+    if (context_menu_item(menu, context, "Delete…")) begin_output_group_delete(view, group->document_index);
+    context_menu_end(menu, context);
+}
+void render_output_group_delete(nk_context* context, const WormUiSetupView& view,
+                                WormUiWorkspaceAction& action) {
+    using namespace wormedit::ui::chrome;
+    auto& state = project_state;
+    if (!state.group_delete_pending) return;
+    const auto* group = find_output_group(view, state.group_index);
+    if (state.group_revision != view.document_revision || !group) {
+        state.group_delete_pending = false;
+        return;
+    }
+    if (dialog_begin(state.group_delete_dialog, context, "Delete export target", "Delete export target?")) {
+        dialog_text(state.group_delete_dialog, context, group->name, color(UiColor::text_bright));
+        dialog_text(state.group_delete_dialog, context,
+                    "This removes the target from the project. Files already exported are kept, and you can Undo this change.",
+                    color(UiColor::text));
+        dialog_footer_begin(state.group_delete_dialog, context, 2, true);
+        (void)dialog_button(state.group_delete_dialog, context, "Delete", DialogButtonRole::destructive);
+        (void)dialog_button(state.group_delete_dialog, context, "Cancel", DialogButtonRole::secondary);
+    }
+    const auto result = dialog_end(state.group_delete_dialog, context);
+    if (result == DialogResult::destructive)
+        publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_DELETE, state.group_index);
+    if (result != DialogResult::none) {
+        state.group_delete_pending = false;
+        state.release_pending = true;
     }
 }
 void render_output_groups(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
+    (void)wormedit::ui::chrome::context_menu_update(project_state.group_menu, context);
     nk_layout_row_dynamic(context, 18, 1);
     nk_spacing(context, 1);
-    nk_layout_row_template_begin(context, 32);
-    nk_layout_row_template_push_dynamic(context);
-    nk_layout_row_template_push_static(context, 110);
-    nk_layout_row_template_push_static(context, 130);
-    nk_layout_row_template_end(context);
+    nk_layout_space_begin(context, NK_STATIC, 32.0f, 3);
+    const auto header = nk_layout_space_bounds(context);
+    const auto viewport = wormedit::ui::nuklear::tooltip::viewport();
+    const auto width = std::max(250.0f,
+        std::min(header.w, viewport.x + viewport.w - header.x - 8.0f));
     char heading[64];
-    std::snprintf(heading, sizeof(heading), "Output groups · %zu", view.output_group_count);
+    std::snprintf(heading, sizeof(heading), "Exports · %zu", view.output_group_count);
+    nk_layout_space_push(context, nk_rect(0.0f, 0.0f, std::max(1.0f, width - 248.0f), 32.0f));
     project_section_heading(context, heading);
+    nk_layout_space_push(context, nk_rect(width - 240.0f, 0.0f, 110.0f, 32.0f));
     if (wormedit::ui::chrome::Button{"Export…", wormedit::ui::chrome::ButtonKind::secondary,
         "Choose a group and overwrite policy", view.chart_count != 0}.render(context))
         std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "document.export_output_group");
-    if (nk_button_label(context, "New group")) begin_output_group_editor(view, nullptr);
+    nk_layout_space_push(context, nk_rect(width - 122.0f, 0.0f, 122.0f, 32.0f));
+    if (nk_button_label(context, "+ New")) begin_output_group_editor(view, nullptr);
+    nk_layout_space_end(context);
     if (view.output_group_count == 0) {
         nk_layout_row_dynamic(context, 24, 1);
-        nk_label(context, "No output groups yet. Create one to choose a format, destination and included charts.", NK_TEXT_LEFT);
+        nk_label(context, "No export targets yet. Create one to choose a format, destination and included charts.", NK_TEXT_LEFT);
     }
-    constexpr float ratios[]{0.20f, 0.10f, 0.28f, 0.08f, 0.10f, 0.12f, 0.12f};
-    nk_layout_row(context, NK_DYNAMIC, 24, 7, ratios);
-    for (const auto* label : {"Name", "Format", "Output path", "Charts", "", "", ""})
-        nk_label(context, label, NK_TEXT_LEFT);
     for (size_t i = 0; i < view.output_group_count; ++i)
-        render_output_group_row(context, view, view.output_groups[i], action);
+        render_output_group_card(context, view, view.output_groups[i], action);
     if (view.output_groups_truncated) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "Showing the first 256 output groups.", NK_TEXT_LEFT);
     }
-    render_output_group_editor(context, view, action);
+    render_output_group_menu(context, view, action);
 }
 
 } // namespace
 
 bool worm_ui_nuklear_setup_popup_owns_input() {
     return project_state.selection.pending_delete != 0 || project_state.release_pending ||
-        wormedit::ui::chrome::context_menu_owns_input(project_state.row_menu);
+        project_state.group_editor_open || project_state.group_delete_pending ||
+        wormedit::ui::chrome::context_menu_owns_input(project_state.row_menu) ||
+        wormedit::ui::chrome::context_menu_owns_input(project_state.group_menu);
 }
 
 void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupView* view) {
@@ -585,9 +751,12 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupVie
     if (!same_session) {
         if (context && project_state.delete_dialog.open) nk_window_close(context, "Delete chart");
         auto retired_menu = project_state.row_menu;
+        auto retired_group_menu = project_state.group_menu;
         wormedit::ui::chrome::context_menu_abandon(retired_menu);
+        wormedit::ui::chrome::context_menu_abandon(retired_group_menu);
         project_state = {};
         project_state.row_menu = retired_menu;
+        project_state.group_menu = retired_group_menu;
     } else {
         worm_ui_nuklear_reconcile_project_selection(project_state.selection, *view);
         worm_ui_nuklear_reconcile_chart_drag(project_state.drag, *view);
@@ -596,6 +765,7 @@ void worm_ui_nuklear_sync_setup_popups(nk_context* context, const WormUiSetupVie
 
 void worm_ui_nuklear_retire_setup_popups(nk_context* context) {
     wormedit::ui::chrome::context_menu_retire(project_state.row_menu, context);
+    wormedit::ui::chrome::context_menu_retire(project_state.group_menu, context);
 }
 
 void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
@@ -661,7 +831,10 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
 
 void worm_ui_nuklear_render_setup_dialogs(nk_context* context, const WormUiSetupView& view,
                                          WormUiWorkspaceAction& action) {
-    if (view.visible) render_delete_confirmation(context, view, action);
+    if (!view.visible) return;
+    render_delete_confirmation(context, view, action);
+    render_output_group_editor(context, view, action);
+    render_output_group_delete(context, view, action);
 }
 
 void worm_ui_nuklear_cancel_setup_drag() {

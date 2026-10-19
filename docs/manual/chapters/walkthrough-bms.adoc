@@ -9,7 +9,7 @@ referenced sounds.
 
 Press kbd:[Ctrl+N], choose *BME 7K (outside scratch)* (the *inside scratch* variant draws the
 scratch lane on the other side of the keys), and click *Create project*. The project starts with
-one BMS-family chart and a *BMS* output group. Its BMS measure labels, WAV IDs, BMS slots and BGM
+one BMS-family chart and a *BMS* export target. Its BMS measure labels, WAV IDs, BMS slots and BGM
 column controls are available from the start.
 
 Lane keys for BME 7K are kbd:[1] to kbd:[8] on the number row, left to right; with the scratch
@@ -109,12 +109,12 @@ project.
 . If an imported sound is linked outside the project, saving copies it into the project's `assets/`
 folder and relinks it. If a copy fails, the original link stays in place and Wormedit reports the
 failure.
-. Open *Project* (kbd:[F1]). Under *Output groups*, click *Edit* on the *BMS* group, set its
-project-relative *Output path* (for example `song/normal.bme`), then click *Save group*.
-. Click *Preview* for the conversion file and warning counts. Preview does not check whether the
+. Open *Project* (kbd:[F1]). Under *Exports*, open the *BMS* target's *⋯* menu, click *Edit*, set its
+project-relative *Destination* (for example `song/normal.bme`), then click *Save*.
+. Open the target's *⋯* menu and click *Preview* for the conversion file and warning counts. Preview does not check whether the
 publication destination already exists.
 . Click *Export…*, select *BMS*, leave *Replace existing chart files* unchecked to refuse
-overwriting, and click *Export group*. The row's *Export* action publishes directly and also
+overwriting, and click *Export group*. The target card's *Export* action publishes directly and also
 refuses to replace existing chart files. Referenced keysounds are copied beside the chart under
 `assets/`; when a filename conflicts, the copied filename gets the asset ID as a prefix. Read the
 completion or refusal in notifications (kbd:[Ctrl+Shift+M]).

@@ -13,7 +13,7 @@ file becomes the song audio.
 You can also create the project with kbd:[Ctrl+N] and drop the song onto the audio field of the
 *Metadata* tab (kbd:[F2]) afterwards. Expand *Audio and export*, then click *Use as song audio*.
 
-Layouts 3K to 8K and 10K start with three output groups, *osu!mania*, *StepMania SM* and *StepMania
+Layouts 3K to 8K and 10K start with three export targets, *osu!mania*, *StepMania SM* and *StepMania
 SSC*, all including the new chart. Other key counts start with osu!mania only (see the
 <<layout-reference,layout reference>>).
 
@@ -52,18 +52,20 @@ support them.
 On the *Project* tab (kbd:[F1]), open the chart's *⋯* menu and choose *Duplicate* to start another
 difficulty; it keeps the chart's timing. The *+* button (*New chart*, kbd:[Ctrl+Shift+N]) adds a
 chart with 120 BPM and one measure, carrying over the layout and audio offset. Add each chart to the
-output groups that should export it.
+export targets that should export it.
 
 == 5. Save and export
 
 . kbd:[Ctrl+S] saves the `.wormedit` project; exporting needs a saved project.
-. On the *Project* tab, under *Groups*, edit each group's *Output path*, relative to the project:
+. On the *Project* tab, under *Exports*, open each target's *⋯* menu and choose *Edit*. Set its
+*Destination*, relative to the project:
 for example `osu/song.osu` and `sm/song.sm`, or a folder when a group exports several osu!mania
 charts.
 . For the StepMania groups, the *StepMania export policy* chooses the target (StepMania 5.1 or
   Etterna 0.75.1) and how timing is written (*Timing syntax*); Preview and Export use those
   choices. SM or SSC is inferred from the output path.
-. Click a group's *Export* button, or use *Export…* to choose a group and overwrite policy. *Preview*
+. Click a target card's *Export* button, or use *Export…* to choose a target and overwrite policy.
+The target's *⋯* menu contains *Preview*, *Duplicate* and *Delete…*. *Preview*
   lists the files, asset copies and warnings that the same export plan would publish; it does not
   write files. It also reports the plan's conversion and publication refusals.
 

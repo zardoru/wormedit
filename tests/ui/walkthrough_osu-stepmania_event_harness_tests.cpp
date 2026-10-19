@@ -390,7 +390,8 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     setup.output_group_count = 1;
     setup.stepmania_policy_status = "Ready";
     (void)harness.frame();
-    expect(harness.drawn_text().find("Copy: osu/assets/") != std::string::npos);
+    expect(harness.drawn_text().find("Preview: 1 file(s), 0 conversion warning(s).") != std::string::npos);
+    expect(harness.drawn_text().find("Copy: osu/assets/") == std::string::npos);
     const output_group_export_request_t request{.document = history.document,
         .plan = output_group_export_plan_t::from(history.document, history.document.output_groups.front()),
         .asset_base = root};
@@ -528,6 +529,7 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     harness.view().setup.output_group_count = 1;
     harness.view().setup.stepmania_policy_status = "Ready";
     (void)harness.frame();
-    expect(harness.drawn_text().find("Warning: BMS measure ratios") != std::string::npos);
+    expect(harness.drawn_text().find("Preview: 1 file(s), 1 conversion warning(s).") != std::string::npos);
+    expect(harness.drawn_text().find("Warning: BMS measure ratios") == std::string::npos);
     std::filesystem::remove_all(root);
 }

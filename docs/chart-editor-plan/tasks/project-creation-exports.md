@@ -9,7 +9,14 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-723 Present output groups as export-target cards
 
-- **Status:** ready
+- **Status:** done
+- **Completed:** The Project tab now renders bounded export-target cards with format badges,
+  destinations, display-only chart chips, one-line status, direct Export and a stamped overflow
+  menu. Create, edit, duplicate and destructive deletion use the shared modal lifecycle; Escape,
+  stale revisions and reopened sessions publish nothing. The existing output-group action and core
+  command remain the only mutation boundary. Focused project-view and frontend event-harness tests,
+  GATE, affected-file complexity and clang-tidy pass; isolated Xvfb captures at 1600×900 and
+  800×700 cover populated, empty, edit and deletion-confirmation states.
 - **Outcome:** The Project tab calls the section **Exports** and presents each existing output group
   as the card in [output-groups.svg](../mockups/output-groups.svg): format badge, name, destination,
   chart chips and one status line; **Edit**, **Preview**, **Duplicate** and **Delete…** live in its
@@ -20,9 +27,14 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `src/sys/project_view.cpp` (`build_output_group_view`).
 - **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/frontend/project.h`,
   `src/sys/project_view.cpp`, `tests/sys/project_view_tests.cpp`,
-  `tests/ui/nuklear_event_harness_tests.cpp`, `docs/manual/chapters/walkthrough-bms.adoc`,
+  `tests/ui/nuklear_event_harness_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`,
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`,
+  `docs/manual/chapters/walkthrough-bms.adoc`,
   `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, this card and
   `memory/chart-editor-status/resume.md`.
+- **Owned-file extension:** The two walkthrough event-harness files are included because they
+  exercised the retired inline Edit/Preview controls and the former multi-line row preview; they
+  now verify the card overflow route and the intentional one-line status.
 - **Steps:**
   1. Stale-plan check: search for `Output groups`, `render_output_group_row` and
      `Confirm group deletion`; if cards and a modal already replace all three, record the owning
@@ -52,7 +64,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-724 Give each export target one export action and existing-file policy
 
-- **Status:** blocked-on T-723
+- **Status:** ready
 - **Outcome:** Every export-target card has one split **Export** action: its main button follows a
   saved **Ask / Replace / Keep** existing-files policy, while the menu can choose Replace or Keep
   for one run; the Project header has **Export all**, and the duplicate header/dialog export path is
@@ -182,7 +194,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-727 Edit compatible target membership and improve the empty state
 
-- **Status:** blocked-on T-723
+- **Status:** ready
 - **Outcome:** Target edit dialogs disable incompatible charts with a plain reason, target cards
   add/remove compatible charts through their chips, the chart table's Exports cell opens the same
   membership checklist, and an empty Exports section offers suggested targets from the active

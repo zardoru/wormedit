@@ -6439,11 +6439,13 @@ struct output_group_fixture_t {
 TEST_CASE("Project output groups remain visible when empty and create a stamped group with selected membership",
           "[frontend-state][event-harness][output-groups]") {
     output_group_fixture_t f{false};
-    require_project_access(f.harness.drawn_text().find("Output groups · 0") != std::string::npos);
+    require_project_access(f.harness.drawn_text().find("Exports · 0") != std::string::npos);
     require_project_access(f.harness.drawn_text_center("Export…").has_value());
-    (void)f.click("New group");
+    require_project_access(f.harness.drawn_text_center("No export targets yet. Create one to choose a format, destination and included charts.").has_value());
+    (void)f.click("+ New");
     (void)f.harness.frame();
-    const auto frames = f.click("Save group");
+    require_project_access(f.harness.drawn_text_center("Create export target").has_value());
+    const auto frames = f.click("Save");
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
     });
@@ -6452,7 +6454,7 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     require_project_access(action.project_id == f.harness.view().project_id);
     require_project_access(action.document_revision == f.harness.view().document_revision);
     require_project_access(action.session_generation == 8);
-    require_project_access(std::string_view{action.name} == "New output group");
+    require_project_access(std::string_view{action.name} == "New export target");
     require_project_access(std::string_view{action.path} == "exports/chart.bmson");
     require_project_access(action.family == 4 && action.chart_count == 1 && action.chart_ids[0] == 10);
 }
@@ -6460,10 +6462,16 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
 TEST_CASE("Project output group editor updates checkbox membership and confirms deletion",
           "[frontend-state][event-harness][output-groups]") {
     output_group_fixture_t f{true};
+    require_project_access(f.harness.drawn_text_center("SSC").has_value());
+    require_project_access(f.harness.drawn_text_center("First difficulty").has_value());
+    require_project_access(f.harness.drawn_text_center("→ exports/song.ssc").has_value());
+    (void)f.click("⋯");
+    (void)f.harness.frame();
     (void)f.click("Edit");
     (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Edit export · SSC release").has_value());
     (void)f.click("Second difficulty");
-    const auto saved = f.click("Save group");
+    const auto saved = f.click("Save");
     const auto found = std::ranges::find_if(saved, [](const auto& frame) {
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
     });
@@ -6471,12 +6479,13 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     const auto& action = found->get().project_output_group;
     require_project_access(action.group_index == 3 && action.family == 2);
     require_project_access(action.chart_count == 2 && action.chart_ids[0] == 10 && action.chart_ids[1] == 11);
-    const auto disabled = f.click("Delete group");
-    require_project_access(std::ranges::none_of(disabled, [](const auto& frame) {
-        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE;
-    }));
-    (void)f.click("Confirm group deletion");
-    const auto deleted = f.click("Delete group");
+    (void)f.harness.frame();
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Delete…");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Delete export target?").has_value());
+    const auto deleted = f.click("Delete");
     require_project_access(std::ranges::any_of(deleted, [](const auto& frame) {
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE &&
             frame.get().project_output_group.group_index == 3;
@@ -6486,11 +6495,14 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
 TEST_CASE("Project output group rows expose worker previews and the shared export action",
           "[frontend-state][event-harness][output-groups]") {
     output_group_fixture_t f{true};
+    (void)f.click("⋯");
+    (void)f.harness.frame();
     const auto preview = f.click("Preview");
     require_project_access(std::ranges::any_of(preview, [](const auto& frame) {
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW &&
             frame.get().project_output_group.group_index == 3;
     }));
+    (void)f.harness.frame();
     const auto exported = f.click("Export");
     const auto found = std::ranges::find_if(exported, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
@@ -6502,6 +6514,56 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(action.compose_input_document_revision == f.harness.view().document_revision);
     require_project_access(action.compose_input_chart_id == 10);
     require_project_access(!action.compose_export_overwrite);
+
+    (void)f.harness.frame();
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Duplicate");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Create export target").has_value());
+    const auto duplicated = f.click("Save");
+    const auto copy = std::ranges::find_if(duplicated, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    });
+    require_project_access(copy != duplicated.end());
+    require_project_access(std::string_view{copy->get().project_output_group.name} == "SSC release copy");
+    require_project_access(std::string_view{copy->get().project_output_group.path} == "exports/song.ssc");
+    require_project_access(copy->get().project_output_group.family == 2);
+    require_project_access(copy->get().project_output_group.chart_count == 1 &&
+                           copy->get().project_output_group.chart_ids[0] == 10);
+}
+
+TEST_CASE("Project export target dialogs cancel and retire on stale context",
+          "[frontend-state][event-harness][output-groups]") {
+    output_group_fixture_t f{true};
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Edit");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Edit export · SSC release").has_value());
+    const std::array escape{key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE)};
+    const auto cancelled = f.harness.frame(escape);
+    require_project_access(cancelled.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_NONE);
+    (void)f.harness.frame();
+    require_project_access(!f.harness.drawn_text_center("Edit export · SSC release").has_value());
+
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Edit");
+    (void)f.harness.frame();
+    ++f.harness.view().setup.document_revision;
+    (void)f.harness.frame();
+    require_project_access(!f.harness.drawn_text_center("Edit export · SSC release").has_value());
+
+    --f.harness.view().setup.document_revision;
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Delete…");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Delete export target?").has_value());
+    ++f.harness.view().setup.session_generation;
+    (void)f.harness.frame();
+    require_project_access(!f.harness.drawn_text_center("Delete export target?").has_value());
 }
 
 TEST_CASE("Double-clicking a stem note arms it without opening its label editor",

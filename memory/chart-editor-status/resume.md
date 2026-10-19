@@ -2,15 +2,23 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-723](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-723-present-output-groups-as-export-target-cards)**
-presents existing output groups as export-target cards and moves editing/deletion into shared
-dialogs. Continue the ordered export lane with T-724 (one Export action and existing-file policy),
-T-725 (per-target StepMania policy), then T-726 (typed destinations and complete file preview).
-After T-723, T-727 membership/empty-state work can run independently. T-728, the grouped
-new-project layout picker, is independent and ready but does not displace T-723.
+**Next: [T-724](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-724-give-each-export-target-one-export-action-and-existing-file-policy)**
+consolidates export entry points around one saved Ask/Replace/Keep policy and adds Export all.
+Continue the ordered export lane with T-725 (per-target StepMania policy), then T-726 (typed
+destinations and complete file preview). T-727 membership/empty-state work is now independently
+ready. T-728, the grouped new-project layout picker, is independent and ready but does not displace
+T-724.
 
-Plan cleanup checkpoint (2026-10-19): **656 unique cards — 549 done, 30 ready, 10 partial,
-25 dependency-blocked, 1 blocked-on-user and 41 deferred**. No proposed/noncanonical status or
+Completed **T-723** (2026-10-19): Project output groups are presented as **Exports** cards with
+format badges, destinations, display-only chart chips, one-line status, direct Export and an
+Edit/Preview/Duplicate/Delete overflow menu. Create/edit and destructive deletion use shared
+modals; Escape and stale revision/session guards publish nothing. The persisted model, preview and
+export routes, membership and one-step command boundary are unchanged. Focused projection and
+event-harness checks, GATE, complexity and clang-tidy pass; isolated Xvfb covers populated, empty,
+edit and delete-confirmation states at 1600×900 plus the populated 800×700 layout.
+
+Plan cleanup checkpoint (2026-10-19): **656 unique cards — 550 done, 31 ready, 10 partial,
+23 dependency-blocked, 1 blocked-on-user and 41 deferred**. No proposed/noncanonical status or
 dependency-blocked card with only completed prerequisites remains. T-110 and T-201 were reconciled
 to their completed replacements; T-102, T-161, T-416, T-417 and T-644 now name their remaining
 work as partial cards. The duplicate deferred T-719/T-720 IDs moved to T-729/T-730, leaving the

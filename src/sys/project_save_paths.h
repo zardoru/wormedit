@@ -1,9 +1,13 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
+#include <wormedit/formats/native_project_storage.h>
 
 #include <filesystem>
 #include <optional>
+#include <map>
+#include <stop_token>
 
 namespace wormedit::sys {
 
@@ -25,5 +29,28 @@ class project_portability_notice_t {
 void rebase_project_paths(song_document_t& document,
                           const std::filesystem::path& old_base,
                           const std::filesystem::path& new_base);
+
+struct project_save_request_t {
+    song_document_t document;
+    std::filesystem::path source_base;
+    std::filesystem::path destination;
+    native_project_storage_options_t storage_options;
+};
+
+// Partial copy failures retain the saved external references and name each failed file.
+struct project_save_report_t {
+    std::filesystem::path destination;
+    native_project_storage_outcome_t storage;
+    std::map<std::filesystem::path, std::filesystem::path> relinks;
+    std::vector<std::filesystem::path> copied_files;
+    std::vector<error_t<failure_code_t>> copy_errors;
+
+    [[nodiscard]] auto status_message() const -> std::string;
+    void publish_paths(document_history_t& history, const std::filesystem::path& old_base) const;
+};
+
+// Worker path: write the native snapshot, copy external assets atomically, then persist links.
+[[nodiscard]] auto create_project_save(const project_save_request_t& request,
+                                      std::stop_token stop = {}) -> project_save_report_t;
 
 } // namespace wormedit::sys

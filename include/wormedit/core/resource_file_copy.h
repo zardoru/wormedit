@@ -26,6 +26,8 @@ struct project_asset_copy_request_t {
     // failed validator removes that temporary and leaves the destination
     // untouched. Existing identical destinations do not need publication.
     std::function<bool(const std::filesystem::path&)> validate_temporary{};
+    // Automatic saves may reuse any byte-identical regular file in assets/.
+    bool reuse_identical_files{};
 };
 
 struct export_asset_copy_request_t {

@@ -21,8 +21,7 @@ auto valid_initial_layout(const wormedit::song_document_t& document, std::uint32
     if (document.charts.size() != 1 || !wormedit::validate_document(document).empty())
         return false;
     const auto& chart = document.charts.front();
-    if (chart.source_family != wormedit::format_family_t::native_project ||
-        chart.lane_layouts.size() != 1 || chart.bpms.size() != 1)
+    if (chart.lane_layouts.size() != 1 || chart.bpms.size() != 1)
         return false;
     return chart.lane_layouts.front().layout.lanes.size() == lanes &&
            chart.bpms.front().beats_per_minute == wormedit::signed_rational_t{120, 1};
@@ -158,6 +157,15 @@ void check_catalog_document(const wormedit::song_document_t& document,
     CHECK(std::ranges::equal(document.output_groups, layout.default_output_groups, is_catalog_output));
 }
 
+void check_initial_family(const wormedit::song_document_t& document) {
+    const auto family = document.charts.front().source_family;
+    const auto& groups = document.output_groups;
+    const bool shared_family = !groups.empty() && std::ranges::all_of(groups, [&](const auto& group) {
+        return group.family == groups.front().family;
+    });
+    CHECK(family == (shared_family ? groups.front().family : wormedit::format_family_t::native_project));
+}
+
 void check_catalog_document_valid(const wormedit::song_document_t& document) {
     const auto& chart = document.charts.front();
     const auto lanes = chart.lane_layouts.front().layout.lanes.size();
@@ -174,6 +182,8 @@ void check_catalog_layout(const wormedit::new_project_layout_descriptor_t& layou
     REQUIRE(audio);
     check_catalog_document(*blank, layout);
     check_catalog_document(*audio, layout);
+    check_initial_family(*blank);
+    check_initial_family(*audio);
     check_catalog_document_valid(*blank);
     check_catalog_document_valid(*audio);
 }
@@ -196,4 +206,11 @@ TEST_CASE("D7 catalog document construction rejects invalid identities", "[sys][
     CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{123}, "unknown"));
     CHECK_FALSE(wormedit::sys::make_initial_document(wormedit::song_id_t{}, "osu-mania-7k"));
     CHECK_FALSE(wormedit::sys::make_audio_project_document(wormedit::song_id_t{123}, {}, "", "", "pms-standard-9button"));
+}
+
+TEST_CASE("new project layouts without output groups keep the native family",
+          "[sys][application-defaults][catalog]") {
+    auto layout = wormedit::new_project_layouts().front();
+    layout.default_output_groups = {};
+    CHECK(layout.source_family() == wormedit::format_family_t::native_project);
 }

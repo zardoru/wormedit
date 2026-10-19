@@ -196,6 +196,8 @@ struct new_project_layout_descriptor_t {
     // The layout's profile with lane_keys bound left to right in display order. A layout without
     // lane_keys keeps its factory bindings; wider than ten lanes, that is none (D7).
     [[nodiscard]] auto profile() const -> lane_input_profile_t;
+    // A shared output family enables its authoring tools; mixed/empty outputs stay native.
+    [[nodiscard]] auto source_family() const -> format_family_t;
 
     std::string_view id;
     std::string_view label;

@@ -4,6 +4,7 @@
 #include "sys/compose_view.h"
 #include "sys/output_group_export.h"
 #include "sys/project_view.h"
+#include "sys/resource_job_state.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/chart_editor.h>
 #include <wormedit/core/command_registry.h>
@@ -278,4 +279,67 @@ TEST_CASE("Osu StepMania walkthrough refuses multiple music resources without pu
         expect(result.message.find("music resource") != std::string::npos);
         expect(!std::filesystem::exists(root / group.relative_output_path));
     }
+}
+
+namespace {
+struct walkthrough_save_directory_t {
+    std::filesystem::path path = std::filesystem::temp_directory_path() /
+        ("wormedit-walkthrough-save-" +
+         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    walkthrough_save_directory_t() { std::filesystem::create_directories(path); }
+    ~walkthrough_save_directory_t() {
+        std::error_code error;
+        std::filesystem::remove_all(path, error);
+    }
+};
+
+auto wait_for_saved_project(runtime::resource_copy_t& runtime)
+    -> std::optional<project_save_job_t::completion_t> {
+    for (unsigned attempt = 0; attempt < 1000; ++attempt) {
+        if (auto completed = runtime.poll_project_save()) return completed;
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    return std::nullopt;
+}
+}
+
+TEST_CASE("Osu StepMania walkthrough Save copies linked song audio and repeat Save copies nothing",
+          "[frontend-state][event-harness][walkthrough-osu-stepmania][project-save]") {
+    walkthrough_save_directory_t directory;
+    charting_t flow;
+    const auto save_key = key(SDLK_S, SDL_SCANCODE_S);
+    const auto action = flow.harness.frame({&save_key, 1}, SDL_KMOD_CTRL);
+    expect(action.get().shortcut_event_count == 1);
+    expect(action.get().shortcut_events[0].hid_usage == SDL_SCANCODE_S);
+    task_scheduler_t scheduler{1, 1};
+    runtime::resource_copy_t runtime{scheduler};
+    const auto destination = directory.path / "song.wormedit";
+    expect(runtime.start_project_save(flow.history.document, song_path().parent_path(), destination));
+    expect(runtime.is_project_save_busy());
+    const auto completed = wait_for_saved_project(runtime);
+    expect(completed);
+    expect(*completed);
+    const auto& report = *completed->value().payload;
+    INFO(report.status_message());
+    expect(report.storage.value);
+    expect(report.copy_errors.empty());
+    expect(report.copied_files.size() == 1);
+    report.publish_paths(flow.history, song_path().parent_path());
+    const auto saved_path = flow.history.document.audio_assets.front().source_path;
+    expect(saved_path.is_relative());
+    expect(saved_path.parent_path() == "assets");
+    expect(read_text(directory.path / saved_path) == read_text(song_path()));
+    expect(report.status_message().find(saved_path.generic_string()) != std::string::npos);
+    const auto reopened = parse_native_project(read_text(destination));
+    expect(reopened.value);
+    expect(reopened.value->audio_assets.front().source_path == saved_path);
+    const auto modified = std::filesystem::last_write_time(directory.path / saved_path);
+    expect(runtime.start_project_save(flow.history.document, directory.path, destination));
+    const auto repeated = wait_for_saved_project(runtime);
+    expect(repeated);
+    expect(*repeated);
+    expect(repeated->value().payload->storage.value);
+    expect(repeated->value().payload->copied_files.empty());
+    expect(repeated->value().payload->copy_errors.empty());
+    expect(std::filesystem::last_write_time(directory.path / saved_path) == modified);
 }

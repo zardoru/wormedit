@@ -16,7 +16,8 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-707 Create BMS-family projects as BMS charts
 
-- **Status:** ready
+- **Status:** done
+- **Evidence (2026-10-18):** Blank and audio-backed factories use the layout descriptor's shared output family; every catalog layout retains its lanes, bindings and output groups. Replaced the blanket native-family test assumption with per-layout family checks; no existing project fixtures changed. The production wizard covers BME and BMSON; the from-new-BME walkthrough covers the `#000` projection/virtual canvas, BMS metadata target, reviewed import with `WAV01`, projected Sounds slots, BGM column button and core command, Move to BGM capability/core command, and iBMSC paste of that sound. All 13 focused CTest cases pass; changed-C++ complexity passes (4 translation units). `scripts/gate.sh --jobs 4`: `gate: passed`, 4,189/4,189 tests, build/whitespace/complexity pass. No supporting-file extensions. Xvfb was not run, per the owner's windowless execution instruction.
 - **Outcome:** A project created from a BMS, BME or PMS layout has charts whose `source_family` is `bms`, so imported sounds get `#WAV` IDs, the Sounds dock offers BMS slots, BGM columns are editable, Move to BGM works and slot-based paste accepts the imported sounds. BMSON layouts likewise start as BMSON. Layouts whose outputs mix families (osu!mania with StepMania) stay native.
 - **Read first:** BMS walkthrough F1; `src/sys/application_defaults.cpp` (`make_initial_document`); `include/wormedit/core/lane_profiles.h` (`new_project_layout_descriptor_t`, `default_output_groups`).
 - **Files owned:** `src/sys/application_defaults.cpp`, `include/wormedit/core/lane_profiles.h` and `src/core/lane_profiles.cpp` (only to expose the family fact if needed), `tests/sys/application_defaults_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp`, this card.
@@ -126,12 +127,14 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-715 Copy linked assets into the project when saving
 
-- **Status:** ready
+- **Status:** done
+- **Evidence (2026-10-18):** Explicit Save/Save As runs on the existing resource worker through `async_job_t`: atomic native snapshot, verified asset copies/reuse, atomic link persistence, then live/Undo/Redo path publication without reverting newer edits. External audio, images, MIDI and generator sources are covered, including files in parent folders and symlinks escaping the project. Copy failures retain the external link and name the file; status lists newly copied paths. The from-new-audio-project event walkthrough covers Save input, the production save runtime, copied bytes/native reopen and a repeat save without copying. All 22 focused CTest cases pass. `scripts/gate.sh --jobs 4`: `gate: passed`, 4,201/4,201 tests, build/whitespace/complexity pass (11 changed translation units, including the accepted T-707 work). Xvfb was not run, per the owner's windowless execution instruction; no originals are moved or deleted.
 - **Outcome:** Saving a project copies song audio, keysounds and images that live outside the project directory into its assets folder and relinks them, so a saved project is self-contained (owner, 2026-10-18).
 - **Read first:** osu!mania/StepMania walkthrough finding 5; `src/sys/application.cpp` (save path), `src/sys/project_save_paths.cpp`, `src/core/resource_file_copy.cpp` and `src/sys/resource_job_state.cpp` (the existing project-copy job).
-- **Files owned:** `src/sys/application.cpp` (save only), `src/sys/project_save_paths.cpp`, the resource copy runtime, tests, this card.
+- **Files owned:** `src/sys/application.cpp` (save and its completion/close lifecycle only), `src/sys/project_save_paths.cpp`, `src/sys/project_save_paths.h`, `src/sys/resource_job_state.cpp`, `src/sys/resource_job_state.h`, `include/wormedit/core/resource_file_copy.h`, `src/core/resource_file_copy.cpp`, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card.
+- **Supporting-file extensions:** `src/sys/project_save_paths.h` exposes the save worker/report used by the application and tests. `include/wormedit/core/resource_file_copy.h` and `src/core/resource_file_copy.cpp` add opt-in reuse of any identical file in `assets/` at the existing byte-comparison owner. `tests/CMakeLists.txt` links the shared save worker into the three existing resource-runtime test targets.
 - **Steps:**
-  1. **STOP:** confirm with the owner: copy every external asset automatically on each save, or ask once per project; and whether copies are made for files already under the project directory's parent folders.
+  1. Every save copies every asset outside the project folder into `assets/` and relinks it, silently; identical files are reused so a repeat save copies nothing; the status message lists what was copied.
   2. Reuse the existing resource copy job (atomic copy, relink, reuse of identical files) after the native file is written.
   3. Tests: audio-started project saved elsewhere ends with relative asset paths and copied files; a second save copies nothing new.
 - **Invariants:** Save stays atomic for the project file; a failed copy never loses the link.

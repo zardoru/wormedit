@@ -8,6 +8,7 @@
 
 #include "sys/thread_priority.h"
 #include "sys/output_group_export.h"
+#include "sys/project_save_paths.h"
 #include "ui/frontend/file_jobs.h"
 
 #include <cstdint>
@@ -33,6 +34,7 @@ struct resource_copy_request_t {
 using resource_copy_job_t =
     wormedit::async_job_t<resource_copy_request_t, wormedit::project_asset_copy_outcome_t,
                           resource_copy_identity_t>;
+using project_save_job_t = async_job_t<project_save_request_t, project_save_report_t, document_stamp_t>;
 
 namespace runtime {
 
@@ -42,8 +44,14 @@ struct resource_copy_t {
         wormedit::notification_sink_t notifications = wormedit::notification_sink_t::muted());
 
     [[nodiscard]] auto is_busy() const noexcept -> bool {
-        return job_.is_busy();
+        return job_.is_busy() || save_job_.is_busy();
     }
+    [[nodiscard]] auto is_project_save_busy() const noexcept -> bool { return save_job_.is_busy(); }
+
+    auto start_project_save(const song_document_t& document,
+                             const std::filesystem::path& source_base,
+                             const std::filesystem::path& destination) -> async_job_start_outcome_t;
+    [[nodiscard]] auto poll_project_save() -> std::optional<project_save_job_t::completion_t>;
 
     auto start(resource_copy_request_t request,
                resource_copy_job_t::work_function_t work = copy_file)
@@ -57,6 +65,7 @@ private:
   [[nodiscard]] static auto copy_file(const resource_copy_request_t& request, std::stop_token stop)
       -> resource_copy_job_t::work_outcome_t;
   resource_copy_job_t job_;
+  project_save_job_t save_job_;
 };
 
 class output_group_export_t {

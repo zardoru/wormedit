@@ -89,6 +89,36 @@ TEST_CASE("project asset copy leaves the project unchanged when its source is mi
     CHECK_FALSE(std::filesystem::exists(directory.path / "assets"));
 }
 
+TEST_CASE("automatic project copies reuse identical bytes under a different asset filename",
+          "[unit][core][resources][project-save]") {
+    temporary_directory_t directory;
+    const auto first = directory.path / "first.wav";
+    const auto second = directory.path / "second.wav";
+    write_text(first, "identical audio bytes");
+    write_text(second, "identical audio bytes");
+    const auto copied = wormedit::create_project_asset_copy({.project_directory = directory.path,
+        .source_path = first, .asset = wormedit::asset_id_t{12}});
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
+    const auto reused = wormedit::create_project_asset_copy({.project_directory = directory.path,
+        .source_path = second, .asset = wormedit::asset_id_t{13}, .reuse_identical_files = true});
+    require_copy_status(reused, wormedit::project_asset_copy_phase_t::reused);
+    CHECK(reused->relative_path == copied->relative_path);
+    CHECK_FALSE(std::filesystem::exists(directory.path / "assets/13-second.wav"));
+}
+
+TEST_CASE("automatic project copies never reuse an unpublished copy temporary",
+          "[unit][core][resources][project-save]") {
+    temporary_directory_t directory;
+    std::filesystem::create_directory(directory.path / "assets");
+    write_text(directory.path / "source.wav", "audio bytes");
+    write_text(directory.path / "assets/.wormedit-copy-test", "audio bytes");
+    const auto copied = wormedit::create_project_asset_copy({.project_directory = directory.path,
+        .source_path = directory.path / "source.wav", .asset = wormedit::asset_id_t{12},
+        .reuse_identical_files = true});
+    require_copy_status(copied, wormedit::project_asset_copy_phase_t::copied);
+    CHECK(copied->relative_path == "assets/12-source.wav");
+}
+
 TEST_CASE("unlinked copy cleanup removes only its own intact publication",
           "[unit][core][resources]") {
     temporary_directory_t directory;

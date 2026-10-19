@@ -109,7 +109,31 @@ runtime::resource_copy_t::resource_copy_t(wormedit::task_scheduler_t& scheduler,
     : notifications_(std::move(notifications)),
       job_(scheduler, 1, "Resource copy could not start.",
            "scheduler outstanding-task capacity exceeded", "Resource copy returned no result.",
-           wormedit::async_job_destruction_policy_t::release) {}
+           wormedit::async_job_destruction_policy_t::release),
+      save_job_(scheduler, 1, "Project save could not start.",
+                "scheduler outstanding-task capacity exceeded", "Project save returned no result.",
+                async_job_destruction_policy_t::release) {}
+
+static auto save_project_files(const project_save_request_t& request, std::stop_token stop)
+    -> project_save_job_t::work_outcome_t {
+    return create_project_save(request, stop);
+}
+
+auto runtime::resource_copy_t::start_project_save(const song_document_t& document,
+    const std::filesystem::path& source_base, const std::filesystem::path& destination)
+    -> async_job_start_outcome_t {
+    if (is_busy())
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+            "Wait for the current resource copy or save to finish."});
+    return save_job_.request([&] {
+        return project_save_request_t{.document = document, .source_base = source_base,
+                                       .destination = destination};
+    }, document_stamp_t::from(document), save_project_files);
+}
+
+auto runtime::resource_copy_t::poll_project_save() -> std::optional<project_save_job_t::completion_t> {
+    return save_job_.poll();
+}
 
 auto runtime::resource_copy_t::copy_file(const resource_copy_request_t& request,
                                          std::stop_token stop)
@@ -177,6 +201,7 @@ auto runtime::resource_copy_t::poll(wormedit::document_history_t& history,
 
 void runtime::resource_copy_t::cancel() {
     job_.cancel();
+    save_job_.cancel();
 }
 
 runtime::output_group_export_t::output_group_export_t(wormedit::notification_sink_t notifications)

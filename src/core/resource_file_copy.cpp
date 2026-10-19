@@ -20,6 +20,7 @@
 
 namespace wormedit {
 namespace {
+constexpr std::string_view copy_temporary_prefix = ".wormedit-copy-";
 
 auto is_valid_relative(const std::filesystem::path& path) -> bool {
     if (path.empty() || path.is_absolute() || path.has_root_name() || path.has_root_directory()) {
@@ -300,7 +301,7 @@ auto publish_copy(const project_asset_copy_request_t& request, const copy_locati
     static std::atomic<std::uint64_t> sequence{0};
     const auto temporary =
         location.directory /
-        (".wormedit-copy-" +
+        (std::string{copy_temporary_prefix} +
          std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()) + "-" +
          std::to_string(sequence.fetch_add(1, std::memory_order_relaxed)));
     std::error_code error;
@@ -459,8 +460,42 @@ static auto copy_resource_file_to_relative_directory(
     return publish_copy(request, location, stop);
 }
 
+static auto find_identical_project_copy(const project_asset_copy_request_t& request,
+                                        std::stop_token stop)
+    -> std::optional<project_asset_copy_receipt_t> {
+    namespace fs = std::filesystem;
+    if (!is_existing_copy_directory_safe(request.project_directory, "assets")) return std::nullopt;
+    std::error_code error;
+    std::vector<fs::path> candidates;
+    auto iterator = fs::directory_iterator(request.project_directory / "assets", error);
+    for (; !error && iterator != fs::directory_iterator{}; iterator.increment(error)) {
+        const auto status = iterator->symlink_status(error);
+        if (!error && fs::is_regular_file(status) &&
+            !iterator->path().filename().string().starts_with(copy_temporary_prefix))
+            candidates.push_back(iterator->path());
+    }
+    std::ranges::sort(candidates);
+    const auto source = request.source_path.is_absolute() ? request.source_path
+        : request.project_directory / request.source_path;
+    for (const auto& candidate : candidates) {
+        if (stop.stop_requested()) break;
+        if (file_bytes_equal(source, candidate, stop))
+            return project_asset_copy_receipt_t::from(
+                candidate.lexically_relative(request.project_directory), candidate,
+                project_asset_copy_phase_t::reused);
+    }
+    return std::nullopt;
+}
+
 auto create_project_asset_copy(const project_asset_copy_request_t& request, std::stop_token stop)
     -> project_asset_copy_outcome_t {
+    if (request.reuse_identical_files) {
+        auto inspected = inspect_project_asset_file(request, stop);
+        if (inspected || (inspected.error().code != failure_code_t::not_found &&
+                          inspected.error().code != failure_code_t::conflict)) return inspected;
+        if (auto identical = find_identical_project_copy(request, stop)) return std::move(*identical);
+        if (inspected.error().code == failure_code_t::conflict) return inspected;
+    }
     return copy_resource_file_to_relative_directory(request, "assets", stop);
 }
 

@@ -2362,6 +2362,8 @@ struct application_t::implementation_t {
     }
 
     auto finish_confirmed_close(pending_close_t& pending) -> bool {
+        if (jobs.resource_copy_runtime.is_project_save_busy())
+            return false;
         if (pending.target == close_target_t::application) {
             running = false;
             pending = {};
@@ -2392,7 +2394,7 @@ struct application_t::implementation_t {
             return false;
         }
         if (jobs.resource_copy_runtime.is_busy() || jobs.export_runtime.is_busy() ||
-            jobs.metadata_asset_runtime.import_pending()) {
+            jobs.metadata_asset_runtime.import_pending() || jobs.project_open_runtime.is_busy()) {
             post_project_feedback(notification_severity_t::warning, notification_source_t::document,
                                   "Wait for the current file operation before saving.");
             return false;
@@ -2406,7 +2408,7 @@ struct application_t::implementation_t {
             return false;
         }
         const auto extension = text_util::lowercase_extension(destination);
-            if (extension.empty())
+        if (extension.empty())
             destination += ".wormedit";
         else if (extension != ".wormedit") {
             post_project_feedback(notification_severity_t::warning, notification_source_t::document,
@@ -2414,68 +2416,69 @@ struct application_t::implementation_t {
             return false;
         }
         std::error_code path_error;
-        const auto destination_base =
-            std::filesystem::absolute(destination, path_error).parent_path();
+        destination = std::filesystem::absolute(destination, path_error);
         if (path_error) {
             post_project_feedback(notification_severity_t::error, notification_source_t::document,
                                   "Could not resolve the project destination: " +
                                       path_error.message());
             return false;
         }
-        auto saved_document = session.history.document;
-        wormedit::sys::rebase_project_paths(saved_document, session.project_identity.asset_base,
-                                            destination_base);
-        const auto result = create_native_project_file(destination, saved_document);
-        if (!result.value) {
-            post_project_feedback(
-                result.diagnostics.empty()
-                    ? notification_severity_t::error
-                    : to_notification_severity(result.diagnostics.front().severity),
-                notification_source_t::document,
-                result.diagnostics.empty() ? "Could not save the project."
-                                           : result.diagnostics.front().message);
+        const auto started = jobs.resource_copy_runtime.start_project_save(
+            session.history.document, session.project_identity.asset_base, destination);
+        if (!started) {
+            post_project_feedback(notification_severity_t::error, notification_source_t::document,
+                                  started.error().message);
             return false;
         }
-        wormedit::sys::rebase_project_paths(session.history.document,
-                                            session.project_identity.asset_base, destination_base);
-        for (auto& entry : session.history.undo) {
-            wormedit::sys::rebase_project_paths(entry.before, session.project_identity.asset_base,
-                                                destination_base);
-            wormedit::sys::rebase_project_paths(entry.after, session.project_identity.asset_base,
-                                                destination_base);
-        }
-        for (auto& entry : session.history.redo) {
-            wormedit::sys::rebase_project_paths(entry.before, session.project_identity.asset_base,
-                                                destination_base);
-            wormedit::sys::rebase_project_paths(entry.after, session.project_identity.asset_base,
-                                                destination_base);
-        }
-        mark_document_saved(session.history);
+        return true;
+    }
+
+    void finish_project_save(const wormedit::sys::project_save_report_t& report,
+                              wormedit::document_stamp_t stamp) {
+        using namespace wormedit;
+        report.publish_paths(session.history, session.project_identity.asset_base);
+        session.history.saved_revision = stamp.revision;
         const auto version =
-            native_project_document_version_t{.project_id = session.history.document.id,
-                                              .revision = session.history.document.revision};
+            native_project_document_version_t{.project_id = stamp.project, .revision = stamp.revision};
         session.autosave_loop.mark_explicit_save(version);
         session.project_identity.scanned_primary_version = version;
-        session.project_identity.active_project_path = destination;
-        remember_project_file(preferences.program_preferences, destination,
+        session.project_identity.active_project_path = report.destination;
+        remember_project_file(preferences.program_preferences, report.destination,
                               platform.notification_sink);
         session.project_identity.native_project_loaded = true;
-        session.project_identity.asset_base = destination_base;
+        session.project_identity.asset_base = report.destination.parent_path();
         session.project_identity.external_player_source_path.clear();
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
         post_audio_inventory_feedback(
             audio_runtime.project_sources.reconcile(session.history.document, session.project_identity.asset_base),
             platform.notification_sink);
 #endif
-        auto message = "Project saved to " + destination.string();
-        auto severity = notification_severity_t::success;
-        if (!result.diagnostics.empty()) {
-            message += " " + result.diagnostics.front().message;
-            severity =
-                std::max(severity, to_notification_severity(result.diagnostics.front().severity));
+        auto severity = report.copy_errors.empty() ? notification_severity_t::success
+                                                   : notification_severity_t::warning;
+        if (!report.storage.diagnostics.empty())
+            severity = std::max(severity, to_notification_severity(report.storage.diagnostics.front().severity));
+        post_project_feedback(severity, notification_source_t::document, report.status_message());
+        auto& pending = views.pending_close;
+        if (pending.target != close_target_t::none && pending.project == stamp.project &&
+            pending.revision == stamp.revision && !is_document_dirty(session.history))
+            (void)finish_confirmed_close(pending);
+    }
+
+    void poll_project_save() {
+        const auto completed = jobs.resource_copy_runtime.poll_project_save();
+        if (!completed) return;
+        std::string failure;
+        if (!*completed) failure = completed->error().cause.message;
+        else if (!completed->value().payload->storage.value)
+            failure = completed->value().payload->status_message();
+        if (!failure.empty()) {
+            post_project_feedback(wormedit::notification_severity_t::error,
+                                  wormedit::notification_source_t::document, failure);
+            if (views.pending_close.save_requested) views.pending_close.save_failure = "Save failed: " + failure;
+            return;
         }
-        post_project_feedback(severity, notification_source_t::document, std::move(message));
-        return true;
+        if (completed->value().identity.project != session.history.document.id) return;
+        finish_project_save(*completed->value().payload, completed->value().identity);
     }
 
     void create_audio_project_session(const char* path, std::string_view layout_id) {
@@ -2835,7 +2838,6 @@ struct application_t::implementation_t {
     void save_before_confirmed_close(pending_close_t& pending,
                                      const WormUiWorkspaceAction& action) {
         const auto id = session.history.document.id;
-        const auto revision = session.history.document.revision;
         if (id != pending.project) {
             post_project_feedback(
                 wormedit::notification_severity_t::warning,
@@ -2844,13 +2846,8 @@ struct application_t::implementation_t {
             return;
         }
         pending.save_failure.clear();
-        const bool saved = save_project_session(action);
-        if (!saved)
+        if (!save_project_session(action))
             pending.save_failure = "Save failed: " + views.close_feedback;
-        if (saved && session.history.document.id == id &&
-            session.history.document.revision == revision &&
-            !wormedit::is_document_dirty(session.history))
-            (void)finish_confirmed_close(pending);
     }
 
     auto validate_audio_offset_drag_context(const AudioOffsetDragContext& context)
@@ -4475,6 +4472,7 @@ struct application_t::implementation_t {
             wormedit::sys::poll_application_jobs(
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
+            poll_project_save();
             poll_project_open();
             compose_viewport_delta_seconds =
                 wormedit::sys::compose_frame_delta_seconds(views.compose_viewport_last_ticks);

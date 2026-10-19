@@ -1288,6 +1288,13 @@ auto default_stepmania_step_type(std::size_t keys) -> std::string_view {
     return catalog_default_step_type(keys);
 }
 auto new_project_layouts() -> std::span<const new_project_layout_descriptor_t> { return project_layouts; }
+auto new_project_layout_descriptor_t::source_family() const -> format_family_t {
+    if (default_output_groups.empty()) return format_family_t::native_project;
+    const auto family = default_output_groups.front().family;
+    for (const auto& group : default_output_groups)
+        if (group.family != family) return format_family_t::native_project;
+    return family;
+}
 auto new_project_layout_descriptor_t::profile() const -> lane_input_profile_t {
     auto result = make_profile();
     if (lane_keys.empty()) return result;

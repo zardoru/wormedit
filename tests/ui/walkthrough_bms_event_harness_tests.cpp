@@ -5,11 +5,15 @@
 #include "sys/output_group_export.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/bgm_columns.h>
+#include <wormedit/core/note_to_bgm.h>
+#include <wormedit/core/virtual_canvas.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -71,6 +75,7 @@ auto serialized_document(song_document_t document) -> std::string {
 auto click_text(nuklear_event_harness_t& harness, std::string_view text, bool twice = false)
     -> std::vector<workspace_action_snapshot_t> {
     const auto point = harness.drawn_text_center(text);
+    INFO("Looking for " << text << " in:\n" << harness.drawn_text());
     require_step(point);
     return test::click_at(harness, point->first, point->second, twice);
 }
@@ -95,7 +100,12 @@ struct walkthrough_t {
         (void)harness.frame();
     }
     void project() {
-        flattened = {};
+        const auto model = workspace_view_t::from(*workspace.value, history.document);
+        require_step(model.value);
+        WormUiKeysoundDockRequest request{};
+        worm_ui_frontend_keysound_dock_request(&request);
+        flattened = frontend_workspace_view_t::from(*model.value, history.document, "", {}, false,
+            {}, nullptr, dock_sort_t::natural_name, request);
         flattened.view.compose.visible = true;
         populate_compose_view(flattened, history, *workspace.value, cache, 1600, 1000,
                               interaction, application, nullptr);
@@ -153,16 +163,105 @@ auto import_review(walkthrough_t& flow) -> resource_id_t {
     (void)flow.harness.frame();
     return flow.history.document.resources.front().id;
 }
+
+void check_bms_metadata(walkthrough_t& flow) {
+    const auto model = workspace_view_t::from(*flow.workspace.value, flow.history.document,
+                                             workspace_tab_t::metadata);
+    require_step(model.value);
+    auto metadata = frontend_workspace_view_t::from(*model.value, flow.history.document,
+                                                   "", {}, false, {});
+    check_step(metadata.view.metadata.has_chart);
+    check_step(metadata.view.metadata.selected_chart_source_family ==
+               static_cast<std::uint8_t>(format_family_t::bms));
+    const auto targets = std::span{metadata.view.metadata.format_targets,
+                                   metadata.view.metadata.format_target_count};
+    check_step(std::ranges::any_of(targets, [](const auto& target) {
+        return target.chart_scoped && target.family == static_cast<std::uint8_t>(format_family_t::bms);
+    }));
+}
+
+void check_imported_slots(walkthrough_t& flow, resource_id_t sound) {
+    const auto& identities = flow.history.document.resources.front().target_identities;
+    require_step(identities.size() == 1);
+    check_step(identities.front().family == format_family_t::bms);
+    check_step(identities.front().namespace_name == "WAV");
+    check_step(identities.front().identifier == "01");
+    auto& ui = worm_ui_nuklear_compose_state();
+    ui.dock_layout.sounds_panel_visible = true;
+    (void)flow.harness.frame();
+    check_step(flow.harness.view().compose.keysound_ids_available);
+    (void)click_text(flow.harness, "BMS slots");
+    flow.project();
+    (void)flow.harness.frame();
+    const auto& view = flow.harness.view().compose;
+    check_step(view.sound_slots_mode);
+    require_step(view.sound_slot_count > 0);
+    check_step(view.sound_slots[0].resource_id == sound.value);
+    (void)click_text(flow.harness, "Automatic IDs");
+    flow.project();
+    (void)flow.harness.frame();
+}
+
+void add_bgm_column(walkthrough_t& flow) {
+    check_step(flow.harness.view().compose.bgm_column_count_editable);
+    // The toolbar is drawn before the inspector's separate preset-grid "+" button.
+    const auto bounds = flow.harness.drawn_text_bounds();
+    const auto plus = std::ranges::find_if(bounds, [](const auto& item) {
+        return std::string_view{item.text} == "+";
+    });
+    require_step(plus != bounds.end());
+    const auto clicked = test::click_at(flow.harness, plus->x + plus->width / 2,
+                                       plus->y + plus->height / 2);
+    bool emitted = false;
+    for (const auto& snapshot : clicked) {
+        if (snapshot.get().compose_action != WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT) continue;
+        emitted = true;
+        require_step(apply_bgm_column_count(flow.history, flow.interaction->chart,
+                                            snapshot.get().compose_bgm_column_count).applied);
+    }
+    require_step(emitted);
+    require_step(flow.history.document.charts.front().bgm_source_lanes.size() == 1);
+    require_step(rebind_workspace(*flow.workspace.value, flow.history).value);
+    flow.project();
+    check_step(flow.harness.view().compose.bgm_lane_count == 1);
+    (void)flow.harness.frame();
+}
+
+void move_note_and_paste_imported_sound(walkthrough_t& flow, resource_id_t sound) {
+    const auto note = flow.history.document.charts.front().measures.front().notes.front().id;
+    flow.interaction->selected_notes = {note};
+    flow.interaction->selected_objects.clear();
+    flow.project();
+    check_step(flow.harness.view().compose.move_to_bgm_available);
+    require_step(move_editor_selection_to_bgm(flow.history, *flow.interaction).command.applied);
+    const auto& measure = flow.history.document.charts.front().measures.front();
+    require_step(measure.bgm_events.size() == 1);
+    check_step(measure.bgm_events.front().id == note);
+    check_step(measure.bgm_events.front().sound == sound);
+    flow.application.services.system_clipboard_text = [] {
+        return std::string{"iBMSC Clipboard Data\r\n6 0 10000 0 0 0"};
+    };
+    flow.interaction->cursor = {measure.id, 96};
+    std::string status;
+    require_step(begin_compose_paste(flow.application, flow.history, *flow.interaction, status));
+    require_step(apply_compose_paste(flow.application, flow.history, *flow.interaction, status));
+    const auto& pasted = flow.history.document.charts.front().measures.front().notes;
+    check_step(std::ranges::any_of(pasted, [&](const auto& entry) {
+        return entry.position.row == 96 && entry.sound == sound;
+    }));
+}
 } // namespace
 
-TEST_CASE("BMS walkthrough wizard emits the BME identity and creates its chart and output group",
+TEST_CASE("BMS walkthrough wizard creates BME and BMSON charts with their source families",
           "[frontend-state][event-harness][walkthrough-bms]") {
+    const bool bmson = GENERATE(false, true);
     nuklear_event_harness_t harness{1280, 900};
     require_step(harness.ready());
     // Keep the production combo interaction bounded to the default and the chosen catalog entry.
-    constexpr std::array<WormUiStringDescriptorView, 2> entries{{
+    const std::array<WormUiStringDescriptorView, 2> entries{{
         {.id = "osu-mania-7k", .label = "osu!mania 7K"},
-        {.id = "bme-7k-outside-scratch", .label = "BME 7K (outside scratch)"}}};
+        {.id = bmson ? "bmson-generic-24keys" : "bme-7k-outside-scratch",
+         .label = bmson ? "BMSON generic 24K" : "BME 7K (outside scratch)"}}};
     const std::array labels{entries[0].label, entries[1].label};
     harness.view().new_project_layouts = {
         .entries = entries.data(), .count = entries.size(), .labels = labels.data()};
@@ -171,35 +270,45 @@ TEST_CASE("BMS walkthrough wizard emits the BME identity and creates its chart a
     (void)harness.frame();
     (void)harness.frame();
     (void)click_text(harness, "osu!mania 7K");
-    (void)click_text(harness, "BME 7K (outside scratch)");
+    (void)click_text(harness, entries[1].label);
     const auto created = click_text(harness, "Create project");
     require_step(created.front().get().kind == WORM_UI_WORKSPACE_ACTION_NEW_PROJECT);
     const auto document = make_initial_document(song_id_t{1}, created.front().get().new_project_layout_id);
     require_step(document);
     require_step(document->charts.size() == 1);
-    check_step(document->charts.front().input_profile.bindings.size() == 8);
-    check_step(document->charts.front().lane_layouts.front().layout.lanes.front().role == lane_role_t::scratch);
+    check_step(document->charts.front().input_profile.bindings.size() == (bmson ? 0 : 8));
+    const auto family = bmson ? format_family_t::bmson : format_family_t::bms;
+    check_step(document->charts.front().source_family == family);
+    check_step(document->charts.front().lane_layouts.front().layout.lanes.size() == (bmson ? 24 : 8));
     require_step(document->output_groups.size() == 1);
-    check_step(document->output_groups.front().family == format_family_t::bms);
+    check_step(document->output_groups.front().family == family);
 }
 
-TEST_CASE("BMS walkthrough reviews a sound then arms and enters a keyboard tap and hold",
+TEST_CASE("BMS walkthrough authors imported sounds with slots BGM and iBMSC paste from a new project",
           "[frontend-state][event-harness][walkthrough-bms]") {
     walkthrough_t flow;
+    check_bms_metadata(flow);
+    check_step(flow.harness.view().compose.bms_measure_labels);
+    const auto& initial_view = flow.harness.view().compose;
+    check_step(std::ranges::any_of(std::span{initial_view.grid_lines, initial_view.grid_line_count},
+        [](const auto& line) { return line.measure_number == 1 && line.chart_row == 0; }));
+    const auto canvas = build_virtual_canvas(flow.history.document.charts.front());
+    require_step(std::holds_alternative<virtual_canvas_t>(canvas));
+    check_step(std::get<virtual_canvas_t>(canvas).measure_count == bms_addressable_measure_count);
     const auto sound = import_review(flow);
+    check_imported_slots(flow, sound);
+    add_bgm_column(flow);
     // Production Draw state; Alt+2 dispatch is exercised by the existing routing test.
     flow.application.project.compose_gesture.note_paint_mode_active = true;
     flow.project();
     auto& view = flow.harness.view().compose;
-    const WormUiComposeKeysoundRowView row{
-        .resource_id = sound.value, .slot = "", .name = "keysound-c4.ogg"};
-    view.keysounds = &row;
-    view.keysound_count = view.keysound_total_count = 1;
-    view.keysounds_available = true;
+    require_step(view.keysound_count == 1);
+    check_step(std::string_view{view.keysounds[0].slot} == "01");
     auto& ui = worm_ui_nuklear_compose_state();
     ui.dock_layout.sounds_panel_visible = true;
     (void)flow.harness.frame();
-    const auto armed = click_text(flow.harness, "keysound-c4.ogg", true);
+    // The dock clips long names; the slot cell is part of the same sound row.
+    const auto armed = click_text(flow.harness, view.keysounds[0].slot, true);
     for (const auto& snapshot : armed) (void)flow.dispatch(snapshot);
     check_step(ui.resource_picker.armed_resource_id == sound.value);
     const auto motion = test::mouse_motion(400, 400);
@@ -223,6 +332,7 @@ TEST_CASE("BMS walkthrough reviews a sound then arms and enters a keyboard tap a
     check_step(notes.back().kind == note_kind_t::hold);
     check_step(notes.back().sound == sound);
     check_step(notes.back().end.has_value());
+    move_note_and_paste_imported_sound(flow, sound);
 }
 
 TEST_CASE("BMS walkthrough pastes all four editor formats through preview commit and Undo",

@@ -586,6 +586,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/window.cpp
         ../src/sys/external_player.cpp
         ../src/sys/resource_job_state.cpp
+        ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
@@ -812,6 +813,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_label_search.cpp
             ../src/sys/bookmark_rename_commands.cpp
             ../src/sys/resource_job_state.cpp
+            ../src/sys/project_save_paths.cpp
             ../src/sys/output_group_export.cpp
             ../src/sys/metadata_asset_runtime.cpp
             ../src/sys/metadata_drop_state.cpp
@@ -869,6 +871,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/resource_notification_tests.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/resource_job_state.cpp
+        ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         sys/metadata_notification_tests.cpp
         ../src/sys/sound_usage_view.cpp

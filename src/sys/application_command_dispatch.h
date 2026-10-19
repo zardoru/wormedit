@@ -21,6 +21,9 @@ struct notification_history_runtime_t;
 // Clear chart-specific state while retaining application services and user settings.
 void reset_application_project_edit_state(application_command_state_t& state);
 
+auto unavailable_application_command_message(const command_registry_t& registry,
+    const std::optional<command_id_t>& id, const application_command_state_t& state) -> std::string;
+
 auto invoke_notification_history_command(application_command_t command, bool auto_repeat,
     notification_history_runtime_t& runtime, notification_center_t& center)
     -> std::optional<wormedit::dispatch_outcome_t>;

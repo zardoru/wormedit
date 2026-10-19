@@ -23,6 +23,7 @@ struct sound_drop_origin_t {
     std::uint32_t window_id{};
     bool slots_mode{};
     std::uint16_t first_slot{};
+    bool slot_explicit{};
     resource_drop_target_t target{resource_drop_target_t::none};
 };
 

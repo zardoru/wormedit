@@ -928,9 +928,11 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
         shortcut_key_t::f5, shortcut_key_t::f6, shortcut_key_t::f7,
     };
     for (std::size_t i = 0; i < workspace_tabs.size(); ++i) {
+        const auto destination = workspace_tabs[i].kind == workspace_tab_t::timing
+            ? workspace_tab_t::compose : workspace_tabs[i].kind;
         add_builtin(registry, invoker, "workspace.open_" + std::string(workspace_tabs[i].id),
                     "Open " + std::string(workspace_tabs[i].label), command_category_t::workspace, workspace,
-                    {chord(function_keys[i])}, false, workspace_tabs[i].kind);
+                    {chord(function_keys[i])}, false, destination);
     }
 
     add_builtin(registry, invoker, "timing.toggle_lock", "Toggle Timing Lock",
@@ -945,7 +947,7 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
                 workspace_tab_t::compose);
     add_builtin(registry, invoker, "timing.open_settings", "Timing Settings",
                 command_category_t::timing, command_focus_scope_t::tab, {}, false,
-                workspace_tab_t::timing);
+                workspace_tab_t::compose);
 
     add_builtin(registry, invoker, "edit.tool_select", "Select tool", command_category_t::edit,
         command_focus_scope_t::tab,

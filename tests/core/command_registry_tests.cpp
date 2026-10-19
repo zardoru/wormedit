@@ -461,9 +461,22 @@ TEST_CASE("default registry seeds discoverable editor commands and visible tab r
     CHECK(calls->back() == command_id_t{"workspace.open_timing"});
 
     focus.visible_tabs = {workspace_tab_t::compose};
-    const auto hidden = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}}, focus,
+    const auto hidden = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f1}}, focus,
                                           shortcut_primary_modifier_t::control);
     CHECK(hidden.value.status == command_dispatch_status_t::no_match);
+}
+
+TEST_CASE("default Timing commands target Compose while the retired Timing tab is hidden",
+          "[unit][core][command_registry][timing-settings]") {
+    auto calls = std::make_shared<std::vector<command_id_t>>();
+    const auto registry = command_registry_t::from(make_invoker(calls));
+    auto focus = focus_for_compose();
+    focus.visible_tabs = {workspace_tab_t::compose};
+    const auto timing = dispatch_shortcut(registry, {.chord = {.key = shortcut_key_t::f3}}, focus,
+                                          shortcut_primary_modifier_t::control);
+    CHECK(timing.value.status == command_dispatch_status_t::invoked);
+    CHECK(timing.value.command == command_id_t{"workspace.open_timing"});
+    CHECK(invokes_command_in_focus(registry, focus, calls, "timing.open_settings", 2));
 }
 
 TEST_CASE("Go To Bookmark is bound to Ctrl Shift G without changing Ctrl G",

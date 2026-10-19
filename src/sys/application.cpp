@@ -40,6 +40,7 @@
 #include "sys/timing_view.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/sound_import_staging.h"
 #include "sys/sound_usage_actions.h"
 #include "sys/compose_bga_actions.h"
 #include "sys/bga_dock_runtime.h"
@@ -1346,71 +1347,6 @@ void apply_compare_scroll_action(compare_scene_cache_t& cache,
                  action.compare_scroll_delta / cache.pixels_per_measure);
 }
 
-auto stage_sound_import(const wormedit::song_document_t& document, wormedit::chart_id_t chart,
-                        std::span<const std::string> paths, wormedit::notification_sink_t& notifications,
-                        std::uint8_t fixed_kind = 0) -> std::string {
-    const auto target = document.find_chart(chart);
-    if (target == nullptr) return post_callback_feedback(notifications, wormedit::notification_severity_t::warning,
-        wormedit::notification_source_t::import_, "Select a difficulty before adding sounds.");
-    auto prepared = wormedit::sys::prepare_keysound_import(document, chart, paths, fixed_kind);
-    if (prepared.entries.empty()) return post_callback_feedback(notifications, prepared.skipped_unreadable
-        ? wormedit::notification_severity_t::warning : wormedit::notification_severity_t::info,
-        wormedit::notification_source_t::import_, prepared.message);
-    std::vector<WormUiSoundImportItem> items;
-    std::vector<std::string> source_paths;
-    source_paths.reserve(prepared.entries.size());
-    for (const auto& entry : prepared.entries)
-        source_paths.push_back(entry.asset.source_path.generic_string());
-    for (std::size_t index = 0; index < prepared.entries.size(); ++index) {
-        const auto& entry = prepared.entries[index];
-        items.push_back({source_paths[index].c_str(), entry.asset.name.c_str(),
-                         static_cast<std::uint8_t>(entry.kind), fixed_kind != 0});
-    }
-    std::vector<WormUiSoundImportGroup> groups;
-    for (const auto& group : document.sound_groups)
-        groups.push_back({group.name.c_str(), group.id.value, nullptr, 0});
-    const bool has_bgm = !target->sound_channels.empty() ||
-        std::ranges::any_of(target->measures, [](const wormedit::measure_chunk_t& measure) { return !measure.bgm_events.empty(); });
-    const auto staged = worm_ui_frontend_stage_sound_import(document.id.value, chart.value,
-        document.revision, items.data(), items.size(), groups.data(), groups.size(), has_bgm,
-        prepared.message.c_str());
-    return post_callback_feedback(notifications, staged ? wormedit::notification_severity_t::hint
-        : wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-        staged ? "Review the sounds before importing." : "The sound import could not be staged.");
-}
-
-auto stage_sound_slot_batch(const wormedit::song_document_t& document,
-    wormedit::chart_id_t chart, std::uint16_t first_slot,
-    const std::vector<std::string>& paths, wormedit::notification_sink_t& notifications) -> std::string {
-    const auto prepared = wormedit::sys::prepare_sound_slot_batch(document, chart, first_slot, paths);
-    std::vector<WormUiSoundSlotImportItem> items;
-    items.reserve(prepared.items.size());
-    for (const auto& item : prepared.items)
-        items.push_back({item.path.c_str(), item.name.c_str(), item.occupied_resource_id,
-                         item.occupied_name.c_str(), item.ambiguous});
-    const auto staged = worm_ui_frontend_stage_sound_slot_batch(document.id.value,
-        chart.value, document.revision, first_slot, items.data(), items.size(),
-        prepared.reason.c_str());
-    return post_callback_feedback(notifications, staged ? wormedit::notification_severity_t::hint
-        : wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-        staged ? "Review the WAV slot assignments before importing." : "The WAV slots target is no longer active.");
-}
-
-auto stage_dropped_sound_slots(const wormedit::song_document_t& document,
-    wormedit::chart_id_t chart, std::uint16_t first_slot,
-    const std::vector<std::string>& paths, wormedit::notification_sink_t& notifications) -> std::string {
-    if (paths.size() != 1) return stage_sound_slot_batch(document, chart, first_slot, paths, notifications);
-    const auto prepared = wormedit::sys::prepare_sound_slot_batch(document, chart, first_slot, paths);
-    if (!prepared.reason.empty() || prepared.items.size() != 1)
-        return stage_sound_slot_batch(document, chart, first_slot, paths, notifications);
-    const auto& item = prepared.items.front();
-    const auto staged = worm_ui_frontend_stage_sound_slot_file_at(document.id.value,
-        chart.value, document.revision, first_slot, item.occupied_resource_id, item.path.c_str());
-    return post_callback_feedback(notifications, staged ? wormedit::notification_severity_t::hint
-        : wormedit::notification_severity_t::warning, wormedit::notification_source_t::import_,
-        staged ? "Sound staged for the selected WAV slot." : "The WAV slots target is no longer active.");
-}
-
 void import_dropped_resources(bool session_loaded, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::vector<wormedit::sys::sound_drop_batch_t>& batches, wormedit::notification_sink_t& notifications) {
@@ -1434,9 +1370,9 @@ void import_dropped_resources(bool session_loaded, wormedit::document_history_t&
         }
         if (origin.target == wormedit::sys::resource_drop_target_t::bga)
             static_cast<void>(wormedit::sys::import_bga_files(history, workspace, *workspace.selected_chart, batch.paths, notifications));
-        else if (origin.slots_mode)
-            static_cast<void>(stage_dropped_sound_slots(history.document, *workspace.selected_chart, origin.first_slot, batch.paths, notifications));
-        else static_cast<void>(stage_sound_import(history.document, *workspace.selected_chart, batch.paths, notifications));
+        else
+            static_cast<void>(wormedit::sys::finish_compose_action(notifications,
+                wormedit::sys::stage_dropped_sound_import(history.document, batch)));
     }
     batches.clear();
 }
@@ -1466,7 +1402,8 @@ auto dispatch_reviewed_sound_slot_batch(const WormUiWorkspaceAction& action,
         std::vector<std::string> paths;
         for (std::size_t i = 0; action.compose_import_paths && i < action.compose_import_path_count; ++i)
             paths.emplace_back(action.compose_import_paths[i] ? action.compose_import_paths[i] : "");
-        feedback = stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths, notifications);
+        feedback = wormedit::sys::finish_compose_action(notifications,
+            wormedit::sys::stage_sound_slot_batch(history.document, chart, action.compose_sound_slot, paths)).message;
         return true;
     }
     if (interaction && interaction->is_pending()) {
@@ -1506,7 +1443,8 @@ auto dispatch_reviewed_sound_import(const WormUiWorkspaceAction& action,
         for (std::size_t index = 0; action.compose_import_paths &&
                                    index < action.compose_import_path_count; ++index)
             if (action.compose_import_paths[index]) paths.emplace_back(action.compose_import_paths[index]);
-        feedback = stage_sound_import(history.document, chart, paths, notifications, action.sound_import_kind);
+        feedback = wormedit::sys::finish_compose_action(notifications,
+            wormedit::sys::stage_sound_import(history.document, workspace, paths, action.sound_import_kind)).message;
         return true;
     }
     if (interaction && interaction->is_pending()) {
@@ -2781,9 +2719,8 @@ struct application_t::implementation_t {
                 handled = true;
                 platform.notification_sink.post(
                     notification_severity_t::warning, notification_source_t::input,
-                    dispatched.value.command
-                        ? "Command is currently unavailable: " + dispatched.value.command->value
-                        : "Command is currently unavailable.");
+                    wormedit::sys::unavailable_application_command_message(
+                        command_registry, dispatched.value.command, commands));
             } else if (dispatched.value.status == command_dispatch_status_t::conflict ||
                        dispatched.value.status == command_dispatch_status_t::invalid_event ||
                        dispatched.value.status == command_dispatch_status_t::rejected) {

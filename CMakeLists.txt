@@ -521,6 +521,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_recipe_actions.cpp
         src/sys/compose_transform_actions.cpp
         src/sys/compose_sound_actions.cpp
+        src/sys/sound_import_staging.cpp
         src/sys/compose_bga_actions.cpp
         src/sys/bga_list_view.cpp
         src/sys/bga_dock_runtime.cpp

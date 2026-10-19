@@ -45,8 +45,8 @@ struct prepared_sound_slot_batch_t {
     -> prepared_keysound_import_t;
 
 // Prepares a complete direct-slot preview in natural filename order. Every
-// input is retained for review; any invalid path, duplicate, or range error
-// sets reason and the whole batch remains ineligible for confirmation.
+// invalid path or duplicate is retained for review with a reason. A range
+// overflow returns no items and names the remaining capacity before staging.
 [[nodiscard]] auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
                                             std::uint16_t first_slot,
                                             std::span<const std::string> paths)

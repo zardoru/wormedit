@@ -65,12 +65,14 @@ auto collect_two_file_drop_with_slot_change()
     using namespace wormedit::sys;
     sound_drop_transaction_t transaction;
     auto initial = origin();
+    initial.slot_explicit = true;
     (void)start_drop(transaction, initial, true);
     (void)send_file(transaction, initial, "/tmp/kick.wav");
     const auto outside = drop_event(SDL_EVENT_DROP_POSITION, initial.window_id);
     (void)transaction.handle(outside, initial, false);
     (void)send_file(transaction, initial, "/tmp/snare.wav");
     initial.first_slot = 44;
+    initial.slot_explicit = false;
     return finish_drop(transaction, initial).completed;
 }
 
@@ -139,6 +141,7 @@ TEST_CASE("sound drop retains files across polls and preserves its original slot
     REQUIRE(result);
     REQUIRE(batch_matches(*result, {"/tmp/kick.wav", "/tmp/snare.wav"}));
     CHECK(result->origin.first_slot == 17);
+    CHECK(result->origin.slot_explicit);
 }
 
 TEST_CASE("sound drop claims only when its first file lands on the Sounds list",

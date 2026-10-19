@@ -1,4 +1,5 @@
 #include "sys/output_group_export.h"
+#include <wormedit/core/catalogs.h>
 #include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/slice_spans.h>
@@ -33,7 +34,11 @@ auto prepare_output_assets(const output_group_export_request_t& input,
                                                          input.asset_base, stop);
     if (!discovered) return std::unexpected(discovered.errors.front());
     request.staged_assets = discovered.mappings;
-    auto pending = plan_output_music(input);
+    auto pending = input.plan.group.family == format_family_t::bms ||
+                           input.plan.group.family == format_family_t::bmson
+                       ? plan_pending_export_assets(input.document, input.plan.group,
+                                                    input.asset_base, request.staged_assets)
+                       : plan_output_music(input);
     if (!pending) return std::unexpected(pending.error());
     std::erase_if(*pending, [&](const auto& copy) {
         return std::ranges::any_of(request.staged_assets, [&](const auto& staged) {
@@ -124,101 +129,90 @@ void complete_output_publication(const wormedit::conversion_publication_result_t
     }
 }
 
-void complete_output_group_conversion(const output_group_export_request_t& input,
-                                      wormedit::conversion_request_t& request, std::stop_token stop,
-                                      output_group_export_task_result_t& completed,
-                                      std::span<const project_asset_copy_request_t> pending_assets = {}) {
-    const auto& snapshot = input.document;
-    const auto& group = input.plan.group;
-    const auto& asset_base = input.asset_base;
-    auto* progress = input.progress.get();
-    using namespace wormedit;
-    const auto converted = convert_document(snapshot, request, {}, {.stop = stop, .progress = progress});
-    if (!converted) {
-        const auto error = std::ranges::find_if(converted.diagnostics, [](const auto& diagnostic) {
-            return diagnostic.severity == diagnostic_severity_t::error;
-        });
-        completed.message =
-            error == converted.diagnostics.end() ? "Output conversion failed." : error->message;
-        completed.severity = stop.stop_requested() ? notification_severity_t::info
-                                                   : notification_severity_t::error;
-        return;
+auto validate_generated_asset_sources(const output_group_export_request_t& input,
+                                      const conversion_result_t& converted) -> std::optional<std::string> {
+    for (const auto& copy : converted.asset_copies) {
+        const auto* audio = input.document.find_audio_asset(copy.asset);
+        const auto visual = std::ranges::find(input.document.visual_assets, copy.asset, &visual_asset_t::id);
+        if (!audio && visual == input.document.visual_assets.end())
+            return "Generated export copy has no source asset.";
+        const auto& source = audio ? audio->source_path : visual->source_path;
+        const auto path = source.is_absolute() ? source : input.asset_base / source;
+        std::error_code error;
+        if (!std::filesystem::is_regular_file(path, error) || error)
+            return "Export source is unavailable: " + path.string();
     }
-    if (stop.stop_requested()) {
-        completed.message = "Export cancelled before publication.";
-        completed.severity = notification_severity_t::info;
-        return;
-    }
-    if (auto error = sliced_bms_destination_error(snapshot, group, request, converted)) {
-        completed.message = *error;
-        completed.severity = notification_severity_t::error;
-        return;
-    }
-    conversion_publication_options_t publication;
-    publication.stop = stop;
-    publication.progress = progress;
-    publication.pending_assets.assign(pending_assets.begin(), pending_assets.end());
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    if (is_conversion_needs_slice_spans(snapshot, request)) {
-        publication.stage_generated_files = [&](const auto& staging) {
-            return render_conversion_slice_plans(snapshot, converted, {asset_base, staging, stop});
-        };
-    }
-#endif
-    const auto published = publish_conversion_group_atomic(asset_base, group, request, converted,
-                                                           std::move(publication));
-    complete_output_publication(published, converted, stop, completed);
-}
-
-void complete_sliced_output_group_conversion(const output_group_export_request_t& input,
-                                             wormedit::conversion_request_t& request,
-                                             std::stop_token stop,
-                                             output_group_export_task_result_t& completed) {
-    const auto& snapshot = input.document;
-#if defined(WORMEDIT_HAS_AUDIO_DECODER)
-    if (auto error =
-            wormedit::prepare_conversion_slice_sources(snapshot, request, input.asset_base, stop)) {
-        completed.message = *error;
-        completed.severity =
-            stop.stop_requested() ? notification_severity_t::info : notification_severity_t::error;
-        return;
-    }
-    complete_output_group_conversion(input, request, stop, completed);
-#else
-    const auto converted = convert_document(snapshot, request, {}, {.stop = stop, .progress = input.progress.get()});
-    if (!converted || (converted.slice_plans.empty() && converted.asset_copies.empty() &&
-                       converted.silent_files.empty())) {
-        complete_output_group_conversion(input, request, stop, completed);
-        return;
-    }
-    completed.message = "BMSON sliced-audio conversion requires the audio decoder build.";
-    completed.severity = notification_severity_t::error;
-#endif
+    return std::nullopt;
 }
 
 } // namespace
 
+auto output_group_export_preparation_t::from(const output_group_export_request_t& input,
+                                             std::stop_token stop)
+    -> result_t<output_group_export_preparation_t, std::string> {
+    if (stop.stop_requested()) return std::unexpected("Export cancelled before conversion.");
+    if (input.plan.group.charts.empty()) return std::unexpected("Add at least one chart before exporting.");
+    if (input.plan.group.family == format_family_t::bms &&
+        input.plan.group.relative_output_path.has_extension() &&
+        !is_bms_extension(input.plan.group.relative_output_path.extension().string()))
+        return std::unexpected("Output extension does not match the BMS format family");
+    output_group_export_preparation_t prepared{.request = input.plan.request};
+    if (is_conversion_needs_slice_spans(input.document, prepared.request)) {
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        if (auto error = prepare_conversion_slice_sources(input.document, prepared.request, input.asset_base, stop))
+            return std::unexpected(*error);
+#else
+        return std::unexpected("BMSON sliced-audio conversion requires the audio decoder build.");
+#endif
+    } else {
+        auto pending = prepare_output_assets(input, prepared.request, stop);
+        if (!pending) return std::unexpected(pending.error());
+        prepared.pending_assets = std::move(*pending);
+    }
+    prepared.converted = convert_document(input.document, prepared.request, {},
+                                          {.stop = stop, .progress = input.progress.get()});
+    if (!prepared.converted) {
+        const auto error = std::ranges::find(prepared.converted.diagnostics,
+            diagnostic_severity_t::error, &conversion_diagnostic_t::severity);
+        return std::unexpected(error == prepared.converted.diagnostics.end()
+                                   ? "Output conversion failed." : error->message);
+    }
+    if (stop.stop_requested()) return std::unexpected("Export cancelled before publication.");
+    if (auto error = sliced_bms_destination_error(input.document, input.plan.group,
+                                                 prepared.request, prepared.converted))
+        return std::unexpected(*error);
+    if (auto error = validate_generated_asset_sources(input, prepared.converted))
+        return std::unexpected(*error);
+    auto publication = conversion_publication_plan_payload_t::from(input.asset_base,
+        input.plan.group, prepared.request, prepared.converted, false, prepared.pending_assets);
+    if (!publication) return std::unexpected(publication.error().message);
+    prepared.publication = std::move(*publication);
+    return prepared;
+}
+
 auto run_output_group_export(const output_group_export_request_t& input, std::stop_token stop)
     -> output_group_export_task_result_t {
-    using namespace wormedit;
-    const auto& snapshot = input.document;
-    auto request = input.plan.request;
-    output_group_export_task_result_t completed;
-    if (stop.stop_requested()) {
-        completed.message = "Export cancelled before conversion.";
-        completed.severity = notification_severity_t::info;
-    } else if (is_conversion_needs_slice_spans(snapshot, request)) {
-        complete_sliced_output_group_conversion(input, request, stop, completed);
-    } else {
-        const auto pending = prepare_output_assets(input, request, stop);
-        if (!pending) {
-            completed.message = pending.error();
-            completed.severity = stop.stop_requested() ? notification_severity_t::info
-                                                       : notification_severity_t::error;
-        } else {
-            complete_output_group_conversion(input, request, stop, completed, *pending);
-        }
+    auto prepared = output_group_export_preparation_t::from(input, stop);
+    if (!prepared)
+        return {.message = prepared.error(),
+                .severity = stop.stop_requested() ? notification_severity_t::info
+                                                  : notification_severity_t::error};
+    conversion_publication_options_t publication;
+    publication.stop = stop;
+    publication.progress = input.progress.get();
+    publication.pending_assets = prepared->pending_assets;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    if (is_conversion_needs_slice_spans(input.document, prepared->request)) {
+        publication.stage_generated_files = [&](const auto& staging) {
+            return render_conversion_slice_plans(input.document, prepared->converted,
+                                                  {input.asset_base, staging, stop});
+        };
     }
+#endif
+    const auto published = publish_conversion_group_atomic(input.asset_base, input.plan.group,
+        prepared->request, prepared->converted, std::move(publication));
+    output_group_export_task_result_t completed;
+    complete_output_publication(published, prepared->converted, stop, completed);
     return completed;
 }
 

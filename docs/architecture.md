@@ -171,7 +171,10 @@ between bounded chunks; parser calls are non-interruptible, and cancelled parse 
 
 `output_group_export_plan_t::from` (`sys/output_group_export.h`) owns format request
 policy shared by preview and publication, including StepMania filename/profile and
-BMS sliced-layout rules. `output_group_export_t::start` admits the request before
+BMS sliced-layout rules. `output_group_export_preparation_t::from` shares asset discovery,
+pending-copy planning, conversion and publication preflight between Project Preview and Export.
+Preview lists the planned destinations and diagnostics without writing files.
+`output_group_export_t::start` admits the request before
 copying its document, owns task submission and captures all worker inputs.
 `run_output_group_export` (`sys/output_group_export.cpp`) owns staging/conversion and
 calls the existing atomic publisher. The runtime owns completion and notification.
@@ -179,7 +182,7 @@ Cancelling retains busy state until terminal polling, and a separate domain rece
 preserves publication evidence when scheduler cancellation replaces the task outcome.
 Conversion and preview expose advisory artifact counters and check stop tokens between
 writers/reimports. Atomic staging checks cancellation between existing files, generated
-artifacts and immediately before exchange. Automatic music copies are pending mappings
+artifacts and immediately before exchange. Automatic music, keysound and image copies are pending mappings
 until copied into private staging, so rejection/cancellation cannot leave a new output
 folder or audio file. Completed exchange remains published even if cancellation races
 with completion. Individual writers and filesystem calls are not preemptible.

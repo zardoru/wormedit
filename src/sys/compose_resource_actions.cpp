@@ -300,11 +300,12 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
             "The selected output group is no longer available.", notification_source_t::export_);
     auto group = doc.output_groups[context.action.compose_output_group_index];
     if (group.charts.empty() ||
-        std::ranges::find(group.charts, context.state.chart) == group.charts.end())
+        std::ranges::any_of(group.charts, [&](const auto id) { return doc.find_chart(id) == nullptr; }))
         return compose_action_outcome_t::blocked(
             "The selected output group has no matching charts.", notification_source_t::export_);
     plan = output_group_export_plan_t::from(doc, std::move(group),
-                                           context.action.compose_export_overwrite);
+                                           context.action.compose_export_overwrite,
+                                           context.environment.resources->stepmania_policy);
     return std::nullopt;
 }
 

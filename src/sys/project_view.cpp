@@ -274,21 +274,29 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
     view.output_group_count = count;
     view.output_groups_truncated = count != doc.output_groups.size();
 }
-auto output_preview(const output_preview_request_t& input, std::stop_token stop) -> std::string {
-    const auto& doc = input.document;
-    const auto& group = input.group;
-    if (group.charts.empty()) return "Add at least one chart before exporting.";
-    const auto plan = output_group_export_plan_t::from(doc, group);
-    const auto result = convert_document(doc, plan.request, {},
-                                         {.stop = stop, .progress = input.progress.get()});
-    const auto error = std::ranges::find(result.diagnostics, diagnostic_severity_t::error,
-        &conversion_diagnostic_t::severity);
-    if (error != result.diagnostics.end()) return "Cannot convert: " + error->message;
-    const auto losses = std::ranges::count(result.diagnostics, true, &conversion_diagnostic_t::loss);
-    return "Preview: " + std::to_string(result.outputs.size()) + " file(s), " +
+auto output_preview(const output_group_export_request_t& input, std::stop_token stop) -> std::string {
+    const auto prepared = output_group_export_preparation_t::from(input, stop);
+    if (!prepared) return "Cannot export: " + prepared.error();
+    const auto& converted = prepared->converted;
+    const auto losses = std::ranges::count(converted.diagnostics, true, &conversion_diagnostic_t::loss);
+    auto status = "Preview: " + std::to_string(converted.outputs.size()) + " file(s), " +
         std::to_string(losses) + " conversion warning(s).";
+    for (const auto& file : prepared->publication.files)
+        status += "\nWrite: " + file.project_relative_path.generic_string();
+    for (const auto& file : prepared->publication.generated_files)
+        status += "\nWrite: " + file.generic_string();
+    for (const auto& asset : prepared->publication.assets) {
+        const bool pending = std::ranges::any_of(prepared->pending_assets, [&](const auto& copy) {
+            return copy.asset == asset.asset;
+        });
+        status += std::string{pending ? "\nCopy: " : "\nReuse: "} + asset.project_relative_path.generic_string();
+    }
+    for (const auto& diagnostic : converted.diagnostics)
+        if (diagnostic.severity == diagnostic_severity_t::warning)
+            status += "\nWarning: " + diagnostic.message;
+    return status;
 }
-auto run_output_preview(const output_preview_request_t& request, std::stop_token stop)
+auto run_output_preview(const output_group_export_request_t& request, std::stop_token stop)
     -> output_preview_job_t::work_outcome_t {
     if (stop.stop_requested())
         return std::unexpected(
@@ -296,15 +304,18 @@ auto run_output_preview(const output_preview_request_t& request, std::stop_token
     return output_preview(request, stop);
 }
 auto start_output_preview(project_chart_runtime_t& runtime, const song_document_t& doc,
-    size_t index, task_scheduler_t& scheduler) -> project_chart_ui_result_t {
+    size_t index, task_scheduler_t& scheduler,
+    stepmania_export_policy_t stepmania_policy,
+    const std::filesystem::path& asset_base) -> project_chart_ui_result_t {
     poll_output_group_preview(runtime, doc);
     if (runtime.preview_job() && runtime.preview_job()->is_busy())
         return {.status = "Wait for the current conversion preview."};
     auto progress = std::make_shared<job_progress_t>();
     const auto started = runtime.preview_job(scheduler).request(
-        [&doc, index, &progress] {
-            return output_preview_request_t{.document = doc, .group = doc.output_groups[index],
-                                            .progress = progress};
+        [&doc, index, &progress, stepmania_policy, &asset_base] {
+            return output_group_export_request_t{.document = doc,
+                .plan = output_group_export_plan_t::from(doc, doc.output_groups[index], false, stepmania_policy),
+                .asset_base = asset_base, .progress = progress};
         },
         {.document = {.project = doc.id, .document_revision = doc.revision}, .index = index},
         run_output_preview);
@@ -318,7 +329,8 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
 
 auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
-    task_scheduler_t& scheduler) -> project_chart_ui_result_t {
+    task_scheduler_t& scheduler, stepmania_export_policy_t stepmania_policy,
+    const std::filesystem::path& asset_base) -> project_chart_ui_result_t {
     const document_stamp_t stamp{.project = song_id_t{action.project_id},
                                  .revision = action.document_revision};
     if (!stamp.is_current(history.document) || action.session_generation != runtime.session_generation)
@@ -327,7 +339,7 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     if (!create && action.group_index >= history.document.output_groups.size())
         return {.status = "Output group is no longer available."};
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW)
-        return start_output_preview(runtime, history.document, action.group_index, scheduler);
+        return start_output_preview(runtime, history.document, action.group_index, scheduler, stepmania_policy, asset_base);
     document_command_result_t result;
     if (action.kind == WORM_UI_PROJECT_OUTPUT_GROUP_DELETE)
         result = apply_delete_output_group_command(history, action.group_index);

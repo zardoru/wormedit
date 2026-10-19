@@ -3,6 +3,7 @@
 #include "sys/compose_view.h"
 #include <wormedit/core/editor_navigation_input.h>
 #include <wormedit/core/viewport_input.h>
+#include <wormedit/formats/conversion.h>
 
 namespace wormedit {
 class task_scheduler_t;
@@ -50,6 +51,7 @@ struct compose_resource_inputs_t {
     const std::filesystem::path& asset_base;
     resource_job_inputs_t jobs;
     metadata_resource_inputs_t metadata;
+    stepmania_export_policy_t stepmania_policy;
 };
 struct compose_action_inputs_t {
     document_edit_inputs_t document;

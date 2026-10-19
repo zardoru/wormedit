@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend.h"
+#include "sys/output_group_export.h"
 #include <map>
 #include <optional>
 #include <wormedit/core/async_job.h>
@@ -10,6 +11,7 @@
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/metadata_editor.h>
 #include <wormedit/core/notifications.h>
+#include <wormedit/formats/conversion.h>
 
 #include <cstdint>
 #include <string>
@@ -76,18 +78,13 @@ struct project_chart_command_result_t {
 [[nodiscard]] auto apply_project_chart_command(document_history_t& history,
     const project_chart_command_t& action) -> project_chart_command_result_t;
 
-struct output_preview_request_t {
-    song_document_t document;
-    output_group_t group;
-    std::shared_ptr<job_progress_t> progress;
-};
 struct output_preview_identity_t {
     async_job_project_identity_t document;
     std::size_t index{};
     auto operator==(const output_preview_identity_t&) const -> bool = default;
 };
 using output_preview_job_t =
-    async_job_t<output_preview_request_t, std::string, output_preview_identity_t>;
+    async_job_t<output_group_export_request_t, std::string, output_preview_identity_t>;
 
 class project_chart_runtime_t {
   public:
@@ -135,6 +132,7 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
 
 [[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     document_history_t& history, const WormUiProjectOutputGroupAction& action,
-    task_scheduler_t& scheduler) -> project_chart_ui_result_t;
+    task_scheduler_t& scheduler, stepmania_export_policy_t stepmania_policy = {},
+    const std::filesystem::path& asset_base = {}) -> project_chart_ui_result_t;
 
 } // namespace wormedit::sys

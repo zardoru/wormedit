@@ -32,10 +32,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-708 Separate output file extension from the BMS lane profile
 
-- **Status:** ready
+- **Status:** done
+- **Evidence (2026-10-18):** New BME/PMS publication matrix covers explicit .bme/.bms/.pms filenames, layout-derived folder names and foreign-extension refusal (including the slicing route). Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** A BMS output path such as `song/normal.bme` exports a `.bme` file using the chart's own lane profile; a folder path names files with the extension that matches each chart's layout (`.bme` for BME, `.pms` for PMS).
 - **Read first:** BMS walkthrough F2; `src/sys/output_group_export.h` (request planning), `src/formats/conversion.cpp` (target profile and filename), `src/formats/bms_writer.cpp` (profile lookup).
-- **Files owned:** `src/sys/output_group_export.h`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h` (if the request type changes), tests in `tests/formats/` and the BMS walkthrough test, this card.
+- **Files owned:** `src/sys/output_group_export.h`, `src/sys/output_group_export.cpp`, `src/formats/conversion.cpp`, `include/wormedit/formats/conversion.h` (if the request type changes), tests in `tests/formats/` and the BMS walkthrough test, `tests/sys/resource_notification_tests.cpp`, this card.
+- **Supporting-file extension:** `tests/sys/resource_notification_tests.cpp` updates the existing shared-plan assertion that encoded extension-as-profile behavior and covers foreign extensions on the slicing route; `src/sys/output_group_export.cpp` validates family extensions before that route can bypass ordinary naming.
 - **Steps:**
   1. Stop deriving `target_profile` from the extension; carry the extension as an output-naming fact.
   2. Choose the folder filename extension from the chart's BMS layout.
@@ -47,10 +49,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-709 Package referenced sounds and images with exported charts
 
-- **Status:** blocked-on T-708
+- **Status:** done
+- **Evidence (2026-10-18):** New BME import → production note edit → native save → explicit .bme publication resolves the copied WAV; BMS/BMSON sound/image copies and named missing-source refusal pass. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** Exporting a BMS or BMSON chart copies every referenced keysound and BGA file that is not already at its destination next to the chart (atomically with the chart, through the existing pending-asset publication path) and rewrites references to the copies; a source that cannot be found refuses the export naming it, instead of reporting success.
 - **Read first:** BMS walkthrough F3; `src/sys/output_group_export.cpp` (`plan_output_music`, staging), `src/formats/conversion_publication.cpp` (asset discovery), `src/core/resource_file_copy.cpp`.
-- **Files owned:** `src/sys/output_group_export.cpp/.h`, `src/formats/conversion_publication.cpp`, tests, this card.
+- **Files owned:** `src/sys/output_group_export.cpp/.h`, `src/formats/conversion_publication.cpp`, `include/wormedit/formats/conversion_publication.h`, tests, this card.
+- **Supporting-file extension:** `include/wormedit/formats/conversion_publication.h` exposes pending-copy planning at the existing asset-discovery owner so sys does not duplicate its asset inventory.
 - **Steps:**
   1. Plan copies for referenced sample and image assets the way osu!mania/StepMania music is planned.
   2. Refuse publication when a referenced source is missing, naming it.
@@ -95,7 +99,8 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-712 Export a group whatever chart is active
 
-- **Status:** blocked-on T-709
+- **Status:** done
+- **Evidence (2026-10-18):** New-project Compose dispatch exports only the group’s included chart with an excluded difficulty active; empty-group refusal and Project button availability pass. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** Export (row button and *Export…*) publishes a group's own charts regardless of which chart is active; the button is enabled exactly when the group has charts.
 - **Read first:** osu!mania/StepMania walkthrough finding 2; `src/sys/compose_resource_actions.cpp` (export validation), `src/ui/nuklear/setup_panel.cpp` (button enablement).
 - **Files owned:** those two files and their tests, this card.
@@ -107,10 +112,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-713 Send the StepMania export policy to Preview and Export
 
-- **Status:** blocked-on T-712
+- **Status:** done
+- **Evidence (2026-10-18):** New-project Etterna/legacy policy requests reach serialization and publication; legacy output differs, incompatible combinations refuse, and async Preview receives the policy. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** The StepMania export policy chosen in the Project tab (target and timing syntax) is the policy Preview and Export use for SM/SSC groups.
 - **Read first:** osu!mania/StepMania walkthrough finding 3; `src/sys/transport_player_actions.cpp` (policy storage), `src/sys/output_group_export.h` (request builder), `src/sys/project_view.cpp` (preview).
-- **Files owned:** those files, the policy's owner if it moves, tests, this card.
+- **Files owned:** those files, `src/sys/project_view.h`, `src/sys/application_edit_inputs.h`, `src/sys/application.cpp`, `src/sys/compose_resource_actions.cpp`, `src/ui/nuklear/setup_panel.cpp`, tests, this card.
+- **Supporting-file extensions:** `src/sys/project_view.h` captures policy in preview requests; `src/sys/application_edit_inputs.h` passes the session policy to resource actions; `src/sys/application.cpp` supplies the existing stored policy to both paths; `src/sys/compose_resource_actions.cpp` forwards it to export planning; `tests/sys/application_dispatch_fixture.h` keeps aggregate setup named after the input extension. The existing view-owned session policy remains the sole storage owner. `src/ui/nuklear/setup_panel.cpp` explains that group paths own SM/SSC family.
 - **Steps:** 1. Store the policy where both planners read it. 2. Tests: Etterna and legacy-timing choices change the written file.
 - **Invariants:** Default policy output unchanged.
 - **Reject/failure behavior:** An incompatible combination is refused before publication.
@@ -119,10 +126,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-714 Preview the same plan that Export publishes
 
-- **Status:** blocked-on T-713
+- **Status:** done
+- **Evidence (2026-10-18):** Audio-started projects preview and export all three default groups; Preview writes nothing, renders filenames/copies/warnings, and matches publication collision and missing-source refusals. Export-chain/documentation focused checks: 23/23 passed. `scripts/gate.sh --jobs 3`: `gate: passed`, 4183/4183 tests; complexity passed for 13 translation units. Window checks omitted per the owner’s no-display instruction.
 - **Outcome:** Preview uses export's planning (asset staging included), so a project that exports also previews, and Preview lists the files it would write and its warnings rather than only counts.
 - **Read first:** osu!mania/StepMania walkthrough findings 4 and 9, BMS walkthrough F5; `src/sys/project_view.cpp` (preview), `src/sys/output_group_export.cpp` (planning).
-- **Files owned:** those files, the Project tab preview view, tests, this card.
+- **Files owned:** those files, `src/sys/output_group_export.h`, `src/sys/project_view.h`, `src/sys/application.cpp`, `src/ui/nuklear/setup_panel.cpp`, `tests/CMakeLists.txt`, `docs/architecture.md`, tests, this card.
+- **Supporting-file extensions:** `src/sys/output_group_export.h` exposes shared read-only preparation; `src/sys/project_view.h` reuses the export request for async Preview; `src/sys/application.cpp` supplies the asset base; `tests/CMakeLists.txt` links shared preparation into core Project-view tests; `docs/architecture.md` records the shared preparation boundary. The existing unbounded preview text is retained and wrapped by the Project tab renderer.
 - **Steps:** 1. Share the planning step without publishing. 2. Show planned file names, copies and warning texts. 3. Test: audio-started project previews and exports.
 - **Invariants:** Preview never writes files.
 - **Reject/failure behavior:** Preview reports the same refusals export would.

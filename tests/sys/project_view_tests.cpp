@@ -278,7 +278,8 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
     const auto before = history.document.revision;
-    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    (void)apply_project_output_group_ui_action(
+        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
     require_project(runtime.preview_job() && runtime.preview_job()->is_busy());
     for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
         build_project_chart_view(runtime, history.document, view);
@@ -288,7 +289,8 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
     expect_project(history.document.revision == before);
     expect_project(history.undo.empty());
-    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    (void)apply_project_output_group_ui_action(
+        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
     ++history.document.revision;
     build_project_chart_view(runtime, history.document, view);
     expect_project(!runtime.preview_job());
@@ -318,7 +320,8 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
                                                 .project_id = history.document.id.value,
                                                 .document_revision = history.document.revision,
                                                 .session_generation = runtime.session_generation};
-    const auto result = apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    const auto result = apply_project_output_group_ui_action(
+        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path());
     const auto before_reset = scheduler.outstanding_tasks();
     std::binary_semaphore reset_done{0};
     std::jthread resetter([&runtime, &reset_done] {
@@ -346,7 +349,8 @@ TEST_CASE("Conversion preview Cancel retains busy state and discards its result"
     const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
         .project_id = history.document.id.value, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
-    REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).status ==
+    REQUIRE(apply_project_output_group_ui_action(
+        runtime, history, action, scheduler, {}, std::filesystem::temp_directory_path()).status ==
             "Conversion preview started.");
     runtime.request_cancel_preview();
     REQUIRE(runtime.preview_view().active);

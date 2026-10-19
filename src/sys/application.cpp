@@ -2198,7 +2198,7 @@ struct application_t::implementation_t {
                 compose_resource_inputs_t{
                     session.project_identity.asset_base,
                     {jobs.resource_copy_scheduler, jobs.resource_copy_runtime, jobs.export_runtime},
-                    {views.metadata_drop, jobs.metadata_asset_runtime}}};
+                    {views.metadata_drop, jobs.metadata_asset_runtime}, views.stepmania_export_policy}};
     }
     auto compose_inputs() -> compose_input_inputs_t {
         return {document_inputs(),
@@ -3533,7 +3533,9 @@ struct application_t::implementation_t {
         const auto previous_chart = workspace.selected_chart;
         auto result = group_action
                           ? wormedit::sys::apply_project_output_group_ui_action(runtime, history,
-                                                                                group, scheduler)
+                                                                                group, scheduler,
+                                                                                views.stepmania_export_policy,
+                                                                                session.project_identity.asset_base)
                           : wormedit::sys::apply_project_chart_ui_action(runtime, history, action,
                                                                          workspace.selected_chart);
         auto outcome =

@@ -66,9 +66,9 @@ inline auto dispatch_compose_view_action(
     const compose_action_inputs_t environment{
         {history, workspace, sink},
         {application_state, defaults.compose_interaction_state},
-        compose_resource_inputs_t{defaults.project_identity.asset_base,
-                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-                                  {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
+        compose_resource_inputs_t{.asset_base = defaults.project_identity.asset_base,
+                                  .jobs = {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  .metadata = {defaults.metadata_drop, defaults.metadata_asset_runtime}}};
     return dispatch_compose_view_action(action, environment, state, viewport_height,
                                         metadata_import_busy, post_notifications);
 }
@@ -88,9 +88,9 @@ inline auto dispatch_compose_workspace_action(
     const compose_action_inputs_t environment{
         {history, workspace, notifications},
         {application_state, interaction_state},
-        compose_resource_inputs_t{defaults.project_identity.asset_base,
-                                  {resource_copy_scheduler, resource_copy_runtime, export_runtime},
-                                  {metadata_drop, metadata_asset_runtime}}};
+        compose_resource_inputs_t{.asset_base = defaults.project_identity.asset_base,
+                                  .jobs = {resource_copy_scheduler, resource_copy_runtime, export_runtime},
+                                  .metadata = {metadata_drop, metadata_asset_runtime}}};
     return dispatch_compose_workspace_action(action, environment, viewport_height,
                                              metadata_import_busy);
 }

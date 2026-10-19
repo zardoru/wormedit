@@ -206,6 +206,9 @@ it in new code even before the card lands.
   editor state may not. Today's frontend follows this in what it uses, but four Nuklear files
   included all of `document.h` or the old `interaction.h` for a few enums until T-670 gave the vocabulary a
   light header, `core/vocabulary.h`.
+- **Editable views carry identity.** A frontend view of an object the user can select or edit
+  carries that object's stable ID. Display numbers and vector positions are presentation, never
+  identity; retain the ID through projection and use it in actions and selections.
 - **Migrate under a ratchet, closed by a lane** (owner, 2026-10-17; ratchet and closing lane
   [T-690–T-699](../tasks/frontend-cxx-views.md) added 2026-10-18). The lane converts every
   remaining surface; until a surface's card lands, other changes follow this rule. A change that adds a view surface or action payload writes it in C++

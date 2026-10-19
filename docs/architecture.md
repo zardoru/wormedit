@@ -62,6 +62,25 @@ visual decoding, resource-copy and inspection requests, and conversion previews 
 and queue/progress services retain their domain lifecycles and publication rules; see
 [async task scheduling](async-task-scheduling.md).
 
+## Glossary
+
+| Term | Meaning and owner |
+|---|---|
+| Bar line / measure line | The selectable boundary that starts a measure. Core selection calls it `editor_selection_object_kind_t::bar_line`; projected grid geometry calls it `editor_grid_line_kind_t::measure`. `measure_id_t` is its identity. |
+| Measure rail | The dedicated canvas strip from x=0 to `compose_measure_rail_width`. `compose_bar_line_bounds` in `src/ui/compose_timing_geometry.h` owns its handle geometry. It is not a timing-catalog lane. |
+| BMS measure labels | Format-specific `#000`, `#001`, … presentation beside the grid. They do not identify or edit a bar line. |
+| Split / merge | `split_measure_action_t` and `remove_bar_line_action_t` in `include/wormedit/core/measure_editor.h`; `add_bar_lines` and `remove_bar_lines` own the underlying structural changes. |
+| Selection object | Stable `{kind, id}` identity carried by `editor_selection_object_t`. Scope flags decide which kinds participate. |
+| Hit target | Geometry under a pointer at this frame. It selects an identity; it is not itself selection state. Shared bounds belong in geometry helpers used by drawing and input. |
+| Area geometry | A snapshot of selectable rectangles used by area selection. `cache_area_object_geometry` projects visible scene objects; `editor_objects_in_row_range` supplies the row-range fallback when no snapshot exists. |
+| Proposal | A stamped, revisable edit candidate, usually `proposal_t<Payload, Stamp>`. It owns validation and the eventual apply operation. |
+| Report | Domain data retained from planning or completion: counts, mappings, warnings or partial-work facts. A report does not publish the document by itself. |
+| Ghost preview | Presentation geometry derived from a proposal or report. Paste ghosts come from `paste_geometry`; the core proposal remains the authority for acceptance and commit. |
+| Public entry | A command ID or frontend action/input type that starts a workflow. |
+| Capability | The predicate and registry state that say whether the entry is currently available. |
+| Workflow/session owner | Project-lifetime state for a multi-frame workflow, or the gesture/proposal owner for a bounded edit. |
+| Completion | The typed transaction result plus any domain report, mapped once into shared command/interaction feedback. |
+
 ## Adding a chart edit
 
 You write only what changes:
@@ -91,11 +110,98 @@ every edit gets it.
 | The executor | `document_command_transaction_t` in `include/wormedit/core/command.h`: construct with history (and an optional captured stamp); `document()` creates the working copy once, `current_document()` reads without copying, `source_document()` / `source_chart(id)` read the committed version, and `outcome()` carries diagnostics. `is_ready()` reports a stale capture born rejected. |
 | A committing note edit’s editor effects | `editor_edit_effect_t`, `prepare_editor_edit`, `run_editor_edit` and `commit_editor_edit` in `src/core/interaction_edit_commit.h`: stage a detached working document, commit once, then apply selection/cursor/lane, update surviving capture stamps and build the result. Internal delete/tap reuse shares action context preparation and staging instead of dispatching on scratch histories. Domain commands that already own a transaction use the same finisher. |
 | A core edit | the editor in `src/core` named for the data (`bpm_editor`, `marker_editor`, …) |
+| Area selection | `cache_area_object_geometry` in `src/sys/compose_view.cpp` projects rectangles when a scene snapshot exists. `editor_objects_in_row_range` in `src/core/interaction_selection.cpp` is the row-range fallback; `is_scope_accepted` and `is_editor_selection_scope_accepted` filter both by scope. |
+| Paste | `edit.paste` enters through `begin_compose_paste`; `application_command_state_t::paste_session_t` in `src/sys/compose_view.h` retains the preview. `chart_paste_proposal_t` in `include/wormedit/core/chart_clipboard.h` proposes, revises and applies; `paste_geometry` in `src/sys/compose_view.cpp` derives ghosts from its report. |
 | The measure lane | The measure rail made editable: `compose_bar_line_bounds` in `src/ui/compose_timing_geometry.h` is the one handle rectangle for drawing, picking and area selection, derived from grid lines that carry `measure_id`. Placing a bar line is `split_measure_action_t`; deleting merges through `remove_bar_lines`; pasting splits through `add_bar_lines`. |
 | A row move | `stage_shift_selection` in `include/wormedit/core/time_shift.h` is the one executor for moving objects and bar lines by chart rows (step moves, shift from cursor, bar-line moves with or without time propagation). The drag gesture keeps its own lane and collision planning and runs its row component through it inside its commit; bar-line geometry itself is `move_bar_lines` in `measure_editor.h`. |
 | Background work | `async_job_t` in `include/wormedit/core/async_job.h` |
 
 Rules for writing each piece: [code style](chart-editor-plan/decisions/code-style.md).
+
+### Feature-to-owner index
+
+| Feature | Public entry and capability | Workflow/session owner | Core operation | Completion and regression home |
+|---|---|---|---|---|
+| Paste | `edit.paste`; `paste_target_available` and `refresh_application_command_states` in `src/sys/application.cpp` | `application_command_state_t::paste_session_t`; `begin_compose_paste`, `revise_compose_paste`, `apply_compose_paste` in `src/sys/compose_view.cpp` | `chart_paste_proposal_t` and `paste_chart_clipboard` in `include/wormedit/core/chart_clipboard.h` | `document_command_result_t`; `tests/core/chart_clipboard_tests.cpp`, `tests/sys/compose_notification_tests.cpp`, `tests/ui/walkthrough_bms_event_harness_tests.cpp` |
+| Quantize | `edit.apply_quantize` and `WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE`; `refresh_quantize_commands` and `can_apply_compose_quantize` | `application_command_state_t::quantize_editor_t` and `quantize_applied_report` in `src/sys/compose_view.h` | `quantization_plan_t::from` in `include/wormedit/core/quantize.h`; `apply_quantize_command` in `src/core/command.cpp` | `quantize_command_result_t` mapped to `compose_action_outcome_t`; `tests/core/quantize_tests.cpp`, `tests/sys/compose_quantize_preview_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp` |
+| Note ↔ BGM | `edit.move_to_bgm`, `edit.move_next_to_bgm`, and `WORM_UI_COMPOSE_INPUT_BGM_MOVE_TO_LANE`; `compose_move_to_bgm_available` | Current editor selection; BGM drop dispatch in `dispatch_note_to_bgm_input` and `move_selected_bgm_to_lane` | `stage_move_notes_to_bgm` and `stage_move_bgm_events_to_lane` in `include/wormedit/core/note_to_bgm.h` | `selected_note_to_bgm_result_t` or `editor_interaction_result_t`; `tests/core/note_to_bgm_tests.cpp`, `tests/sys/application_commands_tests.cpp`, `tests/sys/compose_notification_tests.cpp` |
+| Measure editing | `measures.split_at_cursor` and the measure-lane Compose actions; `compose_measure_edit_rejection` | `application_command_state_t::project.compose_view` owns lane visibility/policy; `measure_resize_t` in `src/ui/nuklear/compose_state.h` owns resize capture | `measure_edit_action_t`, `apply_measure_edit`, `add_bar_lines`, `remove_bar_lines`, `move_bar_lines` in `include/wormedit/core/measure_editor.h` | `document_command_result_t`; `tests/core/measure_editor_tests.cpp`, `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/compose_measure_resize_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp` |
+
+### Fixed navigation exercises
+
+Run these prompts unchanged before and after the quantize pilot:
+
+1. Find where keyboard quantize settings become a core request and where failure reaches feedback.
+2. Find where paste is admitted, revised, rejected and committed, including the owner of its retained preview.
+3. Find where bar-line toggling publishes document and cursor/selection changes.
+4. Find the note-move gesture's domain implementation and its shared stale/cancel handling without confusing the two.
+
+Keep model, effort, tools and starting context identical. Record source files inspected and wrong
+turns first; wall time is secondary. A successful answer must identify mutation and
+failure/completion boundaries. This is comparison evidence, not a performance gate.
+
+## Adding a cross-layer surface
+
+Use the measure lane as the worked example. These recipes list the touchpoints that must agree;
+T-661 and compiler warnings from T-669 should enforce closed enums and table sizes where possible.
+
+### Adding a selection object kind
+
+1. Add the stable vocabulary value beside `editor_selection_object_kind_t::bar_line` in
+   `include/wormedit/core/vocabulary.h`; carry it as `editor_selection_object_t`, never as a display
+   number or container position.
+2. Add scope participation beside `is_scope_accepted` in
+   `src/core/interaction_selection.cpp`, plus row-range and projected-area collection where the
+   object participates.
+3. Project the same ID into the view and use it from hit testing and emitted actions. The measure
+   path uses `WormUiComposeGridLineView::measure_id` and `append_area_bar_line_geometry`.
+4. Cover direct selection, scoped area selection and unavailable/hidden cases in core, sys and
+   event-harness tests.
+
+### Adding a Compose action
+
+1. Add the boundary action beside `WORM_UI_COMPOSE_ACTION_TOGGLE_MEASURE_LANE` in
+   `src/ui/frontend/actions.h` when extending that legacy enum; new or converted surfaces use the
+   C++ boundary types required by the frontend rule.
+2. Give it one operation and route. The worked example is `toggle_compose_measure_lane_action_t`
+   and its `compose_action_route_t` entry in `src/sys/compose_actions.cpp`.
+3. Emit it once from the owning frontend control and verify both route and feedback. Closed action
+   tables must fail at compile time when an entry is missing.
+
+### Adding a toolbar button
+
+1. Put rendering and emission in the owning toolbar group; `render_measure_lane_toggles` in
+   `src/ui/nuklear/compose_toolbar.cpp` is the example.
+2. Update the toolbar layout count in the same file so the control is reachable at supported
+   widths. Derive enabled/checked state from the view or command registry instead of duplicating
+   capability rules.
+3. Add an event-harness assertion for the emitted typed action and any visibility-dependent
+   companion control.
+
+### Adding a Compose view field
+
+1. Define a backend-neutral C++ view type with owned storage and queries, like
+   `compose_measure_lane_view_t` in `src/ui/frontend/compose_measure_lane.h`; add it to the owning
+   Compose view in `src/ui/frontend/compose.h`.
+2. Fill it at the sys projection owner (`src/sys/compose_view.cpp` for the measure lane), carrying
+   stable IDs for every selectable/editable object.
+3. Read it in the frontend without reaching document/history state. Check frame ownership and avoid
+   copying an enclosing view after adding owned containers.
+
+### Adding a selectable canvas lane
+
+1. Add the durable data and typed core edit first. The measure lane uses
+   `split_measure_action_t`/`remove_bar_line_action_t` in
+   `include/wormedit/core/measure_editor.h`.
+2. Project identity and presentation, then put shared bounds at one geometry owner. The worked path
+   uses `compose_bar_line_bounds`, `compose_bar_line_at` and `is_compose_measure_lane_press` in
+   `src/ui/compose_timing_geometry.h`.
+3. Use those bounds for drawing (`draw_compose_measure_lane`), ordered pointer claiming
+   (`compose_pointer_start_hits_element` and `handle_compose_measure_lane_click`) and area geometry
+   (`append_area_bar_line_geometry`). Do not add the lane to the timing catalog unless its domain
+   semantics are timing events.
+4. Test projection plus actual frontend emission, overlap priority, visibility/lock refusal and the
+   committed core edit; inspect the real layout in isolated Xvfb when pixels change.
 
 ## Extension direction
 

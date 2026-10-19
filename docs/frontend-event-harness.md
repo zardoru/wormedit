@@ -107,6 +107,21 @@ New cases belong in a file named for their feature, such as
 copying event constructors from the historical general test file. Existing cases
 move only in a separately scoped checkpoint.
 
+### Compose press, candidate, release and click
+
+The harness sends a click as separate down and up frames. In Compose, an eligible left press on
+blank note-field space may start an area-selection candidate. `compose_pointer_start_hits_element`
+prevents that candidate when the press already targets a note, BGM/BGA object, timing marker or
+measure-lane bar line; specialized pointer handlers can claim the press earlier as well. The usual
+focus, scene, mode and active-capture guards still apply.
+
+On release, Nuklear can expose `pointer_clicked`. `process_compose_pointer_actions` then resolves
+ownership in production order: active paste; consumed area/menu state; BGA; measure lane; Alt
+gesture; note-field press/click; BGM click. A candidate may update, commit, cancel or hand a plain
+release back to the click path. Tests for routing must therefore drive both edges and assert the
+emitted action after the owner has seen the release; a press-only assertion does not prove click
+behavior.
+
 ## Writing a test
 
 ```cpp

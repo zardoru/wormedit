@@ -1,6 +1,10 @@
 # Status: resume checklist
 
-Next: [T-658](../../docs/chart-editor-plan/tasks/feature-friction.md#t-658-write-down-the-names-and-paths-a-cross-layer-feature-has-to-find) adds the cross-layer feature-owner index, then run the four fixed navigation exercises for the pre-pilot baseline. T-716 and T-718–T-721 are complete: the manual uses fresh-BME captures and current workflows; assets keep collision-aware original names; portability advice, format-aware BGM hints and Timing-focus policy have one current owner. `scripts/gate.sh --agents 1` passes 4,228/4,228 tests with build, whitespace and changed-C++ complexity clean (`/tmp/wormedit-gate.FJpIoN`); isolated Xvfb verifies the revised warning, production Save → Preview → BMS Export, and all three T-716 capture states. T-716 documentation tests pass 2/2, production walkthroughs 23/23 and the manual builds. Its stale-shot audit still lists all 12 images because the integration batch is uncommitted and changes UI sources; three are regenerated and stamped `b4d9b5a+dirty`, with the other nine retained for T-432/T-433. Do not start the quantize pilot before T-658 and the baseline exist.
+Next: run the four fixed navigation exercises in `docs/architecture.md` once for the pre-pilot
+baseline, with the recorded model/effort/tools/context held constant. T-658 is complete: the
+cross-layer glossary, feature-owner index, addition recipes, pointer-routing sequence and card
+authoring rules now name current symbols. Commit `1ab570c` completes T-716 and T-718–T-721; its
+GATE passes 4,228/4,228 tests. Do not start the quantize pilot before the baseline exists.
 
 Completed **T-146–T-147 cancellable import/export** (2026-10-18): interactive opening, export and conversion preview expose progress/Cancel; automatic music copies join private atomic staging. GCC and Linux Clang GATE each pass 4,158/4,158, with configured clang-tidy, unchanged complexity allowances and inspected isolated Xvfb Compose layout. Remaining state-ownership and feature-friction checkpoints retain their card statuses; T-621 folder moves still run last. Verification evidence and cancellation limits are recorded on the [completed cards](../../docs/chart-editor-plan/tasks/editing-depth.md#t-146-report-progress-and-allow-cancel-for-chart-import).
 

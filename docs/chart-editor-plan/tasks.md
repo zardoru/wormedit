@@ -137,18 +137,21 @@ every number above T-722.
 ## Rules for whoever executes a card
 
 1. Read this file, the card, and only the files the card lists under **Read first**. Do not explore the whole plan.
-2. **File ownership and scope extensions:** Subagents edit only **Files owned**. If another file is required, report the exact paths and reason to the coordinator and wait for its approval before editing them. Coordinator agents may approve necessary supporting-file extensions within the card's intended outcome without asking the user; record the added paths and rationale on the card, update **Files owned**, and communicate the revised ownership to affected subagents before edits. Coordinate overlapping ownership. This authority does not override **Out of scope**, explicit **STOP** steps or unanswered user decisions.
-3. Do everything under **Steps** in order. Do not reorder, merge, or skip steps.
-4. Run every command under **Verify** and paste the real output tail. **GATE** in a Verify field means `scripts/gate.sh` (build, every test, test-listing errors, changed-C++ complexity, whitespace), run with the default job count unless the owner allows the whole computer. A card is not done until each one passes. Never claim a test passed without running it.
-5. Do not touch anything under **Out of scope**, even if it looks broken.
-6. If a step says **STOP**, or an **Open question** is linked and unanswered, stop and ask the user. Do not pick a default unless the card names one.
-7. Follow [`AGENTS.md`](../../AGENTS.md): no new function above cognitive complexity 25, no `NOLINT` to silence it.
-8. When finished, edit `resume.md` only to remove or advance the finished card's line, and report what you changed.
-9. **Stale-plan check first.** The stage roadmap lags the code. Before step 1, search for the behavior the **Outcome** describes (the card names a symbol or string to grep when it can). If it already works, set **Status** to `done (already implemented: <file:line>)`, change nothing else, and stop.
-10. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
-11. A card whose status starts with `deferred` is a late-stage ambition. Never pick it up while choosing work; start it only when the user names its ID. Its original status is kept in parentheses for when it is un-deferred.
-12. A card whose status starts with `partial` has landed code that does not yet meet its **Outcome**, and the card carries a **Done so far** and a **Remaining** list. It can be picked up like a `ready` card: start from **Remaining**, not from step 1, and keep both lists current. Cards that wait on it stay blocked until it is `done`.
-13. Run `ctest --test-dir build -R '^documentation\.'`, which includes the ceremony ratchet: a known ceremony pattern may not grow, and a lowered count lowers its maximum in `cmake/ceremony_ratchet.txt` in the same commit. Follow the code-style section "Repetition and scaffolding" (rule of three by shape; every scaffold names its removal card).
+2. Before writing **Files owned**, search how the nearest existing feature is wired and list the
+   corresponding core, projection/dispatch, frontend and regression files. For a new lane, compare
+   at least the BGA lane and timing markers; do not infer ownership from filenames alone.
+3. **File ownership and scope extensions:** Subagents edit only **Files owned**. If another file is required, report the exact paths and reason to the coordinator and wait for its approval before editing them. Coordinator agents may approve necessary supporting-file extensions within the card's intended outcome without asking the user; record the added paths and rationale on the card, update **Files owned**, and communicate the revised ownership to affected subagents before edits. Coordinate overlapping ownership. This authority does not override **Out of scope**, explicit **STOP** steps or unanswered user decisions.
+4. Do everything under **Steps** in order. Do not reorder, merge, or skip steps.
+5. Run every command under **Verify** and paste the real output tail. **GATE** in a Verify field means `scripts/gate.sh` (build, every test, test-listing errors, changed-C++ complexity, whitespace), run with the default job count unless the owner allows the whole computer. A card is not done until each one passes. Never claim a test passed without running it.
+6. Do not touch anything under **Out of scope**, even if it looks broken.
+7. If a step says **STOP**, or an **Open question** is linked and unanswered, stop and ask the user. Do not pick a default unless the card names one.
+8. Follow [`AGENTS.md`](../../AGENTS.md): no new function above cognitive complexity 25, no `NOLINT` to silence it.
+9. When finished, edit `resume.md` only to remove or advance the finished card's line, and report what you changed.
+10. **Stale-plan check first.** The stage roadmap lags the code. Before step 1, search for the behavior the **Outcome** describes (the card names a symbol or string to grep when it can). If it already works, set **Status** to `done (already implemented: <file:line>)`, change nothing else, and stop.
+11. A card whose status is `blocked-on-user` starts with a **STOP** step naming the [open question](decisions/open-questions.md) or missing input. Do not implement the provisional default unless the user says so.
+12. A card whose status starts with `deferred` is a late-stage ambition. Never pick it up while choosing work; start it only when the user names its ID. Its original status is kept in parentheses for when it is un-deferred.
+13. A card whose status starts with `partial` has landed code that does not yet meet its **Outcome**, and the card carries a **Done so far** and a **Remaining** list. It can be picked up like a `ready` card: start from **Remaining**, not from step 1, and keep both lists current. Cards that wait on it stay blocked until it is `done`.
+14. Run `ctest --test-dir build -R '^documentation\.'`, which includes the ceremony ratchet: a known ceremony pattern may not grow, and a lowered count lowers its maximum in `cmake/ceremony_ratchet.txt` in the same commit. Follow the code-style section "Repetition and scaffolding" (rule of three by shape; every scaffold names its removal card).
 
 ## Standard wiring pattern for a new UI action
 
@@ -156,7 +159,9 @@ Most frontend cards follow the same four-hop path; cards say "wire it through
 the standard pattern" instead of repeating it.
 
 1. **Core:** a command in `include/wormedit/core/<area>.h` / `src/core/<area>.cpp` that runs through `document_command_transaction_t` (staged edits through `proposal_t`; the stamp is checked once at the boundary, see code-style.md) and rejects atomically. Test it in `tests/core/<area>_tests.cpp`.
-2. **Contract:** a new enumerator in `src/ui/frontend.h` (for Compose, next to `WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL`) plus any scalar view fields. Only plain C types cross this boundary.
+2. **Contract:** add the action and view data at the backend-neutral frontend boundary. New or
+   converted surfaces use the C++ types described in `code-style.md`; when extending a legacy
+   `WormUi*` surface, keep the existing representation unless the card contains its conversion.
 3. **Application:** a `case` in the matching dispatcher (`src/sys/compose_actions.cpp`, `src/sys/metadata_actions.cpp`, or `src/sys/timing_edit_runtime.cpp`) that calls the core command, and view projection in `src/sys/compose_view.cpp`, `src/sys/metadata_view_projection.cpp`, or `src/sys/timing_view.cpp`.
 4. **Frontend:** a widget in the owning Nuklear unit (`src/ui/nuklear/compose_inspector.cpp`, `compose_toolbar.cpp`, `metadata_panel.cpp`, `timing_panel.cpp`, …) that sets the action. Frontend-local state goes in the matching `*_state.cpp` and is tested in `tests/ui/`.
 

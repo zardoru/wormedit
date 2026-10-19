@@ -10,7 +10,14 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-658 Write down the names and paths a cross-layer feature has to find
 
-- **Status:** ready (T-716 completed 2026-10-19)
+- **Status:** done
+- **Evidence (2026-10-19):** `docs/architecture.md` now has the per-layer glossary, verified area
+  selection and paste lookup rows, a four-feature owner index, five measure-lane-derived addition
+  recipes and the four fixed navigation prompts with comparison conditions. The event-harness page
+  records the qualified press/candidate/release/click order. Card authoring now requires tracing the
+  nearest feature before ownership, the standard wiring pattern follows the C++ frontend boundary,
+  and editable views carry stable IDs. `AGENTS.md` already had the T-665 job-count/GATE rule and did
+  not need an edit.
 - **Value:** High for little cost: it is documentation only, and it removes most of the search time the measure lane spent.
 - **Outcome:** `docs/architecture.md` has a compact feature-to-owner index naming public entry,
   capability, workflow/session owner, core operation, completion and regression home for paste,

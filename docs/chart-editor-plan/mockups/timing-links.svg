@@ -1,0 +1,161 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="620" viewBox="0 0 1000 620">
+  <rect width="1000" height="620" fill="#12131a"/>
+  <text x="16" y="24" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Compose · timing lane headers</text>
+  <rect x="16" y="36" width="580" height="300" rx="0" fill="#161921"/>
+  <rect x="16" y="36" width="59" height="300" rx="0" fill="#1a1e26"/>
+  <text x="22" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#e8a24a">BPM</text>
+  <rect x="56" y="44" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="62" y="46" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="18" y="60" width="55" height="276" rx="2" fill="none" stroke="#86b4ff" stroke-width="1" opacity="0.45" stroke-dasharray="2 4"/>
+  <rect x="76" y="36" width="59" height="300" rx="0" fill="#1d2129"/>
+  <text x="82" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#b1ce81">SV</text>
+  <rect x="114" y="45" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <rect x="125" y="45" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <line x1="122" y1="53" x2="124" y2="43" stroke="#f2be66" stroke-width="1.4"/>
+  <rect x="136" y="36" width="59" height="300" rx="0" fill="#1a1e26"/>
+  <text x="142" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#71b8da">SPD</text>
+  <rect x="176" y="44" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="182" y="46" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="138" y="60" width="55" height="276" rx="2" fill="none" stroke="#86b4ff" stroke-width="1" opacity="0.45" stroke-dasharray="2 4"/>
+  <rect x="196" y="36" width="59" height="300" rx="0" fill="#1d2129"/>
+  <text x="202" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ef6b6b">STP</text>
+  <rect x="236" y="44" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="242" y="46" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="198" y="60" width="55" height="276" rx="2" fill="none" stroke="#86b4ff" stroke-width="1" opacity="0.45" stroke-dasharray="2 4"/>
+  <rect x="256" y="36" width="59" height="300" rx="0" fill="#1a1e26"/>
+  <text x="262" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#e8a24a">DLY</text>
+  <rect x="296" y="44" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="302" y="46" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="258" y="60" width="55" height="276" rx="2" fill="none" stroke="#86b4ff" stroke-width="1" opacity="0.45" stroke-dasharray="2 4"/>
+  <rect x="316" y="36" width="59" height="300" rx="0" fill="#1d2129"/>
+  <text x="322" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#c58af0">WRP</text>
+  <rect x="376" y="36" width="59" height="300" rx="0" fill="#1a1e26"/>
+  <text x="382" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f06aa0">KIA</text>
+  <rect x="436" y="36" width="39" height="300" rx="0" fill="#212835"/>
+  <text x="442" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">1</text>
+  <text x="442" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">1</text>
+  <rect x="476" y="36" width="39" height="300" rx="0" fill="#252d3b"/>
+  <text x="482" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">2</text>
+  <text x="482" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">2</text>
+  <rect x="516" y="36" width="39" height="300" rx="0" fill="#212835"/>
+  <text x="522" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">3</text>
+  <text x="522" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">3</text>
+  <rect x="556" y="36" width="39" height="300" rx="0" fill="#252d3b"/>
+  <text x="562" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="none" stroke="#000000" stroke-width="2.5" stroke-linejoin="round">4</text>
+  <text x="562" y="54" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f0f4fa">4</text>
+  <line x1="16" y1="104" x2="596" y2="104" stroke="#3a4353" stroke-width="1"/>
+  <line x1="16" y1="150" x2="596" y2="150" stroke="#3a4353" stroke-width="1"/>
+  <line x1="16" y1="196" x2="596" y2="196" stroke="#3a4353" stroke-width="1"/>
+  <line x1="16" y1="242" x2="596" y2="242" stroke="#3a4353" stroke-width="1"/>
+  <line x1="16" y1="288" x2="596" y2="288" stroke="#3a4353" stroke-width="1"/>
+  <line x1="16" y1="334" x2="596" y2="334" stroke="#3a4353" stroke-width="1"/>
+  <rect x="20" y="96" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#86b4ff" stroke-width="1"/>
+  <text x="26" y="108" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">174</text>
+  <rect x="20" y="234" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#86b4ff" stroke-width="1"/>
+  <text x="26" y="246" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">87</text>
+  <rect x="80" y="142" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#f2be66" stroke-width="1"/>
+  <text x="86" y="154" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">1.5×</text>
+  <rect x="80" y="188" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#f2be66" stroke-width="1"/>
+  <text x="86" y="200" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">0.8×</text>
+  <rect x="80" y="280" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#f2be66" stroke-width="1"/>
+  <text x="86" y="292" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">1×</text>
+  <rect x="200" y="234" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#86b4ff" stroke-width="1"/>
+  <text x="206" y="246" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">1/8</text>
+  <rect x="380" y="142" width="51" height="16" rx="3" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="386" y="154" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">on</text>
+  <rect x="81" y="99" width="312" height="48" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="80" y="98" width="314" height="50" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="79" y="97" width="316" height="52" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="78" y="96" width="318" height="54" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="77" y="95" width="320" height="56" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="76" y="94" width="322" height="58" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="75" y="93" width="324" height="60" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="74" y="92" width="326" height="62" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="82" y="96" width="310" height="46" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="94" y="116" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">BPM 174 · from “Song timing”</text>
+  <text x="94" y="133" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#717077">editing here detaches BPM for this chart</text>
+  <rect x="690" y="36" width="294" height="424" rx="6" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="702" y="60" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">Timing links</text>
+  <text x="702" y="86" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Source</text>
+  <rect x="760" y="70" width="212" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="770" y="87" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Song timing (shared)</text>
+  <text x="962" y="87" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#adb3c5">▾</text>
+  <text x="704" y="128" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">BPM</text>
+  <rect x="800" y="119" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="806" y="121" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <text x="820" y="128" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#86b4ff">Linked</text>
+  <rect x="896" y="112" width="76" height="24" rx="4" fill="none"/>
+  <text x="934.0" y="128.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Detach</text>
+  <rect x="696" y="142" width="282" height="32" rx="4" fill="#2d2616"/>
+  <text x="704" y="162" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">SV / scroll</text>
+  <rect x="798" y="154" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <rect x="809" y="154" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <line x1="806" y1="162" x2="808" y2="152" stroke="#f2be66" stroke-width="1.4"/>
+  <text x="820" y="162" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f2be66">Local</text>
+  <rect x="896" y="146" width="76" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="934.0" y="162.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Relink…</text>
+  <text x="704" y="196" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">SPEEDS</text>
+  <rect x="800" y="187" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="806" y="189" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <text x="820" y="196" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#86b4ff">Linked</text>
+  <rect x="896" y="180" width="76" height="24" rx="4" fill="none"/>
+  <text x="934.0" y="196.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Detach</text>
+  <text x="704" y="230" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Stops</text>
+  <rect x="800" y="221" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="806" y="223" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <text x="820" y="230" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#86b4ff">Linked</text>
+  <rect x="896" y="214" width="76" height="24" rx="4" fill="none"/>
+  <text x="934.0" y="230.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Detach</text>
+  <text x="704" y="264" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Delays</text>
+  <rect x="800" y="255" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <rect x="806" y="257" width="8" height="6" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.4"/>
+  <text x="820" y="264" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#86b4ff">Linked</text>
+  <rect x="896" y="248" width="76" height="24" rx="4" fill="none"/>
+  <text x="934.0" y="264.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Detach</text>
+  <text x="704" y="298" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">Kiai</text>
+  <text x="820" y="298" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#717077">Not linked</text>
+  <rect x="896" y="282" width="76" height="24" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="934.0" y="298.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Link</text>
+  <line x1="702" y1="320" x2="972" y2="320" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="702" y="342" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Used by 3 charts: 7K Hyper, 7K Another,</text>
+  <text x="702" y="358" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">14K (SV local in 7K Another)</text>
+  <rect x="702" y="372" width="270" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="837.0" y="390.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Edit shared timing…</text>
+  <rect x="702" y="408" width="270" height="28" rx="4" fill="none"/>
+  <text x="837.0" y="426.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Link all categories</text>
+  <rect x="16" y="356" width="580" height="48" rx="6" fill="#1e1f28" stroke="#f2be66" stroke-width="1"/>
+  <rect x="28" y="373" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <rect x="39" y="373" width="7" height="6" rx="3" fill="none" stroke="#f2be66" stroke-width="1.4"/>
+  <line x1="36" y1="381" x2="38" y2="371" stroke="#f2be66" stroke-width="1.4"/>
+  <text x="54" y="377" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#f5f6fa">SV is now local to 7K Another.</text>
+  <text x="54" y="394" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Other charts keep the shared SV; BPM and the rest stay linked.</text>
+  <text x="580" y="377" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#86b4ff">Undo</text>
+  <text x="580" y="394" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="end" fill="#86b4ff">Relink</text>
+  <rect x="15" y="425" width="582" height="152" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="14" y="424" width="584" height="154" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="13" y="423" width="586" height="156" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="12" y="422" width="588" height="158" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="11" y="421" width="590" height="160" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="10" y="420" width="592" height="162" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="9" y="419" width="594" height="164" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="8" y="418" width="596" height="166" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="16" y="422" width="580" height="150" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="32" y="450" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="bold" text-anchor="start" fill="#f5f6fa">Relink SV to Song timing?</text>
+  <text x="32" y="476" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">This chart&#x27;s 14 local SV events are replaced by the shared 9.</text>
+  <text x="32" y="494" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Only SV changes; Undo restores the local events.</text>
+  <rect x="32" y="528" width="150" height="28" rx="4" fill="none"/>
+  <text x="107.0" y="546.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Copy local to new set</text>
+  <rect x="292" y="528" width="84" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="334.0" y="546.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Cancel</text>
+  <rect x="384" y="528" width="196" height="28" rx="4" fill="none" stroke="#df563b" stroke-width="1"/>
+  <text x="482.0" y="546.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ff9e86">Relink, discard 14</text>
+  <text x="690" y="478" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">blue chain: follows the shared source</text>
+  <text x="690" y="492" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">amber broken chain: local override</text>
+  <text x="690" y="506" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">dashed blue band: linked lane; editing</text>
+  <text x="690" y="520" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">  is allowed and detaches on first write</text>
+  <text x="690" y="534" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">WRP: no badge; extra categories</text>
+  <text x="690" y="548" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">  are an open T-720 question</text>
+  <text x="690" y="562" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Source: assumes named shared sets,</text>
+  <text x="690" y="576" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">  one answer to T-720&#x27;s first question</text>
+  <text x="16" y="606" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Detach keeps the current events as a local copy. Relink is the only step that can lose data, so only Relink confirms.</text>
+</svg>

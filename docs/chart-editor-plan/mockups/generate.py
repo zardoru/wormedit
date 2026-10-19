@@ -494,6 +494,320 @@ def hitsound_palette():
     svg.save("hitsound-palette.svg")
 
 
+# Lane strips: S scratch, 1 white key, 2 black key, P pedal, F free zone, space = stage gap.
+LANE_FILL = {"S": "#8b3225", "1": "#4a4d5c", "2": "#262833", "P": "#8a6a2c", "F": "#3b4a3a"}
+
+
+def lane_strip(svg, x, y, spec, lane_w, h, labels=None, gap=None):
+    """Mini lane diagram; returns the strip width."""
+    gap = gap if gap is not None else lane_w
+    cursor = x
+    index = 0
+    for kind in spec:
+        if kind == " ":
+            cursor += gap
+            continue
+        width = lane_w * 1.6 if kind == "S" else lane_w
+        svg.rect(cursor, y, width - 1, h, LANE_FILL[kind], radius=1)
+        if labels:
+            svg.text(cursor + (width - 1) / 2, y + h - 6, labels[index], "#f0f4fa", 10, "middle",
+                     outline="#000000")
+        cursor += width
+        index += 1
+    return cursor - x
+
+
+def link_icon(svg, x, y, color, broken=False):
+    """Two chain links, 14 x 8; broken separates them with a slash."""
+    if not broken:
+        svg.rect(x, y, 8, 6, "none", color, radius=3, width=1.4)
+        svg.rect(x + 6, y + 2, 8, 6, "none", color, radius=3, width=1.4)
+        return
+    svg.rect(x - 2, y + 1, 7, 6, "none", color, radius=3, width=1.4)
+    svg.rect(x + 9, y + 1, 7, 6, "none", color, radius=3, width=1.4)
+    svg.line(x + 6, y + 9, x + 8, y - 1, color, 1.4)
+
+
+def new_project_layout():
+    """Proposal: game list + layout cards + variant toggles instead of one 60-entry combo."""
+    svg = Svg(980, 720, "#0b0c11")
+    x, y, w, h = 30, 24, 920, 548
+    panel(svg, x, y, w, h)
+    svg.text(x + 16, y + 30, "Create a new project", BRIGHT, 14, weight="bold")
+    svg.text(x + w - 22, y + 30, "✕", MUTED, 14, "middle")
+    # Search filters every game's cards; typing "14" or "pedal" jumps straight to matches.
+    svg.rect(x + 200, y + 46, w - 216, 28, BG, BORDER, radius=4)
+    svg.text(x + 212, y + 65, "⌕  Search layouts  —  14k, pedal, pump, special…", FAINT, 12)
+
+    # Game list.
+    games = [("Recent", "3"), ("osu!mania", "20"), ("BMS / BME", "28"), ("PMS", "4"),
+             ("StepMania", "3"), ("BMSON", "2")]
+    svg.text(x + 16, y + 64, "Game", MUTED, 12)
+    for index, (name, count) in enumerate(games):
+        gy = y + 84 + index * 32
+        if name == "BMS / BME":
+            svg.rect(x + 12, gy, 172, 28, "#172e60", radius=4)
+            svg.rect(x + 12, gy, 3, 28, BORDER_HI, radius=1)
+        svg.text(x + 24, gy + 19, name, BRIGHT if name == "BMS / BME" else TEXT, 13)
+        svg.text(x + 176, gy + 19, count, FAINT, 11, "end")
+    svg.line(x + 192, y + 46, x + 192, y + h - 60, BORDER)
+
+    # Layout cards: one per lane shape; variants are toggles below instead of separate entries.
+    cards = [("BMS 5K", "S12121", "5 keys + scratch"),
+             ("BME 7K", "S1212121", "7 keys + scratch"),
+             ("DP5 / 10K", "S12121 12121S", "two 5K sides"),
+             ("DP7 / 14K", "S1212121 1212121S", "two 7K sides"),
+             ("10K no scratch", "12121 12121", "two 5K, no scratch"),
+             ("Double scratch", "SS1212121", "FPP"),
+             ("Octave", "P1212121212121", "foot pedal"),
+             ("Project2DX 7K", "S1212121", "7 keys + scratch")]
+    gx, gy0, cw, ch = x + 208, y + 88, 168, 104
+    for index, (name, spec, hint) in enumerate(cards):
+        cx = gx + (index % 4) * (cw + 8)
+        cy = gy0 + (index // 4) * (ch + 8)
+        active = name == "BME 7K"
+        svg.rect(cx, cy, cw, ch, "#172e60" if active else HOVER, BORDER_HI if active else BORDER,
+                 radius=6, width=2 if active else 1)
+        lanes = [c for c in spec if c != " "]
+        lane_w = min(12, 120 / (len(lanes) + 2))
+        strip_w = sum(lane_w * (1.6 if c == "S" else 1) for c in lanes) + spec.count(" ") * lane_w
+        lane_strip(svg, cx + (cw - strip_w) / 2, cy + 12, spec, lane_w, 46)
+        svg.text(cx + 10, cy + 78, name, BRIGHT if active else TEXT, 13, weight="bold" if active else "normal")
+        svg.text(cx + 10, cy + 94, hint, MUTED, 11)
+
+    # Variant toggles for the selected card. Only the options that card has are shown.
+    vy = gy0 + 2 * (ch + 8) + 10
+    svg.line(gx, vy - 4, x + w - 16, vy - 4, BORDER)
+    svg.text(gx, vy + 20, "Scratch", MUTED, 12)
+    segmented(svg, gx + 110, vy + 4, ["Outside (left)", "Inside (right)"], 0)
+    svg.text(gx, vy + 54, "Extra lanes", MUTED, 12)
+    segmented(svg, gx + 110, vy + 38, ["None", "Foot pedal"], 0)
+    svg.text(gx + 396, vy + 54, "Free zone appears only for 5K / DP5", FAINT, 11)
+
+    # Large preview with the lanes Compose will open with (and their default keys when bound).
+    py = vy + 76
+    svg.rect(gx, py, x + w - 16 - gx, 92, FIELD, BORDER, radius=6)
+    svg.text(gx + 12, py + 20, "Preview", MUTED, 12)
+    lane_strip(svg, gx + 12, py + 30, "S1212121", 34, 50, ["SC", "1", "2", "3", "4", "5", "6", "7"])
+    svg.text(gx + 330, py + 46, "8 lanes · BMS lane profile BME 7K", TEXT, 12)
+    svg.text(gx + 330, py + 64, "Saves as  .bme   ·  default export: BMS", TEXT, 12)
+    svg.text(gx + 330, py + 80, "Recent remembers the last 3 choices", FAINT, 11)
+
+    # Footer.
+    svg.line(x + 16, y + h - 52, x + w - 16, y + h - 52, BORDER)
+    svg.text(x + 16, y + h - 26, "Enter creates · ↑↓ games · ←→ cards · Tab to variants", FAINT, 11)
+    button(svg, x + w - 16 - 140 - 8 - 84, y + h - 40, 84, "Cancel")
+    button(svg, x + w - 16 - 140, y + h - 40, 140, "Create project", "primary")
+
+    # osu!mania page inset: key counts are chips, not 20 cards.
+    iy = y + h + 18
+    svg.rect(x, iy, w, 64, SURFACE, BORDER, radius=6)
+    svg.text(x + 16, iy + 22, "osu!mania page", MUTED, 12)
+    svg.text(x + 16, iy + 48, "Keys", MUTED, 12)
+    cx = x + 66
+    for keys in range(1, 19):
+        cx += chip(svg, cx, iy + 32, str(keys), active=keys == 7) + 4
+    svg.text(cx + 12, iy + 48, "SpecialStyle", TEXT, 12)
+    checkbox(svg, cx + 116, iy + 36, "off")
+    svg.text(cx + 140, iy + 48, "(12K, 16K)", FAINT, 11)
+    svg.note(x, iy + 86, "Import audio as a new project: same dialog, with the audio path under the title and Recent selected.")
+    svg.note(x, iy + 102, "The catalog stays one table (lane_profiles.cpp); cards group its entries by lane shape and variants pick the id.")
+    svg.save("new-project-layout.svg")
+
+
+def timing_links():
+    """T-720 proposal: per-category timing links, copy-on-write overrides and relink."""
+    svg = Svg(1000, 620)
+    LINK = "#86b4ff"
+    # Compose lane headers with link badges.
+    svg.text(16, 24, "Compose · timing lane headers", MUTED, 12)
+    hx, hy = 16, 36
+    lanes = [("BPM", "#e8a24a", "linked"), ("SV", "#b1ce81", "local"), ("SPD", "#71b8da", "linked"),
+             ("STP", "#ef6b6b", "linked"), ("DLY", "#e8a24a", "linked"), ("WRP", "#c58af0", None),
+             ("KIA", "#f06aa0", "own")]
+    lane_w = 60
+    svg.rect(hx, hy, lane_w * len(lanes) + 4 * 40, 300, FIELD)
+    for index, (label, color, state) in enumerate(lanes):
+        lx = hx + index * lane_w
+        svg.rect(lx, hy, lane_w - 1, 300, "#1d2129" if index % 2 else "#1a1e26")
+        svg.text(lx + 6, hy + 18, label, color, 12)
+        if state == "linked":
+            link_icon(svg, lx + 40, hy + 8, LINK)
+        elif state == "local":
+            link_icon(svg, lx + 40, hy + 8, AMBER, broken=True)
+        if state == "linked":  # Linked events are drawn from the shared source: dashed outline.
+            svg.rect(lx + 2, hy + 24, lane_w - 5, 276, "none", LINK, radius=2, dash="2 4", opacity=0.45)
+    for index in range(4):
+        svg.rect(hx + lane_w * len(lanes) + index * 40, hy, 39, 300, "#252d3b" if index % 2 else "#212835")
+        svg.text(hx + lane_w * len(lanes) + index * 40 + 6, hy + 18, str(index + 1), "#f0f4fa", 12, outline="#000000")
+    for row in range(1, 7):
+        svg.line(hx, hy + 22 + row * 46, hx + lane_w * len(lanes) + 160, hy + 22 + row * 46, GRID)
+    # Events.
+    for lane, row, value in [(0, 1, "174"), (0, 4, "87"), (1, 2, "1.5×"), (1, 3, "0.8×"), (1, 5, "1×"),
+                             (3, 4, "1/8"), (6, 2, "on")]:
+        svg.rect(hx + lane * lane_w + 4, hy + 22 + row * 46 - 8, lane_w - 9, 16, HOVER,
+                 LINK if lanes[lane][2] == "linked" else (AMBER if lane == 1 else BORDER), radius=3)
+        svg.text(hx + lane * lane_w + 10, hy + 22 + row * 46 + 4, value, TEXT, 11)
+    # Hover tooltip on a linked BPM event.
+    panel(svg, hx + 66, hy + 60, 310, 46)
+    svg.text(hx + 78, hy + 80, "BPM 174 · from “Song timing”", TEXT, 12)
+    svg.text(hx + 78, hy + 97, "editing here detaches BPM for this chart", FAINT, 11)
+
+    # Inspector: chart timing links.
+    ix, iy, iw = 690, 36, 294
+    svg.rect(ix, iy, iw, 424, SURFACE, BORDER, radius=6)
+    svg.text(ix + 12, iy + 24, "Timing links", BRIGHT, 13, weight="bold")
+    svg.text(ix + 12, iy + 50, "Source", MUTED, 12)
+    svg.rect(ix + 70, iy + 34, iw - 82, 26, HOVER, BORDER, radius=4)
+    svg.text(ix + 80, iy + 51, "Song timing (shared)", TEXT, 12)
+    svg.text(ix + iw - 22, iy + 51, "▾", MUTED, 12, "middle")
+    rows = [("BPM", "linked"), ("SV / scroll", "local"), ("SPEEDS", "linked"), ("Stops", "linked"),
+            ("Delays", "linked"), ("Kiai", "own")]
+    for index, (label, state) in enumerate(rows):
+        ry = iy + 74 + index * 34
+        if state == "local":
+            svg.rect(ix + 6, ry - 2, iw - 12, 32, "#2d2616", radius=4)
+        svg.text(ix + 14, ry + 18, label, TEXT, 12)
+        if state == "linked":
+            link_icon(svg, ix + 110, ry + 9, LINK)
+            svg.text(ix + 130, ry + 18, "Linked", LINK, 12)
+            button(svg, ix + iw - 88, ry + 2, 76, "Detach", "ghost", h=24)
+        elif state == "local":
+            link_icon(svg, ix + 110, ry + 9, AMBER, broken=True)
+            svg.text(ix + 130, ry + 18, "Local", AMBER, 12)
+            button(svg, ix + iw - 88, ry + 2, 76, "Relink…", h=24)
+        else:
+            svg.text(ix + 130, ry + 18, "Not linked", FAINT, 12)
+            button(svg, ix + iw - 88, ry + 2, 76, "Link", h=24)
+    svg.line(ix + 12, iy + 284, ix + iw - 12, iy + 284, BORDER)
+    svg.text(ix + 12, iy + 306, "Used by 3 charts: 7K Hyper, 7K Another,", MUTED, 11)
+    svg.text(ix + 12, iy + 322, "14K (SV local in 7K Another)", MUTED, 11)
+    button(svg, ix + 12, iy + 336, iw - 24, "Edit shared timing…", h=28)
+    button(svg, ix + 12, iy + 372, iw - 24, "Link all categories", "ghost", h=28)
+
+    # First-write toast.
+    ty = 356
+    svg.rect(16, ty, 580, 48, SURFACE, AMBER, radius=6)
+    link_icon(svg, 30, ty + 16, AMBER, broken=True)
+    svg.text(54, ty + 21, "SV is now local to 7K Another.", BRIGHT, 12)
+    svg.text(54, ty + 38, "Other charts keep the shared SV; BPM and the rest stay linked.", MUTED, 11)
+    svg.text(580, ty + 21, "Undo", LINK, 12, "end")
+    svg.text(580, ty + 38, "Relink", LINK, 12, "end")
+
+    # Relink confirmation.
+    dx, dy, dw, dh = 16, 422, 580, 150
+    panel(svg, dx, dy, dw, dh)
+    svg.text(dx + 16, dy + 28, "Relink SV to Song timing?", BRIGHT, 14, weight="bold")
+    svg.text(dx + 16, dy + 54, "This chart's 14 local SV events are replaced by the shared 9.", TEXT, 12)
+    svg.text(dx + 16, dy + 72, "Only SV changes; Undo restores the local events.", MUTED, 12)
+    button(svg, dx + 16, dy + dh - 44, 150, "Copy local to new set", "ghost")
+    button(svg, dx + dw - 16 - 196 - 8 - 84, dy + dh - 44, 84, "Cancel")
+    button(svg, dx + dw - 16 - 196, dy + dh - 44, 196, "Relink, discard 14", "destructive")
+
+    for index, line in enumerate([
+            "blue chain: follows the shared source",
+            "amber broken chain: local override",
+            "dashed blue band: linked lane; editing",
+            "  is allowed and detaches on first write",
+            "WRP: no badge; extra categories",
+            "  are an open T-720 question",
+            "Source: assumes named shared sets,",
+            "  one answer to T-720's first question"]):
+        svg.note(ix, 478 + index * 14, line)
+    svg.note(16, 606, "Detach keeps the current events as a local copy. Relink is the only step that can lose data, so only Relink confirms.")
+    svg.save("timing-links.svg")
+
+
+def output_groups():
+    """Proposal: export targets as cards with one Export action and an editor dialog."""
+    svg = Svg(1100, 600)
+    x0, w0 = 16, 600
+    svg.text(x0, 30, "Exports", BRIGHT, 16, weight="bold")
+    svg.text(x0 + 76, 30, "3", MUTED, 13)
+    button(svg, x0 + w0 - 220, 12, 110, "Export all")
+    button(svg, x0 + w0 - 102, 12, 102, "+ New", "primary")
+    formats = {"BMS": "#8b3225", "osu!": "#c0558f", "SSC": "#3f7fbf"}
+    targets = [
+        ("BMS", "BMS release", "exports/bms/", ["7K Hyper", "7K Another", "14K"],
+         "Exported 10:42 · 3 charts · 12 sounds copied", "#78d296", True),
+        ("osu!", "osu!mania", "exports/osu/", ["7K Hyper", "7K Another"],
+         "Not exported yet", MUTED, False),
+        ("SSC", "StepMania", "exports/sm/song.ssc", ["7K Hyper"],
+         "Exported 09:15 · 1 conversion warning — view", AMBER, False),
+    ]
+    y = 46
+    for fmt, name, dest, charts, status, status_color, expanded in targets:
+        h = 160 if expanded else 86
+        svg.rect(x0, y, w0, h, SURFACE, BORDER_HI if expanded else BORDER, radius=6)
+        svg.rect(x0 + 12, y + 12, 44, 22, formats[fmt], radius=4)
+        svg.text(x0 + 34, y + 27, fmt, "#ffffff", 11, "middle", "bold")
+        svg.text(x0 + 66, y + 28, name, BRIGHT, 13, weight="bold")
+        svg.text(x0 + 66 + len(name) * 8 + 12, y + 28, "→ " + dest, MUTED, 12)
+        # Split button: Export ▾ (Replace existing / Keep existing / Choose folder…).
+        svg.rect(x0 + w0 - 140, y + 10, 92, 28, SELECTED, radius=4)
+        svg.text(x0 + w0 - 108, y + 29, "Export", "#ffffff", 12, "middle")
+        svg.line(x0 + w0 - 72, y + 14, x0 + w0 - 72, y + 34, "#5b8ff0")
+        svg.text(x0 + w0 - 60, y + 29, "▾", "#ffffff", 12, "middle")
+        icon_button(svg, x0 + w0 - 40, y + 10, "⋯")
+        cx = x0 + 66
+        for chart in charts:
+            cx += chip(svg, cx, y + 44, chart, h=22) + 4
+        chip(svg, cx, y + 44, "+", h=22, dashed=True)
+        svg.text(x0 + 66, y + 80, status, status_color, 11)
+        if expanded:  # Preview: what Export will write, before writing it.
+            svg.line(x0 + 12, y + 92, x0 + w0 - 12, y + 92, BORDER)
+            files = [("exports/bms/7k_hyper.bme", "replace", MUTED),
+                     ("exports/bms/7k_another.bme", "replace", MUTED),
+                     ("exports/bms/14k.bme", "new", "#78d296"),
+                     ("exports/bms/  12 sounds, 1 image", "copy", MUTED)]
+            for index, (path, verb, color) in enumerate(files):
+                svg.text(x0 + 24, y + 110 + index * 14, path, TEXT, 11)
+                svg.text(x0 + w0 - 24, y + 110 + index * 14, verb, color, 11, "end")
+        y += h + 10
+
+    # Editor dialog.
+    dx, dy, dw, dh = 640, 46, 444, 520
+    panel(svg, dx, dy, dw, dh)
+    svg.text(dx + 16, dy + 30, "Edit export · StepMania", BRIGHT, 14, weight="bold")
+    svg.text(dx + 16, dy + 62, "Name", MUTED, 12)
+    svg.rect(dx + 120, dy + 46, dw - 136, 26, BG, BORDER, radius=4)
+    svg.text(dx + 130, dy + 63, "StepMania", TEXT, 12)
+    svg.text(dx + 16, dy + 96, "Format", MUTED, 12)
+    segmented(svg, dx + 120, dy + 80, ["BMS", "BMSON", "osu!", "StepMania"], 3)
+    # Format options live with the format, so the global StepMania policy section goes away.
+    svg.rect(dx + 16, dy + 114, dw - 32, 112, HOVER, BORDER, radius=6)
+    svg.text(dx + 28, dy + 136, "File", MUTED, 12)
+    segmented(svg, dx + 150, dy + 120, ["SM", "SSC"], 1, seg_w=56)
+    svg.text(dx + 28, dy + 170, "Warps as", MUTED, 12)
+    segmented(svg, dx + 150, dy + 154, ["WARPS", "neg. BPM", "neg. STOP"], 0)
+    svg.text(dx + 28, dy + 204, "Check for", MUTED, 12)
+    segmented(svg, dx + 150, dy + 188, ["Syntax", "SM 5.1", "Etterna"], 1)
+    svg.text(dx + 16, dy + 254, "Save to", MUTED, 12)
+    svg.rect(dx + 120, dy + 238, dw - 220, 26, BG, BORDER, radius=4)
+    svg.text(dx + 130, dy + 255, "exports/sm/song.ssc", TEXT, 12)
+    button(svg, dx + dw - 92, dy + 238, 76, "Browse…", h=26)
+    svg.text(dx + 120, dy + 280, "One .ssc holds every chart", FAINT, 11)
+    svg.text(dx + 16, dy + 310, "Charts", MUTED, 12)
+    members = [("7K Hyper", "on", "kb7", MUTED),
+               ("7K Another", "off", "", MUTED),
+               ("14K", "off", "no 14-lane step type", AMBER)]
+    for index, (name, state, hint, color) in enumerate(members):
+        my = dy + 322 + index * 28
+        checkbox(svg, dx + 120, my + 4, state)
+        svg.text(dx + 144, my + 17, name, TEXT if color != AMBER else FAINT, 12)
+        if hint:
+            svg.text(dx + 240, my + 17, hint, color, 11)
+    svg.text(dx + 16, dy + 426, "Existing", MUTED, 12)
+    segmented(svg, dx + 120, dy + 410, ["Ask", "Replace", "Keep"], 0)
+    svg.line(dx + 16, dy + dh - 56, dx + dw - 16, dy + dh - 56, BORDER)
+    button(svg, dx + 16, dy + dh - 44, 84, "Delete…", "destructive")
+    button(svg, dx + dw - 16 - 84 - 8 - 84, dy + dh - 44, 84, "Cancel")
+    button(svg, dx + dw - 16 - 84, dy + dh - 44, 84, "Save", "primary")
+    svg.note(x0, y + 6, "one card per target · chips add/remove charts · ⋯: Edit, Preview, Delete…")
+    svg.note(x0, y + 22, "Export ▾: Replace existing / Keep existing — no second Export… dialog")
+    svg.save("output-groups.svg")
+
+
 if __name__ == "__main__":
     unsaved_changes()
     tap_timing()
@@ -503,3 +817,6 @@ if __name__ == "__main__":
     field_move()
     markers()
     hitsound_palette()
+    new_project_layout()
+    timing_links()
+    output_groups()

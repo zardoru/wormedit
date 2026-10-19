@@ -1,0 +1,148 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="600" viewBox="0 0 1100 600">
+  <rect width="1100" height="600" fill="#12131a"/>
+  <text x="16" y="30" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="16" font-weight="bold" text-anchor="start" fill="#f5f6fa">Exports</text>
+  <text x="92" y="30" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="start" fill="#adb3c5">3</text>
+  <rect x="396" y="12" width="110" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="451.0" y="30.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Export all</text>
+  <rect x="514" y="12" width="102" height="28" rx="4" fill="#145ce3" stroke="#145ce3" stroke-width="1"/>
+  <text x="565.0" y="30.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ffffff">+ New</text>
+  <rect x="16" y="46" width="600" height="160" rx="6" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <rect x="28" y="58" width="44" height="22" rx="4" fill="#8b3225"/>
+  <text x="50" y="73" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">BMS</text>
+  <text x="82" y="74" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">BMS release</text>
+  <text x="182" y="74" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">→ exports/bms/</text>
+  <rect x="476" y="56" width="92" height="28" rx="4" fill="#145ce3"/>
+  <text x="508" y="75" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Export</text>
+  <line x1="544" y1="60" x2="544" y2="80" stroke="#5b8ff0" stroke-width="1"/>
+  <text x="556" y="75" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">▾</text>
+  <rect x="576" y="56" width="28" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="590.0" y="75.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⋯</text>
+  <rect x="82" y="90" width="80" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="122.0" y="105.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">7K Hyper</text>
+  <rect x="166" y="90" width="96" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="214.0" y="105.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">7K Another</text>
+  <rect x="266" y="90" width="40" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="286.0" y="105.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">14K</text>
+  <rect x="310" y="90" width="24" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="322.0" y="105.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="82" y="126" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#78d296">Exported 10:42 · 3 charts · 12 sounds copied</text>
+  <line x1="28" y1="138" x2="604" y2="138" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="40" y="156" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">exports/bms/7k_hyper.bme</text>
+  <text x="592" y="156" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#adb3c5">replace</text>
+  <text x="40" y="170" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">exports/bms/7k_another.bme</text>
+  <text x="592" y="170" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#adb3c5">replace</text>
+  <text x="40" y="184" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">exports/bms/14k.bme</text>
+  <text x="592" y="184" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#78d296">new</text>
+  <text x="40" y="198" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#ced2df">exports/bms/  12 sounds, 1 image</text>
+  <text x="592" y="198" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="end" fill="#adb3c5">copy</text>
+  <rect x="16" y="216" width="600" height="86" rx="6" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="28" y="228" width="44" height="22" rx="4" fill="#c0558f"/>
+  <text x="50" y="243" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">osu!</text>
+  <text x="82" y="244" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">osu!mania</text>
+  <text x="166" y="244" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">→ exports/osu/</text>
+  <rect x="476" y="226" width="92" height="28" rx="4" fill="#145ce3"/>
+  <text x="508" y="245" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Export</text>
+  <line x1="544" y1="230" x2="544" y2="250" stroke="#5b8ff0" stroke-width="1"/>
+  <text x="556" y="245" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">▾</text>
+  <rect x="576" y="226" width="28" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="590.0" y="245.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⋯</text>
+  <rect x="82" y="260" width="80" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="122.0" y="275.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">7K Hyper</text>
+  <rect x="166" y="260" width="96" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="214.0" y="275.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">7K Another</text>
+  <rect x="266" y="260" width="24" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="278.0" y="275.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="82" y="296" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Not exported yet</text>
+  <rect x="16" y="312" width="600" height="86" rx="6" fill="#1e1f28" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="28" y="324" width="44" height="22" rx="4" fill="#3f7fbf"/>
+  <text x="50" y="339" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#ffffff">SSC</text>
+  <text x="82" y="340" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="bold" text-anchor="start" fill="#f5f6fa">StepMania</text>
+  <text x="166" y="340" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">→ exports/sm/song.ssc</text>
+  <rect x="476" y="322" width="92" height="28" rx="4" fill="#145ce3"/>
+  <text x="508" y="341" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Export</text>
+  <line x1="544" y1="326" x2="544" y2="346" stroke="#5b8ff0" stroke-width="1"/>
+  <text x="556" y="341" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">▾</text>
+  <rect x="576" y="322" width="28" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="590.0" y="341.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="normal" text-anchor="middle" fill="#ced2df">⋯</text>
+  <rect x="82" y="356" width="80" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="122.0" y="371.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">7K Hyper</text>
+  <rect x="166" y="356" width="24" height="22" rx="11.0" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1" stroke-dasharray="3 2"/>
+  <text x="178.0" y="371.0" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">+</text>
+  <text x="82" y="392" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#f2be66">Exported 09:15 · 1 conversion warning — view</text>
+  <rect x="639" y="49" width="446" height="522" rx="9" fill="#000000" opacity="0.035"/>
+  <rect x="638" y="48" width="448" height="524" rx="10" fill="#000000" opacity="0.035"/>
+  <rect x="637" y="47" width="450" height="526" rx="11" fill="#000000" opacity="0.035"/>
+  <rect x="636" y="46" width="452" height="528" rx="12" fill="#000000" opacity="0.035"/>
+  <rect x="635" y="45" width="454" height="530" rx="13" fill="#000000" opacity="0.035"/>
+  <rect x="634" y="44" width="456" height="532" rx="14" fill="#000000" opacity="0.035"/>
+  <rect x="633" y="43" width="458" height="534" rx="15" fill="#000000" opacity="0.035"/>
+  <rect x="632" y="42" width="460" height="536" rx="16" fill="#000000" opacity="0.035"/>
+  <rect x="640" y="46" width="444" height="520" rx="8" fill="#1e1f28" stroke="#86b4ff" stroke-width="1"/>
+  <text x="656" y="76" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="14" font-weight="bold" text-anchor="start" fill="#f5f6fa">Edit export · StepMania</text>
+  <text x="656" y="108" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Name</text>
+  <rect x="760" y="92" width="308" height="26" rx="4" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="770" y="109" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">StepMania</text>
+  <text x="656" y="142" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Format</text>
+  <rect x="760" y="126" width="248" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="782.0" y="143.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">BMS</text>
+  <line x1="804" y1="131" x2="804" y2="147" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="834.0" y="143.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">BMSON</text>
+  <line x1="864" y1="131" x2="864" y2="147" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="890.0" y="143.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">osu!</text>
+  <rect x="918" y="128" width="88" height="22" rx="3" fill="#145ce3"/>
+  <text x="962.0" y="143.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">StepMania</text>
+  <rect x="656" y="160" width="412" height="112" rx="6" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="668" y="182" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">File</text>
+  <rect x="790" y="166" width="112" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="818.0" y="183.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">SM</text>
+  <rect x="848" y="168" width="52" height="22" rx="3" fill="#145ce3"/>
+  <text x="874.0" y="183.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">SSC</text>
+  <text x="668" y="216" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Warps as</text>
+  <rect x="790" y="200" width="236" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="792" y="202" width="56" height="22" rx="3" fill="#145ce3"/>
+  <text x="820.0" y="217.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">WARPS</text>
+  <line x1="850" y1="205" x2="850" y2="221" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="892.0" y="217.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">neg. BPM</text>
+  <line x1="934" y1="205" x2="934" y2="221" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="980.0" y="217.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">neg. STOP</text>
+  <text x="668" y="250" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Check for</text>
+  <rect x="790" y="234" width="212" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="824.0" y="251.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Syntax</text>
+  <rect x="860" y="236" width="64" height="22" rx="3" fill="#145ce3"/>
+  <text x="892.0" y="251.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">SM 5.1</text>
+  <line x1="926" y1="239" x2="926" y2="255" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="964.0" y="251.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Etterna</text>
+  <text x="656" y="300" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Save to</text>
+  <rect x="760" y="284" width="224" height="26" rx="4" fill="#12131a" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="770" y="301" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">exports/sm/song.ssc</text>
+  <rect x="992" y="284" width="76" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="1030.0" y="301.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Browse…</text>
+  <text x="760" y="326" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#717077">One .ssc holds every chart</text>
+  <text x="656" y="356" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Charts</text>
+  <rect x="760" y="372" width="16" height="16" rx="3" fill="#145ce3" stroke="#145ce3" stroke-width="1.5"/>
+  <path d="M763.5 380.5 L766.8 383.8 L772.5 376.8" fill="none" stroke="#ffffff" stroke-width="2"/>
+  <text x="784" y="385" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">7K Hyper</text>
+  <text x="880" y="385" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">kb7</text>
+  <rect x="760" y="400" width="16" height="16" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.5"/>
+  <text x="784" y="413" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#ced2df">7K Another</text>
+  <rect x="760" y="428" width="16" height="16" rx="3" fill="none" stroke="#86b4ff" stroke-width="1.5"/>
+  <text x="784" y="441" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#717077">14K</text>
+  <text x="880" y="441" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#f2be66">no 14-lane step type</text>
+  <text x="656" y="472" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="start" fill="#adb3c5">Existing</text>
+  <rect x="760" y="456" width="172" height="26" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="762" y="458" width="40" height="22" rx="3" fill="#145ce3"/>
+  <text x="782.0" y="473.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ffffff">Ask</text>
+  <line x1="804" y1="461" x2="804" y2="477" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="842.0" y="473.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Replace</text>
+  <line x1="880" y1="461" x2="880" y2="477" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="906.0" y="473.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="12" font-weight="normal" text-anchor="middle" fill="#ced2df">Keep</text>
+  <line x1="656" y1="510" x2="1068" y2="510" stroke="#3a3c4b" stroke-width="1"/>
+  <rect x="656" y="522" width="84" height="28" rx="4" fill="none" stroke="#df563b" stroke-width="1"/>
+  <text x="698.0" y="540.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ff9e86">Delete…</text>
+  <rect x="892" y="522" width="84" height="28" rx="4" fill="#2c2e3c" stroke="#3a3c4b" stroke-width="1"/>
+  <text x="934.0" y="540.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ced2df">Cancel</text>
+  <rect x="984" y="522" width="84" height="28" rx="4" fill="#145ce3" stroke="#145ce3" stroke-width="1"/>
+  <text x="1026.0" y="540.5" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="13" font-weight="normal" text-anchor="middle" fill="#ffffff">Save</text>
+  <text x="16" y="414" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">one card per target · chips add/remove charts · ⋯: Edit, Preview, Delete…</text>
+  <text x="16" y="430" font-family="Adwaita Mono, DejaVu Sans Mono, monospace" font-size="11" font-weight="normal" text-anchor="start" fill="#adb3c5">Export ▾: Replace existing / Keep existing — no second Export… dialog</text>
+</svg>

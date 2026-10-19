@@ -889,7 +889,7 @@ TEST_CASE("schema-4 autosave preserves quantization presets through recovery",
     REQUIRE(saved.value.status == wormedit::native_project_autosave_status_t::published);
     const auto parsed = wormedit::parse_native_project_recovery_snapshot(read_text(recovery_path));
     REQUIRE(parsed.value);
-    CHECK(parsed.value->song.schema_version == 6);
+    CHECK(parsed.value->song.schema_version == 7);
     CHECK(parsed.value->song.quantization_presets == song.quantization_presets);
 }
 
@@ -904,7 +904,7 @@ TEST_CASE("recovery envelope accepts supported schema tags and rejects unknown v
         INFO(schema);
         envelope["schema_version"] = schema;
         const auto parsed = wormedit::parse_native_project_recovery_snapshot(envelope.dump());
-        CHECK(parsed.value.has_value() == (schema >= 1 && schema <= 6));
+        CHECK(parsed.value.has_value() == (schema >= 1 && schema <= 7));
     }
 }
 
@@ -927,7 +927,7 @@ TEST_CASE("schema 6 autosave recovery preserves a BGM tail",
     const auto recovered =
         wormedit::parse_native_project_recovery_snapshot(read_text(path));
     REQUIRE(recovered.value);
-    REQUIRE(recovered.value->song.schema_version == 6);
+    REQUIRE(recovered.value->song.schema_version == 7);
     CHECK(recovered.value->song.charts.front().measures.front().bgm_events.front().end ==
           wormedit::local_position_t{wormedit::measure_id_t{1}, 1});
 }

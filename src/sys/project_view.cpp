@@ -267,8 +267,11 @@ void build_output_group_view(project_chart_runtime_t& runtime, const song_docume
         charts.clear();
         for (const auto id : group.charts) charts.push_back(id.value);
         runtime.output_group_paths[i] = group.relative_output_path.generic_string();
-        runtime.output_groups.push_back({i, group.name.c_str(), static_cast<uint8_t>(group.family),
-            runtime.output_group_paths[i].c_str(), charts.data(), charts.size(), runtime.output_group_status[i].c_str()});
+        runtime.output_groups.push_back(
+            {i, group.name.c_str(), static_cast<uint8_t>(group.family),
+             runtime.output_group_paths[i].c_str(), charts.data(), charts.size(),
+             runtime.output_group_status[i].c_str(),
+             static_cast<WormUiExistingFilesChoice>(group.existing_files)});
     }
     view.output_groups = runtime.output_groups.data();
     view.output_group_count = count;
@@ -313,9 +316,12 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
     auto progress = std::make_shared<job_progress_t>();
     const auto started = runtime.preview_job(scheduler).request(
         [&doc, index, &progress, stepmania_policy, &asset_base] {
-            return output_group_export_request_t{.document = doc,
-                .plan = output_group_export_plan_t::from(doc, doc.output_groups[index], false, stepmania_policy),
-                .asset_base = asset_base, .progress = progress};
+            return output_group_export_request_t{
+                .document = doc,
+                .plan = output_group_export_plan_t::from(doc, doc.output_groups[index],
+                                                         std::nullopt, stepmania_policy),
+                .asset_base = asset_base,
+                .progress = progress};
         },
         {.document = {.project = doc.id, .document_revision = doc.revision}, .index = index},
         run_output_preview);
@@ -348,8 +354,11 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
             return {.status = "Output group action is invalid."};
         if (!action.name || !action.path || action.chart_count > WORM_UI_PROJECT_CHART_CAPACITY)
             return {.status = "Output group fields or membership are invalid."};
-        output_group_t group{.name = action.name, .family = static_cast<format_family_t>(action.family),
-            .relative_output_path = action.path};
+        output_group_t group{.name = action.name,
+                             .family = static_cast<format_family_t>(action.family),
+                             .relative_output_path = action.path,
+                             .existing_files =
+                                 static_cast<existing_files_policy_t>(action.existing_files)};
         for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
         result = apply_set_output_group_command(
             history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));

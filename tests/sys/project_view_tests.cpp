@@ -273,10 +273,16 @@ TEST_CASE("Project output group actions project complete editable membership and
     build_project_chart_view(runtime, history.document, view);
     require_project(view.output_group_count == 1);
     expect_project(view.output_groups[0].chart_ids[0] == history.document.charts[0].id.value);
+    expect_project(view.output_groups[0].existing_files == WORM_UI_EXISTING_FILES_ASK);
     WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
-        .project_id = history.document.id.value, .document_revision = history.document.revision,
-        .session_generation = runtime.session_generation, .name = "BMSON", .path = "exports/chart.bmson", .family = 4,
-        .chart_count = 1};
+                                          .project_id = history.document.id.value,
+                                          .document_revision = history.document.revision,
+                                          .session_generation = runtime.session_generation,
+                                          .name = "BMSON",
+                                          .path = "exports/chart.bmson",
+                                          .family = 4,
+                                          .existing_files = WORM_UI_EXISTING_FILES_REPLACE,
+                                          .chart_count = 1};
     action.chart_ids[0] = history.document.charts[0].id.value;
     ++action.session_generation;
     const auto wrong_session = apply_project_output_group_ui_action(runtime, history, action, scheduler);
@@ -288,6 +294,8 @@ TEST_CASE("Project output group actions project complete editable membership and
     require_project(view.output_group_count == 2);
     expect_project(std::string_view{view.output_groups[1].path} == "exports/chart.bmson");
     expect_project(view.output_groups[1].family == 4);
+    expect_project(history.document.output_groups[1].existing_files ==
+                   existing_files_policy_t::replace);
     expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
     action.document_revision = history.document.revision;
     ++action.project_id;

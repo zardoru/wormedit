@@ -957,11 +957,18 @@ struct storyboard_document_t {
     std::optional<storyboard_document_model_t> model;
 };
 
+enum class existing_files_policy_t {
+    ask,
+    replace,
+    keep,
+};
+
 struct output_group_t {
     std::string name;
     format_family_t family{format_family_t::native_project};
     std::vector<chart_id_t> charts;
     std::filesystem::path relative_output_path;
+    existing_files_policy_t existing_files{existing_files_policy_t::ask};
 };
 
 struct song_metadata_t {
@@ -1007,7 +1014,7 @@ struct quantization_preset_t {
 };
 
 struct song_document_t {
-    std::uint32_t schema_version{6};
+    std::uint32_t schema_version{7};
     song_id_t id;
     std::uint64_t revision{};
     song_metadata_t metadata;

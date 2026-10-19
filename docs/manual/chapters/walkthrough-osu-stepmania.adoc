@@ -61,11 +61,15 @@ export targets that should export it.
 *Destination*, relative to the project:
 for example `osu/song.osu` and `sm/song.sm`, or a folder when a group exports several osu!mania
 charts.
+. Set *Existing files* to *Ask*, *Replace*, or *Keep*. *Ask* publishes immediately when every
+  planned filename is free, and shows one confirmation listing conflicts before replacing any file.
 . For the StepMania groups, the *StepMania export policy* chooses the target (StepMania 5.1 or
   Etterna 0.75.1) and how timing is written (*Timing syntax*); Preview and Export use those
   choices. SM or SSC is inferred from the output path.
-. Click a target card's *Export* button, or use *Export…* to choose a target and overwrite policy.
-The target's *⋯* menu contains *Preview*, *Duplicate* and *Delete…*. *Preview*
+. Click a target card's *Export* button to use its saved policy. Its *⋯* menu can export once with
+*Replace* or *Keep* without changing that saved choice. *Export all* prepares every target before
+publishing the first one. *File → Export…* opens the same target and policy choices from any tab.
+The target's *⋯* menu also contains *Preview*, *Duplicate* and *Delete…*. *Preview*
   lists the files, asset copies and warnings that the same export plan would publish; it does not
   write files. It also reports the plan's conversion and publication refusals.
 

@@ -217,17 +217,20 @@ runtime::output_group_export_t::~output_group_export_t() noexcept {
 auto runtime::output_group_export_t::start(const song_document_t& document,
     output_group_export_plan_t plan, std::filesystem::path asset_base,
     work_function_t work) -> start_outcome_t {
-    if (is_busy())
+    if (is_busy() || confirmation_)
         return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
             "Wait for the current resource copy, import, or export to finish."});
     auto receipt = std::make_shared<std::optional<output_group_export_task_result_t>>();
     auto progress = std::make_shared<job_progress_t>();
+    auto request = std::make_shared<output_group_export_request_t>(
+        output_group_export_request_t{.document = document,
+                                      .plan = std::move(plan),
+                                      .asset_base = std::move(asset_base),
+                                      .progress = progress});
     task_graph_t graph{1};
-    const auto added = graph.create_task({},
-        [request = output_group_export_request_t{.document = document, .plan = std::move(plan),
-                                                 .asset_base = std::move(asset_base), .progress = progress},
-         receipt, work](std::span<const task_outcome_t>, std::stop_token stop) {
-            receipt->emplace(work(request, stop));
+    const auto added = graph.create_task(
+        {}, [request, receipt, work](std::span<const task_outcome_t>, std::stop_token stop) {
+            receipt->emplace(work(*request, stop));
             return task_value_t{};
         });
     if (!added)
@@ -237,12 +240,15 @@ auto runtime::output_group_export_t::start(const song_document_t& document,
         return std::unexpected(submitted.error());
     progress_ = std::move(progress);
     cancelling_ = false;
-    pending_ = pending_t{.graph = std::move(*submitted), .task = *added,
-                        .identity = {.project = document.id,
-                                     .document_revision = document.revision},
-                        .receipt = std::move(receipt)};
+    pending_ =
+        pending_t{.graph = std::move(*submitted),
+                  .task = *added,
+                  .identity = {.project = document.id, .document_revision = document.revision},
+                  .receipt = std::move(receipt),
+                  .request = std::move(request),
+                  .work = work};
     notifications_.post(notification_severity_t::info, notification_source_t::export_,
-                        "Output group conversion started in the background.");
+                        "Export target preparation started in the background.");
     return {};
 }
 
@@ -257,6 +263,8 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
     const auto exported_song = pending_->identity.project;
     const auto exported_revision = pending_->identity.document_revision;
     const auto receipt = pending_->receipt;
+    const auto request = pending_->request;
+    const auto work = pending_->work;
     pending_.reset();
     // A cancellation can replace the scheduler outcome after files were published.
     const auto* exported = receipt->has_value() ? &receipt->value() : nullptr;
@@ -270,6 +278,13 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
                               ? wormedit::notification_severity_t::info
                               : wormedit::notification_severity_t::error
                         : exported->severity;
+    if (exported && exported->confirmation_required) {
+        confirmation_ = confirmation_t{.request = *request,
+                                       .message = exported->message,
+                                       .detail = exported->detail,
+                                       .work = work};
+        return exported->message;
+    }
     if (exported && exported->published &&
         (history.document.id != exported_song || history.document.revision != exported_revision)) {
         status += " The editor session changed after this export started.";
@@ -281,6 +296,28 @@ auto runtime::output_group_export_t::poll(const wormedit::document_history_t& hi
                              .message = status,
                              .detail = exported ? exported->detail : std::string{}});
     return status;
+}
+
+auto runtime::output_group_export_t::confirm(const document_history_t& history) -> start_outcome_t {
+    if (!confirmation_)
+        return std::unexpected(error_t<failure_code_t>{failure_code_t::invalid_request,
+                                                       "No export confirmation is pending."});
+    if (document_stamp_t::from(confirmation_->request.document) !=
+        document_stamp_t::from(history.document)) {
+        confirmation_.reset();
+        return std::unexpected(
+            error_t<failure_code_t>{failure_code_t::stale_generation,
+                                    "The project changed; export confirmation was cancelled."});
+    }
+    auto request = std::move(confirmation_->request);
+    const auto work = confirmation_->work;
+    confirmation_.reset();
+    request.plan.replace_asked_files();
+    return start(request.document, std::move(request.plan), std::move(request.asset_base), work);
+}
+
+void runtime::output_group_export_t::cancel_confirmation() {
+    confirmation_.reset();
 }
 
 void runtime::output_group_export_t::cancel() {
@@ -298,10 +335,22 @@ auto runtime::output_group_export_t::view() const -> ui::file_job_view_t {
                          ? "Publishing artifacts" : "Converting and checking artifacts"};
 }
 
+auto runtime::output_group_export_t::confirmation_view() const
+    -> output_export_confirmation_view_t {
+    if (!confirmation_)
+        return {};
+    return {.required = true,
+            .project_id = confirmation_->request.document.id.value,
+            .document_revision = confirmation_->request.document.revision,
+            .message = confirmation_->message.c_str(),
+            .detail = confirmation_->detail.c_str()};
+}
+
 void runtime::output_group_export_t::shutdown() {
     cancel();
     scheduler_.shutdown();
     pending_.reset();
+    confirmation_.reset();
 }
 
 } // namespace wormedit::sys

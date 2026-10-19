@@ -10,13 +10,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <chrono>
+#include <array>
 #include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <thread>
+#include <optional>
 #include <stdexcept>
+#include <thread>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -140,6 +142,11 @@ auto export_test_worker(const output_group_export_request_t& request, std::stop_
         throw std::runtime_error("Injected export worker exception.");
     if (mode == "failure")
         return {.message = "Injected publication failure."};
+    if (mode == "confirm" && request.plan.existing_files == existing_files_policy_t::ask)
+        return {.confirmation_required = true,
+                .message = "Replace existing files?",
+                .severity = notification_severity_t::warning,
+                .detail = "confirm: exports/chart.bms\n"};
     const bool before = mode == "cancel-before";
     const bool after = mode == "cancel-after";
     if (!before)
@@ -360,9 +367,8 @@ TEST_CASE("output export publishes typed success and terminal failure once",
     require_resource_notification(static_cast<bool>(start_test_export(exports, fixture.history)));
     auto entries = fixture.entries();
     require_resource_notification(entries.size() == 1);
-    expect_notification(entries[0], notification_severity_t::info,
-                        notification_source_t::export_,
-                        "Output group conversion started in the background.");
+    expect_notification(entries[0], notification_severity_t::info, notification_source_t::export_,
+                        "Export target preparation started in the background.");
     const auto completed = wait_for_export_result(exports, fixture.history);
     require_resource_notification(completed == "Output group published from the selected revision.");
     entries = fixture.entries();
@@ -465,17 +471,52 @@ TEST_CASE("export keeps its captured identity and reports exceptions once",
     check_resource_notification(!exports.poll(fixture.history));
 }
 
+TEST_CASE("Ask export confirmation is retained until one-run replace or cancel",
+          "[unit][sys][resource-notification]") {
+    resource_notification_fixture_t fixture;
+    runtime::output_group_export_t exports{fixture.sink};
+    require_resource_notification(
+        static_cast<bool>(start_test_export(exports, fixture.history, "confirm")));
+    require_resource_notification(wait_for_export_result(exports, fixture.history).has_value());
+    const auto confirmation = exports.confirmation_view();
+    require_resource_notification(confirmation.required);
+    check_resource_notification(std::string_view{confirmation.detail}.find("exports/chart.bms") !=
+                                std::string_view::npos);
+    check_resource_notification(!start_test_export(exports, fixture.history));
+    require_resource_notification(static_cast<bool>(exports.confirm(fixture.history)));
+    const auto completed = wait_for_export_result(exports, fixture.history);
+    require_resource_notification(completed.has_value());
+    check_resource_notification(!exports.confirmation_view().required);
+
+    require_resource_notification(
+        static_cast<bool>(start_test_export(exports, fixture.history, "confirm")));
+    require_resource_notification(wait_for_export_result(exports, fixture.history).has_value());
+    require_resource_notification(exports.confirmation_view().required);
+    exports.cancel_confirmation();
+    check_resource_notification(!exports.confirmation_view().required);
+}
+
 TEST_CASE("output preview and publication share format request policy",
           "[unit][sys][resource-notification]") {
     song_document_t document;
     output_group_t group{.family = format_family_t::stepmania,
                          .charts = {chart_id_t{42}}, .relative_output_path = "sm"};
-    auto plan = output_group_export_plan_t::from(document, group, true);
+    auto plan = output_group_export_plan_t::from(document, group, existing_files_policy_t::replace);
     require_resource_notification(plan.request.stepmania.has_value());
     check_resource_notification(plan.request.stepmania->file_profile == stepmania_profile_t::sm);
     check_resource_notification(plan.request.charts == group.charts);
     check_resource_notification(plan.request.overwrite);
+    check_resource_notification(plan.group.existing_files == existing_files_policy_t::ask);
+    check_resource_notification(plan.existing_files == existing_files_policy_t::replace);
+    group.existing_files = existing_files_policy_t::keep;
+    plan = output_group_export_plan_t::from(document, group);
+    check_resource_notification(plan.existing_files == existing_files_policy_t::keep);
+    check_resource_notification(!plan.request.overwrite);
+    plan = output_group_export_plan_t::from(document, group, existing_files_policy_t::replace);
+    check_resource_notification(plan.existing_files == existing_files_policy_t::replace);
+    check_resource_notification(plan.group.existing_files == existing_files_policy_t::keep);
     group.relative_output_path = "chart.ssc";
+    group.existing_files = existing_files_policy_t::ask;
     plan = output_group_export_plan_t::from(document, group);
     require_resource_notification(plan.request.stepmania.has_value());
     check_resource_notification(plan.request.stepmania->file_profile == stepmania_profile_t::ssc);
@@ -518,6 +559,82 @@ TEST_CASE("Rejected music export creates no destination", "[unit][sys][resource-
         {.document = fixture.history.document, .plan = std::move(plan), .asset_base = fixture.project}, {});
     REQUIRE_FALSE(result.published);
     REQUIRE_FALSE(std::filesystem::exists(fixture.project / "exports"));
+}
+
+TEST_CASE("Ask Replace Keep and all-target preflight share one publication path",
+          "[unit][sys][resource-notification][output-group-export]") {
+    resource_notification_fixture_t fixture;
+    std::filesystem::create_directories(fixture.project / "exports");
+    output_group_t group{.name = "Native",
+                         .family = format_family_t::native_project,
+                         .charts = {chart_id_t{1}},
+                         .relative_output_path = "exports/song.wormedit",
+                         .existing_files = existing_files_policy_t::ask};
+    const auto run = [&](std::optional<existing_files_policy_t> one_run = std::nullopt) {
+        return run_output_group_export(
+            {.document = fixture.history.document,
+             .plan = output_group_export_plan_t::from(fixture.history.document, group, one_run),
+             .asset_base = fixture.project},
+            {});
+    };
+
+    const auto first = run();
+    require_resource_notification(first.published);
+    const auto destination = fixture.project / group.relative_output_path;
+    require_resource_notification(std::filesystem::is_regular_file(destination));
+    const auto original_size = std::filesystem::file_size(destination);
+
+    const auto asked = run();
+    require_resource_notification(!asked.published);
+    check_resource_notification(asked.confirmation_required);
+    check_resource_notification(asked.detail.find("Native: exports/song.wormedit") !=
+                                std::string::npos);
+    check_resource_notification(std::filesystem::file_size(destination) == original_size);
+
+    const auto kept = run(existing_files_policy_t::keep);
+    require_resource_notification(!kept.published);
+    check_resource_notification(!kept.confirmation_required);
+    check_resource_notification(std::filesystem::file_size(destination) == original_size);
+
+    const auto replaced = run(existing_files_policy_t::replace);
+    require_resource_notification(replaced.published);
+    check_resource_notification(group.existing_files == existing_files_policy_t::ask);
+
+    std::filesystem::create_directories(fixture.project / "batch");
+    const std::array ask_groups{group,
+                                output_group_t{.name = "Deferred",
+                                               .family = format_family_t::native_project,
+                                               .charts = {chart_id_t{1}},
+                                               .relative_output_path = "batch/deferred.wormedit",
+                                               .existing_files = existing_files_policy_t::replace}};
+    const auto ask_plan =
+        output_group_export_plan_t::from_all(fixture.history.document, ask_groups);
+    require_resource_notification(ask_plan.has_value());
+    const auto batch_asked = run_output_group_export(
+        {.document = fixture.history.document, .plan = *ask_plan, .asset_base = fixture.project},
+        {});
+    require_resource_notification(!batch_asked.published);
+    check_resource_notification(batch_asked.confirmation_required);
+    check_resource_notification(
+        !std::filesystem::exists(fixture.project / "batch/deferred.wormedit"));
+
+    const std::array groups{output_group_t{.name = "First",
+                                           .family = format_family_t::native_project,
+                                           .charts = {chart_id_t{1}},
+                                           .relative_output_path = "batch/first.wormedit",
+                                           .existing_files = existing_files_policy_t::replace},
+                            output_group_t{.name = "Invalid",
+                                           .family = format_family_t::bms,
+                                           .charts = {chart_id_t{1}},
+                                           .relative_output_path = "batch/invalid.txt",
+                                           .existing_files = existing_files_policy_t::replace}};
+    const auto batch_plan = output_group_export_plan_t::from_all(fixture.history.document, groups);
+    require_resource_notification(batch_plan.has_value());
+    const auto batch = run_output_group_export(
+        {.document = fixture.history.document, .plan = *batch_plan, .asset_base = fixture.project},
+        {});
+    require_resource_notification(!batch.published);
+    check_resource_notification(!std::filesystem::exists(fixture.project / "batch/first.wormedit"));
 }
 
 TEST_CASE("Music export publishes its chart and automatic asset together", "[unit][sys][resource-notification]") {

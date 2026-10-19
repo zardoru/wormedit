@@ -38,6 +38,14 @@ using project_save_job_t = async_job_t<project_save_request_t, project_save_repo
 
 namespace runtime {
 
+struct output_export_confirmation_view_t {
+    bool required{};
+    std::uint64_t project_id{};
+    std::uint64_t document_revision{};
+    const char* message{};
+    const char* detail{};
+};
+
 struct resource_copy_t {
     explicit resource_copy_t(
         wormedit::task_scheduler_t& scheduler,
@@ -83,11 +91,14 @@ public:
 
     [[nodiscard]] auto is_busy() const noexcept -> bool { return pending_.has_value(); }
     [[nodiscard]] auto view() const -> ui::file_job_view_t;
+    [[nodiscard]] auto confirmation_view() const -> output_export_confirmation_view_t;
     [[nodiscard]] auto scheduler() noexcept -> task_scheduler_t& { return scheduler_; }
     auto start(const song_document_t& document, output_group_export_plan_t plan,
                std::filesystem::path asset_base,
                work_function_t work = run_output_group_export) -> start_outcome_t;
     auto poll(const document_history_t& history) -> std::optional<std::string>;
+    auto confirm(const document_history_t& history) -> start_outcome_t;
+    void cancel_confirmation();
     void cancel();
     void shutdown();
 
@@ -99,12 +110,21 @@ private:
         // The scheduler replaces task results when cancelled, even after publication.
         // Read this domain receipt only after graph.outcome establishes completion.
         std::shared_ptr<std::optional<output_group_export_task_result_t>> receipt;
+        std::shared_ptr<output_group_export_request_t> request;
+        work_function_t work{};
+    };
+    struct confirmation_t {
+        output_group_export_request_t request;
+        std::string message;
+        std::string detail;
+        work_function_t work{};
     };
     notification_sink_t notifications_;
     std::shared_ptr<job_progress_t> progress_;
     bool cancelling_{};
     task_scheduler_t scheduler_{1, 1, background_scheduler_options()};
     std::optional<pending_t> pending_;
+    std::optional<confirmation_t> confirmation_;
 };
 
 } // namespace runtime

@@ -26,12 +26,16 @@ struct compose_input_queries_t {
     }
 
     auto has_popup_input() const -> bool {
-        return is_canvas_popup_blocked() || compose_area_menu_open() || compose_area_menu_consumed() ||
-            compose_recipe_menu_open() || compose_recipe_menu_consumed() || compose_note_menu_open() ||
-            state.dialogs.export_dialog_open || state.dialogs.compose_dialog_release_pending ||
-            state.layer_editor.layer_creation_context.has_value() || state.keysound_slots.keysound_slot_confirmation_open ||
-            state.keysound_slots.keysound_slot_batch.open || state.keysound_filters.is_popup_open() ||
-            state.keysound_filters.keysound_filter_release_pending;
+        return is_canvas_popup_blocked() || compose_area_menu_open() ||
+               compose_area_menu_consumed() || compose_recipe_menu_open() ||
+               compose_recipe_menu_consumed() || compose_note_menu_open() ||
+               state.dialogs.export_dialog_open || state.dialogs.export_confirmation_dialog.open ||
+               state.dialogs.compose_dialog_release_pending ||
+               state.layer_editor.layer_creation_context.has_value() ||
+               state.keysound_slots.keysound_slot_confirmation_open ||
+               state.keysound_slots.keysound_slot_batch.open ||
+               state.keysound_filters.is_popup_open() ||
+               state.keysound_filters.keysound_filter_release_pending;
     }
 
     auto is_editor_modal_blocked() const -> bool {

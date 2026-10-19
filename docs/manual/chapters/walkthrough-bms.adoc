@@ -111,10 +111,12 @@ folder and relinks it. If a copy fails, the original link stays in place and Wor
 failure.
 . Open *Project* (kbd:[F1]). Under *Exports*, open the *BMS* target's *⋯* menu, click *Edit*, set its
 project-relative *Destination* (for example `song/normal.bme`), then click *Save*.
-. Open the target's *⋯* menu and click *Preview* for the conversion file and warning counts. Preview does not check whether the
+. In the same editor, choose *Ask*, *Replace*, or *Keep* under *Existing files*.
+. Open the target's *⋯* menu and click *Preview* for the conversion file and warning counts. Preview does not yet list whether the
 publication destination already exists.
-. Click *Export…*, select *BMS*, leave *Replace existing chart files* unchecked to refuse
-overwriting, and click *Export group*. The target card's *Export* action publishes directly and also
-refuses to replace existing chart files. Referenced keysounds are copied beside the chart under
+. Click the target card's *Export* action to use its saved policy. With *Ask*, Wormedit publishes
+when the planned names are free and opens one conflict confirmation before replacing anything.
+The card's *⋯* menu offers one-run *Replace* and *Keep* choices, and *File → Export…* reaches the
+same target choices from every tab. Referenced keysounds are copied beside the chart under
 `assets/`; when a filename conflicts, the copied filename gets the asset ID as a prefix. Read the
 completion or refusal in notifications (kbd:[Ctrl+Shift+M]).

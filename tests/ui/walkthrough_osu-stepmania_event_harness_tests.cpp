@@ -396,8 +396,10 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
         .plan = output_group_export_plan_t::from(history.document, history.document.output_groups.front()),
         .asset_base = root};
     expect(run_output_group_export(request, {}).published);
-    const auto refused = run_output_group_export(request, {});
-    expect(preview_group(history, 0, root) == "Cannot export: " + refused.message);
+    const auto asked = run_output_group_export(request, {});
+    expect(!asked.published);
+    expect(asked.confirmation_required);
+    expect(preview_group(history, 0, root).starts_with("Preview: 1 file(s)"));
     history.document.audio_assets.front().source_path = "/missing/walkthrough-song.ogg";
     history.document.output_groups.front().relative_output_path = "missing-output";
     ++history.document.revision;
@@ -407,7 +409,9 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     const auto missing = run_output_group_export(missing_request, {});
     expect(!missing.published);
     expect(missing.message.find("walkthrough-song.ogg") != std::string::npos);
-    expect(preview_group(history, 0, root) == "Cannot export: " + missing.message);
+    const auto missing_preview = preview_group(history, 0, root);
+    expect(missing_preview.starts_with("Cannot export: "));
+    expect(missing_preview.find("walkthrough-song.ogg") != std::string::npos);
     expect(!std::filesystem::exists(root / "missing-output"));
     std::filesystem::remove_all(root);
 }

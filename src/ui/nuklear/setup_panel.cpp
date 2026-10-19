@@ -68,6 +68,7 @@ struct project_panel_state_t {
     char group_name[256]{};
     char group_path[1024]{};
     int group_family{4};
+    int group_existing_files{};
     std::array<nk_bool, WORM_UI_PROJECT_CHART_CAPACITY> group_charts{};
     wormedit::ui::chrome::ContextMenu group_menu{.title = "Export target actions"};
     wormedit::ui::chrome::Dialog group_editor_dialog;
@@ -432,6 +433,7 @@ void load_output_group_draft(const WormUiSetupView& view, const WormUiProjectOut
     state.group_index = group ? group->document_index : 0;
     state.group_revision = view.document_revision;
     state.group_family = group && group->family <= 4 ? group->family : 4;
+    state.group_existing_files = group ? group->existing_files : WORM_UI_EXISTING_FILES_ASK;
     state.group_editor_dialog = {};
     std::snprintf(state.group_name, sizeof(state.group_name), "%s",
                   group ? group->name : "New export target");
@@ -479,6 +481,8 @@ void publish_output_group_action(const WormUiSetupView& view, WormUiWorkspaceAct
     output.name = project_state.group_name;
     output.path = project_state.group_path;
     output.family = static_cast<uint8_t>(project_state.group_family);
+    output.existing_files =
+        static_cast<WormUiExistingFilesChoice>(project_state.group_existing_files);
     for (size_t i = 0; i < std::min(view.chart_row_count, size_t{WORM_UI_PROJECT_CHART_CAPACITY}); ++i)
         if (project_state.group_charts[i]) output.chart_ids[output.chart_count++] = view.charts[i].chart_id;
 }
@@ -501,6 +505,31 @@ auto render_output_family_picker(nk_context* context, const WormUiKindCatalogVie
             if (nk_combo_item_label(context, family.label, NK_TEXT_LEFT))
                 selected = static_cast<int>(family.id);
         }
+        wormedit::ui::chrome::safe_combo_end(context);
+    }
+    return selected;
+}
+auto existing_files_label(int policy) -> const char* {
+    switch (static_cast<WormUiExistingFilesChoice>(policy)) {
+    case WORM_UI_EXISTING_FILES_ASK:
+        return "Ask";
+    case WORM_UI_EXISTING_FILES_REPLACE:
+        return "Replace";
+    case WORM_UI_EXISTING_FILES_KEEP:
+        return "Keep";
+    case WORM_UI_EXISTING_FILES_SAVED:
+        break;
+    }
+    return "Ask";
+}
+auto render_existing_files_picker(nk_context* context, int selected) -> int {
+    if (wormedit::ui::chrome::safe_combo_begin_label(context, existing_files_label(selected),
+                                                     nk_vec2(220, 96))) {
+        nk_layout_row_dynamic(context, 24, 1);
+        for (const auto policy : {WORM_UI_EXISTING_FILES_ASK, WORM_UI_EXISTING_FILES_REPLACE,
+                                  WORM_UI_EXISTING_FILES_KEEP})
+            if (nk_combo_item_label(context, existing_files_label(policy), NK_TEXT_LEFT))
+                selected = policy;
         wormedit::ui::chrome::safe_combo_end(context);
     }
     return selected;
@@ -529,6 +558,10 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
         nk_label(context, "Destination", NK_TEXT_LEFT);
         worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, state.group_path,
                                    sizeof(state.group_path), nk_filter_default);
+        nk_layout_row(context, NK_DYNAMIC, 28, 2, fields);
+        nk_label(context, "Existing files", NK_TEXT_LEFT);
+        state.group_existing_files =
+            render_existing_files_picker(context, state.group_existing_files);
         dialog_text(state.group_editor_dialog, context,
                     "Project-relative file or directory; use a directory for multiple BMS, BMSON or osu! charts.",
                     color(UiColor::text_muted));
@@ -556,13 +589,23 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
         state.release_pending = true;
     }
 }
-void export_project_group(const WormUiSetupView& view, WormUiWorkspaceAction& action, size_t index) {
+void export_project_group(const WormUiSetupView& view, WormUiWorkspaceAction& action, size_t index,
+                          WormUiExistingFilesChoice existing_files) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
     action.compose_input_project_id = view.song_id;
     action.compose_input_chart_id = view.selected_chart_id;
     action.compose_input_document_revision = view.document_revision;
     action.compose_output_group_index = index;
+    action.compose_existing_files = existing_files;
+}
+void export_all_project_groups(const WormUiSetupView& view, WormUiWorkspaceAction& action) {
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+        return;
+    action.compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS;
+    action.compose_input_project_id = view.song_id;
+    action.compose_input_chart_id = view.selected_chart_id;
+    action.compose_input_document_revision = view.document_revision;
 }
 auto output_group_editable(const WormUiSetupView& view,
                            const WormUiProjectOutputGroupView& group) -> bool {
@@ -634,10 +677,11 @@ void render_output_group_card(nk_context* context, const WormUiSetupView& view,
     destination += group.path;
     text_cell(context, destination.c_str(), std::max(1.0f, action_x - path_x - 8.0f));
     nk_layout_space_push(context, nk_rect(action_x, 5.0f, 96.0f, 28.0f));
-    if (Button{"Export", ButtonKind::primary,
-               "Publish this target without replacing existing chart files",
-               group.chart_count != 0}.render(context))
-        export_project_group(view, action, group.document_index);
+    const auto export_tooltip = std::string{"Publish using saved "} +
+                                existing_files_label(group.existing_files) + " policy";
+    if (Button{"Export", ButtonKind::primary, export_tooltip.c_str(), group.chart_count != 0}
+            .render(context))
+        export_project_group(view, action, group.document_index, WORM_UI_EXISTING_FILES_SAVED);
     nk_layout_space_push(context, nk_rect(action_x + 104.0f, 5.0f, 28.0f, 28.0f));
     if (Button{"⋯", ButtonKind::secondary, "Export target actions"}.render(context)) {
         project_state.group_menu_index = group.document_index;
@@ -665,9 +709,14 @@ void render_output_group_menu(nk_context* context, const WormUiSetupView& view,
     if (!group) { context_menu_reset(project_state.group_menu); return; }
     auto& menu = project_state.group_menu;
     if (!context_menu_begin(menu, context, PopupContextStamp::from(view, group->document_index + 1),
-                            nk_vec2(220.0f, context_menu_height(4)))) return;
+                            nk_vec2(260.0f, context_menu_height(6))))
+        return;
     const auto* edit_reason = output_group_editable(view, *group) ? nullptr
         : "This target exceeds the editable Project view limits.";
+    if (context_menu_item(menu, context, "Export · Replace existing"))
+        export_project_group(view, action, group->document_index, WORM_UI_EXISTING_FILES_REPLACE);
+    if (context_menu_item(menu, context, "Export · Keep existing"))
+        export_project_group(view, action, group->document_index, WORM_UI_EXISTING_FILES_KEEP);
     if (context_menu_item(menu, context, "Edit", edit_reason)) begin_output_group_editor(view, group);
     if (context_menu_item(menu, context, "Preview"))
         publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group->document_index);
@@ -716,9 +765,11 @@ void render_output_groups(nk_context* context, const WormUiSetupView& view, Worm
     nk_layout_space_push(context, nk_rect(0.0f, 0.0f, std::max(1.0f, width - 248.0f), 32.0f));
     project_section_heading(context, heading);
     nk_layout_space_push(context, nk_rect(width - 240.0f, 0.0f, 110.0f, 32.0f));
-    if (wormedit::ui::chrome::Button{"Export…", wormedit::ui::chrome::ButtonKind::secondary,
-        "Choose a group and overwrite policy", view.chart_count != 0}.render(context))
-        std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", "document.export_output_group");
+    if (wormedit::ui::chrome::Button{"Export all", wormedit::ui::chrome::ButtonKind::secondary,
+                                     "Prepare every export target, then publish them",
+                                     view.output_group_count != 0}
+            .render(context))
+        export_all_project_groups(view, action);
     nk_layout_space_push(context, nk_rect(width - 122.0f, 0.0f, 122.0f, 32.0f));
     if (nk_button_label(context, "+ New")) begin_output_group_editor(view, nullptr);
     nk_layout_space_end(context);

@@ -3394,7 +3394,7 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
     check_export_policy(dispatch_transport_player_action(action, application, policy).has_value());
     auto group = document->output_groups.back();
     group.relative_output_path = "exports/song.ssc";
-    const auto plan = output_group_export_plan_t::from(*document, group, false, policy);
+    const auto plan = output_group_export_plan_t::from(*document, group, std::nullopt, policy);
     check_export_policy(plan.request.stepmania->timing_syntax == policy.timing_syntax);
     check_export_policy(plan.request.stepmania->implementation_profile == policy.implementation_profile);
     const auto converted = convert_document(*document, plan.request);
@@ -3413,8 +3413,11 @@ TEST_CASE("New project StepMania policy reaches preview conversion and publicati
     check_export_policy(written == bytes);
     group.relative_output_path = "rejected/song.sm";
     policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
-    const auto refused = run_output_group_export({.document = *document,
-        .plan = output_group_export_plan_t::from(*document, group, false, policy), .asset_base = root}, {});
+    const auto refused = run_output_group_export(
+        {.document = *document,
+         .plan = output_group_export_plan_t::from(*document, group, std::nullopt, policy),
+         .asset_base = root},
+        {});
     check_export_policy(!refused.published);
     check_export_policy(!std::filesystem::exists(root / "rejected"));
     std::filesystem::remove_all(root);

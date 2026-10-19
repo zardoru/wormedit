@@ -131,12 +131,27 @@ auto migrate_v5_to_v6(nlohmann::json& document) -> std::string {
     return {};
 }
 
-constexpr std::array<migration_t, 5> released_migrations{{
+auto migrate_v6_to_v7(nlohmann::json& document) -> std::string {
+    if (!document.contains("output_groups"))
+        return {};
+    if (!document.at("output_groups").is_array())
+        return "document output_groups must be an array";
+    for (auto& group : document.at("output_groups")) {
+        if (!group.is_object())
+            return "output group must be an object";
+        if (!group.contains("existing_files"))
+            group["existing_files"] = std::uint64_t{0};
+    }
+    return {};
+}
+
+constexpr std::array<migration_t, 6> released_migrations{{
     {1, &migrate_v1_to_v2},
     {2, &migrate_v2_to_v3},
     {3, &migrate_v3_to_v4},
     {4, &migrate_v4_to_v5},
     {5, &migrate_v5_to_v6},
+    {6, &migrate_v6_to_v7},
 }};
 
 } // namespace

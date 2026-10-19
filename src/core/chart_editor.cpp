@@ -295,6 +295,9 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     for (std::size_t i = 0; i < doc.output_groups.size(); ++i)
         if (i != index && doc.output_groups[i].name == group.name) return "Output group name is already used.";
     if (group.family < format_family_t::native_project || group.family > format_family_t::bmson) return "Output format is not supported.";
+    if (group.existing_files < existing_files_policy_t::ask ||
+        group.existing_files > existing_files_policy_t::keep)
+        return "Existing-files policy is not supported.";
     if (!is_output_group_path_valid(group.relative_output_path)) return "Output path must be a safe project-relative path.";
     if (group.relative_output_path.has_extension() && group.charts.size() > 1 &&
         group.family != format_family_t::stepmania && group.family != format_family_t::native_project)

@@ -295,19 +295,75 @@ auto export_compose_output_group_action_t::validate(compose_action_context_t& co
         blocked->source = notification_source_t::export_;
         return std::move(*blocked);
     }
+    const auto valid_group = [&](const auto& group) {
+        return !group.charts.empty() && std::ranges::none_of(group.charts, [&](const auto id) {
+            return doc.find_chart(id) == nullptr;
+        });
+    };
+    if (context.action.compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS) {
+        if (doc.output_groups.empty() || !std::ranges::all_of(doc.output_groups, valid_group))
+            return compose_action_outcome_t::blocked(
+                "Every export target must contain matching charts.",
+                notification_source_t::export_);
+        plan = *output_group_export_plan_t::from_all(
+            doc, doc.output_groups, context.environment.resources->stepmania_policy);
+        return std::nullopt;
+    }
     if (context.action.compose_output_group_index >= doc.output_groups.size())
         return compose_action_outcome_t::blocked(
             "The selected output group is no longer available.", notification_source_t::export_);
     auto group = doc.output_groups[context.action.compose_output_group_index];
-    if (group.charts.empty() ||
-        std::ranges::any_of(group.charts, [&](const auto id) { return doc.find_chart(id) == nullptr; }))
+    if (!valid_group(group))
         return compose_action_outcome_t::blocked(
             "The selected output group has no matching charts.", notification_source_t::export_);
-    plan = output_group_export_plan_t::from(doc, std::move(group),
-                                           context.action.compose_export_overwrite,
-                                           context.environment.resources->stepmania_policy);
+    std::optional<existing_files_policy_t> one_run_policy;
+    switch (context.action.compose_existing_files) {
+    case WORM_UI_EXISTING_FILES_SAVED:
+        break;
+    case WORM_UI_EXISTING_FILES_ASK:
+        one_run_policy = existing_files_policy_t::ask;
+        break;
+    case WORM_UI_EXISTING_FILES_REPLACE:
+        one_run_policy = existing_files_policy_t::replace;
+        break;
+    case WORM_UI_EXISTING_FILES_KEEP:
+        one_run_policy = existing_files_policy_t::keep;
+        break;
+    default:
+        return compose_action_outcome_t::blocked("The existing-files choice is invalid.",
+                                                 notification_source_t::export_);
+    }
+    plan = output_group_export_plan_t::from(doc, std::move(group), one_run_policy,
+                                            context.environment.resources->stepmania_policy);
     return std::nullopt;
 }
+
+struct confirm_output_export_action_t {
+    bool cancel{};
+    auto operator==(const confirm_output_export_action_t&) const -> bool = default;
+    auto validate(compose_action_context_t&) -> std::optional<compose_action_outcome_t> {
+        return std::nullopt;
+    }
+    auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
+        if (cancel) {
+            context.environment.resources->jobs.exporter.cancel_confirmation();
+            return compose_action_outcome_t::from("Export cancelled before publication.",
+                                                  notification_severity_t::info,
+                                                  notification_source_t::export_);
+        }
+        auto started = context.environment.resources->jobs.exporter.confirm(
+            context.environment.document.history);
+        if (!started)
+            return compose_action_outcome_t::blocked(started.error().message,
+                                                     notification_source_t::export_);
+        auto outcome = compose_action_outcome_t::from(
+            "Output replacement started in the background.", notification_severity_t::info,
+            notification_source_t::export_);
+        outcome.delivery = compose_feedback_delivery_t::none;
+        return outcome;
+    }
+};
+static_assert(compose_action<confirm_output_export_action_t, compose_action_context_t>);
 
 auto export_compose_output_group_action_t::perform(compose_action_context_t& context)
     -> compose_action_outcome_t {
@@ -325,7 +381,7 @@ compose_action_outcome_t start_output_export(compose_action_context_t& context,
             started.error().message, notification_severity_t::error,
             notification_source_t::export_, false, false);
     auto outcome = compose_action_outcome_t::from(
-        "Output group conversion started in the background.", notification_severity_t::info,
+        "Export target preparation started in the background.", notification_severity_t::info,
         notification_source_t::export_);
     outcome.delivery = compose_feedback_delivery_t::none;
     return outcome;
@@ -645,6 +701,18 @@ constexpr auto resource_route_entries = std::array{
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP,
                            .operation =
                                run_routed_compose_action<export_compose_output_group_action_t>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS,
+                           .operation =
+                               run_routed_compose_action<export_compose_output_group_action_t>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT,
+                           .operation =
+                               run_routed_compose_action<confirm_output_export_action_t, false>,
+                           .requires_resources = true},
+    compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT,
+                           .operation =
+                               run_routed_compose_action<confirm_output_export_action_t, true>,
                            .requires_resources = true},
     compose_action_route_t{.kind = WORM_UI_COMPOSE_ACTION_PLACE_RESOURCE,
                            .operation = run_routed_compose_action<place_compose_resource_action_t>},

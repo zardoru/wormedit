@@ -47,7 +47,8 @@ typedef enum WormUiComposeActionKind {
     /* Sets the cursor measure's time signature from timing_meter_numerator_text and
        timing_meter_denominator_text. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURE_METER,
-    /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo step. */
+    /* Sets the meter from timing_meter_*_text on every measure in compose_measure_ids as one undo
+       step. */
     WORM_UI_COMPOSE_ACTION_SET_MEASURES_METER,
     /* Shift+Alt bar line drag: compose_measure_ids[0] is the measure the line ends; it takes the
        timing_meter_*_text meter and the next measure takes compose_second_meter_*. */
@@ -86,6 +87,9 @@ typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT,
     WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT,
     WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP,
+    WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS,
+    WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT,
+    WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT,
     WORM_UI_COMPOSE_ACTION_MOVE_BMSON_BGM_TO_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_CONTINUE_AT_CURSOR,
     WORM_UI_COMPOSE_ACTION_INSERT_BMSON_BGM_RESTART_AT_CURSOR,
@@ -632,7 +636,7 @@ typedef struct WormUiWorkspaceAction {
     uint64_t compose_bmson_channel_id;
     bool compose_sound_slot_confirmed;
     size_t compose_output_group_index;
-    bool compose_export_overwrite;
+    WormUiExistingFilesChoice compose_existing_files;
     uint8_t compose_resource_role;
     char compose_import_path[WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1];
     uint8_t compose_timing_lane;

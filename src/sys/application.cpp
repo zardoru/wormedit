@@ -4556,6 +4556,12 @@ struct application_t::implementation_t {
         flattened.view.file_jobs.opening = jobs.project_open_runtime.view();
         flattened.view.file_jobs.exporting = jobs.export_runtime.view();
         flattened.view.file_jobs.preview = views.project_chart_runtime.preview_view();
+        const auto export_confirmation = jobs.export_runtime.confirmation_view();
+        flattened.view.compose.export_confirmation_required = export_confirmation.required;
+        flattened.view.compose.export_confirmation_project_id = export_confirmation.project_id;
+        flattened.view.compose.export_confirmation_revision = export_confirmation.document_revision;
+        flattened.view.compose.export_confirmation_message = export_confirmation.message;
+        flattened.view.compose.export_confirmation_detail = export_confirmation.detail;
         validate_minimap_start_frame(commands, session.history, views.compose_interaction_state);
         flattened.view.minimap_click_moves_paused_playhead =
             commands.preferences.minimap_click_moves_paused_playhead;

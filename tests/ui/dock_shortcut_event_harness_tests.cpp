@@ -251,7 +251,7 @@ TEST_CASE("Layer naming Escape cancels and blank names cannot create",
     check_dock(!state.layer_editor.layer_creation_context);
 }
 
-TEST_CASE("Export dialog fits a small viewport and submits captured group and overwrite",
+TEST_CASE("Export dialog fits a small viewport and submits the saved target policy",
           "[frontend-state][event-harness][compose-dialogs]") {
     nuklear_event_harness_t harness{640, 480};
     prepare(harness);
@@ -264,17 +264,16 @@ TEST_CASE("Export dialog fits a small viewport and submits captured group and ov
     harness.view().compose.output_group_count = 1;
     auto& state = worm_ui_nuklear_compose_state();
     worm_ui_nuklear_open_export_dialog(harness.view().compose, state);
-    state.dialogs.export_overwrite = true;
     static_cast<void>(harness.frame());
     static_cast<void>(harness.frame());
     check_dock(state.dialogs.export_dialog.bounds.x >= 0 && state.dialogs.export_dialog.bounds.y >= 0);
     check_dock(state.dialogs.export_dialog.bounds.y + state.dialogs.export_dialog.bounds.h <= 480);
-    check_dock(harness.drawn_text_center("Export group").has_value());
+    check_dock(harness.drawn_text_center("Export").has_value());
     const auto enter = dialog_key(SDLK_RETURN, SDL_SCANCODE_RETURN);
     const auto action = harness.frame({&enter, 1});
     check_dock(action.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
     check_dock(action.get().compose_output_group_index == 7);
-    check_dock(action.get().compose_export_overwrite);
+    check_dock(action.get().compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
     check_dock(action.get().compose_input_project_id == 1);
     check_dock(!state.dialogs.export_dialog_open);
 }

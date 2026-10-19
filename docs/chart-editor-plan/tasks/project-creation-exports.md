@@ -64,7 +64,13 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-724 Give each export target one export action and existing-file policy
 
-- **Status:** ready
+- **Status:** done
+- **Completed:** Export targets persist Ask/Replace/Keep, expose saved and one-run actions, and
+  share one background preflight/confirmation path from cards and File → Export. Export all
+  prepares every target before the first publication and qualifies batch results by target. Native
+  schema 7 migrates older targets to Ask. Focused core/sys/UI/native tests, GATE, affected-file
+  complexity and clang-tidy pass; isolated Xvfb captures cover Ask, Replace and Keep tooltips plus
+  Export all.
 - **Outcome:** Every export-target card has one split **Export** action: its main button follows a
   saved **Ask / Replace / Keep** existing-files policy, while the menu can choose Replace or Keep
   for one run; the Project header has **Export all**, and the duplicate header/dialog export path is
@@ -82,6 +88,23 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `tests/sys/project_view_tests.cpp`, `tests/sys/resource_notification_tests.cpp`,
   `tests/sys/application_commands_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`, this card
   and `memory/chart-editor-status/resume.md`.
+- **Supporting-file extensions (2026-10-19):** `src/sys/resource_job_state.h` and
+  `src/sys/resource_job_state.cpp` own the background export lifecycle and therefore retain the
+  prepared Ask-confirmation request; `src/sys/application.cpp` projects that lifecycle state and
+  supplies it to dispatch; `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_state.h`,
+  `src/sys/workspace_view.cpp`, `src/ui/nuklear/compose_input_queries.h`, and
+  `src/ui/nuklear/frontend.cpp` carry the existing global File → Export chooser/confirmation
+  surface. These extensions are required to keep conversion and filesystem preflight off the UI
+  thread while using the same workflow from every project tab. `src/formats/native_project_storage.cpp`
+  and `tests/formats/native_project_storage_tests.cpp` advance the recovery envelope's supported
+  native schema and its persistence expectations;
+  `tests/ui/dock_shortcut_event_harness_tests.cpp` and
+  `tests/ui/walkthrough_bms_event_harness_tests.cpp` exercise the same changed chooser/card labels.
+  `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp` covers the changed Ask-conflict
+  result in the existing production export walkthrough; `tests/sys/compose_action_notification_tests.cpp`
+  verifies the production background-export messages and conversion-loss publication result;
+  `docs/manual/chapters/walkthrough-bms.adoc` and
+  `docs/manual/chapters/walkthrough-osu-stepmania.adoc` describe the consolidated workflow.
 - **Steps:**
   1. Stale-plan check: trace every producer of `WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP` and
      `document.export_output_group`; record which ones ask for or force overwrite.
@@ -108,7 +131,7 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-725 Store StepMania export policy on each export target
 
-- **Status:** blocked-on T-724
+- **Status:** ready
 - **Outcome:** A StepMania export target stores its SM/SSC file profile, timing syntax and target
   implementation; its edit dialog shows those fields, the separate project-wide StepMania policy
   section is removed, and new compatible projects create one StepMania target instead of parallel

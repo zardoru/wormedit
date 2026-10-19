@@ -596,9 +596,13 @@ auto append_compose_output_group(frontend_workspace_view_t& result, frame_arena_
     const auto* assets = arena_string(arena,
         directory ? directory->generic_string() : std::string{});
     if (!name || !path || !assets) return false;
-    if (!result.compose.output_group.view.push_back({
-        .document_index = document_index, .name = name, .relative_output_path = path,
-        .relative_asset_directory = assets})) return false;
+    if (!result.compose.output_group.view.push_back(
+            {.document_index = document_index,
+             .name = name,
+             .relative_output_path = path,
+             .relative_asset_directory = assets,
+             .existing_files = static_cast<WormUiExistingFilesChoice>(group.existing_files)}))
+        return false;
     result.view.compose.output_group_count = result.compose.output_group.view.size();
     return true;
 }

@@ -1,33 +1,51 @@
 #pragma once
 
+#include <filesystem>
+#include <memory>
+#include <optional>
+#include <span>
+#include <stop_token>
+#include <string>
+#include <utility>
+#include <vector>
 #include <wormedit/core/notifications.h>
 #include <wormedit/formats/conversion.h>
 #include <wormedit/formats/conversion_publication.h>
 #include <wormedit/formats/slice_spans.h>
-#include <utility>
-#include <memory>
-#include <filesystem>
-#include <stop_token>
-#include <string>
 
 namespace wormedit::sys {
-struct output_group_export_plan_t {
-    [[nodiscard]] static auto from(const song_document_t& document, output_group_t group,
-                                   bool overwrite = false,
-                                   stepmania_export_policy_t stepmania_policy = {})
-        -> output_group_export_plan_t;
+struct output_group_export_target_t {
     output_group_t group;
     conversion_request_t request;
+    existing_files_policy_t existing_files{existing_files_policy_t::ask};
+};
+
+struct output_group_export_plan_t {
+    [[nodiscard]] static auto
+    from(const song_document_t& document, output_group_t group,
+         std::optional<existing_files_policy_t> one_run_policy = std::nullopt,
+         stepmania_export_policy_t stepmania_policy = {}) -> output_group_export_plan_t;
+    [[nodiscard]] static auto from_all(const song_document_t& document,
+                                       std::span<const output_group_t> groups,
+                                       stepmania_export_policy_t stepmania_policy = {})
+        -> std::optional<output_group_export_plan_t>;
+    void replace_asked_files();
+    output_group_t group;
+    conversion_request_t request;
+    existing_files_policy_t existing_files{existing_files_policy_t::ask};
+    std::vector<output_group_export_target_t> additional_targets;
 };
 
 inline auto output_group_export_plan_t::from(const song_document_t& document, output_group_t group,
-                                             bool overwrite, stepmania_export_policy_t stepmania_policy)
+                                             std::optional<existing_files_policy_t> one_run_policy,
+                                             stepmania_export_policy_t stepmania_policy)
     -> output_group_export_plan_t {
+    const auto existing_files = one_run_policy.value_or(group.existing_files);
     conversion_request_t request;
     request.target = group.family;
     if (group.family != format_family_t::native_project)
         request.charts = group.charts;
-    request.overwrite = overwrite;
+    request.overwrite = existing_files == existing_files_policy_t::replace;
     request.loss_policy = loss_policy_t::warn;
     if (group.family == format_family_t::stepmania) {
         // The group owns its file family; target and timing syntax are session policy.
@@ -40,7 +58,8 @@ inline auto output_group_export_plan_t::from(const song_document_t& document, ou
         if (!is_conversion_needs_slice_spans(document, request))
             request.bms_output_extension = group.relative_output_path.extension().string();
     }
-    return {.group = std::move(group), .request = std::move(request)};
+    return {
+        .group = std::move(group), .request = std::move(request), .existing_files = existing_files};
 }
 
 struct output_group_export_request_t {
@@ -60,10 +79,12 @@ struct output_group_export_preparation_t {
     conversion_result_t converted;
     std::vector<project_asset_copy_request_t> pending_assets;
     conversion_publication_plan_payload_t publication;
+    std::vector<std::filesystem::path> conflicts;
 };
 
 struct output_group_export_task_result_t {
     bool published{};
+    bool confirmation_required{};
     std::string message;
     notification_severity_t severity{notification_severity_t::error};
     std::string detail;

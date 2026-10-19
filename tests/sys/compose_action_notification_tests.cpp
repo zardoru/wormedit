@@ -1164,7 +1164,7 @@ TEST_CASE("BMSON output export rejects missing stem before writing music or dest
         .charts = {chart_id_t{1}}, .relative_output_path = "exports"}};
     const auto revision = document.revision;
     const auto status = fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP));
-    require_action(status == "Output group conversion started in the background.");
+    require_action(status == "Export target preparation started in the background.");
     const auto completed = wait_for_slice_export(fixture);
     require_action(completed.has_value());
     check_action(completed->find("Cannot decode") != std::string::npos);
@@ -1228,7 +1228,7 @@ TEST_CASE("BMSON editor export publishes sliced audio and reports conversion los
     require_action(fixture.dispatch_workspace(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP), retained));
     const auto completed = wait_for_slice_export(fixture);
     require_action(completed.has_value());
-    check_action(completed->starts_with("Output group published"));
+    check_action(completed->starts_with("Output target published"));
     check_action(completed->find("conversion loss") != std::string::npos);
     check_action(completed->size() <= notification_message_max_bytes);
     const auto notifications = fixture.entries();
@@ -1287,7 +1287,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
     fixture.asset_base = directory;
     const auto revision = fixture.history.document.revision;
     require_action(fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP)) ==
-        "Output group conversion started in the background.");
+                   "Export target preparation started in the background.");
     const auto completed = wait_for_slice_export(fixture);
     require_action(completed.has_value());
     if (incompatible_name) {
@@ -1297,7 +1297,7 @@ TEST_CASE("BMSON editor BMS export materializes silent gameplay in private stagi
         check_action(fixture.history.undo.empty());
         return;
     }
-    check_action(completed->starts_with("Output group published"));
+    check_action(completed->starts_with("Output target published"));
     check_action(std::filesystem::exists(directory / "exports" / "conversion-silence.wav"));
     std::size_t charts{}, sounds{};
     for (const auto& file : std::filesystem::directory_iterator(directory / "exports")) {
@@ -2939,7 +2939,7 @@ TEST_CASE("New project exports group charts with an excluded difficulty active",
         const auto completed = wait_for_slice_export(fixture);
         require_action(completed.has_value());
         INFO(*completed);
-        check_action(completed->starts_with("Output group published"));
+        check_action(completed->starts_with("Output target published"));
         check_action(std::filesystem::is_directory(root / "osu"));
         std::size_t charts{};
         for (const auto& entry : std::filesystem::directory_iterator(root / "osu"))

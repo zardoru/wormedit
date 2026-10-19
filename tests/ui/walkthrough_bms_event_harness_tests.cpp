@@ -476,9 +476,9 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     (void)harness.frame();
     const auto direct = click_text(harness, "Export");
     check_step(direct.front().get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP);
-    check_false_step(direct.front().get().compose_export_overwrite);
-    const auto dialog = click_text(harness, "Export…");
-    check_step(std::string_view{dialog.front().get().menu_command_id} == "document.export_output_group");
+    check_step(direct.front().get().compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
+    const auto all = click_text(harness, "Export all");
+    check_step(all.front().get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_ALL_OUTPUT_GROUPS);
 }
 
 namespace {

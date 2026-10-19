@@ -100,6 +100,31 @@ auto action_available(const WormUiWorkspaceAction& action) -> bool {
          action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
 }
 
+void close_export(worm_ui_nuklear_compose_state_t& state);
+
+auto existing_files_label(WormUiExistingFilesChoice policy) -> const char* {
+    switch (policy) {
+    case WORM_UI_EXISTING_FILES_ASK:
+        return "Ask before replacing";
+    case WORM_UI_EXISTING_FILES_REPLACE:
+        return "Replace existing";
+    case WORM_UI_EXISTING_FILES_KEEP:
+        return "Keep existing";
+    case WORM_UI_EXISTING_FILES_SAVED:
+        break;
+    }
+    return "Use saved policy";
+}
+
+void publish_export_action(const ResourcePanel& panel, const WormUiComposeOutputGroupView& selected,
+                           WormUiExistingFilesChoice policy) {
+    stamp_action(*panel.view, *panel.action);
+    panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
+    panel.action->compose_output_group_index = selected.document_index;
+    panel.action->compose_existing_files = policy;
+    close_export(*panel.state);
+}
+
 void close_export(worm_ui_nuklear_compose_state_t& state) {
     state.dialogs.export_dialog_open = false;
     wormedit::ui::chrome::popup_arm_release(state.dialogs.compose_dialog_release_pending);
@@ -136,23 +161,59 @@ void render_export_dialog(const ResourcePanel& panel) {
         chrome::dialog_text(dialog, panel.context,
             selected ? selected->relative_output_path : "No output group for this chart",
             chrome::color(chrome::UiColor::text_muted));
-        int overwrite = state.dialogs.export_overwrite;
         nk_layout_row_dynamic(panel.context, 24, 1);
-        nk_checkbox_label(panel.context, "Replace existing chart files", &overwrite);
-        state.dialogs.export_overwrite = overwrite != 0;
-        chrome::dialog_footer_begin(dialog, panel.context, 2, false, 140);
+        nk_labelf(panel.context, NK_TEXT_LEFT, "Saved policy: %s",
+                  selected ? existing_files_label(selected->existing_files) : "Unavailable");
+        chrome::dialog_footer_begin(dialog, panel.context, 4, false, 150);
         if (chrome::dialog_button(dialog, panel.context, "Cancel", chrome::DialogButtonRole::secondary))
             close_export(state);
-        if (chrome::dialog_button(dialog, panel.context, "Export group", chrome::DialogButtonRole::primary,
-                                 selected && action_available(*panel.action))) {
-            stamp_action(view, *panel.action);
-            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
-            panel.action->compose_output_group_index = selected->document_index;
-            panel.action->compose_export_overwrite = state.dialogs.export_overwrite;
-            close_export(state);
-        }
+        if (chrome::dialog_button(dialog, panel.context, "Export",
+                                  chrome::DialogButtonRole::primary,
+                                  selected && action_available(*panel.action)))
+            publish_export_action(panel, *selected, WORM_UI_EXISTING_FILES_SAVED);
+        if (chrome::dialog_button(dialog, panel.context, "Replace",
+                                  chrome::DialogButtonRole::secondary,
+                                  selected && action_available(*panel.action)))
+            publish_export_action(panel, *selected, WORM_UI_EXISTING_FILES_REPLACE);
+        if (chrome::dialog_button(dialog, panel.context, "Keep",
+                                  chrome::DialogButtonRole::secondary,
+                                  selected && action_available(*panel.action)))
+            publish_export_action(panel, *selected, WORM_UI_EXISTING_FILES_KEEP);
     }
     if (chrome::dialog_end(dialog, panel.context) == chrome::DialogResult::cancel) close_export(state);
+}
+
+void render_export_confirmation(const ResourcePanel& panel) {
+    namespace chrome = wormedit::ui::chrome;
+    auto& dialog = panel.state->dialogs.export_confirmation_dialog;
+    if (!panel.view->export_confirmation_required) {
+        dialog = {};
+        return;
+    }
+    if (chrome::dialog_begin(dialog, panel.context, "Confirm export replacement",
+                             panel.view->export_confirmation_message,
+                             {.width = 620.0f, .enter_confirms = false})) {
+        chrome::dialog_text(dialog, panel.context,
+                            "These files already exist. Replace them for this run?",
+                            chrome::color(chrome::UiColor::text));
+        chrome::dialog_text(dialog, panel.context, panel.view->export_confirmation_detail,
+                            chrome::color(chrome::UiColor::text_muted));
+        chrome::dialog_footer_begin(dialog, panel.context, 2, true);
+        if (chrome::dialog_button(dialog, panel.context, "Replace",
+                                  chrome::DialogButtonRole::destructive)) {
+            stamp_action(*panel.view, *panel.action);
+            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT;
+        }
+        if (chrome::dialog_button(dialog, panel.context, "Cancel",
+                                  chrome::DialogButtonRole::secondary)) {
+            stamp_action(*panel.view, *panel.action);
+            panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
+        }
+    }
+    if (chrome::dialog_end(dialog, panel.context) == chrome::DialogResult::cancel) {
+        stamp_action(*panel.view, *panel.action);
+        panel.action->compose_action = WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT;
+    }
 }
 
 void render_layer_creation(const ResourcePanel& panel) {
@@ -223,6 +284,7 @@ void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiCom
     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state) {
     ResourcePanel panel{context, &view, &action, &state};
     render_export_dialog(panel);
+    render_export_confirmation(panel);
     render_layer_creation(panel);
 }
 

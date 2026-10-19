@@ -474,10 +474,10 @@ namespace {
 
 constexpr std::string_view native_project_format = "wormedit-project";
 // The envelope (`format`, `format_version`, `document`) and the document schema evolve separately:
-// the envelope is still version 1, while the document is at schema 6 (older documents migrate on
+// the envelope is still version 1, while the document is at schema 7 (older documents migrate on
 // load; see native_project_migrations.cpp).
 constexpr std::uint32_t native_project_format_version = 1;
-constexpr std::uint32_t native_project_schema_version = 6;
+constexpr std::uint32_t native_project_schema_version = 7;
 
 auto path_to_utf8(const std::filesystem::path& path) -> std::string {
     return text_util::path_utf8(path);
@@ -671,7 +671,8 @@ void to_json(json& value, const output_group_t& group) {
     value = json{{"name", group.name},
                  {"family", group.family},
                  {"charts", group.charts},
-                 {"relative_output_path", path_to_utf8(group.relative_output_path)}};
+                 {"relative_output_path", path_to_utf8(group.relative_output_path)},
+                 {"existing_files", group.existing_files}};
 }
 
 void from_json(const json& value, output_group_t& group) {
@@ -680,6 +681,7 @@ void from_json(const json& value, output_group_t& group) {
     value.at("charts").get_to(group.charts);
     group.relative_output_path =
         path_from_utf8(value.at("relative_output_path").get<std::string>());
+    value.at("existing_files").get_to(group.existing_files);
 }
 
 void to_json(json& value, const chart_document_t& chart) {
@@ -977,11 +979,12 @@ auto is_valid_enum_domains(const song_document_t& song, std::size_t maximum_dept
         !is_valid_quantization_presets(song.quantization_presets)) {
         return false;
     }
-    if (!std::ranges::all_of(song.visual_assets, [](const auto& asset) {
-            return is_enum_at_most(asset.kind, asset_kind_t::midi);
-        }) ||
+    if (!std::ranges::all_of(
+            song.visual_assets,
+            [](const auto& asset) { return is_enum_at_most(asset.kind, asset_kind_t::midi); }) ||
         !std::ranges::all_of(song.output_groups, [](const auto& group) {
-            return (static_cast<std::size_t>(group.family) < format_family_count);
+            return static_cast<std::size_t>(group.family) < format_family_count &&
+                   is_enum_at_most(group.existing_files, existing_files_policy_t::keep);
         })) {
         return false;
     }

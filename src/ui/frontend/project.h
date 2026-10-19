@@ -129,6 +129,13 @@ typedef enum WormUiStepmaniaImplementation {
 
 #define WORM_UI_PROJECT_CHART_CAPACITY 256
 
+typedef enum WormUiExistingFilesChoice {
+    WORM_UI_EXISTING_FILES_ASK = 0,
+    WORM_UI_EXISTING_FILES_REPLACE,
+    WORM_UI_EXISTING_FILES_KEEP,
+    WORM_UI_EXISTING_FILES_SAVED = 255,
+} WormUiExistingFilesChoice;
+
 typedef struct WormUiProjectChartRow {
     uint64_t chart_id;
     const char* name;
@@ -179,6 +186,7 @@ typedef struct WormUiProjectOutputGroupView {
     const uint64_t* chart_ids;
     size_t chart_count;
     const char* preview_status;
+    WormUiExistingFilesChoice existing_files;
 } WormUiProjectOutputGroupView;
 
 typedef enum WormUiProjectOutputGroupActionKind {
@@ -198,6 +206,7 @@ typedef struct WormUiProjectOutputGroupAction {
     const char* name;
     const char* path;
     uint8_t family;
+    WormUiExistingFilesChoice existing_files;
     size_t chart_count;
     uint64_t chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
 } WormUiProjectOutputGroupAction;

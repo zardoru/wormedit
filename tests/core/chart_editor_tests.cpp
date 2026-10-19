@@ -385,12 +385,16 @@ TEST_CASE("Output group CRUD is atomic and undoable without altering chart conte
     group.name = "Renamed";
     group.family = format_family_t::stepmania;
     group.relative_output_path = "release/song.ssc";
+    group.existing_files = existing_files_policy_t::replace;
     require_chart(apply_set_output_group_command(history, 0, group).applied);
     expect_chart(history.document.output_groups[0].name == "Renamed");
     require_chart(undo_document_command(history));
     expect_chart(history.document.output_groups[0].name == "Release");
+    expect_chart(history.document.output_groups[0].existing_files == existing_files_policy_t::ask);
     require_chart(redo_document_command(history));
     expect_chart(history.document.output_groups[0].relative_output_path == "release/song.ssc");
+    expect_chart(history.document.output_groups[0].existing_files ==
+                 existing_files_policy_t::replace);
     require_chart(apply_delete_output_group_command(history, 0).applied);
     expect_chart(history.document.output_groups.empty());
     require_chart(undo_document_command(history));
@@ -420,6 +424,9 @@ TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid mem
     group.family = format_family_t::quaver;
     expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
     group.family = format_family_t::bmson;
+    group.existing_files = static_cast<existing_files_policy_t>(99);
+    expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
+    group.existing_files = existing_files_policy_t::ask;
     expect_chart(!apply_set_output_group_command(history, 99, group));
     expect_chart(!apply_delete_output_group_command(history, 0));
     expect_chart(history.document.revision == revision);

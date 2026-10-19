@@ -462,7 +462,7 @@ struct worm_ui_nuklear_compose_state_t {
         std::array<char, 32> go_to_measure_text{};
         std::array<char, 96> go_to_measure_error{};
         std::size_t export_group_document_index{};
-        bool export_overwrite{};
+        wormedit::ui::chrome::Dialog export_confirmation_dialog{};
     } dialogs;
 
     struct waveform_drag_t {

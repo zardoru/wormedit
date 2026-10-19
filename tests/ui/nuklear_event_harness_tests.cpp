@@ -6324,12 +6324,7 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     view.setup.chart_count = 1;
     (void)harness.frame();
     if (tab == WORM_UI_WORKSPACE_TAB_SETUP) {
-        const auto export_button = harness.drawn_text_center("Export…");
-        require_project_access(export_button.has_value());
-        const auto frames = click_at(harness, export_button->first, export_button->second);
-        require_project_access(std::ranges::count_if(frames, [](const auto& frame) {
-            return std::string_view{frame.get().menu_command_id} == "document.export_output_group";
-        }) == 1);
+        require_project_access(harness.drawn_text_center("Export all").has_value());
     } else if (tab == WORM_UI_WORKSPACE_TAB_COMPOSE) {
         require_project_access(harness.drawn_text().find("Export…") == std::string::npos);
     }
@@ -6341,7 +6336,7 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     (void)harness.frame();
     INFO(harness.drawn_text());
     require_project_access(harness.drawn_text().find("Project export") != std::string::npos);
-    const auto button = harness.drawn_text_center("Export group");
+    const auto button = harness.drawn_text_center("Export");
     require_project_access(button.has_value());
     const auto frames = click_at(harness, button->first, button->second);
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
@@ -6353,6 +6348,25 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     check_layer_menu(action.compose_input_project_id == view.project_id);
     check_layer_menu(action.compose_input_chart_id == view.selected_chart_id);
     check_layer_menu(action.compose_input_document_revision == view.document_revision);
+}
+
+TEST_CASE("Ask conflict confirmation dispatches replace or cancel without changing target policy",
+          "[unit][frontend-state][event-harness][project-access]") {
+    const auto choice = GENERATE(std::pair{"Replace", WORM_UI_COMPOSE_ACTION_CONFIRM_OUTPUT_EXPORT},
+                                 std::pair{"Cancel", WORM_UI_COMPOSE_ACTION_CANCEL_OUTPUT_EXPORT});
+    nuklear_event_harness_t harness{960, 720};
+    auto& view = harness.view();
+    view.compose.export_confirmation_required = true;
+    view.compose.export_confirmation_message = "Replace existing files?";
+    view.compose.export_confirmation_detail = "BMS: exports/chart.bms";
+    (void)harness.frame();
+    (void)harness.frame();
+    require_project_access(harness.drawn_text_center("Replace existing files?").has_value());
+    const auto button = harness.drawn_text_center(choice.first);
+    require_project_access(button.has_value());
+    const auto frames = click_at(harness, button->first, button->second);
+    require_project_access(std::ranges::any_of(
+        frames, [&](const auto& frame) { return frame.get().compose_action == choice.second; }));
 }
 
 TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio offset unchanged",
@@ -6440,7 +6454,7 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
           "[frontend-state][event-harness][output-groups]") {
     output_group_fixture_t f{false};
     require_project_access(f.harness.drawn_text().find("Exports · 0") != std::string::npos);
-    require_project_access(f.harness.drawn_text_center("Export…").has_value());
+    require_project_access(f.harness.drawn_text_center("Export all").has_value());
     require_project_access(f.harness.drawn_text_center("No export targets yet. Create one to choose a format, destination and included charts.").has_value());
     (void)f.click("+ New");
     (void)f.harness.frame();
@@ -6457,6 +6471,7 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     require_project_access(std::string_view{action.name} == "New export target");
     require_project_access(std::string_view{action.path} == "exports/chart.bmson");
     require_project_access(action.family == 4 && action.chart_count == 1 && action.chart_ids[0] == 10);
+    require_project_access(action.existing_files == WORM_UI_EXISTING_FILES_ASK);
 }
 
 TEST_CASE("Project output group editor updates checkbox membership and confirms deletion",
@@ -6513,7 +6528,16 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(action.compose_input_project_id == f.harness.view().project_id);
     require_project_access(action.compose_input_document_revision == f.harness.view().document_revision);
     require_project_access(action.compose_input_chart_id == 10);
-    require_project_access(!action.compose_export_overwrite);
+    require_project_access(action.compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
+
+    (void)f.harness.frame();
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    const auto replaced = f.click("Export · Replace existing");
+    require_project_access(std::ranges::any_of(replaced, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP &&
+               frame.get().compose_existing_files == WORM_UI_EXISTING_FILES_REPLACE;
+    }));
 
     (void)f.harness.frame();
     (void)f.click("⋯");

@@ -2,12 +2,18 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-724](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-724-give-each-export-target-one-export-action-and-existing-file-policy)**
-consolidates export entry points around one saved Ask/Replace/Keep policy and adds Export all.
-Continue the ordered export lane with T-725 (per-target StepMania policy), then T-726 (typed
-destinations and complete file preview). T-727 membership/empty-state work is now independently
-ready. T-728, the grouped new-project layout picker, is independent and ready but does not displace
-T-724.
+**Next: [T-725](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-725-store-stepmania-export-policy-on-each-export-target)**
+moves StepMania export policy from the project-wide form onto each compatible export target.
+Continue the ordered export lane with T-726 (typed destinations and complete file preview). T-727
+membership/empty-state work and T-728, the grouped new-project layout picker, remain independently
+ready but do not displace T-725.
+
+Completed **T-724** (2026-10-19): every export target persists Ask/Replace/Keep and uses one
+background preflight/confirmation path from its card or File → Export. Card overflow choices
+override Replace or Keep for one run without editing the saved policy. Export all prepares every
+target before publishing the first and reports target-qualified results. Native schema 7 migrates
+older targets to Ask. Focused core/sys/UI/native tests, GATE, complexity and affected clang-tidy
+pass; isolated Xvfb captures cover Ask, Replace, Keep and Export all.
 
 Completed **T-723** (2026-10-19): Project output groups are presented as **Exports** cards with
 format badges, destinations, display-only chart chips, one-line status, direct Export and an
@@ -17,8 +23,8 @@ export routes, membership and one-step command boundary are unchanged. Focused p
 event-harness checks, GATE, complexity and clang-tidy pass; isolated Xvfb covers populated, empty,
 edit and delete-confirmation states at 1600×900 plus the populated 800×700 layout.
 
-Plan cleanup checkpoint (2026-10-19): **656 unique cards — 550 done, 31 ready, 10 partial,
-23 dependency-blocked, 1 blocked-on-user and 41 deferred**. No proposed/noncanonical status or
+Plan cleanup checkpoint (2026-10-19): **656 unique cards — 551 done, 31 ready, 10 partial,
+22 dependency-blocked, 1 blocked-on-user and 41 deferred**. No proposed/noncanonical status or
 dependency-blocked card with only completed prerequisites remains. T-110 and T-201 were reconciled
 to their completed replacements; T-102, T-161, T-416, T-417 and T-644 now name their remaining
 work as partial cards. The duplicate deferred T-719/T-720 IDs moved to T-729/T-730, leaving the

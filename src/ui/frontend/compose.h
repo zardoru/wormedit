@@ -730,6 +730,7 @@ typedef struct WormUiComposeOutputGroupView {
     const char* name;
     const char* relative_output_path;
     const char* relative_asset_directory;
+    WormUiExistingFilesChoice existing_files;
 } WormUiComposeOutputGroupView;
 
 typedef struct WormUiComposeMeasureRowView {
@@ -1151,6 +1152,11 @@ typedef struct WormUiComposeView {
     const WormUiComposeOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
+    bool export_confirmation_required;
+    uint64_t export_confirmation_project_id;
+    uint64_t export_confirmation_revision;
+    const char* export_confirmation_message;
+    const char* export_confirmation_detail;
     const WormUiComposeDifferenceView* differences;
     size_t difference_count;
     const WormUiComposeHoldView* hold_bodies;

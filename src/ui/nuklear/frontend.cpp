@@ -1349,7 +1349,8 @@ static bool capture_snap_grid_key(const SDL_KeyboardEvent& event) {
 
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    if (compose.layer_editor.layer_creation_context || compose.dialogs.export_dialog_open) {
+    if (compose.layer_editor.layer_creation_context || compose.dialogs.export_dialog_open ||
+        compose.dialogs.export_confirmation_dialog.open) {
         if (g_ime_composition_active && event.down &&
             (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER)) return true;
         wormedit::ui::chrome::forward_modal_key(g_context, event);

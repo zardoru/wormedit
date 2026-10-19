@@ -11,8 +11,8 @@ author cannot complete. Owner (2026-10-18): "We should really deal with those wo
 Every card proves its fix from a **new project**, through the production path, extending the
 walkthrough tests in `tests/ui/walkthrough_{bms,osu-stepmania}_event_harness_tests.cpp`; the
 coordinator confirms user-visible results in isolated Xvfb. Lanes: T-707 and T-715 (project and
-save); T-708, T-709, T-712, T-713, T-714 (export, in that order); T-710 and T-711 (commands and
-feedback). T-716 updates the manual after the others land.
+save); T-708, T-709, T-712, T-713, T-714 (export, in that order); T-710, T-711 and T-717 (commands, feedback and the
+Sounds dock). T-716 updates the manual after the others land.
 
 ## T-707 Create BMS-family projects as BMS charts
 
@@ -147,7 +147,7 @@ feedback). T-716 updates the manual after the others land.
 - **Files owned:** `src/sys/application.cpp` (save and its completion/close lifecycle only), `src/sys/project_save_paths.cpp`, `src/sys/project_save_paths.h`, `src/sys/resource_job_state.cpp`, `src/sys/resource_job_state.h`, `include/wormedit/core/resource_file_copy.h`, `src/core/resource_file_copy.cpp`, `tests/core/resource_file_copy_tests.cpp`, `tests/sys/project_save_paths_tests.cpp`, `tests/ui/walkthrough_osu-stepmania_event_harness_tests.cpp`, `tests/CMakeLists.txt`, this card.
 - **Supporting-file extensions:** `src/sys/project_save_paths.h` exposes the save worker/report used by the application and tests. `include/wormedit/core/resource_file_copy.h` and `src/core/resource_file_copy.cpp` add opt-in reuse of any identical file in `assets/` at the existing byte-comparison owner. `tests/CMakeLists.txt` links the shared save worker into the three existing resource-runtime test targets.
 - **Steps:**
-  1. Every save copies every asset outside the project folder into `assets/` and relinks it, silently; identical files are reused so a repeat save copies nothing; the status message lists what was copied.
+  1. Owner decision (2026-10-18): every save copies every asset outside the project folder into `assets/` and relinks it, silently; identical files are reused, so a repeat save copies nothing. The status message lists what was copied.
   2. Reuse the existing resource copy job (atomic copy, relink, reuse of identical files) after the native file is written.
   3. Tests: audio-started project saved elsewhere ends with relative asset paths and copied files; a second save copies nothing new.
 - **Invariants:** Save stays atomic for the project file; a failed copy never loses the link.
@@ -157,7 +157,7 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-716 Correct the manual after the blockers land
 
-- **Status:** blocked-on T-707, T-708, T-709, T-710, T-711, T-715
+- **Status:** ready
 - **Outcome:** The manual chapters match the fixed behavior; the corrections listed in both walkthrough reports that remain true after the fixes are applied, and the walkthrough chapters are rerun from a new project.
 - **Read first:** both walkthrough reports ("Manual corrections").
 - **Files owned:** `docs/manual/chapters/*.adoc`, `docs/manual/shots/`, `docs/manual/images/`, this card.
@@ -184,3 +184,15 @@ feedback). T-716 updates the manual after the others land.
 - **Reject/failure behavior:** A batch that runs past the last slot is refused, and nothing is staged.
 - **Verify:** GATE; Xvfb: click a slot, *Add sounds…*, and check the slot rows.
 - **Out of scope:** Selecting several slots at once.
+
+## T-718 Follow-ups from the blocker integration
+
+- **Status:** ready
+- **Outcome:** Four small inconsistencies the coordinator saw in isolated Xvfb on the integrated branch (2026-10-18) are fixed. (1) Copied assets keep their original file name when no other file in the folder has it (`assets/keysound-c4.ogg`, not `assets/36-keysound-c4.ogg`), on Save and in exported BMS folders. (2) The load warning about assets linked outside the project folder says that Save copies them in. (3) The Compose hint line names BGM moves for the chart's own format rather than always saying "drag BMSON BGM to move". (4) The commands refused in Timing focus come from the same fact as their enablement, not from a second hand-written list in `application_command_dispatch.cpp`.
+- **Read first:** `src/core/resource_file_copy.cpp` (`destination_filename`), the project-load asset warning, the Compose hint text, `timing_focus_command_refusal` in `src/sys/application_command_dispatch.cpp` and command enablement in `src/sys/application.cpp`.
+- **Files owned:** those files and their tests, this card.
+- **Steps:** 1. Name a copy after its source and add the ID prefix only when that name is already taken by a different file. 2. Update the warning and hint texts. 3. Derive the Timing-focus refusal from the enablement fact. 4. Tests for each.
+- **Invariants:** Identical-file reuse and atomic publication stay as they are; existing projects with prefixed names still load.
+- **Reject/failure behavior:** Not applicable.
+- **Verify:** GATE; Xvfb Save and BMS export of the tutorial fixture with external sounds.
+- **Out of scope:** Renaming assets already copied into existing projects.

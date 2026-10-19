@@ -1,10 +1,11 @@
 # Status: resume checklist
 
-Next: run the four fixed navigation exercises in `docs/architecture.md` once for the pre-pilot
-baseline, with the recorded model/effort/tools/context held constant. T-658 is complete: the
-cross-layer glossary, feature-owner index, addition recipes, pointer-routing sequence and card
-authoring rules now name current symbols. Commit `1ab570c` completes T-716 and T-718–T-721; its
-GATE passes 4,228/4,228 tests. Do not start the quantize pilot before the baseline exists.
+Next: write and review the first quantize ownership card using the concrete frontend round trip
+recorded in `docs/audits/workflow-navigation-baseline-2026-10-19.md`; do not start implementation
+from the audit prose alone. The four before-refactor navigation exercises are complete under fixed
+Luna medium, read-only, source-and-tests-only conditions. All found the required boundaries; the
+quantize and bar-line traces confirmed the two intended navigation detours. T-658 is complete, and
+commit `1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
 
 Completed **T-146–T-147 cancellable import/export** (2026-10-18): interactive opening, export and conversion preview expose progress/Cancel; automatic music copies join private atomic staging. GCC and Linux Clang GATE each pass 4,158/4,158, with configured clang-tidy, unchanged complexity allowances and inspected isolated Xvfb Compose layout. Remaining state-ownership and feature-friction checkpoints retain their card statuses; T-621 folder moves still run last. Verification evidence and cancellation limits are recorded on the [completed cards](../../docs/chart-editor-plan/tasks/editing-depth.md#t-146-report-progress-and-allow-cancel-for-chart-import).
 

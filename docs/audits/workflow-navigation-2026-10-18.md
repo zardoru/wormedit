@@ -489,6 +489,12 @@ card for the user-facing walkthrough.
 It is delegated to Codex lanes whose reports are kept as evidence in `docs/audits/`
 (`user-walkthrough-bms-2026-10-18.md`, `user-walkthrough-osu-stepmania-2026-10-18.md`).
 
+**Before-refactor navigation observation (2026-10-19):** the four fixed exercises are recorded in
+[`workflow-navigation-baseline-2026-10-19.md`](workflow-navigation-baseline-2026-10-19.md). All four
+traces found the required boundaries. The quantize trace confirmed the typed-request frontend
+round trip, while the bar-line trace showed how route-owned refresh makes correct publication easy
+to misread. The observation is qualitative evidence, not a timing benchmark or gate.
+
 ## Walkthrough results (2026-10-18)
 
 The user-facing walkthrough ran as decided under R10. Its evidence is in

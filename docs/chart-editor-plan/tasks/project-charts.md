@@ -54,7 +54,13 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-416 Replace the per-row button strip with hover actions and a row menu
 
-- **Status:** blocked-on T-415
+- **Status:** partial (T-415 is done; compact actions, menu and dialog landed, hover-only cleanup remains)
+- **Done so far:** Rows have compact **Open** and **⋯** actions, right-click and keyboard-opened
+  `ContextMenu`, double-click Open, and a shared cancellable Delete dialog. Popup lifecycle closes on
+  hidden/stale sessions. Production event-harness coverage is in the `project-charts` cases.
+- **Remaining:** Remove the always-present two-button action group so Open/⋯ appear only for the
+  hovered or focused row, and remove **Move up/Move down** from the menu once T-417 supplies its
+  remaining Alt+arrow path.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** no row has a button strip. Hovering a row shows Open and ⋯, and ⋯ or a right-click opens a `ContextMenu` with Open in Compose, Duplicate and Delete…. There are no move items, because reordering is T-417's grip and Alt+↑/↓. A double-click opens the chart. Delete… asks in a `chrome::Dialog`.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp` (`render_chart_actions`, `render_delete_confirmation`), `src/ui/nuklear/context_menu.h`, [dialogs](dialogs.md).
@@ -71,11 +77,21 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-417 Reorder charts by dragging the grip or with Alt+Up/Down
 
-- **Status:** blocked-on T-415
+- **Status:** partial (T-415 is done; stable grip reorder landed, Alt+arrow remains)
+- **Done so far:** The visible grip emits stable source/target/side identity; the core/sys reorder
+  creates one Undo entry and rejects stale, missing, adjacent and cancelled drops. The event harness
+  covers insertion and Escape/outside/stale cancellation.
+- **Remaining:** Bind Alt+Up/Down for the focused row, remove the old Move up/down context-menu
+  entries, and verify the insertion line plus keyboard path in isolated Xvfb.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** dragging a row's ⠿ grip shows an insertion line and moves the chart there in one undo step on release. Alt+↑/↓ moves the focused row by one.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp`, the core handler for `WORM_UI_PROJECT_CHART_UP`/`DOWN` (`grep -rn PROJECT_CHART_UP src/sys`).
-- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.cpp`, `src/ui/frontend.h` (a move-to-index action), the project chart dispatcher in `src/sys/`, the core chart-order command and its test, `tests/ui/nuklear_event_harness_tests.cpp`, this card.
+- **Files owned:** `src/ui/nuklear/setup_panel.cpp`, `src/ui/nuklear/setup_state.cpp`,
+  `src/ui/nuklear/setup_state.h`, `src/ui/frontend/project.h`, `src/sys/project_view.h`,
+  `src/sys/project_view.cpp`, `include/wormedit/core/chart_editor.h`, `src/core/chart_editor.cpp`,
+  `tests/core/chart_editor_tests.cpp`, `tests/sys/project_view_tests.cpp`,
+  `tests/ui/nuklear_event_harness_tests.cpp`, this card and
+  `memory/chart-editor-status/resume.md`.
 - **Steps:**
   1. Add a core command that moves a chart to an index, with a revision check, that rejects atomically. Test it.
   2. Send it through the standard wiring pattern as `WORM_UI_PROJECT_CHART_MOVE_TO`.
@@ -87,7 +103,11 @@ Charts  1                                                     [ + ]   ← headin
 
 ## T-418 Move batch metadata edits into a contextual selection bar
 
-- **Status:** blocked-on T-415
+- **Status:** ready (T-415 is done; dependency cleared 2026-10-19)
+- **Stale-plan audit (2026-10-19):** The existing selected-chart block already emits the batch
+  metadata action and exposes author/rating fields, but it is still an inline form with a duplicate
+  selection count and **Clear selection** text. The SelectionBar, popovers, Duplicate/Delete and
+  close affordance in this outcome remain unimplemented.
 - **Mockup:** [chart-table.svg](../mockups/chart-table.svg) (reference: match its structure and hierarchy)
 - **Outcome:** with one or more charts selected, a bar under the table reads "N selected · [Set author…] [Set rating…] [Duplicate] [Delete…] ✕". Each "Set…" opens a small popover with the existing fields and an Apply button. The inline author and rating form is gone.
 - **Read first:** `src/ui/nuklear/setup_panel.cpp` (`render_project_batch`), `src/ui/nuklear/popup_lifecycle.h`.

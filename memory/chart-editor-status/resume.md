@@ -9,7 +9,14 @@ T-725 (per-target StepMania policy), then T-726 (typed destinations and complete
 After T-723, T-727 membership/empty-state work can run independently. T-728, the grouped
 new-project layout picker, is independent and ready but does not displace T-723.
 
-Deferred by explicit owner decisions: T-719 export-cut sections and T-720 timing links start only
+Plan cleanup checkpoint (2026-10-19): **656 unique cards — 549 done, 30 ready, 10 partial,
+25 dependency-blocked, 1 blocked-on-user and 41 deferred**. No proposed/noncanonical status or
+dependency-blocked card with only completed prerequisites remains. T-110 and T-201 were reconciled
+to their completed replacements; T-102, T-161, T-416, T-417 and T-644 now name their remaining
+work as partial cards. The duplicate deferred T-719/T-720 IDs moved to T-729/T-730, leaving the
+completed workflow cards at T-719/T-720 and restoring unique IDs.
+
+Deferred by explicit owner decisions: T-729 export-cut sections and T-730 timing links start only
 when named. The broader workflow-navigation refactoring also remains deferred: T-722 removed a real
 typed-request/frontend-action round trip, but its before/after exercise did not show enough general
 navigation value to continue the series. A concrete correctness defect or independently valuable

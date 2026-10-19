@@ -68,14 +68,14 @@ Bookmark editing already exists in the Markers panel
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R '^frontend-state\.|compose_bookmark_label|^documentation\.'`; `clang-tidy -p build src/ui/nuklear/compose_canvas.cpp`; isolated Xvfb capture of a chart with a named, an unnamed, and a very long bookmark, then open the PNG.
 - **Out of scope:** section labels, editing names in the field, label color preferences.
 
-## T-719 Plan selection-created export-cut sections
+## T-729 Plan selection-created export-cut sections
 
 - **Status:** deferred (was: ready; user request 2026-10-19, not immediate work)
 - **Outcome:** A reviewed design and bounded implementation cards cover creating a section from a selection, marking it as a song interval cut out on export, skipping it entirely in ordinary Compose waveform/timeline/playback/navigation, and exposing its distinct dead-span overlay only in Timing focus mode.
 - **Read first:** `docs/chart-editor-plan/editing/metadata-interop.md`; `src/sys/compose_bookmark_actions.cpp`; `src/ui/nuklear/compose_area_menu.cpp`; `src/sys/compose_dead_spans.cpp`; `src/sys/output_group_export.cpp`.
 - **Files owned:** `docs/chart-editor-plan/editing/metadata-interop.md`, `docs/chart-editor-plan/tasks/markers.md`, `docs/chart-editor-plan/tasks.md`; future implementation-card files only after recording their paths here.
 - **Steps:**
-  1. Start only when the user explicitly picks up T-719; preserve the current immediate-work queue.
+  1. Start only when the user explicitly picks up T-729; preserve the current immediate-work queue.
   2. Audit the existing Create section area-menu action (T-200) and section editor; identify what selection-to-section behavior can be reused.
   3. Resolve the design questions below with the owner before assigning implementation defaults.
   4. Write separate bounded cards for section persistence/actions, export transformation/audio handling, Compose cut-timeline projection/playback/navigation, and Timing-focus visualization, with exact file ownership and verification.

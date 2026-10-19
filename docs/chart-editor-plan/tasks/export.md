@@ -11,7 +11,11 @@ Most remaining format work waits on user decisions; those cards are
 
 ## T-110 Preview artifacts and losses before exporting
 
-- **Status:** ready
+- **Status:** done (standalone card superseded by T-714 and T-726)
+- **Completion:** T-714 made Preview use the same read-only plan as Export, including artifact
+  names, staged copies, warnings, collision checks and missing-source refusals while preserving the
+  no-write invariant. The remaining structured per-file sizes and complete diagnostics are now
+  explicit T-726 acceptance criteria. Do not execute the stale implementation steps below.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Stale-plan audit (2026-10-03):** The existing export worker converts and publishes immediately, and polling returns only a status string; there is no bounded retained preview summary. Completion needs unowned `src/sys/resource_job_state.h/.cpp` for worker/results/state, `src/sys/main.cpp` and `src/sys/application_frame_projection.h/.cpp` to pass the summary, and `src/sys/workspace_projection.cpp` for output-group projection; the owned `compose_view.cpp` projects chart scenes instead. Worker retention and revision-staleness checks also need an appropriate system/UI test owner and source-list ownership.
 - **Outcome:** a **Preview export** button lists, for the selected output group, each artifact name, byte size, and every loss/diagnostic from `convert_document`, without writing files; Export stays a separate click.

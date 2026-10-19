@@ -5,14 +5,14 @@
 Stage 6 from [later work](../stages/later.md). These are independent of each
 other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 
-## T-720 Plan granular timing links with copy-on-write overrides
+## T-730 Plan granular timing links with copy-on-write overrides
 
 - **Status:** deferred (was: ready; user request 2026-10-19, later work)
 - **Outcome:** A reviewed design and bounded implementation cards specify timing sharing across compatible charts/format profiles, with independently linkable categories, copy-on-write local overrides and explicit restoration of links.
 - **Read first:** `docs/chart-editor-plan/document-model.md`; `include/wormedit/core/document.h`; `include/wormedit/core/timing.h`; `include/wormedit/core/timing_lane_catalog.h`; `include/wormedit/formats/native_project.h`.
 - **Files owned:** `docs/chart-editor-plan/document-model.md`, `docs/chart-editor-plan/tasks/editing-depth.md`, `docs/chart-editor-plan/tasks.md`; future implementation-card files only after recording their paths here.
 - **Steps:**
-  1. Start only when the user explicitly picks up T-720; preserve the immediate-work queue.
+  1. Start only when the user explicitly picks up T-730; preserve the immediate-work queue.
   2. Audit timing ownership, category-specific edits, exact position mapping and native/interchange persistence against the deferred requirements in the document-model plan.
   3. Resolve shared-source ownership and the design questions below with the owner before assigning implementation defaults.
   4. Write bounded cards for category link/override storage, undoable edit/relink operations, category-level UI, effective-timing consumers and persistence/export, each with exact ownership and verification.
@@ -20,7 +20,7 @@ other unless a card says otherwise. Apply the stale-plan check (rule 9) first.
 - **Reject/failure behavior:** Cancelling a discard confirmation, an invalid/missing source, a cyclic link or an incompatible exact mapping must preserve local data and existing links. Unsupported target-format semantics must produce the existing conversion diagnostics without altering shared timing.
 - **Verify:** For this planning record, `ctest --test-dir build/release -R '^documentation\.chart_editor_state$' --output-on-failure` and `git diff --check` pass. Future cards must specify GATE plus category-isolation, source-update propagation, first-write detachment, relink/cancel/Undo, native round-trip, cross-resolution mapping and resolved preview/playback/export checks.
 - **Design questions for pickup:** Are sources named shared timing sets or designated charts, and how does the user edit shared data versus make a local override? Which additional timing categories participate beyond the explicitly requested BPM, SV/scroll, SPEEDS, Kiai, stops and delays (for example offsets, warps, anchors and measure layouts)? How do differing measure IDs, divisions and format capabilities map exactly? What are source-deletion and new-chart default-link policies? Is sharing confined to one project?
-- **Out of scope:** Implementing or prioritizing timing links now (explicit user deferral, 2026-10-19); event-by-event override/merge behavior is not requested by the category-level copy-on-write model. Export-cut sections remain a separate deferred request in T-719.
+- **Out of scope:** Implementing or prioritizing timing links now (explicit user deferral, 2026-10-19); event-by-event override/merge behavior is not requested by the category-level copy-on-write model. Export-cut sections remain a separate deferred request in T-729.
 
 ## T-140 Mirror and shuffle lanes of a selection
 

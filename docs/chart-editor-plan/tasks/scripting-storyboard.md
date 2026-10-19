@@ -144,13 +144,29 @@ Stage 7 from [later work](../stages/later.md) and the
 
 ## T-161 Manage SV recipes in a list
 
-- **Status:** ready (un-deferred, user decision 2026-09-30: Lua SV recipes are near-term)
-- **Outcome:** the Timing pane lists the chart's SV/SCROLLS/SPEEDS recipes with Enable toggle, Duplicate, Delete, and Up/Down reorder, each one command.
-- **Read first:** `include/wormedit/core/sv_recipe.h`, `src/ui/nuklear/timing_panel.cpp` (recipe form), `src/sys/timing_edit_runtime.cpp`.
-- **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`, `tests/core/sv_recipe_tests.cpp`, `src/sys/timing_edit_runtime.cpp`, `src/sys/timing_view.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/timing_panel.cpp`.
-- **Steps:** 1. Core commands (enable, duplicate, delete, move) with tests. 2. List UI.
-- **Invariants:** composition order equals list order.
-- **Reject/failure behavior:** stale revision rejects.
+- **Status:** partial (Enable and Delete landed with T-323; Duplicate and ordering remain)
+- **Done so far:** Recipe spans in Compose have an Enable/Disable action and Delete action, each
+  routed through the shared edit transaction with stale identity. Selection and editing live in the
+  Compose SV lane and inspector; the old Timing pane no longer exists.
+- **Remaining:** Add Duplicate and explicit composition-order controls to the Compose recipe
+  workflow. First confirm how overlapping recipes expose their order without recreating a separate
+  Timing-pane list; keep every operation one undoable command.
+- **Outcome:** the Compose recipe workflow exposes Enable, Duplicate, Delete and explicit
+  composition-order controls for the chart's SV/SCROLLS/SPEEDS recipes, each as one command.
+- **Read first:** `include/wormedit/core/sv_recipe.h`, `src/sys/compose_recipe_actions.cpp`,
+  `src/ui/nuklear/compose_recipe_menu.cpp`, `src/ui/nuklear/compose_recipe_form.cpp`.
+- **Files owned:** `include/wormedit/core/sv_recipe.h`, `src/core/sv_recipe.cpp`,
+  `tests/core/sv_recipe_tests.cpp`, `src/sys/compose_recipe_actions.cpp`,
+  `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_recipe_menu.cpp`,
+  `src/ui/nuklear/compose_recipe_form.cpp`, `tests/sys/frame_timing_tests.cpp`,
+  `tests/sys/compose_action_notification_tests.cpp`, `tests/ui/nuklear_event_harness_tests.cpp`,
+  this card.
+- **Steps:** 1. Stale-plan check: choose a compact order affordance for overlapping Compose spans.
+  2. Add core Duplicate and move commands with tests. 3. Wire the actions through the existing
+  recipe command path and cover stale identity, one Undo and disabled boundary moves.
+- **Invariants:** The displayed order equals stored evaluation order; commands preserve recipe
+  contents, spans and generated-event semantics outside the requested operation.
+- **Reject/failure behavior:** Stale revision or missing identity rejects without changing order.
 - **Verify:** standard build/test.
 - **Out of scope:** impulses (T-162).
 

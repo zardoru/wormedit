@@ -135,15 +135,15 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 - **Verify:** native migration and StepMania conversion/publication tests; focused project and
   wizard event-harness tests; `GATE`; isolated Xvfb editing two StepMania targets.
 - **Out of scope:** Program-wide StepMania defaults, changing the writer's supported syntax,
-  destination derivation (T-726), and timing sharing (T-720).
+  destination derivation (T-726), and timing sharing (T-730).
 
 ## T-726 Choose typed destinations and show the complete export plan
 
 - **Status:** blocked-on T-725
 - **Outcome:** An export target chooses a folder for one-file-per-chart formats and a song file for
   StepMania; WormEdit derives and displays every chart, generated and copied-asset destination, and
-  Preview expands the card into per-file **new / replace / reuse / copy** rows plus conversion
-  warnings before publication.
+  Preview expands the card into per-file **new / replace / reuse / copy** rows with byte sizes plus
+  every conversion diagnostic before publication.
 - **Read first:** `src/sys/output_group_export.h` (`output_group_export_preparation_t`);
   `src/formats/conversion_publication.cpp`; `src/sys/project_view.cpp` (`output_preview`);
   `src/ui/nuklear/setup_panel.cpp`; `src/sys/project_save_paths.cpp`.
@@ -164,8 +164,9 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
      for StepMania/native. Migrate existing safe paths without changing their resolved outputs.
   3. Add **Save to** and **Browse…** to the target dialog with format-specific help and a live
      resolved-file summary. New targets default to `exports/<format>/` or an explicit song file.
-  4. Project the preparation's planned files, assets, conflicts and warnings as owned view data;
-     do not parse the existing preview-status string in the frontend.
+  4. Project the preparation's planned files, byte sizes, assets, conflicts and complete conversion
+     diagnostics as owned view data; do not parse the existing preview-status string in the
+     frontend.
   5. Expand/collapse the plan below its target card and label every row by action. Preview and
      Export must consume the same preparation.
   6. Test every format's path shape, migration, collision state, two same-basename assets,

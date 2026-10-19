@@ -109,8 +109,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 - **Status:** blocked-on T-243, T-272
 - **Outcome:** while only the transport frame and scroll change (playback following), the frame skips everything that depends only on the document revision, selection, or settings (metadata, timing marker lists, BMSON projection, resource presenter, recipe views, status texts) and updates only playhead-dependent and scroll-dependent data.
-- **Read first:** `src/sys/application_frame_projection.cpp`, `src/sys/compose_view.cpp` (`compose_scene_cache_t`, `make_editor_field_scene_reusing_window`), `src/sys/compose_waveform_overlays.cpp`, `src/sys/bmson_waveform_projection.cpp`.
-- **Files owned:** `src/sys/application_frame_projection.cpp/.h`, `src/sys/compose_view.cpp/.h`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/bmson_waveform_projection.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Read first:** `src/sys/application_frame_view.cpp`, `src/sys/compose_view.cpp` (`compose_scene_cache_t`, `make_editor_field_scene_reusing_window`), `src/sys/compose_waveform_overlays.cpp`, `src/sys/bmson_waveform_view.cpp`.
+- **Files owned:** `src/sys/application_frame_view.cpp/.h`, `src/sys/compose_view.cpp/.h`, `src/sys/compose_waveform_overlays.cpp`, `src/sys/bmson_waveform_view.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. Define a frame key (revision, chart, selection version, settings version, window size, zoom) and a scroll/playhead key. 2. Each sub-projection declares which key it depends on; revision-keyed outputs live in a second, longer-lived `frame_arena_t` reset only when its key changes (generational arenas: the per-frame arena from T-272 plus this revision arena), and the per-frame view points into it. 3. Test: with only the playhead advancing, the revision-keyed sub-projections run zero times (counters).
 - **Invariants:** any edit, selection, zoom, or resize refreshes everything on the next frame.
 - **Reject/failure behavior:** a missed dependency shows stale UI; tests guard each sub-projection's key.
@@ -139,8 +139,8 @@ measurements. Apply the stale-plan check (rule 9) first.
 
 - **Status:** blocked-on T-275
 - **Outcome:** during playback, low-value per-frame work (status line formatting, song overview, BGM pane counters, inspector values) refreshes at 10–15 Hz instead of every frame, while the playhead and scroll use the audio clock extrapolated to the expected presentation time (frame start + measured present latency), giving smooth motion at 144 Hz.
-- **Read first:** `src/sys/compose_view.cpp` (playhead following and smoothing from commit `f20c4ff`), `src/sys/application_frame_projection.cpp`, `src/sys/frame_timing.cpp` (present timing from T-246).
-- **Files owned:** `src/sys/application_frame_projection.cpp`, `src/sys/compose_view.cpp`, `src/sys/workspace_frame_view.cpp`, `tests/sys/frame_timing_tests.cpp`.
+- **Read first:** `src/sys/compose_view.cpp` (playhead following and smoothing from commit `f20c4ff`), `src/sys/application_frame_view.cpp`, `src/sys/frame_timing.cpp` (present timing from T-246).
+- **Files owned:** `src/sys/application_frame_view.cpp`, `src/sys/compose_view.cpp`, `src/sys/workspace_frame_view.cpp`, `tests/sys/frame_timing_tests.cpp`.
 - **Steps:** 1. A small scheduler of "refresh every N ms while playing" for listed sub-projections. 2. Playhead extrapolation: clock frame at last audio report + elapsed wall time × rate, clamped, corrected smoothly when the audio clock reports. 3. Test the extrapolation with a simulated jittery audio clock: on-screen position never moves backwards and error stays under one frame.
 - **Invariants:** user actions (click, key) still update immediately; paused/stopped behavior unchanged.
 - **Reject/failure behavior:** none.

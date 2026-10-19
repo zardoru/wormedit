@@ -42,15 +42,45 @@ stale-plan check (rule 9) first.
 
 ## T-102 Navigate to a resource's uses
 
-- **Status:** ready
-- **Outcome:** a "Find uses" button on a catalog row selects every note/BGM/BGA event using it and moves the cursor to the first; Next/Previous cycle through them.
-- **Read first:** `src/sys/compose_resource_presenter.cpp`, `include/wormedit/core/interaction.h` (typed selection), `src/sys/compose_actions.cpp`.
-- **Files owned:** `src/sys/compose_actions.cpp`, `src/sys/compose_resource_presenter.cpp/.h`, `src/ui/nuklear/compose_resources.cpp`, `src/ui/frontend.h`.
-- **Steps:** 1. Collect uses in chart order (bounded to 50,000). 2. Replace the selection; jump cursor. 3. Next/Previous buttons.
-- **Invariants:** no document change.
-- **Reject/failure behavior:** zero uses → button disabled.
-- **Verify:** standard build/test.
-- **Out of scope:** uses in other charts (show count only).
+- **Status:** partial (sound-resource navigation completed by T-364; visual/BGA-resource navigation remains)
+- **Done so far:** T-364 added bounded cross-chart sound-use projection and activation from the
+  Sounds tab, covering note/BGM references, shared assets, source-only channel/clip references,
+  stale/deleted results and exact positioned jumps. Production regressions live in
+  `tests/sys/sound_usage_projection_tests.cpp`, `tests/sys/sound_usage_actions_tests.cpp` and
+  `tests/ui/sound_usage_event_harness_tests.cpp`.
+- **Remaining:** Add the corresponding use list and activation for image/video resources and BGA
+  events from the BGA dock. Reuse the T-364 result identity/navigation contract rather than reviving
+  the retired inspector catalog path. Recheck whether explicit Next/Previous controls add value once
+  the bounded list is visible; T-364 activates a chosen row directly.
+- **Outcome:** Sounds and BGA resources each offer a bounded **Find uses** list across project charts;
+  activating a positioned note/BGM/BGA result opens its chart and moves the cursor to it, while a
+  source-only sound result selects its source without inventing a chart position.
+- **Read first:** `src/sys/sound_usage_view.cpp`; `src/sys/sound_usage_actions.cpp`;
+  `src/sys/bga_list_view.cpp`; `src/ui/nuklear/compose_bga_panel.cpp`;
+  `src/sys/compose_input.cpp` (BGA event selection/navigation).
+- **Files owned:** new `src/sys/bga_usage_view.h`, `src/sys/bga_usage_view.cpp`, new
+  `src/sys/bga_usage_actions.h`, `src/sys/bga_usage_actions.cpp`,
+  `src/ui/frontend/compose.h`, `src/ui/nuklear/compose_bga_panel.cpp`,
+  `src/ui/nuklear/compose_state.h`, `src/sys/application_frame_view.cpp`,
+  `src/sys/compose_input.cpp`, new `tests/sys/bga_usage_view_tests.cpp`, new
+  `tests/sys/bga_usage_actions_tests.cpp`, new `tests/ui/bga_usage_event_harness_tests.cpp`,
+  `CMakeLists.txt`, `tests/CMakeLists.txt`, this card and `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Stale-plan check: reuse the T-364 result/view/action shapes where their sound terminology does
+     not leak; inventory base/Layer/Layer 2/Poor BGA event identity and navigation.
+  2. Project BGA uses in chart/position/kind order with the same bound and stable revision identity
+     as sound uses.
+  3. Add **Find uses** to the selected BGA resource and activate a chosen result through normal
+     chart selection and BGA-event navigation.
+  4. Test unused resources, every BGA kind, multiple charts/positions and stale/deleted results.
+- **Invariants:** Finding and activating uses never changes the document, resource selection or
+  authored BGA data except for the explicit view-only selection/navigation result.
+- **Reject/failure behavior:** Zero uses shows an empty list; stale or deleted results refresh or
+  report unavailable without jumping to another event.
+- **Verify:** focused BGA usage projection/action and event-harness tests; `GATE`; isolated Xvfb
+  activation from the BGA dock.
+- **Out of scope:** Replacing usages, asset-level reverse links unrelated to chart events, and
+  restoring the retired inspector resource list.
 
 ## T-103 Filter the catalog by use state and name
 

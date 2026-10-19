@@ -121,7 +121,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-659 Give the paste's chart changes one owner
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Status:** deferred (proposed 2026-10-17; start only if the owner names T-659)
 - **Value:** Modest. It prevents one class of silent preview drift. Today only bar-line splits are affected, so it is worth doing only if paste gains more geometry effects.
 - **Outcome:** One member of `chart_paste_report_t` (for example `apply_geometry(chart_document_t&) const -> diagnostic_list_t`) performs every structural change a paste makes. The proposal, `chart_paste_proposal_t::apply` and the sys ghost preview (`paste_geometry` in `src/sys/compose_view.cpp`) all call it instead of each calling `add_bar_lines`.
 - **Read first:** `include/wormedit/core/chart_clipboard.h`, `src/core/chart_clipboard.cpp` (`add_paste_bar_lines`, `apply`), `src/sys/compose_view.cpp` (`paste_geometry`), T-656's Done note in [measure-lane.md](measure-lane.md).
@@ -137,7 +137,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-660 Put canvas object geometry and hit testing in one header
 
-- **Status:** Proposed (requires scope revision after T-679 and the T-682 specialized-lane inventory; do not execute the old universal-picker sketch)
+- **Status:** deferred (old universal-picker sketch requires replacement scope; start only if the owner names T-660)
 - **Reevaluation (owner direction, 2026-10-18):** [T-679](canvas-input-ownership.md) completed the proven BGM/bookmark duplication cleanup. BGA/timing/bar-line bounds were already shared; pointer and area selection have intentionally different shapes. [T-682](extension-friction.md) now inventories specialized-lane extension sites. Retain the following outcome as the historical proposal until that inventory supplies its replacement scope; the approximate ten-file benefit was not re-established by the recent bounded review.
 - **Value (historical proposal):** The highest of these cards. The next selectable lane becomes one bounds function, one line in the hit query, one draw pass and one dispatch case, instead of edits in about ten files. It is also the largest and riskiest: input routing order is a contract.
 - **Outcome:** `src/ui/compose_canvas_geometry.h` (renamed from, or including, `compose_timing_geometry.h`) holds one `compose_<kind>_bounds(view, item)` per non-note canvas object kind (timing markers and bar lines already exist; BGA events, BGM events and bookmarks move in) and one query `compose_canvas_object_at(view, x, y) -> std::optional<editor_selection_object_t>`, written as a fixed sequence of named calls. `compose_pointer_start_hits_element`, the click handlers and hover read that query; sys `append_area_*_geometry` builds rectangles from the same bounds functions. Rail coordinates are named constants.
@@ -196,7 +196,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-663 Keep the Compose edit toggles in one struct
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Status:** deferred (proposed 2026-10-17; start only if the owner names T-663)
 - **Value:** Small, and the least certain of these cards. It removes per-field mirroring and the second write in each toggle, but the benefit grows only if more toggles arrive. Skip it if no new toggle is planned.
 - **Outcome:** `edit_snap_enabled`, `y_lock` and `bar_line_time` form one `editor_edit_settings_t` stored in `project.compose_view` (where D3 puts them) and copied whole into the interaction state at the existing idle-frame point. Toggles write only `compose_view`; the view reads the struct.
 - **Read first:** `src/sys/compose_view.h` (`compose_view_state_t`), `src/sys/compose_view.cpp` (the `!retained_state->is_pending()` copy and `view.y_lock`), `src/sys/compose_actions.cpp` (the snap, Y-lock and bar-line time toggles), `include/wormedit/core/interaction.h`, D3 in [state ownership](state-ownership.md) (T-601).
@@ -270,7 +270,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-667 Test the measure editor and row moves with random edit sequences
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Status:** deferred (proposed 2026-10-17; start only if the owner names T-667)
 - **Value:** Medium. `measure_editor` and `time_shift` share one strong invariant: a keep-rows edit leaves every object's absolute row unchanged and the document valid. Example tests cover only the cases their author thought of; random sequences find the rest cheaply.
 - **Outcome:** A seeded property test applies random sequences of `add_bar_lines`, `remove_bar_lines`, `move_bar_lines` and `stage_shift_selection` (both bar-line time policies) to small generated charts, and checks after each step: `validate_document` is clean; under keep-song-time every non-bar-line object keeps its absolute row; a rejected edit leaves the chart unchanged. A failure prints its seed and step list.
 - **Read first:** `include/wormedit/core/measure_editor.h`, `include/wormedit/core/time_shift.h`, `tests/core/measure_editor_tests.cpp`, `tests/core/time_shift_tests.cpp`, `tests/slow_tests.cmake`.
@@ -286,7 +286,7 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 
 ## T-668 Let the documentation check catch stale references and statuses
 
-- **Status:** Proposed (2026-10-17; awaiting owner approval)
+- **Status:** deferred (proposed 2026-10-17; start only if the owner names T-668)
 - **Value:** Medium. Cards cite `file.cpp:1258` lines that drift, the task index's free-ID line had gone stale (it said "above T-628" while T-657 existed), and status values mix forms ("ready", "Ready (owner approved…)", "done (date)"), so nothing can list what is ready.
 - **Outcome:** `documentation.chart_editor_state` also fails on a backticked repository path in a card that does not exist, warns on `path:line` citations, checks that every Status begins with one word from a fixed set (`Proposed`, `Ready`, `In progress`, `Partial`, `Blocked`, `Done`), and checks the free-ID line against the highest card number. A small script lists Ready cards with their "after" constraints.
 - **Read first:** `cmake/check_chart_editor_docs.cmake`, `docs/chart-editor-plan/tasks.md`.

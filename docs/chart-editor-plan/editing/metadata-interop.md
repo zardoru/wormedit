@@ -20,7 +20,7 @@ exposes the original intervals so their boundaries remain editable; switching
 modes preserves the source song and cut definitions. Export/audio splicing,
 timeline rebasing, scope across charts/output groups, boundary handling and
 Timing-focus audition policy need a later design pass; this is not immediate
-implementation work. See [T-719](../tasks/markers.md#t-719-plan-selection-created-export-cut-sections).
+implementation work. See [T-729](../tasks/markers.md#t-729-plan-selection-created-export-cut-sections).
 
 osu! `[Editor]` bookmarks are integer millisecond points and carry no label or range. Import them as audio-time point markers. Export every compatible point marker, plus the start of a labeled range when requested; retain labels, colors, range ends, and beat anchors in the native project and diagnose that loss when producing standalone `.osu`. MIDI export may emit labeled markers as marker meta-events.
 

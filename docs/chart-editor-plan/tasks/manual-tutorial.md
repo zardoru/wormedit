@@ -65,7 +65,7 @@ scripts so they can be regenerated after UI changes, never by hand.
 - **Outcome:** the Getting started and Compose basics chapters let a new user create a project,
   import a chart, place, select and move notes, change snaps, and play back, using only the manual.
   Every screenshot has a matching reproducible script in `docs/manual/shots/`.
-- **Read first:** `docs/manual/README.md`, the task cards for the features described (Draw tool, quantize, docks), `docs/chart-editor-plan/editing/interactions.md`.
+- **Read first:** `docs/manual/index.adoc`, the task cards for the features described (Draw tool, quantize, docks), `docs/chart-editor-plan/editing/interactions.md`.
 - **Files owned:** `docs/manual/chapters/the-wormedit-way.adoc`,
   `docs/manual/chapters/getting-started.adoc`, `docs/manual/chapters/navigating.adoc`,
   `docs/manual/chapters/placing-notes.adoc`, `docs/manual/chapters/sounds-and-layers.adoc`,
@@ -95,7 +95,7 @@ scripts so they can be regenerated after UI changes, never by hand.
 - **Outcome:** both walkthroughs end with a short "try it" exercise on a bundled fixture;
   Troubleshooting maps the actual notification text to a recovery step; and the Project output-group
   capture shows Preview and Export where the walkthrough tells the reader to use them.
-- **Read first:** `docs/manual/README.md`, [BMS editing cards](bms-editing.md), the export cards, and the timing cards.
+- **Read first:** `docs/manual/index.adoc`, [BMS editing cards](bms-editing.md), the export cards, and the timing cards.
 - **Files owned:** `docs/manual/chapters/walkthrough-bms.adoc`,
   `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, `docs/manual/chapters/timing.adoc`,
   new `docs/manual/chapters/troubleshooting.adoc`, new

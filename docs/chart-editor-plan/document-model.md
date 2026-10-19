@@ -99,7 +99,7 @@ Events need stable IDs so selection, undo/redo, labels, slice references, and va
 
 ### Shared timing categories (deferred)
 
-User request (2026-10-19; [T-720](tasks/editing-depth.md#t-720-plan-granular-timing-links-with-copy-on-write-overrides)):
+User request (2026-10-19; [T-730](tasks/editing-depth.md#t-730-plan-granular-timing-links-with-copy-on-write-overrides)):
 allow charts/difficulties, including those targeting different compatible file
 formats, to share timing layouts by category. **BPM**, **SV/scroll**, **SPEEDS**,
 **Kiai**, **stops** and **delays** must each be independently linkable, locally

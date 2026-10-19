@@ -45,7 +45,12 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-201 Show SV recipes as span objects in the Compose SV lane
 
-- **Status:** ready
+- **Status:** done (completed through T-313–T-323)
+- **Completion:** Compose projects each recipe as an exact selectable span with a bounded curve,
+  supports snapped edge/body drag, exposes the selected recipe form and unapplied preview in the
+  inspector, and creates recipes from the retained-area menu. Recipe-area projection and frame
+  dispatch tests cover selection, move/resize, Delete, area creation, stale input and form preview.
+  The Timing pane referenced below was retired by T-321; do not execute these historical steps.
 - **Outcome:** each recipe draws as a bar spanning its exact interval in the Compose SV lane (with its curve drawn inside); clicking it selects it and opens an "SV recipe" section at the top of the inspector with the same fields as the Timing pane recipe form; its ends and body drag with the existing snapped range-drag controller; "Add SV recipe" from the area menu creates one over the band.
 - **Read first:** `include/wormedit/core/sv_recipe.h` (`sv_recipe_draft_t::propose`, `sv_recipe_range_drag_t::propose`, `apply_proposal`), `src/ui/nuklear/timing_panel.cpp` (recipe form, `cancel_timing_recipe_range_drag`), `src/ui/nuklear/compose_canvas.cpp` (`draw_compose_timing_lanes`), `src/sys/compose_view.cpp`.
 - **Files owned:** `src/sys/compose_view.cpp`, `src/sys/compose_actions.cpp`, `src/sys/compose_input.cpp`, `src/ui/frontend.h`, `src/ui/nuklear/compose_canvas.cpp`, `src/ui/nuklear/compose_input_panel.cpp`, new `src/ui/nuklear/compose_recipe_inspector.cpp/.h`, `CMakeLists.txt`.
@@ -76,7 +81,11 @@ Apply the stale-plan check (rule 9) first.
 
 ## T-203 Retire the Timing tab once Compose has parity
 
-- **Status:** blocked-on T-201, T-202, T-51
+- **Status:** done (superseded by T-313–T-323; T-321 removed the Timing screen)
+- **Completion:** The later Compose-timing lane provided full editing parity and removed the Timing
+  screen rather than retaining the provisional hidden-tab fallback described below. F3 opens Compose
+  timing focus, and the obsolete Timing projection/action fields were swept afterwards. This
+  historical card requires no separate implementation.
 - **Outcome:** a parity checklist in this card is all checked, then the Timing tab is hidden behind View → "Show Timing tab" (off by default).
 - **Read first:** `src/ui/nuklear/timing_panel.cpp`, `src/ui/nuklear/compose_inspector.cpp`, `src/core/workspace.cpp` (tab list).
 - **Files owned:** `src/core/workspace.cpp`, `src/ui/nuklear/frontend.cpp`, `src/ui/frontend.h`, this card.

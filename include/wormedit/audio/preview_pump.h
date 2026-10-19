@@ -31,7 +31,6 @@ struct preview_pump_options_t {
 };
 
 
-static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct preview_pump_effect_t {

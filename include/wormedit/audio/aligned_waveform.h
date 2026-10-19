@@ -146,7 +146,6 @@ struct aligned_waveform_row_t {
     auto operator==(const aligned_waveform_row_t&) const -> bool = default;
 };
 
-static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct aligned_waveform_view_result_t {

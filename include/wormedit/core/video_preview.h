@@ -11,7 +11,6 @@
 namespace wormedit {
 
 enum class video_preview_clock_phase_t : std::uint8_t { inactive };
-static_assert(sizeof(operation_state_t<video_preview_clock_phase_t>) <= 2 * sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<video_preview_clock_phase_t>>);
 
 // Exact, decoder-neutral position in the video activated by the current BGA

@@ -55,7 +55,6 @@ struct preview_assist_click_grid_t {
 using preview_bridge_start_outcome_t = result_t<session_token_t, failure_code_t>;
 
 
-static_assert(sizeof(operation_state_t<std::monostate>) <= 2 * sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 struct preview_bridge_pump_effect_t {

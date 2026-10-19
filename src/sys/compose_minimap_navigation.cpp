@@ -47,7 +47,8 @@ auto compose_minimap_target(double fraction, std::uint64_t total_frames,
         timing.total_rows == 0) return std::nullopt;
     const auto source_frame = std::round(static_cast<long double>(fraction) * (total_frames - 1));
     const auto converted = std::round(source_frame * preview_rate / waveform_rate);
-    if (converted > std::numeric_limits<std::int64_t>::max()) return std::nullopt;
+    // Use the exact exclusive bound: INT64_MAX rounds up on Apple Silicon.
+    if (converted >= 0x1p63L) return std::nullopt;
     auto frame = static_cast<std::uint64_t>(converted);
     if (compiled_end) frame = std::min(frame, *compiled_end);
     return target_at_frame(frame, preview_rate, timing, measures, snap_denominator);

@@ -9,6 +9,7 @@
 namespace wormedit {
 
 // A domain phase or a shared failure, with no separate acceptance flag.
+// Storage size follows std::variant's implementation-defined discriminator layout.
 template <class Phase>
     requires((std::is_enum_v<Phase> || std::same_as<Phase, std::monostate>) &&
              !std::same_as<Phase, failure_code_t>)

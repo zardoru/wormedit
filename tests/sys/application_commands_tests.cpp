@@ -2,7 +2,9 @@
 #include "sys/application_defaults.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
 #include "../sys/application_dispatch_fixture.h"
+#endif
 #include "compose_area_dispatch_fixture.h"
 #include "sys/application_command_dispatch.h"
 #include "sys/application_commands.h"
@@ -12,6 +14,7 @@
 #include "sys/compose_semantic_layer_commands.h"
 #include "sys/compose_sound_actions.h"
 #include "sys/native_chart_edit_action.h"
+#include "sys/output_group_export.h"
 #include "sys/transport_player_actions.h"
 
 #include <wormedit/core/command_registry.h>

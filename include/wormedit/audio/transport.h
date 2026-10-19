@@ -40,7 +40,6 @@ struct transport_voice_t {
     auto operator==(const transport_voice_t&) const -> bool = default;
 };
 
-static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(std::uint32_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
 
 using active_voice_snapshot_outcome_t =

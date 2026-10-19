@@ -11,6 +11,7 @@
 
 namespace {
 
+#if !defined(__APPLE__)
 SDL_HitTestResult SDLCALL window_hit_test(SDL_Window* window, const SDL_Point* point, void*) {
     int width{};
     int height{};
@@ -39,6 +40,7 @@ SDL_HitTestResult SDLCALL window_hit_test(SDL_Window* window, const SDL_Point* p
         return SDL_HITTEST_DRAGGABLE;
     return SDL_HITTEST_NORMAL;
 }
+#endif
 
 } // namespace
 

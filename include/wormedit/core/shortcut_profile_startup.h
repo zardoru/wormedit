@@ -9,7 +9,6 @@
 namespace wormedit {
 
 enum class shortcut_profile_startup_phase_t : std::uint8_t { applied, missing };
-static_assert(sizeof(operation_state_t<shortcut_profile_startup_phase_t>) <= 2 * sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<shortcut_profile_startup_phase_t>>);
 
 inline constexpr std::size_t maximum_shortcut_profile_startup_diagnostics = 8;

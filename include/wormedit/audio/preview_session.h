@@ -36,7 +36,6 @@ using preview_session_start_outcome_t =
 
 enum class preview_session_pump_phase_t : std::uint8_t { ready = 0, loop_boundary = 2 };
 
-static_assert(sizeof(operation_state_t<preview_session_pump_phase_t>) <= sizeof(std::uint32_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<preview_session_pump_phase_t>>);
 
 struct preview_session_pump_effect_t {

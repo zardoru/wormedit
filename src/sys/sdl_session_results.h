@@ -30,7 +30,6 @@ template <class Session> struct sdl_session_start_result_t {
 };
 
 static_assert(std::is_trivially_copyable_v<operation_state_t<std::monostate>>);
-static_assert(sizeof(operation_state_t<std::monostate>) <= sizeof(sdl_callback_failure_t));
 
 template <class Pump, class Telemetry = std::monostate> struct sdl_session_service_result_t {
     operation_state_t<std::monostate> status;

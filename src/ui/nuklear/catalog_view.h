@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ui/frontend/catalog.h"
+#include <cstddef>
 #include <cstdint>
 
 namespace wormedit::ui {

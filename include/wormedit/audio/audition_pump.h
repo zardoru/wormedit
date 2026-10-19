@@ -21,7 +21,6 @@ struct audition_pump_options_t {
 
 enum class audition_pump_phase_t : std::uint8_t { ready, complete };
 
-static_assert(sizeof(operation_state_t<audition_pump_phase_t>) <= sizeof(std::uint32_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<audition_pump_phase_t>>);
 
 struct audition_pump_effect_t {

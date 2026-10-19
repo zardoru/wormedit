@@ -19,7 +19,8 @@ id menu_target;
 const wormedit::command_registry_t* current_registry;
 
 NSString* menu_text(const char* text) {
-    return [NSString stringWithUTF8String:text] ?: @"";
+    NSString* string = [NSString stringWithUTF8String:text];
+    return string ? string : @"";
 }
 
 NSEventModifierFlags native_modifiers(wormedit::shortcut_modifiers_t modifiers) {

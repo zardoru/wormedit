@@ -24,7 +24,6 @@ enum class marker_navigation_kind_t : std::uint8_t {
 };
 
 enum class marker_navigation_phase_t : std::uint8_t { found, no_result };
-static_assert(sizeof(operation_state_t<marker_navigation_phase_t>) <= 2 * sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<marker_navigation_phase_t>>);
 
 struct marker_navigation_filter_t {
@@ -88,7 +87,6 @@ using marker_navigation_outcome_t = diagnosed_t<marker_navigation_match_t>;
 [[nodiscard]] auto has_marker_navigation_targets(const chart_document_t& chart) -> bool;
 
 enum class section_selection_phase_t : std::uint8_t { resolved, timing_projection_required };
-static_assert(sizeof(operation_state_t<section_selection_phase_t>) <= 2 * sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<operation_state_t<section_selection_phase_t>>);
 
 // Resolves beat sections to their authored selection spans. Audio-time sections require

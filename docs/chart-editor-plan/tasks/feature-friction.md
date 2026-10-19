@@ -44,6 +44,81 @@ All of these were **proposed** (2026-10-17) for owner approval; each card's Stat
 - **Verify:** `ctest --test-dir build -R '^documentation\.' --output-on-failure`; grep every symbol the new text names.
 - **Out of scope:** Renaming any symbol to make the names agree; switching `build/` to Ninja (an owner choice: it discards the warm build).
 
+## T-722 Route keyboard and frontend quantize through one typed workflow
+
+- **Status:** done (2026-10-19)
+- **Completion:** `src/sys/compose_quantize.cpp` now owns capability, stamped editor initialization,
+  preview toggling, typed selection normalization, report retention and application outcomes.
+  Registered Apply passes the stored typed request directly; the area route alone decodes the
+  frontend payload. Application still forces collision rejection, disables preview-only resolution
+  promotion, clears legacy object IDs and attaches current note/BGM selection. Invalid stored
+  settings, report contents, collision policy, promotion policy, Undo, diagnostics and rebind
+  failure have production-path regressions. The sys frontend-action-builder ratchet is 3 → 2, with
+  the two project drop/replacement adapters retained.
+- **Assessment:** The repeated quantize trace had no wrong turn or internal frontend detour, versus
+  one wrong file guess before, but inspected 13 files versus 9. Untouched controls varied from
+  −4 to +3 files and from zero to three wrong guesses. This is a useful structural cleanup, not
+  evidence that the extraction broadly improved navigation; see the baseline audit's verdict.
+- **Verification:** Focused core/sys quantize checks pass **1,358 assertions in 82 cases**,
+  including invalid stored settings and retained collision/promotion policy. Final GATE passes
+  **4,230/4,230** with build, CTest, whitespace and changed-C++ complexity clean
+  (`/tmp/wormedit-gate.1kQR7r`). Documentation passes 5/5. Affected clang-tidy has no new findings;
+  it reports only recorded existing complexity in `build_speed_graph` and unrelated legacy test
+  cases. The four fresh Luna medium post-change traces found all mutation and completion boundaries.
+- **Baseline:** The fixed before-refactor observation is
+  [`workflow-navigation-baseline-2026-10-19.md`](../../audits/workflow-navigation-baseline-2026-10-19.md).
+  Its keyboard trace inspected nine files and found the typed request → frontend action → typed
+  request round trip. The lexical sys frontend-action construction inventory is three sites: this
+  quantize detour and two retained project drop/replacement adapters in `application.cpp`.
+- **Outcome:** `compose_quantize` is the named sys workflow owner for capability, editor-state
+  initialization/preview toggling and typed selection application. A registered command passes its
+  stored `quantize_request_t` directly; only the real frontend route decodes
+  `WormUiWorkspaceAction`. Both routes retain one typed application body for selection attachment,
+  report storage, core mutation and outcome construction.
+- **Read first:** `docs/architecture.md`; `docs/chart-editor-plan/decisions/code-style.md`;
+  `docs/audits/workflow-navigation-2026-10-18.md`; `src/sys/compose_actions.cpp`;
+  `src/sys/compose_area_actions.cpp`; `src/sys/compose_quantize_request.h`;
+  `src/sys/application_command_dispatch.cpp`; `src/core/command.cpp`.
+- **Files owned:** new `src/sys/compose_quantize.h`, `src/sys/compose_quantize.cpp`;
+  `src/sys/compose_actions.h`, `src/sys/compose_actions.cpp`,
+  `src/sys/compose_actions_internal.h`, `src/sys/compose_area_actions.h`,
+  `src/sys/compose_area_actions.cpp`, `src/sys/compose_quantize_request.h`,
+  `src/sys/application_command_dispatch.cpp`, `tests/sys/application_commands_tests.cpp`,
+  `tests/sys/frame_timing_tests.cpp`,
+  `CMakeLists.txt`, `tests/CMakeLists.txt`, `cmake/ceremony_ratchet.txt`, `docs/architecture.md`,
+  this card, the baseline audit and `memory/chart-editor-status/resume.md`.
+- **Steps:**
+  1. Recheck all request producers/consumers and the three local sys frontend-action builders.
+     Record the construction ratchet at three before removal and two after it; the row is a lexical
+     guard, not proof of intent.
+  2. Add the named sys owner. Move capability, quantize-editor initialization, preview toggle and
+     typed application/report completion into it. Keep the existing core command and result types.
+  3. Decode frontend settings once in the area-action adapter. Pass stored typed settings directly
+     from the registered command; remove `invoke_compose_quantize_command` and its fabricated
+     frontend action.
+  4. Preserve the old decoder's application policy in the typed owner: validate divisions and
+     enum ranges, force collision rejection and resolution promotion off, clear legacy object IDs,
+     and attach the current typed selection without mutating stored panel settings.
+  5. Strengthen the registered-command regression for applied report contents and add invalid
+     stored-settings rejection. Run focused checks, GATE and affected clang-tidy/complexity.
+  6. Repeat all four fixed navigation exercises under the recorded conditions. Record whether the
+     result justifies this extraction before recommending the pattern elsewhere.
+- **Invariants:** Same command IDs, capability projection and invocation recheck; same preview
+  stamp/toggle lifetime; current note/BGM selection; collision and resolution-promotion policy;
+  report row ordering/count/truncation; one transaction and Undo; accepted no-ops, diagnostics,
+  feedback delivery/order and producer rebind policy. Frontend action values and UI projection do
+  not change.
+- **Reject/failure behavior:** Invalid typed or frontend settings reject before preview/mutation;
+  core rejection retains its first diagnostic and does not store an applied report. Rebind failure
+  still reports the successful edit before the document error. If the repeated trace does not find
+  the correct mutation and completion boundaries, do not use this extraction as a template.
+- **Verify:** focused `application_commands`, `compose_action_notification` and quantize tests;
+  `scripts/gate.sh --agents 1`; `clang-tidy -p build` and `scripts/check-complexity.py` on affected
+  C++ consumers; four fixed fresh-Luna navigation exercises; `git diff --check`.
+- **Out of scope:** Converting the frontend action payload (T-694), changing quantize behavior or
+  preview projection, moving quantize tests wholesale (T-671), paste/measure extraction, or the two
+  retained project drop/replacement frontend adapters.
+
 ## T-659 Give the paste's chart changes one owner
 
 - **Status:** Proposed (2026-10-17; awaiting owner approval)

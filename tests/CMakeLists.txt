@@ -32,6 +32,7 @@ add_executable(wormedit_core_tests
     sys/document_edit_feedback_tests.cpp
     ../src/sys/compose_resource_presenter.cpp
     ../src/sys/compose_area_actions.cpp
+    ../src/sys/compose_quantize.cpp
     ../src/sys/document_edit_feedback.cpp
     ../src/sys/compose_action_outcome.cpp
     ../src/sys/compose_audition_requests.cpp
@@ -670,6 +671,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/bookmark_chooser_view.cpp
         ../src/sys/bookmark_navigation.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/compose_quantize.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp
@@ -776,6 +778,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         ../src/ui/nuklear/theme.cpp
         ../src/sys/frame_timing.cpp
         ../src/sys/compose_area_actions.cpp
+        ../src/sys/compose_quantize.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/compose_action_outcome.cpp
         ../src/sys/compose_audition_requests.cpp

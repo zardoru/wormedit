@@ -7,6 +7,7 @@
 #include "sys/application_command_dispatch.h"
 #include "sys/compose_actions.h"
 #include "sys/compose_area_actions.h"
+#include "sys/compose_quantize.h"
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_input.h"
 #include "sys/compose_scroll_geometry.h"

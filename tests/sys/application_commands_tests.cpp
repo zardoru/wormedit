@@ -2707,6 +2707,7 @@ TEST_CASE("Quantize registry commands toggle session preview and preserve Apply 
     auto& note = history.document.charts.front().measures.front().notes.front();
     note.position.row = 130;
     const auto before = note.position;
+    const auto note_id = note.id;
     fixture.compose_state->selected_notes = {note.id};
     const auto revision = history.document.revision;
     require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_toggle_quantize_preview).value);
@@ -2717,7 +2718,15 @@ TEST_CASE("Quantize registry commands toggle session preview and preserve Apply 
     fixture.application_state.project.quantize.quantize_editor->request.divisions = 4;
     require_bookmark_callback(fixture.invoke(application_command_kind_t::edit_apply_quantize).value);
     check_bookmark_callback(history.undo.size() == 1);
-    check_bookmark_callback(fixture.application_state.project.quantize.quantize_applied_report.has_value());
+    const auto& report = fixture.application_state.project.quantize.quantize_applied_report;
+    require_bookmark_callback(report.has_value());
+    check_bookmark_callback(report->total_rows == 1);
+    check_bookmark_callback(report->rows.size() == 1);
+    check_bookmark_callback(report->rows.front().object == note_id);
+    check_bookmark_callback(report->rows.front().start_before == before);
+    check_bookmark_callback(
+        report->rows.front().start_after ==
+        history.document.charts.front().measures.front().notes.front().position);
     require_bookmark_callback(fixture.invoke(application_command_kind_t::history_undo).value);
     check_bookmark_callback(history.document.charts.front().measures.front().notes.front().position == before);
     fixture.workspace.active_tab = wormedit::workspace_tab_t::metadata;
@@ -2725,6 +2734,50 @@ TEST_CASE("Quantize registry commands toggle session preview and preserve Apply 
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).value);
 }
 
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Registered Quantize rejects invalid stored panel settings atomically",
+          "[sys][application_commands][quantize-intent]") {
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    const auto revision = history.document.revision;
+    fixture.application_state.project.quantize.quantize_editor =
+        application_command_state_t::quantize_editor_t{
+            .stamp = wormedit::chart_stamp_t::from(history.document,
+                                                   fixture.compose_state->chart),
+            .request = {.divisions = 0}};
+    check_bookmark_callback(
+        !fixture.invoke(application_command_kind_t::edit_apply_quantize).value);
+    check_bookmark_callback(history.document.revision == revision);
+    check_bookmark_callback(history.undo.empty());
+    check_bookmark_callback(
+        !fixture.application_state.project.quantize.quantize_applied_report.has_value());
+    check_bookmark_callback(fixture.latest_message() ==
+                            "Selection quantization has invalid settings.");
+}
+#endif
+
+#ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Registered Quantize does not apply preview-only resolution promotion",
+          "[sys][application_commands][quantize-intent]") {
+    TimingInsertFixture fixture;
+    auto& history = fixture.fixture.history;
+    const auto revision = history.document.revision;
+    const auto resolution =
+        history.document.charts.front().divisions_per_standard_measure;
+    fixture.application_state.project.quantize.quantize_editor =
+        application_command_state_t::quantize_editor_t{
+            .stamp = wormedit::chart_stamp_t::from(history.document,
+                                                   fixture.compose_state->chart),
+            .request = {.divisions = 7, .allow_resolution_promotion = true}};
+    check_bookmark_callback(
+        !fixture.invoke(application_command_kind_t::edit_apply_quantize).value);
+    check_bookmark_callback(history.document.revision == revision);
+    check_bookmark_callback(history.undo.empty());
+    check_bookmark_callback(
+        history.document.charts.front().divisions_per_standard_measure == resolution);
+}
 #endif
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
@@ -2737,6 +2790,12 @@ TEST_CASE("Quantize command rejects collisions with preview off and rejects timi
     const auto revision = history.document.revision;
     fixture.compose_state->selected_notes = {notes[0].id};
     fixture.compose_state->selected_objects = {{wormedit::editor_selection_object_kind_t::note, notes[0].id}};
+    fixture.application_state.project.quantize.quantize_editor =
+        application_command_state_t::quantize_editor_t{
+            .stamp = wormedit::chart_stamp_t::from(history.document,
+                                                   fixture.compose_state->chart),
+            .request = {.divisions = 4,
+                        .collisions = wormedit::quantization_collision_t::allow}};
     check_bookmark_callback(!fixture.invoke(application_command_kind_t::edit_apply_quantize).value);
     check_bookmark_callback(history.document.revision == revision && history.undo.empty());
     check_bookmark_callback(!fixture.application_state.project.quantize.quantize_editor->preview_enabled);

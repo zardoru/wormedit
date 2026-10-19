@@ -1,11 +1,13 @@
 # Status: resume checklist
 
-Next: write and review the first quantize ownership card using the concrete frontend round trip
-recorded in `docs/audits/workflow-navigation-baseline-2026-10-19.md`; do not start implementation
-from the audit prose alone. The four before-refactor navigation exercises are complete under fixed
-Luna medium, read-only, source-and-tests-only conditions. All found the required boundaries; the
-quantize and bar-line traces confirmed the two intended navigation detours. T-658 is complete, and
-commit `1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
+Next: revise the remaining workflow-navigation scopes from their concrete ownership defects before
+approving another extraction; T-722 does not validate broad file splitting as a navigation remedy.
+T-722's registered quantize command now enters one typed sys workflow without constructing a
+frontend action. Its before/after exercise removed that false detour but changed the target trace
+from 9 files / 1 wrong guess to 13 / 0, while untouched controls also varied substantially. The
+cleanup is retained for its type boundary and ratcheted invariant, not as proof of a general
+navigation gain. Final T-722 GATE passes 4,230/4,230 tests (`/tmp/wormedit-gate.1kQR7r`). T-658 is
+complete, and commit `1ab570c` completes T-716 and T-718–T-721 with GATE passing 4,228/4,228 tests.
 
 Completed **T-146–T-147 cancellable import/export** (2026-10-18): interactive opening, export and conversion preview expose progress/Cancel; automatic music copies join private atomic staging. GCC and Linux Clang GATE each pass 4,158/4,158, with configured clang-tidy, unchanged complexity allowances and inspected isolated Xvfb Compose layout. Remaining state-ownership and feature-friction checkpoints retain their card statuses; T-621 folder moves still run last. Verification evidence and cancellation limits are recorded on the [completed cards](../../docs/chart-editor-plan/tasks/editing-depth.md#t-146-report-progress-and-allow-cancel-for-chart-import).
 

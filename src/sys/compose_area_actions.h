@@ -15,12 +15,4 @@ auto compose_area_delete_supported(const wormedit::chart_document_t&,
                                    const wormedit::editor_interaction_state_t&) -> bool;
 auto compose_area_delete_supported(wormedit::document_history_t&,
                                    const wormedit::editor_interaction_state_t&) -> bool;
-struct application_command_state_t;
-auto can_apply_compose_quantize(const application_command_state_t& application,
-                                const wormedit::editor_interaction_state_t& state) -> bool;
-auto apply_compose_quantize_selection(wormedit::document_history_t& history,
-                                      wormedit::editor_interaction_state_t& state,
-                                      application_command_state_t& application,
-                                      const WormUiWorkspaceAction& action)
-    -> compose_action_outcome_t;
 } // namespace wormedit::sys

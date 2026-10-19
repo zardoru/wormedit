@@ -355,8 +355,6 @@ auto run_bms_block_command(const WormUiWorkspaceAction& action,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t;
 
-auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool;
-
 auto quantize_editor_for(compose_action_context_t& context)
     -> application_command_state_t::quantize_editor_t&;
 

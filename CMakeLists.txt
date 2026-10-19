@@ -495,6 +495,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/compose_speed_spans.cpp
         src/sys/recipe_form.cpp
         src/sys/compose_quantize_preview.cpp
+        src/sys/compose_quantize.cpp
         src/sys/application_command_dispatch.cpp
         src/sys/compose_resource_presenter.cpp
         src/sys/compose_view.cpp

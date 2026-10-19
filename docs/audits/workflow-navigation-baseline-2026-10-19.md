@@ -175,3 +175,39 @@ slice. Preserve the source-and-tests-only exclusion and reporting fields above. 
 still locate mutation and feedback/completion correctly. Compare unique files inspected and wrong
 turns, with special attention to whether quantize still takes the frontend encode/decode detour.
 Do not treat elapsed time or a smaller file count alone as success.
+
+## After T-722
+
+Four fresh `gpt-6-luna` medium agents repeated the prompts after the typed quantize workflow
+extraction. They received the same read-only, source-and-tests-only instructions and the same
+documentation exclusions. All four again found the mutation and failure/completion boundaries.
+
+| Exercise | Before files / wrong turns | After files / wrong turns | Observation |
+|---|---:|---:|---|
+| Keyboard quantize | 9 / 1 | 13 / 0 | The reader found `compose_quantize.cpp` directly and did not follow a fabricated frontend action, but inspected more registry, outcome and test files |
+| Paste | 7 / 3 | 10 / 0 | Untouched control; the different reader inspected more regression homes and guessed no nonexistent paths |
+| Bar-line toggle | 11 / 1 | 7 / 1 | Untouched control; the reader first followed the measure-lane visibility toggle, then found the command path |
+| Note move | 7 / 0 | 5 / 0 | Untouched control; broad search surfaced unrelated cancellation and note-to-BGM results without becoming a false trace |
+
+The quantize trace correctly identified the new path: settings decode and storage in
+`compose_actions.cpp`, registered command dispatch in `application_command_dispatch.cpp`, typed
+selection normalization/report/mutation in `compose_quantize.cpp`, core planning/transaction in
+`core/command.cpp`, and feedback/rebinding in `compose_action_outcome.cpp`. It explicitly
+distinguished Alt+Q preview and the real frontend area-action route. The old internal
+encode/decode detour was absent.
+
+Elapsed time remains unusable: the post agents reported about 28 seconds, 12 seconds, no reliable
+measurement and about two minutes. More importantly, untouched controls changed by −4 to +3 files
+and by zero to three wrong guesses. A single fresh-agent run is too variable to attribute the
+quantize file-count increase or wrong-turn decrease to T-722.
+
+### Verdict
+
+T-722 is a modestly worthwhile type-boundary cleanup. A registered command no longer constructs a
+frontend payload, both entries share one typed mutation/report owner, preview-only collision and
+resolution-promotion policies are explicit, and a ratchet prevents the removed construction from
+returning. The exercise did not establish a general navigation improvement: the target trace
+opened four more files, and the controls show that this measurement design is noisy. Do not cite
+it as evidence for broad file extraction or use it to gate changes. Before applying the audit's
+paste or measure proposals, revise their scopes from concrete ownership defects and existing
+regressions rather than assuming T-722 proved the pattern.

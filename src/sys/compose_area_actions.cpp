@@ -3,6 +3,7 @@
 #include "core/timing_arithmetic.h"
 #include "sys/compose_action_context.h"
 #include "sys/compose_action_routes.h"
+#include "sys/compose_quantize.h"
 #include "sys/compose_quantize_request.h"
 #include <algorithm>
 #include <array>
@@ -21,45 +22,6 @@
 
 namespace wormedit::sys {
 using namespace compose_action_detail;
-auto can_apply_compose_quantize(const application_command_state_t& application,
-                                const editor_interaction_state_t& state) -> bool {
-    return !application.project.compose_view.compose_timing_focus &&
-           !application.project.clipboard.paste_session &&
-           !(state).is_pending();
-}
-
-auto apply_compose_quantize_selection(document_history_t& history,
-                                      editor_interaction_state_t& state,
-                                      application_command_state_t& application,
-                                      const WormUiWorkspaceAction& action)
-    -> compose_action_outcome_t {
-    const auto* chart = history.document.find_chart(state.chart);
-    if (!chart)
-        return compose_action_outcome_t::blocked("The chart is no longer available.");
-    const auto& geometry = history.indices(chart->id)->measures;
-    if (!geometry)
-        return compose_action_outcome_t::blocked("The selected area has invalid measure geometry.");
-    auto request = quantize_request_from_action(action, {});
-    if (!request)
-        return compose_action_outcome_t::blocked("Selection quantization has invalid settings.");
-    request->selection = editor_quantize_selection(state);
-    auto report = preview_quantize_selection(*chart, request->selection->notes, *request, &*geometry);
-    auto result = apply_quantize_command(history, state.chart, *request);
-    if (!result.command.applied)
-        return result.command.diagnostics.empty()
-                   ? compose_action_outcome_t::blocked("Selection quantization rejected.")
-                   : compose_action_outcome_t::from(std::move(result.command.diagnostics),
-                                                    notification_source_t::edit,
-                                                    compose_feedback_delivery_t::first_diagnostic);
-    application.project.quantize.quantize_applied_report =
-        application_command_state_t::quantize_applied_report_t{
-            .song = history.document.id,
-            .chart = state.chart,
-            .rows = std::move(report.report_rows),
-            .total_rows = report.report_total_rows,
-            .truncated = report.report_truncated};
-    return compose_action_outcome_t::from(std::move(result.command), compose_action_description_t{.success = "Selected objects quantized.", .unchanged = {}, .rebind_failure = "Selected objects quantized, but workspace rebinding failed.", .source = notification_source_t::edit, .diagnostic_policy = compose_diagnostic_feedback_policy_t::rejected_only});
-}
 
 namespace {
 struct clear_compose_area_action_t {
@@ -77,14 +39,20 @@ struct clear_compose_area_action_t {
 static_assert(compose_action<clear_compose_area_action_t, compose_action_context_t>);
 
 struct quantize_compose_selection_action_t {
-    auto operator==(const quantize_compose_selection_action_t&) const -> bool = default;
+    std::optional<wormedit::quantize_request_t> request;
+    static auto from(const compose_action_context_t& context)
+        -> quantize_compose_selection_action_t {
+        return {.request = quantize_request_from_action(context.action, {})};
+    }
     auto validate(compose_action_context_t&) const -> std::optional<compose_action_outcome_t> {
+        if (!request)
+            return compose_action_outcome_t::blocked(
+                "Selection quantization has invalid settings.");
         return std::nullopt;
     }
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t {
         return apply_compose_quantize_selection(context.environment.document.history, context.state,
-                                                context.environment.editor.commands,
-                                                context.action);
+                                                context.environment.editor.commands, *request);
     }
 };
 static_assert(compose_action<quantize_compose_selection_action_t, compose_action_context_t>);

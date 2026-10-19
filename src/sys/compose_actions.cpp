@@ -8,6 +8,7 @@
 #include "sys/compose_label_search.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_navigation.h"
+#include "sys/compose_quantize.h"
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_resource_presenter.h"
 #include "sys/compose_scroll_geometry.h"
@@ -2639,27 +2640,10 @@ auto edit_compose_bms_branch_block_action_t::perform(compose_action_context_t& c
     return run_bms_block_command(action, history, *chart, *workspace.selected_chart);
 }
 
-auto quantize_settings_valid(const wormedit::quantize_request_t& request) -> bool {
-    using namespace wormedit;
-    return request.divisions != 0 &&
-           request.space <= quantization_space_t::authored_measure &&
-           request.tie <= quantization_tie_t::reject &&
-           request.holds <= quantization_hold_t::both_endpoints;
-}
-
 auto quantize_editor_for(compose_action_context_t& context)
     -> application_command_state_t::quantize_editor_t& {
-    auto& editor = context.environment.editor.commands.project.quantize.quantize_editor;
-    if (!editor || !editor->stamp.is_identity_current(
-        context.environment.document.history.document, context.state.chart)) {
-        const auto request = wormedit::quantize_request_t{
-            .divisions = context.state.active_snap_denominator};
-        editor = application_command_state_t::quantize_editor_t{
-            .stamp = wormedit::chart_stamp_t::from(context.environment.document.history.document,
-                                                   context.state.chart),
-            .request = request};
-    }
-    return *editor;
+    return compose_quantize_editor_for(context.environment.document.history, context.state,
+                                       context.environment.editor.commands);
 }
 
 // The Quantize grid and the editing snap are one grid: setting the target also sets the snap
@@ -2752,7 +2736,7 @@ auto validate_quantize_preset_save(const compose_action_context_t& context,
     if (context.environment.document.history.document.quantization_presets.size() >=
         quantization_preset_t::maximum_count)
         return "The project already has the maximum number of quantization presets.";
-    if (!request || !quantize_settings_valid(*request))
+    if (!request || !is_compose_quantize_request_valid(*request))
         return "Quantization settings are invalid.";
     return std::nullopt;
 }
@@ -3049,45 +3033,15 @@ static_assert(compose_action<toggle_compose_quantize_preview_action_t, compose_a
 
 auto toggle_compose_quantize_preview_action_t::perform(compose_action_context_t& context) const
     -> compose_action_outcome_t {
-    invoke_compose_quantize_command(true, context.environment.document.history, context.state,
-                                    context.environment.editor.commands);
+    const auto enabled = toggle_compose_quantize_preview(context.environment.document.history,
+                                                         context.state,
+                                                         context.environment.editor.commands);
     return compose_action_outcome_t::from(
-        context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
-            ? "Quantize preview enabled."
-            : "Quantize preview disabled.",
+        enabled ? "Quantize preview enabled." : "Quantize preview disabled.",
         notification_severity_t::info, notification_source_t::input);
 }
 
 } // namespace compose_action_detail
-
-auto invoke_compose_quantize_command(bool toggle_preview, document_history_t& history,
-                                     editor_interaction_state_t& state,
-                                     application_command_state_t& application)
-    -> compose_action_outcome_t {
-    auto& editor = application.project.quantize.quantize_editor;
-    if (!editor || !editor->stamp.is_identity_current(history.document, state.chart))
-        editor = application_command_state_t::quantize_editor_t{
-            .stamp = wormedit::chart_stamp_t::from(history.document, state.chart),
-            .request = {.divisions = state.active_snap_denominator}};
-    if (toggle_preview) {
-        editor->preview_enabled = !editor->preview_enabled;
-        return compose_action_outcome_t::from({}, notification_severity_t::info,
-                                              notification_source_t::input);
-    }
-    if (!can_apply_compose_quantize(application, state))
-        return compose_action_outcome_t::blocked(compose_quantize_idle_message,
-                                                 notification_source_t::input);
-    WormUiWorkspaceAction action{};
-    action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
-    action.compose_input_project_id = history.document.id.value;
-    action.compose_input_chart_id = state.chart.value;
-    action.compose_input_document_revision = history.document.revision;
-    action.compose_quantize_divisions = editor->request.divisions;
-    action.compose_quantize_space = static_cast<std::uint8_t>(editor->request.space);
-    action.compose_quantize_tie = static_cast<std::uint8_t>(editor->request.tie);
-    action.compose_quantize_holds = static_cast<std::uint8_t>(editor->request.holds);
-    return apply_compose_quantize_selection(history, state, application, action);
-}
 
 struct toggle_compose_bga_visibility_action_t {
     const chart_document_t* chart{};

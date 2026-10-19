@@ -16,6 +16,7 @@
 #include "sys/compose_input_internal.h"
 #include "sys/compose_minimap_navigation.h"
 #include "sys/compose_playhead_cursor.h"
+#include "sys/compose_quantize.h"
 #include "sys/compose_view.h"
 #include "sys/compose_view_internal.h"
 #include "sys/frame_timing.h"
@@ -6452,15 +6453,13 @@ TEST_CASE("Quantize ghost preview defaults off and toggles without editing the c
     const auto revision = fixture.history.document.revision;
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
-                                                        fixture.application)
-                            .accepted);
+    expect_compose_test(toggle_compose_quantize_preview(
+        fixture.history, *fixture.interaction, fixture.application));
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 1);
-    expect_compose_test(invoke_compose_quantize_command(true, fixture.history, *fixture.interaction,
-                                                        fixture.application)
-                            .accepted);
+    expect_compose_test(!toggle_compose_quantize_preview(
+        fixture.history, *fixture.interaction, fixture.application));
     fixture.project();
     expect_compose_test(!fixture.flattened.view.compose.quantize_preview_enabled);
     expect_compose_test(fixture.flattened.view.compose.quantize_ghost_count == 0);

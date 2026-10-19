@@ -5,6 +5,7 @@
 #include "sys/compose_area_actions.h"
 #include "sys/compose_measure_commands.h"
 #include "sys/compose_note_to_bgm.h"
+#include "sys/compose_quantize.h"
 #include "sys/compose_quantize_request.h"
 #include "sys/compose_semantic_layer_commands.h"
 
@@ -726,16 +727,22 @@ auto compose_quantize_command(command_context_t& context) -> command_result_t {
             compose_quantize_idle_message, notification_severity_t::warning,
             notification_source_t::input, diagnostic_code_t::unsupported_feature);
     const auto toggle = kind == command_kind_t::edit_toggle_quantize_preview;
-    auto outcome = invoke_compose_quantize_command(toggle, context.environment.document.history,
-                                                   *state, context.environment.editor.commands);
+    auto outcome = compose_action_outcome_t{};
     if (toggle) {
+        const auto enabled = toggle_compose_quantize_preview(
+            context.environment.document.history, *state, context.environment.editor.commands);
         outcome = compose_action_outcome_t::from(
-            context.environment.editor.commands.project.quantize.quantize_editor->preview_enabled
-                ? "Quantize preview enabled."
-                : "Quantize preview disabled.",
+            enabled ? "Quantize preview enabled." : "Quantize preview disabled.",
             notification_severity_t::hint, notification_source_t::edit,
             compose_message_lifetime_t::borrowed);
         outcome.delivery = compose_feedback_delivery_t::transient_hint;
+    } else {
+        const auto request = compose_quantize_editor_for(
+                                 context.environment.document.history, *state,
+                                 context.environment.editor.commands)
+                                 .request;
+        outcome = apply_compose_quantize_selection(context.environment.document.history, *state,
+                                                   context.environment.editor.commands, request);
     }
     outcome.are_command_diagnostics_retained = false;
     return outcome;

@@ -590,6 +590,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/compose_stem_lane_render_tests.cpp
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
+        ui/walkthrough_bms_event_harness_tests.cpp
+        ../src/sys/application_defaults.cpp
         ui/widget_lookup_event_harness_tests.cpp
         ../src/sys/resource_drop_router.cpp
         ../src/sys/metadata_actions.cpp

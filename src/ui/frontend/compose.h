@@ -580,6 +580,7 @@ typedef struct WormUiKeysoundDockRequest {
     bool sort_by_id;
     bool slots_mode;
     uint16_t selected_slot;
+    bool selected_slot_explicit;
     char search[64];
     size_t first_row, row_limit;
     char automatic_search[64];

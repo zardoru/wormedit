@@ -43,6 +43,24 @@ void reset_application_project_edit_state(application_command_state_t& current) 
 
 namespace {
 
+auto timing_focus_command_refusal(application_command_t command,
+                                  const application_command_state_t& state)
+    -> std::optional<std::string_view> {
+    if (wormedit::ui::compose_notes_editable(compose_mode_of(state))) return std::nullopt;
+    switch (command.kind) {
+    case application_command_kind_t::edit_tool_draw:
+    case application_command_kind_t::edit_tool_layer:
+    case application_command_kind_t::edit_toggle_quantize_preview:
+    case application_command_kind_t::edit_apply_quantize:
+    case application_command_kind_t::view_open_layers:
+    case application_command_kind_t::semantic_layer_create:
+    case application_command_kind_t::view_toggle_sounds:
+        return "Timing focus is on: press F4 to edit notes.";
+    default:
+        return std::nullopt;
+    }
+}
+
 void remember_snap_denominator(application_command_state_t& state, wormedit::chart_id_t chart,
                                std::uint64_t denominator) {
     if (chart.value != 0 && denominator != 0) {
@@ -64,6 +82,17 @@ void follow_snap_with_quantize_grid(application_command_state_t& application,
 }
 
 } // namespace
+
+auto unavailable_application_command_message(const command_registry_t& registry,
+    const std::optional<command_id_t>& id, const application_command_state_t& state) -> std::string {
+    const auto* command = id ? find_command(registry, *id) : nullptr;
+    if (!command) return "Command is currently unavailable.";
+    if (const auto parsed = parse_application_command(command->definition.id.value)) {
+        if (const auto reason = timing_focus_command_refusal(*parsed, state))
+            return std::string{*reason};
+    }
+    return "Command is currently unavailable: " + command->definition.display_name;
+}
 
 auto reject_application_command(notification_sink_t& sink, std::string message,
                                 notification_severity_t severity, notification_source_t source,
@@ -818,6 +847,7 @@ auto workspace_tab_command(command_context_t& context) -> command_result_t {
         break;
     case command_kind_t::workspace_open_compose:
         tab = workspace_tab_t::compose;
+        context.environment.editor.commands.project.compose_view.compose_timing_focus = false;
         break;
     case command_kind_t::workspace_open_storyboard:
         tab = workspace_tab_t::storyboard;
@@ -970,11 +1000,6 @@ auto timing_insert_command(command_context_t& context) -> command_result_t {
 
 auto select_tool_command(command_context_t& context) -> command_result_t {
     const auto kind = context.command.kind;
-    if (kind != command_kind_t::edit_tool_select &&
-        !wormedit::ui::compose_notes_editable(compose_mode_of(context.environment.editor.commands)))
-        return compose_action_outcome_t::from(
-            "Draw and Layer are unavailable in Timing focus.", notification_severity_t::warning,
-            notification_source_t::edit, diagnostic_code_t::unsupported_feature);
     auto* state = context.compose();
     if (!state)
         return compose_action_outcome_t::from(
@@ -1266,7 +1291,11 @@ auto invoke_application_command(application_command_t command,
     const auto previous_revision = environment.document.history.document.revision;
     const auto previous_chart =
         environment.document.workspace.selected_chart.value_or(chart_id_t{});
-    auto outcome = route.operation(context);
+    const auto refusal = timing_focus_command_refusal(command, environment.editor.commands);
+    auto outcome = refusal
+        ? compose_action_outcome_t::from(std::string{*refusal}, notification_severity_t::warning,
+              notification_source_t::input, diagnostic_code_t::unsupported_feature)
+        : route.operation(context);
     outcome.feedback_order = route.feedback_order;
     if (route.refresh_on_accepted && outcome.accepted)
         outcome.is_workspace_refresh_required = true;

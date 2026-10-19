@@ -1,5 +1,6 @@
 #include "nuklear_event_harness.h"
 #include "sys/application_defaults.h"
+#include "sys/application_command_dispatch.h"
 #include "sys/compose_input.h"
 #include "sys/compose_view.h"
 #include "sys/output_group_export.h"
@@ -61,6 +62,9 @@ struct charting_t {
     notification_sink_t notifications{notification_sink_t::muted()};
     compose_scene_cache_t cache;
     std::optional<editor_interaction_state_t> interaction;
+    std::optional<timing_lane_pseudonote_outcome_t> timing_stage;
+    command_registry_t registry{command_registry_t::from(
+        [this](const command_invocation_context_t& context) { return invoke(context); })};
     frontend_workspace_view_t flattened;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
@@ -84,6 +88,31 @@ struct charting_t {
         view.document_revision = history.document.revision;
         view.selected_chart_id = workspace.selected_chart->value;
         view.compose = flattened.view.compose;
+        view.timing_settings_visible = commands.preferences.timing_settings_visible;
+    }
+    auto invoke(const command_invocation_context_t& context) -> dispatch_outcome_t {
+        const auto command = parse_application_command(context.command.value);
+        expect(command);
+        return invoke_application_command(*command,
+            {.document = {.history = history, .workspace = workspace,
+                          .notifications = notifications},
+             .editor = {.commands = commands, .retained = interaction,
+                        .timing_stage = timing_stage}});
+    }
+    auto focus() const -> command_focus_t {
+        return {.workspace_active = true, .active_tab = workspace.active_tab,
+                .visible_tabs = {workspace_tab_t::setup, workspace_tab_t::metadata,
+                    workspace_tab_t::compose, workspace_tab_t::audio_slices,
+                    workspace_tab_t::compare_validate}};
+    }
+    auto shortcut(const workspace_action_snapshot_t& snapshot) -> command_dispatch_outcome_t {
+        const auto& action = snapshot.get();
+        expect(action.shortcut_event_count == 1);
+        const auto& input = action.shortcut_events[0];
+        return dispatch_shortcut(registry,
+            {.chord = {.key = static_cast<shortcut_key_t>(input.hid_usage),
+                       .modifiers = input.modifiers}, .auto_repeat = input.repeat},
+            focus(), shortcut_primary_modifier_t::control);
     }
     auto send(const SDL_Event& event) -> workspace_action_snapshot_t {
         const auto snapshot = harness.frame({&event, 1});
@@ -102,6 +131,87 @@ auto read_text(const std::filesystem::path& path) -> std::string {
     expect(input);
     return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
+}
+
+TEST_CASE("Osu StepMania walkthrough opens Timing focus and visible settings from a new project",
+          "[frontend-state][event-harness][walkthrough-osu-stepmania]") {
+    charting_t flow;
+    const auto revision = flow.history.document.revision;
+    const auto f3 = key(SDLK_F3, SDL_SCANCODE_F3);
+    expect(flow.shortcut(flow.harness.frame({&f3, 1})).value.is_invoked());
+    flow.project();
+    (void)flow.harness.frame();
+    expect(flow.workspace.active_tab == workspace_tab_t::compose);
+    expect(flow.harness.view().compose.timing_focus);
+
+    const auto* settings = find_command(flow.registry, {"timing.open_settings"});
+    expect(settings);
+    auto& view = flow.harness.view();
+    view.command_menu_count = 1;
+    view.command_menu_rows[0] = {.id = settings->definition.id.value.c_str(),
+        .label = settings->definition.display_name.c_str(), .enabled = settings->definition.enabled};
+    expect(worm_ui_frontend_open_command_menu());
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    const auto enter = key(SDLK_RETURN, SDL_SCANCODE_RETURN);
+    const auto chosen = flow.harness.frame({&enter, 1});
+    expect(chosen.get().command_menu_invoked);
+    expect(std::string_view{chosen.get().command_menu_command_id} == "timing.open_settings");
+    expect(invoke_command(flow.registry, {chosen.get().command_menu_command_id}, flow.focus()).value.is_invoked());
+    flow.project();
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    expect(flow.harness.drawn_text_center("Metronome"));
+    expect(flow.harness.drawn_text_center("Timing lanes"));
+    expect(flow.history.document.revision == revision);
+    expect(flow.history.undo.empty());
+}
+
+TEST_CASE("Osu StepMania walkthrough returns from Timing focus with F4 and opens settings in Compose",
+          "[frontend-state][event-harness][walkthrough-osu-stepmania]") {
+    charting_t flow;
+    expect(invoke_command(flow.registry, {"workspace.open_timing"}, flow.focus()).value.is_invoked());
+    flow.project();
+    const auto f4 = key(SDLK_F4, SDL_SCANCODE_F4);
+    expect(flow.shortcut(flow.harness.frame({&f4, 1})).value.is_invoked());
+    flow.project();
+    expect(!flow.harness.view().compose.timing_focus);
+    expect(invoke_command(flow.registry, {"timing.open_settings"}, flow.focus()).value.is_invoked());
+    flow.project();
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    expect(flow.harness.drawn_text_center("Metronome"));
+}
+
+TEST_CASE("Osu StepMania walkthrough explains refused Draw and follows F4 back to note editing",
+          "[frontend-state][event-harness][walkthrough-osu-stepmania]") {
+    charting_t flow;
+    flow.commands.project.compose_gesture.note_paint_mode_active = false;
+    const auto revision = flow.history.document.revision;
+    const auto f3 = key(SDLK_F3, SDL_SCANCODE_F3);
+    expect(flow.shortcut(flow.harness.frame({&f3, 1})).value.is_invoked());
+    flow.project();
+    // Availability belongs to the application; exercise its disabled registry
+    // path and the same production feedback formatter used by the input boundary.
+    expect(update_command_state(flow.registry, {"edit.tool_draw"}, false, false).value);
+    const auto draw = key(SDLK_2, SDL_SCANCODE_2);
+    const auto refused = flow.shortcut(flow.harness.frame({&draw, 1}, SDL_KMOD_LALT));
+    expect(refused.value.status == command_dispatch_status_t::disabled);
+    expect(unavailable_application_command_message(flow.registry, refused.value.command, flow.commands) ==
+           "Timing focus is on: press F4 to edit notes.");
+    expect(!flow.commands.project.compose_gesture.note_paint_mode_active);
+    expect(flow.history.document.revision == revision);
+
+    const auto f4 = key(SDLK_F4, SDL_SCANCODE_F4);
+    expect(flow.shortcut(flow.harness.frame({&f4, 1})).value.is_invoked());
+    flow.project();
+    expect(!flow.harness.view().compose.timing_focus);
+    expect(update_command_state(flow.registry, {"edit.tool_draw"}, true, false).value);
+    expect(flow.shortcut(flow.harness.frame({&draw, 1}, SDL_KMOD_LALT)).value.is_invoked());
+    flow.project();
+    (void)flow.send(key(SDLK_1, SDL_SCANCODE_1));
+    (void)flow.send(key(SDLK_1, SDL_SCANCODE_1, false));
+    expect(flow.history.document.charts.front().measures.front().notes.size() == 1);
 }
 
 TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages Metadata audio",

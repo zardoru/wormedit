@@ -625,6 +625,7 @@ static void reset_frontend_session() {
 }
 
 void worm_ui_frontend_begin_project_session() {
+    worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit = false;
     worm_ui_nuklear_reset_sound_import();
 }
 
@@ -848,6 +849,7 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
     request->sort_by_id = state.keysound_filters.keysound_sort_by_id;
     request->slots_mode = state.keysound_filters.keysound_slots_mode;
     request->selected_slot = state.keysound_catalog.keysound_selected_slot;
+    request->selected_slot_explicit = state.keysound_catalog.keysound_selected_slot_explicit;
     std::copy(state.keysound_catalog.keysound_slots_search.begin(), state.keysound_catalog.keysound_slots_search.end(), request->search);
     request->first_row = state.keysound_catalog.keysound_slots_first_row;
     request->row_limit = state.keysound_catalog.keysound_slots_row_limit;
@@ -3134,6 +3136,10 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
 
 static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
     namespace chrome = wormedit::ui::chrome;
+    auto& catalog = worm_ui_nuklear_compose_state().keysound_catalog;
+    if (!view || catalog.keysound_slots_project != view->project_id ||
+        catalog.keysound_slots_chart != view->selected_chart_id)
+        catalog.keysound_selected_slot_explicit = false;
     const auto project = view ? view->project_id : 0;
     const auto chart = view ? view->compose.chart_id : 0;
     const auto tab = view ? view->active_tab : WORM_UI_WORKSPACE_TAB_METADATA;

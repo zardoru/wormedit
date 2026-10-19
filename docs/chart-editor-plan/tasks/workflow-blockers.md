@@ -61,10 +61,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-710 Make F3 and Timing Settings work from Compose
 
-- **Status:** ready
+- **Status:** done
+- **Evidence (2026-10-18):** Added a hidden-Timing registry regression and two new-project production-path walkthrough cases for F3, visible palette/Compose settings and F4 recovery; focused tests passed 14/14. `scripts/gate.sh --jobs 3`: `gate: passed`, 4195/4195 tests, complexity 6/6. Smoke script shell syntax passed; its new `timing` pixel assertion and real-window checks remain unverified here for the coordinator to run.
 - **Outcome:** F3 (*Open Timing*) enters Timing focus in Compose, and *Timing Settings* opens a visible panel from Compose and the command palette. The smoke script's `timing` mode asserts that Timing focus is on.
 - **Read first:** osu!mania/StepMania walkthrough, real-window checks; `src/core/command_registry.cpp` (the F1–F7 loop, `is_eligible`), `src/sys/application_command_dispatch.cpp` (`workspace_open_timing`, `timing_settings_visible`), `src/ui/nuklear/timing_settings_panel.cpp`.
-- **Files owned:** `src/core/command_registry.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/application.cpp` (registration state only), the timing settings frontend files, `scripts/smoke-compose-virtual-x.sh`, tests, this card.
+- **Files owned:** `src/core/command_registry.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/application.cpp` (registration state only), the timing settings frontend files, `scripts/smoke-compose-virtual-x.sh`, tests (including `tests/CMakeLists.txt`), this card.
+- **Supporting-file extension (2026-10-18):** `tests/CMakeLists.txt` links the production application command dispatcher and its Compose route dependencies into the walkthrough event harness.
 - **Steps:**
   1. Register `workspace.open_timing` against Compose (it is an alias), so destination visibility passes.
   2. Give Timing Settings a Compose surface (or retarget the command to an existing one); add an event-harness test that it becomes visible.
@@ -76,10 +78,12 @@ feedback). T-716 updates the manual after the others land.
 
 ## T-711 Explain refusals in Timing focus
 
-- **Status:** ready
+- **Status:** done
+- **Evidence (2026-10-18):** Added three feedback unit cases (including all seven Timing-disabled commands) and a new-project F3 → refused Alt+2 → F4 → note-placement walkthrough; focused tests passed 14/14. `scripts/gate.sh --jobs 3`: `gate: passed`, 4195/4195 tests, complexity 6/6. Real-window feedback verification remains unverified here for the coordinator to run.
 - **Outcome:** Commands refused because Timing focus is on say so and name the way out ("Timing focus is on: press F4 to edit notes."), instead of "Command is currently unavailable: edit.tool_draw". Unavailable-command feedback in general uses the command's display name, not its ID.
 - **Read first:** osu!mania/StepMania walkthrough finding 1; `src/sys/application.cpp` (unavailable-command feedback), `src/sys/application_command_dispatch.cpp` (Draw refusal).
-- **Files owned:** `src/sys/application.cpp` (that feedback only), `src/sys/application_command_dispatch.cpp`, tests, this card.
+- **Files owned:** `src/sys/application.cpp` (that feedback only), `src/sys/application_command_dispatch.cpp`, `src/sys/application_command_dispatch.h`, tests, this card.
+- **Supporting-file extension (2026-10-18):** `src/sys/application_command_dispatch.h` declares the shared unavailable-command feedback formatter for the application boundary and production-path tests.
 - **Steps:**
   1. Unavailable-command feedback names the command's display name.
   2. Commands disabled by Timing focus carry the reason and the F4 remedy.
@@ -150,3 +154,21 @@ feedback). T-716 updates the manual after the others land.
 - **Reject/failure behavior:** Not applicable.
 - **Verify:** `documentation.manual_*`; `scripts/manual-captures.sh --check-stale`; Asciidoctor `--failure-level WARN`.
 - **Out of scope:** New chapters.
+
+## T-717 Start sound imports at the selected BMS slot
+
+- **Status:** done
+- **Evidence (2026-10-18):** Six new walkthrough cases start from the production BMS session factory (the wizard family fix remains T-707), project the real catalog and cover picked 0A–0C assignments, armed-05 automatic imports, occupied-slot review, overflow refusal, selection resets and single-file slot drops. Extended drop-capture and overflow unit coverage; focused tests passed 22/22. `scripts/gate.sh --jobs 3`: `gate: passed`, 4201/4201 tests, complexity 13/13. Xvfb verification remains unverified here for the coordinator to run.
+- **Outcome:** If the user has single-clicked a BMS slot in the Sounds dock's *BMS slots* view (the highlighted slot), any multi-file import (*Add sounds…*, a file-dialog import or a drop) fills consecutive slots starting at that slot. Occupied slots go through the existing replace review. With no slot clicked, imports use automatic IDs, as *Add sounds…* does today. Owner, 2026-10-18: "if the BMS slot is specifically selected … mass-imports should also probably start at that index".
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp` (`keysound_selected_slot`: set by a click at the slot row, reset to 1 on mode or chart change, synced to the armed sound by `sync_selected_slot_to_armed_resource`), `src/sys/application.cpp` (`stage_sound_import`, `stage_dropped_sound_slots`, `dispatch_reviewed_sound_import`), `src/sys/application_frame_services.cpp` (`collect_dropped_resources`, `first_slot`), `src/sys/compose_sound_actions.cpp` (`prepare_sound_slot_batch`).
+- **Files owned:** the files above, `src/ui/nuklear/compose_state.h` (the selection fact), `src/ui/nuklear/frontend.cpp` (the dock request), tests, this card; supporting files below.
+- **Supporting-file extensions (2026-10-18):** `src/ui/frontend/compose.h` and `src/sys/sound_drop_transaction.h` carry the explicit-choice fact across the existing frontend and captured-drop boundaries. `src/sys/sound_import_staging.h`, `src/sys/sound_import_staging.cpp`, `CMakeLists.txt` and `tests/CMakeLists.txt` share and link the production staging path for the application and walkthrough harness. `src/sys/compose_sound_actions.h` documents the revised overflow result. `docs/chart-editor-plan/tasks.md` advances the free-ID range as requested.
+- **Steps:**
+  1. Record whether the slot was chosen explicitly. A click selects it. The default slot 1 and the armed-sound sync do not, so arming a sound never redirects imports. Mode, chart or project changes clear the choice.
+  2. Route *Add sounds…*, file-dialog imports and drops through the slot batch when a slot is explicitly chosen, and through automatic IDs otherwise. Today a slots-mode drop with no click starts at 01.
+  3. If the batch runs past ZZ, refuse it before staging and name how many slots are left.
+  4. Tests: click 0A then import three files, which land in 0A, 0B and 0C; arm a sound in slot 05 then import, which uses automatic IDs; an occupied slot inside the range opens the replace review.
+- **Invariants:** Single-file drops on a slot row still target that row; Automatic IDs mode is unchanged.
+- **Reject/failure behavior:** A batch that runs past the last slot is refused, and nothing is staged.
+- **Verify:** GATE; Xvfb: click a slot, *Add sounds…*, and check the slot rows.
+- **Out of scope:** Selecting several slots at once.

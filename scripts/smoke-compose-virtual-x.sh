@@ -50,8 +50,8 @@ for utility in Xvfb xauth mcookie xdpyinfo xdotool import; do
         exit 1
     fi
 done
-if [[ $mode == recipe_apply ]] && ! command -v tesseract >/dev/null; then
-    echo "Missing test utility: tesseract" >&2
+if [[ $mode == timing ]] && ! command -v identify >/dev/null; then
+    echo "Missing test utility: identify" >&2
     exit 1
 fi
 
@@ -155,9 +155,32 @@ if [[ $mode == audio ]]; then
     click_at "$((window_width * 9 / 12))" 55
 fi
 if [[ $mode == timing ]]; then
-    # Timing focus is a Compose mode, reached through the workspace.open_timing shortcut.
+    # These cells precede all width-dependent toolbar content. Their centers in
+    # the default Linux layout are Snap (222, 122.5), Timing (276, 122.5).
+    # Sample the fill inside the left edge, away from either glyph. The fresh
+    # config has Snap on, providing the selected color without hard-coding a theme.
+    xdotool key --window "$window_id" F4
+    xdotool mousemove --window "$window_id" 0 0
+    sleep 0.3
+    import -window "$window_id" "$temp_dir/compose-focus.png"
+    selected_fill=$(identify -format '%[pixel:p{212,117}]' "$temp_dir/compose-focus.png")
+    timing_off_fill=$(identify -format '%[pixel:p{266,117}]' "$temp_dir/compose-focus.png")
+    if [[ $selected_fill == "$timing_off_fill" ]]; then
+        cp "$temp_dir/compose-focus.png" "$output"
+        echo "Cannot establish inactive Timing and selected Snap buttons (capture: $output)." >&2
+        exit 1
+    fi
+    # Timing focus is a Compose mode, reached through workspace.open_timing.
+    # Fail if F3 silently leaves the timer unselected (the retired-tab regression).
     xdotool key --window "$window_id" F3
     sleep 0.3
+    import -window "$window_id" "$temp_dir/timing-focus.png"
+    timing_on_fill=$(identify -format '%[pixel:p{266,117}]' "$temp_dir/timing-focus.png")
+    if [[ $timing_on_fill != "$selected_fill" ]]; then
+        cp "$temp_dir/timing-focus.png" "$output"
+        echo "Timing focus button is not active after F3 (capture: $output)." >&2
+        exit 1
+    fi
 fi
 if ! kill -0 "$app_pid" 2>/dev/null; then
     cat "$temp_dir/wormedit.log" >&2

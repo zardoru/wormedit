@@ -895,13 +895,16 @@ auto prepare_sound_slot_batch(const song_document_t& document, chart_id_t chart,
         set_first_error(prepared.reason, "Direct sound slots are available only for a BMS chart.");
     if (first_slot == 0 || first_slot > 1295)
         set_first_error(prepared.reason, "Choose a sound slot from 01 through ZZ.");
+    if (first_slot > 0 && first_slot <= 1295 && !paths.empty() &&
+        paths.size() > static_cast<std::size_t>(1296 - first_slot)) {
+        set_first_error(prepared.reason,
+            "Remaining WAV slots through ZZ: " + std::to_string(1296 - first_slot) +
+            ". Choose fewer files or an earlier starting slot.");
+        return prepared;
+    }
     if (paths.empty() || paths.size() > maximum_bulk_sound_import)
         set_first_error(prepared.reason,
                         "Choose between 1 and 1295 audio files for the WAV slots.");
-    if (first_slot > 0 && first_slot <= 1295 && !paths.empty() &&
-        (paths.size() > 1295 || paths.size() - 1 > static_cast<std::size_t>(1295 - first_slot)))
-        set_first_error(prepared.reason,
-                        "The selected files exceed the remaining WAV slots through ZZ.");
     const auto sorted = sorted_slot_paths(paths);
     auto seen = std::unordered_set<std::string>{};
     prepared.items.reserve(sorted.size());

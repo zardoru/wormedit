@@ -654,6 +654,7 @@ struct worm_ui_nuklear_compose_state_t {
         std::size_t keysound_slots_first_row{};
         std::size_t keysound_slots_row_limit{64};
         std::uint16_t keysound_selected_slot{1};
+        bool keysound_selected_slot_explicit{};
         std::uint64_t keysound_selected_slot_resource{};
         bool keysound_selected_slot_resource_known{};
         std::uint64_t keysound_slots_project{}, keysound_slots_chart{}, keysound_slots_revision{};

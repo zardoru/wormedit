@@ -71,7 +71,8 @@ auto collect_dropped_resources(const SDL_Event& event, SDL_Window* window,
         .tab = static_cast<WormUiWorkspaceTab>(workspace.active_tab),
         .window_id = SDL_GetWindowID(window),
         .slots_mode = workspace.active_tab == workspace_tab_t::compose && dock.slots_mode,
-        .first_slot = dock.selected_slot};
+        .first_slot = dock.selected_slot,
+        .slot_explicit = dock.selected_slot_explicit};
     auto result = handle_resource_drop(event, origin, transaction);
     if (result.completed) batches.push_back(std::move(*result.completed));
     return result.consumed;

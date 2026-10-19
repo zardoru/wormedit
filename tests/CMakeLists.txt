@@ -591,6 +591,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/nuklear_event_harness.cpp
         ui/nuklear_event_harness_tests.cpp
         ui/walkthrough_bms_event_harness_tests.cpp
+        ../src/sys/sound_import_staging.cpp
         ../src/sys/application_defaults.cpp
         ui/widget_lookup_event_harness_tests.cpp
         ../src/sys/resource_drop_router.cpp
@@ -648,6 +649,19 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp
         ui/walkthrough_osu-stepmania_event_harness_tests.cpp
+        ../src/sys/application_commands.cpp
+        ../src/sys/application_command_dispatch.cpp
+        ../src/sys/compose_actions.cpp
+        ../src/sys/compose_resource_actions.cpp
+        ../src/sys/compose_marker_actions.cpp
+        ../src/sys/compose_bookmark_actions.cpp
+        ../src/sys/compose_measure_actions.cpp
+        ../src/sys/compose_recipe_actions.cpp
+        ../src/sys/compose_transform_actions.cpp
+        ../src/sys/compose_bga_actions.cpp
+        ../src/sys/compose_measure_commands.cpp
+        ../src/sys/compose_selection_transform.cpp
+        ../src/sys/compose_label_search.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp

@@ -2,6 +2,10 @@
 #include "sys/application_defaults.h"
 #include "sys/compose_input.h"
 #include "sys/compose_sound_actions.h"
+#include "sys/sound_import_staging.h"
+#include "ui/nuklear/sound_import_runtime.h"
+#include <wormedit/core/chart_editor.h>
+#include <wormedit/formats/stepmania.h>
 #include "sys/output_group_export.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/interaction_dispatch.h>
@@ -11,6 +15,8 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 #include <array>
+#include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
@@ -70,6 +76,7 @@ auto serialized_document(song_document_t document) -> std::string {
 
 auto click_text(nuklear_event_harness_t& harness, std::string_view text, bool twice = false)
     -> std::vector<workspace_action_snapshot_t> {
+    INFO("Finding " << text << "\n" << harness.drawn_text());
     const auto point = harness.drawn_text_center(text);
     require_step(point);
     return test::click_at(harness, point->first, point->second, twice);
@@ -87,7 +94,8 @@ struct walkthrough_t {
     notification_sink_t notifications{notification_sink_t::muted()};
     nuklear_event_harness_t harness{1600, 1000};
 
-    walkthrough_t() {
+    explicit walkthrough_t(song_document_t document = new_bme())
+        : history(document_history_t::from(std::move(document))) {
         require_step(harness.ready());
         require_step(workspace.value);
         workspace.value->active_tab = workspace_tab_t::compose;
@@ -95,15 +103,20 @@ struct walkthrough_t {
         (void)harness.frame();
     }
     void project() {
-        flattened = {};
-        flattened.view.compose.visible = true;
+        require_step(rebind_workspace(*workspace.value, history.document).value);
+        const auto source = workspace_view_t::from(*workspace.value, history.document);
+        require_step(source.value);
+        WormUiKeysoundDockRequest dock{};
+        worm_ui_frontend_keysound_dock_request(&dock);
+        flattened = frontend_workspace_view_t::from(*source.value, history.document, "Ready",
+            {}, false, {}, nullptr, dock_sort_t::natural_name, dock);
         populate_compose_view(flattened, history, *workspace.value, cache, 1600, 1000,
                               interaction, application, nullptr);
         require_step(interaction);
         require_step(flattened.view.compose.scene_available);
         auto& view = harness.view();
         view.project_id = history.document.id.value;
-        view.selected_chart_id = history.document.charts.front().id.value;
+        view.selected_chart_id = workspace.value->selected_chart->value;
         view.document_revision = history.document.revision;
         view.compose = flattened.view.compose;
         view.compose.visible = true;
@@ -344,5 +357,231 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     check_false_step(direct.front().get().compose_export_overwrite);
     const auto dialog = click_text(harness, "Export…");
     check_step(std::string_view{dialog.front().get().menu_command_id} == "document.export_output_group");
+}
+
+namespace {
+auto slot_import_paths() -> std::array<std::string, 3> {
+    const auto audio = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / "tests/fixtures/audio";
+    return {(audio / "keysound-c4.ogg").string(), (audio / "keysound-e4.ogg").string(),
+            (audio / "keysound-g4.ogg").string()};
+}
+
+void refresh_sound_dock(walkthrough_t& flow) {
+    // A changed mode/filter first publishes its virtual-list window, then projects it.
+    for (int frame = 0; frame < 2; ++frame) {
+        flow.project();
+        (void)flow.harness.frame();
+    }
+}
+
+void show_slot_dock(walkthrough_t& flow) {
+    auto& ui = worm_ui_nuklear_compose_state();
+    ui.dock_layout.sounds_panel_visible = true;
+    ui.dock_layout.sounds_preview_on_click = false;
+    refresh_sound_dock(flow);
+    (void)click_text(flow.harness, "BMS slots");
+    refresh_sound_dock(flow);
+}
+
+void select_import_slot(walkthrough_t& flow, const char* label) {
+    INFO(flow.harness.drawn_text());
+    (void)click_text(flow.harness, label);
+    refresh_sound_dock(flow);
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    require_step(dock.selected_slot_explicit);
+}
+
+void apply_sound_action(walkthrough_t& flow, const WormUiWorkspaceAction& action) {
+    const auto before = flow.history.document.revision;
+    const auto result = dispatch_compose_sound_action(action, flow.history, *flow.workspace.value,
+        *flow.workspace.value->selected_chart, flow.application);
+    require_step(result);
+    INFO(*result);
+    require_step(flow.history.document.revision != before);
+}
+
+void confirm_sound_review(walkthrough_t& flow, bool slots) {
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    const auto kind = slots ? WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH
+                            : WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
+    const auto frames = click_text(flow.harness, slots ? "Assign files" : "Confirm import");
+    const auto found = std::ranges::find_if(frames, [kind](const auto& frame) {
+        return frame.get().compose_action == kind;
+    });
+    require_step(found != frames.end());
+    apply_sound_action(flow, found->get());
+    if (slots) worm_ui_frontend_sound_slot_batch_result(true, "Imported");
+    else worm_ui_frontend_sound_import_result(true, "Imported");
+    refresh_sound_dock(flow);
+}
+
+auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id_t {
+    const auto path = slot_import_paths().front();
+    const std::array paths{path.c_str()};
+    const WormUiWorkspaceAction action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+        .compose_input_chart_id = flow.workspace.value->selected_chart->value,
+        .compose_input_document_revision = flow.history.document.revision,
+        .compose_import_paths = paths.data(), .compose_import_path_count = paths.size(),
+        .compose_sound_slot = slot};
+    apply_sound_action(flow, action);
+    const auto rows = sound_slots_view_t::from(flow.history.document,
+        {.first_row = static_cast<std::size_t>(slot - 1), .row_limit = 1});
+    require_step(rows.rows.size() == 1);
+    return rows.rows.front().resource;
+}
+
+auto sound_drop_origin(walkthrough_t& flow) -> sound_drop_origin_t {
+    WormUiKeysoundDockRequest dock{};
+    worm_ui_frontend_keysound_dock_request(&dock);
+    return {.project_id = flow.history.document.id.value,
+        .chart_id = flow.workspace.value->selected_chart->value,
+        .revision = flow.history.document.revision, .tab = WORM_UI_WORKSPACE_TAB_COMPOSE,
+        .slots_mode = dock.slots_mode, .first_slot = dock.selected_slot,
+        .slot_explicit = dock.selected_slot_explicit, .target = resource_drop_target_t::sounds};
+}
+}
+
+TEST_CASE("BMS walkthrough imports three picked files starting at an explicitly clicked 0A",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    // The production BMS session factory starts a fresh chart; layout family is T-707.
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    show_slot_dock(flow);
+    check_false_step(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit);
+    select_import_slot(flow, "0A  (empty)");
+    const auto picked = flow.harness.click_widget("Choose files for consecutive BMS WAV slots");
+    require_step(std::ranges::any_of(picked, [](const auto& frame) {
+        return frame.get().sound_import_pick_requested;
+    }));
+    const auto paths = slot_import_paths();
+    const auto staged = stage_sound_import(flow.history.document, *flow.workspace.value, paths);
+    require_step(staged.accepted);
+    check_step(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.first_slot == 10);
+    confirm_sound_review(flow, true);
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 3});
+    require_step(slots.rows.size() == 3);
+    for (std::size_t index = 0; index < paths.size(); ++index) {
+        check_step(static_cast<bool>(slots.rows[index].resource));
+        check_step(slots.rows[index].source_path == paths[index]);
+    }
+    check_step(slots.rows.front().identifier == "0A");
+    check_step(slots.rows.back().identifier == "0C");
+}
+
+TEST_CASE("BMS walkthrough arming slot 05 does not redirect automatic picked or dropped imports",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    const auto dropped = GENERATE(false, true);
+    const auto file_count = GENERATE(std::size_t{1}, std::size_t{2});
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    const auto armed = assign_initial_slot(flow, 5);
+    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = true;
+    refresh_sound_dock(flow);
+    const auto clicks = click_text(flow.harness, "05", true);
+    for (const auto& snapshot : clicks) (void)flow.dispatch(snapshot);
+    require_step(worm_ui_nuklear_compose_state().resource_picker.armed_resource_id == armed.value);
+    show_slot_dock(flow);
+    // Exercise the production armed-sound reveal sync without clicking its slot.
+    worm_ui_nuklear_compose_state().keysound_catalog.keysound_reveal_primary = true;
+    refresh_sound_dock(flow);
+    refresh_sound_dock(flow);
+    require_step(sound_drop_origin(flow).first_slot == 5);
+    require_step(!worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit);
+    const auto all_paths = slot_import_paths();
+    const auto paths = std::span{all_paths}.subspan(1, file_count);
+    const sound_drop_batch_t batch{.origin = sound_drop_origin(flow), .paths = {paths.begin(), paths.end()}};
+    const auto staged = dropped ? stage_dropped_sound_import(flow.history.document, batch)
+        : stage_sound_import(flow.history.document, *flow.workspace.value, paths);
+    require_step(staged.accepted);
+    check_false_step(worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open);
+    confirm_sound_review(flow, false);
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.row_limit = 5});
+    for (std::size_t index = 0; index < file_count; ++index)
+        check_step(static_cast<bool>(slots.rows[index].resource));
+    check_step(slots.rows[4].resource == armed);
+}
+
+TEST_CASE("BMS walkthrough explicitly selected drop ranges retain occupied-slot replacement review",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    const auto occupied = assign_initial_slot(flow, 11);
+    show_slot_dock(flow);
+    select_import_slot(flow, "0A  (empty)");
+    const auto paths = slot_import_paths();
+    const sound_drop_batch_t batch{.origin = sound_drop_origin(flow), .paths = {paths.begin(), paths.end()}};
+    require_step(stage_dropped_sound_import(flow.history.document, batch).accepted);
+    auto& review = worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch;
+    require_step(review.items.size() == 3);
+    check_step(review.items[1].occupied_resource_id == occupied.value);
+    check_false_step(review.items[1].replace);
+    (void)flow.harness.frame();
+    (void)flow.harness.frame();
+    const auto refused = click_text(flow.harness, "Assign files");
+    check_step(std::ranges::none_of(refused, [](const auto& frame) {
+        return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
+    }));
+    (void)click_text(flow.harness, "Replace");
+    confirm_sound_review(flow, true);
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 10, .row_limit = 1});
+    check_step(slots.rows.front().resource == occupied);
+    check_step(slots.rows.front().source_path == paths[1]);
+}
+
+TEST_CASE("BMS walkthrough refuses a selected range beyond ZZ before staging and names remaining slots",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    show_slot_dock(flow);
+    auto& ui = worm_ui_nuklear_compose_state();
+    // Filter the virtual catalog to expose its final two rows, then click the real row.
+    std::snprintf(ui.keysound_catalog.keysound_slots_search.data(),
+                  ui.keysound_catalog.keysound_slots_search.size(), "%s", "ZY");
+    refresh_sound_dock(flow);
+    select_import_slot(flow, "ZY  (empty)");
+    const auto revision = flow.history.document.revision;
+    const auto staged = stage_sound_import(flow.history.document, *flow.workspace.value, slot_import_paths());
+    check_false_step(staged.accepted);
+    check_step(staged.message.find("Remaining WAV slots through ZZ: 2.") != std::string::npos);
+    check_false_step(ui.keysound_slots.keysound_slot_batch.open);
+    check_step(worm_ui_nuklear_pending_sound_import().phase == worm_ui_sound_import_phase_t::closed);
+    check_step(flow.history.document.revision == revision);
+}
+
+TEST_CASE("BMS walkthrough clears explicit slot imports on mode chart and project changes",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    show_slot_dock(flow);
+    select_import_slot(flow, "0A  (empty)");
+    (void)click_text(flow.harness, "Automatic IDs");
+    refresh_sound_dock(flow);
+    check_false_step(sound_drop_origin(flow).slot_explicit);
+    (void)click_text(flow.harness, "BMS slots");
+    refresh_sound_dock(flow);
+    select_import_slot(flow, "0A  (empty)");
+    const auto duplicate = apply_duplicate_chart_command(flow.history, *flow.workspace.value->selected_chart);
+    require_step(duplicate.command.applied);
+    worm_ui_nuklear_compose_state().dock_layout.sounds_panel_visible = false;
+    flow.workspace.value->selected_chart = duplicate.payload.chart;
+    refresh_sound_dock(flow);
+    check_false_step(sound_drop_origin(flow).slot_explicit);
+    show_slot_dock(flow);
+    select_import_slot(flow, "0A  (empty)");
+    worm_ui_frontend_begin_project_session();
+    check_false_step(worm_ui_nuklear_compose_state().keysound_catalog.keysound_selected_slot_explicit);
+}
+
+TEST_CASE("BMS walkthrough single-file slot drops retain their exact row target",
+          "[frontend-state][event-harness][walkthrough-bms][selected-slot-import]") {
+    walkthrough_t flow{make_initial_document(song_id_t{1})};
+    show_slot_dock(flow);
+    select_import_slot(flow, "0A  (empty)");
+    const sound_drop_batch_t batch{.origin = sound_drop_origin(flow),
+        .paths = {slot_import_paths().front()}};
+    require_step(stage_dropped_sound_import(flow.history.document, batch).accepted);
+    const auto assigned = flow.harness.frame();
+    require_step(assigned.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT);
+    check_step(assigned.get().compose_sound_slot == 10);
+    apply_sound_action(flow, assigned.get());
+    const auto slots = sound_slots_view_t::from(flow.history.document, {.first_row = 9, .row_limit = 1});
+    check_step(static_cast<bool>(slots.rows.front().resource));
 }
 

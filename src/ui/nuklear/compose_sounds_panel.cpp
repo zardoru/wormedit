@@ -11,20 +11,19 @@
 #include "ui/nuklear/lucide_icons.h"
 #include "ui/nuklear/popup_lifecycle.h"
 #include "ui/nuklear/sound_import_state.h"
+#include "ui/nuklear/sound_import_runtime.h"
 #include "ui/nuklear/theme.h"
 #include "ui/nuklear/tooltip.h"
 #include "ui/nuklear/vector_icons.h"
 
 #include "wormedit/nuklear_config.h"
 
-#include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_keyboard.h>
 
 #include <algorithm>
 #include <bit>
 #include <cstdio>
 #include <cstring>
-#include <mutex>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -51,77 +50,6 @@ struct SoundsPanel {
 
 void prepare_pending_group_review(const SoundsPanel& panel);
 void render_sound_group_context_menu(const SoundsPanel& panel);
-
-// ---- Multi-file picker. SDL may call back from another thread. ----
-
-struct picker_target_t {
-    bool slots_mode{};
-    std::uint64_t project{}, chart{}, revision{}, occupied_resource{};
-    std::uint16_t slot{};
-};
-
-struct PickerState {
-    std::mutex mutex;
-    bool open{};
-    bool callback_ready{};
-    picker_target_t target;
-    std::vector<std::string> paths;
-};
-
-auto picker() -> PickerState& {
-    static PickerState state;
-    return state;
-}
-
-void SDLCALL picker_callback(void* /*userdata*/, const char* const* filelist, int /*filter*/) {
-    auto& state = picker();
-    std::lock_guard lock{state.mutex};
-    state.open = false;
-    state.callback_ready = true;
-    for (std::size_t index = 0; filelist && filelist[index]; ++index)
-        state.paths.emplace_back(filelist[index]);
-}
-
-auto picker_open() -> bool {
-    auto& state = picker();
-    std::lock_guard lock{state.mutex};
-    return state.open;
-}
-
-void show_picker(const SoundsPanel& panel) {
-    {
-        auto& state = picker();
-        std::lock_guard lock{state.mutex};
-        if (state.open) return;
-        state.open = true;
-        state.callback_ready = false;
-        state.paths.clear();
-        state.target = {};
-        state.target.project = panel.view->project_id;
-        state.target.chart = panel.view->chart_id;
-        state.target.revision = panel.view->document_revision;
-        if (panel.state->keysound_filters.keysound_slots_mode) {
-            state.target.slots_mode = true;
-            state.target.slot = panel.state->keysound_catalog.keysound_selected_slot;
-            state.target.occupied_resource = panel.state->keysound_catalog.keysound_selected_slot_resource;
-        }
-    }
-    static const SDL_DialogFileFilter filters[]{{"Audio files", "wav;ogg;mp3;flac"}};
-    SDL_ShowOpenFileDialog(picker_callback, nullptr, SDL_GetKeyboardFocus(), filters, 1, nullptr,
-                           true);
-}
-
-auto take_picker_result(std::vector<std::string>& destination, picker_target_t& target) -> bool {
-    auto& state = picker();
-    std::lock_guard lock{state.mutex};
-    if (!state.callback_ready) return false;
-    destination = std::move(state.paths);
-    state.paths.clear();
-    target = state.target;
-    state.target = {};
-    state.callback_ready = false;
-    return true;
-}
 
 auto bms_slot_label(std::uint16_t number) -> std::string {
     constexpr std::string_view digits = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -169,19 +97,6 @@ void raise_sound_slot_assignment(const SoundsPanel& panel, std::uint16_t slot,
     panel.action->compose_import_path_count = panel.state->keysound_catalog.keysound_staged_path_pointers.size();
 }
 
-void raise_sound_slot_batch_stage(const SoundsPanel& panel, std::uint16_t slot) {
-    auto& state = *panel.state;
-    if (state.keysound_catalog.keysound_staged_paths.empty() ||
-        !raise(panel, WORM_UI_COMPOSE_ACTION_STAGE_SOUND_SLOT_BATCH)) return;
-    state.keysound_catalog.keysound_staged_path_pointers.clear();
-    for (const auto& path : state.keysound_catalog.keysound_staged_paths)
-        state.keysound_catalog.keysound_staged_path_pointers.push_back(path.c_str());
-    panel.action->compose_sound_slot = slot;
-    panel.action->sound_import_project_id = panel.view->project_id;
-    panel.action->compose_import_paths = state.keysound_catalog.keysound_staged_path_pointers.data();
-    panel.action->compose_import_path_count = state.keysound_catalog.keysound_staged_path_pointers.size();
-}
-
 void process_slot_file(const SoundsPanel& panel, std::uint64_t project, std::uint64_t chart,
                        std::uint64_t revision, std::uint16_t slot,
                        std::uint64_t occupied_resource, std::string_view path) {
@@ -215,60 +130,6 @@ void process_pending_slot_file(const SoundsPanel& panel) {
                       state.keysound_slots.keysound_pending_occupied_resource, state.keysound_slots.keysound_pending_path);
     state.keysound_slots.keysound_pending_file = false;
     state.keysound_slots.keysound_pending_path.clear();
-}
-
-void consume_slot_picker_result(const SoundsPanel& panel, const picker_target_t& target) {
-    auto& state = *panel.state;
-    if (state.keysound_catalog.keysound_staged_paths.empty()) return;
-    if (!wormedit::ui::chrome::popup_context_matches(
-            {target.project, target.chart, target.revision}, wormedit::ui::chrome::PopupContextStamp::from(*panel.view)) ||
-        !state.keysound_filters.keysound_slots_mode || target.slot == 0 || target.slot > 1295) {
-        state.keysound_slots.keysound_slot_feedback = "The WAV slot target changed; choose the files again.";
-        state.keysound_catalog.keysound_staged_paths.clear();
-        return;
-    }
-    if (state.keysound_catalog.keysound_staged_paths.size() > 1) {
-        raise_sound_slot_batch_stage(panel, target.slot);
-        return;
-    }
-    const auto path = state.keysound_catalog.keysound_staged_paths.front();
-    state.keysound_catalog.keysound_staged_paths.clear();
-    (void)worm_ui_frontend_stage_sound_slot_file_at(target.project, target.chart, target.revision,
-        target.slot, target.occupied_resource, path.c_str());
-    process_pending_slot_file(panel);
-}
-
-void import_picked_files(const SoundsPanel& panel) {
-    auto& state = *panel.state;
-    if (panel.action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
-    picker_target_t target{};
-    if (!take_picker_result(state.keysound_catalog.keysound_staged_paths, target)) {
-        process_pending_slot_file(panel);
-        return;
-    }
-    if (wormedit::ui::nuklear::slot_review_active(state)) {
-        state.keysound_slots.keysound_slot_feedback = "Finish the current WAV slot review before choosing another file.";
-        state.keysound_catalog.keysound_staged_paths.clear();
-        return;
-    }
-    if (target.slots_mode) {
-        consume_slot_picker_result(panel, target);
-        return;
-    }
-    if (!wormedit::ui::chrome::popup_context_matches(
-            {target.project, target.chart, target.revision}, wormedit::ui::chrome::PopupContextStamp::from(*panel.view)) ||
-        state.keysound_filters.keysound_slots_mode) {
-        state.keysound_slots.keysound_slot_feedback = "The project, chart, revision, or mode changed while the picker was open.";
-        state.keysound_catalog.keysound_staged_paths.clear();
-        return;
-    }
-    if (state.keysound_catalog.keysound_staged_paths.empty()) return;
-    state.keysound_catalog.keysound_staged_path_pointers.clear();
-    for (const auto& path : state.keysound_catalog.keysound_staged_paths)
-        state.keysound_catalog.keysound_staged_path_pointers.push_back(path.c_str());
-    (void)raise(panel, WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES);
-    panel.action->compose_import_paths = state.keysound_catalog.keysound_staged_path_pointers.data();
-    panel.action->compose_import_path_count = state.keysound_catalog.keysound_staged_path_pointers.size();
 }
 
 // ---- Selection state kept in step with the document ----
@@ -392,6 +253,7 @@ void reset_sound_slots(worm_ui_nuklear_compose_state_t& state, std::uint64_t pro
     state.keysound_catalog.keysound_slots_first_row = 0;
     state.keysound_catalog.keysound_slots_row_limit = 64;
     state.keysound_catalog.keysound_selected_slot = 1;
+    state.keysound_catalog.keysound_selected_slot_explicit = false;
     state.keysound_catalog.keysound_selected_slot_resource = 0;
     state.keysound_catalog.keysound_selected_slot_resource_known = false;
     state.keysound_slots.keysound_pending_file = false;
@@ -494,6 +356,8 @@ void sync_selected_slot_to_armed_resource(const SoundsPanel& panel) {
     const auto* row = find_row(*panel.view, state.keysound_catalog.keysound_selection.primary);
     const auto number = row && row->slot ? parse_slot_number(row->slot) : 0;
     if (number != 0) {
+        if (number != state.keysound_catalog.keysound_selected_slot)
+            state.keysound_catalog.keysound_selected_slot_explicit = false;
         state.keysound_catalog.keysound_selected_slot = number;
         state.keysound_catalog.keysound_selected_slot_resource = row->resource_id;
         state.keysound_catalog.keysound_selected_slot_resource_known = true;
@@ -521,6 +385,7 @@ void render_mode_row(const SoundsPanel& panel) {
     nk_layout_row_dynamic(context, 24, 2);
     if (sound_mode_button(context, "Automatic IDs", !state.keysound_filters.keysound_slots_mode)) {
         state.keysound_filters.keysound_slots_mode = false;
+        state.keysound_catalog.keysound_selected_slot_explicit = false;
         if (state.keysound_slots.keysound_slot_confirmation_open) {
             const auto bounds = nk_rect(0, 60,
                 std::min(360.0f, nk_window_get_content_region(context).w), 180);
@@ -537,21 +402,23 @@ void render_mode_row(const SoundsPanel& panel) {
         state.keysound_catalog.keysound_slots_first_row = 0;
         state.keysound_catalog.keysound_slots_search.fill(0);
         state.keysound_catalog.keysound_selected_slot = 1;
+        state.keysound_catalog.keysound_selected_slot_explicit = false;
         state.keysound_catalog.keysound_selected_slot_resource = 0;
     }
 }
 
 void render_add_sounds_button(const SoundsPanel& panel) {
     auto& state = *panel.state;
-    const auto label = state.keysound_filters.keysound_slots_mode
+    const auto label = state.keysound_filters.keysound_slots_mode && state.keysound_catalog.keysound_selected_slot_explicit
         ? "Choose files for consecutive BMS WAV slots"
         : "Add sounds from files (you can also drop audio files on this list)";
-    if (!toolbar_button(panel.context, !picker_open(), DrawnIconButton{icons::plus, label})) return;
-    if (state.keysound_filters.keysound_slots_mode && !state.keysound_catalog.keysound_selected_slot_resource_known) {
+    if (!toolbar_button(panel.context, !worm_ui_nuklear_sound_import_active(), DrawnIconButton{icons::plus, label})) return;
+    if (state.keysound_filters.keysound_slots_mode && state.keysound_catalog.keysound_selected_slot_explicit &&
+        !state.keysound_catalog.keysound_selected_slot_resource_known) {
         state.keysound_slots.keysound_slot_feedback = "Wait for the selected WAV slot to load, or select a slot.";
         return;
     }
-    show_picker(panel);
+    panel.action->sound_import_pick_requested = true;
 }
 
 void render_section_add_buttons(const SoundsPanel& panel) {
@@ -832,6 +699,7 @@ void render_sound_slot_row(const SoundsPanel& panel, std::size_t index) {
     }
     if (!clicked) return;
     state.keysound_catalog.keysound_selected_slot = slot.number;
+    state.keysound_catalog.keysound_selected_slot_explicit = true;
     state.keysound_catalog.keysound_selected_slot_resource = slot.resource_id;
     state.keysound_catalog.keysound_selected_slot_resource_known = true;
     state.keysound_slots.keysound_slot_feedback.clear();
@@ -1727,7 +1595,7 @@ void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
     collect_shown_and_masks(panel);
     refresh_selected_slot_resource(panel);
     sync_selected_slot_to_armed_resource(panel);
-    import_picked_files(panel);
+    process_pending_slot_file(panel);
     render_sound_panel_controls(panel);
     render_section_add_buttons(panel);
     if (state->dock_layout.sounds_layers_open) render_layer_section(panel);

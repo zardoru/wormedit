@@ -510,7 +510,8 @@ auto prepared_sound_slot_batch_rejects_all_invalid_inputs() -> bool {
                                                     1295, valid);
     return !bad_files.reason.empty() && bad_files.items.size() == duplicate.size() &&
         bad_files.items[0].path == bad_files.items[1].path &&
-        !overflow.reason.empty() && overflow.items.size() == valid.size();
+        overflow.reason.find("Remaining WAV slots through ZZ: 1.") != std::string::npos &&
+        overflow.items.empty();
 }
 } // namespace
 
@@ -2297,6 +2298,52 @@ TEST_CASE("Toolbar stop is transient while genuine audio failure remains durable
 #endif
 
 #ifdef WORMEDIT_TEST_APPLICATION_COMMAND_DISPATCH_ONLY
+TEST_CASE("Unavailable command feedback uses display names and a generic missing-command message",
+          "[sys][application_commands][command-feedback]") {
+    const auto registry = wormedit::command_registry_t::from({});
+    application_command_state_t state;
+    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{"history.undo"}, state) ==
+          "Command is currently unavailable: Undo");
+    CHECK(unavailable_application_command_message(registry, std::nullopt, state) ==
+          "Command is currently unavailable.");
+    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{"missing.command"}, state) ==
+          "Command is currently unavailable.");
+}
+
+TEST_CASE("Timing focus refusal feedback names F4 only for commands disabled by that focus",
+          "[sys][application_commands][command-feedback]") {
+    const auto id = GENERATE("edit.tool_draw", "edit.tool_layer", "edit.toggle_quantize_preview",
+                            "edit.apply_quantize", "view.open_layers", "semantic_layer.create",
+                            "view.toggle_sounds");
+    const auto registry = wormedit::command_registry_t::from({});
+    application_command_state_t state;
+    state.project.compose_view.compose_timing_focus = true;
+    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{id}, state) ==
+          "Timing focus is on: press F4 to edit notes.");
+    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{"history.undo"}, state) ==
+          "Command is currently unavailable: Undo");
+    state.project.compose_view.compose_timing_focus = false;
+    const auto* command = wormedit::find_command(registry, {id});
+    REQUIRE(command);
+    CHECK(unavailable_application_command_message(registry, wormedit::command_id_t{id}, state) ==
+          "Command is currently unavailable: " + command->definition.display_name);
+}
+
+TEST_CASE("Timing focus refusals explain the same F4 remedy at the direct command boundary",
+          "[sys][application_commands][command-feedback]") {
+    const auto kind = GENERATE(application_command_kind_t::edit_tool_draw,
+        application_command_kind_t::edit_tool_layer,
+        application_command_kind_t::edit_toggle_quantize_preview,
+        application_command_kind_t::edit_apply_quantize,
+        application_command_kind_t::view_open_layers,
+        application_command_kind_t::semantic_layer_create,
+        application_command_kind_t::view_toggle_sounds);
+    TimingInsertFixture fixture;
+    fixture.application_state.project.compose_view.compose_timing_focus = true;
+    CHECK_FALSE(fixture.invoke(kind).value);
+    CHECK(fixture.latest_message() == "Timing focus is on: press F4 to edit notes.");
+}
+
 TEST_CASE("Draw and Layer shortcuts select tools without changing the armed note kind or history",
           "[sys][application_commands][draw]") {
     TimingInsertFixture fixture;

@@ -11,8 +11,8 @@ author cannot complete. Owner (2026-10-18): "We should really deal with those wo
 Every card proves its fix from a **new project**, through the production path, extending the
 walkthrough tests in `tests/ui/walkthrough_{bms,osu-stepmania}_event_harness_tests.cpp`; the
 coordinator confirms user-visible results in isolated Xvfb. Lanes: T-707 and T-715 (project and
-save); T-708, T-709, T-712, T-713, T-714 (export, in that order); T-710 and T-711 (commands and
-feedback). T-716 updates the manual after the others land.
+save); T-708, T-709, T-712, T-713, T-714 (export, in that order); T-710, T-711 and T-717 (commands, feedback and the
+Sounds dock). T-716 updates the manual after the others land.
 
 ## T-707 Create BMS-family projects as BMS charts
 
@@ -150,3 +150,19 @@ feedback). T-716 updates the manual after the others land.
 - **Reject/failure behavior:** Not applicable.
 - **Verify:** `documentation.manual_*`; `scripts/manual-captures.sh --check-stale`; Asciidoctor `--failure-level WARN`.
 - **Out of scope:** New chapters.
+
+## T-717 Start sound imports at the selected BMS slot
+
+- **Status:** ready
+- **Outcome:** If the user has single-clicked a BMS slot in the Sounds dock's *BMS slots* view (the highlighted slot), any multi-file import (*Add sounds…*, a file-dialog import or a drop) fills consecutive slots starting at that slot. Occupied slots go through the existing replace review. With no slot clicked, imports use automatic IDs, as *Add sounds…* does today. Owner, 2026-10-18: "if the BMS slot is specifically selected … mass-imports should also probably start at that index".
+- **Read first:** `src/ui/nuklear/compose_sounds_panel.cpp` (`keysound_selected_slot`: set by a click at the slot row, reset to 1 on mode or chart change, synced to the armed sound by `sync_selected_slot_to_armed_resource`), `src/sys/application.cpp` (`stage_sound_import`, `stage_dropped_sound_slots`, `dispatch_reviewed_sound_import`), `src/sys/application_frame_services.cpp` (`collect_dropped_resources`, `first_slot`), `src/sys/compose_sound_actions.cpp` (`prepare_sound_slot_batch`).
+- **Files owned:** the files above, `src/ui/nuklear/compose_state.h` (the selection fact), `src/ui/nuklear/frontend.cpp` (the dock request), tests, this card.
+- **Steps:**
+  1. Record whether the slot was chosen explicitly. A click selects it. The default slot 1 and the armed-sound sync do not, so arming a sound never redirects imports. Mode, chart or project changes clear the choice.
+  2. Route *Add sounds…*, file-dialog imports and drops through the slot batch when a slot is explicitly chosen, and through automatic IDs otherwise. Today a slots-mode drop with no click starts at 01.
+  3. If the batch runs past ZZ, refuse it before staging and name how many slots are left.
+  4. Tests: click 0A then import three files, which land in 0A, 0B and 0C; arm a sound in slot 05 then import, which uses automatic IDs; an occupied slot inside the range opens the replace review.
+- **Invariants:** Single-file drops on a slot row still target that row; Automatic IDs mode is unchanged.
+- **Reject/failure behavior:** A batch that runs past the last slot is refused, and nothing is staged.
+- **Verify:** GATE; Xvfb: click a slot, *Add sounds…*, and check the slot rows.
+- **Out of scope:** Selecting several slots at once.

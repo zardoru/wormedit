@@ -645,6 +645,9 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/playback_status_event_harness_tests.cpp
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp
+        ui/walkthrough_osu-stepmania_event_harness_tests.cpp
+        ../src/sys/application_defaults.cpp
+        ../src/sys/project_view.cpp
         ui/inspector_resource_workflow_tests.cpp
         ../src/sys/bookmark_chooser_view.cpp
         ../src/sys/bookmark_navigation.cpp

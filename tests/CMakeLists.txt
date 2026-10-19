@@ -37,6 +37,7 @@ add_executable(wormedit_core_tests
     ../src/sys/compose_audition_requests.cpp
     ../src/sys/application_commands.cpp
     ../src/sys/project_view.cpp
+    ../src/sys/output_group_export.cpp
     ../src/sys/tap_timing_runtime.cpp
     ../src/sys/transport_player_actions.cpp
     ../src/sys/compose_minimap_navigation.cpp

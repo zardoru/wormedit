@@ -488,13 +488,21 @@ TEST_CASE("output preview and publication share format request policy",
     for (const auto* profile : {"bme", "bml", "pms"}) {
         group.relative_output_path = std::string{"chart."} + profile;
         plan = output_group_export_plan_t::from(document, group);
-        check_resource_notification(plan.request.target_profile == profile);
+        check_resource_notification(plan.request.target_profile.empty());
+        check_resource_notification(plan.request.bms_output_extension == std::string{"."} + profile);
         document.charts.push_back({.id = chart_id_t{42},
                                    .source_family = format_family_t::bmson});
         plan = output_group_export_plan_t::from(document, group);
         check_resource_notification(plan.request.target_profile.empty());
         document.charts.clear();
     }
+    document.charts.push_back({.id = chart_id_t{42}, .source_family = format_family_t::bmson});
+    group.relative_output_path = "foreign-extension/chart.osu";
+    const auto refused = run_output_group_export({.document = document,
+        .plan = output_group_export_plan_t::from(document, group),
+        .asset_base = std::filesystem::temp_directory_path()}, {});
+    check_resource_notification(!refused.published);
+    check_resource_notification(refused.message == "Output extension does not match the BMS format family");
 }
 
 TEST_CASE("Rejected music export creates no destination", "[unit][sys][resource-notification]") {

@@ -88,6 +88,13 @@ struct staged_asset_discovery_t {
     -> staged_asset_discovery_t;
 
 
+// Plans copies for the same declared assets as discovery, excluding verified
+// destination mappings. Publication performs the copies only in private staging.
+[[nodiscard]] auto plan_pending_export_assets(const song_document_t& song,
+    const output_group_t& group, const std::filesystem::path& project_directory,
+    std::span<const conversion_request_t::staged_asset_t> mappings)
+    -> result_t<std::vector<project_asset_copy_request_t>, std::string>;
+
 enum class conversion_publication_stage_t {
     copy_existing,
     write_output,

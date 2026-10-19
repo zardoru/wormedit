@@ -1,4 +1,5 @@
 #include "sys/compose_audition_requests.h"
+#include "sys/application_defaults.h"
 #include "../support/workspace_result_assertions.h"
 #include "../support/stale_action_assertions.h"
 #include "../sys/application_dispatch_fixture.h"
@@ -3210,3 +3211,55 @@ TEST_CASE("Native chart action bindings borrow labels and keep one-step marker h
 }
 
 #endif
+
+
+namespace {
+void check_export_policy(bool value) { REQUIRE(value); }
+}
+
+TEST_CASE("New project StepMania policy reaches preview conversion and publication",
+          "[unit][sys][output-groups][workflow-blockers]") {
+    using namespace wormedit;
+    const bool legacy = GENERATE(false, true);
+    auto document = make_initial_document(song_id_t{1}, "osu-mania-4k");
+    check_export_policy(document.has_value());
+    auto& chart = document->charts.front();
+    const auto measure = chart.measures.front().id;
+    chart.warps.push_back({.id = object_id_t{900},
+        .span = {.begin = {measure, 240}, .end = {measure, 480}}});
+    application_command_state_t application;
+    stepmania_export_policy_t policy;
+    WormUiWorkspaceAction action{.kind = WORM_UI_WORKSPACE_ACTION_SET_STEPMANIA_EXPORT_POLICY};
+    action.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
+    action.stepmania_timing_syntax = legacy ? WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP
+                                          : WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
+    action.stepmania_implementation = legacy ? WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY
+                                            : WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
+    check_export_policy(dispatch_transport_player_action(action, application, policy).has_value());
+    auto group = document->output_groups.back();
+    group.relative_output_path = "exports/song.ssc";
+    const auto plan = output_group_export_plan_t::from(*document, group, false, policy);
+    check_export_policy(plan.request.stepmania->timing_syntax == policy.timing_syntax);
+    check_export_policy(plan.request.stepmania->implementation_profile == policy.implementation_profile);
+    const auto converted = convert_document(*document, plan.request);
+    check_export_policy(static_cast<bool>(converted));
+    const auto& bytes = converted.outputs.front().bytes;
+    check_export_policy((bytes.find("#WARPS:") != std::string::npos) == !legacy);
+    const auto root = std::filesystem::temp_directory_path() / "wormedit-stepmania-policy";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    const auto exported = run_output_group_export(
+        {.document = *document, .plan = plan, .asset_base = root}, {});
+    INFO(exported.message);
+    check_export_policy(exported.published);
+    std::ifstream input{root / group.relative_output_path, std::ios::binary};
+    const std::string written{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
+    check_export_policy(written == bytes);
+    group.relative_output_path = "rejected/song.sm";
+    policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
+    const auto refused = run_output_group_export({.document = *document,
+        .plan = output_group_export_plan_t::from(*document, group, false, policy), .asset_base = root}, {});
+    check_export_policy(!refused.published);
+    check_export_policy(!std::filesystem::exists(root / "rejected"));
+    std::filesystem::remove_all(root);
+}

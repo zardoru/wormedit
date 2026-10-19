@@ -217,7 +217,7 @@ auto append_discovered_asset(const song_document_t& song, const output_group_t& 
         .source_path = source, .relative_output_path = group.relative_output_path, .asset = asset}, stop);
     if (!inspected && inspected.error().code == failure_code_t::not_found) return {};
     if (!inspected)
-        return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + ": " + inspected.error().message});
+        return std::unexpected(std::string{"Export asset #" + std::to_string(asset.value) + " (" + source.string() + "): " + inspected.error().message});
     const auto relative = export_asset_reference_path(group.relative_output_path, inspected->relative_path);
     if (!relative)
         return std::unexpected(std::string{"Verified export asset has an invalid chart-relative path."});
@@ -244,6 +244,26 @@ auto staged_asset_discovery_t::from(const song_document_t& song, const output_gr
         if (!appended) return std::unexpected(staged_asset_discovery_error_t::from(std::move(mappings), std::move(appended.error())));
     }
     return mappings;
+}
+
+auto plan_pending_export_assets(const song_document_t& song, const output_group_t& group,
+    const std::filesystem::path& project_directory,
+    std::span<const conversion_request_t::staged_asset_t> mappings)
+    -> result_t<std::vector<project_asset_copy_request_t>, std::string> {
+    const auto referenced = referenced_export_assets(song, group);
+    if (!referenced) return std::unexpected(referenced.error());
+    std::vector<project_asset_copy_request_t> pending;
+    for (const auto id : *referenced) {
+        if (std::ranges::any_of(mappings, [id](const auto& mapping) { return mapping.asset == id; }))
+            continue;
+        const auto* audio = song.find_audio_asset(id);
+        const auto visual = std::ranges::find(song.visual_assets, id, &visual_asset_t::id);
+        if ((audio == nullptr) == (visual == song.visual_assets.end()))
+            return std::unexpected("Export asset #" + std::to_string(id.value) + " has no unique source.");
+        pending.push_back({.project_directory = project_directory,
+            .source_path = audio ? audio->source_path : visual->source_path, .asset = id});
+    }
+    return pending;
 }
 
 auto conversion_publication_plan_payload_t::from(const std::filesystem::path& project_directory,

@@ -5,11 +5,13 @@
 #include "sys/output_group_export.h"
 #include "ui/nuklear/compose_state.h"
 #include <wormedit/core/interaction_dispatch.h>
+#include <wormedit/core/resource_file_copy.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/native_project_storage.h>
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
+#include <algorithm>
 #include <array>
 #include <filesystem>
 #include <fstream>
@@ -264,9 +266,9 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     const auto sound = import_review(flow);
     const auto chart = flow.history.document.charts.front().id;
     const auto measure = flow.history.document.charts.front().measures.front().id;
-    const auto lane = flow.history.document.charts.front().input_profile.bindings[1].lane;
-    flow.history.document.charts.front().measures.front().notes.push_back(
-        {.id = object_id_t{100}, .position = {measure, 0}, .lane = lane, .sound = sound});
+    flow.interaction->active_lane = flow.history.document.charts.front().input_profile.bindings[1].lane;
+    require_step(dispatch_editor_action(flow.history, *flow.interaction,
+        place_tap_action_t{.position = {measure, 0}, .sound = sound}));
     const auto directory = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / ".agent/bms-export-walkthrough";
     std::filesystem::remove_all(directory);
     std::filesystem::create_directories(directory);
@@ -277,26 +279,35 @@ TEST_CASE("BMS walkthrough saves then publishes a folder chart and refuses repla
     check_step(serialized_document(*reopened.value) == serialized_document(flow.history.document));
     auto group = flow.history.document.output_groups.front();
     require_step(group.charts == std::vector{chart});
-    // Chart publication works for a folder. Filename and audio-packaging failures are audited.
-    group.relative_output_path = "song";
+    group.relative_output_path = "song/normal.bme";
     const output_group_export_request_t request{
         .document = flow.history.document,
         .plan = output_group_export_plan_t::from(flow.history.document, group),
         .asset_base = directory};
+    const auto prepared = output_group_export_preparation_t::from(request);
+    require_step(prepared);
+    check_step(prepared->pending_assets.size() == 1);
+    check_step(!std::filesystem::exists(directory / "song"));
+    check_step(std::ranges::any_of(prepared->converted.diagnostics, [](const auto& diagnostic) {
+        return diagnostic.loss && !diagnostic.message.empty();
+    }));
     const auto exported = run_output_group_export(request, {});
     INFO(exported.message);
     require_step(exported.published);
     const auto converted = convert_document(request.document, request.plan.request);
     require_step(converted);
     require_step(converted.outputs.size() == 1);
-    const auto output = directory / "song" / converted.outputs.front().suggested_filename;
+    const auto output = directory / group.relative_output_path;
     const auto bytes = read_file(output);
     check_step(bytes.find("#WAV01 ") != std::string::npos);
     const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
         {.file_extension = output.extension().string()});
     require_step(parsed.value.song);
     require_step(parsed.value.song->audio_assets.size() == 1);
-    // Project Preview runs this conversion without publication or destination checks.
+    const auto copied = output.parent_path() / parsed.value.song->audio_assets.front().source_path;
+    check_step(std::filesystem::is_regular_file(copied));
+    check_step(read_file(copied) == read_file(flow.history.document.audio_assets.front().source_path));
+    // Pure conversion remains available without publication.
     const auto preview = convert_document(request.document, request.plan.request);
     require_step(preview);
     check_step(preview.outputs.size() == 1);
@@ -324,7 +335,8 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     view.setup.visible = true;
     view.setup.song_id = 1;
     view.setup.document_revision = 1;
-    view.setup.selected_chart_id = chart_id;
+    // Group export remains available without a selected chart row.
+    view.setup.selected_chart_id = 0;
     view.setup.charts = &chart;
     view.setup.chart_count = view.setup.chart_row_count = 1;
     view.setup.output_groups = &group;
@@ -346,3 +358,76 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     check_step(std::string_view{dialog.front().get().menu_command_id} == "document.export_output_group");
 }
 
+
+TEST_CASE("BMS walkthrough exports explicit extensions independently of new chart layouts",
+          "[frontend-state][event-harness][walkthrough-bms]") {
+    const auto* layout = GENERATE("bme-7k-outside-scratch", "pms-standard-9button");
+    const auto* path = GENERATE("song/normal.bme", "song/normal.bms", "song/normal.pms", "song/normal.osu", "song");
+    auto document = make_initial_document(song_id_t{1}, layout);
+    require_step(document);
+    auto group = document->output_groups.front();
+    group.relative_output_path = path;
+    const auto directory = std::filesystem::temp_directory_path() / "wormedit-bms-extension-walkthrough";
+    std::filesystem::remove_all(directory);
+    std::filesystem::create_directories(directory);
+    const auto plan = output_group_export_plan_t::from(*document, group);
+    check_step(plan.request.target_profile.empty());
+    const auto converted = convert_document(*document, plan.request);
+    const auto exported = run_output_group_export(
+        {.document = *document, .plan = plan, .asset_base = directory}, {});
+    INFO(exported.message);
+    if (group.relative_output_path.extension() == ".osu") {
+        check_false_step(exported.published);
+        check_false_step(std::filesystem::exists(directory / "song"));
+    } else {
+        require_step(converted);
+        require_step(exported.published);
+        const auto output = group.relative_output_path.has_extension()
+            ? directory / group.relative_output_path
+            : directory / "song" / converted.outputs.front().suggested_filename;
+        check_step(std::filesystem::is_regular_file(output));
+        const auto expected = std::string_view{layout}.starts_with("pms") ? ".pms" : ".bme";
+        if (!group.relative_output_path.has_extension()) check_step(output.extension() == expected);
+        const auto bytes = read_file(output);
+        const auto parsed = parse_bms_bytes(std::as_bytes(std::span{bytes}),
+            {.file_extension = expected, .lane_profile_id = layout});
+        require_step(parsed.value.song);
+        check_step(parsed.value.song->charts.front().lane_layouts.front().layout.profile_id == layout);
+    }
+    std::filesystem::remove_all(directory);
+}
+
+TEST_CASE("BMS walkthrough packages declared sounds and images and names missing sources",
+          "[frontend-state][event-harness][walkthrough-bms]") {
+    const auto family = GENERATE(format_family_t::bms, format_family_t::bmson);
+    walkthrough_t flow;
+    (void)import_review(flow);
+    const auto image = std::filesystem::path{WORMEDIT_SOURCE_ROOT} / "docs/manual/images/start-screen.png";
+    flow.history.document.visual_assets.push_back({.id = asset_id_t{500}, .source_path = image});
+    flow.history.document.resources.push_back({.id = resource_id_t{501}, .name = "background.png",
+        .asset = asset_id_t{500}, .roles = {resource_role_t::bga}});
+    auto group = flow.history.document.output_groups.front();
+    group.family = family;
+    group.relative_output_path = "song";
+    const auto root = std::filesystem::temp_directory_path() / "wormedit-bms-packaging-walkthrough";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    output_group_export_request_t request{.document = flow.history.document,
+        .plan = output_group_export_plan_t::from(flow.history.document, group), .asset_base = root};
+    const auto exported = run_output_group_export(request, {});
+    INFO(exported.message);
+    require_step(exported.published);
+    for (const auto& asset : request.document.audio_assets) {
+        const project_asset_copy_request_t copy{.source_path = asset.source_path, .asset = asset.id};
+        check_step(read_file(root / "song/assets" / copy.destination_filename()) == read_file(asset.source_path));
+    }
+    const project_asset_copy_request_t image_copy{.source_path = image, .asset = asset_id_t{500}};
+    check_step(read_file(root / "song/assets" / image_copy.destination_filename()) == read_file(image));
+    std::filesystem::remove_all(root / "song");
+    request.document.visual_assets.front().source_path = "/missing/walkthrough-background.png";
+    const auto missing = run_output_group_export(request, {});
+    check_false_step(missing.published);
+    check_step(missing.message.find("walkthrough-background.png") != std::string::npos);
+    check_false_step(std::filesystem::exists(root / "song"));
+    std::filesystem::remove_all(root);
+}

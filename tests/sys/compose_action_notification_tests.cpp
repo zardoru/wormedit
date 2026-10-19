@@ -1,4 +1,5 @@
 #include "sys/compose_audition_requests.h"
+#include "sys/application_defaults.h"
 #include "compose_scene_cache_fixture.h"
 #include "sys/compose_sound_actions.h"
 #include "../support/workspace_result_assertions.h"
@@ -125,8 +126,8 @@ struct action_notification_fixture_t {
             .document = {.history = history, .workspace = workspace, .notifications = sink,
                          .auditions = &application.project.auditions},
             .editor = {application, interaction},
-            .resources = compose_resource_inputs_t{asset_base, {scheduler, resource_copy, export_runtime},
-                                                   {drop, metadata}}};
+            .resources = compose_resource_inputs_t{.asset_base = asset_base, .jobs = {scheduler, resource_copy, export_runtime},
+                                                   .metadata = {drop, metadata}}};
         return dispatch_compose_workspace_action(value, environment, 800, false);
     }
     auto invoke_registered(const char* id) -> bool {
@@ -2905,4 +2906,44 @@ TEST_CASE("Project edit reset discards a catalog audition retained for the next 
     CHECK(fixture.application.project.auditions.has_pending_request(resource_id_t{20}));
     reset_application_project_edit_state(fixture.application);
     CHECK_FALSE(fixture.application.project.auditions.has_pending_request());
+}
+
+
+TEST_CASE("New project exports group charts with an excluded difficulty active",
+          "[unit][sys][output-groups][workflow-blockers]") {
+    const bool empty = GENERATE(false, true);
+    action_notification_fixture_t fixture;
+    auto document = make_initial_document(song_id_t{1}, "osu-mania-7k");
+    require_action(document.has_value());
+    fixture.history = document_history_t::from(std::move(*document));
+    const auto added = apply_add_chart_command(fixture.history, fixture.history.document.charts.front().id);
+    require_action(added.payload.chart.has_value());
+    fixture.workspace = *workspace_controller_t::from(fixture.history).value;
+    fixture.workspace.active_tab = workspace_tab_t::compose;
+    fixture.workspace.selected_chart = *added.payload.chart;
+    fixture.state.chart = *added.payload.chart;
+    const auto root = std::filesystem::temp_directory_path() / "wormedit-excluded-export";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    fixture.asset_base = root;
+    if (empty) fixture.history.document.output_groups.front().charts.clear();
+    const auto status = fixture.dispatch(fixture.action(WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP));
+    INFO(status);
+    if (empty) {
+        check_action(!fixture.export_runtime.is_busy());
+        check_action(status == "The selected output group has no matching charts.");
+        check_action(!std::filesystem::exists(root / "osu"));
+    } else {
+        require_action(fixture.export_runtime.is_busy());
+        const auto completed = wait_for_slice_export(fixture);
+        require_action(completed.has_value());
+        INFO(*completed);
+        check_action(completed->starts_with("Output group published"));
+        check_action(std::filesystem::is_directory(root / "osu"));
+        std::size_t charts{};
+        for (const auto& entry : std::filesystem::directory_iterator(root / "osu"))
+            if (entry.path().extension() == ".osu") ++charts;
+        check_action(charts == 1);
+    }
+    std::filesystem::remove_all(root);
 }

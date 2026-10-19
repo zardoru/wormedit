@@ -506,7 +506,7 @@ void render_output_group_editor(nk_context* context, const WormUiSetupView& view
         publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_DELETE, state.group_index);
 }
 void export_project_group(const WormUiSetupView& view, WormUiWorkspaceAction& action, size_t index) {
-    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE || !view.selected_chart_id) return;
+    if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_EXPORT_OUTPUT_GROUP;
     action.compose_input_project_id = view.song_id;
     action.compose_input_chart_id = view.selected_chart_id;
@@ -528,10 +528,16 @@ void render_output_group_row(nk_context* context, const WormUiSetupView& view,
     if (nk_button_label(context, "Preview"))
         publish_output_group_action(view, action, WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW, group.document_index);
     if (wormedit::ui::chrome::Button{"Export", wormedit::ui::chrome::ButtonKind::secondary,
-        "Publish this group without replacing existing chart files", group.chart_count != 0 && view.selected_chart_id != 0}.render(context))
+        "Publish this group without replacing existing chart files", group.chart_count != 0}.render(context))
         export_project_group(view, action, group.document_index);
-    nk_layout_row_dynamic(context, 20, 1);
-    nk_label(context, group.preview_status, NK_TEXT_LEFT);
+    const float width = std::max(1.0f, nk_window_get_content_region_size(context).x -
+                                          2 * context->style.text.padding.x);
+    const auto lines = wormedit::ui::chrome::wrap_text(context->style.font, group.preview_status,
+        width, wormedit::ui::chrome::text_wrap_policy_t::tooltip_lines);
+    for (const auto& line : lines) {
+        nk_layout_row_dynamic(context, context->style.font->height + 2 * context->style.text.padding.y, 1);
+        nk_label(context, line.c_str(), NK_TEXT_LEFT);
+    }
 }
 void render_output_groups(nk_context* context, const WormUiSetupView& view, WormUiWorkspaceAction& action) {
     nk_layout_row_dynamic(context, 18, 1);
@@ -608,6 +614,8 @@ void worm_ui_nuklear_render_setup_panel(struct nk_context* context,
     nk_spacing(context, 1);
     nk_layout_row_dynamic(context, 26, 1);
     project_section_heading(context, "StepMania export policy");
+    nk_layout_row_dynamic(context, 32, 1);
+    nk_label_wrap(context, "Groups choose SM/SSC from their output paths. Target and timing syntax apply to both.");
 
     constexpr std::array file_labels{"SM", "SSC"};
     constexpr std::array timing_labels{"Native WARPS", "Legacy negative BPM",

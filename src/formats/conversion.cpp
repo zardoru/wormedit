@@ -709,6 +709,12 @@ auto validate_request_policies(conversion_context_t& context, const song_documen
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "Conversion limits must permit outputs, bytes, and bounded filenames");
     }
+    if (!context.request.bms_output_extension.empty() &&
+        (context.request.target != format_family_t::bms ||
+         !is_bms_extension(context.request.bms_output_extension))) {
+        return reject(conversion_diagnostic_code_t::invalid_request,
+                      "Output extension does not match the BMS format family");
+    }
     if (context.request.target != format_family_t::stepmania && context.request.stepmania) {
         return reject(conversion_diagnostic_code_t::invalid_request,
                       "StepMania export policy was supplied for a different target");
@@ -832,13 +838,13 @@ void write_bms_outputs(conversion_context_t& context, const song_document_t& pre
         append_target_diagnostics(context.result, written.diagnostics, context.request.target,
                                   chart_id, context.request.loss_policy);
         const auto* chart = selected_chart(prepared, chart_id);
-        const auto profile = context.request.target_profile.empty() &&
-                                     chart->source_family == format_family_t::bmson &&
-                                     !chart->lane_layouts.empty()
+        const auto profile = context.request.target_profile.empty() && !chart->lane_layouts.empty()
                                  ? chart->lane_layouts.front().layout.profile_id
                                  : context.request.target_profile;
-        append_conversion_output(context, prepared, chart_id, std::string(bms_extension(profile)),
-                                 written.value, chart);
+        const auto extension = context.request.bms_output_extension.empty()
+                                   ? std::string(bms_extension(profile))
+                                   : context.request.bms_output_extension;
+        append_conversion_output(context, prepared, chart_id, extension, written.value, chart);
     }
 }
 

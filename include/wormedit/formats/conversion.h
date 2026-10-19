@@ -67,6 +67,8 @@ struct conversion_request_t {
     // Explicit decoder geometry: pure conversion never opens source files.
     std::vector<slice_span_source_t> slice_sources;
     slice_span_options_t slice_options;
+    // BMS filename choice, independent of the lane profile.
+    std::string bms_output_extension;
 };
 
 enum class conversion_stage_t {

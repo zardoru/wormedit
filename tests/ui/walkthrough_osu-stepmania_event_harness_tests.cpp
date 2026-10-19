@@ -102,6 +102,26 @@ auto read_text(const std::filesystem::path& path) -> std::string {
     expect(input);
     return {std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
 }
+auto preview_group(document_history_t& history, std::size_t index,
+                   const std::filesystem::path& root, stepmania_export_policy_t policy = {}) -> std::string {
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    WormUiSetupView view{.visible = true};
+    build_project_chart_view(runtime, history.document, view);
+    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id.value, .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation, .group_index = index};
+    (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, policy, root);
+    expect(runtime.preview_job());
+    for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
+        build_project_chart_view(runtime, history.document, view);
+        std::this_thread::sleep_for(std::chrono::milliseconds{1});
+    }
+    build_project_chart_view(runtime, history.document, view);
+    expect(!runtime.preview_job()->is_busy());
+    return view.output_groups[index].preview_status;
+}
+
 }
 
 TEST_CASE("Osu StepMania walkthrough creates the chosen audio project and stages Metadata audio",
@@ -193,7 +213,14 @@ TEST_CASE("Osu StepMania walkthrough saves and publishes all three groups with s
     std::filesystem::remove_all(root);
     std::filesystem::create_directories(root);
     expect(create_native_project_file(root / "song.wormedit", history.document).value);
-    for (const auto& group : history.document.output_groups) {
+    for (std::size_t index = 0; index < history.document.output_groups.size(); ++index) {
+        const auto& group = history.document.output_groups[index];
+        const auto preview = preview_group(history, index, root);
+        INFO(preview);
+        expect(preview.starts_with("Preview: "));
+        expect(preview.find("\nWrite: " + group.relative_output_path.generic_string() + "/") != std::string::npos);
+        expect(preview.find("\nCopy: " + group.relative_output_path.generic_string() + "/assets/") != std::string::npos);
+        expect(!std::filesystem::exists(root / group.relative_output_path));
         const auto result = run_output_group_export({.document = history.document,
             .plan = output_group_export_plan_t::from(history.document, group), .asset_base = root}, {});
         INFO(group.name << ": " << result.message);
@@ -231,35 +258,46 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     expect(selected.get().command_menu_invoked);
     expect(std::string_view{selected.get().command_menu_command_id} == "timing.tap_assistant");
     auto history = document_history_t::from(audio_project());
-    project_chart_runtime_t runtime;
-    task_scheduler_t scheduler{1, 1};
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    const WormUiProjectOutputGroupAction preview{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
-        .project_id = history.document.id.value, .document_revision = history.document.revision,
-        .session_generation = runtime.session_generation};
-    (void)apply_project_output_group_ui_action(runtime, history, preview, scheduler);
-    expect(runtime.preview_job());
-    for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
-        build_project_chart_view(runtime, history.document, view);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    build_project_chart_view(runtime, history.document, view);
-    expect(std::string_view{view.output_groups[0].preview_status} ==
-        "Cannot convert: music resource refers to an unsafe or missing audio asset");
-    // Publication above succeeds for this same absolute linked source: preview lacks staging.
-    expect(apply_resource_asset_relink(history, {.asset = history.document.audio_assets.front().id,
-        .source_path = "assets/song.ogg"}).applied);
-    build_project_chart_view(runtime, history.document, view);
-    auto relative_preview = preview;
-    relative_preview.document_revision = history.document.revision;
-    (void)apply_project_output_group_ui_action(runtime, history, relative_preview, scheduler);
-    for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
-        build_project_chart_view(runtime, history.document, view);
-        std::this_thread::sleep_for(std::chrono::milliseconds{1});
-    }
-    build_project_chart_view(runtime, history.document, view);
-    expect(std::string_view{view.output_groups[0].preview_status} == "Preview: 1 file(s), 0 conversion warning(s).");
+    const auto root = std::filesystem::temp_directory_path() / "wormedit-audio-preview-walkthrough";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    const auto status = preview_group(history, 0, root);
+    INFO(status);
+    expect(status.starts_with("Preview: 1 file(s), 0 conversion warning(s)."));
+    expect(status.find("\nWrite: osu/") != std::string::npos);
+    expect(status.find("\nCopy: osu/assets/") != std::string::npos);
+    expect(std::filesystem::is_empty(root));
+    // Render the production preview text through the Project tab surface.
+    const auto chart = history.document.charts.front().id.value;
+    const WormUiProjectOutputGroupView group{.name = "osu!mania", .path = "osu",
+        .chart_ids = &chart, .chart_count = 1, .preview_status = status.c_str()};
+    auto& setup = harness.view().setup;
+    harness.view().active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    harness.view().compose.visible = false;
+    setup.visible = true;
+    setup.output_groups = &group;
+    setup.output_group_count = 1;
+    setup.stepmania_policy_status = "Ready";
+    (void)harness.frame();
+    expect(harness.drawn_text().find("Copy: osu/assets/") != std::string::npos);
+    const output_group_export_request_t request{.document = history.document,
+        .plan = output_group_export_plan_t::from(history.document, history.document.output_groups.front()),
+        .asset_base = root};
+    expect(run_output_group_export(request, {}).published);
+    const auto refused = run_output_group_export(request, {});
+    expect(preview_group(history, 0, root) == "Cannot export: " + refused.message);
+    history.document.audio_assets.front().source_path = "/missing/walkthrough-song.ogg";
+    history.document.output_groups.front().relative_output_path = "missing-output";
+    ++history.document.revision;
+    auto missing_request = request;
+    missing_request.document = history.document;
+    missing_request.plan = output_group_export_plan_t::from(history.document, history.document.output_groups.front());
+    const auto missing = run_output_group_export(missing_request, {});
+    expect(!missing.published);
+    expect(missing.message.find("walkthrough-song.ogg") != std::string::npos);
+    expect(preview_group(history, 0, root) == "Cannot export: " + missing.message);
+    expect(!std::filesystem::exists(root / "missing-output"));
+    std::filesystem::remove_all(root);
 }
 
 TEST_CASE("Osu StepMania walkthrough refuses multiple music resources without publishing",
@@ -278,4 +316,44 @@ TEST_CASE("Osu StepMania walkthrough refuses multiple music resources without pu
         expect(result.message.find("music resource") != std::string::npos);
         expect(!std::filesystem::exists(root / group.relative_output_path));
     }
+}
+
+TEST_CASE("Osu StepMania walkthrough preview receives incompatible StepMania target and syntax choices",
+          "[frontend-state][event-harness][walkthrough-osu-stepmania]") {
+    auto document = make_initial_document(song_id_t{1}, "osu-mania-4k");
+    expect(document.has_value());
+    auto history = document_history_t::from(std::move(*document));
+    const stepmania_export_policy_t policy{
+        .timing_syntax = stepmania_timing_syntax_t::legacy_negative_stop,
+        .implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1};
+    const auto status = preview_group(history, 2, std::filesystem::temp_directory_path(), policy);
+    expect(status.find("audited only with native WARPS") != std::string::npos);
+}
+
+TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
+          "[frontend-state][event-harness][walkthrough-bms]") {
+    auto document = make_initial_document(song_id_t{1}, "bme-7k-outside-scratch");
+    expect(document);
+    auto history = document_history_t::from(std::move(*document));
+    const auto root = std::filesystem::temp_directory_path() / "wormedit-preview-warnings";
+    std::filesystem::remove_all(root);
+    std::filesystem::create_directories(root);
+    const auto status = preview_group(history, 0, root);
+    INFO(status);
+    expect(status.find("\nWrite: ") != std::string::npos);
+    expect(status.find("\nWarning: BMS measure ratios") != std::string::npos);
+    expect(std::filesystem::is_empty(root));
+    nuklear_event_harness_t harness{1280, 1000};
+    expect(harness.ready());
+    const WormUiProjectOutputGroupView group{.name = "BMS", .path = "bms",
+        .preview_status = status.c_str()};
+    harness.view().active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
+    harness.view().compose.visible = false;
+    harness.view().setup.visible = true;
+    harness.view().setup.output_groups = &group;
+    harness.view().setup.output_group_count = 1;
+    harness.view().setup.stepmania_policy_status = "Ready";
+    (void)harness.frame();
+    expect(harness.drawn_text().find("Warning: BMS measure ratios") != std::string::npos);
+    std::filesystem::remove_all(root);
 }

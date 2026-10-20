@@ -7,6 +7,7 @@
 #include <semaphore>
 #include <thread>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 
 using namespace wormedit;
 using namespace wormedit::sys;
@@ -34,6 +35,58 @@ TEST_CASE("Project chart table projects metadata layout groups notes and timing"
     expect_project(row.rating == "3.50" && row.key_count == 7);
     expect_project(row.output_groups == "SSC" && row.output_group_count == 1);
     expect_project(row.note_count == 0 && row.length == "2.00 s" && row.diagnostic.empty());
+}
+
+TEST_CASE("Project view projects family compatibility reasons and layout suggestions",
+          "[unit][project-view][output-groups][output-compatibility]") {
+    auto song = project_song();
+    song.output_groups.clear();
+    const auto profile = *make_osu_mania_profile(4);
+    song.charts.push_back(song.charts.front());
+    song.charts.back().id = chart_id_t{999};
+    song.charts.back().lane_layouts.front().layout = profile.layout;
+    song.charts.back().input_profile = profile.input;
+    project_chart_runtime_t runtime;
+    WormUiSetupView view{.visible = true, .selected_chart_id = song.charts.back().id.value};
+    build_project_chart_view(runtime, song, view);
+    REQUIRE(view.chart_row_count == 2);
+    const auto& row = view.charts[1];
+    CHECK(row.compatible_output_families &
+          (std::uint32_t{1} << static_cast<std::uint8_t>(format_family_t::osu_mania)));
+    CHECK_FALSE(row.compatible_output_families &
+                (std::uint32_t{1} << static_cast<std::uint8_t>(format_family_t::bms)));
+    CHECK(std::string_view{row.output_incompatibility_reasons[
+              static_cast<std::uint8_t>(format_family_t::bms)]}
+              .find("BMS channel profile") != std::string_view::npos);
+    REQUIRE_FALSE(view.output_suggestions.empty());
+    CHECK(view.output_suggestions.front().family ==
+          static_cast<std::uint8_t>(format_family_t::osu_mania));
+}
+
+TEST_CASE("Project output action reports incompatible membership without changing the target",
+          "[unit][project-view][output-groups][output-compatibility]") {
+    auto history = document_history_t::from(project_song());
+    project_chart_runtime_t runtime;
+    task_scheduler_t scheduler{1, 1};
+    const auto before_name = history.document.output_groups.front().name;
+    const auto before_charts = history.document.output_groups.front().charts;
+    WormUiProjectOutputGroupAction action{
+        .kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
+        .project_id = history.document.id.value,
+        .document_revision = history.document.revision,
+        .session_generation = runtime.session_generation,
+        .name = "osu", .path = "exports/osu",
+        .family = static_cast<std::uint8_t>(format_family_t::osu_mania),
+        .destination_kind = WORM_UI_OUTPUT_DESTINATION_DIRECTORY,
+        .existing_files = WORM_UI_EXISTING_FILES_ASK, .chart_count = 1};
+    action.chart_ids[0] = history.document.charts.front().id.value;
+    const auto result = apply_project_output_group_ui_action(runtime, history, action, scheduler);
+    CHECK_FALSE(result.applied);
+    CHECK(result.status.find("osu!mania requires") != std::string::npos);
+    REQUIRE(history.document.output_groups.size() == 1);
+    CHECK(history.document.output_groups.front().name == before_name);
+    CHECK(history.document.output_groups.front().charts == before_charts);
+    CHECK(history.undo.empty());
 }
 
 TEST_CASE("Project chart projection truncates rows without limiting the document", "[unit][project-view]") {

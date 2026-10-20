@@ -2,9 +2,15 @@
 
 ## Active queue (2026-10-19)
 
-**Next: [T-727](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-727-edit-compatible-target-membership-and-improve-the-empty-state)**
-adds compatible membership editing from target chips and chart rows plus layout-derived empty-state
-suggestions. T-728, the grouped new-project layout picker, remains ready after it.
+**Next: [T-728](../../docs/chart-editor-plan/tasks/project-creation-exports.md#t-728-replace-the-new-project-layout-combo-with-a-grouped-picker)**
+replaces the long new-project layout combo with a grouped searchable picker.
+
+Completed **T-727** (2026-10-19): one core query owns format/layout compatibility and reasons.
+Target dialogs, removable card chips and chart-row Exports checklists publish complete atomic group
+updates, with incompatible charts visible and disabled. Empty Exports now opens layout-derived
+suggestions as ordinary unsaved target drafts. Focused core/frontend/documentation tests, affected
+clang-tidy and complexity pass; GATE passes 4,251/4,251 (`/tmp/wormedit-gate.pjtTdL`). Isolated
+Xvfb captures are `/tmp/t727-empty.png` and `/tmp/t727-mixed-dialog.png`.
 
 Completed **T-726** (2026-10-19): export targets now persist directory destinations for
 BMS/BMSON/osu!mania and file destinations for StepMania/native. The Project target editor provides

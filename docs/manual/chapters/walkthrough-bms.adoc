@@ -111,6 +111,9 @@ folder and relinks it. If a copy fails, the original link stays in place and Wor
 failure.
 . Open *Project* (kbd:[F1]). Under *Exports*, open the *BMS* target's *⋯* menu, click *Edit*, set its
 project-relative *Destination* (for example `song/normal.bme`), then click *Save*.
+. Add or remove difficulties with the target card's *+* and chart chips, or click a chart row's
+  *Exports* cell for the same checklist. A chart with no compatible BMS channel layout is disabled
+  and its reason is shown instead of being hidden. Each saved membership change is one Undo step.
 . In the same editor, choose *Ask*, *Replace*, or *Keep* under *Existing files*.
 . Open the target's *⋯* menu and click *Preview* for the conversion file and warning counts. Preview does not yet list whether the
 publication destination already exists.

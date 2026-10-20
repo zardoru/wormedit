@@ -1007,6 +1007,42 @@ TEST_CASE("StepMania catalog keeps supported step types and default key counts",
     check_catalog(default_stepmania_step_type(9).empty());
 }
 
+TEST_CASE("Output compatibility owns family lane limits and stable-layout reasons",
+          "[core][lane-profile][output-compatibility]") {
+    chart_document_t chart;
+    check_catalog(output_family_compatibility(chart, format_family_t::native_project).compatible);
+    check_catalog(output_family_compatibility(chart, format_family_t::bmson).reason ==
+                  "The chart has no lane layout.");
+    const auto osu = *make_osu_mania_profile(4);
+    chart.lane_layouts = {{.id = object_id_t{1}, .layout = osu.layout}};
+    check_catalog(output_family_compatibility(chart, format_family_t::osu_mania).compatible);
+    check_catalog(output_family_compatibility(chart, format_family_t::stepmania).compatible);
+    check_catalog(output_family_compatibility(chart, format_family_t::bmson).compatible);
+    check_catalog(!output_family_compatibility(chart, format_family_t::bms).compatible);
+    auto changed = osu.layout;
+    changed.lanes.front().name = "Changed mid-chart";
+    chart.lane_layouts.push_back({.id = object_id_t{2}, .layout = std::move(changed)});
+    check_catalog(output_family_compatibility(chart, format_family_t::osu_mania).reason ==
+                  "This format requires one stable lane layout for the whole chart.");
+    const auto bms = make_bms_7k_profile();
+    chart.lane_layouts = {{.id = object_id_t{3}, .layout = bms.layout},
+                          {.id = object_id_t{4}, .layout = osu.layout}};
+    check_catalog(!output_family_compatibility(chart, format_family_t::bms).compatible);
+}
+
+TEST_CASE("Output suggestions reuse the active New Project layout defaults",
+          "[core][catalog][output-compatibility]") {
+    const auto* layout = find_new_project_layout("osu-mania-4k");
+    check_catalog(layout != nullptr);
+    chart_document_t chart;
+    chart.lane_layouts = {{.id = object_id_t{1}, .layout = layout->profile().layout}};
+    const auto suggestions = suggested_output_groups(chart);
+    check_catalog(suggestions.size() == layout->default_output_groups.size());
+    check_catalog(suggestions.data() == layout->default_output_groups.data());
+    chart.lane_layouts.front().layout.profile_id = "custom";
+    check_catalog(suggested_output_groups(chart).empty());
+}
+
 TEST_CASE("New Project double-play layouts bind the owner's lane keys left to right", "[core][catalog]") {
     using enum physical_key_t;
     const auto keys_of = [](std::string_view id) {

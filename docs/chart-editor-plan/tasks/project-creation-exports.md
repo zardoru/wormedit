@@ -257,7 +257,16 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
 
 ## T-727 Edit compatible target membership and improve the empty state
 
-- **Status:** ready
+- **Status:** done
+- **Completed:** One lane-profile compatibility query now owns per-family membership eligibility
+  and plain refusal reasons, including stable-layout and BMS segment checks. Target editors, card
+  chips and chart-row *Exports* checklists publish the same complete revision-checked group update;
+  incompatible choices remain visible and disabled, while core validation rejects a newly
+  incompatible whole update atomically. Empty Exports offers the selected layout's normal new-
+  project targets as uncommitted drafts. The BMS and osu!/StepMania manual workflows describe both
+  editing directions. GATE passes 4,251/4,251 (`/tmp/wormedit-gate.pjtTdL`); affected clang-tidy
+  and complexity pass. Isolated Xvfb captures cover the suggested empty state and a mixed-
+  compatibility draft.
 - **Outcome:** Target edit dialogs disable incompatible charts with a plain reason, target cards
   add/remove compatible charts through their chips, the chart table's Exports cell opens the same
   membership checklist, and an empty Exports section offers suggested targets from the active
@@ -272,6 +281,11 @@ persisted policy. The [new-project layout picker](../mockups/new-project-layout.
   `tests/ui/nuklear_event_harness_tests.cpp`, `docs/manual/chapters/walkthrough-bms.adoc`,
   `docs/manual/chapters/walkthrough-osu-stepmania.adoc`, this card and
   `memory/chart-editor-status/resume.md`.
+- **Supporting-file extensions (2026-10-19):** `src/sys/project_view.h` owns the projected
+  compatibility strings and suggestion storage; `src/formats/conversion.cpp` consumes the public
+  BMS layout query instead of retaining a second compatibility fact. `src/sys/application.cpp`
+  supplies the selected chart before building suggestions. The BMS walkthrough harness fixture
+  declares its projected compatibility after the view contract gained the mask and reasons.
 - **Steps:**
   1. Stale-plan check: trace current format/layout compatibility checks and every Project-tab
      membership display/edit path; choose one typed compatibility query owner.

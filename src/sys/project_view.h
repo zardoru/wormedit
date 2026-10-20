@@ -13,6 +13,7 @@
 #include <wormedit/core/notifications.h>
 #include <wormedit/formats/conversion.h>
 
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -30,6 +31,8 @@ struct project_chart_row_view_t {
     std::uint32_t key_count{};
     std::string output_groups;
     std::size_t output_group_count{};
+    std::uint32_t compatible_output_families{};
+    std::array<std::string, 5> output_incompatibility_reasons;
     std::uint64_t note_count{};
     std::string length;
     std::string diagnostic;
@@ -96,6 +99,7 @@ class project_chart_runtime_t {
     std::vector<WormUiProjectChartRow> rows;
     std::map<std::uint64_t, std::string> row_errors;
     std::vector<WormUiProjectOutputGroupView> output_groups;
+    std::vector<WormUiProjectOutputSuggestion> output_suggestions;
     std::vector<std::vector<uint64_t>> output_group_charts;
     std::vector<std::string> output_group_status;
     std::vector<std::string> output_group_paths;

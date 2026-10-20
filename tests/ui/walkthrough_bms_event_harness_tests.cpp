@@ -440,7 +440,10 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     const std::uint64_t chart_id = 2;
     const WormUiProjectChartRow chart{
         .chart_id = chart_id, .name = "Normal", .author = "Author", .rating = "4",
-        .mode = "BME 7K", .output_groups = "BMS", .length = "2 s", .diagnostic = ""};
+        .mode = "BME 7K", .output_groups = "BMS",
+        .compatible_output_families = std::uint32_t{1} <<
+                                      static_cast<std::uint8_t>(format_family_t::bms),
+        .length = "2 s", .diagnostic = ""};
     const WormUiProjectOutputGroupView group{
         .document_index = 0, .name = "BMS", .family = static_cast<std::uint8_t>(format_family_t::bms),
         .path = "song/normal.bme", .chart_ids = &chart_id, .chart_count = 1,

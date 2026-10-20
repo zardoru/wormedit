@@ -6,6 +6,7 @@
 
 #include <wormedit/core/timing.h>
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/conversion.h>
 
 #include <algorithm>
@@ -139,6 +140,14 @@ auto project_chart_row_view_t::from(const song_document_t& document, const chart
         .rating = chart.metadata.rating ? decimal_value(*chart.metadata.rating, 2) : "Unset"};
     build_project_chart_mode_view(chart, row);
     build_project_chart_groups_view(document, row);
+    for (std::size_t family = 0; family < row.output_incompatibility_reasons.size(); ++family) {
+        const auto compatibility = output_family_compatibility(
+            chart, static_cast<format_family_t>(family));
+        if (compatibility.compatible)
+            row.compatible_output_families |= std::uint32_t{1} << family;
+        else
+            row.output_incompatibility_reasons[family] = compatibility.reason;
+    }
     for (const auto& measure : chart.measures) row.note_count += measure.notes.size();
     build_project_chart_length_view(chart, row);
     return row;
@@ -508,9 +517,17 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
     runtime.rows.reserve(table.rows.size());
     for (const auto& row : table.rows) {
         const auto error = runtime.row_errors.find(row.chart.value);
-        runtime.rows.push_back({row.chart.value, row.name.c_str(), row.author.c_str(), row.rating.c_str(),
-            row.mode.c_str(), row.key_count, row.output_groups.c_str(), row.note_count, row.length.c_str(),
-            error == runtime.row_errors.end() ? row.diagnostic.c_str() : error->second.c_str()});
+        WormUiProjectChartRow projected{row.chart.value, row.name.c_str(), row.author.c_str(),
+            row.rating.c_str(), row.mode.c_str(), row.key_count, row.output_groups.c_str(),
+            row.compatible_output_families};
+        for (std::size_t family = 0; family < row.output_incompatibility_reasons.size(); ++family)
+            projected.output_incompatibility_reasons[family] =
+                row.output_incompatibility_reasons[family].c_str();
+        projected.note_count = row.note_count;
+        projected.length = row.length.c_str();
+        projected.diagnostic = error == runtime.row_errors.end() ? row.diagnostic.c_str()
+                                                                  : error->second.c_str();
+        runtime.rows.push_back(projected);
     }
     view.song_id = document.id.value;
     view.document_revision = document.revision;
@@ -518,6 +535,27 @@ void build_project_chart_view(project_chart_runtime_t& runtime, const song_docum
     view.charts = runtime.rows.data();
     view.chart_row_count = runtime.rows.size();
     view.charts_truncated = table.rows_truncated;
+    runtime.output_suggestions.clear();
+    if (document.output_groups.empty()) {
+        const auto* selected = document.find_chart(chart_id_t{view.selected_chart_id});
+        if (!selected && !document.charts.empty()) selected = &document.charts.front();
+        if (selected)
+            for (const auto& suggestion : suggested_output_groups(*selected))
+                runtime.output_suggestions.push_back({suggestion.label.data(),
+                    static_cast<std::uint8_t>(suggestion.family),
+                    suggestion.relative_output_path.data(), suggestion.stepmania.has_value(),
+                    static_cast<WormUiStepmaniaFileProfile>(
+                        suggestion.stepmania ? suggestion.stepmania->file_profile
+                                             : stepmania_profile_t::ssc),
+                    ui_stepmania_timing(suggestion.stepmania
+                                            ? suggestion.stepmania->timing_syntax
+                                            : stepmania_timing_syntax_t::native_warps),
+                    static_cast<WormUiStepmaniaImplementation>(
+                        suggestion.stepmania
+                            ? suggestion.stepmania->implementation_profile
+                            : stepmania_implementation_profile_t::unspecified)});
+    }
+    view.output_suggestions = runtime.output_suggestions;
 }
 
 auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,

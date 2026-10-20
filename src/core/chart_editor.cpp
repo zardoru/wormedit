@@ -1,4 +1,5 @@
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/core/measure_editor.h>
 
 #include <wormedit/formats/stepmania.h>
@@ -325,8 +326,13 @@ auto output_group_error(const song_document_t& doc, std::optional<std::size_t> i
     }
     std::vector<chart_id_t> seen;
     for (const auto chart : group.charts) {
-        if (doc.find_chart(chart) == nullptr) return "Output group contains an unknown chart.";
+        const auto* member = doc.find_chart(chart);
+        if (member == nullptr) return "Output group contains an unknown chart.";
         if (std::ranges::find(seen, chart) != seen.end()) return "Output group repeats a chart.";
+        const auto compatibility = output_family_compatibility(*member, group.family);
+        if (!compatibility.compatible)
+            return "Chart \"" + member->metadata.name + "\" is incompatible: " +
+                   std::string{compatibility.reason};
         seen.push_back(chart);
     }
     return {};

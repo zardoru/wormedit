@@ -524,14 +524,6 @@ auto prepare_bms_slice_resources(conversion_context_t& context, song_document_t&
     return false;
 }
 
-auto is_compatible_bms_layout(const lane_layout_t& source, const lane_layout_t& target) -> bool {
-    if (source.lanes.size() != target.lanes.size()) return false;
-    return std::ranges::all_of(source.lanes, [&](const auto& lane) {
-        const auto matching = [&](const auto& other) { return other.role == lane.role && other.stage == lane.stage; };
-        return std::ranges::count_if(source.lanes, matching) == std::ranges::count_if(target.lanes, matching);
-    });
-}
-
 void map_bms_slice_lanes(lane_layout_t& source, const lane_layout_t& target) {
     std::map<std::pair<stage_group_t, lane_role_t>, std::size_t> next;
     for (auto& lane : source.lanes) {
@@ -550,7 +542,7 @@ auto prepare_bms_slice_layout(conversion_context_t& context, chart_document_t& c
         const auto found = std::ranges::find_if(profiles, [&](const auto& descriptor) {
             return (context.request.target_profile.empty() ||
                     descriptor.profile.layout.profile_id == context.request.target_profile) &&
-                   is_compatible_bms_layout(segment.layout, descriptor.profile.layout);
+                   is_bms_lane_layout_compatible(segment.layout, descriptor.profile.layout);
         });
         if (found == profiles.end()) {
             add_diagnostic(context.result, diagnostic_severity_t::error,

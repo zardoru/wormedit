@@ -159,6 +159,16 @@ struct WormUiOutputDiagnosticRow {
     uint8_t severity;
 };
 
+struct WormUiProjectOutputSuggestion {
+    const char* name;
+    uint8_t family;
+    const char* path;
+    bool has_stepmania_policy;
+    WormUiStepmaniaFileProfile stepmania_file_profile;
+    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
+    WormUiStepmaniaImplementation stepmania_implementation;
+};
+
 typedef struct WormUiProjectChartRow {
     uint64_t chart_id;
     const char* name;
@@ -167,6 +177,8 @@ typedef struct WormUiProjectChartRow {
     const char* mode;
     uint32_t key_count;
     const char* output_groups;
+    uint32_t compatible_output_families;
+    const char* output_incompatibility_reasons[5];
     uint64_t note_count;
     const char* length;
     const char* diagnostic;
@@ -260,6 +272,7 @@ typedef struct WormUiSetupView {
     const WormUiProjectOutputGroupView* output_groups;
     size_t output_group_count;
     bool output_groups_truncated;
+    std::span<const WormUiProjectOutputSuggestion> output_suggestions;
     uint64_t selected_chart_id;
     size_t chart_count;
     size_t audio_asset_count;

@@ -6440,7 +6440,10 @@ struct output_group_fixture_t {
         .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY,
         .plan_rows = plan,
         .diagnostics = diagnostics};
+    WormUiProjectOutputSuggestion suggestion{
+        .name = "osu!mania folder", .family = 3, .path = "exports/osu"};
     explicit output_group_fixture_t(bool existing) {
+        for (auto& chart : charts) chart.compatible_output_families = 0x1f;
         auto& view = harness.view();
         view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
         view.compose.visible = false;
@@ -6454,6 +6457,7 @@ struct output_group_fixture_t {
         view.setup.chart_row_count = charts.size();
         view.setup.output_groups = existing ? &group : nullptr;
         view.setup.output_group_count = existing ? 1 : 0;
+        view.setup.output_suggestions = std::span{&suggestion, std::size_t{1}};
         (void)harness.frame();
     }
     auto click(const char* label) {
@@ -6469,7 +6473,9 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     output_group_fixture_t f{false};
     require_project_access(f.harness.drawn_text().find("Exports · 0") != std::string::npos);
     require_project_access(f.harness.drawn_text_center("Export all").has_value());
-    require_project_access(f.harness.drawn_text_center("No export targets yet. Create one to choose a format, destination and included charts.").has_value());
+    require_project_access(f.harness.drawn_text_center(
+        "No export targets yet. Start with a target suggested for this layout:").has_value());
+    require_project_access(f.harness.drawn_text_center("osu!mania folder").has_value());
     (void)f.click("+ New");
     (void)f.harness.frame();
     require_project_access(f.harness.drawn_text_center("Create export target").has_value());
@@ -6488,6 +6494,79 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
                            action.destination_kind == WORM_UI_OUTPUT_DESTINATION_DIRECTORY &&
                            action.chart_count == 1 && action.chart_ids[0] == 10);
     require_project_access(action.existing_files == WORM_UI_EXISTING_FILES_ASK);
+}
+
+TEST_CASE("Project empty-state suggestion opens a normal draft and waits for Save",
+          "[frontend-state][event-harness][output-groups][output-compatibility]") {
+    output_group_fixture_t f{false};
+    const auto opened = f.click("osu!mania folder");
+    require_project_access(std::ranges::none_of(opened, [](const auto& frame) {
+        return frame.get().project_output_group.kind != WORM_UI_PROJECT_OUTPUT_GROUP_NONE;
+    }));
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Create export target").has_value());
+    require_project_access(f.harness.drawn_text_center("osu!mania folder").has_value());
+    const auto saved = f.click("Save");
+    const auto found = std::ranges::find_if(saved, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
+    });
+    require_project_access(found != saved.end());
+    require_project_access(found->get().project_output_group.family == 3);
+    require_project_access(std::string_view{found->get().project_output_group.path} == "exports/osu");
+}
+
+TEST_CASE("Project target chips remove membership with one complete update",
+          "[frontend-state][event-harness][output-groups][output-compatibility]") {
+    output_group_fixture_t f{true};
+    const auto removed = f.click("First difficulty");
+    const auto found = std::ranges::find_if(removed, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    });
+    require_project_access(found != removed.end());
+    require_project_access(found->get().project_output_group.group_index == 3);
+    require_project_access(found->get().project_output_group.chart_count == 0);
+    require_project_access(std::string_view{found->get().project_output_group.name} == "SSC release");
+    require_project_access(std::string_view{found->get().project_output_group.path} ==
+                           "exports/song.ssc");
+}
+
+TEST_CASE("Project chart Exports cell adds compatible membership through the same update",
+          "[frontend-state][event-harness][output-groups][output-compatibility]") {
+    output_group_fixture_t f{true};
+    (void)f.click("Unassigned");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center("Edit chart exports").has_value());
+    const auto added = f.click("SSC release");
+    const auto found = std::ranges::find_if(added, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    });
+    require_project_access(found != added.end());
+    require_project_access(found->get().project_output_group.chart_count == 2);
+    require_project_access(found->get().project_output_group.chart_ids[0] == 10);
+    require_project_access(found->get().project_output_group.chart_ids[1] == 11);
+}
+
+TEST_CASE("Project target editor disables incompatible charts and keeps their reason visible",
+          "[frontend-state][event-harness][output-groups][output-compatibility]") {
+    output_group_fixture_t f{true};
+    f.charts[1].compatible_output_families &= ~(std::uint32_t{1} << 2);
+    f.charts[1].output_incompatibility_reasons[2] =
+        "No truthful StepMania step type exists for this lane count.";
+    (void)f.harness.frame();
+    (void)f.click("⋯");
+    (void)f.harness.frame();
+    (void)f.click("Edit");
+    (void)f.harness.frame();
+    require_project_access(f.harness.drawn_text_center(
+        "No truthful StepMania step type exists for this lane count.").has_value());
+    (void)f.click("Second difficulty");
+    const auto saved = f.click("Save");
+    const auto found = std::ranges::find_if(saved, [](const auto& frame) {
+        return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
+    });
+    require_project_access(found != saved.end());
+    require_project_access(found->get().project_output_group.chart_count == 1);
+    require_project_access(found->get().project_output_group.chart_ids[0] == 10);
 }
 
 TEST_CASE("Project output group editor updates checkbox membership and confirms deletion",

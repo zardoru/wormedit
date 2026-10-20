@@ -53,7 +53,10 @@ support them.
 On the *Project* tab (kbd:[F1]), open the chart's *⋯* menu and choose *Duplicate* to start another
 difficulty; it keeps the chart's timing. The *+* button (*New chart*, kbd:[Ctrl+Shift+N]) adds a
 chart with 120 BPM and one measure, carrying over the layout and audio offset. Add each chart to the
-export targets that should export it.
+export targets that should export it. Click the chart's *Exports* cell to check or uncheck targets,
+or use the *+* and removable chart chips on a target card. A target editor shows the same complete
+membership. Charts whose lane layout cannot be represented by that format stay visible but disabled
+with the reason; an existing incompatible membership remains visible until you remove it.
 
 == 5. Save and export
 
@@ -62,6 +65,8 @@ export targets that should export it.
 *Destination*, relative to the project:
 for example `osu/song.osu` and `ssc`, or a folder when a group exports several osu!mania
 charts.
+. If the project has no targets, choose a layout-derived suggestion in the empty *Exports* section.
+  This opens the normal target editor; nothing is added until you click *Save*.
 . Set *Existing files* to *Ask*, *Replace*, or *Keep*. *Ask* publishes immediately when every
   planned filename is free, and shows one confirmation listing conflicts before replacing any file.
 . In each StepMania target's editor, choose its *File profile* (SM or SSC), target implementation

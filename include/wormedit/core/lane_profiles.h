@@ -213,4 +213,16 @@ struct new_project_layout_descriptor_t {
 [[nodiscard]] auto make_new_project_output_groups(const new_project_layout_descriptor_t& layout,
                                                  chart_id_t chart) -> std::vector<output_group_t>;
 
+struct output_family_compatibility_t {
+    bool compatible{};
+    std::string_view reason;
+};
+[[nodiscard]] auto output_family_compatibility(const chart_document_t& chart,
+                                               format_family_t family)
+    -> output_family_compatibility_t;
+[[nodiscard]] auto is_bms_lane_layout_compatible(const lane_layout_t& source,
+                                                 const lane_layout_t& target) -> bool;
+[[nodiscard]] auto suggested_output_groups(const chart_document_t& chart)
+    -> std::span<const new_project_output_group_descriptor_t>;
+
 } // namespace wormedit

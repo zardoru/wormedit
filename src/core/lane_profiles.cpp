@@ -1328,4 +1328,71 @@ auto make_new_project_output_groups(const new_project_layout_descriptor_t& layou
     return groups;
 }
 
+namespace {
+auto has_stable_layout(const chart_document_t& chart) -> bool {
+    if (chart.lane_layouts.empty()) return false;
+    const auto& first = chart.lane_layouts.front().layout;
+    return std::ranges::all_of(chart.lane_layouts,
+                               [&](const auto& segment) { return first == segment.layout; });
+}
+} // namespace
+
+auto is_bms_lane_layout_compatible(const lane_layout_t& source, const lane_layout_t& target) -> bool {
+    if (source.lanes.size() != target.lanes.size()) return false;
+    return std::ranges::all_of(source.lanes, [&](const auto& lane) {
+        const auto matching = [&](const auto& other) {
+            return other.role == lane.role && other.stage == lane.stage;
+        };
+        return std::ranges::count_if(source.lanes, matching) ==
+               std::ranges::count_if(target.lanes, matching);
+    });
+}
+
+auto output_family_compatibility(const chart_document_t& chart, format_family_t family)
+    -> output_family_compatibility_t {
+    if (family == format_family_t::native_project) return {true, {}};
+    if (chart.lane_layouts.empty()) return {false, "The chart has no lane layout."};
+    const auto& layout = chart.lane_layouts.front().layout;
+    if (family == format_family_t::bms) {
+        const auto compatible = std::ranges::all_of(chart.lane_layouts, [&](const auto& segment) {
+            return std::ranges::any_of(built_in_bms_lane_profiles(), [&](const auto& candidate) {
+                return is_bms_lane_layout_compatible(segment.layout, candidate.profile.layout);
+            });
+        });
+        return compatible ? output_family_compatibility_t{true, {}}
+                          : output_family_compatibility_t{
+                                false, "The lane layout has no compatible BMS channel profile."};
+    }
+    if (!has_stable_layout(chart))
+        return {false, "This format requires one stable lane layout for the whole chart."};
+    if (family == format_family_t::osu_mania) {
+        const auto playable = std::ranges::all_of(layout.lanes, [](const auto& lane) {
+            return lane.role == lane_role_t::playable;
+        });
+        return playable && !layout.lanes.empty() && layout.lanes.size() <= 18
+                   ? output_family_compatibility_t{true, {}}
+                   : output_family_compatibility_t{false, "osu!mania requires 1–18 playable lanes."};
+    }
+    if (family == format_family_t::stepmania)
+        return !default_stepmania_step_type(layout.lanes.size()).empty()
+                   ? output_family_compatibility_t{true, {}}
+                   : output_family_compatibility_t{
+                         false, "No truthful StepMania step type exists for this lane count."};
+    if (family == format_family_t::bmson)
+        return layout.lanes.size() <= 48
+                   ? output_family_compatibility_t{true, {}}
+                   : output_family_compatibility_t{false, "BMSON supports at most 48 mapped lanes."};
+    return {false, "This output format is not supported."};
+}
+
+auto suggested_output_groups(const chart_document_t& chart)
+    -> std::span<const new_project_output_group_descriptor_t> {
+    if (chart.lane_layouts.empty()) return {};
+    const auto profile = chart.lane_layouts.front().layout.profile_id;
+    const auto found = std::ranges::find(project_layouts, profile,
+                                         &new_project_layout_descriptor_t::id);
+    return found == project_layouts.end() ? std::span<const new_project_output_group_descriptor_t>{}
+                                          : found->default_output_groups;
+}
+
 } // namespace wormedit

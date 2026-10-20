@@ -1,4 +1,5 @@
 #include <wormedit/core/chart_editor.h>
+#include <wormedit/core/lane_profiles.h>
 #include <wormedit/formats/bms.h>
 #include <wormedit/formats/native_project.h>
 #include <wormedit/formats/stepmania.h>
@@ -57,6 +58,16 @@ auto chart_song() -> song_document_t {
     song.charts = {std::move(chart)};
     song.output_groups = {{.name = "First", .charts = {chart_id_t{2}}}, {.name = "Second"}};
     return song;
+}
+
+void make_chart_stepmania_compatible(song_document_t& song) {
+    auto profile = *make_osu_mania_profile(4);
+    auto& chart = song.charts.front();
+    const auto lane = profile.layout.lanes.front().id;
+    chart.lane_layouts.front().layout = std::move(profile.layout);
+    chart.input_profile = std::move(profile.input);
+    chart.measures.front().notes.front().lane = lane;
+    chart.sound_channels.front().events.front().lane = lane;
 }
 
 auto duplicate_links_match(const chart_document_t& source, const chart_document_t& copy) -> bool {
@@ -374,7 +385,9 @@ TEST_CASE("New chart refuses excessive linked audio without publishing a partial
 }
 
 TEST_CASE("Output group CRUD is atomic and undoable without altering chart content", "[unit][output-groups]") {
-    auto history = document_history_t::from(chart_song());
+    auto song = chart_song();
+    make_chart_stepmania_compatible(song);
+    auto history = document_history_t::from(std::move(song));
     history.document.output_groups.clear();
     const auto before = write_native_project(history.document).value;
     const auto initial_revision = history.document.revision;
@@ -449,7 +462,9 @@ TEST_CASE("Output group edits reject unsafe paths stale contexts and invalid mem
 }
 
 TEST_CASE("Output groups permit drafts and multiple memberships with format-aware file cardinality", "[unit][output-groups]") {
-    auto history = document_history_t::from(chart_song());
+    auto song = chart_song();
+    make_chart_stepmania_compatible(song);
+    auto history = document_history_t::from(std::move(song));
     history.document.output_groups.clear();
     const auto duplicate = apply_duplicate_chart_command(history, chart_id_t{2});
     require_chart(static_cast<bool>(duplicate));
@@ -473,4 +488,33 @@ TEST_CASE("Output groups permit drafts and multiple memberships with format-awar
     require_chart(apply_set_output_group_command(history, std::nullopt, group).applied);
     expect_chart(history.document.output_groups[1].charts == history.document.output_groups[2].charts);
     expect_chart(!apply_set_output_group_command(history, std::nullopt, group));
+}
+
+TEST_CASE("Output membership updates reject one incompatible chart without a partial edit",
+          "[unit][output-groups][output-compatibility]") {
+    auto song = chart_song();
+    make_chart_stepmania_compatible(song);
+    auto history = document_history_t::from(std::move(song));
+    history.document.output_groups.clear();
+    const auto duplicate = apply_duplicate_chart_command(history, chart_id_t{2});
+    require_chart(static_cast<bool>(duplicate));
+    output_group_t group{.name = "Mania", .family = format_family_t::osu_mania,
+        .charts = {chart_id_t{2}}, .relative_output_path = "exports/osu"};
+    require_chart(apply_set_output_group_command(history, std::nullopt, group).applied);
+    group.charts.push_back(*duplicate.payload.chart);
+    require_chart(apply_set_output_group_command(history, 0, group).applied);
+    require_chart(undo_document_command(history));
+    expect_chart(history.document.output_groups.front().charts == std::vector{chart_id_t{2}});
+
+    auto& incompatible = history.document.charts.back().lane_layouts.front().layout;
+    incompatible.lanes.front().role = lane_role_t::scratch;
+    const auto revision = history.document.revision;
+    const auto undo_size = history.undo.size();
+    const auto rejected = apply_set_output_group_command(history, 0, group);
+    require_chart(!rejected.applied);
+    require_chart(!rejected.diagnostics.empty());
+    expect_chart(rejected.diagnostics.front().message.find("osu!mania requires") != std::string::npos);
+    expect_chart(history.document.output_groups.front().charts == std::vector{chart_id_t{2}});
+    expect_chart(history.document.revision == revision);
+    expect_chart(history.undo.size() == undo_size);
 }

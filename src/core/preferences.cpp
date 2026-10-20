@@ -166,7 +166,8 @@ void read_editor_audio(preference_reader_t& reader, const json_t& root) {
     read_editor(reader, root);
     auto& values = reader.result.preferences;
     const auto& audio = reader.section(root, "audio");
-    reader.check_keys(audio, {"playback_rate", "keep_pitch", "keysound_budget_mib"});
+    reader.check_keys(audio, {"playback_rate", "keep_pitch", "keysound_budget_mib", "osu_skin_directory"});
+    reader.string(audio, "osu_skin_directory", values.audio.osu_skin_directory);
     read_keysound_budget(reader, audio);
     reader.boolean(audio, "keep_pitch", values.audio.keep_pitch);
     const auto& rate = reader.section(audio, "playback_rate");
@@ -277,7 +278,8 @@ auto is_valid_preferences(const program_preferences_t& value) -> bool {
         is_valid_string(value.general.shortcut_profile_path) && !value.general.shortcut_profile_path.empty() &&
         is_valid_editor(value.editor) &&
         is_supported_rate(value.audio.playback_rate) && value.audio.keysound_budget_mib >= 256 &&
-        value.audio.keysound_budget_mib <= 8192 && is_valid_string(value.display.theme) && is_valid_string(value.display.field_scheme) && is_valid_field_scheme_overrides(value.display) &&
+        value.audio.keysound_budget_mib <= 8192 && is_valid_string(value.audio.osu_skin_directory) &&
+        is_valid_string(value.display.theme) && is_valid_string(value.display.field_scheme) && is_valid_field_scheme_overrides(value.display) &&
         std::ranges::all_of(value.display.scratch_positions, [](auto side) { return side <= 3; }) &&
         value.display.snap_grid_opacity_percent <= 100 && value.display.field_waveform_opacity_percent <= 100 &&
         (value.display.ui_scale_percent == 0 ||
@@ -299,7 +301,8 @@ auto preferences_json(const program_preferences_t& value) -> json_t {
         {"lane_keys", lane_keys_json(value.lane_keys)},
         {"audio", {{"playback_rate", {{"numerator", value.audio.playback_rate.numerator},
             {"denominator", value.audio.playback_rate.denominator}}}, {"keep_pitch", value.audio.keep_pitch},
-            {"keysound_budget_mib", value.audio.keysound_budget_mib}}},
+            {"keysound_budget_mib", value.audio.keysound_budget_mib},
+            {"osu_skin_directory", value.audio.osu_skin_directory}}},
         {"display", {{"scratch_positions", value.display.scratch_positions}, {"field_scheme", value.display.field_scheme}, {"field_scheme_overrides", value.display.field_scheme_overrides}, {"theme", value.display.theme}, {"ui_scale_percent", value.display.ui_scale_percent},
             {"frame_timing_overlay", value.display.frame_timing_overlay},
             {"snap_colored_grid", value.display.snap_colored_grid},

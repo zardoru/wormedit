@@ -61,6 +61,7 @@ struct pending_hold_t {
     note_kind_t kind{note_kind_t::tap};
     std::optional<std::vector<layer_id_t>> layers;
     std::shared_ptr<const bmson_source_geometry_t> source_geometry;
+    std::optional<osu_hitsample_t> hitsample;
 
     [[nodiscard]] static auto from(editor_edit_context_t&, const hold_start_t&)
         -> diagnosed_t<std::optional<pending_hold_t>>;
@@ -269,6 +270,7 @@ struct pending_note_paint_gesture_t {
     note_kind_t note_kind{note_kind_t::tap};
     std::optional<std::vector<layer_id_t>> layers;
     std::optional<bmson_source_geometry_t> source_geometry;
+    std::optional<osu_hitsample_t> hitsample;
 
     [[nodiscard]] static auto begin(editor_edit_context_t&, const begin_note_paint_gesture_action_t&)
         -> diagnosed_t<std::optional<pending_note_paint_gesture_t>>;

@@ -1,4 +1,5 @@
 #include "ui/nuklear/compose_gesture_registry.h"
+#include "ui/nuklear/compose_action_stamp.h"
 #include "ui/nuklear/compose_measure_resize_input.h"
 #include "ui/nuklear/compose_panel.h"
 #include "ui/compose_timing_geometry.h"
@@ -602,6 +603,13 @@ static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
     }
 }
 
+static void stamp_visible_compose_input(const WormUiComposeView* view, WormUiWorkspaceAction& action) {
+    if (!view || !view->visible) return;
+    // Modal occlusion cancels captures; cleanup still belongs to the visible chart.
+    wormedit::ui::stamp_compose_input(action, *view, wormedit::ui::compose_project_stamp_t::include);
+    action.compose_input_viewport_width_pixels = view->viewport_width_pixels;
+}
+
 void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
                                            bool window_focused, WormUiWorkspaceAction* action) {
     state.input_queue.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
@@ -609,13 +617,11 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
     if (!action) {
         return;
     }
+    stamp_visible_compose_input(view, *action);
     prepare_compose_note_menu(view, compose_tab_active, window_focused, action);
     if (!compose_tab_active || !view || !view->visible) reset_compose_area_menu();
     if (view && compose_tab_active && view->visible) {
         state.input_queue.action_overflowed = false;
-        action->compose_input_chart_id = view->chart_id;
-        action->compose_input_document_revision = view->document_revision;
-        action->compose_input_viewport_width_pixels = view->viewport_width_pixels;
         if (!view->scene_available || view->input_occluded || !window_focused) {
             cancel_compose_gestures(action);
         }

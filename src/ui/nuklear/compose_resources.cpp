@@ -283,6 +283,7 @@ void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
 void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
     WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state) {
     ResourcePanel panel{context, &view, &action, &state};
+    state.preview_audio.render(context, view, action);
     render_export_dialog(panel);
     render_export_confirmation(panel);
     render_layer_creation(panel);

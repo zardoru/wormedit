@@ -283,6 +283,8 @@ NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(lane_binding_t, key, lane, focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(input_profile_t, profile_id, bindings, stage_count,
                                    requires_focused_stage)
 NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(semantic_layer_t, id, name, color, visible, locked)
+NLOHMANN_DEFINE_TYPE_NON_INTRUSIVE(osu_hitsample_t, whistle, finish, clap, normal_set,
+                                  addition_set, custom_index, volume, filename)
 void to_json(json& value, const note_t& note) {
     value = json{{"id", note.id},
                  {"position", note.position},
@@ -297,6 +299,7 @@ void to_json(json& value, const note_t& note) {
     if (note.sound_channel_event.has_value()) {
         value["sound_channel_event"] = *note.sound_channel_event;
     }
+    if (note.osu_hitsample) value["osu_hitsample"] = *note.osu_hitsample;
 }
 
 void from_json(const json& value, note_t& note) {
@@ -310,6 +313,7 @@ void from_json(const json& value, note_t& note) {
     value.at("label").get_to(note.label);
     value.at("branch").get_to(note.branch);
     value.at("provenance").get_to(note.provenance);
+    note.osu_hitsample = value.value("osu_hitsample", std::optional<osu_hitsample_t>{});
     note.sound_channel_event.reset();
     if (const auto linked = value.find("sound_channel_event"); linked != value.end()) {
         linked->get_to(note.sound_channel_event);

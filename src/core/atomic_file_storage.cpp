@@ -167,15 +167,21 @@ auto close_file(native_file_t& handle, int& error_value) -> bool {
 }
 
 auto atomic_replace(const std::filesystem::path& temporary,
-                    const std::filesystem::path& destination, std::string& error) -> bool {
+                    const std::filesystem::path& destination, std::string& error,
+                    bool replace_existing = true) -> bool {
 #ifdef _WIN32
     if (!MoveFileExW(temporary.c_str(), destination.c_str(),
-                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                     (replace_existing ? MOVEFILE_REPLACE_EXISTING : 0) | MOVEFILE_WRITE_THROUGH)) {
         error = "atomic file replacement failed with Windows error " +
                 std::to_string(GetLastError());
         return false;
     }
 #else
+    if (!replace_existing) {
+        if (::link(temporary.c_str(), destination.c_str()) == 0) return true;
+        error = "atomic file publication failed: " + std::error_code(errno, std::generic_category()).message();
+        return false;
+    }
     if (::rename(temporary.c_str(), destination.c_str()) != 0) {
         error = "atomic file replacement failed: " +
                 std::error_code(errno, std::generic_category()).message();
@@ -187,8 +193,18 @@ auto atomic_replace(const std::filesystem::path& temporary,
 
 } // namespace
 
-auto create_file_atomic(const std::filesystem::path& path, std::string_view bytes,
-                        std::size_t maximum_bytes) -> atomic_file_save_outcome_t {
+struct prepared_atomic_file_t::storage_t {
+    temporary_file_t temporary;
+    std::filesystem::path destination;
+};
+prepared_atomic_file_t::prepared_atomic_file_t(std::unique_ptr<storage_t> storage) : storage_(std::move(storage)) {}
+prepared_atomic_file_t::prepared_atomic_file_t(prepared_atomic_file_t&&) noexcept = default;
+auto prepared_atomic_file_t::operator=(prepared_atomic_file_t&&) noexcept -> prepared_atomic_file_t& = default;
+prepared_atomic_file_t::~prepared_atomic_file_t() = default;
+
+auto prepared_atomic_file_t::from(const std::filesystem::path& path, std::string_view bytes,
+    std::size_t maximum_bytes, validator_t validate, std::stop_token stop)
+    -> result_t<prepared_atomic_file_t, std::string> {
     std::string message;
     if (path.empty() || path.filename().empty()) {
         message = "destination must name a file";
@@ -199,7 +215,10 @@ auto create_file_atomic(const std::filesystem::path& path, std::string_view byte
         return std::unexpected(std::move(message));
     }
     static std::atomic<std::uint64_t> temporary_sequence{1};
-    temporary_file_t temporary;
+    auto storage = std::make_unique<storage_t>();
+    storage->destination = path;
+    auto& temporary = storage->temporary;
+    if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
     bool created{};
     for (int attempt = 0; attempt < 32; ++attempt) {
         const auto sequence = temporary_sequence.fetch_add(1, std::memory_order_relaxed);
@@ -242,10 +261,28 @@ auto create_file_atomic(const std::filesystem::path& path, std::string_view byte
                   std::error_code(error, native_error_category()).message();
         return std::unexpected(std::move(message));
     }
-    if (!atomic_replace(temporary.path, path, message)) {
+    if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
+    if (validate) {
+        if (auto verified = validate(temporary.path); !verified) return std::unexpected(std::move(verified.error()));
+    }
+    if (stop.stop_requested()) return std::unexpected("File preparation cancelled.");
+    return prepared_atomic_file_t{std::move(storage)};
+}
+
+auto prepared_atomic_file_t::publish(bool replace_existing) -> atomic_file_save_outcome_t {
+    if (!storage_) return std::unexpected("Prepared file is no longer available.");
+    std::string message;
+    if (!atomic_replace(storage_->temporary.path, storage_->destination, message, replace_existing)) {
         return std::unexpected(std::move(message));
     }
-    temporary.owned = false;
+    storage_.reset();
     return {};
+}
+
+auto create_file_atomic(const std::filesystem::path& path, std::string_view bytes,
+                        std::size_t maximum_bytes) -> atomic_file_save_outcome_t {
+    auto prepared = prepared_atomic_file_t::from(path, bytes, maximum_bytes);
+    if (!prepared) return std::unexpected(std::move(prepared.error()));
+    return prepared->publish();
 }
 } // namespace wormedit

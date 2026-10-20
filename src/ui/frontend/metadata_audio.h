@@ -1,6 +1,8 @@
 #pragma once
 #include "catalog.h"
 #include "project.h"
+#include <span>
+#include <string_view>
 
 typedef struct WormUiMetadataFormatFieldView {
     bool chart_scoped;
@@ -167,6 +169,7 @@ typedef struct WormUiSoundRowView {
     uint64_t asset_id;
     const char* name;
     const char* tags_text;
+    std::span<const std::string_view> tags;
     const char* source_path;
     // 0 unspecified, 1 stem, 2 keysound, 3 sample (sound_kind_t, effective kind).
     int kind;

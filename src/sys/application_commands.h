@@ -1,4 +1,5 @@
 #pragma once
+#include <wormedit/core/osu_hitsample.h>
 
 #include <cstddef>
 #include <optional>
@@ -87,6 +88,8 @@ enum class application_command_kind_t {
     audio_paint_hitsound,
     audio_toggle_click_audition,
     workspace_command_menu,
+    hitsound_edit,
+    hitsound_toggle_palette,
 };
 
 struct application_command_t {
@@ -95,6 +98,7 @@ struct application_command_t {
     // are one-based and must be positive.
     std::optional<std::size_t> semantic_layer_slot;
     std::optional<unsigned> note_kind;
+    std::optional<wormedit::hitsound_change_t> hitsound;
 
     auto operator==(const application_command_t&) const -> bool = default;
 };

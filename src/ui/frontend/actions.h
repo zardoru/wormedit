@@ -1,5 +1,8 @@
 #pragma once
 #include "workspace.h"
+#include <optional>
+#include <string>
+#include <vector>
 
 typedef struct WormUiSoundImportItem {
     const char* path;
@@ -625,6 +628,10 @@ typedef struct WormUiWorkspaceAction {
     uint64_t sound_properties_document_revision;
     char sound_properties_name[257];
     uint8_t sound_properties_kind;
+    // A tag-only edit; name and authored kind remain unchanged when present.
+    std::optional<std::vector<std::string>> sound_properties_tags;
+    std::optional<wormedit::hitsound_change_t> compose_hitsound;
+    std::optional<wormedit::ui::preview_audio_export_action_t> preview_audio_export;
     bool sound_import_pick_requested;
     /* 0 generic import, 1 Stems section, 2 Keysounds section. */
     uint8_t sound_import_kind;

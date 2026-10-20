@@ -322,7 +322,7 @@ auto commit_virtual_hold(editor_edit_context_t& context,
     if (!captured) captured = context.state.hold();
     auto pending = captured ? *captured : pending_hold_t{.position = *anchor,
         .lane = action.lane, .sound = action.sound, .kind = staged.armed_note_kind,
-        .layers = staged.armed_note_layers};
+        .layers = staged.armed_note_layers, .hitsample = staged.armed_hitsample};
     staged.clear();
     pending.position = *anchor;
     pending.anchor_canvas_row.reset();
@@ -549,6 +549,7 @@ auto stage_editor_tap(editor_edit_context_t& context, document_command_transacti
     if (const auto* failure = std::get_if<diagnostic_list_t>(&prepared))
         return attempt_t<editor_edit_effect_t>{.diagnostics = *failure};
     auto document = std::get<prepared_note_paint_t>(std::move(prepared));
+    document.set_hitsample(state.chart, state.armed_hitsample);
     const auto created = document.painted_notes.empty()
                              ? std::optional<object_id_t>{}
                              : std::optional{document.painted_notes.front()};

@@ -1,4 +1,13 @@
 #include "ui/nuklear/audio_state.h"
+#include "core/text_util.h"
+#include <algorithm>
+
+auto worm_ui_nuklear_audio_state_t::matches_tags(std::span<const std::string_view> tags) const -> bool {
+    const auto needle = wormedit::text_util::ascii_lowercase(tag_filter);
+    return needle.empty() || std::ranges::any_of(tags, [&needle](const auto& tag) {
+        return wormedit::text_util::ascii_lowercase(tag).find(needle) != std::string::npos;
+    });
+}
 
 auto worm_ui_nuklear_audio_state() noexcept -> worm_ui_nuklear_audio_state_t& {
     static worm_ui_nuklear_audio_state_t state;

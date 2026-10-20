@@ -75,6 +75,7 @@ struct semantic_sound_t {
     local_position_t position;
     lane_id_t lane;
     std::optional<local_position_t> end;
+    bool has_hitsample{};
 };
 
 using fused_group_key_t = std::tuple<std::uint64_t, std::uint64_t, std::uint64_t, std::uint8_t,
@@ -138,12 +139,12 @@ class audition_resolver_index_t {
         for (const auto& measure : chart.measures) {
             for (const auto& note : measure.notes) {
                 add_semantic({note.id, note.sound, note.sound_channel_event.value_or(object_id_t{}),
-                              true, note.kind, note.position, note.lane, note.end});
+                              true, note.kind, note.position, note.lane, note.end, note.osu_hitsample.has_value()});
             }
             for (const auto& event : measure.bgm_events) {
                 add_semantic({event.id, event.sound,
                               event.sound_channel_event.value_or(object_id_t{}), false,
-                              note_kind_t::tap, event.position, lane_id_t{}, std::nullopt});
+                              note_kind_t::tap, event.position, lane_id_t{}, std::nullopt, false});
             }
         }
     }
@@ -157,6 +158,10 @@ class audition_resolver_index_t {
         if (found == semantic_by_id_.end())
             return std::nullopt;
         return semantics_[found->second].resource;
+    }
+    [[nodiscard]] auto has_hitsample(object_id_t object) const -> bool {
+        const auto found = semantic_by_id_.find(object.value);
+        return found != semantic_by_id_.end() && semantics_[found->second].has_hitsample;
     }
 
     [[nodiscard]] auto resolve(object_id_t object) -> audition_resolve_result_t {
@@ -420,6 +425,60 @@ auto transient_audition_event(const chart_document_t& chart, local_position_t ta
     return result;
 }
 
+struct preview_binding_builder_t {
+    audition_resolver_index_t& index;
+    const audition_resolve_options_t& options;
+    preview_bindings_resolve_outcome_t& result;
+    std::unordered_map<std::uint64_t, const hitsound_binding_t*> hitsounds;
+    std::size_t total_clips{};
+
+    auto append_sources(object_id_t object, resource_id_t resource,
+                         preview_object_source_binding_t& output) -> bool {
+        if (!resource) return true;
+        auto resolved = index.resolve(object);
+        if (resolved.clips.empty() && resolved.diagnostics.empty()) return true;
+        if (!resolved) {
+            if (is_unavailable_preview_source(resolved, options)) {
+                ++result.value.skipped_unavailable_objects;
+                return true;
+            }
+            result.diagnostics.insert(result.diagnostics.end(),
+                std::make_move_iterator(resolved.diagnostics.begin()),
+                std::make_move_iterator(resolved.diagnostics.end()));
+            return false;
+        }
+        for (auto& clip : resolved.clips)
+            output.voices.push_back({.source = std::move(clip.source),
+                .source_start_frame = clip.source_start_frame, .frame_count = clip.frame_count, .gain = clip.gain});
+        return true;
+    }
+
+    auto append(object_id_t object, resource_id_t resource) -> bool {
+        const auto semantic = index.resource_for(object);
+        if ((!resource && !index.has_hitsample(object)) ||
+            (resource && (!semantic || *semantic != resource))) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_link,
+                "preview schedule object is stale or mismatched", object));
+            return false;
+        }
+        preview_object_source_binding_t output{.object = object};
+        if (!append_sources(object, resource, output)) return false;
+        if (const auto extra = hitsounds.find(object.value); extra != hitsounds.end()) {
+            output.voices.insert(output.voices.end(), extra->second->binding.voices.begin(),
+                                  extra->second->binding.voices.end());
+            for (auto& voice : output.voices) voice.gain *= extra->second->gain;
+        }
+        if (output.voices.size() > options.maximum_total_clips - total_clips) {
+            result.diagnostics.push_back(error(audition_resolve_code_t::capacity_exceeded,
+                "preview schedule exceeds the configured audition clip limit", object));
+            return false;
+        }
+        total_clips += output.voices.size();
+        if (!output.voices.empty()) result.value.bindings.push_back(std::move(output));
+        return true;
+    }
+};
+
 } // namespace
 
 auto audition_resolution_t::from(audition_resolve_result_t&& report) -> audition_resolve_outcome_t {
@@ -452,6 +511,14 @@ auto audition_resolution_t::from(const song_document_t& song, chart_id_t chart_i
     return from(index.resolve(object));
 }
 
+void preview_bindings_resolution_t::append_music(resource_id_t resource,
+    const decoded_source_binding_t& source, preview_schedule_t& schedule) {
+    schedule.music = preview_schedule_t::music_event_t::from(resource, source.output_frame_count);
+    if (!schedule.music) return;
+    bindings.push_back({.object = preview_music_object,
+        .voices = {{.source = source.source, .frame_count = source.output_frame_count}}});
+}
+
 auto preview_bindings_resolution_t::from(const song_document_t& song, chart_id_t chart_id,
                               const preview_schedule_t& schedule,
                               std::span<const audition_source_binding_t> bindings,
@@ -479,46 +546,13 @@ auto preview_bindings_resolution_t::from(const song_document_t& song, chart_id_t
         return result;
 
     result.value.bindings.reserve(scheduled.size());
-    std::size_t total_clips{};
+    preview_binding_builder_t builder{.index = index, .options = options, .result = result};
+    for (const auto& binding : options.hitsounds)
+        builder.hitsounds.emplace(binding.binding.object.value, &binding);
     for (const auto& [object, scheduled_resource] : scheduled) {
-        const auto semantic_resource = index.resource_for(object);
-        if (!semantic_resource.has_value() || *semantic_resource != scheduled_resource) {
-            result.diagnostics.push_back(error(audition_resolve_code_t::invalid_link,
-                                               "preview schedule object is stale or mismatched",
-                                               object));
+        if (!builder.append(object, scheduled_resource)) {
             result.value.bindings.clear();
             return result;
-        }
-        auto resolved = index.resolve(object);
-        // A point past the end of its sample resolves to no clips and no error: it is silent.
-        if (resolved.clips.empty() && resolved.diagnostics.empty()) continue;
-        if (!resolved) {
-            if (is_unavailable_preview_source(resolved, options)) {
-                ++result.value.skipped_unavailable_objects;
-                continue;
-            }
-            result.diagnostics.insert(result.diagnostics.end(),
-                                      std::make_move_iterator(resolved.diagnostics.begin()),
-                                      std::make_move_iterator(resolved.diagnostics.end()));
-            result.value.bindings.clear();
-            return result;
-        }
-        if (resolved.clips.size() > options.maximum_total_clips - total_clips) {
-            result.diagnostics.push_back(
-                error(audition_resolve_code_t::capacity_exceeded,
-                      "preview schedule exceeds the configured audition clip limit", object));
-            result.value.bindings.clear();
-            return result;
-        }
-        total_clips += resolved.clips.size();
-        auto& output = result.value.bindings.emplace_back();
-        output.object = object;
-        output.voices.reserve(resolved.clips.size());
-        for (auto& clip : resolved.clips) {
-            output.voices.push_back({.source = std::move(clip.source),
-                                     .source_start_frame = clip.source_start_frame,
-                                     .frame_count = clip.frame_count,
-                                     .gain = clip.gain});
         }
     }
     return result;

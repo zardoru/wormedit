@@ -133,6 +133,33 @@ TEST_CASE("Sounds properties are staged, revertible and stamped before Apply",
     expect(std::string_view{state.properties_name}=="Kick");
 }
 
+TEST_CASE("Sounds tag chips emit one stamped add or remove without applying name drafts",
+          "[event-harness][sounds-workflow][sound-tags]") {
+    fixture_t fixture;
+    const std::array<std::string_view, 2> tags{"Drum", "Kick"};
+    fixture.rows[0].tags = tags;
+    auto& state = worm_ui_nuklear_audio_state();
+    std::strcpy(state.properties_name, "Unapplied name");
+    std::strcpy(state.new_tag, "Low");
+    (void)fixture.harness.frame();
+    SECTION("add") {
+        const auto button = fixture.harness.drawn_text_center("Add tag");
+        expect(button);
+        const auto action = fixture.click(button->first, button->second);
+        expect(action.get().sound_properties_tags ==
+              std::optional{std::vector<std::string>{"Drum", "Kick", "Low"}});
+        expect(std::string_view{action.get().sound_properties_name} == "Kick");
+    }
+    SECTION("remove") {
+        const auto button = fixture.harness.drawn_text_center("Drum  ×");
+        expect(button);
+        const auto action = fixture.click(button->first, button->second);
+        expect(action.get().sound_properties_tags ==
+              std::optional{std::vector<std::string>{"Kick"}});
+        expect(action.get().sound_properties_resource_id == 101);
+    }
+}
+
 TEST_CASE("Sounds pan and alignment drag are separate zoom-aware gestures",
           "[event-harness][sounds-workflow]") {
     fixture_t fixture;

@@ -2,6 +2,7 @@
 #include "core/text_util.h"
 #include "sys/catalog_view.h"
 #include "sys/application.h"
+#include <wormedit/core/hitsound_editor.h>
 #include "sys/application_edit_inputs.h"
 #include "sys/external_player_runtime.h"
 #include "sys/application_timing_stage.h"
@@ -695,6 +696,14 @@ void refresh_note_kind_commands(wormedit::command_registry_t& registry,
     using namespace wormedit;
     const auto paint_active = application.project.compose_gesture.note_paint_mode_active;
     const auto layer_active = application.project.compose_gesture.semantic_layer_paint_mode_active;
+    const auto hitsounds_ready = compose_ready && !pending &&
+        compose_state->has_hitsound_palette(chart->source_family);
+    for (const auto& entry : hitsound_commands())
+        (void)update_command_state(registry, command_id_t{std::string{entry.id}}, hitsounds_ready, std::nullopt);
+    (void)update_command_state(registry, command_id_t{"hitsound.toggle_palette"},
+        compose_ready && !pending && chart->source_family != format_family_t::osu_mania &&
+            chart->source_family != format_family_t::quaver,
+        compose_ready && compose_state->has_hitsound_palette(chart->source_family));
     const auto tools_ready = compose_ready;
     const auto layer_ready = tools_ready &&
         layer_tool_target_editable(chart, application.project.semantic_layer.semantic_layer_target);
@@ -2044,6 +2053,10 @@ struct application_t::implementation_t {
         notification_sink_t& notifications;
         task_scheduler_t resource_copy_scheduler{1, 1, background_scheduler_options()};
         runtime::resource_copy_t resource_copy_runtime{resource_copy_scheduler, notifications};
+        runtime::preview_audio_export_t preview_audio_runtime{resource_copy_scheduler, notifications};
+        [[nodiscard]] auto is_resource_worker_busy() const -> bool {
+            return resource_copy_runtime.is_busy() || preview_audio_runtime.is_busy();
+        }
         runtime::metadata_asset_t metadata_asset_runtime{notifications};
         runtime::output_group_export_t export_runtime{notifications};
         task_scheduler_t project_open_scheduler{1, 1, background_scheduler_options()};
@@ -2236,7 +2249,7 @@ struct application_t::implementation_t {
     }
 
     auto can_transition_project() -> bool {
-        if (session.autosave_loop.is_busy() || jobs.resource_copy_runtime.is_busy() ||
+        if (session.autosave_loop.is_busy() || jobs.is_resource_worker_busy() ||
             jobs.export_runtime.is_busy() || jobs.metadata_asset_runtime.import_pending()) {
             post_project_feedback(wormedit::notification_severity_t::warning,
                                   wormedit::notification_source_t::document,
@@ -2333,7 +2346,7 @@ struct application_t::implementation_t {
                                   "Create or open a project before saving.");
             return false;
         }
-        if (jobs.resource_copy_runtime.is_busy() || jobs.export_runtime.is_busy() ||
+        if (jobs.is_resource_worker_busy() || jobs.export_runtime.is_busy() ||
             jobs.metadata_asset_runtime.import_pending() || jobs.project_open_runtime.is_busy()) {
             post_project_feedback(notification_severity_t::warning, notification_source_t::document,
                                   "Wait for the current file operation before saving.");
@@ -2834,7 +2847,7 @@ struct application_t::implementation_t {
     }
 
     auto is_project_replacement_busy() -> bool {
-        if (!session.autosave_loop.is_busy() && !jobs.resource_copy_runtime.is_busy() &&
+        if (!session.autosave_loop.is_busy() && !jobs.is_resource_worker_busy() &&
             !jobs.export_runtime.is_busy() && !jobs.metadata_asset_runtime.import_pending())
             return false;
         post_project_feedback(wormedit::notification_severity_t::warning,
@@ -3092,7 +3105,7 @@ struct application_t::implementation_t {
         } else if (const auto metadata_status = wormedit::sys::dispatch_metadata_action(
                        action, metadata_inputs(),
                        application_command_state.audio_offset_edits_locked(),
-                       jobs.resource_copy_runtime.is_busy(), jobs.export_runtime.is_busy(), true)) {
+                       jobs.is_resource_worker_busy(), jobs.export_runtime.is_busy(), true)) {
             static_cast<void>(metadata_status);
         } else if (dispatch_timing_workspace_action(action, application_command_state)) {
             // The timing producer publishes feedback and consumes this action.
@@ -3961,6 +3974,8 @@ struct application_t::implementation_t {
         audio_runtime.project_sources.probe_scheduler = &audio_runtime.audition_probe_scheduler;
         audio_runtime.project_sources.resident_loader = &audio_runtime.resident_loader;
         audio_runtime.project_sources.notifications = &platform.notification_sink;
+        audio_runtime.project_sources.hitsounds.environment.bundle_directory =
+            std::filesystem::path{SDL_GetBasePath()} / "assets/hitsounds";
         audio_runtime.project_sources.audition_output = &audio_runtime.audition_output;
         audio_runtime.project_sources.preview_output = &audio_runtime.preview_output;
         audio_runtime.project_sources.waveform = &audio_runtime.waveform_runtime;
@@ -4042,6 +4057,7 @@ struct application_t::implementation_t {
         shutdown_started_ = true;
         jobs.project_open_runtime.shutdown();
         jobs.resource_copy_runtime.cancel();
+        jobs.preview_audio_runtime.cancel();
         jobs.metadata_asset_runtime.cancel();
         jobs.export_runtime.cancel();
         jobs.resource_copy_scheduler.shutdown();
@@ -4445,6 +4461,7 @@ struct application_t::implementation_t {
                 wormedit::sys::frame_phase_t::events_jobs);
             wormedit::sys::poll_application_jobs(
                 jobs.metadata_asset_runtime, jobs.resource_copy_runtime, jobs.export_runtime,
+                jobs.preview_audio_runtime,
                 session.history, session.workspace, session.project_identity.asset_base);
             poll_project_save();
             poll_project_open();
@@ -4589,7 +4606,8 @@ struct application_t::implementation_t {
     void complete_frame_view(frontend_workspace_view_t& flattened,
                              const composed_frame_inputs_t& frame) {
         flattened.view.file_jobs.opening = jobs.project_open_runtime.view();
-        flattened.view.file_jobs.exporting = jobs.export_runtime.view();
+        const auto preview_audio = jobs.preview_audio_runtime.view();
+        flattened.view.file_jobs.exporting = preview_audio.active ? preview_audio : jobs.export_runtime.view();
         flattened.view.file_jobs.preview = views.project_chart_runtime.preview_view();
         const auto export_confirmation = jobs.export_runtime.confirmation_view();
         flattened.view.compose.export_confirmation_required = export_confirmation.required;
@@ -4647,12 +4665,34 @@ struct application_t::implementation_t {
                          session.project_identity.asset_base, flattened.view.compose);
     }
 
+    void dispatch_preview_audio_export(const WormUiWorkspaceAction& action) {
+        if (!action.preview_audio_export) return;
+        if (jobs.is_resource_worker_busy() || jobs.export_runtime.is_busy() || jobs.metadata_asset_runtime.import_pending()) {
+            platform.notification_sink.post(notification_severity_t::warning, notification_source_t::export_,
+                "Wait for the current import or export to finish.");
+            return;
+        }
+        const auto* base = SDL_GetBasePath();
+        const auto started = jobs.preview_audio_runtime.start(session.history.document,
+            *action.preview_audio_export, session.project_identity.asset_base,
+            preferences.program_preferences.preferences.audio.osu_skin_directory,
+            std::filesystem::path{base ? base : ""} / "assets/hitsounds");
+        platform.notification_sink.post(started ? notification_severity_t::info : notification_severity_t::warning,
+            notification_source_t::export_, started ? "Preview audio export started." : started.error().message);
+    }
+
     void dispatch_confirmed_workspace_actions(
         double viewport_delta_seconds, WormUiWorkspaceAction& action,
         const std::optional<std::uint32_t>& selected_waveform_sample_rate, double viewport_height) {
         dispatch_lane_keys(action);
         dispatch_options_page_action(action.options);
+        dispatch_preview_audio_export(action);
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
+        const auto& skin = preferences.program_preferences.preferences.audio.osu_skin_directory;
+        if (audio_runtime.project_sources.hitsounds.environment.skin_directory != skin) {
+            audio_runtime.project_sources.hitsounds.environment.skin_directory = skin;
+            audio_runtime.preview_state.invalidate();
+        }
         audio_runtime.resident_loader.set_budget_bytes(
             static_cast<std::size_t>(
                 preferences.program_preferences.preferences.audio.keysound_budget_mib) *
@@ -4695,7 +4735,10 @@ struct application_t::implementation_t {
 #endif
 
             if (action.file_jobs.cancel_open) jobs.project_open_runtime.cancel();
-            if (action.file_jobs.cancel_export) jobs.export_runtime.cancel();
+            if (action.file_jobs.cancel_export) {
+                if (jobs.preview_audio_runtime.is_busy()) jobs.preview_audio_runtime.cancel();
+                else jobs.export_runtime.cancel();
+            }
             if (action.file_jobs.cancel_preview) views.project_chart_runtime.request_cancel_preview();
             if (jobs.project_open_runtime.is_busy()) return;
             if (dispatch_close_confirmation(

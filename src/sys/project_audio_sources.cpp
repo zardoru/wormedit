@@ -174,6 +174,20 @@ auto project_audio_sources_t::bindings(const song_document_t& document)
     ensure_current(document);
     return sources.bindings();
 }
+auto project_audio_sources_t::resolve_preview(const song_document_t& document,
+    const chart_document_t& chart, const preview_schedule_t& schedule)
+    -> audio::preview_bindings_resolve_outcome_t {
+    ensure_current(document);
+    hitsounds.environment.map_directory = asset_base;
+    const auto registered = sources.bindings();
+    const auto extras = hitsounds.bindings(document, chart, sources, generation);
+    auto result = audio::preview_bindings_resolution_t::from(document, chart.id, schedule,
+        registered, {.skip_unavailable_preview_sources = true, .hitsounds = extras});
+    if (hitsounds.take_fallback_notice() && notifications)
+        notifications->post(notification_severity_t::warning, notification_source_t::audio,
+            "Some osu! hitsamples were unavailable; default samples were used where possible.");
+    return result;
+}
 auto project_audio_sources_t::binding(const song_document_t& document, asset_id_t asset)
     -> std::optional<audio::decoded_source_binding_t> {
     ensure_current(document);

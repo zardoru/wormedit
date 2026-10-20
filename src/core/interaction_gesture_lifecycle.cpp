@@ -484,6 +484,7 @@ auto pending_note_paint_gesture_t::begin(editor_edit_context_t& context,
         .note_kind = state.armed_note_kind,
         .layers = state.armed_note_layers,
         .source_geometry = geometry,
+        .hitsample = state.armed_hitsample,
     };
     pending.visited.reserve(64);
     pending.visited.insert({lane, *row});
@@ -623,6 +624,15 @@ auto prepare_note_paint_document(const document_history_t& history, chart_id_t c
     return prepared;
 }
 
+void prepared_note_paint_t::set_hitsample(chart_id_t chart_id, const std::optional<osu_hitsample_t>& sample) {
+    if (!sample) return;
+    std::unordered_set<std::uint64_t> ids;
+    for (const auto id : painted_notes) ids.insert(id.value);
+    for (auto& measure : document.find_chart(chart_id)->measures)
+        for (auto& note : measure.notes)
+            if (ids.contains(note.id.value)) note.osu_hitsample = sample;
+}
+
 auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     -> editor_interaction_result_t {
     auto& state = context.state;
@@ -645,6 +655,7 @@ auto pending_note_paint_gesture_t::apply(editor_edit_context_t& context) const
     if (const auto* diagnostics = std::get_if<diagnostic_list_t>(&prepared))
         return editor_interaction_result_t{.diagnostics = *diagnostics};
     auto result = std::get<prepared_note_paint_t>(std::move(prepared));
+    result.set_hitsample(state.chart, pending.hitsample);
     auto transaction = document_command_transaction_t(context.history);
     transaction.adopt_document(std::move(result.document));
     return commit_editor_edit(context, transaction,
@@ -672,7 +683,8 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
             .preview_canvas_row = context.state.virtual_bms_cursor_row,
             .gesture_source = start.source, .sound = start.sound,
             .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
-            .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr}};
+            .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr,
+            .hitsample = context.state.armed_hitsample}};
     const auto resolved = resolve_row_placement(context.scope.chart, context.scope.measures,
         context.state, start.lane, start.position);
     const auto* position = std::get_if<local_position_t>(&resolved);
@@ -689,7 +701,8 @@ auto pending_hold_t::from(editor_edit_context_t& context, const hold_start_t& st
         .placement_preview = std::get<pending_hold_placement_preview_t>(plan),
         .gesture_source = start.source, .sound = start.sound,
         .kind = context.state.armed_note_kind, .layers = context.state.armed_note_layers,
-        .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr}};
+        .source_geometry = start.geometry ? std::make_shared<const bmson_source_geometry_t>(*start.geometry) : nullptr,
+        .hitsample = context.state.armed_hitsample}};
 }
 
 auto pending_hold_t::validate_start(const editor_edit_context_t& context) const -> diagnostic_list_t {
@@ -901,6 +914,7 @@ auto prepare_stem_hold_document(const editor_edit_context_t& context, const pend
     if (std::holds_alternative<diagnostic_list_t>(prepared))
         return prepared;
     auto& result = std::get<prepared_note_paint_t>(prepared);
+    result.set_hitsample(context.state.chart, pending.hitsample);
     auto* chart = result.document.find_chart(context.state.chart);
     for (const auto id : result.painted_notes) {
         auto* note = (*chart).find_note(id);
@@ -996,7 +1010,8 @@ auto pending_hold_t::apply(editor_edit_context_t& context, local_position_t posi
              .kind = placement.tail ? held_note_kind(pending.kind) : pending.kind,
              .end = placement.tail,
              .sound = pending.sound,
-             .semantic_layers = resolve_placement_layers(*chart, pending.layers, pending.sound)});
+             .semantic_layers = resolve_placement_layers(*chart, pending.layers, pending.sound),
+             .osu_hitsample = pending.hitsample});
     }
     const auto label = placement.adds_note
                            ? (placement.tail ? "Place merged hold note" : "Place tap note")

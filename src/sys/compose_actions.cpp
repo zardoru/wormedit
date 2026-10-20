@@ -1,5 +1,6 @@
 #include <wormedit/core/timing.h>
 #include "sys/compose_actions.h"
+#include <wormedit/core/hitsound_editor.h>
 #include "sys/application_edit_inputs.h"
 #include "sys/bookmark_commands.h"
 #include "sys/compose_actions_internal.h"
@@ -52,6 +53,19 @@
 #include <vector>
 
 namespace wormedit::sys {
+auto apply_compose_hitsound(document_history_t& history, editor_interaction_state_t& state,
+                            hitsound_change_t change) -> compose_action_outcome_t {
+    if (!change.is_valid()) return compose_action_outcome_t::blocked("Invalid hitsound edit.");
+    if (state.active_gesture)
+        return compose_action_outcome_t::blocked("Finish the current gesture before editing hitsounds.");
+    const auto notes = editor_quantize_selection(state).notes;
+    if (notes.empty()) {
+        state.armed_hitsample = changed_hitsample(state.armed_hitsample.value_or(osu_hitsample_t{}), change);
+        return compose_action_outcome_t::from("Next-note hitsounds updated.", notification_severity_t::hint);
+    }
+    return compose_action_outcome_t::from(apply_hitsound_edit(history, state.chart, notes, change),
+        compose_action_description_t{.unchanged = "Hitsounds are unchanged."}, "Hitsounds updated.");
+}
 using namespace compose_action_detail;
 
 namespace compose_action_detail {
@@ -3446,6 +3460,9 @@ auto perform_routed_compose_action(compose_action_context_t& context,
 }
 
 auto perform_compose_view_action(compose_action_context_t& context) -> compose_action_outcome_t {
+    if (context.action.compose_hitsound)
+        return apply_compose_hitsound(context.environment.document.history, context.state,
+                                       *context.action.compose_hitsound);
     const auto* route = compose_action_route_t::find(context.action.compose_action);
     if (auto blocked = process_compose_action_boundary(context, route))
         return std::move(*blocked);
@@ -3521,7 +3538,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
 
     using namespace wormedit;
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
-        !action.compose_area_clear_requested) return {};
+        !action.compose_area_clear_requested && !action.compose_hitsound) return {};
     const bool metadata_path_action = resource_path_tab_action(action, workspace.active_tab);
     const chart_stamp_t stamp{
         .document = {history.document.id, action.compose_input_document_revision},
@@ -3619,7 +3636,7 @@ auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceActio
         return true;
     }
     if (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE &&
-        !action.compose_area_clear_requested) {
+        !action.compose_area_clear_requested && !action.compose_hitsound) {
         return false;
     }
 

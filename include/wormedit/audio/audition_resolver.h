@@ -3,6 +3,7 @@
 #include <wormedit/audio/audition_bridge.h>
 #include <wormedit/audio/preview_bridge.h>
 #include <wormedit/audio/source_registry.h>
+#include <wormedit/audio/hitsound_resolver.h>
 #include <wormedit/core/bmson_sound_channel_editor.h>
 #include <wormedit/core/sound_slice.h>
 
@@ -20,6 +21,7 @@ struct audition_resolve_options_t {
     std::size_t maximum_total_clips{200'000};
     sample_rounding_t rounding{sample_rounding_t::nearest_ties_to_even};
     bool skip_unavailable_preview_sources{};
+    std::span<const hitsound_binding_t> hitsounds;
 };
 
 enum class audition_resolve_code_t {
@@ -57,6 +59,8 @@ using audition_resolve_outcome_t =
     diagnosed_t<audition_resolution_t, std::vector<audition_resolve_diagnostic_t>>;
 
 struct preview_bindings_resolution_t {
+    void append_music(resource_id_t resource, const decoded_source_binding_t& source,
+                       preview_schedule_t& schedule);
     [[nodiscard]] static auto from(const song_document_t& song, chart_id_t chart,
                                    const preview_schedule_t& schedule,
                                    std::span<const audition_source_binding_t> bindings,

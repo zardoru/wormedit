@@ -526,10 +526,63 @@ auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> 
 } // namespace
 
 bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
+    if (view.hitsounds.visible) return true;
     if (!view.note_kind_palette_visible) return false;
     for (std::size_t index = 0; index < view.note_palette.count; ++index)
         if (note_palette_kind_allowed(view, view.note_palette.entries[index].id)) return true;
     return false;
+}
+
+namespace {
+void emit_hitsound(const ComposeToolbarContext& toolbar, wormedit::hitsound_field_t field,
+                   std::optional<int> value = {}) {
+    auto& action = *toolbar.action;
+    action.compose_hitsound = {.field = field, .value = value};
+    action.compose_input_project_id = toolbar.view->project_id;
+    action.compose_input_chart_id = toolbar.view->chart_id;
+    action.compose_input_document_revision = toolbar.view->document_revision;
+}
+
+void render_hitsound_tiles(const ComposeToolbarContext& toolbar) {
+    if (!toolbar.view->hitsounds.visible) return;
+    auto* context = toolbar.context;
+    wormedit::ui::chrome::section_separator(context);
+    constexpr std::array labels{"W", "F", "C"};
+    constexpr std::array tooltips{"Whistle (W)", "Finish (E)", "Clap (R)",
+        "Normal sample set: click cycles, right-click chooses", "Addition sample set: click cycles, right-click chooses"};
+    constexpr std::array sets{"A", "N", "S", "D"};
+    for (std::size_t index = 0; index < 5; ++index) {
+        const auto value = toolbar.view->hitsounds.values.fields[index];
+        const auto field = static_cast<wormedit::hitsound_field_t>(index);
+        const char* label = !value ? "−" : index < 3 ? labels[index] : sets[static_cast<std::size_t>(*value)];
+        nk_layout_row_static(context, 30, 30, 1);
+        const auto bounds = nk_widget_bounds(context);
+        if (wormedit::ui::chrome::Chip{.label = label, .chosen = index < 3 && value == 1,
+                .tooltip = tooltips[index]}.render(context)) emit_hitsound(toolbar, field);
+        if (index >= 3 && nk_input_is_mouse_pressed(&context->input, NK_BUTTON_RIGHT) &&
+            nk_input_is_mouse_hovering_rect(&context->input, bounds)) {
+            state.hitsound_menu.field = field;
+            wormedit::ui::chrome::context_menu_open(state.hitsound_menu.menu, context->input.mouse.pos,
+                wormedit::ui::chrome::PopupContextStamp::from(*toolbar.view));
+        }
+    }
+}
+} // namespace
+
+void render_compose_hitsound_menu(const ComposeToolbarContext& toolbar) {
+    namespace chrome = wormedit::ui::chrome;
+    auto& menu = state.hitsound_menu.menu;
+    auto* context = toolbar.context;
+    if (!toolbar.view->hitsounds.visible) chrome::context_menu_abandon(menu);
+    if (!menu.opened_this_frame) (void)chrome::context_menu_update(menu, context);
+    if (!chrome::context_menu_begin(menu, context, chrome::PopupContextStamp::from(*toolbar.view),
+        nk_vec2(220, chrome::context_menu_height(4)))) return;
+    constexpr std::array labels{"Auto", "Normal", "Soft", "Drum"};
+    for (std::size_t index = 0; index < labels.size(); ++index) {
+        if (chrome::context_menu_item(menu, context, labels[index], nullptr))
+            emit_hitsound(toolbar, state.hitsound_menu.field, static_cast<int>(index));
+    }
+    chrome::context_menu_end(menu, context);
 }
 
 void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
@@ -541,7 +594,8 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
             .render(toolbar.context) &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
-    for (std::size_t index = 0; index < toolbar.view->note_palette.count; ++index) {
+    const auto count = toolbar.view->note_kind_palette_visible ? toolbar.view->note_palette.count : 0;
+    for (std::size_t index = 0; index < count; ++index) {
         const auto& descriptor = toolbar.view->note_palette.entries[index];
         const auto kind = descriptor.id;
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
@@ -558,6 +612,7 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
                 toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE;
         }
     }
+    render_hitsound_tiles(toolbar);
 }
 
 static void layout_toolbar_icons(nk_context* context, int count) {

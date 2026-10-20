@@ -5,9 +5,16 @@
 Stage 3 branch and channel-map leftovers from
 [authoring/export](../stages/authoring-export.md) and the
 [BMS control-flow reference](../../references/bms-control-flow.md). Core already
-has statement edit/insert/delete commands and `apply_bms_branch_choice_command`
-(wired in `src/sys/compose_actions.cpp`); the outline panel is read-only apart
-from choice selection. Apply the stale-plan check (rule 9) first.
+has source-backed statement edit/insert/delete, choice changes, narrow root-range
+RANDOM block creation/removal and leaf-body reordering. The panel is not read-only.
+Apply the stale-plan check (rule 9) first.
+
+**Owner direction (2026-10-20):** the next model is a scoped program with Control,
+Chart and opaque Text nodes, not a retained-source browser. See the
+[approved contract](../editing/bms-scoped-program.md) and new T-731–T-744 cards.
+The completed cards below record the old source-backed slice; they do not fulfill
+the new contract. T-93 remains individual-note move/copy work, separate from moving
+whole scoped subtrees. T-287's opt-out malformed-flow repair proposals remain separate.
 
 ## T-90 Expose inactive-statement edit, insert, and delete in the branch outline
 

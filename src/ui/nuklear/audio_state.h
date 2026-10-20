@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <span>
+#include <string_view>
 #include <wormedit/audio/waveform_viewport.h>
 
 struct worm_ui_nuklear_audio_state_t {
@@ -29,6 +31,9 @@ struct worm_ui_nuklear_audio_state_t {
     bool offset_escape_pending{};
     bool offset_cancel_pending{};
     char search_text[128]{};
+    char tag_filter[128]{};
+    char new_tag[257]{};
+    [[nodiscard]] auto matches_tags(std::span<const std::string_view> tags) const -> bool;
     // The selected resource may share an audio asset with another catalog entry.
     std::uint64_t selected_project_id{};
     std::uint64_t selected_resource_id{};

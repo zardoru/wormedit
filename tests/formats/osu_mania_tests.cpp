@@ -652,6 +652,63 @@ TEST_CASE("osu!mania fixtures preserve source bytes, tags, bookmarks, kiai and s
     CHECK(diagnostics.empty());
 }
 
+namespace {
+auto check_hitsample_native_roundtrip(const wormedit::song_document_t& source) -> wormedit::song_document_t {
+    auto reopened = native_reopen(source);
+    const auto unchanged = write_inline(reopened);
+    REQUIRE(unchanged.value);
+    const auto original = write_inline(source);
+    REQUIRE(original.value);
+    CHECK(*unchanged.value == *original.value);
+    return reopened;
+}
+void check_edited_hitsample_export(const wormedit::song_document_t& song, const wormedit::note_t& note) {
+    const auto written = write_inline(song);
+    REQUIRE(written.value);
+    const auto again = parse_inline(*written.value);
+    REQUIRE(again.value);
+    const auto* edited = source_note(again.value->charts.front(), "64,");
+    REQUIRE(edited);
+    CHECK(edited->osu_hitsample == note.osu_hitsample);
+}
+}
+
+TEST_CASE("osu!mania typed hitsamples survive native storage and drive edited export",
+          "[unit][format][osu-mania][hitsound]") {
+    const auto parsed = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n",
+        "64,192,1000,1,14,1:2:3:40:custom.wav\n"
+        "192,192,2000,128,8,3000:3:1:0:100:\n"));
+    REQUIRE(parsed.value);
+    auto reopened = check_hitsample_native_roundtrip(*parsed.value);
+    const auto* source = source_note(reopened.charts.front(), "64,");
+    REQUIRE(source);
+    auto* note = reopened.charts.front().find_note(source->id);
+    REQUIRE(note->osu_hitsample);
+    const wormedit::osu_hitsample_t expected{
+        .whistle = true, .finish = true, .clap = true,
+        .normal_set = wormedit::osu_sample_set_t::normal,
+        .addition_set = wormedit::osu_sample_set_t::soft,
+        .custom_index = 3, .volume = 40, .filename = "custom.wav"};
+    CHECK(*note->osu_hitsample == expected);
+    note->osu_hitsample->whistle = false;
+    note->osu_hitsample->normal_set = wormedit::osu_sample_set_t::drum;
+    note->osu_hitsample->volume = 70;
+    check_edited_hitsample_export(reopened, *note);
+}
+
+TEST_CASE("osu!mania rejects malformed typed hitsample settings",
+          "[unit][format][osu-mania][hitsound]") {
+    std::string sample;
+    SECTION("normal set") { sample = "4:0:0:0:"; }
+    SECTION("addition set") { sample = "0:-1:0:0:"; }
+    SECTION("index") { sample = "0:0:-1:0:"; }
+    SECTION("volume") { sample = "0:0:0:101:"; }
+    SECTION("numeric") { sample = "0:0:no:0:"; }
+    const auto parsed = parse_inline(timing_fixture("0,500,4,0,0,100,1,0\n",
+        "64,192,1000,1,0," + sample + "\n"));
+    CHECK_FALSE(parsed.value);
+}
+
 TEST_CASE("osu!mania version profiles preserve stable-v14 and lazer-v128 time semantics",
           "[unit][format][osu-mania][version]") {
     const auto stable = fixture("versioned-stable-v14.osu");

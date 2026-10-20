@@ -82,6 +82,27 @@
    - **Owner input (2026-10-17):** "I would *like* to support a potential migration to a new front-end if it were to be necessary. What I'm less sure about is whether the C ABI needs to be there to achieve this." Frontend portability is a goal; the C shape of the boundary is not settled as the means. Still open: whether the boundary may become plain C++ types (spans, string views, enum classes) while keeping the same view-and-action seam and `cmake/check_ui_boundary.cmake`.
    - **Answered (2026-10-17):** Relax the requirement. Frontend portability stays a goal; the C ABI is no longer required for it. Boundary types may be plain C++, migrated slowly as surfaces are touched, with no wholesale conversion. Rule: [code-style.md, "Frontend boundary"](code-style.md). The provisional `WormUiComposeView` sub-struct grouping is superseded: a touched surface converts to C++ types instead.
 
+21. When lowering `#RANDOM n`, what happens to existing IF values or a selected preview value above the new range?
+   - **Agreed (2026-10-20):** the range is independent of arm count; editing it does not implicitly delete or renumber children.
+   - **Still open:** keep now-unreachable arms with a warning, or reject the shrink until resolved; whether an out-of-range preview choice is cleared, explicitly replaced, or blocks the edit.
+   - **No provisional choice:** do not silently clamp, delete or renumber anything.
+   - **Blocks:** [T-739](../tasks/bms-scoped-authoring.md#t-739-edit-random-outcome-ranges-without-implicit-arm-edits). See the [approved scoped-program contract](../editing/bms-scoped-program.md).
+22. Which non-body BMS directives appear as editable scope nodes rather than parameters or structural markers?
+   - **Agreed (2026-10-20):** Root and control scopes, including RANDOM and IF, each own at least one Chart child; the panel is an edit-scope selector, not a row for each source statement.
+   - **Still open:** presentation/authoring of `SETRANDOM`, `SETSWITCH`, `SKIP` and parser-only grouping/closing markers, whose syntax does not uniformly introduce a body. Define the control-node/scope mapping without inventing extra executable bodies or hiding meaningful controls.
+   - **No provisional choice:** preserve the rule that every modeled control node owns Chart content; do not equate source closing markers with additional user scopes or silently exclude fixed-selector forms. This is a syntax-to-model mapping question, not permission to exempt control nodes from the agreed Chart-child invariant.
+   - **Blocks:** complete source-node mapping in [T-733](../tasks/bms-scoped-model.md#t-733-decode-modeled-content-in-every-bms-scope) and node-creation grammar in [T-738](../tasks/bms-scoped-authoring.md#t-738-add-control-chart-and-text-nodes-in-selected-scopes); T-732 can represent the already agreed Root/RANDOM/IF model without deciding this presentation.
+23. What is the supported unwrap operation for a selector whose children depend on that selector?
+   - **Agreed (2026-10-20):** Delete removes a confirmed subtree; Unwrap separately promotes ordered contents to the parent and does not silently discard content.
+   - **Still open:** removing RANDOM/SWITCH may orphan IF/CASE children or bind them to an outer selector. Should such unwraps be refused, or should a separately specified compound transformation be offered?
+   - **No provisional choice:** never silently flatten, erase conditional boundaries, rebind selectors or drop collisions. Ordinary structurally valid child promotion remains the intended meaning of unwrap.
+   - **Blocks:** selector-unwrapping behavior in [T-742](../tasks/bms-scoped-authoring.md#t-742-unwrap-controls-as-an-explicit-structural-operation).
+24. How does selecting an inactive edit scope interact with the evaluated field and playback preview?
+   - **Agreed (2026-10-20):** selecting a control targets its first Chart child; another Chart can be selected explicitly; edits outside a leaf target the containing scope. RANDOM's range and its chosen preview outcome are different settings.
+   - **Still open:** whether selecting a scope adjusts the evaluation environment to reveal it, or opens a distinct scope-authoring projection while preview choices remain separate; specify switch fallthrough, object selection and Undo restoration. Define whether inherited ancestor/common content is read-only context, requires an intentional target switch, or supports an explicit local override/copy.
+   - **No provisional choice:** never implicitly mutate another scope/Chart owner, edit hidden unrelated content, silently change authored control parameters, or redirect a missing target to Root.
+   - **Blocks:** final selection/preview integration in [T-743](../tasks/bms-scoped-authoring.md#t-743-present-the-branch-panel-as-a-scope-authoring-tree).
+
 ## How to use this list
 
 An executing model never resolves an open question by itself. If a task depends on one, implement only behavior that holds for the provisional default, keep it behind a policy value, and say in the report which question it relied on. The defaults are unconfirmed suggestions written on 2026-09-29; the user may overturn any of them.

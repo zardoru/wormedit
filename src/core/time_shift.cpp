@@ -140,11 +140,6 @@ auto is_lanes_free_of_overlap(const chart_document_t& chart, const row_shifter_t
     return true;
 }
 
-auto has_bms_control_flow(const chart_document_t& chart) -> bool {
-    return chart.bms_control_tree.has_value() || !chart.bms_measure_length_projections.empty() ||
-           !chart.bms_bpm_projections.empty() || !chart.bms_pause_projections.empty();
-}
-
 // Validates the common preconditions on the document being edited; null means nothing to do.
 auto prepare_shift(song_document_t& document, chart_id_t chart_id, std::int64_t rows,
                    time_shift_result_t& result) -> chart_document_t* {
@@ -155,7 +150,7 @@ auto prepare_shift(song_document_t& document, chart_id_t chart_id, std::int64_t 
         reject(result.command, diagnostic_code_t::invalid_id, "time shift refers to an unknown chart");
         return nullptr;
     }
-    if (has_bms_control_flow(*chart)) {
+    if (chart->bms_control_tree && chart->bms_control_tree->has_control_flow()) {
         reject(result.command, diagnostic_code_t::unsupported_feature,
                "time shift is not supported on a chart with retained BMS control flow");
         return nullptr;

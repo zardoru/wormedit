@@ -486,11 +486,6 @@ auto definition_for_rows(std::uint64_t rows, std::uint64_t resolution) -> measur
     return {length, meters.empty() ? std::nullopt : std::optional{meters.front()}};
 }
 
-auto has_conditional_measures(const bms_control_node_t& node) -> bool {
-    if (node.kind != bms_control_kind_t::root && node.kind != bms_control_kind_t::raw_statement) return true;
-    return std::ranges::any_of(node.children, has_conditional_measures);
-}
-
 auto measure_rows(const chart_document_t& chart, std::size_t index) -> std::uint64_t {
     return validate_measure(chart.divisions_per_standard_measure, chart.measures[index].definition)
         .row_capacity.value_or(0);
@@ -521,7 +516,7 @@ auto removable_bar_line_index(const chart_document_t& chart, measure_id_t id)
 template <typename index_of_t>
 auto bar_line_indices(const chart_document_t& chart, std::span<const measure_id_t> measures,
                       index_of_t index_of) -> std::variant<std::vector<std::size_t>, diagnostic_list_t> {
-    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
+    if (chart.bms_control_tree && chart.bms_control_tree->has_control_flow())
         return diagnostic_list_t{error(diagnostic_code_t::unsupported_feature,
                                        "editing a bar line requires resolved BMS conditional branches")};
     std::vector<std::size_t> indices;
@@ -701,7 +696,7 @@ void apply_measure_action(measure_edit_context_t& context, const split_measure_a
     auto* chart = target_measure_chart(context, edit.chart);
     if (!chart) return;
     if (edit.position.row == 0) return;
-    if (chart->bms_control_tree && has_conditional_measures(*chart->bms_control_tree)) {
+    if (chart->bms_control_tree && chart->bms_control_tree->has_control_flow()) {
         reject(context.result, diagnostic_code_t::unsupported_feature,
                "measure splitting requires resolved BMS conditional branches");
         return;
@@ -926,7 +921,7 @@ void apply_measure_action(measure_edit_context_t& context, const convert_range_t
         return;
     }
     const pause_range_t range{*first, *last, edit.kind};
-    if ((chart->bms_control_tree && has_conditional_measures(*chart->bms_control_tree)) ||
+    if ((chart->bms_control_tree && chart->bms_control_tree->has_control_flow()) ||
         is_conversion_timing_blocked(*chart, *built, range)) {
         reject(context.result, diagnostic_code_t::unsupported_feature,
                "The range crosses BPM, pause, warp or retained BMS branch timing; choose an uninterrupted interval.");
@@ -1139,7 +1134,7 @@ auto remove_bar_lines(chart_document_t& chart, std::span<const measure_id_t> mea
 auto add_bar_lines(chart_document_t& chart, std::span<const std::uint64_t> rows,
                    measure_edit_limits_t limits) -> diagnostic_list_t {
     if (rows.empty()) return {};
-    if (chart.bms_control_tree && has_conditional_measures(*chart.bms_control_tree))
+    if (chart.bms_control_tree && chart.bms_control_tree->has_control_flow())
         return {error(diagnostic_code_t::unsupported_feature,
                       "adding a bar line requires resolved BMS conditional branches")};
     const auto before = measure_index_t::from(chart);

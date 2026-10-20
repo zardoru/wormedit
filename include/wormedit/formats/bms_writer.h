@@ -42,8 +42,9 @@ struct bms_write_options_t {
     std::optional<std::string> lane_profile_id;
     // Original bytes are emitted only while their import provenance is still unchanged.
     bool preserve_unchanged_source{true};
-    // Full-tree preservation is the safe default. Active-projection flattening
-    // is a separate, explicitly lossy operation and requires resolved choices.
+    // Preserve actual control flow, not the original placement of ordinary timing.
+    // Without control flow, edited BPM/STOP events are emitted normally. Discarding
+    // control flow requires explicit flatten_active and resolved branch choices.
     bms_branch_policy_t branch_policy{bms_branch_policy_t::preserve_tree};
     // Omit to retain exact unchanged source bytes when possible and otherwise
     // emit UTF-8 with BOM. Supplying an encoding forces normalized output in
@@ -58,9 +59,11 @@ using bms_write_outcome_t = attempt_t<std::string, std::vector<bms_write_diagnos
 // Writes unchanged imported BMS bytes exactly, or emits deterministic normalized
 // BMS in the requested encoding for metadata, resources, measure lengths, initial
 // BPM, taps, holds, repeated BGM source lanes, and representable BGA events.
-// Explicit flatten_active output also emits projected BPM changes, BMS STOP-tick
-// pauses, and exact supported measure ratios; unsupported pause units fail rather
-// than being converted approximately.
+// Branch-free output emits projected BPM changes, BMS STOP-tick pauses and exact
+// supported measure ratios under the default policy, retaining root comments and
+// unknown headers. Explicit flatten_active uses the same timing projection while
+// discarding control flow. Unsupported pause units fail rather than being converted
+// approximately.
 // Unsupported semantic features fail with typed diagnostics. Preserve-tree output
 // always emits every retained branch and its control statements; it never emits
 // only the selected materialized projection or only its patches. Provenanced branch

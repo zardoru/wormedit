@@ -95,6 +95,18 @@ void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOption
         view->keysound_budget_mib, 256, 8192);
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
+    nk_layout_row_dynamic(context, 22, 1);
+    nk_label(context, "osu! hitsound skin folder (empty uses bundled samples)", NK_TEXT_LEFT);
+    std::array<char, WORM_UI_OPTIONS_TEXT_CAPACITY> folder{};
+    std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.c_str());
+    nk_layout_row_dynamic(context, 28, 1);
+    (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
+        NK_EDIT_FIELD, folder.data(), folder.size(), nk_filter_default);
+    if (view->osu_skin_directory != folder.data() && action->kind == WORM_UI_OPTIONS_NONE) {
+        *action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view->revision,
+            .category = view->category, .field = WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY};
+        std::snprintf(action->text, sizeof(action->text), "%s", folder.data());
+    }
 }
 void field_scheme_picker(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
     const auto& schemes = wormedit::ui::theme::field_schemes();

@@ -274,8 +274,10 @@ conditional optimization remains unproven.
 
 ## T-215 Model osu!-style hitsounds on notes
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
+- **Verification:** Typed flags/sets/index/volume/filename import, byte-stable unchanged export, edited export and optional native persistence pass. GATE passes 4,318/4,318, whitespace and changed-C++ complexity (`/tmp/wormedit-gate.aCMmTI`).
 - **Outcome:** notes carry an optional typed `osu_hitsample_t` (additions whistle/finish/clap, normal set, addition set, custom index, volume, filename); the osu!mania codec reads and writes it instead of relying on provenance text; Quaver `HitSound` flags map to the same type later.
+- **Supporting ownership (2026-10-20):** `include/wormedit/core/osu_hitsample.h` owns the small semantic value separately so frontend presentation and audio resolution can use it without importing document storage. The optional native field is backwards-compatible (absent = none), requiring no schema bump.
 - **Read first:** `src/formats/osu_mania.cpp` (`build_osu_note_sample`, `osu_note_sample_t`), `include/wormedit/core/document.h` (`note_t`), `docs/references/quaver-qua-format.md` (HitSound flags).
 - **Files owned:** `include/wormedit/core/document.h`, `src/core/document.cpp`, `src/formats/osu_mania.cpp`, `src/formats/native_project.cpp`, `src/formats/native_project_migrations.cpp`, `tests/formats/osu_mania_tests.cpp`, `tests/formats/native_project_tests.cpp`.
 - **Steps:** 1. Type + validation. 2. Reader fills it; writer prefers it, falling back to provenance only for untouched notes (byte-stable). 3. Native persistence with migration (absent = none). 4. Round-trip test with every flag and set.
@@ -286,7 +288,8 @@ conditional optimization remains unproven.
 
 ## T-216 Add osu!-style hitsound controls to the left note palette
 
-- **Status:** blocked-on T-215
+- **Status:** done (2026-10-20)
+- **Verification:** Mixed selection edits, one-step Undo, default capture for taps/paint/holds, right-click sample-set choices, shortcut dispatch and native enable/edit/save/reopen tests pass. GATE passes 4,318/4,318 (`/tmp/wormedit-gate.aCMmTI`). Isolated Xvfb captures inspected: osu! palette `/tmp/wormedit-hitsound-palette.png`, non-osu native project enabled through the command menu `/tmp/wormedit-native-hitsound-palette.png`. The workflow and generated shortcuts are in the manual.
 - **Mockup:** [hitsound-palette.svg](../mockups/hitsound-palette.svg) (reference: match its structure and hierarchy)
 - **Placement (user decision 2026-10-05):** in the left note palette column, below the note-kind buttons and after a separator, not in the toolbar or the Sounds dock. The palette has plenty of vertical room, and people rarely use the Sounds dock and osu! hitsounding at the same time. Users who want custom osu! samples use the Sounds dock's grouped view.
 - **Outcome:** on osu!mania and Quaver charts, the palette shows a hitsound group of 30 px square tiles with tooltips:
@@ -306,10 +309,15 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** a stale revision rejects. With nothing selected, a click changes only the next-note defaults and never the document.
 - **Verify:** `cmake --build build`; `ctest --test-dir build --output-on-failure -R 'hitsound'`; `ctest --test-dir build -L event-harness`; an Xvfb capture of the palette on an osu!mania fixture.
 - **Out of scope:** sample playback (T-217) and custom-sample management in the Sounds dock.
+- **Supporting ownership (menu lifecycle):** `src/ui/nuklear/context_menu.cpp` implements the existing state owner's shared palette-menu retirement and abandonment next to the native popup functions, keeping state-only test targets free of renderer linkage.
+- **Supporting ownership (native workflow/manual):** `tests/sys/application_commands_tests.cpp` covers enabling the palette on a native chart, selection versus placement-default edits, and native persistence. `docs/manual/chapters/sounds-and-layers.adoc` documents that workflow explicitly, including native projects with no osu! import.
+- **Supporting ownership (generated reference):** `docs/manual/generated/shortcuts.adoc` is regenerated from the command registry for the hitsound shortcuts and palette command.
+- **Supporting ownership (2026-10-20):** `include/wormedit/core/osu_hitsample.h`, `include/wormedit/core/interaction_state.h`, `include/wormedit/core/interaction_gestures.h`, `src/core/interaction.cpp`, `src/core/interaction_internal.h`, `src/core/interaction_gesture_lifecycle.cpp`, `src/core/note_placement.cpp`: own pure field/change values, next-note defaults, and capture/apply them through existing placement. `src/ui/frontend/hitsounds.h`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `src/ui/nuklear/compose_toolbar.h`, `src/ui/nuklear/compose_state.h/.cpp`, `src/ui/nuklear/compose_input_queries.h`, `src/ui/nuklear/frontend.cpp`: typed views/payloads and shared palette-menu lifecycle. `src/sys/application.cpp`, `src/sys/application_commands.h/.cpp`, `src/sys/application_command_dispatch.cpp`, `src/sys/compose_actions.h`, `tests/ui/hitsound_palette_event_harness_tests.cpp`: command capability/dispatch and feature-specific production-input tests.
 
 ## T-217 Play osu! hitsounds in preview
 
-- **Status:** blocked-on T-216
+- **Status:** done (2026-10-20)
+- **Verification:** Map/skin/bundle priority, explicit missing-file fallback, timing-context inheritance, multi-voice gain, audible native-note PCM and capacity rejection pass. GATE passes 4,318/4,318 (`/tmp/wormedit-gate.aCMmTI`). Isolated fixture playback runs with dummy audio (`/tmp/wormedit-hitsound-playback.png`); actual loudspeaker listening was not performed. Bundled samples are original generated CC0 PCM, with the generator and provenance checked in.
 - **Outcome:** preview plays normal and addition samples for each note: wormedit ships its own small CC0 default set (normal/soft/drum × hitnormal/whistle/finish/clap), and Options can point to an osu! skin folder whose files override the bundled ones; per-map custom samples always win (user decision 2026-09-30).
 - **Read first:** `docs/chart-editor-plan/playback-audio.md`, `include/wormedit/audio/preview_bridge.h`, `src/sys/audio_source_registration.cpp` (internal metronome sources: same pattern for bundled samples), `include/wormedit/core/preferences.h` (T-253).
 - **Files owned:** new `assets/hitsounds/` (samples + `LICENSE.md` stating CC0 and provenance), new `src/audio/hitsound_resolver.cpp/.h`, new `tests/core/audio_hitsound_resolver_tests.cpp`, `src/sys/audio_source_registration.cpp`, `src/audio/preview_bridge.cpp`, `CMakeLists.txt`, `tests/CMakeLists.txt`.
@@ -322,6 +330,9 @@ conditional optimization remains unproven.
 - **Reject/failure behavior:** missing samples fall back silently with one diagnostic.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual playback of an osu!mania fixture.
 - **Out of scope:** skin browsing UI beyond the folder option.
+- **Supporting ownership (inheritance):** `include/wormedit/core/osu_hitsample.h`, `include/wormedit/formats/osu_mania.h`, `src/formats/osu_mania.cpp` resolve Auto sets, zero index and zero volume from current-position BPM/SV sample context through one prebuilt index. `tests/support/temporary_directory.h` supplies isolated map/skin directories for resolver-order tests.
+- **Supporting ownership (preferences verification):** `tests/core/preferences_tests.cpp` covers the persisted skin directory alongside existing audio options.
+- **Supporting ownership (2026-10-20):** `include/wormedit/audio/hitsound_resolver.h` is the resolver's public header; `scripts/generate-hitsounds.py` generates original bundled PCM. `src/core/timing.cpp`, `include/wormedit/audio/audition_resolver.h`, `src/audio/audition_resolver.cpp`, `src/sys/project_audio_sources.h/.cpp`, `src/sys/chart_preview_state.cpp` extend the existing schedule and binding owners for typed samples without a resource ID. `include/wormedit/core/preferences.h`, `src/core/preferences.cpp`, `src/ui/frontend/options_notifications.h`, `src/ui/nuklear/options_window.cpp`, `src/sys/options_runtime.cpp`, `src/sys/application.cpp` persist and apply the skin-folder option. Existing bridge multi-voice scheduling is reused rather than introducing a second voice scheduler.
 
 ## T-240 Stop high-zoom waveform flicker during playback
 

@@ -21,6 +21,7 @@
 #include <string_view>
 #include <utility>
 
+
 void reset_armed_resource(worm_ui_nuklear_compose_state_t& state,
                           compose_resource_reset_reason_t reason) {
     state.resource_picker.armed_resource_id = 0;

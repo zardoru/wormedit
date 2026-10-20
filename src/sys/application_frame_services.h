@@ -5,6 +5,7 @@
 #include "sys/metadata_asset_runtime.h"
 #include "sys/metadata_drop_state.h"
 #include "sys/resource_job_state.h"
+#include "sys/preview_audio_export.h"
 #include "sys/sound_drop_transaction.h"
 #include "sys/workspace_edit_feedback.h"
 
@@ -29,6 +30,7 @@ auto poll_frontend_events(WormWindow& window, const frontend_event_inputs_t& env
 void poll_application_jobs(runtime::metadata_asset_t& metadata_assets,
                            runtime::resource_copy_t& resource_copy,
                            runtime::output_group_export_t& output_group_export,
+                           runtime::preview_audio_export_t& preview_audio,
                            document_history_t& history,
                            workspace_controller_t& workspace,
                            const std::filesystem::path& asset_base);

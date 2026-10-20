@@ -1062,6 +1062,18 @@ auto select_tool_command(command_context_t& context) -> command_result_t {
                                           compose_message_lifetime_t::borrowed);
 }
 
+auto hitsound_command(command_context_t& context) -> command_result_t {
+    auto* state = context.compose();
+    if (!state) return compose_action_outcome_t::blocked("Hitsounds require the active Compose chart.");
+    if (context.command.kind == command_kind_t::hitsound_toggle_palette) {
+        state->hitsound_palette_visible = !state->hitsound_palette_visible;
+        if (state->hitsound_palette_visible && !state->armed_hitsample) state->armed_hitsample = wormedit::osu_hitsample_t{};
+        return compose_action_outcome_t::from("Hitsound palette updated.", notification_severity_t::hint);
+    }
+    if (!context.command.hitsound) return compose_action_outcome_t::blocked("Invalid hitsound command.");
+    return apply_compose_hitsound(context.environment.document.history, *state, *context.command.hitsound);
+}
+
 auto note_kind_command(command_context_t& context) -> command_result_t {
     auto* state = context.compose();
     if (!state || !context.command.note_kind)
@@ -1200,6 +1212,9 @@ auto application_command_route_t::from(command_kind_t kind) -> application_comma
         return {.operation = select_tool_command};
     case command_kind_t::edit_note_kind:
         return {.operation = note_kind_command};
+    case command_kind_t::hitsound_edit:
+    case command_kind_t::hitsound_toggle_palette:
+        return {.operation = hitsound_command};
     case command_kind_t::measures_insert_before:
     case command_kind_t::measures_insert_after:
     case command_kind_t::measures_remove_empty:

@@ -114,4 +114,19 @@ using osu_mania_write_outcome_t = attempt_t<std::string, std::vector<osu_mania_w
                                    osu_mania_write_options_t options = {})
     -> osu_mania_write_outcome_t;
 
+// Resolves Auto/index-zero/volume-zero inheritance at the note's current musical
+// position, using the modeled timing events' retained sample fields.
+struct osu_sample_context_index_t {
+    struct entry_t {
+        std::uint64_t row{};
+        std::size_t source_order{};
+        osu_sample_context_t sample;
+    };
+    measure_index_t measures;
+    osu_sample_context_t initial;
+    std::vector<entry_t> entries;
+    [[nodiscard]] static auto from(const chart_document_t& chart) -> std::optional<osu_sample_context_index_t>;
+    [[nodiscard]] auto at(local_position_t position) const -> osu_sample_context_t;
+};
+
 } // namespace wormedit

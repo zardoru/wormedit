@@ -472,7 +472,8 @@ auto filtered_sound_rows(const WormUiAudioSlicesView& view) -> sound_rows_t {
     sound_rows_t rows;
     const auto needle = ascii_lowercase(audio.search_text);
     for (std::size_t index = 0; index < view.sound_row_count; ++index)
-        if (row_matches(view.sound_rows[index], needle)) rows.push_back(&view.sound_rows[index]);
+        if (row_matches(view.sound_rows[index], needle) && audio.matches_tags(view.sound_rows[index].tags))
+            rows.push_back(&view.sound_rows[index]);
     return rows;
 }
 
@@ -525,6 +526,14 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
                                                      static_cast<int>(sizeof(audio.search_text)),
                                                      nk_filter_default);
     if (nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, search_bounds))
+        audio.sound_list_focused = false;
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Filter by tag", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 26, 1);
+    const auto tag_bounds = nk_widget_bounds(context);
+    wormedit::ui::chrome::worm_ui_nuklear_text_field(context, NK_EDIT_FIELD, audio.tag_filter,
+        sizeof(audio.tag_filter), nk_filter_default);
+    if (nk_input_is_mouse_click_in_rect(&context->input, NK_BUTTON_LEFT, tag_bounds))
         audio.sound_list_focused = false;
     wormedit::ui::chrome::section_separator(context);
     const auto rows = filtered_sound_rows(view);
@@ -661,6 +670,44 @@ void reset_sound_properties(const WormUiAudioSlicesView& view, const WormUiSound
     audio.properties_revision = view.document_revision;
     std::snprintf(audio.properties_name, sizeof(audio.properties_name), "%s", sound.name ? sound.name : "");
     audio.properties_kind = std::clamp(sound.kind, 0, 3);
+    audio.new_tag[0] = '\0';
+}
+
+void submit_sound_tags(const WormUiAudioSlicesView& view, const WormUiSoundRowView& sound,
+                       std::vector<std::string> tags, WormUiWorkspaceAction& action) {
+    if (action.sound_properties_apply) return;
+    action.sound_properties_apply = true;
+    action.sound_properties_project_id = view.usage_song_id;
+    action.sound_properties_chart_id = view.has_chart ? view.chart_id : 0;
+    action.sound_properties_resource_id = sound.resource_id;
+    action.sound_properties_document_revision = view.document_revision;
+    std::snprintf(action.sound_properties_name, sizeof(action.sound_properties_name), "%s", sound.name);
+    action.sound_properties_kind = static_cast<std::uint8_t>(sound.kind);
+    action.sound_properties_tags = std::move(tags);
+}
+
+void render_sound_tags(nk_context* context, const WormUiAudioSlicesView& view,
+                       const WormUiSoundRowView& sound, WormUiWorkspaceAction& action) {
+    nk_layout_row_dynamic(context, 20, 1);
+    nk_label(context, "Tags (click to remove)", NK_TEXT_LEFT);
+    nk_layout_row_dynamic(context, 25, 2);
+    for (std::size_t index = 0; index < sound.tags.size(); ++index) {
+        const auto label = std::string{sound.tags[index]} + "  ×";
+        if (!wormedit::ui::chrome::Chip{.label = label.c_str(), .tooltip = "Remove tag"}.render(context)) continue;
+        std::vector<std::string> tags(sound.tags.begin(), sound.tags.end());
+        tags.erase(tags.begin() + static_cast<std::ptrdiff_t>(index));
+        submit_sound_tags(view, sound, std::move(tags), action);
+    }
+    nk_layout_row_dynamic(context, 26, 2);
+    const auto edit = wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
+        static_cast<nk_flags>(NK_EDIT_FIELD) | NK_EDIT_SIG_ENTER,
+        audio.new_tag, sizeof(audio.new_tag), nk_filter_default);
+    const bool add = nk_button_label(context, "Add tag") || (edit & NK_EDIT_COMMITED);
+    if (add && audio.new_tag[0]) {
+        std::vector<std::string> tags(sound.tags.begin(), sound.tags.end());
+        tags.emplace_back(audio.new_tag);
+        submit_sound_tags(view, sound, std::move(tags), action);
+    }
 }
 
 void render_sound_kind_properties(nk_context* context, const WormUiKindCatalogView& catalog) {
@@ -737,8 +784,7 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
                   static_cast<double>(selected->duration_frames) / selected->sample_rate,
                   selected->sample_rate);
     }
-    nk_labelf(context, NK_TEXT_LEFT, "Tags: %s",
-              selected->tags_text && selected->tags_text[0] ? selected->tags_text : "(none)");
+    render_sound_tags(context, view, *selected, action);
     if (selected->source_path && selected->source_path[0]) {
         nk_label(context, selected->source_path, NK_TEXT_LEFT);
     }

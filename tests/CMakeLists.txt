@@ -144,6 +144,8 @@ add_executable(wormedit_core_tests
     core/audio_slicer_tests.cpp
     core/sound_import_tests.cpp
     core/note_label_editor_tests.cpp
+    core/hitsound_editor_tests.cpp
+    core/atomic_file_storage_tests.cpp
     core/pause_warp_editor_tests.cpp
     core/player_preview_tests.cpp
     core/storyboard_preview_tests.cpp
@@ -229,6 +231,7 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         PRIVATE wormedit::audio_decoder Catch2::Catch2WithMain)
 
     add_executable(wormedit_audio_tests
+        ../src/sys/preview_audio_export.cpp
         ../src/sys/project_open.cpp
         ../src/sys/application_defaults.cpp
         ../src/sys/audio_project_import.cpp
@@ -257,6 +260,9 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         core/audio_waveform_tests.cpp
         core/audio_onset_tests.cpp
         core/audio_offline_mix_tests.cpp
+        core/audio_hitsound_resolver_tests.cpp
+        core/audio_ogg_encoder_tests.cpp
+        core/audio_preview_export_tests.cpp
         core/audio_waveform_viewport_tests.cpp
         core/audio_slice_render_tests.cpp
         formats/slice_span_render_tests.cpp
@@ -589,6 +595,7 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ../src/sys/window.cpp
         ../src/sys/external_player.cpp
         ../src/sys/resource_job_state.cpp
+        ../src/sys/preview_audio_export.cpp
         ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         ui/compose_stem_lane_render_tests.cpp
@@ -656,6 +663,8 @@ if((WORMEDIT_BUILD_APP OR WORMEDIT_BUILD_EVENT_HARNESS) AND TARGET SDL3::SDL3)
         ui/playback_status_event_harness_tests.cpp
         ui/live_resource_table_event_harness_tests.cpp
         ui/audio_sounds_workflow_event_harness_tests.cpp
+        ui/hitsound_palette_event_harness_tests.cpp
+        ui/preview_audio_export_event_harness_tests.cpp
         ui/walkthrough_osu-stepmania_event_harness_tests.cpp
         ../src/sys/application_commands.cpp
         ../src/sys/application_command_dispatch.cpp
@@ -836,6 +845,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
             ../src/sys/compose_label_search.cpp
             ../src/sys/bookmark_rename_commands.cpp
             ../src/sys/resource_job_state.cpp
+            ../src/sys/preview_audio_export.cpp
             ../src/sys/project_save_paths.cpp
             ../src/sys/output_group_export.cpp
             ../src/sys/metadata_asset_runtime.cpp
@@ -894,6 +904,7 @@ if(WORMEDIT_BUILD_APP AND TARGET SDL3::SDL3)
         sys/resource_notification_tests.cpp
         ../src/sys/document_edit_feedback.cpp
         ../src/sys/resource_job_state.cpp
+        ../src/sys/preview_audio_export.cpp
         ../src/sys/project_save_paths.cpp
         ../src/sys/output_group_export.cpp
         sys/metadata_notification_tests.cpp

@@ -110,6 +110,10 @@ auto lane_layout_t::lanes_in_stage_order() const -> std::vector<lane_definition_
     std::ranges::stable_sort(ordered, {}, [](const auto& lane) { return lane.stage == stage_group_t::right; });
     return ordered;
 }
+auto bms_control_node_t::has_control_flow() const -> bool {
+    return (kind != bms_control_kind_t::root && kind != bms_control_kind_t::raw_statement) ||
+        std::ranges::any_of(children, &bms_control_node_t::has_control_flow);
+}
 auto lane_definition_t::is_editable() const noexcept -> bool {
     return role != lane_role_t::autoplay && role != lane_role_t::invisible && role != lane_role_t::mine;
 }
@@ -872,6 +876,10 @@ struct chart_object_validation_t {
 auto validate_chart_note(chart_object_validation_t& context, measure_id_t measure_id,
                          const note_t& note) -> void {
     validate_object_id(context.diagnostics, context.object_ids, note.id, "note");
+    if (note.osu_hitsample && !note.osu_hitsample->is_valid()) {
+        add_diagnostic(context.diagnostics, diagnostic_code_t::invalid_id,
+                       "note has invalid osu! hitsample settings", note.id);
+    }
     const auto start =
         position_row_or_diagnostic(context.index, note.position, context.diagnostics, note.id);
     if (note.position.measure != measure_id) {

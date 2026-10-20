@@ -110,10 +110,13 @@ later covering more bmhelper functions.
 
 ## T-330 Edit and filter sound tags
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
+- **Verification:** Add/remove chips, case-insensitive duplicate handling, tag-only edits, bounded rejection and filtering are covered through core/metadata and production-input tests. GATE passes 4,318/4,318, whitespace and changed-C++ complexity (`/tmp/wormedit-gate.aCMmTI`); manual instructions are in `sounds-and-layers.adoc`.
 - **Outcome:** the properties column edits tags as chips plus a text field, and the list filters by tag.
 - **Read first:** `src/ui/nuklear/audio_panel.cpp`, `include/wormedit/core/resource_assignment.h`.
 - **Files owned:** `src/ui/nuklear/audio_panel.cpp`, `src/ui/nuklear/audio_state.cpp/.h`, `src/sys/main.cpp` (action wiring only), `tests/ui/nuklear_audio_state_tests.cpp`.
+- **Supporting ownership (2026-10-20):** `src/ui/frontend/actions.h`, `src/ui/frontend/metadata_audio.h`, `src/sys/workspace_view.cpp`, `src/sys/compose_sound_actions.cpp`, `tests/sys/sound_properties_actions_tests.cpp`: the current metadata route lives in Compose sound actions rather than main; carry structured tags through the view and an optional owned C++ tag payload through that route, with command integration coverage.
+- **Supporting ownership (UI coverage):** `tests/ui/audio_sounds_workflow_event_harness_tests.cpp` exercises the production chip/add emitters and their separation from unapplied name drafts.
 - **Steps:** 1. Commit through `apply_resource_sound_metadata`. 2. Tag filter state. 3. Tests for add, remove, duplicate and limit messages.
 - **Invariants:** one history step per tag edit.
 - **Reject/failure behavior:** a rejected edit shows the diagnostic and keeps the old tags.

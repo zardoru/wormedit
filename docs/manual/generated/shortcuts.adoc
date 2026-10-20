@@ -40,6 +40,18 @@
 |Arm note kind: lift |`+Alt+6+`
 |Arm note kind: fake |`+Alt+7+`
 |Arm note kind: roll |`+Alt+8+`
+|Toggle Whistle |`+W+`
+|Toggle Finish |`+E+`
+|Toggle Clap |`+R+`
+|Normal set: Auto |`+Shift+Q+`
+|Normal set: Normal |`+Shift+W+`
+|Normal set: Soft |`+Shift+E+`
+|Normal set: Drum |`+Shift+R+`
+|Addition set: Auto |`+Alt+Q+`
+|Addition set: Normal |`+Alt+W+`
+|Addition set: Soft |`+Alt+E+`
+|Addition set: Drum |`+Alt+R+`
+|Show hitsound palette |unbound
 |===
 
 .Selection

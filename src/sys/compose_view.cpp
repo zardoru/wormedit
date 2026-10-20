@@ -1345,6 +1345,16 @@ std::optional<wormedit::editor_interaction_view_model_t> prepare_compose_interac
 }
 
 
+void populate_preview_audio_range(const compose_scene_cache_t& cache, WormUiComposeView& view) {
+    view.preview_audio_range = {};
+    if (!view.area_range_available || view.area_range_virtual || !cache.timing.marker_timing_index) return;
+    const auto begin = cache.timing.marker_timing_index->seconds_at(view.area_range_begin_row);
+    const auto end = cache.timing.marker_timing_index->seconds_at(view.area_range_end_row);
+    if (begin.seconds && end.seconds)
+        view.preview_audio_range = wormedit::ui::preview_audio_range_view_t::from(
+            wormedit::to_double(*begin.seconds), wormedit::to_double(*end.seconds));
+}
+
 WormUiComposeSelectionMode compose_scalar_selection_mode(
     wormedit::editor_area_selection_mode_t mode) {
     switch (mode) {
@@ -1429,6 +1439,7 @@ std::uint64_t prepare_compose_projection_state(const compose_projection_context_
         interaction_view.retained_canvas_selection_range = retained_state->retained_canvas_selection_range;
     }
     view.pixels_per_standard_measure = interaction_view.pixels_per_standard_measure;
+    populate_preview_audio_range(cache, view);
     if (view.area_range_available && !view.area_range_virtual)
         view.area_delete_supported = compose_area_delete_supported(chart, cache.scene.index.value()->measures, *retained_state);
     cache.frame.interaction_view = interaction_view;
@@ -1923,6 +1934,20 @@ auto build_compose_lane_key_view(
     return truncated;
 }
 
+void populate_compose_hitsounds(const wormedit::chart_document_t& chart,
+    const wormedit::editor_interaction_state_t& state, WormUiComposeView& view) {
+    const auto selected = wormedit::editor_quantize_selection(state).notes;
+    std::unordered_set<std::uint64_t> ids;
+    for (const auto id : selected) ids.insert(id.value);
+    std::vector<wormedit::osu_hitsample_t> samples;
+    for (const auto& measure : chart.measures)
+        for (const auto& note : measure.notes)
+            if (ids.contains(note.id.value)) samples.push_back(note.osu_hitsample.value_or(wormedit::osu_hitsample_t{}));
+    if (samples.empty()) samples.push_back(state.armed_hitsample.value_or(wormedit::osu_hitsample_t{}));
+    view.hitsounds = wormedit::ui::hitsound_palette_view_t::from(
+        state.has_hitsound_palette(chart.source_family), samples);
+}
+
 bool compose_project_scene(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input,
                            std::uint64_t canvas_rows) {
     auto& flattened = input.frame.flattened;
@@ -1937,6 +1962,7 @@ bool compose_project_scene(const compose_projection_context_t<wormedit::editor_i
     view.audition_on_click = application_state.preferences.editor_preferences.audition_on_click;
     view.area_band_alpha = application_state.preferences.editor_preferences.area_band_alpha;
     view.armed_note_kind = static_cast<std::uint32_t>(retained_state->armed_note_kind);
+    populate_compose_hitsounds(chart, *retained_state, view);
     view.allowed_note_kind_mask = 0;
     for (unsigned kind = 0; kind <= static_cast<unsigned>(wormedit::note_kind_t::fake); ++kind)
         if (wormedit::is_note_kind_allowed(chart, static_cast<wormedit::note_kind_t>(kind)))

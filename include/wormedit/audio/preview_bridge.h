@@ -10,11 +10,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <limits>
 #include <span>
 #include <type_traits>
 #include <vector>
 
 namespace wormedit::audio {
+inline constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};
 
 struct preview_voice_source_t {
     audio_source_identity_t source;

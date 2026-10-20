@@ -949,9 +949,11 @@ struct edit_sound_properties_action_t {
         auto& history = context.document.history;
         auto applied = apply_resource_sound_metadata(
             history, {.resource = selected->id,
-                      .kind = static_cast<sound_kind_t>(action.sound_properties_kind),
-                      .tags = selected->tags,
-                      .name = std::string(std::begin(action.sound_properties_name), name_end)});
+                      .kind = action.sound_properties_tags ? selected->sound_kind :
+                          static_cast<sound_kind_t>(action.sound_properties_kind),
+                      .tags = action.sound_properties_tags.value_or(selected->tags),
+                      .name = action.sound_properties_tags ? std::nullopt :
+                          std::optional{std::string(std::begin(action.sound_properties_name), name_end)}});
         return compose_action_outcome_t::from(
             std::move(applied),
             compose_action_description_t{

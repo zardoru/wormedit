@@ -1195,6 +1195,18 @@ void populate_sound_lane_modes(const workspace_projection_context_t& projection)
     }
 }
 
+auto build_sound_tags_view(frame_arena_t& arena, const std::vector<std::string>& source)
+    -> std::optional<std::span<const std::string_view>> {
+    auto tags = arena_array<std::string_view>(arena, source.size());
+    if (tags.capacity() < source.size()) return std::nullopt;
+    for (const auto& tag : source) {
+        const auto* text = arena_string(arena, tag);
+        if (!text) return std::nullopt;
+        (void)tags.push_back(text);
+    }
+    return std::span<const std::string_view>{tags.data(), tags.size()};
+}
+
 void populate_sound_rows(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& audio = result.view.audio_slices;
@@ -1222,6 +1234,12 @@ void populate_sound_rows(const workspace_projection_context_t& projection) {
         view.asset_id = asset.value;
         view.name = arena_string(*arena, row.name);
         view.tags_text = arena_string(*arena, row.tags_text);
+        const auto tags = build_sound_tags_view(*arena, properties.tags);
+        if (!tags) {
+            audio.sound_rows_truncated = true;
+            break;
+        }
+        view.tags = *tags;
         view.source_path = arena_string(*arena, properties.source_path);
         view.kind = static_cast<int>(row.kind);
         view.use_count = row.use_count;

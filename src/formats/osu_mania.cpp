@@ -1489,6 +1489,32 @@ class osu_resource_catalog_t {
     id_allocator_t resource_ids;
 };
 
+template <typename fail_t>
+auto read_osu_hitsample(const hit_object_t& object, fail_t&& fail) -> osu_hitsample_t {
+    std::array<std::int64_t, 4> values{};
+    const auto parts = split(object.hit_sample, ':');
+    const auto offset = object.end_time ? std::size_t{1} : std::size_t{0};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        if (offset + index >= parts.size() || parts[offset + index].empty()) continue;
+        if (!parse_integer(parts[offset + index], values[index]))
+            fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
+                 "hitSample settings must be integers", object.order);
+    }
+    osu_hitsample_t sample{
+        .whistle = (object.hit_sound & 2) != 0,
+        .finish = (object.hit_sound & 4) != 0,
+        .clap = (object.hit_sound & 8) != 0,
+        .normal_set = static_cast<osu_sample_set_t>(values[0]),
+        .addition_set = static_cast<osu_sample_set_t>(values[1]),
+        .custom_index = values[2], .volume = values[3]};
+    if (parts.size() > offset + 4) sample.filename = parts[offset + 4];
+    if (!sample.is_valid() || object.hit_sound < 0 || object.hit_sound > 15 ||
+        values[0] < 0 || values[0] > 3 || values[1] < 0 || values[1] > 3)
+        fail(osu_mania_parse_diagnostic_code_t::invalid_hit_object,
+             "hitSample set, index, volume, filename or hitsound flags are invalid", object.order);
+    return sample;
+}
+
 template <typename position_t, typename object_id_t, typename fail_t>
 void append_osu_hit_notes(chart_document_t& chart, const std::vector<hit_object_t>& objects,
                           const std::vector<std::optional<resource_id_t>>& samples,
@@ -1516,6 +1542,7 @@ void append_osu_hit_notes(chart_document_t& chart, const std::vector<hit_object_
         note.kind = object.end_time ? note_kind_t::hold : note_kind_t::tap;
         note.end = end;
         note.sound = samples[index];
+        note.osu_hitsample = read_osu_hitsample(object, fail);
         note.provenance = {format_family_t::osu_mania, "osu-mania", "HitObjects",
                            object.raw_line, object.order};
         chart.measures[static_cast<std::size_t>(position->measure.value - 1)].notes.push_back(note);
@@ -3111,9 +3138,7 @@ auto serialize_osu_note_time(std::uint64_t row,
     return {static_cast<long double>(*rounded), std::to_string(*rounded)};
 }
 
-template <typename fail_t>
-auto build_osu_note_sample(const note_t& note, const song_document_t& song, bool hold,
-                           fail_t&& fail) -> osu_note_sample_t {
+auto retained_osu_note_sample(const note_t& note, bool hold) -> osu_note_sample_t {
     osu_note_sample_t sample;
     if (const auto raw = split_csv(note.provenance.source_spelling); raw && raw->size() >= 5) {
         std::int64_t parsed{};
@@ -3129,6 +3154,33 @@ auto build_osu_note_sample(const note_t& note, const song_document_t& song, bool
             }
         }
     }
+    return sample;
+}
+
+void apply_osu_sample_values(osu_note_sample_t& sample, const osu_hitsample_t& typed) {
+    sample.hit_sound = (sample.hit_sound & 1) | typed.additions();
+    const std::array<std::int64_t, 4> values{
+        static_cast<std::int64_t>(typed.normal_set),
+        static_cast<std::int64_t>(typed.addition_set), typed.custom_index, typed.volume};
+    for (std::size_t index = 0; index < values.size(); ++index) {
+        std::int64_t retained{};
+        if (!parse_integer(sample.values[index], retained) || retained != values[index])
+            sample.values[index] = std::to_string(values[index]);
+    }
+}
+
+template <typename fail_t>
+auto build_osu_note_sample(const note_t& note, const song_document_t& song, bool hold,
+                           fail_t&& fail) -> osu_note_sample_t {
+    auto sample = retained_osu_note_sample(note, hold);
+    std::string filename;
+    if (note.osu_hitsample) {
+        if (!note.osu_hitsample->is_valid())
+            fail(osu_mania_write_diagnostic_code_t::invalid_document,
+                 "note has invalid osu! hitsample settings", "HitObjects.hitSample");
+        apply_osu_sample_values(sample, *note.osu_hitsample);
+        filename = note.osu_hitsample->filename;
+    }
     if (note.sound) {
         const auto name = osu_resource_path(song, *note.sound, true);
         if (!name || name->find(':') != std::string::npos)
@@ -3136,11 +3188,11 @@ auto build_osu_note_sample(const note_t& note, const song_document_t& song, bool
                  "note sample must refer to a safe relative audio asset whose path contains no "
                  "colon",
                  "HitObjects.hitSample");
+        filename = *name;
+    }
+    if (!filename.empty() || std::ranges::any_of(sample.values, [](const auto& value) { return value != "0"; })) {
         sample.field = sample.values[0] + ":" + sample.values[1] + ":" + sample.values[2] +
-                       ":" + sample.values[3] + ":" + *name;
-    } else if (std::ranges::any_of(sample.values, [](const auto& value) { return value != "0"; })) {
-        sample.field = sample.values[0] + ":" + sample.values[1] + ":" + sample.values[2] +
-                       ":" + sample.values[3] + ":";
+                       ":" + sample.values[3] + ":" + filename;
     }
     return sample;
 }
@@ -3540,6 +3592,43 @@ auto write_osu_mania(const song_document_t& song, osu_mania_write_options_t opti
                                       .location = "document"});
     }
     return result;
+}
+
+auto osu_sample_context_index_t::from(const chart_document_t& chart)
+    -> std::optional<osu_sample_context_index_t> {
+    auto measures = measure_index_t::from(chart);
+    if (!measures) return {};
+    osu_sample_context_index_t result{.measures = std::move(*measures)};
+    for (const auto& group : chart.metadata.format_groups)
+        for (const auto& [key, value] : group.ordered_fields)
+            if (key == "General.SampleSet") {
+                if (value == "Soft") result.initial.normal_set = osu_sample_set_t::soft;
+                if (value == "Drum") result.initial.normal_set = osu_sample_set_t::drum;
+            }
+    const auto consider = [&](local_position_t at, const source_provenance_t& source) {
+        const auto row = result.measures.row_of(at);
+        if (!row || source.family != format_family_t::osu_mania ||
+            source.source_spelling.empty()) return;
+        const auto fields = osu_timing_sample_fields(source);
+        auto sample = result.initial;
+        if (fields[0] >= 1 && fields[0] <= 3) sample.normal_set = static_cast<osu_sample_set_t>(fields[0]);
+        sample.custom_index = std::max<std::int64_t>(fields[1], 1);
+        sample.volume = std::clamp<std::int64_t>(fields[2], 0, 100);
+        result.entries.push_back({.row = *row, .source_order = source.source_order, .sample = sample});
+    };
+    for (const auto& event : chart.bpms) consider(event.position, event.provenance);
+    for (const auto& event : chart.scrolls) consider(event.position, event.provenance);
+    std::ranges::stable_sort(result.entries, [](const entry_t& a, const entry_t& b) {
+        return std::tie(a.row, a.source_order) < std::tie(b.row, b.source_order);
+    });
+    return result;
+}
+
+auto osu_sample_context_index_t::at(local_position_t position) const -> osu_sample_context_t {
+    const auto row = measures.row_of(position);
+    if (!row) return initial;
+    const auto next = std::ranges::upper_bound(entries, *row, {}, &entry_t::row);
+    return next == entries.begin() ? initial : std::prev(next)->sample;
 }
 
 } // namespace wormedit

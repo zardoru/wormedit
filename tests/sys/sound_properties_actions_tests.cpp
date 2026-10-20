@@ -1,6 +1,7 @@
 #include "sys/compose_sound_actions.h"
 #include <catch2/catch_test_macros.hpp>
 #include <cstring>
+#include <algorithm>
 
 namespace {
 using namespace wormedit;
@@ -65,10 +66,58 @@ TEST_CASE("Sounds property drafts reject stale target and malformed names atomic
     SECTION("unterminated") { std::memset(fixture.action.sound_properties_name, 'x', 257); }
     SECTION("empty") { std::strcpy(fixture.action.sound_properties_name, "  "); }
     SECTION("invalid kind") { fixture.action.sound_properties_kind = 255; }
+    SECTION("overlong tag") { fixture.action.sound_properties_tags = {std::string(65, 'x')}; }
+    SECTION("too many tags") {
+        fixture.action.sound_properties_tags = std::vector<std::string>{};
+        for (int index = 0; index < 33; ++index)
+            fixture.action.sound_properties_tags->push_back(std::to_string(index));
+    }
     const auto revision = fixture.history.document.revision;
     fixture.dispatch();
     check_properties(fixture.history.document.revision == revision);
     check_properties(fixture.history.document.resources.front().name == "Voice");
     check_properties(fixture.history.document.resources.front().sound_kind == sound_kind_t::keysound);
     check_properties(!undo_document_command(fixture.history));
+}
+
+TEST_CASE("Sounds tag edits add remove and deduplicate through the metadata command",
+          "[sys][sound-properties][sound-tags]") {
+    properties_fixture_t fixture;
+    std::vector<std::string> expected;
+    SECTION("add") {
+        fixture.action.sound_properties_tags = {"Vocal", "Keep", " Drum "};
+        expected = {"Vocal", "Keep", "Drum"};
+    }
+    SECTION("remove") {
+        fixture.action.sound_properties_tags = {"Keep"};
+        expected = {"Keep"};
+    }
+    SECTION("duplicate") {
+        fixture.action.sound_properties_tags = {"Vocal", "vocal", "Keep"};
+        expected = {"Vocal", "Keep"};
+    }
+    SECTION("clear") { fixture.action.sound_properties_tags = std::vector<std::string>{}; }
+    const auto original = fixture.history.document.resources.front();
+    fixture.dispatch();
+    const auto& tags = fixture.history.document.resources.front().tags;
+    check_properties(tags == expected);
+    check_properties(fixture.history.document.resources.front().name == original.name);
+    check_properties(fixture.history.document.resources.front().sound_kind == original.sound_kind);
+    check_properties(undo_document_command(fixture.history) == (expected != original.tags));
+    check_properties(fixture.history.document.resources.front().tags == original.tags);
+    check_properties(fixture.history.document.resources.front().name == original.name);
+    check_properties(fixture.history.document.resources.front().sound_kind == original.sound_kind);
+    check_properties(!undo_document_command(fixture.history));
+}
+
+TEST_CASE("Sounds duplicate-only tag additions leave history unchanged",
+          "[sys][sound-properties][sound-tags]") {
+    properties_fixture_t fixture;
+    std::strcpy(fixture.action.sound_properties_name, "Voice");
+    fixture.action.sound_properties_kind = static_cast<std::uint8_t>(sound_kind_t::keysound);
+    fixture.action.sound_properties_tags = {"Vocal", "Keep", " vocal "};
+    const auto revision = fixture.history.document.revision;
+    fixture.dispatch();
+    CHECK(fixture.history.document.revision == revision);
+    CHECK_FALSE(undo_document_command(fixture.history));
 }

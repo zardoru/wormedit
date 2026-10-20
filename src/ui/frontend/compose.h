@@ -1,6 +1,8 @@
 #pragma once
 #include "compose_measure_lane.h"
 #include "metadata_audio.h"
+#include "hitsounds.h"
+#include "preview_audio.h"
 
 typedef struct WormUiComposeRect {
     double left;
@@ -815,6 +817,7 @@ typedef struct WormUiComposeView {
     uint32_t armed_note_kind;
     uint32_t allowed_note_kind_mask;
     bool note_kind_palette_visible, lane_key_legend_visible;
+    wormedit::ui::hitsound_palette_view_t hitsounds;
     // Editor preference: whether clicks, placements, and selections play their sound.
     bool audition_on_click;
     uint32_t area_band_alpha;
@@ -947,6 +950,7 @@ typedef struct WormUiComposeView {
     bool transport_loop_selection_enabled;
     uint64_t area_range_begin_row;
     uint64_t area_range_end_row;
+    wormedit::ui::preview_audio_range_view_t preview_audio_range;
     uint64_t area_canvas_rows;
     uint64_t area_rows_per_measure;
     uint64_t area_snap_denominator;

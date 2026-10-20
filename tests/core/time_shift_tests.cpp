@@ -1,9 +1,16 @@
 #include <wormedit/core/time_shift.h>
+#include <wormedit/core/rational.h>
+#include <wormedit/formats/bms.h>
+#include "sys/output_group_export.h"
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include <algorithm>
 #include <vector>
+#include <span>
+#include <string>
+#include <string_view>
 
 using namespace wormedit;
 
@@ -74,6 +81,51 @@ auto find_note(const document_history_t& history, std::uint64_t id)
 auto has_code(const time_shift_result_t& result, diagnostic_code_t code) -> bool {
     return std::ranges::any_of(result.command.diagnostics,
                                [code](const auto& diagnostic) { return diagnostic.code == code; });
+}
+
+constexpr std::string_view plain_bms =
+    "#PLAYER 1\n#TITLE Plain source\n#BPM 120\n#BPM01 150\n#STOP01 48\n"
+    "#WAV01 kick.wav\n#00011:01000000\n#00102:0.5\n#00111:00010000\n"
+    "#00101:01000000\n#00108:00010000\n#00109:00000100\n#00211:01000000\n";
+
+auto import_shift_bms(std::string_view source) -> song_document_t {
+    auto parsed = parse_bms_bytes(std::as_bytes(std::span{source.data(), source.size()}),
+                                 {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(parsed.value.song);
+    return std::move(*parsed.value.song);
+}
+
+auto export_shift_bms(const song_document_t& song) -> song_document_t {
+    // Use the same default request as the GUI's target Preview/Export path.
+    const auto plan = sys::output_group_export_plan_t::from(song,
+        {.family = format_family_t::bms, .charts = {song.charts.front().id}});
+    REQUIRE(plan.request.branches == branch_projection_t::preserve_tree);
+    const auto written = convert_document(song, plan.request);
+    std::string diagnostics;
+    for (const auto& diagnostic : written.diagnostics) diagnostics += diagnostic.message + "\n";
+    INFO(diagnostics);
+    REQUIRE(written);
+    REQUIRE(written.outputs.size() == 1);
+    return import_shift_bms(written.outputs.front().bytes);
+}
+
+void check_plain_bms_timing(const chart_document_t& chart, bool shifted) {
+    const auto resolution = chart.divisions_per_standard_measure;
+    const auto bpm_position = shifted ? rational_t{1, 4} : rational_t{1, 8};
+    const auto pause_position = shifted ? rational_t{3, 8} : rational_t{1, 4};
+    REQUIRE(chart.bpms.size() == 2);
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK(rows_to_fraction(chart.bpms.back().position.row, resolution) == bpm_position);
+    CHECK(rows_to_fraction(chart.pauses.front().position.row, resolution) == pause_position);
+}
+
+void check_plain_bms_content(const chart_document_t& chart) {
+    REQUIRE(chart.measures.size() == 3);
+    const auto& measure = chart.measures[1];
+    CHECK(measure.definition.length == rational_t{1, 2});
+    REQUIRE(measure.notes.size() == 1);
+    CHECK(rows_to_fraction(measure.notes.front().position.row, chart.divisions_per_standard_measure) ==
+          rational_t{1, 4});
 }
 
 } // namespace
@@ -168,13 +220,67 @@ TEST_CASE("shifting from the cursor moves later content and optionally timing",
 
 TEST_CASE("time shift refuses charts that retain BMS control flow",
           "[unit][core][time-shift]") {
-    auto song = shift_song();
-    song.charts.front().bms_measure_length_projections.push_back({.measure_index = 0});
-    auto history = document_history_t::from(std::move(song));
-    const auto result = apply_shift_selection(
-        history, {.chart = chart_id_t{2}, .notes = {object_id_t{10}}, .rows = 10});
+    const auto from_cursor = GENERATE(false, true);
+    auto history = document_history_t::from(import_shift_bms(std::string(plain_bms) +
+        "#RANDOM 2\n#IF 1\n#00111:0100\n#ENDIF\n#ENDRANDOM\n"));
+    const auto& chart = chart_of(history);
+    const auto& note = chart.measures.front().notes.front();
+    const auto result = from_cursor
+        ? apply_shift_from_cursor(history, {.chart = chart.id, .cursor = note.position, .rows = 10})
+        : apply_shift_selection(history, {.chart = chart.id, .notes = {note.id}, .rows = 10});
     CHECK_FALSE(result.command.applied);
     CHECK(has_code(result, diagnostic_code_t::unsupported_feature));
+    CHECK(history.undo.empty());
+}
+
+TEST_CASE("Retained BMS tree queries distinguish statements from all control-flow kinds",
+          "[unit][core][time-shift][bms]") {
+    const auto kind = GENERATE(bms_control_kind_t::root, bms_control_kind_t::raw_statement,
+        bms_control_kind_t::random, bms_control_kind_t::set_random, bms_control_kind_t::if_group,
+        bms_control_kind_t::if_branch, bms_control_kind_t::else_if_branch, bms_control_kind_t::else_branch,
+        bms_control_kind_t::switch_block, bms_control_kind_t::set_switch,
+        bms_control_kind_t::case_branch, bms_control_kind_t::default_branch, bms_control_kind_t::skip);
+    const bms_control_node_t root{.kind = bms_control_kind_t::root,
+        .children = {{.kind = bms_control_kind_t::root, .children = {{.kind = kind}}}}};
+    CHECK(root.has_control_flow() ==
+          (kind != bms_control_kind_t::root && kind != bms_control_kind_t::raw_statement));
+}
+
+TEST_CASE("Time shift allows ordinary imported BMS statements and exports moved notes",
+          "[unit][core][time-shift][bms]") {
+    auto history = document_history_t::from(import_shift_bms(plain_bms));
+    const auto& chart = chart_of(history);
+    REQUIRE(chart.bms_control_tree);
+    CHECK_FALSE(chart.bms_control_tree->has_control_flow());
+    const auto note = chart.measures.front().notes.front().id;
+    const auto result = apply_shift_selection(history, {.chart = chart.id, .notes = {note},
+        .rows = static_cast<std::int64_t>(chart.divisions_per_standard_measure / 8)});
+    REQUIRE(result);
+    const auto reloaded = export_shift_bms(history.document);
+    const auto& moved = reloaded.charts.front();
+    CHECK(rows_to_fraction(moved.measures.front().notes.front().position.row,
+                           moved.divisions_per_standard_measure) == rational_t{1, 8});
+    REQUIRE(undo_document_command(history));
+    CHECK(chart_of(history).measures.front().notes.front().position.row == 0);
+}
+
+TEST_CASE("Time shift from cursor preserves plain BMS timing and measure lengths through export",
+          "[unit][core][time-shift][bms]") {
+    const auto include_timing = GENERATE(false, true);
+    auto history = document_history_t::from(import_shift_bms(plain_bms));
+    const auto& chart = chart_of(history);
+    const auto result = apply_shift_from_cursor(history, {.chart = chart.id,
+        .cursor = {chart.measures[1].id, 0},
+        .rows = static_cast<std::int64_t>(chart.divisions_per_standard_measure / 8),
+        .include_timing = include_timing});
+    REQUIRE(result);
+    check_plain_bms_content(chart_of(history));
+    check_plain_bms_timing(chart_of(history), include_timing);
+    const auto reloaded = export_shift_bms(history.document);
+    check_plain_bms_content(reloaded.charts.front());
+    check_plain_bms_timing(reloaded.charts.front(), include_timing);
+    REQUIRE(undo_document_command(history));
+    check_plain_bms_timing(chart_of(history), false);
 }
 
 namespace {

@@ -56,6 +56,50 @@ chart; kbd:[Ctrl+Alt] + click does it for the whole chart.
 * *Play sound on click* (in the command menu, kbd:[Ctrl+Shift+P]) plays each note's sound when you
 click it.
 
+== Sound tags
+
+On the *Sounds* tab, select a sound to edit its properties. Type a tag and click *Add tag*
+(or press kbd:[Enter]); click a tag chip to remove it. Each change is one Undo step and leaves
+the sound's name, kind and asset unchanged. Duplicate tags are ignored without regard to case.
+There can be up to 32 tags of 64 bytes each; rejected edits keep the existing tags and show a
+diagnostic. *Filter by tag* matches part of an individual tag, without regard to case. The
+ordinary search also finds names and tag text.
+
+== osu! hitsounds
+
+osu!mania charts show hitsound tiles below the note-kind palette. The *W*, *F* and *C* tiles
+toggle Whistle, Finish and Clap; a dash means the selection is mixed. Clicking a mixed addition
+turns it on for every selected note. The two sample-set tiles show *A*, *N*, *S* or *D* for
+Auto, Normal, Soft or Drum. Click to cycle, or right-click to choose a set.
+
+With notes selected, a tile edits the selection in one Undo step. With nothing selected, it
+sets defaults for the next notes you place, including painted notes and holds. These settings
+do not replace BMS keysound assignments. You can also add hitsounds to a native project:
+use *Show hitsound palette* in the command menu to enable the tiles, then select existing
+notes to edit them, or clear the selection to set defaults for new notes. There is no need
+to import an osu! chart first. Note settings are saved in `.wormedit` and used by playback
+and preview-audio export. The same command enables the tiles for other chart formats.
+
+The default shortcuts are kbd:[W]/kbd:[E]/kbd:[R] for additions,
+kbd:[Shift+Q]/kbd:[Shift+W]/kbd:[Shift+E]/kbd:[Shift+R] for the normal set and the same letters
+with kbd:[Alt] for the addition set. They are remappable in *Options → Input & shortcuts*.
+
+Playback prefers map samples, then the folder set under *Options → Playback & audio → osu!
+hitsound skin folder*, then Wormedit's bundled samples. Auto sets, index zero and volume zero
+inherit the map's timing-point settings.
+
+== Exporting preview audio
+
+Select a materialized area in Compose, right-click it and choose *Export preview audio…*.
+The dialog shows the resolved source interval. Choose an `.ogg` filename, optionally shorten
+the duration (trimming the end), and set a fade-out. Relative filenames are next to the project;
+the default is `preview.ogg`. A render can be at most ten minutes.
+
+Enable *Replace an existing file* only when you want to replace that output. Project assets
+cannot be overwritten. Click *Export* to mix chart autoplay in the background; the job bar
+offers cancellation. The encoder's result is decoded and checked before publication. A failed,
+cancelled or stale request leaves any existing output unchanged and never edits the chart.
+
 [#layers]
 == Layers
 

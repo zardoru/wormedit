@@ -564,6 +564,7 @@ auto is_retained_line_current(std::string_view text, bms_source_span_t source_sp
 }
 
 struct branch_tree_analysis_t {
+    bool has_control_flow{};
     bool has_branches{};
     bool has_branch_timing{};
     bool has_unmodeled_root_statement{};
@@ -594,7 +595,7 @@ struct branch_tree_analysis_t {
 struct branch_write_state_t {
     branch_tree_analysis_t retained_tree;
     branch_tree_analysis_t tree;
-    bool flattening_active_projection{};
+    bool can_project_timing{};
     std::optional<std::set<std::size_t>> active_orders;
     std::map<std::size_t, std::string> measure_ratio_edits;
 };
@@ -782,6 +783,7 @@ void visit_branch_tree(const bms_control_node_t& node, bool inside_branch,
 
 auto analyze_branch_tree(const bms_control_node_t& root) -> branch_tree_analysis_t {
     branch_tree_analysis_t result;
+    result.has_control_flow = root.has_control_flow();
     visit_branch_tree(root, false, result);
     if (!result.preserved_lines.empty()) {
         const auto [first, last] = std::minmax_element(
@@ -937,10 +939,9 @@ auto prepare_branch_write_state(const song_document_t& song, const chart_documen
              "branch tree",
              "$.charts[].active_branch_selection");
     }
-    if (retained.has_branches && flatten) {
+    if (retained.has_control_flow && flatten) {
         warn(diagnostics, bms_write_diagnostic_code_t::lossy_transform,
-             "the explicitly selected active BMS projection is flattened and inactive branches "
-             "are omitted",
+             "the active BMS projection is flattened and retained control flow is omitted",
              "$.charts[].bms_control_tree");
     }
     if (!chart.active_branch_selection.empty() && !retained.has_branches) {
@@ -949,7 +950,9 @@ auto prepare_branch_write_state(const song_document_t& song, const chart_documen
              "$.charts[].active_branch_selection");
     }
     auto state = branch_write_state_t{};
-    state.flattening_active_projection = flatten;
+    // Preserving a program is not a request to freeze ordinary semantic timing.
+    // Only actual control flow requires source-attributed timing preservation.
+    state.can_project_timing = flatten || !retained.has_control_flow;
     state.retained_tree = retained;
     state.tree = flatten ? branch_tree_analysis_t{} : std::move(retained);
     state.active_orders = active_branch_orders_for_write(state.tree, chart, options);
@@ -1145,7 +1148,7 @@ void warn_bgm_hold_tails(const chart_document_t& chart,
 }
 
 void validate_unsupported_chart_features(const chart_document_t& chart,
-                                         bool flattening_active_projection,
+                                         bool can_project_timing,
                                          const branch_tree_analysis_t& tree,
                                          std::vector<bms_write_diagnostic_t>& diagnostics) {
     const auto unsupported = [&](const auto& events) {
@@ -1154,7 +1157,7 @@ void validate_unsupported_chart_features(const chart_document_t& chart,
                    !is_retained_timing_source(tree, event.provenance);
         });
     };
-    if ((!flattening_active_projection && unsupported(chart.pauses)) || unsupported(chart.warps) ||
+    if ((!can_project_timing && unsupported(chart.pauses)) || unsupported(chart.warps) ||
         unsupported(chart.scrolls) || unsupported(chart.speeds) || unsupported(chart.kiai) ||
         !chart.timing_anchors.empty() || !chart.sections.empty() || !chart.sound_channels.empty())
         fail(bms_write_diagnostic_code_t::unsupported_feature,
@@ -1740,7 +1743,9 @@ void apply_branch_pause_edits(const chart_document_t& chart,
     }
 }
 
-struct flattened_timing_projection_t {
+struct bms_timing_projection_t {
+    [[nodiscard]] static auto from(const chart_document_t&, const measure_index_t&,
+        std::map<std::pair<std::size_t, std::string>, channel_line_t>&) -> bms_timing_projection_t;
     std::vector<std::string> declarations;
     const bpm_event_t* initial_bpm{};
 };
@@ -1761,7 +1766,7 @@ auto timing_identifier(timing_identifier_registry_t& registry, signed_rational_t
     if (existing != registry.identifiers.end()) return existing->second;
     if (registry.next >= 1296)
         fail(bms_write_diagnostic_code_t::resource_limit,
-             "flattened BMS timing exceeds 1295 " + registry.path, registry.path);
+             "BMS timing exceeds 1295 " + registry.path, registry.path);
     const auto id = base36_id(registry.next++);
     declarations.push_back("#" + registry.directive + id + " " +
                            exact_decimal(value, registry.path));
@@ -1805,16 +1810,16 @@ auto ordered_bpm_events(const chart_document_t& chart, const measure_index_t& in
     return result;
 }
 
-void project_flattened_bpms(const chart_document_t& chart, const measure_index_t& index,
+void append_projected_bpms(const chart_document_t& chart, const measure_index_t& index,
                             std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines,
-                            flattened_timing_projection_t& result) {
+                            bms_timing_projection_t& result) {
     auto ordered = ordered_bpm_events(chart, index);
     timing_identifier_registry_t ids{.directive = "BPM", .path = "$.charts[].bpms[].beats_per_minute"};
     std::optional<std::uint64_t> previous_row;
     for (const auto& [bpm, absolute] : ordered) {
         if (previous_row == absolute)
             fail(bms_write_diagnostic_code_t::duplicate_event,
-                 "multiple BPM events share one BMS channel position and cannot be flattened without changing their ordering",
+                 "multiple BPM events share one BMS channel position and cannot be exported without changing their ordering",
                  "$.charts[].bpms");
         previous_row = absolute;
         if (absolute == 0) {
@@ -1827,15 +1832,15 @@ void project_flattened_bpms(const chart_document_t& chart, const measure_index_t
     }
 }
 
-void project_flattened_pauses(const chart_document_t& chart, const measure_index_t& index,
+void append_projected_pauses(const chart_document_t& chart, const measure_index_t& index,
                               std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines,
-                              flattened_timing_projection_t& result) {
+                              bms_timing_projection_t& result) {
     timing_identifier_registry_t ids{.directive = "STOP", .path = "$.charts[].pauses[].duration"};
     for (const auto& pause : chart.pauses) {
         const auto path = "$.charts[].pauses[" + std::to_string(pause.id.value) + "]";
         if (pause.kind != pause_kind_t::stop || pause.source_unit != pause_unit_t::bms_stop_ticks)
             fail(bms_write_diagnostic_code_t::unsupported_feature,
-                 "active-projection flattening supports BMS STOP ticks only; delay and other pause units cannot be converted without a timing approximation",
+                 "BMS timing export supports BMS STOP ticks only; delay and other pause units cannot be converted without a timing approximation",
                  path);
         (void)exact_decimal(pause.duration, "$.charts[].pauses[].duration");
         if (!index.row_of(pause.position))
@@ -1846,13 +1851,13 @@ void project_flattened_pauses(const chart_document_t& chart, const measure_index
     }
 }
 
-auto flattened_timing_projection(
+auto bms_timing_projection_t::from(
     const chart_document_t& chart, const measure_index_t& index,
     std::map<std::pair<std::size_t, std::string>, channel_line_t>& lines)
-    -> flattened_timing_projection_t {
-    flattened_timing_projection_t result;
-    project_flattened_bpms(chart, index, lines, result);
-    project_flattened_pauses(chart, index, lines, result);
+    -> bms_timing_projection_t {
+    bms_timing_projection_t result;
+    append_projected_bpms(chart, index, lines, result);
+    append_projected_pauses(chart, index, lines, result);
     return result;
 }
 
@@ -2746,11 +2751,11 @@ auto encode_bms_channel_line(const channel_line_t& line,
     return "#" + prefix + std::to_string(line.measure) + line.channel + ":" + payload;
 }
 
-void append_bms_bpm_header(const chart_document_t& chart, bool flattening_active_projection,
+void append_bms_bpm_header(const chart_document_t& chart, bool can_project_timing,
                            const bpm_event_t* projected_initial_bpm,
                            const branch_tree_analysis_t& tree, const measure_index_t& index,
                            std::vector<std::string>& output) {
-    if (flattening_active_projection) {
+    if (can_project_timing) {
         if (projected_initial_bpm)
             output.emplace_back("#BPM " + exact_decimal(
                 projected_initial_bpm->beats_per_minute, "$.charts[].bpms[].beats_per_minute"));
@@ -3073,7 +3078,7 @@ void validate_branch_tree_edits_emitted(const branch_tree_emission_context_t& co
 void append_preserved_branch_tree(const branch_tree_analysis_t& tree,
                                  std::vector<std::string>& output,
                                  std::vector<std::string> preserved_lines) {
-    if (!tree.has_branches || preserved_lines.empty()) return;
+    if (!tree.has_control_flow || preserved_lines.empty()) return;
     if (!tree.branch_source_begin || !tree.branch_source_end)
         fail(bms_write_diagnostic_code_t::branch_provenance,
              "retained BMS branch tree has no source-order span",
@@ -3101,7 +3106,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     const auto branch_state = prepare_branch_write_state(song, chart, options, diagnostics);
     const auto& retained_branch_tree = branch_state.retained_tree;
     const auto& branch_tree = branch_state.tree;
-    const auto flattening_active_projection = branch_state.flattening_active_projection;
+    const auto can_project_timing = branch_state.can_project_timing;
     const auto& active_branch_orders = branch_state.active_orders;
     const auto& branch_measure_ratio_edits = branch_state.measure_ratio_edits;
     const auto branch_source_bytes = source_provenance_bytes(song, chart);
@@ -3109,7 +3114,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
         chart, branch_tree, active_branch_orders, branch_source_bytes);
     validate_retained_pauses(chart, branch_tree);
 
-    validate_unsupported_chart_features(chart, flattening_active_projection, branch_tree,
+    validate_unsupported_chart_features(chart, can_project_timing, branch_tree,
                                         diagnostics);
     const auto [title, artist] = export_title_artist(song, chart);
 
@@ -3143,8 +3148,8 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
     std::map<std::pair<std::size_t, std::string>, std::size_t> bga_line_order;
     std::vector<std::string> projected_timing_declarations;
     const bpm_event_t* projected_initial_bpm{};
-    if (flattening_active_projection) {
-        auto projection = flattened_timing_projection(chart, index, channel_lines);
+    if (can_project_timing) {
+        auto projection = bms_timing_projection_t::from(chart, index, channel_lines);
         projected_timing_declarations = std::move(projection.declarations);
         projected_initial_bpm = projection.initial_bpm;
     }
@@ -3225,7 +3230,7 @@ auto normalized_write(const song_document_t& song, const chart_document_t& chart
                                              false};
     auto output = emit_metadata_header(std::move(metadata_output));
 
-    append_bms_bpm_header(chart, flattening_active_projection, projected_initial_bpm,
+    append_bms_bpm_header(chart, can_project_timing, projected_initial_bpm,
                           branch_tree, index, output);
 
     append_resource_declarations(declarations, audio_ids, visual_ids, output);

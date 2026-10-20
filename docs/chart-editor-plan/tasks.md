@@ -92,6 +92,8 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Editing commands: disabled registry commands, movement, quantize, clipboard, shortcuts](tasks/editing-commands.md)
 - [Measures and timing: measure/layout editing, timing navigation, beat fitting](tasks/measures-timing.md)
 - [BMS branches, channel maps, and BGM columns](tasks/bms-branches.md)
+- [Scoped BMS program model and migration](tasks/bms-scoped-model.md)
+- [Scoped BMS node authoring and editor integration](tasks/bms-scoped-authoring.md)
 - [Resources and audio: catalog safety, usage, slices, preview audio export](tasks/resources-audio.md)
 - [Export and conversion: preview/publish UI, loss gates, blocked profiles](tasks/export.md)
 - [Persistence and metadata: recovery journal, migrations, metadata forms](tasks/persistence-metadata.md)
@@ -133,7 +135,7 @@ says *which card is next*. A card says exactly *how to do one slice and prove it
 - [Project creation and export-target UX](tasks/project-creation-exports.md)
 
 Card IDs are unique across all files. Free ranges: T-17–T-29, T-32–T-39, T-176–T-179, T-193–T-199, and
-every number above T-730.
+every number above T-744.
 
 ## Rules for whoever executes a card
 

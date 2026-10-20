@@ -55,6 +55,7 @@ TEST_CASE("Program preferences round trip every section without project data", "
     values.general = {30, 100, false, "profiles/custom.json"};
     values.editor.default_snap = 96;
     values.audio = {{1, 3}, true};
+    values.audio.osu_skin_directory = "/tmp/skin with spaces";
     values.display = {"dark", 150, true};
     values.players.players[0] = {"Player \"one\"", "C:\\Music\\player.exe", "\"<filename>\"", "<measure>", "stop"};
     values.players.selected = 2;

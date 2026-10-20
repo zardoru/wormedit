@@ -2636,7 +2636,7 @@ auto linked_group_for(const note_t& note) -> linked_playable_group_t {
 auto count_preview_note(const note_t& note, preview_schedule_options_t options,
                         std::set<linked_playable_group_t>& linked_groups,
                         preview_input_counts_t& counts) -> void {
-    if (!note.sound || (note.kind != note_kind_t::tap && note.kind != note_kind_t::hold &&
+    if ((!note.sound && !note.osu_hitsample) || (note.kind != note_kind_t::tap && note.kind != note_kind_t::hold &&
                         note.kind != note_kind_t::roll)) {
         return;
     }
@@ -2695,7 +2695,7 @@ struct preview_event_context_t {
 };
 
 auto append_preview_note(preview_event_context_t& context, const note_t& note) -> bool {
-    if (!note.sound ||
+    if ((!note.sound && !note.osu_hitsample) ||
         (note.kind != note_kind_t::tap && note.kind != note_kind_t::hold &&
          note.kind != note_kind_t::roll) ||
         (note.sound_channel_event &&
@@ -2715,7 +2715,7 @@ auto append_preview_note(preview_event_context_t& context, const note_t& note) -
     }
     context.schedule.playable.push_back({.sample_frame = *frame,
                                          .object = note.id,
-                                         .resource = *note.sound,
+                                         .resource = note.sound.value_or(resource_id_t{}),
                                          .lane = note.lane,
                                          .source_order = note.provenance.source_order});
     return true;

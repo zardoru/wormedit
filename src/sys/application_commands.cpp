@@ -1,4 +1,5 @@
 #include "sys/application_commands.h"
+#include <wormedit/core/hitsound_editor.h>
 
 #include <charconv>
 #include <string_view>
@@ -106,6 +107,12 @@ auto compose_input_status_with_precedence(std::string_view current,
 
 auto parse_application_command(std::string_view id) noexcept
     -> std::optional<application_command_t> {
+    if (id == "hitsound.toggle_palette")
+        return application_command_t{.kind = application_command_kind_t::hitsound_toggle_palette};
+    for (const auto& entry : wormedit::hitsound_commands())
+        if (entry.id == id)
+            return application_command_t{.kind = application_command_kind_t::hitsound_edit,
+                                          .hitsound = entry.change};
     constexpr std::pair<std::string_view, unsigned> note_kinds[]{
         {"tap", 0}, {"hold", 1}, {"mine", 4}, {"invisible", 3},
         {"lift", 5}, {"fake", 6}, {"roll", 2}};

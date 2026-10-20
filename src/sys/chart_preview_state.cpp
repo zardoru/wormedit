@@ -63,7 +63,7 @@ auto preview_diagnostic_feedback(chart_preview_t& preview, const auto& diagnosti
                           diagnostic.message);
 }
 
-constexpr object_id_t preview_music_object{std::numeric_limits<std::uint64_t>::max()};
+using audio::preview_music_object;
 
 auto registered_music_asset(const song_document_t& document,
                             project_audio_sources_t& sources)
@@ -230,25 +230,14 @@ auto chart_preview_t::build_compiled(const compilation_request_t& request, compi
          .include_metronome = true, .count_in_pulses = *count_in, .include_layer_ticks = true});
     if (!built_schedule.value)
         return preview_diagnostic_feedback(*this, built_schedule.diagnostics, "Chart preview could not be compiled.");
-    auto resolved = audio::preview_bindings_resolution_t::from(
-        document, selected_chart.id, *built_schedule.value, sources.bindings(document),
-        {.skip_unavailable_preview_sources = true});
+    auto resolved = sources.resolve_preview(document, selected_chart, *built_schedule.value);
     if (!resolved.diagnostics.empty())
         return preview_diagnostic_feedback(*this, resolved.diagnostics, "Chart audio could not be resolved.");
 
     if (selected_music) {
         const auto source = sources.binding(document, selected_music->second);
         if (source && source->output_frame_count != 0) {
-            built_schedule.value->music = preview_schedule_t::music_event_t::from(
-                selected_music->first, source->output_frame_count);
-            if (built_schedule.value->music) {
-                resolved.value.bindings.push_back({
-                    .object = preview_music_object,
-                    .voices = {{.source = source->source,
-                                .source_start_frame = 0,
-                                .frame_count = source->output_frame_count,
-                                .gain = 1.0F}}});
-            }
+            resolved.value.append_music(selected_music->first, *source, *built_schedule.value);
         }
     }
 

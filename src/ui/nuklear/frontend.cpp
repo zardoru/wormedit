@@ -524,7 +524,7 @@ static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_la
                                          compose_state.inline_offset.inline_offset_input_consumed ||
                                          compose_state.layer_editor.layers_menu_input_consumed ||
                                          compose_note_menu_consumed() || compose_quantize_owns_input() ||
-                                         wormedit::ui::chrome::context_menu_owns_input(compose_state.snap_grid.snap_grid_menu);
+                                         compose_state.has_palette_context_menu();
     compose_state.inline_timing.inline_timing_input_consumed = false;
     compose_state.inline_offset.inline_offset_input_consumed = false;
     compose_state.layer_editor.layers_menu_input_consumed = false;
@@ -556,7 +556,7 @@ static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
     if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
         worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned ||
         worm_ui_nuklear_compose_state().layer_editor.layers_menu_input_consumed || compose_note_menu_consumed() || compose_quantize_owns_input() ||
-        wormedit::ui::chrome::context_menu_owns_input(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu) || nuklear_text_entry_active())
+        worm_ui_nuklear_compose_state().has_palette_context_menu() || nuklear_text_entry_active())
         return;
     switch (g_compose_text_hotkeys[0]) {
     case '+': action.compose_action = WORM_UI_COMPOSE_ACTION_ZOOM_IN; break;
@@ -1356,7 +1356,7 @@ static bool capture_snap_grid_key(const SDL_KeyboardEvent& event) {
 
 static bool capture_compose_modal_key(const SDL_KeyboardEvent& event) {
     const auto& compose = worm_ui_nuklear_compose_state();
-    if (compose.layer_editor.layer_creation_context || compose.dialogs.export_dialog_open ||
+    if (compose.layer_editor.layer_creation_context || compose.dialogs.export_dialog_open || compose.preview_audio.open ||
         compose.dialogs.export_confirmation_dialog.open) {
         if (g_ime_composition_active && event.down &&
             (event.key == SDLK_RETURN || event.key == SDLK_KP_ENTER)) return true;
@@ -1668,7 +1668,7 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
                  NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND | (input_blocked ? NK_WINDOW_NO_INPUT : 0))) {
         nk_layout_row_dynamic(g_context, 30, 1);
         worm_ui_nuklear_retire_setup_popups(g_context);
-        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, g_context);
+        worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         nk_label(g_context, "The editor could not display this workspace frame.", NK_TEXT_LEFT);
         nk_layout_row_dynamic(g_context, 72, 1);
         nk_label_wrap(g_context, diagnostic && diagnostic[0]
@@ -2725,7 +2725,7 @@ static bool external_project_modal_active(const WormUiWorkspaceView& view) {
 
 static bool project_modal_active(const WormUiWorkspaceView& view) {
     const auto& state = worm_ui_nuklear_compose_state();
-    return external_project_modal_active(view) || state.dialogs.export_dialog_open ||
+    return external_project_modal_active(view) || state.dialogs.export_dialog_open || state.preview_audio.open ||
         state.layer_editor.layer_creation_context.has_value();
 }
 
@@ -3091,7 +3091,7 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
         worm_ui_nuklear_retire_setup_popups(g_context);
-        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, g_context);
+        worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
         render_title_bar(&frame.view, &frame.action);
@@ -3218,7 +3218,7 @@ static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
                  nk_rect(0, 0, static_cast<float>(frame.width), static_cast<float>(frame.height)),
                  workspace_window_flags(frame.view))) {
         worm_ui_nuklear_retire_setup_popups(g_context);
-        wormedit::ui::chrome::context_menu_retire(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu, g_context);
+        worm_ui_nuklear_compose_state().retire_palette_context_menus(g_context);
         worm_ui_nuklear_dismiss_layer_popup(g_context);
         dismiss_compose_note_popup(g_context);
         render_title_bar(&view, &action);
@@ -3400,13 +3400,15 @@ static void render_notification_frame(const WormUiNotificationView& view,
 static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
     if (!g_window_focused || !view.project_loaded || view.options.visible || external_project_modal_active(view))
         worm_ui_nuklear_compose_state().dialogs.export_dialog_open = false;
+    if (!g_window_focused || !view.project_loaded || view.options.visible || external_project_modal_active(view))
+        worm_ui_nuklear_compose_state().preview_audio.open = false;
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && g_window_focused &&
         view.project_loaded && view.compose.visible && !view.compose.input_occluded &&
         !view.options.visible && !external_project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
     state.layer_editor.layer_creation_request.reset();
     state.layer_editor.layer_creation_context.reset();
-    wormedit::ui::chrome::context_menu_abandon(state.snap_grid.snap_grid_menu);
+    state.abandon_palette_context_menus();
     wormedit::ui::chrome::context_menu_abandon(state.layer_editor.layers_menu);
     abandon_compose_quantize_popup();
     state.bga_interaction.bga_stack_open = false;
@@ -3490,7 +3492,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
 
     if (validation_error) {
         worm_ui_nuklear_compose_state().layer_editor.layer_creation_request.reset();
-        wormedit::ui::chrome::context_menu_abandon(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu);
+        worm_ui_nuklear_compose_state().abandon_palette_context_menus();
         render_workspace_error(&action, width, height, validation_error, view->close_confirmation.visible);
         render_close_confirmation(view->close_confirmation, action, width, height);
         worm_ui_nuklear_render_keysound_group_review(g_context, view->compose, action,

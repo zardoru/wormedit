@@ -33,6 +33,12 @@ struct editor_interaction_state_t {
     note_kind_t armed_note_kind{note_kind_t::tap};
     // An explicit palette target overrides sound defaults; an empty vector means No layer.
     std::optional<std::vector<layer_id_t>> armed_note_layers;
+    std::optional<osu_hitsample_t> armed_hitsample;
+    bool hitsound_palette_visible{};
+    [[nodiscard]] auto has_hitsound_palette(format_family_t source) const -> bool {
+        return hitsound_palette_visible || source == format_family_t::osu_mania ||
+               source == format_family_t::quaver;
+    }
     // How a moved bar line treats the content after it. Never persisted: propagation is only ever
     // an explicit request, so every new editing session starts by keeping song time.
     bar_line_time_t bar_line_time{bar_line_time_t::keep_song_time};

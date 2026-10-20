@@ -70,6 +70,7 @@ struct audio_preferences_t {
     rational_t playback_rate{1, 1};
     bool keep_pitch{};
     std::uint32_t keysound_budget_mib{512};
+    std::string osu_skin_directory;
     auto operator==(const audio_preferences_t&) const -> bool = default;
 };
 struct display_preferences_t {

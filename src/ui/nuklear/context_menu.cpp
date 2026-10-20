@@ -1,4 +1,18 @@
 #include "ui/nuklear/context_menu.h"
+#include "ui/nuklear/compose_state.h"
+
+auto worm_ui_nuklear_compose_state_t::has_palette_context_menu() const -> bool {
+    return wormedit::ui::chrome::context_menu_owns_input(snap_grid.snap_grid_menu) ||
+           wormedit::ui::chrome::context_menu_owns_input(hitsound_menu.menu);
+}
+void worm_ui_nuklear_compose_state_t::retire_palette_context_menus(nk_context* context) {
+    for (auto* menu : {&snap_grid.snap_grid_menu, &hitsound_menu.menu})
+        wormedit::ui::chrome::context_menu_retire(*menu, context);
+}
+void worm_ui_nuklear_compose_state_t::abandon_palette_context_menus() {
+    for (auto* menu : {&snap_grid.snap_grid_menu, &hitsound_menu.menu})
+        wormedit::ui::chrome::context_menu_abandon(*menu);
+}
 
 #include "ui/nuklear/chrome.h"
 #include "ui/nuklear/tooltip.h"

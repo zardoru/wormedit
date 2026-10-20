@@ -2,8 +2,30 @@
 
 ## Active queue (2026-10-20)
 
+Completed owner-requested priorities **T-330**, **T-215–T-217** and **T-107** (2026-10-20):
+sound-tag chips/filtering; typed osu! samples and native persistence; selection/default hitsound
+palette edits and remappable shortcuts; map/skin/generated-bundle playback; cancellable, verified,
+atomic preview Ogg export. Native projects explicitly enable the palette through the command
+menu, with no osu! import required; the flow and shortcut reference are in the manual.
+GATE passes **4,318/4,318**, whitespace and changed-C++ complexity
+(`/tmp/wormedit-gate.aCMmTI`). Isolated Xvfb checks the osu! and enabled non-osu palettes,
+dummy-output playback and a real 20-second preview export (ffprobe: stereo Vorbis, 44,100 Hz,
+20.000000 seconds). No actual loudspeaker listening was performed. Clang preset configuration
+succeeds, but the build stops at three pre-existing missing `stepmania` initializers in
+`src/core/lane_profiles.cpp` (same lines in HEAD; not changed in this batch); log
+`/tmp/wormedit-priority-clang-build.log`. No new/increased complexity allowances were added.
+
 No sequential follow-up is active. T-729 export-cut sections and T-730 timing links remain
 deferred until the owner names them.
+
+Scoped BMS program **plan written** (2026-10-20; implementation not started):
+[approved Control/Chart/Text contract](../../docs/chart-editor-plan/editing/bms-scoped-program.md),
+[model/migration T-731–T-737](../../docs/chart-editor-plan/tasks/bms-scoped-model.md), then
+[authoring/integration T-738–T-744](../../docs/chart-editor-plan/tasks/bms-scoped-authoring.md).
+When implementation is requested, start with T-731's ownership/transition audit, not the old
+raw-statement panel. Questions 21–24 gate range shrinking, non-body directive presentation,
+selector unwrap and scope/preview interaction. Confirmed subtree deletion and separate unwrap
+are already settled. This planning request does not start implementation or revive T-729/T-730.
 
 Completed **T-703** (2026-10-20): Lane Keys is available from Options → Input & shortcuts
 and the command menu. Stage cards, a physical keyboard map, presets and validated capture save

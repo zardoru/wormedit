@@ -124,3 +124,9 @@ The card's *⋯* menu offers one-run *Replace* and *Keep* choices, and *File →
 same target choices from every tab. Referenced keysounds are copied beside the chart under
 `assets/`; when a filename conflicts, the copied filename gets the asset ID as a prefix. Read the
 completion or refusal in notifications (kbd:[Ctrl+Shift+M]).
+
+BMS export preserves control-flow statements by default; it does not freeze ordinary timing.
+Charts without control flow export edited BPM changes and BMS STOP events normally, including
+changes made by a time shift. Root comments and unknown headers are retained. When control flow
+is present, preservation safeguards remain in force: exporting only the active projection and
+discarding inactive branches is a separate, explicit conversion policy.

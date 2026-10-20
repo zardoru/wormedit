@@ -1039,6 +1039,7 @@ auto entry_stem_channel(const song_document_t& document, const chart_document_t&
 struct prepared_note_paint_t {
     song_document_t document;
     std::vector<object_id_t> painted_notes;
+    void set_hitsample(chart_id_t chart, const std::optional<osu_hitsample_t>& sample);
 };
 auto prepare_stem_note_paint(const document_history_t& history, chart_id_t chart_id,
                              const note_paint_plan_t& plan, object_id_t channel,

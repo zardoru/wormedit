@@ -10,6 +10,7 @@
 #include "ui/nuklear/context_menu.h"
 #include "ui/nuklear/sound_slot_batch.h"
 #include "ui/nuklear/dialog.h"
+#include "ui/nuklear/preview_audio_dialog.h"
 
 #include <array>
 #include <cstddef>
@@ -222,6 +223,10 @@ auto compose_note_base_fill(worm_ui_nuklear_compose_color_view_t color_view,
                             const WormUiComposeHoldView& hold) -> nk_color;
 
 struct worm_ui_nuklear_compose_state_t {
+    wormedit::ui::preview_audio_dialog_t preview_audio;
+    [[nodiscard]] auto has_palette_context_menu() const -> bool;
+    void retire_palette_context_menus(nk_context* context);
+    void abandon_palette_context_menus();
     struct tool_chip_stamp_t {
         std::uint64_t project{}, chart{}, revision{}, source{};
         std::uint8_t kind{};
@@ -550,6 +555,11 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t last_project_id{};
         std::uint64_t last_document_revision{};
     } document_context;
+
+    struct hitsound_menu_t {
+        wormedit::ui::chrome::ContextMenu menu{.title = "Hitsound sample set"};
+        wormedit::hitsound_field_t field{wormedit::hitsound_field_t::normal_set};
+    } hitsound_menu;
 
     struct layer_editor_t {
         std::array<char, WORM_UI_COMPOSE_SEMANTIC_LAYER_NAME_CAPACITY> semantic_layer_name{};

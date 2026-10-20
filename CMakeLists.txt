@@ -96,6 +96,7 @@ add_library(wormedit_core
     src/core/measure_editor.cpp
     src/core/lane_transform.cpp
     src/core/note_label_editor.cpp
+    src/core/hitsound_editor.cpp
     src/core/pause_warp_editor.cpp
     src/core/player_preview.cpp
     src/core/quantize.cpp
@@ -209,6 +210,7 @@ endif()
 
 if(WORMEDIT_ENABLE_AUDIO_DECODER)
     include(cmake/dependencies/miniaudio.cmake)
+    include(cmake/dependencies/vorbis.cmake)
     target_sources(wormedit_audio_decoder PRIVATE
         src/formats/slice_span_render.cpp
         src/audio/playback_rate.cpp
@@ -216,7 +218,10 @@ if(WORMEDIT_ENABLE_AUDIO_DECODER)
         src/audio/onset.cpp
         src/audio/offline_mix.cpp
         src/audio/metronome.cpp
+        src/audio/hitsound_resolver.cpp
+        src/audio/ogg_encoder.cpp
     )
+    target_link_libraries(wormedit_audio_decoder PRIVATE vorbisenc Ogg::ogg)
     target_link_libraries(wormedit-convert PRIVATE wormedit::audio_decoder)
     target_compile_definitions(wormedit-convert PRIVATE WORMEDIT_HAS_AUDIO_DECODER=1)
 endif()
@@ -415,6 +420,7 @@ if(WORMEDIT_BUILD_APP OR (BUILD_TESTING AND WORMEDIT_BUILD_EVENT_HARNESS))
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_bmson_tab.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_markers.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_area_menu.cpp"
+        "${CMAKE_SOURCE_DIR}/src/ui/nuklear/preview_audio_dialog.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_note_menu.cpp"
         "${CMAKE_SOURCE_DIR}/src/ui/nuklear/compose_recipe_form.cpp"
@@ -559,6 +565,7 @@ if(WORMEDIT_BUILD_APP)
         src/sys/bmson_waveform_view.cpp
         src/sys/compose_waveform_overlays.cpp
         src/sys/resource_job_state.cpp
+        src/sys/preview_audio_export.cpp
         src/sys/output_group_export.cpp
         src/sys/player_preview_presenter.cpp
         src/sys/workspace_view.cpp
@@ -586,6 +593,7 @@ if(WORMEDIT_BUILD_APP)
         target_link_libraries(wormedit PRIVATE "-framework AppKit")
     endif()
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/assets/fonts")
+    file(COPY "${CMAKE_SOURCE_DIR}/assets/hitsounds" DESTINATION "${CMAKE_BINARY_DIR}/assets")
     configure_file("${CMAKE_SOURCE_DIR}/assets/fonts/AdwaitaMono-Regular.ttf"
                    "${CMAKE_BINARY_DIR}/assets/fonts/AdwaitaMono-Regular.ttf" COPYONLY)
     foreach(font_asset NotoSansCJKjp-Regular.otf NotoSansCJK-LICENSE README.md)
@@ -650,6 +658,7 @@ if(WORMEDIT_BUILD_APP)
         assets/fonts/NotoSansCJKjp-Regular.otf assets/fonts/NotoSansCJK-LICENSE assets/fonts/README.md
         DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/fonts")
     install(FILES assets/themes/ui-dark.json DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes")
+    install(DIRECTORY assets/hitsounds DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets")
     install(DIRECTORY assets/themes/field DESTINATION "${WORMEDIT_INSTALL_BINDIR}/assets/themes"
         FILES_MATCHING PATTERN "*.json")
     install(FILES assets/icons/lucide/LICENSE

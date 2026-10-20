@@ -25,7 +25,8 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID, WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY,
     WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL, WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY,
     WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION, WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION,
-    WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME
+    WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME,
+    WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY
 } WormUiOptionsField;
 typedef struct WormUiOptionsDiagnostic {
     WormUiOptionsField field;
@@ -57,6 +58,7 @@ typedef struct WormUiOptionsView {
     uint32_t field_waveform_opacity_percent;
     bool minimap_click_moves_paused_playhead;
     uint32_t keysound_budget_mib;
+    std::string osu_skin_directory;
     uint64_t rate_numerator, rate_denominator;
     uint32_t p1_scratch_position, p2_scratch_position;
     const char* field_scheme; // Default skin for layouts without an override.

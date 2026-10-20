@@ -1881,6 +1881,93 @@ TEST_CASE("BMS writer patches one branch resource path without changing sibling 
     CHECK(has_error(rejected, wormedit::bms_write_diagnostic_code_t::branch_provenance));
 }
 
+namespace {
+auto plain_timing_song() -> wormedit::song_document_t {
+    constexpr std::string_view source =
+        "#PLAYER 1\n; keep this timing comment\n#TITLE Ordinary timing\n"
+        "#X-WORMEDIT-UNKNOWN keep this header\n#BPM 120\n#BPM01 150\n#STOP01 48\n"
+        "#WAV01 kick.wav\n#00011:0100\n#00008:0001\n#00009:0001\n";
+    auto imported = parse(source, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.value.song);
+    REQUIRE(imported.value.song->charts.front().bpms.size() == 2);
+    REQUIRE(imported.value.song->charts.front().pauses.size() == 1);
+    return std::move(*imported.value.song);
+}
+
+void check_plain_timing_values(const wormedit::chart_document_t& chart) {
+    REQUIRE(chart.bpms.size() == 2);
+    REQUIRE(chart.pauses.size() == 1);
+    CHECK(chart.bpms.back().beats_per_minute == wormedit::signed_rational_t{180, 1});
+    CHECK(chart.bpms.back().position.row == chart.divisions_per_standard_measure / 4);
+    CHECK(chart.pauses.front().position.row == chart.divisions_per_standard_measure / 2);
+    CHECK(chart.pauses.front().duration == wormedit::signed_rational_t{96, 1});
+}
+
+void check_fixed_selector_flatten(const wormedit::song_document_t& song, std::string_view selector) {
+    const auto flattened = wormedit::write_bms(song,
+        {.branch_policy = wormedit::bms_branch_policy_t::flatten_active});
+    REQUIRE(flattened.value);
+    CHECK(flattened.value->find(selector) == std::string::npos);
+    CHECK(has_warning(flattened, wormedit::bms_write_diagnostic_code_t::lossy_transform));
+}
+}
+
+TEST_CASE("Default BMS export emits edited plain timing without discarding root statements",
+          "[unit][format][bms][writer][timing-policy]") {
+    auto song = plain_timing_song();
+    auto& chart = song.charts.front();
+    chart.bpms.back().position.row = chart.divisions_per_standard_measure / 4;
+    chart.bpms.back().beats_per_minute = {180, 1};
+    chart.pauses.front().position.row = chart.divisions_per_standard_measure / 2;
+    chart.pauses.front().duration = {96, 1};
+    // Direct model edits in writer tests must bypass the unchanged-source shortcut;
+    // the branch policy itself remains the default preserve-tree policy.
+    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    REQUIRE(written.value);
+    CHECK(written.value->find("; keep this timing comment") != std::string::npos);
+    CHECK(written.value->find("#X-WORMEDIT-UNKNOWN keep this header") != std::string::npos);
+    const auto reparsed = parse(*written.value, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.value.song);
+    check_plain_timing_values(reparsed.value.song->charts.front());
+}
+
+TEST_CASE("Default BMS timing export still rejects unsupported pause units",
+          "[unit][format][bms][writer][timing-policy]") {
+    auto song = plain_timing_song();
+    song.charts.front().pauses.front().source_unit = GENERATE(wormedit::pause_unit_t::seconds,
+        wormedit::pause_unit_t::milliseconds, wormedit::pause_unit_t::beats);
+    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    CHECK_FALSE(written.value);
+    CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::unsupported_feature));
+}
+
+TEST_CASE("Default BMS timing export rejects ambiguous BPM ordering rather than dropping events",
+          "[unit][format][bms][writer][timing-policy]") {
+    auto song = plain_timing_song();
+    auto& chart = song.charts.front();
+    chart.bpms.back().position = chart.bpms.front().position;
+    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    CHECK_FALSE(written.value);
+    CHECK(has_error(written, wormedit::bms_write_diagnostic_code_t::duplicate_event));
+}
+
+TEST_CASE("Preserve-tree keeps fixed BMS selectors even without conditional branches",
+          "[unit][format][bms][writer][timing-policy]") {
+    const auto selector = GENERATE(std::string("#SETRANDOM 1"), std::string("#SETSWITCH 1"));
+    auto imported = parse(selector + "\n#PLAYER 1\n#TITLE Fixed selector\n#BPM 120\n"
+        "#WAV01 kick.wav\n#00011:01\n", {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(imported.value.song);
+    auto& song = *imported.value.song;
+    song.metadata.title = "Edited fixed selector";
+    const auto written = wormedit::write_bms(song, {.preserve_unchanged_source = false});
+    REQUIRE(written.value);
+    CHECK(occurrences(*written.value, selector) == 1);
+    const auto reparsed = parse(*written.value, {.lane_profile_id = "bme-7k-outside-scratch"});
+    REQUIRE(reparsed.value.song);
+    CHECK(reparsed.value.song->charts.front().bms_control_tree->has_control_flow());
+    check_fixed_selector_flatten(song, selector);
+}
+
 TEST_CASE("BMS writer preserves mixed root and branch timing statements",
           "[unit][format][bms][writer]") {
     constexpr std::string_view source =

@@ -718,6 +718,62 @@ struct TimingInsertFixture {
     }
 };
 
+void enable_native_hitsounds(TimingInsertFixture& fixture) {
+    using namespace wormedit;
+    auto& history = fixture.fixture.history;
+    auto& state = *fixture.compose_state;
+    REQUIRE(history.document.charts.front().source_family == format_family_t::native_project);
+    CHECK_FALSE(state.has_hitsound_palette(format_family_t::native_project));
+    const auto revision = history.document.revision;
+    fixture.invoke(application_command_kind_t::hitsound_toggle_palette);
+    CHECK(state.has_hitsound_palette(format_family_t::native_project));
+    REQUIRE(state.armed_hitsample);
+    CHECK(history.document.revision == revision);
+}
+
+void check_native_hitsound_placement(TimingInsertFixture& fixture) {
+    using namespace wormedit;
+    auto& history = fixture.fixture.history;
+    auto& state = *fixture.compose_state;
+    const auto placed = dispatch_editor_action(history, state,
+        place_tap_action_t{.position = {measure_id_t{1}, 0}});
+    REQUIRE(placed.created_note);
+    const auto stored = write_native_project(history.document);
+    REQUIRE(stored.value);
+    const auto reopened = parse_native_project(*stored.value);
+    REQUIRE(reopened.value);
+    CHECK(reopened.value->charts.front().find_note(*placed.created_note)->osu_hitsample ==
+          state.armed_hitsample);
+    CHECK(reopened.value->charts.front().find_note(object_id_t{1})->osu_hitsample->clap);
+}
+
+TEST_CASE("Native projects can enable hitsounds, edit notes and arm new note defaults",
+          "[unit][sys][hitsound][native_project]") {
+    using namespace wormedit;
+    TimingInsertFixture fixture;
+    enable_native_hitsounds(fixture);
+    auto& history = fixture.fixture.history;
+    auto& state = *fixture.compose_state;
+
+    const auto invoke = [&](hitsound_change_t change) {
+        return invoke_application_command({.kind = application_command_kind_t::hitsound_edit,
+                                           .hitsound = change},
+            history, fixture.workspace, fixture.compose_state, fixture.preview,
+            fixture.application_state, fixture.sink);
+    };
+    invoke({.field = hitsound_field_t::clap});
+    REQUIRE(history.document.charts.front().find_note(object_id_t{1})->osu_hitsample);
+    CHECK(history.document.charts.front().find_note(object_id_t{1})->osu_hitsample->clap);
+    state.selected_notes.clear();
+    state.selected_objects.clear();
+    const auto edited_revision = history.document.revision;
+    invoke({.field = hitsound_field_t::whistle});
+    CHECK(history.document.revision == edited_revision);
+    REQUIRE(state.armed_hitsample);
+    CHECK(state.armed_hitsample->whistle);
+    check_native_hitsound_placement(fixture);
+}
+
 void check_paint_cell(bool downscroll, bool snap) {
     using namespace wormedit;
     TimingInsertFixture fixture;

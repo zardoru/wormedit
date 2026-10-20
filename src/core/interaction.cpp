@@ -666,6 +666,8 @@ auto editor_interaction_state_t::from(const document_history_t& history, chart_i
     result.state = editor_interaction_state_t{
         .chart = chart_id,
         .active_lane = lane_id,
+        .armed_hitsample = (chart->source_family == format_family_t::osu_mania || chart->source_family == format_family_t::quaver)
+            ? std::optional{osu_hitsample_t{}} : std::nullopt,
         .cursor = cursor,
         .supported_snap_denominators = snap.supported_denominators,
         .active_snap_denominator = snap.active_denominator,
@@ -743,6 +745,8 @@ auto recover_editor_interaction(const document_history_t& history,
     }
     if (is_note_kind_allowed(*chart, previous.armed_note_kind))
         result.state->armed_note_kind = previous.armed_note_kind;
+    result.state->armed_hitsample = previous.armed_hitsample;
+    result.state->hitsound_palette_visible = previous.hitsound_palette_visible;
     const auto view = make_view(history, *result.state);
     if (const auto* recovered = std::get_if<editor_interaction_view_model_t>(&view)) {
         result.view = *recovered;

@@ -2,6 +2,8 @@
 
 #include "sys/audio_source_registration.h"
 #include "sys/metronome.h"
+#include <wormedit/audio/hitsound_resolver.h>
+#include <wormedit/audio/audition_resolver.h>
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace wormedit::sys {
@@ -18,6 +20,9 @@ struct project_audio_sources_t {
     std::optional<std::uint64_t> reconciled_revision{};
     std::filesystem::path asset_base{};
     metronome_t* metronome{};
+    audio::hitsound_resolver_t hitsounds;
+    [[nodiscard]] auto resolve_preview(const song_document_t&, const chart_document_t&,
+        const preview_schedule_t&) -> audio::preview_bindings_resolve_outcome_t;
     [[nodiscard]] auto metronome_bindings() const -> std::span<const audio::preview_metronome_source_binding_t> {
         return metronome ? metronome->bindings() : std::span<const audio::preview_metronome_source_binding_t>{};
     }

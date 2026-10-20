@@ -34,17 +34,51 @@ MIDI export uses the same semantic-lane destinations. Holds become note-on/note-
 
 ### BMS branch tree and active projection
 
-Preserve BMS random and conditional source as an ordered control-flow tree rather than evaluating and discarding it during import. Initial nodes cover `#RANDOM`/`#SETRANDOM`/`#ENDRANDOM`, `#IF`/`#ELSEIF`/`#ELSE`/`#ENDIF`, and `#SWITCH`/`#SETSWITCH`/`#CASE`/`#DEF`/`#SKIP`/`#ENDSW`. Retain original spelling, raw source spans, line endings, nesting, and branch-local commands. Common commands outside a branch remain root content.
+Model BMS as an ordered scoped program, retaining all active and inactive content.
+The owner-approved [scoped-program contract](bms-scoped-program.md) defines Control,
+Chart and Text nodes: every editable scope, including Root and RANDOM, owns at least
+one Chart child; selecting a control targets its first Chart, and an explicit Chart
+selection targets that content node. These Chart nodes are not separate difficulties.
+Commands with known meaning, such as WAV definitions, need typed scoped owners;
+comments and commands without implemented meaning belong to ordered opaque Text.
+Original source remains provenance or safe migration backing, not a second writable
+semantic graph. The mapping of non-body control directives is an explicit open question.
 
-The chart window includes a visible outline/tree component. Random and switch nodes show their range or fixed value; conditional and case nodes show labels, probability/effective reachability, contained object counts, measure range, and diagnostics. For every active random/switch node, the user chooses a value manually, steps through values, or asks for a deterministic seeded roll. Independent top-level blocks and active nested blocks produce a branch-selection environment containing several selected leaves.
+The chart window's tree is an edit-scope selector and node-authoring surface.
+Control nodes can be added, moved and removed, RANDOM's outcome count can be edited
+directly, and several Chart children may coexist in a scope. A confirmed Delete
+removes the complete subtree; separate Unwrap promotes ordered contents to the
+parent only when the approved structural policy permits it. Text travels with its
+containing block. RANDOM's range, IF arm count and preview outcome are distinct facts.
 
-The note, timing, BGM, waveform, metadata/resource preview, and playback views are a deterministic projection of root/common content plus the leaves activated by that environment. Notes from inactive leaves are absent by default, as requested; an optional non-editable ghost overlay may be added later. Changing a tree choice is view state and does not rewrite the chart. It clears or parks selections that are no longer visible so keyboard and batch commands cannot mutate hidden objects accidentally.
+The note, timing, BGM, waveform, metadata/resource and playback views are derived
+from the program and its evaluation environment. Inactive content remains owned by
+the program even when absent from the current projection. Edit targeting and preview
+choice must not be conflated; their interaction, including inactive-scope authoring
+and selection restoration, is question 24 in the
+[open decisions](../decisions/open-questions.md).
 
-Direct branch-body and structural editing is desirable but is not on the critical path for correct BMS writing. When added, new events and metadata edits need an explicit insertion scope shown beside the tree: the current selected leaf, a chosen ancestor/common scope, or all sibling leaves through a deliberate replicated command. Moving an object between branches and adding/removing/reordering branches are atomic undoable operations. Before commit, validate branch-local `#WAV`/BPM/STOP/SCROLL definitions, lane/resource collisions, and timing effects against every affected projection.
+Data edits resolve a stable scope/Chart target through the shared transaction;
+existing objects keep their semantic owner, and a target mismatch does not authorize
+implicit relocation or mutation of another scope. Inherited-context/override behavior
+is part of question 24. Validate scoped WAV/BPM/STOP definitions, lane/resource collisions and
+timing effects against affected projections. T-731–T-744 provide the model,
+migration, authoring and integration sequence. Moving/copying individual selected
+notes between scopes remains T-93, distinct from moving whole program subtrees.
 
 Evaluation must be profile-driven and sequence-aware. `#RANDOM n` chooses an integer in `1..n`; `#SETRANDOM` fixes the value. `#IF` groups, `#ELSEIF`, and `#ELSE` select according to that surrounding value. `#SWITCH`/`#SETSWITCH` begins at the matching `#CASE` or `#DEF` and preserves target-profile fallthrough until `#SKIP` or `#ENDSW`. Nested random and switch blocks remain nested nodes. The editor should enumerate reachable outcomes for tests and warnings within a configured cap, while seeded sampling handles combinatorial trees interactively.
 
-Export offers two distinct operations: preserve the authored control tree, or flatten the currently selected projection into a non-random BMS file. Full-tree preservation is the default and required writer path, independent of direct branch-editing support: emit every active and inactive branch with its corresponding `#RANDOM`/`#SETRANDOM`, `#IF`/`#ELSEIF`/`#ELSE`, `#SWITCH`/`#CASE`/`#DEF`/`#SKIP`, and closing statements in stable source order. A BMS writer must not serialize only the currently materialized branch or only the patches applied to it. An edit outside the tree must not replace the file with only the currently materialized projection. Root/common content remains editable. Provenance-backed active-branch metadata, resource paths, measure ratios, notes/holds, BGM/BGA slots, direct/extended BPM, and uniquely owned STOP values patch only their identified retained statements while preserving every branch. Cross-measure moves, occupied-slot collisions, timing declarations shared with sibling branches, and timing/event classes without import projections remain source-backed and reject ambiguous edits. Flattening is an explicit lossy compatibility transform and never replaces the branched source without a warning. Compatibility diagnostics are tied to the selected BMS target because command nesting, `#ELSE`, switch behavior, malformed recovery, and maximum depth vary among implementations; see the [control-flow research and `libotoworm` audit](../../references/bms-control-flow.md).
+Default export means **do not discard control flow**, not freeze ordinary timing.
+Branch-free charts export edited BPM/STOP timing normally. Branched output must
+emit the complete authored program with inactive content, scoped definitions and
+Text, not merely the active projection. Explicit active-projection export is the
+separate lossy operation that may discard control flow, with existing warnings and
+selection requirements. Until the scoped model is activated, provenance-backed
+writer patches remain compatibility backing with their existing attribution and
+collision safeguards; they are not the new model's semantic authority. No edit may
+silently replace the whole program with its current projection. Profile-dependent
+nesting, switch behavior, malformed recovery and depth rules remain governed by the
+[control-flow reference](../../references/bms-control-flow.md).
 
 ### Clipboard interoperability
 

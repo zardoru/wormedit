@@ -647,6 +647,7 @@ int worm_ui_nuklear_compose_overview_valid(const WormUiComposeView* view) {
 
 int worm_ui_nuklear_compose_view_valid(const WormUiComposeView* view) {
     return compose_validation_check(view, "view") &&
+           compose_validation_check(view->hitsounds.values.is_valid(), "hitsound palette values") &&
            compose_validation_check(worm_ui_nuklear_note_layer_window_valid(view), "worm_ui_nuklear_note_layer_window_valid(view)") &&
            compose_validation_check(view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY, "view->band_count <= WORM_UI_COMPOSE_BAND_CAPACITY") &&
            compose_validation_check((view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1), "(view->selected_bmson_bgm_event_id == 0 || view->selected_object_count == 1)") &&
@@ -1636,6 +1637,7 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
         inspector_drawn && compose_quantize_section_visible());
     nk_layout_space_end(context);
     worm_ui_nuklear_render_bga_stack_picker(context, view, action, &state);
+    render_compose_hitsound_menu({context, view, action});
     render_go_to_measure(context, *view, *action, window_focused);
     (void)worm_ui_nuklear_render_compose_bookmark_chooser(context, view->bookmark_chooser, action, window_focused, &state.bookmark_ui.bookmark_chooser);
     render_compose_sound_picker(context, *view, *action, state, window_focused);
@@ -1646,7 +1648,7 @@ bool worm_ui_nuklear_compose_lane_focused(const WormUiComposeView* view, bool co
     return compose_tab_active && worm_ui_nuklear_compose_canvas_input_available(
         view, window_focused, state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open ||
             state.layer_editor.layers_menu.open || state.layer_editor.layers_menu_input_consumed || compose_quantize_owns_input() ||
-            wormedit::ui::chrome::context_menu_owns_input(state.snap_grid.snap_grid_menu) || compose_note_menu_consumed() ||
+            state.has_palette_context_menu() || compose_note_menu_consumed() ||
             state.bookmark_ui.bookmark_rename.active || state.bookmark_ui.bookmark_rename.release_pending ||
             (worm_ui_nuklear_bookmark_chooser_owns_input(state.bookmark_ui.bookmark_chooser) || compose_sound_picker_owns_input(state.sound_picker_ui.sound_picker)), false) &&
         view->cursor && view->cursor->lane_id != 0;

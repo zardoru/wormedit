@@ -294,7 +294,22 @@ artifacts and immediately before exchange. Automatic music, keysound and image c
 until copied into private staging, so rejection/cancellation cannot leave a new output
 folder or audio file. Completed exchange remains published even if cancellation races
 with completion. Individual writers and filesystem calls are not preemptible.
-Preview audio encoding remains T-107.
+Selected-area audio export belongs to `runtime::preview_audio_export_t`
+(`sys/preview_audio_export.h`) over `async_job_t`. Its admitted request owns the
+document snapshot, source paths, row interval and trim/fade/encoder settings. The worker
+uses the ordinary timing schedule, shared music binding and hitsound resolver with
+`render_offline_interval`, then encodes Vorbis and decode-verifies a same-directory
+temporary owned by `prepared_atomic_file_t`. UI-thread polling checks the document stamp
+and selected chart before explicit atomic publication. Cancelled, stale and abandoned
+results destroy their temporary without replacing the destination. Replacement is explicit;
+project asset destinations are rejected even when replacement was requested.
+
+osu! note samples are semantic `osu_hitsample_t` values, persisted by the native codec.
+`hitsound_values_t` owns mixed-selection presentation and toggle/cycle decisions;
+`apply_hitsound_edit` batches selected-note changes through the transaction. Empty-selection
+palette actions change only `editor_interaction_state_t::armed_hitsample`, captured by tap,
+paint and hold placement. Preview resolves inherited sample context once per chart and
+expands normal/addition voices through the existing bridge's multi-voice bindings.
 
 ## Composing edits
 

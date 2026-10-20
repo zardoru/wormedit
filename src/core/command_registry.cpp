@@ -1,4 +1,5 @@
 #include <wormedit/core/command_registry.h>
+#include <wormedit/core/hitsound_editor.h>
 
 #include <nlohmann/json.hpp>
 
@@ -974,6 +975,13 @@ auto command_registry_t::from(command_invoker_t invoker) -> command_registry_t {
             "Arm note kind: " + std::string(entry.command_id_suffix), command_category_t::edit,
             command_focus_scope_t::tab, std::move(shortcuts), false, compose);
     }
+
+    for (const auto& entry : hitsound_commands())
+        add_builtin(registry, invoker, std::string{entry.id}, std::string{entry.label},
+            command_category_t::edit, command_focus_scope_t::tab,
+            {chord(entry.key, entry.modifiers)}, true, compose);
+    add_builtin(registry, invoker, "hitsound.toggle_palette", "Show hitsound palette",
+        command_category_t::edit, command_focus_scope_t::tab, {}, false, compose);
 
     constexpr std::array layer_keys{
         shortcut_key_t::digit_1, shortcut_key_t::digit_2, shortcut_key_t::digit_3,

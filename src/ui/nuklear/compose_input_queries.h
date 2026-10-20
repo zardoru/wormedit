@@ -51,7 +51,7 @@ private:
         return compose_quantize_owns_input() || state.keysound_catalog.keysound_group_review.open ||
             wormedit::ui::chrome::context_menu_owns_input(state.keysound_catalog.keysound_group_menu) ||
             wormedit::ui::chrome::context_menu_owns_input(state.layer_editor.layers_menu) ||
-            wormedit::ui::chrome::context_menu_owns_input(state.snap_grid.snap_grid_menu) ||
+            state.has_palette_context_menu() ||
             state.bga_interaction.bga_stack_open || state.bga_interaction.bga_stack_release_pending ||
             state.bga_catalog.bga_renumber_confirmation_open || state.bga_catalog.bga_renumber_release_pending ||
             compose_note_menu_consumed() ||

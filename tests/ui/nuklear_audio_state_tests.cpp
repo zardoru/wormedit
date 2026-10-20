@@ -2,11 +2,31 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <source_location>
+#include <array>
+#include <cstring>
 
 namespace {
 void expect_state(bool condition, std::source_location at = std::source_location::current()) {
     INFO("Audio state expectation at " << at.line());
     CHECK(condition);
+}
+
+TEST_CASE("Sounds tag filters match individual tags without case sensitivity",
+          "[unit][frontend][audio][sound-tags]") {
+    worm_ui_nuklear_audio_state_t state;
+    const std::array<std::string_view, 2> tags{"Vocal", "Big Drum"};
+    CHECK(state.matches_tags(tags));
+    std::strcpy(state.tag_filter, "DRUM");
+    CHECK(state.matches_tags(tags));
+    CHECK_FALSE(state.matches_tags({}));
+    std::strcpy(state.tag_filter, "Vocal, Big");
+    CHECK_FALSE(state.matches_tags(tags));
+    auto& shared = worm_ui_nuklear_audio_state();
+    std::strcpy(shared.tag_filter, "Vocal");
+    std::strcpy(shared.new_tag, "Draft");
+    worm_ui_nuklear_reset_audio_state();
+    CHECK(shared.tag_filter[0] == '\0');
+    CHECK(shared.new_tag[0] == '\0');
 }
 }
 

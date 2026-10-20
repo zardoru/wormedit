@@ -144,7 +144,8 @@ stale-plan check (rule 9) first.
 
 ## T-107 Encode and publish preview.ogg
 
-- **Status:** ready
+- **Status:** done (2026-10-20)
+- **Verification:** Deterministic stereo encoder, full decode verification, private atomic preparation, explicit replacement, protected assets, cancellation and stale publication tests pass. GATE passes 4,318/4,318, whitespace and changed-C++ complexity (`/tmp/wormedit-gate.aCMmTI`). Isolated real-UI export resolves 0–20 seconds and publishes `/tmp/wormedit-priority-visual/preview.ogg`; independent ffprobe reports Vorbis, stereo, 44,100 Hz, 20.000000 seconds. Dialog and completion captures `/tmp/wormedit-preview-dialog.png` and `/tmp/wormedit-preview-exported.png` inspected.
 - **Scope approval (user, 2026-10-03):** All supporting-file ownership extensions documented in this card’s audit and approval step are approved, including their integration/test linkage. This extends **Files owned** only for the existing outcome and supersedes the historical pending-approval statements below.
 - **Outcome:** the area-selection menu offers "Export preview audio…": the selected interval is mixed with T-106, encoded to Ogg Vorbis with pinned libogg + libvorbis built through FetchContent (user decision 2026-09-30), written to a temporary file, verified by decoding it back, and atomically published as `preview.ogg` (or a chosen name) next to the chart.
 - **Read first:** `cmake/dependencies/` (pattern for pinned dependencies), `include/wormedit/audio/offline_mix.h` (T-106), `docs/chart-editor-plan/stages/authoring-export.md` (stage 4 preview bullet), `include/wormedit/formats/conversion_publication.h` (atomic publication helpers).
@@ -154,6 +155,10 @@ stale-plan check (rule 9) first.
 - **Reject/failure behavior:** encode or verify failure reports an error and publishes nothing.
 - **Verify:** `ctest --test-dir build --output-on-failure -R '^audio\.'`; manual export of a 20-second preview.
 - **Out of scope:** other audio formats.
+- **Supporting ownership (2026-10-20):** `include/wormedit/core/atomic_file_storage.h`, `src/core/atomic_file_storage.cpp`, `tests/core/atomic_file_storage_tests.cpp` split existing atomic writing into RAII preparation and explicit publication, allowing worker verification and UI-thread stamp admission without duplicating temporary-file plumbing. `src/sys/preview_audio_export.h/.cpp`, `src/sys/application.cpp`, `src/sys/application_frame_services.cpp`, `src/sys/compose_view.cpp`, `src/ui/frontend/preview_audio.h`, `src/ui/frontend/compose.h`, `src/ui/frontend/actions.h`, `src/ui/nuklear/preview_audio_dialog.h/.cpp`, `src/ui/nuklear/compose_state.h`, `src/ui/nuklear/compose_panel.cpp`, `src/ui/nuklear/frontend.cpp` wire the selected interval, duration/trim/fade, explicit replacement, progress and cancellation. `include/wormedit/audio/preview_bridge.h`, `include/wormedit/audio/audition_resolver.h`, `src/audio/audition_resolver.cpp`, `src/sys/chart_preview_state.cpp` share the live-preview music binding rather than copying its scheduling logic. `tests/support/temporary_directory.h` owns isolated test directories shared by new file/audio tests.
+- **Supporting ownership (verification/documentation):** `src/sys/application_frame_services.h`, `tests/core/audio_preview_export_tests.cpp`, `tests/ui/preview_audio_export_event_harness_tests.cpp`, `docs/architecture.md`, `docs/manual/chapters/sounds-and-layers.adoc`. Preview export has its own runtime owner, sharing the resource-worker scheduler rather than extending resource-copy state.
+- **Supporting ownership (dialog lifecycle):** `src/ui/nuklear/compose_resources.cpp` renders the preview form with the existing top-level Compose dialogs, after the workspace window has ended.
+- **Supporting ownership (modal cleanup):** `src/ui/nuklear/compose_input_panel.cpp` stamps visible-chart cleanup even when a modal occludes Compose, avoiding false stale-action warnings on preview-dialog open/close; event-harness coverage pins the identity and viewport.
 
 ## T-267 Keep keysounds decoded in memory while editing
 

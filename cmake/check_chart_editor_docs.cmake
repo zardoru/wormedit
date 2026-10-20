@@ -11,6 +11,7 @@ set(plan_slices
     docs/chart-editor-plan/editing/layout.md
     docs/chart-editor-plan/editing/interactions.md
     docs/chart-editor-plan/editing/metadata-interop.md
+    docs/chart-editor-plan/editing/bms-scoped-program.md
     docs/chart-editor-plan/playback-audio.md
     docs/chart-editor-plan/playback/player-preview.md
     docs/chart-editor-plan/formats-persistence.md
@@ -27,6 +28,8 @@ set(plan_slices
     docs/chart-editor-plan/tasks/editing-commands.md
     docs/chart-editor-plan/tasks/measures-timing.md
     docs/chart-editor-plan/tasks/bms-branches.md
+    docs/chart-editor-plan/tasks/bms-scoped-model.md
+    docs/chart-editor-plan/tasks/bms-scoped-authoring.md
     docs/chart-editor-plan/tasks/resources-audio.md
     docs/chart-editor-plan/tasks/export.md
     docs/chart-editor-plan/tasks/persistence-metadata.md
@@ -136,6 +139,7 @@ set(editing_slices
     docs/chart-editor-plan/editing/layout.md
     docs/chart-editor-plan/editing/interactions.md
     docs/chart-editor-plan/editing/metadata-interop.md
+    docs/chart-editor-plan/editing/bms-scoped-program.md
 )
 foreach(slice IN LISTS editing_slices)
     string(REGEX REPLACE "^docs/chart-editor-plan/" "" index_target "${slice}")
@@ -258,6 +262,8 @@ set(task_card_files
     docs/chart-editor-plan/tasks/editing-commands.md
     docs/chart-editor-plan/tasks/measures-timing.md
     docs/chart-editor-plan/tasks/bms-branches.md
+    docs/chart-editor-plan/tasks/bms-scoped-model.md
+    docs/chart-editor-plan/tasks/bms-scoped-authoring.md
     docs/chart-editor-plan/tasks/resources-audio.md
     docs/chart-editor-plan/tasks/export.md
     docs/chart-editor-plan/tasks/persistence-metadata.md

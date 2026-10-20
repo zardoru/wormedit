@@ -81,6 +81,9 @@ void validate_draft(options_runtime_t& r) {
     case WORM_UI_OPTIONS_GENERAL: validate_general(r); break;
     case WORM_UI_OPTIONS_EDITOR: validate_editor(r); break;
     case WORM_UI_OPTIONS_AUDIO:
+        diagnose(r, WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY,
+            text_util::is_valid_bounded_text(r.draft.audio.osu_skin_directory, maximum_preference_string_bytes),
+            "The osu! skin directory must be bounded text without NUL characters.");
         diagnose(r, WORM_UI_OPTIONS_FIELD_RATE,
             std::ranges::find(audio::playback_rates, r.draft.audio.playback_rate) != audio::playback_rates.end(),
             "Playback rate is unsupported."); break;
@@ -143,6 +146,7 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_RATE: p.audio.playback_rate = {a.integer, a.denominator}; return true;
     case WORM_UI_OPTIONS_FIELD_KEEP_PITCH: p.audio.keep_pitch = a.boolean; return true;
+    case WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY: p.audio.osu_skin_directory = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY:
         p.audio.keysound_budget_mib = static_cast<std::uint32_t>(std::clamp<std::uint64_t>(a.integer, 256, 8192));
         return true;
@@ -308,6 +312,7 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .field_waveform_opacity_percent = p.display.field_waveform_opacity_percent,
         .minimap_click_moves_paused_playhead = p.minimap.click_moves_paused_playhead,
         .keysound_budget_mib = p.audio.keysound_budget_mib,
+        .osu_skin_directory = p.audio.osu_skin_directory,
         .rate_numerator = p.audio.playback_rate.numerator, .rate_denominator = p.audio.playback_rate.denominator,
         .p1_scratch_position = p.display.scratch_positions[0], .p2_scratch_position = p.display.scratch_positions[1],
         .field_scheme = p.display.field_scheme.c_str(),

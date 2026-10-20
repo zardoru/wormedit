@@ -5,6 +5,7 @@
 #include <wormedit/core/measure.h>
 #include <wormedit/core/storyboard.h>
 #include <wormedit/core/vocabulary.h>
+#include <wormedit/core/osu_hitsample.h>
 
 #include <algorithm>
 #include <array>
@@ -272,6 +273,7 @@ struct note_t {
     std::optional<std::string> label;
     std::optional<branch_id_t> branch;
     source_provenance_t provenance;
+    std::optional<osu_hitsample_t> osu_hitsample;
 };
 
 struct bgm_event_t {
@@ -717,6 +719,8 @@ struct bms_source_span_t {
 };
 
 struct bms_control_node_t {
+    // A retained source tree may contain only ordinary statements, not control flow.
+    [[nodiscard]] auto has_control_flow() const -> bool;
     branch_id_t id;
     bms_control_kind_t kind{bms_control_kind_t::raw_statement};
     std::optional<std::int64_t> value;

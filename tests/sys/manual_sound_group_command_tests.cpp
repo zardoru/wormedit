@@ -35,9 +35,9 @@ struct dispatch_fixture_t {
         workspace = *binding.value;
     }
 
-    auto dispatch(const WormUiSoundGroupAssignment* assignments, std::size_t count,
+    auto dispatch(const wormedit::ui::sound_group_assignment_t* assignments, std::size_t count,
                   std::uint64_t revision, bool keep) -> std::optional<std::string> {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS;
         action.compose_input_chart_id = chart_id.value;
         action.compose_input_document_revision = revision;
@@ -217,7 +217,7 @@ auto ungroup_command_is_undoable() -> bool {
 auto dispatcher_creates_one_group_undo() -> bool {
     dispatch_fixture_t fixture;
     const std::array ids{std::uint64_t{1}, std::uint64_t{2}};
-    const WormUiSoundGroupAssignment assignment{0, "Kicks", ids.data(), ids.size()};
+    const wormedit::ui::sound_group_assignment_t assignment{0, "Kicks", ids.data(), ids.size()};
     const auto result = fixture.dispatch(&assignment, 1, fixture.history.document.revision, false);
     if (!result || fixture.history.document.sound_groups.size() != 1 ||
         fixture.history.document.sound_groups.front().name != "Kicks" ||
@@ -234,8 +234,8 @@ auto dispatcher_rejects_stale_and_duplicate_batch() -> bool {
     const std::array first_ids{std::uint64_t{1}};
     const std::array second_ids{std::uint64_t{1}, std::uint64_t{2}};
     const std::array assignments{
-        WormUiSoundGroupAssignment{0, "One", first_ids.data(), first_ids.size()},
-        WormUiSoundGroupAssignment{0, "Two", second_ids.data(), second_ids.size()}};
+        wormedit::ui::sound_group_assignment_t{0, "One", first_ids.data(), first_ids.size()},
+        wormedit::ui::sound_group_assignment_t{0, "Two", second_ids.data(), second_ids.size()}};
     const auto duplicate = fixture.dispatch(assignments.data(), assignments.size(), revision, false);
     if (!duplicate || duplicate->find("repeats a sound") == std::string::npos ||
         fixture.history.document.revision != revision || !fixture.history.document.sound_groups.empty() ||

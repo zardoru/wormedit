@@ -263,19 +263,19 @@ constexpr std::uint64_t key_bookmark = 1ULL << 62U;
 constexpr std::uint64_t key_section = 2ULL << 62U;
 constexpr std::uint64_t key_audio_bookmark = 3ULL << 62U;
 
-void stamp_action(WormUiWorkspaceAction& action, const WormUiComposeView& view) {
+void stamp_action(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view) {
     action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
 }
 
-auto raise_compose(WormUiWorkspaceAction& action, WormUiComposeActionKind kind) -> bool {
+auto raise_compose(wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) -> bool {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return false;
     action.compose_action = kind;
     return true;
 }
 
-void request_marker_navigation(WormUiWorkspaceAction& action, bool previous, bool next) {
+void request_marker_navigation(wormedit::ui::workspace_action_t& action, bool previous, bool next) {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
     if (previous) action.kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_PREVIOUS_MARKER;
     else if (next) action.kind = WORM_UI_WORKSPACE_ACTION_NAVIGATE_NEXT_MARKER;
@@ -283,7 +283,7 @@ void request_marker_navigation(WormUiWorkspaceAction& action, bool previous, boo
 
 // ---- Beat bookmarks ----
 
-void handle_bookmark_row(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void handle_bookmark_row(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                          const WormUiComposeBookmarkView& bookmark, const row_result_t& row) {
     if (!row.clicked) return;
     state.bookmark_id = bookmark.bookmark_id;
@@ -298,7 +298,7 @@ void handle_bookmark_row(const WormUiComposeView& view, WormUiWorkspaceAction& a
     stamp_action(action, view);
 }
 
-void apply_bookmark_header(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void apply_bookmark_header(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                            const header_clicks_t& clicks) {
     request_marker_navigation(action, clicks.previous, clicks.next);
     if (clicks.add) {
@@ -311,7 +311,7 @@ void apply_bookmark_header(const WormUiComposeView& view, WormUiWorkspaceAction&
 }
 
 void render_bookmarks(struct nk_context* context, const WormUiComposeView& view,
-                      WormUiWorkspaceAction& action) {
+                      wormedit::ui::workspace_action_t& action) {
     const auto* selected = selected_bookmark(view);
     const auto editable = view.scene_available && !view.input_occluded;
     const header_spec_t spec{
@@ -362,7 +362,7 @@ void handle_section_row(const WormUiComposeView& view, const WormUiComposeSectio
                                              section.section_id, x, y);
 }
 
-void apply_section_header(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void apply_section_header(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                           const header_clicks_t& clicks) {
     request_marker_navigation(action, clicks.previous, clicks.next);
     if (clicks.add && raise_compose(action, WORM_UI_COMPOSE_ACTION_ADD_BEAT_SECTION)) {
@@ -376,7 +376,7 @@ void apply_section_header(const WormUiComposeView& view, WormUiWorkspaceAction& 
 }
 
 void render_section_edge_buttons(struct nk_context* context, const WormUiComposeView& view,
-                                 WormUiWorkspaceAction& action,
+                                 wormedit::ui::workspace_action_t& action,
                                  const WormUiComposeSectionView& selected) {
     const auto editable = view.scene_available && !view.input_occluded;
     nk_layout_row_dynamic(context, 24, 2);
@@ -391,7 +391,7 @@ void render_section_edge_buttons(struct nk_context* context, const WormUiCompose
 }
 
 void render_sections(struct nk_context* context, const WormUiComposeView& view,
-                     WormUiWorkspaceAction& action) {
+                     wormedit::ui::workspace_action_t& action) {
     const auto* selected = selected_section(view);
     const auto editable = view.scene_available && !view.input_occluded;
     const header_spec_t spec{
@@ -420,7 +420,7 @@ void render_sections(struct nk_context* context, const WormUiComposeView& view,
 
 // ---- Audio-time markers: the same grouping, with a compact form for the typed times. ----
 
-void request_audio_navigation(WormUiWorkspaceAction& action, bool previous, bool next) {
+void request_audio_navigation(wormedit::ui::workspace_action_t& action, bool previous, bool next) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (previous) action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_PREVIOUS_AUDIO_MARKER;
     else if (next) action.compose_action = WORM_UI_COMPOSE_ACTION_NAVIGATE_NEXT_AUDIO_MARKER;
@@ -450,7 +450,7 @@ void render_audio_form_fields(struct nk_context* context, bool bookmark) {
         state.audio_section_end.data(), state.audio_section_end.size(), nk_filter_default);
 }
 
-void fill_audio_bookmark_action(WormUiWorkspaceAction& action, bool update) {
+void fill_audio_bookmark_action(wormedit::ui::workspace_action_t& action, bool update) {
     action.compose_bookmark_id = state.audio_bookmark_id;
     std::memcpy(action.compose_marker_label, state.audio_bookmark_label.data(),
                 sizeof(action.compose_marker_label));
@@ -460,7 +460,7 @@ void fill_audio_bookmark_action(WormUiWorkspaceAction& action, bool update) {
                                    : WORM_UI_COMPOSE_ACTION_ADD_AUDIO_BOOKMARK;
 }
 
-void fill_audio_section_action(WormUiWorkspaceAction& action, bool update) {
+void fill_audio_section_action(wormedit::ui::workspace_action_t& action, bool update) {
     action.compose_section_id = state.audio_section_id;
     std::memcpy(action.compose_marker_label, state.audio_section_label.data(),
                 sizeof(action.compose_marker_label));
@@ -473,7 +473,7 @@ void fill_audio_section_action(WormUiWorkspaceAction& action, bool update) {
 }
 
 void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView& view,
-                            WormUiWorkspaceAction& action) {
+                            wormedit::ui::workspace_action_t& action) {
     const auto* selected = selected_audio_bookmark(view);
     const auto editable = view.scene_available;
     const auto navigation = view.audio_marker_navigation_available && view.audio_marker_transport_available;
@@ -512,7 +512,7 @@ void render_audio_bookmarks(struct nk_context* context, const WormUiComposeView&
 }
 
 void render_audio_sections(struct nk_context* context, const WormUiComposeView& view,
-                           WormUiWorkspaceAction& action) {
+                           wormedit::ui::workspace_action_t& action) {
     const auto* selected = selected_audio_section(view);
     const auto editable = view.scene_available;
     const auto navigation = view.audio_marker_navigation_available && view.audio_marker_transport_available;
@@ -561,7 +561,7 @@ void worm_ui_nuklear_reset_compose_markers(void) {
 
 void worm_ui_nuklear_render_compose_markers(struct nk_context* context,
                                             const WormUiComposeView* view,
-                                            WormUiWorkspaceAction* action) {
+                                            wormedit::ui::workspace_action_t* action) {
     if (!context || !view || !action) {
         return;
     }

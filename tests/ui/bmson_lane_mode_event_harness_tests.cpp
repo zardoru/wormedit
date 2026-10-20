@@ -42,15 +42,15 @@ void check_emitted(const std::array<workspace_action_snapshot_t, 2>& frames,
     check_ui(found->get().compose_resource_id == resource);
     check_ui(found->get().compose_input_count == 0);
 }
-void audio_fixture(nuklear_event_harness_t& harness, WormUiSoundRowView& row) {
+void audio_fixture(nuklear_event_harness_t& harness, wormedit::ui::sound_row_view_t& row) {
     auto& workspace = harness.view();
     workspace.active_tab = WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
     workspace.compose.visible = false;
     auto& audio = workspace.audio_slices;
-    audio.visible = true; audio.has_chart = true; audio.chart_id = 7; audio.document_revision = 91;
-    audio.usage_song_id = 5; audio.selected_resource_id = row.resource_id;
+    audio.visible = true; audio.has_chart = true; audio.chart_id = wormedit::chart_id_t{7}; audio.document_revision = 91;
+    audio.usage_song_id = wormedit::song_id_t{5}; audio.selected_resource_id = row.resource_id;
     audio.has_selected_asset = true; audio.selected_asset_id = row.asset_id;
-    audio.sound_rows = &row; audio.sound_row_count = 1; audio.offset_denominator = 1;
+    audio.sound_rows.assign(&row, &row + 1); audio.offset_denominator = 1;
 }
 }
 
@@ -60,7 +60,7 @@ TEST_CASE("BMSON lane_mode menus convert packed events and stem headers", "[fron
     nuklear_event_harness_t harness{1280, 900};
     auto& view = harness.view().compose;
     (void)harness.frame();
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     require_ui(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     view.viewport_width_pixels = viewport.width;
     view.viewport_height_pixels = viewport.height;
@@ -92,8 +92,8 @@ TEST_CASE("BMSON lane_mode menus convert packed events and stem headers", "[fron
 
 TEST_CASE("BMSON lane_mode Sounds kind change uses the same action", "[frontend-state][event-harness][bmson][lane_mode]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiSoundRowView row{.resource_id = 3, .asset_id = 42, .name = "kick.wav", .kind = 2,
-        .bmson_channel_id = 71};
+    wormedit::ui::sound_row_view_t row{.resource_id = wormedit::resource_id_t{3}, .asset_id = wormedit::asset_id_t{42}, .name = "kick.wav", .kind = static_cast<wormedit::sound_kind_t>(2),
+        .bmson_channel_id = wormedit::object_id_t{71}};
     audio_fixture(harness, row);
     (void)harness.frame();
     check_emitted(click_label(harness, "Kind: Stem (make stem)"), WORM_UI_COMPOSE_ACTION_MAKE_BMSON_STEM, 71);
@@ -102,8 +102,8 @@ TEST_CASE("BMSON lane_mode Sounds kind change uses the same action", "[frontend-
 TEST_CASE("BMSON lane_mode restart conversion waits for confirmation and rejects stale state", "[frontend-state][event-harness][bmson][lane_mode]") {
     const bool stale = GENERATE(false, true);
     nuklear_event_harness_t harness{1280, 900};
-    WormUiSoundRowView row{.resource_id = 3, .asset_id = 42, .name = "vox.wav", .kind = 1,
-        .bmson_channel_id = 71, .bmson_channel_continues = true};
+    wormedit::ui::sound_row_view_t row{.resource_id = wormedit::resource_id_t{3}, .asset_id = wormedit::asset_id_t{42}, .name = "vox.wav", .kind = static_cast<wormedit::sound_kind_t>(1),
+        .bmson_channel_id = wormedit::object_id_t{71}, .bmson_channel_continues = true};
     audio_fixture(harness, row);
     (void)harness.frame();
     const auto requested = click_label(harness, "Kind: Keysound (pack into columns)");

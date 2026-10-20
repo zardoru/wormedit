@@ -99,31 +99,41 @@ auto notification_copy_payload(const notification_center_t& center, notification
     return entry->detail.empty() ? entry->message : entry->detail;
 }
 
-auto notification_history_runtime_t::project(const notification_center_t& center,
-    const song_document_t& document, notification_time_t now,
-    std::uint64_t document_generation) -> WormUiNotificationHistoryView {
-    WormUiNotificationHistoryView view{visible, 0, rows.data()};
-    if (!visible) return view;
-    auto& targets = target_cache.get_or_build(
+} // namespace wormedit::sys
+
+void wormedit::ui::notification_history_view_t::refill(sys::notification_history_runtime_t& runtime,
+    const notification_center_t& center, const song_document_t& document,
+    std::chrono::nanoseconds now, std::uint64_t document_generation) {
+    visible = runtime.visible;
+    rows.clear();
+    if (!visible) return;
+    auto& targets = runtime.target_cache.get_or_build(
         std::tuple{&document, document_stamp_t::from(document), document_generation},
-        [](target_entries_t& entries) { entries.fill({}); });
+        [](sys::notification_history_runtime_t::target_entries_t& entries) { entries.fill({}); });
     const auto entries = center.borrowed_snapshot(notification_capacity);
     for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry) {
-        const auto availability = targets[view.row_count].get_or_build(entry->id,
-            [&document, &entry] {
-                return resolve_notification_target(document, entry->target).availability;
-            });
+        const auto availability = targets[rows.size()].get_or_build(entry->id,
+            [&document, &entry] { return sys::resolve_notification_target(document, entry->target).availability; });
         const auto age = now > entry->timestamp ? now - entry->timestamp : notification_time_t{};
-        rows[view.row_count++] = {
-            entry->id, static_cast<WormUiNotificationSeverity>(entry->severity),
-            static_cast<std::uint32_t>(entry->source), entry->message.c_str(), entry->detail.c_str(),
-            entry->count, static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::seconds>(age).count()),
-            entry->read, availability};
+        rows.push_back({.id = entry->id, .severity = entry->severity, .source = entry->source,
+            .message = entry->message, .detail = entry->detail, .repeat_count = entry->count,
+            .age_seconds = static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::seconds>(age).count()),
+            .read = entry->read, .target = availability});
     }
-    return view;
 }
 
-auto notification_history_runtime_t::apply(const WormUiNotificationAction& action,
+auto wormedit::ui::notification_history_view_t::from(sys::notification_history_runtime_t& runtime,
+    const notification_center_t& center, const song_document_t& document,
+    std::chrono::nanoseconds now, std::uint64_t document_generation) -> notification_history_view_t {
+    notification_history_view_t result;
+    result.refill(runtime, center, document, now, document_generation);
+    return result;
+}
+
+namespace wormedit::sys {
+
+auto notification_history_runtime_t::apply(const wormedit::ui::notification_action_t& action,
                                            notification_center_t& center) -> bool {
     switch (action.kind) {
     case WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY:

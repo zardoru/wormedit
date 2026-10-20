@@ -47,7 +47,7 @@ void metadata_drop_state_t::discard_if_stale(std::uint64_t current_project, std:
         clear_lane_profile_preview();
 }
 
-void metadata_drop_state_t::publish(WormUiMetadataView& view) const {
+void metadata_drop_state_t::publish(wormedit::ui::metadata_view_t& view) const {
     view.dropped_music_path = music_path.c_str();
     view.dropped_music_target = music_target;
     view.dropped_output_relative_path = output_path.c_str();

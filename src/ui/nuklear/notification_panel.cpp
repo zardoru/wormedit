@@ -16,13 +16,13 @@ constexpr const char* filter_names[]{"All severities", "Hint", "Info", "Success"
 constexpr const char* source_names[]{"Document", "Edit", "Audio", "Export", "Import", "Recovery",
                                     "Format", "Input", "System"};
 
-void emit_notification_action(WormUiNotificationAction& action,
+void emit_notification_action(wormedit::ui::notification_action_t& action,
                               WormUiNotificationActionKind kind, std::uint64_t id = 0) {
     if (action.kind == WORM_UI_NOTIFICATION_ACTION_NONE) action = {kind, id};
 }
 
-void render_row_buttons(nk_context* context, const WormUiNotificationHistoryRow& row,
-                        WormUiNotificationAction& action) {
+void render_row_buttons(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
+                        wormedit::ui::notification_action_t& action) {
     nk_layout_row_dynamic(context, 26, 3);
     if (nk_button_label(context, "Copy details"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_COPY_DETAILS, row.id);
@@ -67,12 +67,13 @@ void render_detail_lines(nk_context* context, std::string_view text) {
     }
 }
 
-void render_expanded_detail(nk_context* context, const WormUiNotificationHistoryRow& row,
+void render_expanded_detail(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
                             notification_panel_state_t& state) {
     // The pinned READ_ONLY edit disables all input, including scrolling.
     // Static text in a scroll group keeps the entire bounded payload accessible.
-    std::snprintf(state.detail_text.data(), state.detail_text.size(), "%s",
-                  row.detail[0] ? row.detail : row.message);
+    const auto detail = row.detail.empty() ? row.message : row.detail;
+    std::snprintf(state.detail_text.data(), state.detail_text.size(), "%.*s",
+                  static_cast<int>(detail.size()), detail.data());
     nk_layout_row_dynamic(context, 150, 1);
     if (nk_group_scrolled_offset_begin(context, &state.detail_scroll_x, &state.detail_scroll_y,
                                       "Notification detail", NK_WINDOW_BORDER)) {
@@ -81,14 +82,15 @@ void render_expanded_detail(nk_context* context, const WormUiNotificationHistory
     }
 }
 
-void render_history_row(nk_context* context, const WormUiNotificationHistoryRow& row,
-                        notification_panel_state_t& state, WormUiNotificationAction& action) {
+void render_history_row(nk_context* context, const wormedit::ui::notification_history_row_view_t& row,
+                        notification_panel_state_t& state, wormedit::ui::notification_action_t& action) {
     nk_layout_row_dynamic(context, 23, 1);
     nk_labelf(context, NK_TEXT_LEFT, "%s · %s · ×%u · %llus ago%s",
-        severity_names[row.severity], source_names[row.source], row.repeat_count,
+        severity_names[static_cast<std::size_t>(row.severity)],
+        source_names[static_cast<std::size_t>(row.source)], row.repeat_count,
         static_cast<unsigned long long>(row.age_seconds), row.read ? "" : " · unread");
     nk_layout_row_dynamic(context, 70, 1);
-    nk_label_wrap(context, row.message);
+    nk_text_wrap(context, row.message.data(), static_cast<int>(row.message.size()));
     nk_layout_row_dynamic(context, 24, 1);
     if (nk_button_label(context, state.expanded_id == row.id ? "Collapse details" : "Expand details"))
         state.expanded_id = state.expanded_id == row.id ? 0 : row.id;
@@ -98,18 +100,18 @@ void render_history_row(nk_context* context, const WormUiNotificationHistoryRow&
     nk_spacing(context, 1);
 }
 
-void render_history_body(nk_context* context, const WormUiNotificationHistoryView& view,
-                         notification_panel_state_t& state, WormUiNotificationAction& action) {
+void render_history_body(nk_context* context, const wormedit::ui::notification_history_view_t& view,
+                         notification_panel_state_t& state, wormedit::ui::notification_action_t& action) {
     nk_layout_row_dynamic(context, 28, 2);
     state.severity_filter = chrome::safe_combo(context, filter_names, 6,
         std::clamp(state.severity_filter, 0, 5), 24, nk_vec2(190, 170));
     if (nk_button_label(context, "Clear all"))
         emit_notification_action(action, WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL);
-    if (view.row_count == 0) {
+    if (view.rows.empty()) {
         nk_layout_row_dynamic(context, 30, 1);
         nk_label(context, "No notifications", NK_TEXT_LEFT);
     }
-    for (std::size_t index = 0; index < view.row_count; ++index) {
+    for (std::size_t index = 0; index < view.rows.size(); ++index) {
         if (notification_row_visible(state, view.rows[index]))
             render_history_row(context, view.rows[index], state, action);
     }
@@ -136,13 +138,10 @@ auto notification_history_pointer_edge(notification_panel_state_t& state, struct
     return captured;
 }
 
-auto notification_history_view_valid(const WormUiNotificationHistoryView& view) -> bool {
-    if (view.row_count > WORM_UI_NOTIFICATION_HISTORY_CAPACITY || (view.row_count && !view.rows))
-        return false;
-    for (std::size_t index = 0; index < view.row_count; ++index) {
-        const auto& row = view.rows[index];
-        if (!row.message || !row.detail || row.id == 0 || row.severity < WORM_UI_NOTIFICATION_HINT ||
-            row.severity > WORM_UI_NOTIFICATION_ERROR || row.source >= std::size(source_names) ||
+auto notification_history_view_valid(const wormedit::ui::notification_history_view_t& view) -> bool {
+    for (const auto& row : view.rows) {
+        if (row.id == 0 || static_cast<std::size_t>(row.severity) >= std::size(severity_names) ||
+            static_cast<std::size_t>(row.source) >= std::size(source_names) ||
             row.target < WORM_UI_NOTIFICATION_NO_TARGET || row.target > WORM_UI_NOTIFICATION_TARGET_MISSING)
             return false;
     }
@@ -150,13 +149,13 @@ auto notification_history_view_valid(const WormUiNotificationHistoryView& view) 
 }
 
 auto notification_row_visible(const notification_panel_state_t& state,
-                               const WormUiNotificationHistoryRow& row) -> bool {
+                               const wormedit::ui::notification_history_row_view_t& row) -> bool {
     return state.severity_filter == 0 || state.severity_filter == static_cast<int>(row.severity) + 1;
 }
 
-void render_notification_panel(nk_context* context, const WormUiNotificationHistoryView& view,
+void render_notification_panel(nk_context* context, const wormedit::ui::notification_history_view_t& view,
                                 notification_panel_state_t& state,
-                                WormUiNotificationAction& action, int width, int height,
+                                wormedit::ui::notification_action_t& action, int width, int height,
                                 bool interactive) {
     if (!context || !view.visible || !notification_history_view_valid(view)) return;
     const auto panel_width = std::max(1.0f, std::min(760.0f, static_cast<float>(width) - 24));

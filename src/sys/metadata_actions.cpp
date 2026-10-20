@@ -55,10 +55,10 @@ auto publish_metadata_edit(document_command_result_t result,
     return {feedback.severity, std::string{feedback.message_text()}};
 }
 
-auto dispatch_song_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_song_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                         workspace_controller_t& workspace) -> metadata_edit_feedback_t {
     if (!action.metadata_title || !action.metadata_artist ||
-        action.metadata_search_tag_count > WORM_UI_METADATA_SEARCH_TAG_CAPACITY ||
+        action.metadata_search_tag_count > wormedit::default_metadata_edit_limits.maximum_search_tags ||
         (action.metadata_search_tag_count != 0 && !action.metadata_search_tags)) {
         return {notification_severity_t::warning, "Metadata edit payload is incomplete or exceeds the tag-count cap."};
     }
@@ -76,7 +76,7 @@ auto dispatch_song_edit(const WormUiWorkspaceAction& action, document_history_t&
         workspace, history);
 }
 
-auto dispatch_chart_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_chart_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                          workspace_controller_t& workspace) -> metadata_edit_feedback_t {
     if (action.metadata_chart_id == 0 || !action.metadata_chart_name ||
         !action.metadata_chart_author ||
@@ -103,10 +103,10 @@ auto dispatch_chart_edit(const WormUiWorkspaceAction& action, document_history_t
         workspace, history);
 }
 
-auto dispatch_batch_chart_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_batch_chart_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                                workspace_controller_t& workspace) -> metadata_edit_feedback_t {
     const auto count = action.metadata_batch_chart_count;
-    if (count == 0 || count > WORM_UI_METADATA_BATCH_CHART_CAPACITY ||
+    if (count == 0 || count > wormedit::maximum_batch_chart_metadata_charts ||
         !action.metadata_batch_chart_ids ||
         (action.metadata_batch_edit_author && !action.metadata_chart_author) ||
         (action.metadata_batch_edit_rating && action.metadata_has_chart_rating &&
@@ -139,7 +139,7 @@ auto dispatch_batch_chart_edit(const WormUiWorkspaceAction& action, document_his
     return feedback;
 }
 
-auto dispatch_audio_offset_edit(const WormUiWorkspaceAction& action,
+auto dispatch_audio_offset_edit(const wormedit::ui::workspace_action_t& action,
                                 document_history_t& history,
                                 workspace_controller_t& workspace,
                                 bool timing_locked) -> metadata_edit_feedback_t {
@@ -158,7 +158,7 @@ auto dispatch_audio_offset_edit(const WormUiWorkspaceAction& action,
         workspace, history);
 }
 
-auto dispatch_format_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_format_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                           workspace_controller_t& workspace) -> metadata_edit_feedback_t {
     if (action.metadata_format_family > static_cast<std::uint8_t>(format_family_t::quaver))
         return {notification_severity_t::warning, "Format metadata edit refers to an unknown format family."};
@@ -199,7 +199,7 @@ auto redivision_rejection_message(const diagnostic_t& diagnostic) -> std::string
     return message;
 }
 
-auto dispatch_redivision_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_redivision_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                               workspace_controller_t& workspace) -> metadata_edit_feedback_t {
     if (action.metadata_chart_id == 0 || action.metadata_redivision_resolution == 0)
         return {notification_severity_t::warning, "Resolution change payload is incomplete."};
@@ -224,10 +224,10 @@ auto optional_channel_text(const char* text) -> std::optional<std::string> {
 }
 
 // Lane ids and four texts per lane; an empty text means the channel is unset.
-auto channel_map_replacements(const WormUiWorkspaceAction& action)
+auto channel_map_replacements(const wormedit::ui::workspace_action_t& action)
     -> std::optional<std::vector<channel_map_replacement_t>> {
     const auto count = action.metadata_channel_map_lane_count;
-    if (count > WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY ||
+    if (count > wormedit::ui::metadata_channel_map_lane_limit ||
         (count != 0 && (!action.metadata_channel_map_lane_ids || !action.metadata_channel_map_texts)))
         return std::nullopt;
     std::vector<channel_map_replacement_t> replacements;
@@ -242,7 +242,7 @@ auto channel_map_replacements(const WormUiWorkspaceAction& action)
     return replacements;
 }
 
-auto dispatch_channel_map_preview(const WormUiWorkspaceAction& action, const document_history_t& history,
+auto dispatch_channel_map_preview(const wormedit::ui::workspace_action_t& action, const document_history_t& history,
                                   metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
     const auto replacements = channel_map_replacements(action);
     if (action.metadata_chart_id == 0 || !replacements)
@@ -292,7 +292,7 @@ auto lane_profile_chart(const song_document_t& song, std::uint64_t id) -> const 
 
 // Previews the chosen family profile as a sealed proposal. The index must name a family choice:
 // Custom and stale indices never reach the core.
-auto dispatch_lane_profile_preview(const WormUiWorkspaceAction& action, const document_history_t& history,
+auto dispatch_lane_profile_preview(const wormedit::ui::workspace_action_t& action, const document_history_t& history,
                                    metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
     const auto* chart = lane_profile_chart(history.document, action.metadata_chart_id);
     if (!chart) return {notification_severity_t::warning, "Choose a chart before previewing its key count."};
@@ -352,7 +352,7 @@ auto lane_profile_family_targets_impl(const chart_document_t& chart) -> std::vec
     return targets;
 }
 
-auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_metadata_edit(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                             workspace_controller_t& workspace, bool timing_locked,
                             metadata_drop_state_t& metadata_drop) -> metadata_edit_feedback_t {
     switch (action.metadata_edit) {
@@ -366,7 +366,7 @@ auto dispatch_metadata_edit(const WormUiWorkspaceAction& action, document_histor
         return dispatch_audio_offset_edit(action, history, workspace, timing_locked);
     case WORM_UI_METADATA_EDIT_OUTPUT_PATH:
         if (!action.metadata_output_path ||
-            std::strlen(action.metadata_output_path) > WORM_UI_METADATA_OUTPUT_PATH_BYTES)
+            std::strlen(action.metadata_output_path) > wormedit::default_metadata_edit_limits.maximum_output_path_bytes)
             return {notification_severity_t::warning, "Output path edit payload is incomplete or too long."};
         return publish_metadata_edit(
             apply_metadata_edit(history, action.metadata_document_revision,
@@ -399,7 +399,7 @@ auto lane_profile_family_targets(const chart_document_t& chart) -> std::vector<l
     return lane_profile_family_targets_impl(chart);
 }
 
-auto dispatch_metadata_action(const WormUiWorkspaceAction& action,
+auto dispatch_metadata_action(const wormedit::ui::workspace_action_t& action,
                               const metadata_action_inputs_t& environment, bool timing_locked,
                               bool resource_copy_busy, bool export_busy, bool post_notifications)
     -> std::optional<std::string> {

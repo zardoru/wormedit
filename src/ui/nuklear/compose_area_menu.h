@@ -34,7 +34,7 @@ struct ComposeAreaCapture {
                  view.area_range_begin_row,
                  view.area_range_end_row};
     }
-    void restore(WormUiWorkspaceAction& action) const {
+    void restore(wormedit::ui::workspace_action_t& action) const {
         action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_RANGE_RESTORE;
         action.compose_input_chart_id = chart;
         action.compose_input_document_revision = revision;
@@ -45,12 +45,12 @@ struct ComposeAreaCapture {
 };
 
 auto compose_area_band_rect(const WormUiComposeView&, struct nk_rect) -> struct nk_rect;
-void process_compose_area_menu(nk_context*, const WormUiComposeView&, WormUiWorkspaceAction&,
+void process_compose_area_menu(nk_context*, const WormUiComposeView&, wormedit::ui::workspace_action_t&,
                                struct nk_rect, double input_right, bool focused);
 auto compose_area_pointer_consumed() -> bool;
 auto compose_area_menu_open() -> bool;
 auto compose_area_menu_consumed() -> bool;
-void cancel_compose_area_capture(WormUiWorkspaceAction&);
+void cancel_compose_area_capture(wormedit::ui::workspace_action_t&);
 void reset_compose_area_menu();
 auto compose_area_capture_active() -> bool;
 

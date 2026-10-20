@@ -110,6 +110,7 @@ auto sound_list_view_t::from(const song_document_t& document, const sound_list_r
         const auto count = counts.find(resource.id.value);
         list.rows.push_back({.resource = resource.id,
                              .name = resource.name,
+                             .source_path = asset->source_path.generic_string(),
                              .kind = effective_sound_kind(resource),
                              .tag_count = static_cast<std::uint32_t>(resource.tags.size()),
                              .tags_text = joined(resource.tags),
@@ -119,6 +120,13 @@ auto sound_list_view_t::from(const song_document_t& document, const sound_list_r
                              .missing = resource.missing});
     }
     return list;
+}
+
+auto sound_list_cache_t::view_for(const song_document_t& document,
+                                  const sound_list_request_t& request, std::uint64_t session_generation) -> const sound_list_view_t& {
+    return projection_.get_or_build(key_t{document_stamp_t::from(document), request, session_generation}, [&] {
+        return sound_list_view_t::from(document, request);
+    });
 }
 
 auto sound_properties_view_t::from(const song_document_t& document, resource_id_t resource_id)

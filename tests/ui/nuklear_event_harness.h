@@ -24,8 +24,8 @@ struct event_step_t {
 // snapshot must be reassigned before calling get().
 class workspace_action_snapshot_t {
   public:
-    explicit workspace_action_snapshot_t(const WormUiWorkspaceAction& action);
-    [[nodiscard]] auto get() const -> const WormUiWorkspaceAction&;
+    explicit workspace_action_snapshot_t(const wormedit::ui::workspace_action_t& action);
+    [[nodiscard]] auto get() const -> const wormedit::ui::workspace_action_t&;
   private:
     struct storage_t;
     std::shared_ptr<const storage_t> storage_;
@@ -43,9 +43,9 @@ class nuklear_event_harness_t {
     auto operator=(const nuklear_event_harness_t&) -> nuklear_event_harness_t& = delete;
 
     [[nodiscard]] auto ready() const noexcept -> bool { return initialized_ && view_valid_; }
-    [[nodiscard]] auto view() noexcept -> WormUiWorkspaceView& { return view_; }
+    [[nodiscard]] auto view() noexcept -> wormedit::ui::workspace_view_t& { return view_; }
     [[nodiscard]] auto drawn_text() const noexcept -> const std::string& { return drawn_text_; }
-    [[nodiscard]] auto drawn_text_bounds() const noexcept -> std::span<const WormUiTestingDrawnText> {
+    [[nodiscard]] auto drawn_text_bounds() const noexcept -> std::span<const wormedit::ui::testing_drawn_text_view_t> {
         return drawn_text_bounds_;
     }
     [[nodiscard]] auto drawn_text_center(std::string_view text) const
@@ -72,10 +72,10 @@ class nuklear_event_harness_t {
     bool sdl_initialized_{};
     bool initialized_{};
     bool view_valid_{};
-    WormUiWorkspaceView view_{};
+    wormedit::ui::workspace_view_t view_{};
     wormedit::ui::testing::icon_widget_snapshot_t icon_widgets_;
     std::string drawn_text_;
-    std::vector<WormUiTestingDrawnText> drawn_text_bounds_;
+    std::vector<wormedit::ui::testing_drawn_text_view_t> drawn_text_bounds_;
 };
 
 namespace wormedit::test {

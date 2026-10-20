@@ -20,13 +20,13 @@ constexpr std::array<const char*, WORM_UI_OPTIONS_CATEGORY_COUNT> category_descr
     "Appearance, interface scale, and window layout.",
     "Keyboard shortcuts and shortcut profiles.",
     "External player applications and launch arguments."};
-void placeholder(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction*) {
+void placeholder(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t*) {
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, category_descriptions[view->category]);
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Changes stay in a draft until Apply. Revert reloads this page's current settings; Restore defaults changes only its draft.");
 }
-void edit_integer(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+void edit_integer(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
     const char* label, WormUiOptionsField field, uint32_t value, int minimum, int maximum) {
     nk_layout_row_dynamic(context, 28, 1);
     int draft = static_cast<int>(value);
@@ -35,7 +35,7 @@ void edit_integer(nk_context* context, const WormUiOptionsView& view, WormUiOpti
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = field, .integer = static_cast<uint64_t>(draft)};
 }
-void edit_toggle(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+void edit_toggle(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
     const char* label, WormUiOptionsField field, bool value) {
     nk_layout_row_dynamic(context, 28, 1);
     nk_bool draft = value;
@@ -43,7 +43,7 @@ void edit_toggle(nk_context* context, const WormUiOptionsView& view, WormUiOptio
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = field, .boolean = draft != 0};
 }
-void general_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void general_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     edit_integer(context, *view, *action, "Autosave interval (minutes)", WORM_UI_OPTIONS_FIELD_AUTOSAVE,
         view->autosave_minutes, 1, 30);
     edit_integer(context, *view, *action, "Recent-files limit", WORM_UI_OPTIONS_FIELD_RECENT_FILES,
@@ -51,7 +51,7 @@ void general_page(nk_context* context, const WormUiOptionsView* view, WormUiOpti
     edit_toggle(context, *view, *action, "Confirm closing unsaved work", WORM_UI_OPTIONS_FIELD_CONFIRM_CLOSE,
         view->confirm_unsaved_close);
 }
-void scroll_directions(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void scroll_directions(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     constexpr std::array<const char*, 6> families{"Beat keys", "Pop’n buttons", "Dance", "Pump", "Keyboard", "Other modes"};
     constexpr const char* directions[]{"Profile default", "Up", "Down"};
     for (size_t index = 0; index < families.size(); ++index) {
@@ -65,7 +65,7 @@ void scroll_directions(nk_context* context, const WormUiOptionsView& view, WormU
             .family_index = static_cast<uint32_t>(index)};
     }
 }
-void move_collision_policy(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void move_collision_policy(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     constexpr const char* labels[]{"Reject", "Move it to a BGM lane"};
     nk_layout_row_dynamic(context, 28, 2);
     nk_label(context, "When a move lands on a note", NK_TEXT_LEFT);
@@ -75,7 +75,7 @@ void move_collision_policy(nk_context* context, const WormUiOptionsView& view, W
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY, .integer = static_cast<uint64_t>(selected)};
 }
-void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void editor_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     edit_toggle(context, *view, *action, "Play sounds on note clicks",
         WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, view->audition_on_click);
     edit_integer(context, *view, *action, "Default snap denominator", WORM_UI_OPTIONS_FIELD_SNAP, view->default_snap, 1, 1920);
@@ -90,31 +90,31 @@ void editor_page(nk_context* context, const WormUiOptionsView* view, WormUiOptio
     edit_toggle(context, *view, *action, "Minimap click moves paused playhead", WORM_UI_OPTIONS_FIELD_MINIMAP_CLICK,
         view->minimap_click_moves_paused_playhead);
 }
-void audio_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void audio_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     edit_integer(context, *view, *action, "Keysound memory (MiB)", WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY,
         view->keysound_budget_mib, 256, 8192);
     nk_layout_row_dynamic(context, 48, 1);
     nk_label_wrap(context, "Raising the budget loads skipped keysounds for the open project. Lowering it limits future loads and keeps playing sounds in memory.");
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "osu! hitsound skin folder (empty uses bundled samples)", NK_TEXT_LEFT);
-    std::array<char, WORM_UI_OPTIONS_TEXT_CAPACITY> folder{};
-    std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.c_str());
+    std::array<char, wormedit::maximum_preference_string_bytes + 1> folder{};
+    std::snprintf(folder.data(), folder.size(), "%s", view->osu_skin_directory.data());
     nk_layout_row_dynamic(context, 28, 1);
     (void)wormedit::ui::chrome::worm_ui_nuklear_text_field(context,
         NK_EDIT_FIELD, folder.data(), folder.size(), nk_filter_default);
     if (view->osu_skin_directory != folder.data() && action->kind == WORM_UI_OPTIONS_NONE) {
         *action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view->revision,
             .category = view->category, .field = WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY};
-        std::snprintf(action->text, sizeof(action->text), "%s", folder.data());
+        action->text = folder.data();
     }
 }
-void field_scheme_picker(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void field_scheme_picker(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     const auto& schemes = wormedit::ui::theme::field_schemes();
     std::vector<const char*> labels;
     int selected = 0;
     for (std::size_t index = 0; index < schemes.size(); ++index) {
         labels.push_back(schemes[index].name.c_str());
-        if (view->field_scheme && schemes[index].id == view->field_scheme) selected = static_cast<int>(index);
+        if (schemes[index].id == view->field_scheme) selected = static_cast<int>(index);
     }
     nk_layout_row_dynamic(context, 28, 2);
     nk_label(context, "Default field skin", NK_TEXT_LEFT);
@@ -124,18 +124,18 @@ void field_scheme_picker(nk_context* context, const WormUiOptionsView* view, Wor
     if (value == selected || action->kind != WORM_UI_OPTIONS_NONE) return;
     *action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view->revision, .category = view->category,
         .field = WORM_UI_OPTIONS_FIELD_FIELD_SCHEME};
-    snprintf(action->text, sizeof(action->text), "%s", schemes[static_cast<std::size_t>(value)].id.c_str());
+    action->text = schemes[static_cast<std::size_t>(value)].id;
 }
-void layout_field_scheme_picker(nk_context* context, const WormUiOptionsView& view,
-                               WormUiOptionsAction& action) {
-    const auto* key = view.current_field_layout_key;
-    if (!key || !*key) {
+void layout_field_scheme_picker(nk_context* context, const wormedit::ui::options_view_t& view,
+                               wormedit::ui::options_action_t& action) {
+    const auto key = view.current_field_layout_key;
+    if (key.empty()) {
         nk_layout_row_dynamic(context, 28, 1);
         nk_label(context, "Open a chart to choose its layout's field skin.", NK_TEXT_LEFT);
         return;
     }
     std::vector<wormedit::ui::theme::field_lane_t> lanes;
-    for (const auto& lane : std::span(view.current_field_layout_lanes, view.current_field_layout_lane_count))
+    for (const auto& lane : std::span{view.current_field_layout_lanes})
         lanes.push_back({lane.display_order, lane.stage, lane.key_color, lane.role, lane.lane_id});
     std::vector<const char*> labels{"Use default"};
     std::vector<const char*> ids{""};
@@ -144,28 +144,28 @@ void layout_field_scheme_picker(nk_context* context, const WormUiOptionsView& vi
         if (!wormedit::ui::theme::field_scheme_supports_layout(scheme.id, lanes)) continue;
         ids.push_back(scheme.id.c_str());
         labels.push_back(scheme.name.c_str());
-        if (view.current_layout_field_scheme && scheme.id == view.current_layout_field_scheme)
+        if (!view.current_layout_field_scheme.empty() && scheme.id == view.current_layout_field_scheme)
             selected = static_cast<int>(ids.size() - 1);
     }
     std::string unavailable;
-    if (selected == 0 && view.current_layout_field_scheme && *view.current_layout_field_scheme) {
+    if (selected == 0 && !view.current_layout_field_scheme.empty() && !view.current_layout_field_scheme.empty()) {
         unavailable = std::string(view.current_layout_field_scheme) + " (using default)";
         labels.push_back(unavailable.c_str());
-        ids.push_back(view.current_layout_field_scheme);
+        ids.push_back(view.current_layout_field_scheme.data());
         selected = static_cast<int>(ids.size() - 1);
     }
     nk_layout_row_dynamic(context, 28, 2);
-    nk_labelf(context, NK_TEXT_LEFT, "Layout: %s", view.current_field_layout_name
-        ? view.current_field_layout_name : key);
+    nk_labelf(context, NK_TEXT_LEFT, "Layout: %s", !view.current_field_layout_name.empty()
+        ? view.current_field_layout_name.data() : key.data());
     const auto value = wormedit::ui::chrome::safe_combo(context, labels.data(),
         static_cast<int>(labels.size()), selected, 24, nk_vec2(260, 280));
     if (value == selected || action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME};
-    snprintf(action.text, sizeof(action.text), "%s", ids[static_cast<std::size_t>(value)]);
+    action.text = ids[static_cast<std::size_t>(value)];
 }
-void scratch_position_picker(nk_context* context, const WormUiOptionsView& view,
-                             WormUiOptionsAction& action, bool second_player) {
+void scratch_position_picker(nk_context* context, const wormedit::ui::options_view_t& view,
+                             wormedit::ui::options_action_t& action, bool second_player) {
     static constexpr const char* labels[]{"Skin default", "Chart layout", "Left", "Right"};
     const auto current = second_player ? view.p2_scratch_position : view.p1_scratch_position;
     nk_layout_row_dynamic(context, 28, 2);
@@ -177,7 +177,7 @@ void scratch_position_picker(nk_context* context, const WormUiOptionsView& view,
         .field = second_player ? WORM_UI_OPTIONS_FIELD_P2_SCRATCH_POSITION : WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION,
         .integer = static_cast<std::uint64_t>(selected)};
 }
-void grid_opacity_slider(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void grid_opacity_slider(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     nk_layout_row_dynamic(context, 28, 2);
     nk_labelf(context, NK_TEXT_LEFT, "Grid opacity · %u%%", view.snap_grid_opacity_percent);
     if (!view.snap_colored_grid) nk_widget_disable_begin(context);
@@ -188,7 +188,7 @@ void grid_opacity_slider(nk_context* context, const WormUiOptionsView& view, Wor
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
 }
-void field_waveform_opacity_slider(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void field_waveform_opacity_slider(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     nk_layout_row_dynamic(context, 28, 2);
     nk_labelf(context, NK_TEXT_LEFT, "Field waveform opacity · %u%%", view.field_waveform_opacity_percent);
     int percent = static_cast<int>(view.field_waveform_opacity_percent);
@@ -196,7 +196,7 @@ void field_waveform_opacity_slider(nk_context* context, const WormUiOptionsView&
     action = {.kind = WORM_UI_OPTIONS_EDIT_FIELD, .revision = view.revision, .category = view.category,
         .field = WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY, .integer = static_cast<std::uint64_t>(percent)};
 }
-void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiOptionsAction* action) {
+void appearance_page(nk_context* context, const wormedit::ui::options_view_t* view, wormedit::ui::options_action_t* action) {
     field_scheme_picker(context, view, action);
     layout_field_scheme_picker(context, *view, *action);
     const auto& schemes = wormedit::ui::theme::field_schemes();
@@ -215,11 +215,11 @@ void appearance_page(nk_context* context, const WormUiOptionsView* view, WormUiO
 }
 std::array<WormUiOptionsPageRenderer, WORM_UI_OPTIONS_CATEGORY_COUNT> pages{
     general_page, editor_page, audio_page, appearance_page, wormedit::ui::nuklear::render_shortcuts_page, placeholder};
-void emit(WormUiOptionsAction& action, const WormUiOptionsView& view, WormUiOptionsActionKind kind) {
+void emit(wormedit::ui::options_action_t& action, const wormedit::ui::options_view_t& view, WormUiOptionsActionKind kind) {
     if (action.kind != WORM_UI_OPTIONS_NONE) return;
     action = {.kind = kind, .revision = view.revision, .category = view.category};
 }
-void render_categories(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action) {
+void render_categories(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     if (!nk_group_begin(context, "Options categories", NK_WINDOW_NO_SCROLLBAR)) return;
     nk_layout_row_dynamic(context, 32, 1);
     for (int category = 0; category < WORM_UI_OPTIONS_CATEGORY_COUNT; ++category) {
@@ -231,7 +231,7 @@ void render_categories(nk_context* context, const WormUiOptionsView& view, WormU
     }
     nk_group_end(context);
 }
-void render_page(nk_context* context, const WormUiOptionsView& view, WormUiOptionsAction& action,
+void render_page(nk_context* context, const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action,
                  wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!nk_group_begin(context, "Options page", 0)) return;
     nk_layout_row_dynamic(context, 28, 1);
@@ -243,16 +243,16 @@ void render_page(nk_context* context, const WormUiOptionsView& view, WormUiOptio
     }
     pages[view.category](context, &view, &action);
     nk_layout_row_dynamic(context, 32, 1);
-    for (size_t i = 0; i < view.diagnostic_count; ++i)
-        nk_label_wrap(context, view.diagnostics[i].message);
+    for (size_t i = 0; i < view.diagnostics.size(); ++i)
+        nk_label_wrap(context, view.diagnostics[i].message.data());
     nk_group_end(context);
 }
 void render_footer(wormedit::ui::chrome::Dialog& dialog, nk_context* context,
-                   const WormUiOptionsView& view, WormUiOptionsAction& action) {
+                   const wormedit::ui::options_view_t& view, wormedit::ui::options_action_t& action) {
     namespace chrome = wormedit::ui::chrome;
-    if (view.status[0]) {
+    if (!view.status.empty()) {
         nk_layout_row_dynamic(context, 34, 1);
-        nk_label_wrap(context, view.status);
+        nk_label_wrap(context, view.status.data());
     }
     chrome::dialog_footer_begin(dialog, context, 4, false, 128);
     if (chrome::dialog_button(dialog, context, "Revert", chrome::DialogButtonRole::secondary))
@@ -271,23 +271,16 @@ bool worm_ui_nuklear_register_options_page(WormUiOptionsCategory category, WormU
     pages[category] = renderer;
     return true;
 }
-bool worm_ui_nuklear_options_view_valid(const WormUiOptionsView* view) {
+bool worm_ui_nuklear_options_view_valid(const wormedit::ui::options_view_t* view) {
     if (!view || !view->visible) return view != nullptr;
-    if (view->category < WORM_UI_OPTIONS_GENERAL || view->category >= WORM_UI_OPTIONS_CATEGORY_COUNT ||
-        !view->theme || !view->dock_layout || !view->shortcut_profile_path || !view->status ||
-        view->diagnostic_count > 16 || view->player_count > 64) return false;
-    if ((view->diagnostic_count && !view->diagnostics) || (view->player_count && !view->players)) return false;
-    if (view->current_field_layout_lane_count > 4096 ||
-        (view->current_field_layout_lane_count && !view->current_field_layout_lanes)) return false;
-    for (size_t i = 0; i < view->diagnostic_count; ++i)
-        if (!view->diagnostics[i].message) return false;
-    if (view->shortcut_row_count > WORM_UI_SHORTCUT_ROW_CAPACITY || (view->shortcut_row_count && !view->shortcut_rows)) return false;
-    for (size_t i = 0; i < view->shortcut_row_count; ++i)
-        if (!view->shortcut_rows[i].label || !view->shortcut_rows[i].chord) return false;
-    return true;
+    constexpr std::size_t maximum_options_layout_lanes = 4096;
+    return view->category >= WORM_UI_OPTIONS_GENERAL && view->category < WORM_UI_OPTIONS_CATEGORY_COUNT &&
+           view->players.size() <= wormedit::maximum_external_players &&
+           view->current_field_layout_lanes.size() <= maximum_options_layout_lanes;
 }
-void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOptionsView* view,
-    WormUiOptionsAction* action, wormedit::ui::lane_keys_action_t* lane_keys) {
+
+void worm_ui_nuklear_render_options_window(nk_context* context, const wormedit::ui::options_view_t* view,
+    wormedit::ui::options_action_t* action, wormedit::ui::lane_keys_action_t* lane_keys) {
     if (!context || !action || !worm_ui_nuklear_options_view_valid(view) || !view->visible) {
         worm_ui_nuklear_cancel_options_drag();
         return;
@@ -299,7 +292,7 @@ void worm_ui_nuklear_render_options_window(nk_context* context, const WormUiOpti
          .enter_confirms = false, .resizable = true, .height = 500, .minimum_size = {640, 400}, .movable = true})) {
         const auto content = nk_window_get_content_region(context);
         const auto footer_height = chrome::dialog_button_height + chrome::dialog_spacing +
-            (view->status[0] ? 34.0f + chrome::dialog_spacing : 0.0f);
+            (!view->status.empty() ? 34.0f + chrome::dialog_spacing : 0.0f);
         const auto bottom = std::min(content.y + content.h,
             dialog.bounds.y + dialog.bounds.h - chrome::dialog_padding);
         const auto body_height = std::max(1.0f, bottom -

@@ -8,7 +8,7 @@ namespace wormedit::sys::compose_action_detail {
 struct compose_action_context_t {
     using outcome_type = compose_action_outcome_t;
     const compose_action_inputs_t& environment;
-    const WormUiWorkspaceAction& action;
+    const wormedit::ui::workspace_action_t& action;
     wormedit::editor_interaction_state_t& state;
     double viewport_height;
     bool metadata_import_busy;

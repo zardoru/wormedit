@@ -64,8 +64,8 @@ void require_expectation(bool value,
 auto area_quantize_action(const document_history_t& history, std::uint64_t divisions,
                           quantization_space_t space,
                           quantization_tie_t tie, quantization_hold_t holds)
-    -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+    -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE;
     action.compose_input_chart_id = history.document.charts.front().id.value;
     action.compose_input_document_revision = history.document.revision;

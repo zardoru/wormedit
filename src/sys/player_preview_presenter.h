@@ -20,9 +20,9 @@ class video_frame_job_t;
 
 namespace wormedit::sys {
 
-// Owns the revision caches and borrowed scalar storage behind one player-preview
+// Owns revision caches and decoded resources behind one retained player-preview
 // view. It deliberately has no Nuklear or SDL renderer dependency, so another
-// frontend can consume the same WormUiPlayerPreviewView boundary.
+// frontend can consume the same player_preview_view_t boundary.
 class player_preview_presenter_t {
   public:
     player_preview_presenter_t();
@@ -33,7 +33,7 @@ class player_preview_presenter_t {
     player_preview_presenter_t(const player_preview_presenter_t&) = delete;
     auto operator=(const player_preview_presenter_t&) -> player_preview_presenter_t& = delete;
 
-    void populate(WormUiPlayerPreviewView& view, const document_history_t& history,
+    void populate(wormedit::ui::player_preview_view_t& view, const document_history_t& history,
                   std::optional<chart_id_t> selected_chart, bool visible,
                   player_preview_skin_t skin, std::uint64_t sample_frame, std::uint32_t sample_rate,
                   const std::filesystem::path& project_directory

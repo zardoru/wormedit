@@ -163,7 +163,9 @@ TEST_CASE("Notification badge and View menu open history through their actual co
     REQUIRE(badge.has_value());
     check_history_opens_on_click(*badge);
 
-    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view());
+    wormedit::sys::command_shortcut_text_t menu_shortcuts_0;
+
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), harness.view(), menu_shortcuts_0);
     const auto view_menu = click_text(harness, "View");
     REQUIRE(view_menu.has_value());
     static_cast<void>(harness.frame()); // Render the opened native menu before selecting an item.

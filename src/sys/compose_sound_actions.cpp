@@ -306,7 +306,7 @@ auto import_keysound_files(document_history_t& history, workspace_controller_t& 
 
 namespace {
 
-auto sound_ids(const WormUiWorkspaceAction& action) -> std::vector<resource_id_t> {
+auto sound_ids(const wormedit::ui::workspace_action_t& action) -> std::vector<resource_id_t> {
     std::vector<resource_id_t> ids;
     if (!action.compose_sound_resource_ids)
         return ids;
@@ -712,7 +712,7 @@ struct import_compose_sounds_action_t {
 };
 static_assert(compose_action<import_compose_sounds_action_t, const resource_action_context_t>);
 
-auto confirmed_import_entries(const WormUiWorkspaceAction& action, const song_document_t& document,
+auto confirmed_import_entries(const wormedit::ui::workspace_action_t& action, const song_document_t& document,
                               bool bms_chart, std::string& reason)
     -> std::optional<std::vector<bulk_sound_import_entry_t>> {
     if (!action.sound_import_items || action.sound_import_item_count == 0 ||
@@ -763,7 +763,7 @@ auto confirmed_import_entries(const WormUiWorkspaceAction& action, const song_do
     return entries;
 }
 
-auto confirmed_import_groups(const WormUiWorkspaceAction& action, std::size_t entry_count,
+auto confirmed_import_groups(const wormedit::ui::workspace_action_t& action, std::size_t entry_count,
                              std::string& reason)
     -> std::optional<std::vector<bulk_sound_import_group_t>> {
     auto groups = std::vector<bulk_sound_import_group_t>{};
@@ -967,7 +967,7 @@ struct edit_sound_properties_action_t {
 static_assert(compose_action<edit_sound_properties_action_t, const resource_action_context_t>);
 } // namespace
 
-auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
+auto dispatch_sound_properties_action(const wormedit::ui::workspace_action_t& action,
                                       document_history_t& history,
                                       workspace_controller_t& workspace,
                                       notification_sink_t notifications) -> bool {
@@ -980,7 +980,7 @@ auto dispatch_sound_properties_action(const WormUiWorkspaceAction& action,
     return true;
 }
 
-auto dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
+auto dispatch_compose_sound_action(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                                    workspace_controller_t& workspace, chart_id_t chart,
                                    application_command_state_t& application_state,
                                    notification_sink_t notifications)

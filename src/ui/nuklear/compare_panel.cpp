@@ -7,27 +7,27 @@
 #include <algorithm>
 
 namespace {
-void render_diagnostics(nk_context* context, const WormUiCompareView& view,
-                        WormUiWorkspaceAction& action) {
-    if (view.diagnostic_count == 0) {
+void render_diagnostics(nk_context* context, const wormedit::ui::compare_view_t& view,
+                        wormedit::ui::workspace_action_t& action) {
+    if (view.diagnostics.size() == 0) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "No validation diagnostics.", NK_TEXT_LEFT);
         return;
     }
     const auto group_height = std::min(154.0f, 44.0f +
-        22.0f * static_cast<float>(view.diagnostic_count));
+        22.0f * static_cast<float>(view.diagnostics.size()));
     nk_layout_row_dynamic(context, group_height, 1);
     if (!nk_group_begin(context, "Validation diagnostics", NK_WINDOW_BORDER)) return;
-    for (size_t index = 0; index < view.diagnostic_count; ++index) {
-        const char* label = view.diagnostic_labels ? view.diagnostic_labels[index]
-                                                    : "Validation diagnostic";
+    for (size_t index = 0; index < view.diagnostics.size(); ++index) {
+        const auto& diagnostic = view.diagnostics[index];
+        const char* label = diagnostic.label.data();
         nk_layout_row_dynamic(context, 22, 1);
-        if (view.diagnostic_has_rows && view.diagnostic_has_rows[index]) {
+        if (diagnostic.has_row) {
             if (nk_button_label(context, label)) {
                 action.kind = WORM_UI_WORKSPACE_ACTION_COMPARE_DIAGNOSTIC_JUMP;
-                action.compare_diagnostic_row = view.diagnostic_rows[index];
-                action.compare_diagnostic_measure = view.diagnostic_measures[index];
-                action.compare_diagnostic_chart = view.diagnostic_chart_id;
+                action.compare_diagnostic_row = diagnostic.row;
+                action.compare_diagnostic_measure = diagnostic.measure.value;
+                action.compare_diagnostic_chart = view.diagnostic_chart_id.value;
             }
         } else {
             nk_label(context, label, NK_TEXT_LEFT);
@@ -38,8 +38,8 @@ void render_diagnostics(nk_context* context, const WormUiCompareView& view,
 } // namespace
 
 void worm_ui_nuklear_render_compare_panel(nk_context* context,
-                                          const WormUiCompareView* view,
-                                          WormUiWorkspaceAction* action) {
+                                          const wormedit::ui::compare_view_t* view,
+                                          wormedit::ui::workspace_action_t* action) {
     if (!context || !view || !action || !view->visible) return;
     render_diagnostics(context, *view, *action);
     if (!view->has_two_difficulties || !view->first_pane || !view->second_pane) {
@@ -48,21 +48,21 @@ void worm_ui_nuklear_render_compare_panel(nk_context* context,
         return;
     }
     int selected{};
-    for (size_t index = 0; index < view->chart_count; ++index)
-        if (view->chart_ids[index] == view->second_chart_id) selected = static_cast<int>(index);
-    if (view->chart_names && view->chart_count > 0) {
-        const auto* labels = const_cast<const char**>(view->chart_names);
+    for (size_t index = 0; index < view->charts.size(); ++index)
+        if (view->charts[index].id == view->second_chart_id) selected = static_cast<int>(index);
+    if (!view->charts.empty()) {
         nk_layout_row_dynamic(context, 28, 1);
-        const int next = wormedit::ui::chrome::safe_combo(
-            context, labels, static_cast<int>(view->chart_count), selected, 24, nk_vec2(220, 300));
-        if (next != selected && static_cast<size_t>(next) < view->chart_count) {
+        const auto next = wormedit::ui::chrome::safe_combo(context,
+            std::span<const wormedit::ui::compare_chart_view_t>{view->charts},
+            selected, 24, nk_vec2(220, 300), &wormedit::ui::compare_chart_view_t::label);
+        if (next != selected && static_cast<std::size_t>(next) < view->charts.size()) {
             action->kind = WORM_UI_WORKSPACE_ACTION_COMPARE_SELECT_CHART;
-            action->compare_chart_id = view->chart_ids[next];
+            action->compare_chart_id = view->charts[next].id.value;
         }
     }
     nk_layout_row_dynamic(context, 18, 2);
-    nk_label(context, view->first_difficulty, NK_TEXT_CENTERED);
-    nk_label(context, view->second_difficulty, NK_TEXT_CENTERED);
+    nk_label(context, view->first_difficulty.data(), NK_TEXT_CENTERED);
+    nk_label(context, view->second_difficulty.data(), NK_TEXT_CENTERED);
     struct nk_rect first{}, second{};
     const auto field_height = wormedit::ui::layout::remaining_content_height(context,
         {.minimum = 160.0f, .include_spacing = true});

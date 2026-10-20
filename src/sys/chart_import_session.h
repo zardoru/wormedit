@@ -25,7 +25,7 @@ struct chart_import_session_t {
     std::string error;
 
     // Borrowed by the frontend view; rebuilt after every change.
-    std::vector<WormUiChartImportRowView> row_views;
+    std::vector<wormedit::ui::chart_import_row_view_t> row_views;
     std::vector<std::string> row_labels;
     std::string summary;
     std::vector<std::string> note_lines;
@@ -46,7 +46,5 @@ auto chart_import_confirm(chart_import_session_t& session, document_history_t& h
                           std::uint64_t expected_revision, const std::filesystem::path& target_base)
     -> chart_import_result_t;
 
-[[nodiscard]] auto chart_import_view(const chart_import_session_t& session,
-                                     std::uint64_t document_revision) -> WormUiChartImportView;
 
 } // namespace wormedit::sys

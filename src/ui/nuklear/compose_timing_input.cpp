@@ -50,7 +50,7 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
     const auto continuation = state.timing_drag.timing_stage_capture.advance(
         {.down = input.left_down, .released = input.left_released, .x = pointer.x, .y = pointer.y},
         input.window_focused && state.timing_drag.timing_stage_capture.matches(view, view.waveform_timing_locked) &&
-            timing.stage_active && timing.stage_existing_object_id != 0,
+            timing.stage_active && bool(timing.stage_existing_object_id),
         compose_drag_release_policy_t::clear_on_release);
     // Overflow still cancels through the outer registry; release clears only the
     // UI capture, leaving the staged edit available for explicit confirmation.
@@ -58,11 +58,11 @@ static void update_active_timing_stage_drag(const ComposePointerEventContext& in
         state.timing_drag.timing_stage_drag_active = false;
         state.timing_drag.timing_stage_capture.cancel();
     } else if (continuation.moved && nk_input_is_mouse_moved(&input.context->input) &&
-               action.timing_stage_action == WORM_UI_TIMING_STAGE_NONE) {
-        action.timing_stage_action = WORM_UI_TIMING_STAGE_MOVE;
+               action.timing_stage_action == wormedit::ui::timing_stage_action_t::none) {
+        action.timing_stage_action = wormedit::ui::timing_stage_action_t::move;
         action.timing_chart_id = state.timing_drag.timing_stage_capture.chart;
         action.timing_document_revision = state.timing_drag.timing_stage_capture.revision;
-        action.timing_object_id = timing.stage_existing_object_id;
+        action.timing_object_id = timing.stage_existing_object_id.value;
         action.timing_lane = timing.stage_lane;
         action.timing_has_target_y = true;
         action.timing_target = compose_timing_target(view, input.pointer_y);
@@ -74,7 +74,7 @@ static void start_timing_stage_drag(const ComposePointerEventContext& input) {
     const auto& timing = *input.timing_view;
     if (!input.window_focused || !input.pointer_started_in_view || !input.left_down ||
         !view.timing_stage_active || view.y_lock ||
-        !timing.stage_active || timing.stage_existing_object_id == 0 ||
+        !timing.stage_active || !timing.stage_existing_object_id ||
         input.shortcut_event_count != 0 ||
         (input.pointer_modifiers & input.any_pointer_modifier) != 0)
         return;
@@ -142,7 +142,7 @@ static auto continue_span_capture(const ComposePointerEventContext& input, compo
 static void begin_kiai_drag(const ComposePointerEventContext& input) {
     state.timing_drag.kiai_drag_speed = false;
     const auto& view = *input.view;
-    const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_KIAI);
+    const auto extent = compose_timing_lane_inner_extent(view, wormedit::timing_lane_kind_t::kiai);
     const auto x = input.pointer_started_x;
     const auto y = input.pointer_started_y;
     if (!extent || x < extent->first || x >= extent->second ||
@@ -188,7 +188,7 @@ static void commit_kiai_drag(const ComposePointerEventContext& input) {
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.timing_drag.kiai_drag_head_id, 0,
                          false,
-                         state.timing_drag.kiai_drag_speed ? WORM_UI_TIMING_LANE_SPEED : WORM_UI_TIMING_LANE_KIAI,
+                         state.timing_drag.kiai_drag_speed ? wormedit::timing_lane_kind_t::speed : wormedit::timing_lane_kind_t::kiai,
                          state.timing_drag.span_capture.chart, state.timing_drag.span_capture.revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];
@@ -225,11 +225,11 @@ static auto recipe_gesture_blocked(const ComposePointerEventContext& input) -> b
 }
 
 static auto recipe_area_extent(const WormUiComposeView& view, const WormUiComposeRecipeAreaView& area) {
-    return compose_timing_lane_inner_extent(view, static_cast<WormUiTimingLaneKind>(area.lane));
+    return compose_timing_lane_inner_extent(view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
 }
 
 static auto point_in_recipe_lane(const WormUiComposeView& view, double x) -> bool {
-    for (const auto lane : {WORM_UI_TIMING_LANE_SCROLL, WORM_UI_TIMING_LANE_SPEED}) {
+    for (const auto lane : {wormedit::timing_lane_kind_t::scroll, wormedit::timing_lane_kind_t::speed}) {
         const auto extent = compose_timing_lane_inner_extent(view, lane);
         if (extent && x >= extent->first && x < extent->second) return true;
     }
@@ -264,7 +264,7 @@ static auto recipe_press_at(const WormUiComposeView& view, double x, double y, d
 // drag reuses the Kiai drag state (kiai_drag_speed marks it).
 static void begin_speed_drag(const ComposePointerEventContext& input) {
     const auto& view = *input.view;
-    const auto extent = compose_timing_lane_inner_extent(view, WORM_UI_TIMING_LANE_SPEED);
+    const auto extent = compose_timing_lane_inner_extent(view, wormedit::timing_lane_kind_t::speed);
     const auto x = input.pointer_started_x;
     const auto y = input.pointer_started_y;
     if (!extent || x < extent->first || x >= extent->second || state.timing_drag.recipe_drag_active ||
@@ -305,7 +305,7 @@ static void begin_speed_stretch(const ComposePointerEventContext& input) {
         return;
     const auto* marker = compose_timing_marker_at(*input.view, input.pointer_started_x,
                                                   input.pointer_started_y);
-    if (!marker || marker->lane != WORM_UI_TIMING_LANE_SPEED || marker->object_id == 0 ||
+    if (!marker || marker->lane != wormedit::timing_lane_kind_t::speed || marker->object_id == 0 ||
         marker->fixed_initial)
         return;
     state.timing_drag.kiai_drag_edge = WORM_UI_SPAN_HANDLE_END;
@@ -349,7 +349,7 @@ static void commit_recipe_drag(const ComposePointerEventContext& input) {
                          input.pointer_started_x, state.timing_drag.recipe_drag_current_y, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.timing_drag.recipe_drag_id, 0, false,
-                         WORM_UI_TIMING_LANE_SCROLL, state.timing_drag.recipe_capture.chart,
+                         wormedit::timing_lane_kind_t::scroll, state.timing_drag.recipe_capture.chart,
                          state.timing_drag.recipe_capture.revision);
     if (input.action->compose_input_count == 0) return;
     auto& queued = input.action->compose_inputs[input.action->compose_input_count - 1];

@@ -16,7 +16,7 @@ void text(nk_command_buffer* canvas, struct nk_rect bounds, const char* label,
     nk_draw_text(canvas, bounds, label, static_cast<int>(std::strlen(label)), font,
                  theme::ui(theme::UiColor::surface), tint);
 }
-void draw_ring(nk_command_buffer* canvas, struct nk_rect bounds, const WormUiTapTimingView& view) {
+void draw_ring(nk_command_buffer* canvas, struct nk_rect bounds, const wormedit::ui::tap_timing_view_t& view) {
     const auto center_x = bounds.x + 48;
     const auto center_y = bounds.y + 48;
     const auto count = std::clamp<unsigned>(view.beats_per_measure, 1, 32);
@@ -33,7 +33,7 @@ void draw_ring(nk_command_buffer* canvas, struct nk_rect bounds, const WormUiTap
     nk_fill_circle(canvas, nk_rect(center_x - 28, center_y - 28, 56, 56),
                     theme::ui(theme::UiColor::surface));
 }
-void draw_readout(nk_context* context, const WormUiTapTimingView& view) {
+void draw_readout(nk_context* context, const wormedit::ui::tap_timing_view_t& view) {
     nk_layout_row_dynamic(context, 96, 1);
     struct nk_rect bounds{};
     (void)nk_widget(&bounds, context);
@@ -59,7 +59,7 @@ void draw_readout(nk_context* context, const WormUiTapTimingView& view) {
     text(canvas, nk_rect(x, bounds.y + 73, width, 20), detail, context->style.font,
          theme::ui(theme::UiColor::text_muted));
 }
-void draw_progress(nk_context* context, const WormUiTapTimingView& view) {
+void draw_progress(nk_context* context, const wormedit::ui::tap_timing_view_t& view) {
     nk_layout_row_dynamic(context, 18, 1);
     struct nk_rect bounds{};
     (void)nk_widget(&bounds, context);
@@ -78,14 +78,14 @@ void draw_progress(nk_context* context, const WormUiTapTimingView& view) {
     text(canvas, nk_rect(bounds.x + width + 8, bounds.y, 100, 18), label,
          context->style.font, theme::ui(theme::UiColor::text_muted));
 }
-auto hint(const WormUiTapTimingView& view) -> const char* {
-    if (view.status && view.status[0]) return view.status;
+auto hint(const wormedit::ui::tap_timing_view_t& view) -> const char* {
+    if (!view.status.empty()) return view.status.data();
     if (!view.music_available) return "Add a music track to tap";
     if (!view.playing) return "Start playback to tap";
     if (!view.estimate_available || view.tap_count < 4) return "Play the song and tap T or Space on the beat";
     return "Tap T or Space on the beat";
 }
-auto apply_reason(const WormUiTapTimingView& view) -> const char* {
+auto apply_reason(const wormedit::ui::tap_timing_view_t& view) -> const char* {
     if (view.timing_locked) return "Unlock timing to apply the estimate.";
     if (!view.music_available) return "Add a music track to tap.";
     if (!view.playing) return "Start playback and tap on the beat.";
@@ -93,7 +93,7 @@ auto apply_reason(const WormUiTapTimingView& view) -> const char* {
     if (!view.stable) return "Keep tapping until the estimate is stable.";
     return "The estimate is not available for this chart.";
 }
-void draw_rounding(nk_context* context, const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
+void draw_rounding(nk_context* context, const wormedit::ui::tap_timing_view_t& view, wormedit::ui::tap_timing_action_t& action) {
     static const char* choices[]{"Raw", "1", "0.5"};
     nk_layout_row_template_begin(context, 28);
     nk_layout_row_template_push_static(context, 72);
@@ -109,7 +109,7 @@ void draw_rounding(nk_context* context, const WormUiTapTimingView& view, WormUiT
     struct nk_rect unused{};
     (void)nk_widget(&unused, context);
 }
-void draw_footer(nk_context* context, const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
+void draw_footer(nk_context* context, const wormedit::ui::tap_timing_view_t& view, wormedit::ui::tap_timing_action_t& action) {
     chrome::section_separator(context);
     nk_layout_row_template_begin(context, 28);
     nk_layout_row_template_push_static(context, 72);
@@ -136,7 +136,7 @@ void draw_footer(nk_context* context, const WormUiTapTimingView& view, WormUiTap
 } // namespace
 
 void worm_ui_nuklear_render_tap_timing_panel(nk_context* context,
-    const WormUiTapTimingView& view, WormUiTapTimingAction& action) {
+    const wormedit::ui::tap_timing_view_t& view, wormedit::ui::tap_timing_action_t& action) {
     if (!context || !view.visible) return;
     static chrome::Dialog dialog;
     if (chrome::dialog_begin(dialog, context, "Tap timing", "Tap tempo",

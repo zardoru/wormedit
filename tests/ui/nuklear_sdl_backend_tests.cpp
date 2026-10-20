@@ -395,8 +395,8 @@ void diagnostic_window(nk_context* context) {
     nk_end(context);
 }
 struct measured_work_t {
-    WormUiFrameGpuWork application{};
-    WormUiFrameGpuWork diagnostic{};
+    wormedit::ui::frame_gpu_work_view_t application{};
+    wormedit::ui::frame_gpu_work_view_t diagnostic{};
     bool diagnostic_available{};
 };
 auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> measured_work_t {
@@ -411,7 +411,8 @@ auto measured_frame(backend_fixture_t& backend, bool diagnostics) -> measured_wo
     timer.begin_frame();
     render_sdl_backend(backend.context, NK_ANTI_ALIASING_ON);
     timer.end_frame();
-    const auto view = worm_ui_frame_timing_view();
+    wormedit::ui::frame_timing_view_t view;
+    worm_ui_frame_timing_view(view);
     expect_backend(view.gpu_work_available);
     return {view.gpu_work_latest, view.diagnostic_gpu_work_latest,
             view.diagnostic_gpu_work_available != 0};
@@ -422,7 +423,7 @@ auto red_pixels(const std::vector<unsigned char>& pixels) -> std::size_t {
         count += pixels[index] > 200 && pixels[index + 1] < 60 && pixels[index + 2] < 60;
     return count;
 }
-void expect_same_geometry(const WormUiFrameGpuWork& left, const WormUiFrameGpuWork& right) {
+void expect_same_geometry(const wormedit::ui::frame_gpu_work_view_t& left, const wormedit::ui::frame_gpu_work_view_t& right) {
     INFO("vertices " << left.vertices << " vs " << right.vertices << ", indices " << left.indices
          << " vs " << right.indices << ", draws " << left.draw_calls << " vs " << right.draw_calls);
     expect_backend(left.vertices == right.vertices);

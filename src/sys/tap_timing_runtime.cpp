@@ -139,7 +139,7 @@ auto tap_timing_runtime_t::state() const -> tap_timing_state_t {
     result.visible = visible_;
     result.estimate = estimator_.estimate();
     result.tap_count = estimator_.tap_count();
-    result.status = status_;
+    result.status = status_ ? std::string_view{status_} : std::string_view{};
     result.timing_locked = timing_locked_;
     result.tap_segment = tap_segment_;
     if (!clock_) return result;

@@ -8,32 +8,27 @@
 using namespace wormedit::ui::nuklear;
 
 namespace {
-auto history_row() -> WormUiNotificationHistoryRow {
-    return {1, WORM_UI_NOTIFICATION_WARNING, 0, "Warning", "Details", 2, 3, false,
+auto history_row() -> wormedit::ui::notification_history_row_view_t {
+    return {1, wormedit::notification_severity_t::warning, wormedit::notification_source_t::document, "Warning", "Details", 2, 3, false,
             WORM_UI_NOTIFICATION_TARGET_POSITION};
 }
 }
 
-TEST_CASE("notification history validates bounded borrowed rows", "[notifications][frontend]") {
-    std::array<WormUiNotificationHistoryRow, WORM_UI_NOTIFICATION_HISTORY_CAPACITY> rows;
-    rows.fill(history_row());
-    WormUiNotificationHistoryView view{true, rows.size(), rows.data()};
+TEST_CASE("notification history owns its complete row list", "[notifications][frontend]") {
+    wormedit::ui::notification_history_view_t view{true, {history_row()}};
+    view.rows.resize(257, history_row());
     CHECK(notification_history_view_valid(view));
-    view.row_count += 1;
-    CHECK_FALSE(notification_history_view_valid(view));
-    view.row_count = 1;
-    view.rows = nullptr;
-    CHECK_FALSE(notification_history_view_valid(view));
+    CHECK(view.rows.size() == 257);
+    view.rows.clear();
+    CHECK(notification_history_view_valid(view));
 }
 
 TEST_CASE("notification history rejects invalid public row fields", "[notifications][frontend]") {
-    auto row = history_row();
-    WormUiNotificationHistoryView view{true, 1, &row};
-    SECTION("message") { row.message = nullptr; }
-    SECTION("detail") { row.detail = nullptr; }
+    wormedit::ui::notification_history_view_t view{true, {history_row()}};
+    auto& row = view.rows.front();
     SECTION("identity") { row.id = 0; }
-    SECTION("source") { row.source = 9; }
-    SECTION("severity") { row.severity = static_cast<WormUiNotificationSeverity>(5); }
+    SECTION("source") { row.source = static_cast<wormedit::notification_source_t>(9); }
+    SECTION("severity") { row.severity = static_cast<wormedit::notification_severity_t>(5); }
     SECTION("target") { row.target = static_cast<WormUiNotificationTargetAvailability>(4); }
     CHECK_FALSE(notification_history_view_valid(view));
 }
@@ -43,7 +38,7 @@ TEST_CASE("notification history filters every severity and retains all in defaul
     notification_panel_state_t state;
     auto row = history_row();
     for (int severity = 0; severity < 5; ++severity) {
-        row.severity = static_cast<WormUiNotificationSeverity>(severity);
+        row.severity = static_cast<wormedit::notification_severity_t>(severity);
         state.severity_filter = 0;
         CHECK(notification_row_visible(state, row));
         for (int filter = 1; filter <= 5; ++filter) {
@@ -106,8 +101,8 @@ TEST_CASE("locked history uses secondary context without altering primary focus 
     row.detail = "first line\nsecond line";
     notification_panel_state_t state;
     state.expanded_id = row.id;
-    WormUiNotificationAction action{};
-    render_notification_panel(&overlay.context, {true, 1, &row}, state, action, 1000, 700, false);
+    wormedit::ui::notification_action_t action{};
+    render_notification_panel(&overlay.context, {true, {row}}, state, action, 1000, 700, false);
     check_locked_history_primary(primary.context, active, flags);
     CHECK(history_rendered_text(overlay.context, "first line"));
     CHECK(history_rendered_text(overlay.context, "second line"));
@@ -122,23 +117,23 @@ TEST_CASE("expanded history retains complete bounded detail in static scroll gro
     row.detail = detail.c_str();
     notification_panel_state_t state;
     state.expanded_id = row.id;
-    WormUiNotificationAction action{};
-    render_notification_panel(&rendered.context, {true, 1, &row}, state, action, 1000, 700);
+    wormedit::ui::notification_action_t action{};
+    render_notification_panel(&rendered.context, {true, {row}}, state, action, 1000, 700);
     CHECK(std::string_view{state.detail_text.data()} == detail);
     CHECK(nk_window_is_active(&rendered.context, "Notifications"));
     CHECK(action.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
 }
 
 namespace {
-void draw_history_detail_frame(history_render_context_t& rendered, const WormUiNotificationHistoryRow& row,
+void draw_history_detail_frame(history_render_context_t& rendered, const wormedit::ui::notification_history_row_view_t& row,
                                notification_panel_state_t& state, bool scroll) {
     nk_clear(&rendered.context);
     nk_input_begin(&rendered.context);
     nk_input_motion(&rendered.context, 100, 300);
     if (scroll) nk_input_scroll(&rendered.context, nk_vec2(0, -100));
     nk_input_end(&rendered.context);
-    WormUiNotificationAction action{};
-    render_notification_panel(&rendered.context, {true, 1, &row}, state, action, 1000, 700);
+    wormedit::ui::notification_action_t action{};
+    render_notification_panel(&rendered.context, {true, {row}}, state, action, 1000, 700);
     CHECK(action.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
 }
 }
@@ -222,14 +217,14 @@ TEST_CASE("history context switch preserves moved geometry filter and detail scr
     notification_panel_state_t state;
     state.expanded_id = row.id;
     state.severity_filter = 4;
-    WormUiNotificationAction action{};
-    render_notification_panel(&primary.context, {true, 1, &row}, state, action, 1000, 700);
+    wormedit::ui::notification_action_t action{};
+    render_notification_panel(&primary.context, {true, {row}}, state, action, 1000, 700);
     const auto moved = nk_rect(480, 40, 500, 400);
     nk_window_set_bounds(&primary.context, "Notifications", moved);
     nk_clear(&primary.context);
-    render_notification_panel(&primary.context, {true, 1, &row}, state, action, 1000, 700);
+    render_notification_panel(&primary.context, {true, {row}}, state, action, 1000, 700);
     state.detail_scroll_y = 20;
-    render_notification_panel(&overlay.context, {true, 1, &row}, state, action, 1000, 700, false);
+    render_notification_panel(&overlay.context, {true, {row}}, state, action, 1000, 700, false);
     check_history_context_geometry(overlay.context, state, moved);
     CHECK(action.kind == WORM_UI_NOTIFICATION_ACTION_NONE);
 }

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/diagnostic.h>
 #include <wormedit/formats/native_project.h>
 
@@ -111,13 +113,6 @@ enum class native_project_recovery_comparison_t {
     newer_revision,
 };
 
-enum class native_project_recovery_action_t {
-    inspect_read_only,
-    recover_into_session,
-    save_as_new_project,
-    discard,
-    quarantine,
-};
 
 enum class native_project_recovery_quarantine_t {
     retain,

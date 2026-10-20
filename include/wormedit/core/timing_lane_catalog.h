@@ -6,7 +6,6 @@
 
 namespace wormedit {
 
-inline constexpr std::size_t timing_lane_kind_count = static_cast<std::size_t>(timing_lane_kind_t::anchor) + 1;
 inline constexpr std::size_t editor_selection_object_kind_count = static_cast<std::size_t>(editor_selection_object_kind_t::bar_line) + 1;
 struct timing_lane_descriptor_t {
     timing_lane_kind_t kind;

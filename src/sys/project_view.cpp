@@ -17,70 +17,11 @@
 
 namespace wormedit::sys {
 namespace {
-auto ui_stepmania_timing(stepmania_timing_syntax_t timing) -> WormUiStepmaniaTimingSyntax {
-    switch (timing) {
-    case stepmania_timing_syntax_t::native_warps:
-        return WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
-    case stepmania_timing_syntax_t::legacy_negative_bpm:
-        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM;
-    case stepmania_timing_syntax_t::legacy_negative_stop:
-        return WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP;
-    case stepmania_timing_syntax_t::unspecified:
-        break;
-    }
-    return static_cast<WormUiStepmaniaTimingSyntax>(255);
-}
+constexpr std::size_t maximum_project_display_text_bytes = 4096;
 
-auto stepmania_policy_from(const WormUiProjectOutputGroupAction& action)
-    -> std::optional<stepmania_export_policy_t> {
-    if (!action.has_stepmania_policy)
-        return std::nullopt;
-    stepmania_export_policy_t policy;
-    switch (action.stepmania_file_profile) {
-    case WORM_UI_STEPMANIA_FILE_SM:
-        policy.file_profile = stepmania_profile_t::sm;
-        break;
-    case WORM_UI_STEPMANIA_FILE_SSC:
-        policy.file_profile = stepmania_profile_t::ssc;
-        break;
-    default:
-        policy.file_profile = static_cast<stepmania_profile_t>(255);
-        break;
-    }
-    switch (action.stepmania_timing_syntax) {
-    case WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS:
-        policy.timing_syntax = stepmania_timing_syntax_t::native_warps;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_BPM:
-        policy.timing_syntax = stepmania_timing_syntax_t::legacy_negative_bpm;
-        break;
-    case WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP:
-        policy.timing_syntax = stepmania_timing_syntax_t::legacy_negative_stop;
-        break;
-    default:
-        policy.timing_syntax = stepmania_timing_syntax_t::unspecified;
-        break;
-    }
-    switch (action.stepmania_implementation) {
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY:
-        policy.implementation_profile = stepmania_implementation_profile_t::unspecified;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1:
-        policy.implementation_profile = stepmania_implementation_profile_t::stepmania_5_1;
-        break;
-    case WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1:
-        policy.implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
-        break;
-    default:
-        policy.implementation_profile = static_cast<stepmania_implementation_profile_t>(255);
-        break;
-    }
-    return policy;
-}
 auto display_text(std::string_view text) -> std::string {
-    constexpr std::size_t capacity = 4096;
-    if (text.size() <= capacity) return std::string{text};
-    return std::string{text_util::truncate_utf8(text, capacity - 3)} + "...";
+    if (text.size() <= maximum_project_display_text_bytes) return std::string{text};
+    return std::string{text_util::truncate_utf8(text, maximum_project_display_text_bytes - 3)} + "...";
 }
 
 auto decimal_value(signed_rational_t value, unsigned precision) -> std::string {
@@ -105,7 +46,7 @@ void build_project_chart_groups_view(const song_document_t& document, project_ch
     for (const auto& group : document.output_groups) {
         if (std::ranges::find(group.charts, row.chart) == group.charts.end()) continue;
         ++row.output_group_count;
-        if (names.size() > 4096) continue;
+        if (names.size() > maximum_project_display_text_bytes) continue;
         if (!names.empty()) names += ", ";
         names += display_text(group.name);
     }
@@ -211,9 +152,8 @@ auto apply_project_chart_command(document_history_t& history,
 }
 
 auto project_chart_table_view_t::from(const song_document_t& document) -> project_chart_table_view_t {
-    const auto count = std::min(document.charts.size(), maximum_project_chart_rows);
-    project_chart_table_view_t table{.total_charts = document.charts.size(),
-        .rows_truncated = document.charts.size() > count};
+    const auto count = document.charts.size();
+    project_chart_table_view_t table{.total_charts = document.charts.size()};
     table.rows.reserve(count);
     for (std::size_t index = 0; index < count; ++index)
         table.rows.push_back(project_chart_row_view_t::from(document, document.charts[index]));
@@ -231,47 +171,51 @@ auto project_chart_table_view_t::from(project_chart_table_cache_t& cache,
         static_cast<builder_t>(&project_chart_table_view_t::from), std::cref(document)));
 }
 namespace {
-auto ui_command_kind(WormUiProjectChartActionKind kind) -> std::optional<project_chart_command_kind_t> {
-    switch (kind) {
-    case WORM_UI_PROJECT_CHART_NEW: return project_chart_command_kind_t::create;
-    case WORM_UI_PROJECT_CHART_DUPLICATE: return project_chart_command_kind_t::duplicate;
-    case WORM_UI_PROJECT_CHART_DELETE: return project_chart_command_kind_t::erase;
-    case WORM_UI_PROJECT_CHART_UP: return project_chart_command_kind_t::move_up;
-    case WORM_UI_PROJECT_CHART_DOWN: return project_chart_command_kind_t::move_down;
-    case WORM_UI_PROJECT_CHART_OPEN: return project_chart_command_kind_t::open;
-    case WORM_UI_PROJECT_CHART_BATCH_METADATA: return project_chart_command_kind_t::batch_metadata;
-    case WORM_UI_PROJECT_CHART_REORDER: return project_chart_command_kind_t::reorder;
-    default: return std::nullopt;
-    }
-}
-
-auto ui_batch_metadata(const WormUiProjectChartAction& action) -> std::optional<batch_chart_metadata_action_t> {
-    if (action.selected_count == 0 || action.selected_count > WORM_UI_PROJECT_CHART_CAPACITY ||
-        (action.edit_author && !action.author)) return std::nullopt;
-    batch_chart_metadata_action_t metadata;
-    for (size_t index = 0; index < action.selected_count; ++index)
-        metadata.charts.push_back(chart_id_t{action.selected_chart_ids[index]});
-    if (action.edit_author) metadata.author = action.author;
-    metadata.edit_rating = action.edit_rating;
-    if (action.edit_rating && !action.unset_rating) {
-        if (!action.rating_numerator || !action.rating_denominator) return std::nullopt;
-        metadata.rating = parse_metadata_rating(action.rating_numerator, action.rating_denominator);
-        if (!metadata.rating) return std::nullopt;
-    }
-    return metadata;
-}
-
-void publish_row_error(project_chart_runtime_t& runtime, const WormUiProjectChartAction& action,
+void publish_row_error(project_chart_runtime_t& runtime, const wormedit::ui::project_chart_action_t& action,
     const std::string& message) {
     const auto update = [&](std::uint64_t id) {
         if (message.empty()) runtime.row_errors.erase(id);
         else runtime.row_errors[id] = message;
     };
-    if (action.chart_id) update(action.chart_id);
-    if (action.selected_count <= WORM_UI_PROJECT_CHART_CAPACITY)
-        for (size_t index = 0; index < action.selected_count; ++index) update(action.selected_chart_ids[index]);
+    if (action.chart_id) update(action.chart_id.value);
+    if (action.selected_chart_ids.size() <= maximum_batch_chart_metadata_charts)
+        for (size_t index = 0; index < action.selected_chart_ids.size(); ++index) update(action.selected_chart_ids[index].value);
 }
 } // namespace
+
+auto project_chart_command_t::from(const ui::project_chart_action_t& action,
+                                  std::optional<chart_id_t> active_chart)
+    -> result_t<project_chart_command_t, std::string> {
+    project_chart_command_t command{.expected_revision = action.document_revision,
+        .chart = action.chart_id, .target_chart = action.target_chart_id,
+        .insert_after = action.insert_after};
+    switch (action.kind) {
+    case WORM_UI_PROJECT_CHART_NEW: command.kind = project_chart_command_kind_t::create; break;
+    case WORM_UI_PROJECT_CHART_DUPLICATE: command.kind = project_chart_command_kind_t::duplicate; break;
+    case WORM_UI_PROJECT_CHART_DELETE: command.kind = project_chart_command_kind_t::erase; break;
+    case WORM_UI_PROJECT_CHART_UP: command.kind = project_chart_command_kind_t::move_up; break;
+    case WORM_UI_PROJECT_CHART_DOWN: command.kind = project_chart_command_kind_t::move_down; break;
+    case WORM_UI_PROJECT_CHART_OPEN: command.kind = project_chart_command_kind_t::open; break;
+    case WORM_UI_PROJECT_CHART_BATCH_METADATA: command.kind = project_chart_command_kind_t::batch_metadata; break;
+    case WORM_UI_PROJECT_CHART_REORDER: command.kind = project_chart_command_kind_t::reorder; break;
+    default: return std::unexpected("Project chart action is invalid.");
+    }
+    if (command.kind == project_chart_command_kind_t::create && active_chart)
+        command.chart = *active_chart;
+    if (command.kind != project_chart_command_kind_t::batch_metadata) return command;
+    if (action.selected_chart_ids.empty() ||
+        action.selected_chart_ids.size() > maximum_batch_chart_metadata_charts)
+        return std::unexpected("Batch metadata selection or rating is invalid.");
+    command.metadata.charts = action.selected_chart_ids;
+    if (action.edit_author) command.metadata.author = action.author;
+    command.metadata.edit_rating = action.edit_rating;
+    if (action.edit_rating && !action.unset_rating) {
+        command.metadata.rating = parse_metadata_rating(action.rating_numerator, action.rating_denominator);
+        if (!command.metadata.rating)
+            return std::unexpected("Batch metadata selection or rating is invalid.");
+    }
+    return command;
+}
 
 auto project_chart_runtime_t::preview_job(task_scheduler_t& scheduler) -> output_preview_job_t& {
     if (!preview_job_ || (!preview_job_->is_busy() && !preview_job_->is_bound_to(scheduler)))
@@ -308,6 +252,10 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
     if (runtime.output_group_song != doc.id || runtime.output_group_revision != doc.revision) {
         runtime.cancel_preview();
         runtime.output_group_status.assign(doc.output_groups.size(), "Preview not run");
+        runtime.output_group_paths.clear();
+        runtime.output_group_paths.resize(doc.output_groups.size());
+        runtime.output_group_plan_paths.clear();
+        runtime.output_group_plan_paths.resize(doc.output_groups.size());
         runtime.output_group_previews.clear();
         runtime.output_group_previews.resize(doc.output_groups.size());
         runtime.output_group_song = doc.id;
@@ -325,6 +273,7 @@ void poll_output_group_preview(project_chart_runtime_t& runtime, const song_docu
         runtime.output_group_status[index] = result->error().cause.message;
     } else {
         runtime.output_group_previews[index] = std::move(*result->value().payload);
+        runtime.output_group_plan_paths[index].clear();
         const auto& preview = *runtime.output_group_previews[index];
         const auto warnings = std::ranges::count(
             preview.converted.diagnostics, diagnostic_severity_t::warning,
@@ -348,84 +297,60 @@ auto ui_plan_action(output_group_export_file_action_t action) -> WormUiOutputPla
     return WORM_UI_OUTPUT_PLAN_NEW;
 }
 
-void build_output_preview_view(project_chart_runtime_t& runtime, std::size_t index) {
+void build_output_preview_view(project_chart_runtime_t& runtime, std::size_t index,
+                               ui::project_output_group_view_t& view) {
     constexpr std::size_t maximum_plan_rows = 512;
-    auto& paths = runtime.output_group_plan_paths[index];
-    auto& rows = runtime.output_group_plan_rows[index];
-    auto& messages = runtime.output_group_diagnostic_messages[index];
-    auto& diagnostics = runtime.output_group_diagnostic_rows[index];
-    paths.clear();
-    rows.clear();
-    messages.clear();
-    diagnostics.clear();
-    if (!runtime.output_group_previews[index]) return;
+    if (!runtime.output_group_previews[index]) {
+        view.plan_rows.clear();
+        view.diagnostics.clear();
+        view.plan_rows_truncated = false;
+        view.diagnostics_truncated = false;
+        return;
+    }
     const auto& preview = *runtime.output_group_previews[index];
     const auto file_count = std::min(preview.files.size(), maximum_plan_rows);
-    paths.reserve(file_count);
-    rows.reserve(file_count);
+    auto& paths = runtime.output_group_plan_paths[index];
+    if (paths.size() != file_count) {
+        paths.resize(file_count);
+        for (std::size_t row = 0; row < file_count; ++row)
+            paths[row] = preview.files[row].path.generic_string();
+    }
+    view.plan_rows.resize(file_count);
     for (std::size_t row = 0; row < file_count; ++row)
-        paths.push_back(preview.files[row].path.generic_string());
-    for (std::size_t row = 0; row < file_count; ++row)
-        rows.push_back({paths[row].c_str(), ui_plan_action(preview.files[row].action),
-                        preview.files[row].bytes});
-    const auto diagnostic_count =
-        std::min(preview.converted.diagnostics.size(), maximum_plan_rows);
-    messages.reserve(diagnostic_count);
-    diagnostics.reserve(diagnostic_count);
+        view.plan_rows[row] = {.path = paths[row], .action = ui_plan_action(preview.files[row].action),
+                              .bytes = preview.files[row].bytes};
+    const auto diagnostic_count = std::min(preview.converted.diagnostics.size(), maximum_plan_rows);
+    view.diagnostics.resize(diagnostic_count);
     for (std::size_t row = 0; row < diagnostic_count; ++row)
-        messages.push_back(preview.converted.diagnostics[row].message);
-    for (std::size_t row = 0; row < diagnostic_count; ++row)
-        diagnostics.push_back(
-            {messages[row].c_str(),
-             static_cast<std::uint8_t>(preview.converted.diagnostics[row].severity)});
+        view.diagnostics[row] = {.message = preview.converted.diagnostics[row].message,
+                                .severity = preview.converted.diagnostics[row].severity};
+    view.plan_rows_truncated = file_count != preview.files.size();
+    view.diagnostics_truncated = diagnostic_count != preview.converted.diagnostics.size();
 }
 
 void build_output_group_view(project_chart_runtime_t& runtime, const song_document_t& doc,
-                             WormUiSetupView& view) {
+                             ui::setup_view_t& view) {
     poll_output_group_preview(runtime, doc);
     if (!view.visible) return;
-    const auto count = std::min(doc.output_groups.size(), maximum_project_chart_rows);
-    runtime.output_group_charts.resize(count);
-    runtime.output_group_paths.resize(count);
-    runtime.output_group_plan_rows.resize(count);
-    runtime.output_group_plan_paths.resize(count);
-    runtime.output_group_diagnostic_rows.resize(count);
-    runtime.output_group_diagnostic_messages.resize(count);
-    runtime.output_groups.clear();
-    runtime.output_groups.reserve(count);
-    for (size_t i = 0; i < count; ++i) {
-        const auto& group = doc.output_groups[i];
-        auto& charts = runtime.output_group_charts[i];
-        charts.clear();
-        for (const auto id : group.charts) charts.push_back(id.value);
-        runtime.output_group_paths[i] = group.relative_output_path.generic_string();
-        build_output_preview_view(runtime, i);
-        const auto& plan_rows = runtime.output_group_plan_rows[i];
-        const auto& diagnostics = runtime.output_group_diagnostic_rows[i];
-        const auto* preview = runtime.output_group_previews[i] ? &*runtime.output_group_previews[i]
-                                                               : nullptr;
-        runtime.output_groups.push_back(
-            {i, group.name.c_str(), static_cast<uint8_t>(group.family),
-             runtime.output_group_paths[i].c_str(),
-             static_cast<WormUiOutputDestinationKind>(group.destination_kind), charts.data(), charts.size(),
-             runtime.output_group_status[i].c_str(),
-             static_cast<WormUiExistingFilesChoice>(group.existing_files),
-             group.stepmania.has_value(),
-             static_cast<WormUiStepmaniaFileProfile>(group.stepmania ? group.stepmania->file_profile
-                                                                     : stepmania_profile_t::ssc),
-             ui_stepmania_timing(group.stepmania ? group.stepmania->timing_syntax
-                                                 : stepmania_timing_syntax_t::native_warps),
-             static_cast<WormUiStepmaniaImplementation>(
-                 group.stepmania ? group.stepmania->implementation_profile
-                                 : stepmania_implementation_profile_t::unspecified),
-             plan_rows, preview && preview->files.size() != plan_rows.size(),
-             diagnostics,
-             preview && preview->converted.diagnostics.size() != diagnostics.size()});
+    view.output_groups.resize(doc.output_groups.size());
+    for (std::size_t index = 0; index < doc.output_groups.size(); ++index) {
+        const auto& group = doc.output_groups[index];
+        auto& projected = view.output_groups[index];
+        if (runtime.output_group_paths[index].empty())
+            runtime.output_group_paths[index] = group.relative_output_path.generic_string();
+        projected.document_index = index;
+        projected.name = group.name;
+        projected.family = group.family;
+        projected.path = runtime.output_group_paths[index];
+        projected.destination_kind = group.destination_kind;
+        projected.chart_ids.assign(group.charts.begin(), group.charts.end());
+        projected.preview_status = runtime.output_group_status[index];
+        projected.existing_files = group.existing_files;
+        projected.stepmania = group.stepmania;
+        build_output_preview_view(runtime, index, projected);
     }
-    view.output_groups = runtime.output_groups.data();
-    view.output_group_count = count;
-    view.output_groups_truncated = count != doc.output_groups.size();
 }
+
 auto run_output_preview(const output_group_export_request_t& request, std::stop_token stop)
     -> output_preview_job_t::work_outcome_t {
     if (stop.stop_requested())
@@ -465,7 +390,7 @@ auto start_output_preview(project_chart_runtime_t& runtime, const song_document_
 } // namespace
 
 auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectOutputGroupAction& action,
+    document_history_t& history, const wormedit::ui::project_output_group_action_t& action,
     task_scheduler_t& scheduler,
     const std::filesystem::path& asset_base) -> project_chart_ui_result_t {
     const document_stamp_t stamp{.project = song_id_t{action.project_id},
@@ -483,17 +408,14 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     else {
         if (action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_CREATE && action.kind != WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE)
             return {.status = "Output group action is invalid."};
-        if (!action.name || !action.path || action.chart_count > WORM_UI_PROJECT_CHART_CAPACITY)
-            return {.status = "Output group fields or membership are invalid."};
         output_group_t group{.name = action.name,
-                             .family = static_cast<format_family_t>(action.family),
-                             .destination_kind = static_cast<output_destination_kind_t>(
-                                 action.destination_kind),
+                             .family = action.family,
+                             .destination_kind = action.destination_kind,
                              .relative_output_path = action.path,
                              .existing_files =
-                                 static_cast<existing_files_policy_t>(action.existing_files),
-                             .stepmania = stepmania_policy_from(action)};
-        for (size_t i = 0; i < action.chart_count; ++i) group.charts.push_back(chart_id_t{action.chart_ids[i]});
+                                 action.existing_files,
+                             .stepmania = action.stepmania};
+        group.charts = action.chart_ids;
         result = apply_set_output_group_command(
             history, create ? std::nullopt : std::optional{action.group_index}, std::move(group));
     }
@@ -501,84 +423,61 @@ auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
     return {.status = "Output groups updated.", .applied = true, .severity = notification_severity_t::success};
 }
 
-void build_project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
-                              WormUiSetupView& view) {
-    build_output_group_view(runtime, document, view);
-    if (!view.visible) return;
+} // namespace wormedit::sys
+
+void wormedit::ui::setup_view_t::refill(sys::project_chart_runtime_t& runtime,
+                                      const song_document_t& document) {
+    using namespace wormedit::sys;
+    build_output_group_view(runtime, document, *this);
+    if (!visible) return;
     if (!runtime.cache.has_value() || runtime.cache.key()->document.revision != document.revision)
         std::erase_if(runtime.row_errors, [&](const auto& error) {
             return std::ranges::none_of(document.charts, [&](const auto& chart) {
                 return chart.id.value == error.first;
             });
         });
-    const auto& table =
-        project_chart_table_view_t::from(runtime.cache, document, runtime.session_generation);
-    runtime.rows.clear();
-    runtime.rows.reserve(table.rows.size());
-    for (const auto& row : table.rows) {
+    const auto& table = project_chart_table_view_t::from(runtime.cache, document, runtime.session_generation);
+    charts.resize(table.rows.size());
+    for (std::size_t index = 0; index < table.rows.size(); ++index) {
+        const auto& row = table.rows[index];
         const auto error = runtime.row_errors.find(row.chart.value);
-        WormUiProjectChartRow projected{row.chart.value, row.name.c_str(), row.author.c_str(),
-            row.rating.c_str(), row.mode.c_str(), row.key_count, row.output_groups.c_str(),
-            row.compatible_output_families};
+        auto& projected = charts[index];
+        projected = {.chart_id = row.chart, .name = row.name, .author = row.author,
+            .rating = row.rating, .mode = row.mode, .key_count = row.key_count,
+            .output_groups = row.output_groups, .compatible_output_families = row.compatible_output_families,
+            .note_count = row.note_count, .length = row.length,
+            .diagnostic = error == runtime.row_errors.end() ? row.diagnostic : error->second};
         for (std::size_t family = 0; family < row.output_incompatibility_reasons.size(); ++family)
-            projected.output_incompatibility_reasons[family] =
-                row.output_incompatibility_reasons[family].c_str();
-        projected.note_count = row.note_count;
-        projected.length = row.length.c_str();
-        projected.diagnostic = error == runtime.row_errors.end() ? row.diagnostic.c_str()
-                                                                  : error->second.c_str();
-        runtime.rows.push_back(projected);
+            projected.output_incompatibility_reasons[family] = row.output_incompatibility_reasons[family];
     }
-    view.song_id = document.id.value;
-    view.document_revision = document.revision;
-    view.session_generation = runtime.session_generation;
-    view.charts = runtime.rows.data();
-    view.chart_row_count = runtime.rows.size();
-    view.charts_truncated = table.rows_truncated;
-    runtime.output_suggestions.clear();
+    song_id = document.id;
+    document_revision = document.revision;
+    session_generation = runtime.session_generation;
+    output_suggestions.clear();
     if (document.output_groups.empty()) {
-        const auto* selected = document.find_chart(chart_id_t{view.selected_chart_id});
+        const auto* selected = document.find_chart(selected_chart_id);
         if (!selected && !document.charts.empty()) selected = &document.charts.front();
         if (selected)
             for (const auto& suggestion : suggested_output_groups(*selected))
-                runtime.output_suggestions.push_back({suggestion.label.data(),
-                    static_cast<std::uint8_t>(suggestion.family),
-                    suggestion.relative_output_path.data(), suggestion.stepmania.has_value(),
-                    static_cast<WormUiStepmaniaFileProfile>(
-                        suggestion.stepmania ? suggestion.stepmania->file_profile
-                                             : stepmania_profile_t::ssc),
-                    ui_stepmania_timing(suggestion.stepmania
-                                            ? suggestion.stepmania->timing_syntax
-                                            : stepmania_timing_syntax_t::native_warps),
-                    static_cast<WormUiStepmaniaImplementation>(
-                        suggestion.stepmania
-                            ? suggestion.stepmania->implementation_profile
-                            : stepmania_implementation_profile_t::unspecified)});
+                output_suggestions.push_back({.name = suggestion.label, .family = suggestion.family,
+                    .path = suggestion.relative_output_path, .stepmania = suggestion.stepmania});
     }
-    view.output_suggestions = runtime.output_suggestions;
 }
 
+namespace wormedit::sys {
+
 auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectChartAction& action,
+    document_history_t& history, const wormedit::ui::project_chart_action_t& action,
     std::optional<chart_id_t> active_chart) -> project_chart_ui_result_t {
     if (action.session_generation != runtime.session_generation)
         return {.status = stale_action_message("Project chart action")};
-    const auto kind = ui_command_kind(action.kind);
-    if (!kind) return {.status = "Project chart action is invalid."};
-    project_chart_command_t command{.kind = *kind, .expected_revision = action.document_revision,
-        .chart = chart_id_t{action.chart_id}, .target_chart = chart_id_t{action.target_chart_id},
-        .insert_after = action.insert_after};
-    if (*kind == project_chart_command_kind_t::create && active_chart) command.chart = *active_chart;
-    if (*kind == project_chart_command_kind_t::batch_metadata) {
-        const auto metadata = ui_batch_metadata(action);
-        if (!metadata) {
-            const std::string error = "Batch metadata selection or rating is invalid.";
-            publish_row_error(runtime, action, error);
-            return {.status = error};
-        }
-        command.metadata = *metadata;
+    const auto command = project_chart_command_t::from(action, active_chart);
+    if (!command) {
+        if (action.kind == WORM_UI_PROJECT_CHART_BATCH_METADATA)
+            publish_row_error(runtime, action, command.error());
+        return {.status = command.error()};
     }
-    auto result = apply_project_chart_command(history, command);
+    auto result = apply_project_chart_command(history, *command);
     const auto error = result.command.diagnostics.empty() ? std::string{} : result.command.diagnostics.front().message;
     publish_row_error(runtime, action, error);
     if (!error.empty()) {

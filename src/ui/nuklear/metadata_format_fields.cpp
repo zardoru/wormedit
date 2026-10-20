@@ -1,4 +1,3 @@
-#include "ui/nuklear/catalog_view.h"
 #include "ui/nuklear/metadata_format_fields.h"
 
 #include "ui/nuklear/chrome.h"
@@ -94,21 +93,21 @@ static auto bms_field_name_matches(const char* name, const char* expected) -> bo
     return *name == '\0' && *expected == '\0';
 }
 
-void initialize_bms_field_buffers(const WormUiMetadataView* metadata) {
+void initialize_bms_field_buffers(const wormedit::ui::metadata_view_t* metadata) {
     state.bms_field_indices.fill(std::numeric_limits<size_t>::max());
     state.bms_field_occurrences.fill(0);
     state.bms_field_valid.fill(true);
     for (auto& value : state.bms_fields)
         value.fill('\0');
-    if (!metadata || !metadata->format_fields)
+    if (!metadata)
         return;
-    for (size_t index = 0; index < metadata->format_field_count; ++index) {
+    for (size_t index = 0; index < metadata->format_fields.size(); ++index) {
         const auto& field = metadata->format_fields[index];
-        if (field.chart_scoped || field.family != bms_format_family ||
+        if (field.chart_scoped || static_cast<std::uint8_t>(field.family) != bms_format_family ||
             !field.first_group_for_family)
             continue;
         for (size_t typed = 0; typed < bms_field_names.size(); ++typed) {
-            if (!bms_field_name_matches(field.name, bms_field_names[typed]))
+            if (!bms_field_name_matches(field.name.c_str(), bms_field_names[typed]))
                 continue;
             ++state.bms_field_occurrences[typed];
             if (state.bms_field_indices[typed] != std::numeric_limits<size_t>::max())
@@ -116,8 +115,8 @@ void initialize_bms_field_buffers(const WormUiMetadataView* metadata) {
             state.bms_field_indices[typed] = field.field_index;
             state.bms_field_valid[typed] =
                 copy_metadata_text(state.bms_fields[typed].data(),
-                                   state.bms_fields[typed].size(), field.value,
-                                   field.value_bytes) != 0;
+                                   state.bms_fields[typed].size(), field.value.c_str(),
+                                   field.value.size()) != 0;
             break;
         }
     }
@@ -192,28 +191,28 @@ static auto bmson_json_value(size_t typed, std::string_view human)
     return std::string(human);
 }
 
-void initialize_bmson_field_buffers(const WormUiMetadataView* metadata) {
+void initialize_bmson_field_buffers(const wormedit::ui::metadata_view_t* metadata) {
     state.bmson_field_indices.fill(std::numeric_limits<size_t>::max());
     state.bmson_field_chart_scoped.fill(false);
     state.bmson_field_valid.fill(true);
     for (auto& value : state.bmson_fields)
         value.fill('\0');
-    if (!metadata || !metadata->format_fields)
+    if (!metadata)
         return;
     for (size_t typed = 0; typed < bmson_field_names.size(); ++typed) {
         for (const bool chart_scoped : {false, true}) {
             bool found = false;
-            for (size_t index = 0; index < metadata->format_field_count; ++index) {
+            for (size_t index = 0; index < metadata->format_fields.size(); ++index) {
                 const auto& field = metadata->format_fields[index];
                 if (field.chart_scoped != chart_scoped ||
-                    field.family != bmson_format_family ||
-                    !field.first_group_for_family || !field.name || !field.value ||
-                    std::string_view{field.name} != bmson_field_names[typed])
+                    static_cast<std::uint8_t>(field.family) != bmson_format_family ||
+                    !field.first_group_for_family || !field.name.c_str() || !field.value.c_str() ||
+                    std::string_view{field.name.c_str()} != bmson_field_names[typed])
                     continue;
                 state.bmson_field_indices[typed] = field.field_index;
                 state.bmson_field_chart_scoped[typed] = chart_scoped;
                 const auto human = bmson_human_value(
-                    typed, std::string_view{field.value, field.value_bytes});
+                    typed, std::string_view{field.value.c_str(), field.value.size()});
                 state.bmson_field_valid[typed] =
                     human && copy_metadata_text(state.bmson_fields[typed].data(),
                                                 state.bmson_fields[typed].size(),
@@ -227,32 +226,32 @@ void initialize_bmson_field_buffers(const WormUiMetadataView* metadata) {
     }
 }
 
-static int initialize_format_buffers(const WormUiMetadataFormatFieldView* field, int insert_mode) {
-    state.format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
-    state.format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+static int initialize_format_buffers(const wormedit::ui::metadata_format_field_view_t* field, int insert_mode) {
+    state.format_name.assign(wormedit::default_metadata_edit_limits.maximum_field_name_bytes + 1, '\0');
+    state.format_value.assign(wormedit::default_metadata_edit_limits.maximum_field_value_bytes + 1, '\0');
     state.format_insert_mode = insert_mode != 0;
     if (insert_mode) {
         state.format_buffers_valid = field && field->first_group_for_family;
         return state.format_buffers_valid;
     }
-    if (!field || !field->first_group_for_family || !field->name || !field->value ||
-        field->group_field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
+    if (!field || !field->first_group_for_family || !field->name.c_str() || !field->value.c_str() ||
+        field->group_field_count > wormedit::default_metadata_edit_limits.maximum_fields_per_group) {
         state.format_buffers_valid = 0;
         return 0;
     }
     state.format_buffers_valid =
-        copy_metadata_text(state.format_name.data(), state.format_name.size(), field->name,
-                           field->name_bytes) &&
-        copy_metadata_text(state.format_value.data(), state.format_value.size(), field->value,
-                           field->value_bytes);
+        copy_metadata_text(state.format_name.data(), state.format_name.size(), field->name.c_str(),
+                           field->name.size()) &&
+        copy_metadata_text(state.format_value.data(), state.format_value.size(), field->value.c_str(),
+                           field->value.size());
     return state.format_buffers_valid;
 }
 
-static void initialize_format_target_buffers(const WormUiMetadataView* metadata,
-                                             const WormUiMetadataFormatTargetView* target) {
-    if (!metadata || !target || target->family > 6 ||
+static void initialize_format_target_buffers(const wormedit::ui::metadata_view_t* metadata,
+                                             const wormedit::ui::metadata_format_target_view_t* target) {
+    if (!metadata || !target || static_cast<std::uint8_t>(target->family) > 6 ||
         (target->chart_scoped && !metadata->has_chart) ||
-        target->field_count > WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY) {
+        target->field_count > wormedit::default_metadata_edit_limits.maximum_fields_per_group) {
         state.format_target_valid = 0;
         state.format_buffers_valid = 0;
         return;
@@ -260,17 +259,17 @@ static void initialize_format_target_buffers(const WormUiMetadataView* metadata,
     state.selected_format_field = std::numeric_limits<size_t>::max();
     state.format_target_valid = 1;
     state.format_target_chart_scoped = target->chart_scoped;
-    state.format_target_family = target->family;
+    state.format_target_family = static_cast<std::uint8_t>(target->family);
     state.format_target_field_count = target->field_count;
     state.format_target_index = target->field_count;
     state.format_insert_mode = 1;
-    state.format_name.assign(WORM_UI_METADATA_FORMAT_NAME_BYTES + 1, '\0');
-    state.format_value.assign(WORM_UI_METADATA_FORMAT_VALUE_BYTES + 1, '\0');
+    state.format_name.assign(wormedit::default_metadata_edit_limits.maximum_field_name_bytes + 1, '\0');
+    state.format_value.assign(wormedit::default_metadata_edit_limits.maximum_field_value_bytes + 1, '\0');
     state.format_buffers_valid = 1;
 }
 
-static void set_metadata_format_action(WormUiWorkspaceAction* action,
-                                       const WormUiMetadataView* metadata,
+static void set_metadata_format_action(wormedit::ui::workspace_action_t* action,
+                                       const wormedit::ui::metadata_view_t* metadata,
                                        WormUiMetadataEditKind kind) {
     const int needs_text = kind != WORM_UI_METADATA_EDIT_ERASE_FORMAT_FIELD;
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
@@ -281,33 +280,12 @@ static void set_metadata_format_action(WormUiWorkspaceAction* action,
     }
     action->metadata_edit = kind;
     action->metadata_document_revision = metadata->document_revision;
-    action->metadata_chart_id = state.format_target_chart_scoped ? metadata->chart_id : 0;
+    action->metadata_chart_id = state.format_target_chart_scoped ? metadata->chart_id.value : 0;
     action->metadata_format_chart_scoped = state.format_target_chart_scoped;
     action->metadata_format_family = state.format_target_family;
     action->metadata_format_index = state.format_target_index;
     action->metadata_format_name = needs_text ? state.format_name.data() : nullptr;
     action->metadata_format_value = needs_text ? state.format_value.data() : nullptr;
-}
-
-static auto find_format_source(const WormUiMetadataView& metadata, std::uint8_t family,
-                               bool chart_scoped, std::size_t field_index)
-    -> const WormUiMetadataFormatFieldView* {
-    for (size_t index = 0; index < metadata.format_field_count; ++index) {
-        const auto& field = metadata.format_fields[index];
-        if (field.chart_scoped == chart_scoped && field.family == family &&
-            field.first_group_for_family && field.field_index == field_index)
-            return &field;
-    }
-    return nullptr;
-}
-
-static auto format_target(const WormUiMetadataView& metadata, std::uint8_t family)
-    -> const WormUiMetadataFormatTargetView* {
-    for (size_t index = 0; index < metadata.format_target_count; ++index) {
-        const auto& target = metadata.format_targets[index];
-        if (!target.chart_scoped && target.family == family) return &target;
-    }
-    return nullptr;
 }
 
 static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t family,
@@ -320,7 +298,7 @@ static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t f
         : exists ? WORM_UI_METADATA_EDIT_REPLACE_FORMAT_FIELD
                  : WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD;
     action->metadata_document_revision = metadata.document_revision;
-    action->metadata_chart_id = chart_scoped ? metadata.chart_id : 0;
+    action->metadata_chart_id = chart_scoped ? metadata.chart_id.value : 0;
     action->metadata_format_chart_scoped = chart_scoped;
     action->metadata_format_family = family;
     action->metadata_format_index = exists ? field_index : insert_index;
@@ -329,8 +307,8 @@ static void apply_typed_format_action(const MetadataPanel& panel, std::uint8_t f
 }
 
 static void render_bms_field_buttons(const MetadataPanel& panel,
-                                     const WormUiMetadataFormatTargetView& target,
-                                     size_t typed, const WormUiMetadataFormatFieldView* source,
+                                     const wormedit::ui::metadata_format_target_view_t& target,
+                                     size_t typed, const wormedit::ui::metadata_format_field_view_t* source,
                                      bool editable, bool numeric_valid) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
@@ -338,9 +316,9 @@ static void render_bms_field_buttons(const MetadataPanel& panel,
     const auto field_index = state.bms_field_indices[typed];
     const auto exists = field_index != std::numeric_limits<size_t>::max();
     auto& buffer = state.bms_fields[typed];
-    const auto changed = exists && source && source->value &&
-                         std::strcmp(source->value, buffer.data()) != 0;
-    const auto room = target.field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+    const auto changed = exists && source && source->value.c_str() &&
+                         std::strcmp(source->value.c_str(), buffer.data()) != 0;
+    const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     const auto can_apply = editable && numeric_valid &&
         action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
         (exists ? changed : buffer[0] != '\0' && room);
@@ -380,12 +358,12 @@ static void render_bms_field_hint(nk_context* context, size_t typed, bool editab
 }
 
 static void render_bms_field(const MetadataPanel& panel,
-                             const WormUiMetadataFormatTargetView& target, size_t typed) {
+                             const wormedit::ui::metadata_format_target_view_t& target, size_t typed) {
     auto* context = panel.context;
     auto& buffer = state.bms_fields[typed];
     const auto field_index = state.bms_field_indices[typed];
     const auto exists = field_index != std::numeric_limits<size_t>::max();
-    const auto* source = exists ? find_format_source(*panel.metadata, bms_format_family,
+    const auto* source = exists ? panel.metadata->find_format_field(static_cast<wormedit::format_family_t>(bms_format_family),
                                                       false, field_index) : nullptr;
     const auto editable = state.bms_field_valid[typed] && (!exists || source != nullptr);
     const auto numeric_valid = bms_field_numeric_valid(typed, buffer.data());
@@ -401,15 +379,15 @@ static void render_bms_field(const MetadataPanel& panel,
     render_bms_field_hint(context, typed, editable, numeric_valid);
 }
 
-static void render_bms_fields(struct nk_context* context, const WormUiMetadataView* metadata,
-                              WormUiWorkspaceAction* action) {
+static void render_bms_fields(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
+                              wormedit::ui::workspace_action_t* action) {
     const MetadataPanel panel{context, metadata, action, false};
-    if (metadata->selected_chart_source_family != bms_format_family || !metadata->has_chart)
+    if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bms_format_family || !metadata->has_chart)
         return;
-    const auto* target = format_target(*metadata, bms_format_family);
+    const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bms_format_family));
     nk_layout_row_dynamic(context, 24, 1);
     nk_label(context, "BMS fields", NK_TEXT_LEFT);
-    if (!target || metadata->format_fields_truncated) {
+    if (!target) {
         muted_label(context, "BMS fields are unavailable while metadata rows are truncated.");
         return;
     }
@@ -440,8 +418,8 @@ static void render_bmson_field_input(const MetadataPanel& panel, size_t typed, b
 }
 
 static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
-                                      const WormUiMetadataFormatTargetView& target,
-                                      const WormUiMetadataFormatFieldView* source, bool editable,
+                                      const wormedit::ui::metadata_format_target_view_t& target,
+                                      const wormedit::ui::metadata_format_field_view_t* source, bool editable,
                                       const std::optional<std::string>& encoded) {
     const auto& metadata = *panel.metadata;
     auto* context = panel.context;
@@ -450,10 +428,10 @@ static void render_bmson_field_actions(const MetadataPanel& panel, size_t typed,
     const auto index = state.bmson_field_indices[typed];
     const auto exists = index != std::numeric_limits<size_t>::max();
     const auto chart_scoped = state.bmson_field_chart_scoped[typed];
-    const auto changed = exists && source && source->value && encoded &&
-        std::string_view{source->value, source->value_bytes} != *encoded;
+    const auto changed = exists && source && source->value.c_str() && encoded &&
+        std::string_view{source->value.c_str(), source->value.size()} != *encoded;
     const auto has_value = buffer[0] != '\0' || typed == 1;
-    const auto room = target.field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+    const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     const auto can_apply = editable && encoded &&
         action->metadata_edit == WORM_UI_METADATA_EDIT_NONE &&
         (exists ? changed : has_value && room);
@@ -491,12 +469,12 @@ static void render_bmson_field_hint(const MetadataPanel& panel, bool editable, b
 }
 
 static void render_bmson_field(const MetadataPanel& panel,
-                               const WormUiMetadataFormatTargetView& target, size_t typed) {
+                               const wormedit::ui::metadata_format_target_view_t& target, size_t typed) {
     auto& buffer = state.bmson_fields[typed];
     const auto index = state.bmson_field_indices[typed];
     const auto exists = index != std::numeric_limits<size_t>::max();
     const auto chart_scoped = state.bmson_field_chart_scoped[typed];
-    const auto* source = exists ? find_format_source(*panel.metadata, bmson_format_family,
+    const auto* source = exists ? panel.metadata->find_format_field(static_cast<wormedit::format_family_t>(bmson_format_family),
                                                       chart_scoped, index) : nullptr;
     const auto editable = state.bmson_field_valid[typed] && (!exists || source != nullptr);
     render_bmson_field_input(panel, typed, editable);
@@ -507,15 +485,15 @@ static void render_bmson_field(const MetadataPanel& panel,
     render_bmson_field_hint(panel, editable, encoded.has_value());
 }
 
-static void render_bmson_fields(struct nk_context* context, const WormUiMetadataView* metadata,
-                                WormUiWorkspaceAction* action) {
+static void render_bmson_fields(struct nk_context* context, const wormedit::ui::metadata_view_t* metadata,
+                                wormedit::ui::workspace_action_t* action) {
     const MetadataPanel panel{context, metadata, action, false};
-    if (metadata->selected_chart_source_family != bmson_format_family || !metadata->has_chart)
+    if (static_cast<std::uint8_t>(metadata->selected_chart_source_family) != bmson_format_family || !metadata->has_chart)
         return;
-    const auto* target = format_target(*metadata, bmson_format_family);
+    const auto* target = metadata->find_song_format_target(static_cast<wormedit::format_family_t>(bmson_format_family));
     nk_layout_row_dynamic(context, 24, 1);
     nk_label(context, "BMSON info", NK_TEXT_LEFT);
-    if (!target || metadata->format_fields_truncated) {
+    if (!target) {
         muted_label(context, "BMSON fields are unavailable while metadata rows are truncated.");
         return;
     }
@@ -556,14 +534,14 @@ static auto typed_name_matches(std::uint8_t family, const char* stored,
     return schema.name == stored;
 }
 
-static void load_typed_field(const WormUiMetadataView& metadata, std::uint8_t family,
+static void load_typed_field(const wormedit::ui::metadata_view_t& metadata, std::uint8_t family,
                              std::size_t slot, const wormedit::format_field_schema_t& schema) {
     for (const bool chart_scoped : {false, true}) {
-        for (size_t index = 0; index < metadata.format_field_count; ++index) {
+        for (size_t index = 0; index < metadata.format_fields.size(); ++index) {
             const auto& field = metadata.format_fields[index];
-            if (field.chart_scoped != chart_scoped || field.family != family ||
-                !field.first_group_for_family || !field.value ||
-                !typed_name_matches(family, field.name, schema))
+            if (field.chart_scoped != chart_scoped || static_cast<std::uint8_t>(field.family) != family ||
+                !field.first_group_for_family || !field.value.c_str() ||
+                !typed_name_matches(family, field.name.c_str(), schema))
                 continue;
             ++state.typed_field_occurrences[slot];
             if (state.typed_field_indices[slot] != std::numeric_limits<size_t>::max())
@@ -572,37 +550,37 @@ static void load_typed_field(const WormUiMetadataView& metadata, std::uint8_t fa
             state.typed_field_chart_scoped[slot] = chart_scoped;
             state.typed_field_valid[slot] =
                 copy_metadata_text(state.typed_fields[slot].data(),
-                                   state.typed_fields[slot].size(), field.value,
-                                   field.value_bytes) != 0;
+                                   state.typed_fields[slot].size(), field.value.c_str(),
+                                   field.value.size()) != 0;
         }
         if (state.typed_field_indices[slot] != std::numeric_limits<size_t>::max()) return;
     }
 }
 
-void initialize_typed_field_buffers(const WormUiMetadataView* metadata) {
+void initialize_typed_field_buffers(const wormedit::ui::metadata_view_t* metadata) {
     state.typed_field_indices.fill(std::numeric_limits<size_t>::max());
     state.typed_field_occurrences.fill(0);
     state.typed_field_chart_scoped.fill(false);
     state.typed_field_valid.fill(true);
     for (auto& value : state.typed_fields)
         value.fill('\0');
-    if (!metadata || !metadata->format_fields || !metadata->has_chart)
+    if (!metadata || !metadata->has_chart)
         return;
-    const auto family = metadata->selected_chart_source_family;
+    const auto family = static_cast<std::uint8_t>(metadata->selected_chart_source_family);
     const auto schemas = generic_typed_schemas(family);
     for (size_t slot = 0; slot < schemas.size(); ++slot)
         load_typed_field(*metadata, family, slot, *schemas[slot]);
 }
 
 // An existing field keeps its scope; a new one goes to the song group unless only the chart has one.
-static auto typed_field_target(const WormUiMetadataView& metadata, std::uint8_t family,
+static auto typed_field_target(const wormedit::ui::metadata_view_t& metadata, std::uint8_t family,
                                bool exists, bool existing_scope)
-    -> const WormUiMetadataFormatTargetView* {
-    const WormUiMetadataFormatTargetView* song = nullptr;
-    const WormUiMetadataFormatTargetView* chart = nullptr;
-    for (size_t index = 0; index < metadata.format_target_count; ++index) {
+    -> const wormedit::ui::metadata_format_target_view_t* {
+    const wormedit::ui::metadata_format_target_view_t* song = nullptr;
+    const wormedit::ui::metadata_format_target_view_t* chart = nullptr;
+    for (size_t index = 0; index < metadata.format_targets.size(); ++index) {
         const auto& target = metadata.format_targets[index];
-        if (target.family != family) continue;
+        if (static_cast<std::uint8_t>(target.family) != family) continue;
         (target.chart_scoped ? chart : song) = &target;
     }
     if (exists) return existing_scope ? chart : song;
@@ -611,19 +589,19 @@ static auto typed_field_target(const WormUiMetadataView& metadata, std::uint8_t 
 
 static void render_typed_field_buttons(const MetadataPanel& panel, std::size_t slot,
                                        const wormedit::format_field_schema_t& schema,
-                                       const WormUiMetadataFormatTargetView& target,
+                                       const wormedit::ui::metadata_format_target_view_t& target,
                                        bool editable, bool valid) {
     auto* context = panel.context;
     auto* action = panel.action;
-    const auto family = panel.metadata->selected_chart_source_family;
+    const auto family = static_cast<std::uint8_t>(panel.metadata->selected_chart_source_family);
     const auto index = state.typed_field_indices[slot];
     const auto exists = index != std::numeric_limits<size_t>::max();
-    const auto* source = exists ? find_format_source(*panel.metadata, family,
+    const auto* source = exists ? panel.metadata->find_format_field(static_cast<wormedit::format_family_t>(family),
                                                       state.typed_field_chart_scoped[slot], index)
                                 : nullptr;
     const auto& buffer = state.typed_fields[slot];
-    const auto changed = source && source->value && std::strcmp(source->value, buffer.data()) != 0;
-    const auto room = target.field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+    const auto changed = source && source->value.c_str() && std::strcmp(source->value.c_str(), buffer.data()) != 0;
+    const auto room = target.field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     const auto idle = action->metadata_edit == WORM_UI_METADATA_EDIT_NONE;
     const auto can_apply = editable && valid && idle &&
         (exists ? changed : buffer[0] != '\0' && room);
@@ -646,7 +624,7 @@ static void render_typed_field_buttons(const MetadataPanel& panel, std::size_t s
 static void render_typed_field(const MetadataPanel& panel, std::size_t slot,
                                const wormedit::format_field_schema_t& schema) {
     auto* context = panel.context;
-    const auto family = panel.metadata->selected_chart_source_family;
+    const auto family = static_cast<std::uint8_t>(panel.metadata->selected_chart_source_family);
     const auto index = state.typed_field_indices[slot];
     const auto exists = index != std::numeric_limits<size_t>::max();
     const auto* target = typed_field_target(*panel.metadata, family, exists,
@@ -676,8 +654,8 @@ static void render_typed_field(const MetadataPanel& panel, std::size_t slot,
 
 static void render_typed_fields(const MetadataPanel& panel) {
     const auto& metadata = *panel.metadata;
-    if (!metadata.has_chart || metadata.format_fields_truncated) return;
-    const auto schemas = generic_typed_schemas(metadata.selected_chart_source_family);
+    if (!metadata.has_chart) return;
+    const auto schemas = generic_typed_schemas(static_cast<std::uint8_t>(metadata.selected_chart_source_family));
     if (schemas.empty()) return;
     nk_layout_row_dynamic(panel.context, 24, 1);
     nk_label(panel.context, "Typed fields", NK_TEXT_LEFT);
@@ -690,12 +668,9 @@ namespace {
 void render_format_field_rows(const MetadataPanel& panel) {
     auto* context = panel.context;
     const auto* metadata = panel.metadata;
-    if (metadata->format_field_count != 0 && !metadata->format_fields) {
-        muted_label(context, "Format field list is unavailable.");
-        return;
-    }
+
     std::size_t rows = 0;
-    for (size_t index = 0; index < metadata->format_field_count; ++index) {
+    for (size_t index = 0; index < metadata->format_fields.size(); ++index) {
         const auto* field = &metadata->format_fields[index];
         if (!field->first_group_for_family) continue;
         ++rows;
@@ -704,16 +679,16 @@ void render_format_field_rows(const MetadataPanel& panel) {
         nk_layout_row_begin(context, NK_DYNAMIC, 26, 2);
         nk_layout_row_push(context, 0.78f);
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s · %s (%zu fields)",
-                  field->chart_scoped ? "Chart" : "Song", wormedit::ui::kind_label(metadata->format_families, field->family, "Unknown"),
-                  field->name ? field->name : "(empty)", field->group_field_count);
+                  field->chart_scoped ? "Chart" : "Song", metadata->format_families.label(static_cast<wormedit::format_family_t>(static_cast<std::uint8_t>(field->family)), "Unknown"),
+                  field->name.c_str() ? field->name.c_str() : "(empty)", field->group_field_count);
         nk_layout_row_push(context, 0.22f);
-        const auto editable = field->family <= 6 && (!field->chart_scoped || metadata->has_chart);
+        const auto editable = static_cast<std::uint8_t>(field->family) <= 6 && (!field->chart_scoped || metadata->has_chart);
         if (!editable) nk_widget_disable_begin(context);
         if (nk_button_label(context, label) && editable) {
             state.selected_format_field = index;
             state.format_target_valid = true;
             state.format_target_chart_scoped = field->chart_scoped;
-            state.format_target_family = field->family;
+            state.format_target_family = static_cast<std::uint8_t>(field->family);
             state.format_target_index = field->field_index;
             state.format_target_field_count = field->group_field_count;
             initialize_format_buffers(field, 0);
@@ -722,13 +697,11 @@ void render_format_field_rows(const MetadataPanel& panel) {
         nk_layout_row_end(context);
     }
     if (rows == 0) muted_label(context, "No format-specific fields.");
-    if (metadata->format_fields_truncated)
-        muted_label(context, "Additional format fields are hidden by the frontend row cap.");
 }
 
-auto selected_format_field(const WormUiMetadataView& metadata)
-    -> const WormUiMetadataFormatFieldView* {
-    if (state.selected_format_field >= metadata.format_field_count || !metadata.format_fields)
+auto selected_format_field(const wormedit::ui::metadata_view_t& metadata)
+    -> const wormedit::ui::metadata_format_field_view_t* {
+    if (state.selected_format_field >= metadata.format_fields.size())
         return nullptr;
     return &metadata.format_fields[state.selected_format_field];
 }
@@ -747,24 +720,24 @@ void render_format_target_selector(const MetadataPanel& panel) {
         wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.5f);
-    const auto family_label = wormedit::ui::kind_label(metadata.format_families, state.format_add_family, "Unknown");
+    const auto family_label = metadata.format_families.label(static_cast<wormedit::format_family_t>(state.format_add_family), "Unknown");
     if (wormedit::ui::chrome::safe_combo_begin_label(context, family_label, nk_vec2(nk_widget_width(context), 180))) {
         nk_layout_row_dynamic(context, 22, 1);
-        for (std::size_t index = 0; index < metadata.format_families.count; ++index) {
+        for (std::size_t index = 0; index < metadata.format_families.entries.size(); ++index) {
             const auto& family = metadata.format_families.entries[index];
-            if (nk_combo_item_label(context, family.label, NK_TEXT_LEFT))
+            if (nk_combo_item_label(context, family.label.data(), NK_TEXT_LEFT))
                 state.format_add_family = static_cast<std::uint8_t>(family.id);
         }
         wormedit::ui::chrome::safe_combo_end(context);
     }
     nk_layout_row_push(context, 0.3f);
-    const WormUiMetadataFormatTargetView* target = nullptr;
-    for (size_t i = 0; i < metadata.format_target_count; ++i) {
+    const wormedit::ui::metadata_format_target_view_t* target = nullptr;
+    for (size_t i = 0; i < metadata.format_targets.size(); ++i) {
         const auto& item = metadata.format_targets[i];
         if (item.chart_scoped == state.format_add_chart_scoped &&
-            item.family == state.format_add_family) { target = &item; break; }
+            static_cast<std::uint8_t>(item.family) == state.format_add_family) { target = &item; break; }
     }
-    const auto can_add = target && target->field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY;
+    const auto can_add = target && target->field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group;
     if (!can_add) nk_widget_disable_begin(context);
     const auto add = nk_button_label(context, "Add field");
     if (!can_add) nk_widget_disable_end(context);
@@ -772,21 +745,21 @@ void render_format_target_selector(const MetadataPanel& panel) {
     if (add && can_add) initialize_format_target_buffers(&metadata, target);
 }
 
-void render_format_editor_title(nk_context* context, const WormUiMetadataView& metadata,
-                                const WormUiMetadataFormatFieldView* field) {
+void render_format_editor_title(nk_context* context, const wormedit::ui::metadata_view_t& metadata,
+                                const wormedit::ui::metadata_format_field_view_t* field) {
     nk_layout_row_dynamic(context, 22, 1);
     if (field && !state.format_insert_mode)
         nk_labelf(context, NK_TEXT_LEFT, "%s · %s field #%zu",
                   field->chart_scoped ? "Chart" : "Song",
-                  wormedit::ui::kind_label(metadata.format_families, field->family, "Unknown"), field->field_index + 1);
+                  metadata.format_families.label(static_cast<wormedit::format_family_t>(static_cast<std::uint8_t>(field->family)), "Unknown"), field->field_index + 1);
     else
         nk_labelf(context, NK_TEXT_LEFT, "New %s · %s field",
                   state.format_target_chart_scoped ? "Chart" : "Song",
-                  wormedit::ui::kind_label(metadata.format_families, state.format_target_family, "Unknown"));
+                  metadata.format_families.label(static_cast<wormedit::format_family_t>(state.format_target_family), "Unknown"));
 }
 
 void render_format_editor_unavailable(const MetadataPanel& panel,
-                                      const WormUiMetadataFormatFieldView* field) {
+                                      const wormedit::ui::metadata_format_field_view_t* field) {
     muted_label(panel.context, "Field is read-only because it exceeds the text cap or group scope.");
     if (!field || !field->first_group_for_family) return;
     nk_layout_row_dynamic(panel.context, 25, 1);
@@ -797,11 +770,11 @@ void render_format_editor_unavailable(const MetadataPanel& panel,
 }
 
 void render_format_editor_actions(const MetadataPanel& panel,
-                                  const WormUiMetadataFormatFieldView* field) {
+                                  const wormedit::ui::metadata_format_field_view_t* field) {
     if (state.format_insert_mode) {
         nk_layout_row_dynamic(panel.context, 25, 1);
         if (nk_button_label(panel.context, "Add field") &&
-            state.format_target_field_count < WORM_UI_METADATA_FORMAT_GROUP_FIELD_CAPACITY &&
+            state.format_target_field_count < wormedit::default_metadata_edit_limits.maximum_fields_per_group &&
             panel.action->metadata_edit == WORM_UI_METADATA_EDIT_NONE)
             set_metadata_format_action(panel.action, panel.metadata,
                                        WORM_UI_METADATA_EDIT_INSERT_FORMAT_FIELD);

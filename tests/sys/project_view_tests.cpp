@@ -47,9 +47,9 @@ TEST_CASE("Project view projects family compatibility reasons and layout suggest
     song.charts.back().lane_layouts.front().layout = profile.layout;
     song.charts.back().input_profile = profile.input;
     project_chart_runtime_t runtime;
-    WormUiSetupView view{.visible = true, .selected_chart_id = song.charts.back().id.value};
-    build_project_chart_view(runtime, song, view);
-    REQUIRE(view.chart_row_count == 2);
+    wormedit::ui::setup_view_t view{.visible = true, .selected_chart_id = song.charts.back().id};
+    view.refill(runtime, song);
+    REQUIRE(view.charts.size() == 2);
     const auto& row = view.charts[1];
     CHECK(row.compatible_output_families &
           (std::uint32_t{1} << static_cast<std::uint8_t>(format_family_t::osu_mania)));
@@ -60,7 +60,7 @@ TEST_CASE("Project view projects family compatibility reasons and layout suggest
               .find("BMS channel profile") != std::string_view::npos);
     REQUIRE_FALSE(view.output_suggestions.empty());
     CHECK(view.output_suggestions.front().family ==
-          static_cast<std::uint8_t>(format_family_t::osu_mania));
+          format_family_t::osu_mania);
 }
 
 TEST_CASE("Project output action reports incompatible membership without changing the target",
@@ -70,16 +70,16 @@ TEST_CASE("Project output action reports incompatible membership without changin
     task_scheduler_t scheduler{1, 1};
     const auto before_name = history.document.output_groups.front().name;
     const auto before_charts = history.document.output_groups.front().charts;
-    WormUiProjectOutputGroupAction action{
+    wormedit::ui::project_output_group_action_t action{
         .kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
-        .project_id = history.document.id.value,
+        .project_id = history.document.id,
         .document_revision = history.document.revision,
         .session_generation = runtime.session_generation,
         .name = "osu", .path = "exports/osu",
-        .family = static_cast<std::uint8_t>(format_family_t::osu_mania),
-        .destination_kind = WORM_UI_OUTPUT_DESTINATION_DIRECTORY,
-        .existing_files = WORM_UI_EXISTING_FILES_ASK, .chart_count = 1};
-    action.chart_ids[0] = history.document.charts.front().id.value;
+        .family = format_family_t::osu_mania,
+        .destination_kind = output_destination_kind_t::directory,
+        .existing_files = existing_files_policy_t::ask};
+    action.chart_ids = {history.document.charts.front().id};
     const auto result = apply_project_output_group_ui_action(runtime, history, action, scheduler);
     CHECK_FALSE(result.applied);
     CHECK(result.status.find("osu!mania requires") != std::string::npos);
@@ -89,11 +89,11 @@ TEST_CASE("Project output action reports incompatible membership without changin
     CHECK(history.undo.empty());
 }
 
-TEST_CASE("Project chart projection truncates rows without limiting the document", "[unit][project-view]") {
+TEST_CASE("Project chart projection retains every row without limiting the document", "[unit][project-view]") {
     auto song = project_song();
     song.charts.resize(257, song.charts[0]);
     const auto table = project_chart_table_view_t::from(song);
-    expect_project(table.rows.size() == 256 && table.total_charts == 257 && table.rows_truncated);
+    expect_project(table.rows.size() == 257 && table.total_charts == 257);
     expect_project(song.charts.size() == 257);
     song.charts[0].metadata.name = std::string(5000, 'N');
     const auto bounded = project_chart_table_view_t::from(song);
@@ -144,9 +144,9 @@ TEST_CASE("Project chart commands preserve atomic rejection and open newly creat
 TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed batch ratings", "[unit][project-view]") {
     auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
-    WormUiProjectChartAction action{.kind = WORM_UI_PROJECT_CHART_DELETE,
+    wormedit::ui::project_chart_action_t action{.kind = WORM_UI_PROJECT_CHART_DELETE,
         .document_revision = history.document.revision, .session_generation = 0,
-        .chart_id = history.document.charts[0].id.value};
+        .chart_id = history.document.charts[0].id};
     auto result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
     expect_project(result.severity == notification_severity_t::warning);
@@ -156,11 +156,11 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
     result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
     expect_project(result.severity == notification_severity_t::error);
-    expect_project(runtime.row_errors.contains(action.chart_id));
+    expect_project(runtime.row_errors.contains(action.chart_id.value));
     action = {.kind = WORM_UI_PROJECT_CHART_BATCH_METADATA, .document_revision = history.document.revision,
-        .session_generation = runtime.session_generation, .selected_count = 1, .edit_rating = true,
+        .session_generation = runtime.session_generation, .edit_rating = true,
         .rating_numerator = "3", .rating_denominator = "0"};
-    action.selected_chart_ids[0] = history.document.charts[0].id.value;
+    action.selected_chart_ids = {history.document.charts[0].id};
     result = apply_project_chart_ui_action(runtime, history, action);
     expect_project(!result.applied && !result.status.empty());
     expect_project(history.undo.empty() && history.document.charts.size() == 1);
@@ -173,19 +173,19 @@ TEST_CASE("Project chart UI rejects closed sessions stale delete and malformed b
 TEST_CASE("Project chart scalar projection exposes row rejection and refreshes after mutations", "[unit][project-view]") {
     auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    expect_project(view.chart_row_count == 1 && view.document_revision == history.document.revision);
-    expect_project(view.song_id == history.document.id.value && view.session_generation == 1);
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
+    expect_project(view.charts.size() == 1 && view.document_revision == history.document.revision);
+    expect_project(view.song_id == history.document.id && view.session_generation == 1);
     runtime.row_errors[history.document.charts[0].id.value] = "Cannot delete the last chart";
-    build_project_chart_view(runtime, history.document, view);
+    view.refill(runtime, history.document);
     expect_project(std::string_view{view.charts[0].diagnostic} == "Cannot delete the last chart");
     const auto result = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_DUPLICATE, .document_revision = history.document.revision,
-         .session_generation = 1, .chart_id = history.document.charts[0].id.value});
+         .session_generation = 1, .chart_id = history.document.charts[0].id});
     require_project(result.applied);
-    build_project_chart_view(runtime, history.document, view);
-    expect_project(view.chart_row_count == 2 && std::string_view{view.charts[0].diagnostic}.empty());
+    view.refill(runtime, history.document);
+    expect_project(view.charts.size() == 2 && std::string_view{view.charts[0].diagnostic}.empty());
 }
 
 TEST_CASE("Project New templates the selected four-key chart instead of the first chart or default profile", "[unit][project-view]") {
@@ -280,8 +280,8 @@ TEST_CASE("Project grip reorder resolves stable destination and creates one atom
     project_chart_runtime_t runtime;
     const auto result = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = history.document.revision,
-         .session_generation = runtime.session_generation, .chart_id = original[0].value,
-         .target_chart_id = original[2].value, .insert_after = true});
+         .session_generation = runtime.session_generation, .chart_id = original[0],
+         .target_chart_id = original[2], .insert_after = true});
     require_project(result.applied);
     expect_project((chart_ids(history) == std::vector{original[1], original[2], original[0]}));
     expect_project(history.undo.size() == 1);
@@ -289,8 +289,8 @@ TEST_CASE("Project grip reorder resolves stable destination and creates one atom
     expect_project(chart_ids(history) == original);
     const auto moved_back = apply_project_chart_ui_action(runtime, history,
         {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = history.document.revision,
-         .session_generation = runtime.session_generation, .chart_id = original[2].value,
-         .target_chart_id = original[0].value, .insert_after = false});
+         .session_generation = runtime.session_generation, .chart_id = original[2],
+         .target_chart_id = original[0], .insert_after = false});
     require_project(moved_back.applied);
     expect_project((chart_ids(history) == std::vector{original[2], original[0], original[1]}));
 }
@@ -299,9 +299,9 @@ TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adja
     auto history = reorder_history();
     const auto original = chart_ids(history);
     project_chart_runtime_t runtime;
-    WormUiProjectChartAction action{.kind = WORM_UI_PROJECT_CHART_REORDER,
+    wormedit::ui::project_chart_action_t action{.kind = WORM_UI_PROJECT_CHART_REORDER,
         .document_revision = history.document.revision, .session_generation = runtime.session_generation,
-        .chart_id = original[0].value, .target_chart_id = original[1].value};
+        .chart_id = original[0], .target_chart_id = original[1]};
     expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
     expect_project(history.undo.empty());
     action.insert_after = true;
@@ -313,7 +313,7 @@ TEST_CASE("Project grip reorder rejects stale or missing targets and leaves adja
     ++action.session_generation;
     expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
     action.session_generation = runtime.session_generation;
-    action.target_chart_id = 99999;
+    action.target_chart_id = chart_id_t{99999};
     expect_project(!apply_project_chart_ui_action(runtime, history, action).applied);
     expect_project(chart_ids(history) == original && history.undo.empty());
 }
@@ -322,48 +322,48 @@ TEST_CASE("Project output group actions project complete editable membership and
     auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    require_project(view.output_group_count == 1);
-    expect_project(view.output_groups[0].chart_ids[0] == history.document.charts[0].id.value);
-    expect_project(view.output_groups[0].existing_files == WORM_UI_EXISTING_FILES_ASK);
-    WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
-                                          .project_id = history.document.id.value,
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
+    require_project(view.output_groups.size() == 1);
+    expect_project(view.output_groups[0].chart_ids[0] == history.document.charts[0].id);
+    expect_project(view.output_groups[0].existing_files == existing_files_policy_t::ask);
+    wormedit::ui::project_output_group_action_t action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE,
+                                          .project_id = history.document.id,
                                           .document_revision = history.document.revision,
                                           .session_generation = runtime.session_generation,
                                           .name = "BMSON",
                                           .path = "exports/chart.bmson",
-                                          .family = 4,
-                                          .existing_files = WORM_UI_EXISTING_FILES_REPLACE,
-                                          .chart_count = 1};
-    action.chart_ids[0] = history.document.charts[0].id.value;
+                                          .family = format_family_t::bmson,
+                                          .existing_files = existing_files_policy_t::replace,
+};
+    action.chart_ids = {history.document.charts[0].id};
     ++action.session_generation;
     const auto wrong_session = apply_project_output_group_ui_action(runtime, history, action, scheduler);
     expect_project(!wrong_session.applied);
     expect_project(wrong_session.status == stale_action_message("Output group action"));
     --action.session_generation;
     require_project(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
-    build_project_chart_view(runtime, history.document, view);
-    require_project(view.output_group_count == 2);
+    view.refill(runtime, history.document);
+    require_project(view.output_groups.size() == 2);
     expect_project(std::string_view{view.output_groups[1].path} == "exports/chart.bmson");
-    expect_project(view.output_groups[1].family == 4);
+    expect_project(view.output_groups[1].family == format_family_t::bmson);
     expect_project(history.document.output_groups[1].existing_files ==
                    existing_files_policy_t::replace);
     expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
     action.document_revision = history.document.revision;
-    ++action.project_id;
+    ++action.project_id.value;
     expect_project(!apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
 }
 
 namespace {
-void check_independent_stepmania_views(const WormUiSetupView& view) {
-    REQUIRE(view.output_group_count == 2);
-    CHECK(view.output_groups[0].stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SM);
-    CHECK(view.output_groups[0].stepmania_timing_syntax ==
-          WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP);
-    CHECK(view.output_groups[1].stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SSC);
-    CHECK(view.output_groups[1].stepmania_implementation ==
-          WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1);
+void check_independent_stepmania_views(const wormedit::ui::setup_view_t& view) {
+    REQUIRE(view.output_groups.size() == 2);
+    CHECK(view.output_groups[0].stepmania->file_profile == stepmania_profile_t::sm);
+    CHECK(view.output_groups[0].stepmania->timing_syntax ==
+          stepmania_timing_syntax_t::legacy_negative_stop);
+    CHECK(view.output_groups[1].stepmania->file_profile == stepmania_profile_t::ssc);
+    CHECK(view.output_groups[1].stepmania->implementation_profile ==
+          stepmania_implementation_profile_t::etterna_0_75_1);
 }
 
 void check_undone_stepmania_policy(const document_history_t& history) {
@@ -379,43 +379,40 @@ TEST_CASE("Project StepMania targets keep independent policies and undo policy e
     auto history = document_history_t::from(project_song());
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
-    const auto chart = history.document.charts.front().id.value;
-    WormUiProjectOutputGroupAction action{
+    const auto chart = history.document.charts.front().id;
+    wormedit::ui::project_output_group_action_t action{
         .kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE,
-        .project_id = history.document.id.value,
+        .project_id = history.document.id,
         .document_revision = history.document.revision,
         .session_generation = runtime.session_generation,
         .name = "Legacy SM",
         .path = "sm",
-        .family = static_cast<std::uint8_t>(format_family_t::stepmania),
-        .destination_kind = WORM_UI_OUTPUT_DESTINATION_FILE,
-        .existing_files = WORM_UI_EXISTING_FILES_ASK,
-        .has_stepmania_policy = true,
-        .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SM,
-        .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP,
-        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY,
-        .chart_count = 1};
-    action.chart_ids[0] = chart;
+        .family = format_family_t::stepmania,
+        .destination_kind = output_destination_kind_t::file,
+        .existing_files = existing_files_policy_t::ask,
+        .stepmania = stepmania_export_policy_t{stepmania_profile_t::sm,
+            stepmania_timing_syntax_t::legacy_negative_stop, stepmania_implementation_profile_t::unspecified}};
+    action.chart_ids = {chart};
     REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
 
     action.kind = WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
     action.document_revision = history.document.revision;
     action.name = "Etterna SSC";
     action.path = "ssc";
-    action.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
-    action.stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS;
-    action.stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
+    action.stepmania->file_profile = stepmania_profile_t::ssc;
+    action.stepmania->timing_syntax = stepmania_timing_syntax_t::native_warps;
+    action.stepmania->implementation_profile = stepmania_implementation_profile_t::etterna_0_75_1;
     REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
 
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
     check_independent_stepmania_views(view);
 
     action.kind = WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
     action.group_index = 0;
     action.document_revision = history.document.revision;
     action.name = "Updated SSC";
-    action.stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY;
+    action.stepmania->implementation_profile = stepmania_implementation_profile_t::unspecified;
     REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler).applied);
     REQUIRE(undo_document_command(history));
     check_undone_stepmania_policy(history);
@@ -428,19 +425,19 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     history.document.output_groups[0].relative_output_path = "exports/song.wormedit";
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
-        .project_id = history.document.id.value, .document_revision = history.document.revision,
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
+    wormedit::ui::project_output_group_action_t action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
     const auto before = history.document.revision;
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path());
     require_project(runtime.preview_job() && runtime.preview_job()->is_busy());
     for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
-        build_project_chart_view(runtime, history.document, view);
+        view.refill(runtime, history.document);
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
-    build_project_chart_view(runtime, history.document, view);
+    view.refill(runtime, history.document);
     expect_project(std::string_view{view.output_groups[0].preview_status}.starts_with("Preview: 1 file"));
     require_project(view.output_groups[0].plan_rows.size() == 1);
     expect_project(view.output_groups[0].plan_rows[0].action == WORM_UI_OUTPUT_PLAN_NEW);
@@ -451,7 +448,7 @@ TEST_CASE("Project conversion preview runs through the worker service and retire
     expect_project(history.undo.empty());
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path());
     ++history.document.revision;
-    build_project_chart_view(runtime, history.document, view);
+    view.refill(runtime, history.document);
     expect_project(!runtime.preview_job());
     expect_project(std::string_view{view.output_groups[0].preview_status} == "Preview not run");
 }
@@ -476,8 +473,8 @@ TEST_CASE("Project preview session reset releases queued work without cancellati
     auto submitted = scheduler.begin(std::move(blocker));
     require_project(static_cast<bool>(submitted));
     started.wait();
-    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
-                                                .project_id = history.document.id.value,
+    const wormedit::ui::project_output_group_action_t action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+                                                .project_id = history.document.id,
                                                 .document_revision = history.document.revision,
                                                 .session_generation = runtime.session_generation};
     const auto result = apply_project_output_group_ui_action(
@@ -505,10 +502,10 @@ TEST_CASE("Conversion preview Cancel retains busy state and discards its result"
     history.document.output_groups[0].destination_kind = output_destination_kind_t::file;
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
-        .project_id = history.document.id.value, .document_revision = history.document.revision,
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
+    const wormedit::ui::project_output_group_action_t action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation};
     REQUIRE(apply_project_output_group_ui_action(runtime, history, action, scheduler, std::filesystem::temp_directory_path()).status ==
             "Conversion preview started.");
@@ -516,7 +513,7 @@ TEST_CASE("Conversion preview Cancel retains busy state and discards its result"
     REQUIRE(runtime.preview_view().active);
     REQUIRE(runtime.preview_view().cancelling);
     scheduler.shutdown();
-    build_project_chart_view(runtime, history.document, view);
+    view.refill(runtime, history.document);
     REQUIRE_FALSE(runtime.preview_view().active);
     REQUIRE(std::string_view(view.output_groups[0].preview_status) == "Conversion preview cancelled.");
     REQUIRE(history.undo.empty());

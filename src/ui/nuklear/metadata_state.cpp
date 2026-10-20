@@ -228,7 +228,7 @@ void worm_ui_nuklear_clear_metadata_drop_targets() {
 }
 
 void worm_ui_nuklear_set_metadata_drop_target(
-    WormUiMetadataDropTarget target, worm_ui_nuklear_metadata_state_t::drop_rectangle_t rect) {
+    wormedit::ui::metadata_drop_target_t target, worm_ui_nuklear_metadata_state_t::drop_rectangle_t rect) {
     auto& state = worm_ui_nuklear_metadata_state();
     if (target.destination == WORM_UI_METADATA_DROP_PROJECT) {
         state.project_drop_rectangle = rect;
@@ -241,7 +241,7 @@ void worm_ui_nuklear_set_metadata_drop_target(
     }
 }
 
-auto worm_ui_nuklear_metadata_drop_target(float x, float y) -> WormUiMetadataDropTarget {
+auto worm_ui_nuklear_metadata_drop_target(float x, float y) -> wormedit::ui::metadata_drop_target_t {
     const auto& state = worm_ui_nuklear_metadata_state();
     if (state.export_drop_rectangle.is_point_inside(x, y))
         return {WORM_UI_METADATA_DROP_EXPORT, state.export_drop_group_index};

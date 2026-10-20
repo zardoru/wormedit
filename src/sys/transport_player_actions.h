@@ -59,7 +59,7 @@ inline auto play_stop_transport(application_command_state_t& state)
 // Returns a status when the action belongs to transport/player
 // handling, and nullopt when the caller should try another action dispatcher.
 [[nodiscard]] auto dispatch_transport_player_action(
-    const WormUiWorkspaceAction& action, application_command_state_t& application_state,
+    const wormedit::ui::workspace_action_t& action, application_command_state_t& application_state,
     notification_sink_t notifications = notification_sink_t::muted()) -> std::optional<std::string>;
 
 } // namespace wormedit::sys

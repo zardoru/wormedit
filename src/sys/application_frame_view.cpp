@@ -110,10 +110,10 @@ auto prepare_frame_stems(const application_frame_projection_context_t& context,
 
 } // namespace
 
-auto frontend_workspace_view_t::from(const application_frame_projection_context_t& context)
-    -> frontend_workspace_view_t {
+void frontend_workspace_view_t::refill(const application_frame_projection_context_t& context) {
     frame_phase_scope_t frame_projection(frame_phase_t::workspace);
-    frontend_workspace_view_t flattened;
+    auto& flattened = *this;
+    flattened.query_session_generation = context.project_session_generation;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     std::vector<const sound_channel_t*> frame_visible_stems;
 #endif
@@ -122,13 +122,13 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
         frame_phase_scope_t flatten(frame_phase_t::workspace_flatten);
         WormUiKeysoundDockRequest keysound_request{};
         worm_ui_frontend_keysound_dock_request(&keysound_request);
-        WormUiSoundUsageRequest sound_usage_request{};
+        wormedit::ui::sound_usage_request_t sound_usage_request{};
         worm_ui_frontend_sound_usage_request(&sound_usage_request);
         WormUiBookmarkChooserRequest bookmark_request{};
         worm_ui_frontend_bookmark_chooser_request(&bookmark_request);
         const auto bookmark_indices = bookmark_chooser_indices_t::from(
             context.history, context.model, bookmark_request.open, context.compose_scene_cache);
-        flattened = frontend_workspace_view_t::from(
+        flattened.refill(
             context.model, context.history.document, empty_legacy_feedback,
                               context.recovery_controller.view(), context.recovery_scan_configured,
                               context.frame_arena,
@@ -136,7 +136,6 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
             keysound_request, sound_usage_request, bookmark_request,
             &context.compose_scene_cache.keysound_list_cache, bookmark_indices,
             &context.compose_scene_cache.resource_catalog_cache);
-        flattened.rebind_view_pointers();
         flattened.view.transport_metronome_enabled =
             context.application_command_state.metronome_settings().enabled;
         flattened.view.transport_metronome_available =
@@ -207,7 +206,7 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
     {
         frame_phase_scope_t audio_waveforms(frame_phase_t::workspace_audio_waveforms);
-        WormUiAudioWaveformViewportRequest viewport_request{};
+        wormedit::ui::audio_waveform_viewport_request_t viewport_request{};
         worm_ui_frontend_audio_waveform_viewport_request(&viewport_request);
         populate_audio_waveform_views(flattened, context.waveform_runtime.waveform_analysis().get(),
                                       context.waveform_runtime.waveform_job().is_busy(),
@@ -324,7 +323,6 @@ auto frontend_workspace_view_t::from(const application_frame_projection_context_
     }
     build_hover_timing_view(flattened, context.history, context.workspace,
                          context.compose_scene_cache);
-    return flattened;
 }
 
 } // namespace wormedit::sys

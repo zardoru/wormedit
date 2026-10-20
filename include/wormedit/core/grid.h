@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/document.h>
 #include <wormedit/core/result.h>
 
@@ -29,19 +31,7 @@ struct editor_grid_position_t {
     auto operator==(const editor_grid_position_t&) const -> bool = default;
 };
 
-enum class editor_grid_line_kind_t {
-    active_snap,
-    beat,
-    group,
-    measure,
-};
 
-enum class editor_grid_emphasis_t {
-    subtle,
-    normal,
-    strong,
-    strongest,
-};
 
 struct editor_grid_line_t {
     editor_grid_position_t position;

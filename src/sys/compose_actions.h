@@ -16,13 +16,13 @@ namespace wormedit::sys {
 auto apply_compose_hitsound(document_history_t& history, editor_interaction_state_t& state,
                             hitsound_change_t change) -> compose_action_outcome_t;
 
-auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
+auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action,
                                   const compose_action_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state,
                                   double viewport_height, bool metadata_import_busy,
                                   bool post_notifications = true) -> std::string;
 
-auto dispatch_compose_workspace_action(const WormUiWorkspaceAction& action,
+auto dispatch_compose_workspace_action(const wormedit::ui::workspace_action_t& action,
                                        const compose_action_inputs_t& environment,
                                        double viewport_height, bool metadata_import_busy) -> bool;
 

@@ -34,19 +34,19 @@ static void render_initial_bpm_control(const ComposeInspectorContext& inspector)
         nk_label(context, "BPM: unset", NK_TEXT_LEFT);
     nk_layout_row_push(context, 1.0f - wormedit::ui::chrome::property_label_ratio);
     const auto can_edit_initial_bpm = timing_view->initial_bpm_editable &&
-        action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE;
+        action->timing_stage_action == wormedit::ui::timing_stage_action_t::none;
     if (!can_edit_initial_bpm) nk_widget_disable_begin(context);
     const auto clicked = nk_button_label(context, "Set BPM");
     if (!can_edit_initial_bpm) nk_widget_disable_end(context);
     nk_layout_row_end(context);
     if (clicked && can_edit_initial_bpm) {
-        action->timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
-        action->timing_chart_id = timing_view->chart_id;
+        action->timing_stage_action = wormedit::ui::timing_stage_action_t::begin;
+        action->timing_chart_id = timing_view->chart_id.value;
         action->timing_document_revision = timing_view->document_revision;
-        action->timing_lane = WORM_UI_TIMING_LANE_BPM;
-        action->timing_object_id = timing_view->initial_bpm_event_id;
-        action->timing_has_target_y = timing_view->initial_bpm_event_id == 0;
-        action->timing_target = WormUiTimingTarget{0.0, 1.0, 0.0, 1.0, false};
+        action->timing_lane = wormedit::timing_lane_kind_t::bpm;
+        action->timing_object_id = timing_view->initial_bpm_event_id.value;
+        action->timing_has_target_y = !timing_view->initial_bpm_event_id;
+        action->timing_target = wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false};
     }
 }
 
@@ -172,7 +172,7 @@ void render_compose_timing_inspector(const ComposeInspectorContext& inspector) {
         nk_edit_unfocus(inspector.context);
     }
     if (!state.inline_timing.inline_timing_open && inspector.timing_view->stage_active &&
-        inspector.action->timing_stage_action == WORM_UI_TIMING_STAGE_NONE &&
+        inspector.action->timing_stage_action == wormedit::ui::timing_stage_action_t::none &&
         nk_tree_push(inspector.context, NK_TREE_TAB, "Timing event", NK_MAXIMIZED)) {
         worm_ui_nuklear_render_timing_stage_editor(inspector.context, inspector.timing_view,
                                                    inspector.action);

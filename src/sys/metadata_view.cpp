@@ -10,12 +10,45 @@
 #include <string>
 
 namespace wormedit::sys {
+auto metadata_output_path_key_t::operator==(const metadata_output_path_query_t& query) const -> bool {
+    return path == query.path && destination == query.destination;
+}
+auto metadata_output_path_key_t::from(const metadata_output_path_query_t& query)
+    -> metadata_output_path_key_t {
+    return {query.path, query.destination};
+}
+void metadata_output_path_key_t::assign(const metadata_output_path_query_t& query) {
+    path = query.path;
+    destination = query.destination;
+}
+auto metadata_channel_summary_key_t::operator==(const channel_map_preview_view_t& preview) const -> bool {
+    return report.has_value() == (preview.report != nullptr) &&
+        diagnostic.has_value() == (preview.diagnostic != nullptr) &&
+        (!report || *report == *preview.report) &&
+        (!diagnostic || *diagnostic == *preview.diagnostic);
+}
+auto metadata_channel_summary_key_t::from(const channel_map_preview_view_t& preview)
+    -> metadata_channel_summary_key_t {
+    metadata_channel_summary_key_t key;
+    key.assign(preview);
+    return key;
+}
+void metadata_channel_summary_key_t::assign(const channel_map_preview_view_t& preview) {
+    if (preview.report) report = *preview.report;
+    else report.reset();
+    if (preview.diagnostic) diagnostic = *preview.diagnostic;
+    else diagnostic.reset();
+}
 namespace {
+auto metadata_path_text(keyed_cache_t<std::filesystem::path, std::string>& cache,
+                        const std::filesystem::path& path) -> const std::string& {
+    return cache.get_or_build(path, [&] { return path.generic_string(); });
+}
+
 auto metadata_frame_text(frontend_workspace_view_t& flattened, std::string_view text)
     -> const char* {
     auto* arena = flattened.arena();
     const auto* copied = arena ? arena_string(*arena, text) : nullptr;
-    if (!copied) flattened.metadata.text_truncated = true;
     return copied;
 }
 
@@ -26,9 +59,9 @@ void populate_metadata_music(frontend_workspace_view_t& flattened,
     const auto audio = history.document.find_audio_asset(*workspace.transport.audio_asset);
     if (audio == nullptr) return;
     auto& metadata = flattened.view.metadata;
-    metadata.selected_music_asset_id = audio->id.value;
-    metadata.selected_music_source = metadata_frame_text(flattened,
-                                                        audio->source_path.generic_string());
+    metadata.selected_music_asset_id = audio->id;
+    metadata.selected_music_source = metadata_path_text(
+        flattened.metadata_projection_cache.selected_music_source, audio->source_path);
     metadata.selected_music_resource_count = std::ranges::count(
         history.document.resources, audio->id, &wormedit::resource_entry_t::asset);
     for (const auto& chart : history.document.charts) {
@@ -39,15 +72,15 @@ void populate_metadata_music(frontend_workspace_view_t& flattened,
     }
 }
 
-auto metadata_copy_preview_matches(const WormUiMetadataView& metadata,
+auto metadata_copy_preview_matches(const wormedit::ui::metadata_view_t& metadata,
                                    const wormedit::document_history_t& history,
                                    const metadata_copy_preview_key_t& key) -> bool {
     if (key.song != history.document.id || key.revision != history.document.revision ||
-        key.chart.value != metadata.chart_id) return false;
-    if (key.import_copy) return key.asset.value == metadata.next_import_asset_id;
-    return key.asset.value == metadata.selected_music_asset_id &&
-        metadata.selected_music_source &&
-        key.source_path.generic_string() == metadata.selected_music_source;
+        key.chart != metadata.chart_id) return false;
+    if (key.import_copy) return key.asset == metadata.next_import_asset_id;
+    const auto* asset = history.document.find_audio_asset(metadata.selected_music_asset_id);
+    return asset && key.asset == asset->id && !asset->source_path.empty() &&
+        key.source_path == asset->source_path;
 }
 
 void populate_metadata_chart_resolution(frontend_workspace_view_t& flattened,
@@ -64,56 +97,36 @@ void populate_metadata_copy_preview(frontend_workspace_view_t& flattened,
     auto& metadata = flattened.view.metadata;
     const auto& key = runtime.copy_preview_key();
     if (!key || !metadata_copy_preview_matches(metadata, history, *key)) return;
-    const auto* message = metadata_frame_text(flattened, runtime.copy_preview_message());
-    metadata.copy_preview_text = message ? message :
-        "Metadata display text truncated (frame storage limit).";
+    metadata.copy_preview_text = runtime.copy_preview_message();
     metadata.copy_preview_pending = runtime.copy_preview_pending();
     metadata.copy_preview_export = key->export_copy;
     metadata.copy_preview_import = key->import_copy;
     metadata.copy_preview_group_index = key->output_group_index;
-    metadata.copy_preview_asset_id = key->asset.value;
-    metadata.copy_preview_source = metadata_frame_text(flattened, key->source_path.generic_string());
+    metadata.copy_preview_asset_id = key->asset;
+    metadata.copy_preview_source = metadata_path_text(
+        flattened.metadata_projection_cache.copy_preview_source, key->source_path);
 }
 
 void populate_metadata_channel_map_lanes(frontend_workspace_view_t& flattened,
-                                        const wormedit::document_history_t& history) {
+                                        const document_history_t& history) {
     auto& metadata = flattened.view.metadata;
-    const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
-    if (chart == nullptr || !metadata.has_chart ||
-        chart->source_family != wormedit::format_family_t::bms || chart->lane_layouts.empty())
-        return;
-    // The first layout segment is the one the table edits; its id travels back with the action.
+    const auto* chart = history.document.find_chart(metadata.chart_id);
+    if (!chart || !metadata.has_chart || chart->source_family != format_family_t::bms ||
+        chart->lane_layouts.empty()) { metadata.channel_map_lanes.clear(); return; }
     const auto& segment = chart->lane_layouts.front();
-    const auto lane_count = segment.layout.lanes.size();
-    const auto count = std::min(lane_count, std::size_t{WORM_UI_METADATA_CHANNEL_MAP_LANE_CAPACITY});
-    metadata.channel_map_layout_segment_id = segment.id.value;
-    metadata.channel_map_lanes_truncated = count != lane_count;
-    auto* arena = flattened.arena();
-    flattened.metadata.channel_map_lane = arena
-        ? arena_array<WormUiMetadataChannelMapLaneView>(*arena, count)
-        : frame_span<WormUiMetadataChannelMapLaneView>{};
-    metadata.channel_map_lanes = flattened.metadata.channel_map_lane.data();
-    if (flattened.metadata.channel_map_lane.capacity() != count) {
-        metadata.channel_map_lanes_truncated = true;
-        return;
+    metadata.channel_map_layout_segment_id = segment.id;
+    metadata.channel_map_editable = segment.layout.lanes.size() <= ui::metadata_channel_map_lane_limit;
+    metadata.channel_map_lanes.resize(segment.layout.lanes.size());
+    for (std::size_t i = 0; i < segment.layout.lanes.size(); ++i) {
+        const auto& lane = segment.layout.lanes[i];
+        auto& row = metadata.channel_map_lanes[i];
+        row.lane_id = lane.id;
+        row.name = lane.name;
+        row.channels[0] = lane.bms_channels.visible.value_or("");
+        row.channels[1] = lane.bms_channels.invisible.value_or("");
+        row.channels[2] = lane.bms_channels.long_note.value_or("");
+        row.channels[3] = lane.bms_channels.mine.value_or("");
     }
-    for (const auto& lane : segment.layout.lanes) {
-        if (flattened.metadata.channel_map_lane.size() >= count) break;
-        const auto& channels = lane.bms_channels;
-        const auto* name = metadata_frame_text(flattened, lane.name);
-        const auto* visible = metadata_frame_text(flattened, channels.visible.value_or(""));
-        const auto* invisible = metadata_frame_text(flattened, channels.invisible.value_or(""));
-        const auto* long_note = metadata_frame_text(flattened, channels.long_note.value_or(""));
-        const auto* mine = metadata_frame_text(flattened, channels.mine.value_or(""));
-        if (!name || !visible || !invisible || !long_note || !mine) {
-            metadata.channel_map_lanes_truncated = true;
-            break;
-        }
-        (void)flattened.metadata.channel_map_lane.push_back({
-            .lane_id = lane.id.value, .name = name,
-            .channels = {visible, invisible, long_note, mine}});
-    }
-    metadata.channel_map_lane_count = flattened.metadata.channel_map_lane.size();
 }
 
 auto channel_map_preview_summary(const wormedit::channel_map_preview_view_t& preview) -> std::string {
@@ -139,44 +152,41 @@ void populate_metadata_channel_map_preview(frontend_workspace_view_t& flattened,
     metadata.channel_map_preview_valid = valid;
     metadata.channel_map_preview_affected_note_count = preview.report ? preview.report->affected_note_count : 0;
     metadata.channel_map_preview_conflict_count = preview.report ? preview.report->conflict_count : 0;
-    const auto* message = metadata_frame_text(flattened, channel_map_preview_summary(preview));
-    metadata.channel_map_preview_message = message ? message : "";
+    metadata.channel_map_preview_message = flattened.metadata_projection_cache.channel_summary.get_or_build(
+        preview, [&] { return channel_map_preview_summary(preview); });
     metadata.channel_map_apply_enabled = valid && preview.report->conflict_count == 0 &&
-                                         !metadata.channel_map_lanes_truncated;
+                                         metadata.channel_map_editable;
 }
 
 constexpr const char* custom_lane_profile_reason =
     "Custom layouts need the per-lane mapping editor, which is not available here yet.";
 
-// The chart's key-count family, then a disabled Custom entry. Labels live in the frame arena.
+// The chart's key-count family, then a disabled Custom entry.
 void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
                                     const wormedit::document_history_t& history,
                                     const metadata_drop_state_t& metadata_drop) {
     auto& metadata = flattened.view.metadata;
     const auto chart = history.document.find_chart(wormedit::chart_id_t{metadata.chart_id});
-    if (chart == nullptr || !metadata.has_chart) return;
-    const auto targets = lane_profile_family_targets(*chart);
-    if (targets.empty()) return;
-    const auto count = targets.size() + 1;
-    auto* arena = flattened.arena();
-    auto choices = arena ? arena_array<WormUiMetadataLaneProfileChoice>(*arena, count)
-                         : frame_span<WormUiMetadataLaneProfileChoice>{};
-    if (choices.capacity() != count) return;
+    if (chart == nullptr || !metadata.has_chart) { metadata.lane_profile_choices.clear(); return; }
+    const auto& targets = flattened.metadata_projection_cache.lane_targets.get_or_build(
+        std::tuple{document_stamp_t::from(history.document), chart->id,
+                   flattened.query_session_generation},
+        [&] { return lane_profile_family_targets(*chart); });
+    if (targets.empty()) { metadata.lane_profile_choices.clear(); return; }
+    auto& choices = metadata.lane_profile_choices;
+    choices.resize(targets.size() + 1);
     const auto& current_id = chart->lane_layouts.front().layout.profile_id;
-    metadata.lane_profile_current = count - 1;
-    for (std::size_t index = 0; index < targets.size(); ++index) {
-        const auto& layout = targets[index].layout;
-        const auto* label = metadata_frame_text(flattened, layout.display_name.empty() ? layout.profile_id
-                                                                                      : layout.display_name);
-        if (!label) return;
-        if (layout.profile_id == current_id) metadata.lane_profile_current = index;
-        (void)choices.push_back({.label = label, .enabled = true, .reason = ""});
+    metadata.lane_profile_current = targets.size();
+    for (std::size_t i = 0; i < targets.size(); ++i) {
+        const auto& layout = targets[i].layout;
+        choices[i].label = layout.display_name.empty() ? layout.profile_id : layout.display_name;
+        choices[i].enabled = true;
+        choices[i].reason.clear();
+        if (layout.profile_id == current_id) metadata.lane_profile_current = i;
     }
-    const auto* custom = metadata_frame_text(flattened, "Custom");
-    if (!custom) return;
-    (void)choices.push_back({.label = custom, .enabled = false, .reason = custom_lane_profile_reason});
-    metadata.lane_profile_choices = choices.data();
-    metadata.lane_profile_choice_count = choices.size();
+    choices.back().label = "Custom";
+    choices.back().enabled = false;
+    choices.back().reason = custom_lane_profile_reason;
     if (!metadata_drop.lane_profile_preview) return;
     const auto preview = wormedit::lane_migration_preview_view_t::from(*metadata_drop.lane_profile_preview);
     const auto mapped_count = preview.report ? preview.report->mapped_note_count : 0;
@@ -188,79 +198,56 @@ void populate_metadata_lane_profile(frontend_workspace_view_t& flattened,
     metadata.lane_profile_dropped_note_count = dropped_count;
     metadata.lane_profile_collision_count = collision_count;
     metadata.lane_profile_apply_enabled = preview.proposal != nullptr;
-    const auto message = "Key-count preview: " + std::to_string(mapped_count) + " notes map, " +
-                         std::to_string(dropped_count) + " dropped, " +
-                         std::to_string(collision_count) + " collisions.";
-    const auto* text = metadata_frame_text(flattened, message);
-    metadata.lane_profile_preview_message = text ? text : "";
+    metadata.lane_profile_preview_message = flattened.metadata_projection_cache.lane_summary.get_or_build(
+        std::array{mapped_count, dropped_count, collision_count}, [&] {
+            return "Key-count preview: " + std::to_string(mapped_count) + " notes map, " +
+                std::to_string(dropped_count) + " dropped, " +
+                std::to_string(collision_count) + " collisions.";
+        });
 }
 
 void populate_metadata_chart_choices(frontend_workspace_view_t& flattened,
-                                     const wormedit::document_history_t& history) {
-    auto& metadata = flattened.view.metadata;
-    constexpr std::size_t batch_limit = WORM_UI_METADATA_BATCH_CHART_CAPACITY;
-    const auto total = history.document.charts.size();
-    const auto count = std::min(total, batch_limit);
-    metadata.chart_choices_truncated = total > batch_limit;
-    auto* arena = flattened.arena();
-    auto choices = arena ? arena_array<WormUiMetadataChartChoice>(*arena, count)
-                         : frame_span<WormUiMetadataChartChoice>{};
-    for (std::size_t index = 0; index < count && choices.capacity() == count; ++index) {
-        const auto& chart = history.document.charts[index];
-        const auto* name = metadata_frame_text(flattened, chart.metadata.name);
-        if (!name) {
-            metadata.chart_choices_truncated = true;
-            break;
-        }
-        (void)choices.push_back({.chart_id = chart.id.value, .name = name});
+                                     const document_history_t& history) {
+    auto& choices = flattened.view.metadata.chart_choices;
+    choices.resize(history.document.charts.size());
+    for (std::size_t i = 0; i < choices.size(); ++i) {
+        choices[i].chart_id = history.document.charts[i].id;
+        choices[i].name = history.document.charts[i].metadata.name;
     }
-    if (choices.capacity() != count) metadata.chart_choices_truncated = true;
-    metadata.chart_choices = choices.data();
-    metadata.chart_choice_count = choices.size();
+}
+
+auto metadata_output_path_text(frontend_workspace_view_t& flattened,
+                               const output_group_t& group, std::size_t index)
+    -> const metadata_output_path_text_t& {
+    auto& caches = flattened.metadata_projection_cache.output_paths;
+    return caches[index].get_or_build(
+        metadata_output_path_query_t{group.relative_output_path, group.destination_kind}, [&] {
+            const auto directory = export_asset_directory(group.relative_output_path, group.destination_kind);
+            return metadata_output_path_text_t{group.relative_output_path.generic_string(),
+                directory ? directory->generic_string() : std::string{}};
+        });
 }
 
 void populate_metadata_output_groups(frontend_workspace_view_t& flattened,
-                                     const wormedit::document_history_t& history,
-                                     const wormedit::workspace_controller_t& workspace) {
-    auto& metadata = flattened.view.metadata;
-    const auto selected_count = std::ranges::count_if(history.document.output_groups,
-        [&](const auto& group) {
-            return workspace.selected_chart &&
-                std::ranges::find(group.charts, *workspace.selected_chart) != group.charts.end();
-        });
-    const auto count = std::min(static_cast<std::size_t>(selected_count),
-                                std::size_t{WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY});
-    auto* arena = flattened.arena();
-    flattened.metadata.output_group.view = arena
-        ? arena_array<WormUiComposeOutputGroupView>(*arena, count)
-        : frame_span<WormUiComposeOutputGroupView>{};
-    metadata.output_groups = flattened.metadata.output_group.view.data();
-    if (flattened.metadata.output_group.view.capacity() != count) {
-        metadata.output_groups_truncated = true;
-        return;
-    }
-    for (std::size_t index = 0; index < history.document.output_groups.size(); ++index) {
-        const auto& group = history.document.output_groups[index];
-        if (!workspace.selected_chart ||
-            std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end()) continue;
-        if (metadata.output_group_count >= WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY) {
-            metadata.output_groups_truncated = true;
-            break;
-        }
+                                     const document_history_t& history,
+                                     const workspace_controller_t& workspace) {
+    auto& rows = flattened.view.metadata.output_groups;
+    rows.clear();
+    if (!workspace.selected_chart) return;
+    flattened.metadata_projection_cache.output_paths.resize(history.document.output_groups.size());
+    for (std::size_t i = 0; i < history.document.output_groups.size(); ++i) {
+        const auto& group = history.document.output_groups[i];
+        if (std::ranges::find(group.charts, *workspace.selected_chart) == group.charts.end()) continue;
         const auto* name = metadata_frame_text(flattened, group.name);
-        const auto* path = metadata_frame_text(flattened, group.relative_output_path.generic_string());
-        const auto directory = wormedit::export_asset_directory(group.relative_output_path,
-                                                                 group.destination_kind);
-        const auto* assets = metadata_frame_text(flattened,
-            directory ? directory->generic_string() : std::string{});
+        const auto& text = metadata_output_path_text(flattened, group, i);
+        const auto* path = metadata_frame_text(flattened, text.path);
+        const auto* assets = metadata_frame_text(flattened, text.asset_directory);
         if (!name || !path || !assets) {
-            metadata.output_groups_truncated = true;
-            break;
+            flattened.view.metadata.output_group_text_truncated = true;
+            return;
         }
-        (void)flattened.metadata.output_group.view.push_back({
-            .document_index = index, .name = name, .relative_output_path = path,
-            .relative_asset_directory = assets});
-        metadata.output_group_count = flattened.metadata.output_group.view.size();
+        rows.push_back({.document_index = i, .name = name, .relative_output_path = path,
+                        .relative_asset_directory = assets});
     }
 }
 } // namespace
@@ -277,15 +264,16 @@ void populate_metadata_view_projection(
         return;
 
     auto& metadata = flattened.view.metadata;
-    metadata.project_directory = metadata_frame_text(flattened, asset_base.generic_string());
+    metadata.project_directory = metadata_path_text(
+        flattened.metadata_projection_cache.project_directory, asset_base);
     metadata.import_copy_pending = metadata_asset_runtime.import_pending();
     if (!asset_base.empty()) {
         if (const auto next = wormedit::next_resource_asset_id(history.document))
-            metadata.next_import_asset_id = next->value;
+            metadata.next_import_asset_id = *next;
     }
     metadata_drop.publish(metadata);
-    metadata.dropped_music_path = metadata_frame_text(flattened, metadata_drop.music_path);
-    metadata.dropped_output_relative_path = metadata_frame_text(flattened, metadata_drop.output_path);
+    metadata.dropped_music_path = metadata_drop.music_path;
+    metadata.dropped_output_relative_path = metadata_drop.output_path;
 
     populate_metadata_music(flattened, history, workspace);
     populate_metadata_chart_resolution(flattened, history);
@@ -296,15 +284,7 @@ void populate_metadata_view_projection(
     populate_metadata_lane_profile(flattened, history, metadata_drop);
     populate_metadata_chart_choices(flattened, history);
 
-    metadata.search_tags = metadata.search_tags_editable
-                               ? flattened.metadata.search_tag.data()
-                               : nullptr;
-    flattened.view.metadata.search_tag_bytes =
-        flattened.view.metadata.search_tags_editable
-            ? flattened.metadata.search_tag_length.data()
-            : nullptr;
-    flattened.view.metadata.format_fields = flattened.metadata.format_field.data();
-    flattened.view.metadata.format_targets = flattened.metadata.format_target.data();
+
 }
 
 } // namespace wormedit::sys

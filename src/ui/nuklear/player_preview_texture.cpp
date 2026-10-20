@@ -27,9 +27,9 @@ constexpr std::size_t maximum_texture_entries = 64;
 constexpr std::size_t maximum_texture_bytes = 256U * 1024U * 1024U;
 
 struct preview_texture_t {
-    std::uint64_t project_id{};
+    wormedit::song_id_t project_id{};
     std::uint64_t document_revision{};
-    std::uint64_t resource_id{};
+    wormedit::resource_id_t resource_id{};
     std::uint64_t content_id{};
     bool black_key{};
     std::uint32_t width{};
@@ -86,9 +86,9 @@ void evict_texture() {
 template <typename ImageView>
 auto preview_upload_pixels(const ImageView& layer, bool black_key,
                            std::vector<std::uint8_t>& keyed_pixels) -> const std::uint8_t* {
-    if (!black_key) return layer.rgba_pixels;
+    if (!black_key) return layer.rgba_pixels.data();
     try {
-        keyed_pixels.assign(layer.rgba_pixels, layer.rgba_pixels + layer.rgba_byte_count);
+        keyed_pixels.assign(layer.rgba_pixels.begin(), layer.rgba_pixels.end());
     } catch (const std::bad_alloc&) {
         return nullptr;
     }
@@ -98,34 +98,34 @@ auto preview_upload_pixels(const ImageView& layer, bool black_key,
     return keyed_pixels.data();
 }
 
-auto bga_composite_stage(WormUiPlayerPreviewVisualKind kind) -> int {
+auto bga_composite_stage(wormedit::visual_event_kind_t kind) -> int {
     switch (kind) {
-    case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER: return 1;
-    case WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2: return 2;
-    case WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD: return 3;
+    case wormedit::visual_event_kind_t::layer: return 1;
+    case wormedit::visual_event_kind_t::layer2: return 2;
+    case wormedit::visual_event_kind_t::storyboard: return 3;
     default: return 0;
     }
 }
 
-void order_bga_composite_layers(std::span<const WormUiPlayerPreviewVisualLayerView*> ordered) {
-    std::array<const WormUiPlayerPreviewVisualLayerView*, WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY> bga{};
+void order_bga_composite_layers(std::span<const wormedit::ui::player_preview_visual_layer_view_t*> ordered) {
+    std::array<const wormedit::ui::player_preview_visual_layer_view_t*, wormedit::ui::player_preview_visual_layer_limit> bga{};
     std::size_t count{};
     for (const auto* layer : ordered)
-        if (layer->kind != WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) bga[count++] = layer;
+        if (layer->kind != wormedit::visual_event_kind_t::storyboard) bga[count++] = layer;
     std::stable_sort(bga.begin(), bga.begin() + static_cast<std::ptrdiff_t>(count),
         [](const auto* left, const auto* right) { return bga_composite_stage(left->kind) < bga_composite_stage(right->kind); });
     std::size_t index{};
     for (auto& layer : ordered)
-        if (layer->kind != WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD) layer = bga[index++];
+        if (layer->kind != wormedit::visual_event_kind_t::storyboard) layer = bga[index++];
 }
 
 template <typename ImageView>
-auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
+auto texture_for(SDL_Renderer* renderer, const wormedit::ui::player_preview_view_t& view,
                  const ImageView& layer, bool black_key = false)
         -> wormedit::result_t<SDL_Texture*, worm_ui_nuklear_preview_visual_failure_t> {
-    if (!renderer || !layer.image_ready || view.project_id == 0 || view.document_revision == 0 ||
-        layer.resource_id == 0 || layer.rgba_byte_count == 0 || !layer.rgba_pixels ||
-        layer.rgba_byte_count > maximum_texture_bytes) {
+    if (!renderer || !layer.image_ready || !view.project_id || view.document_revision == 0 ||
+        !layer.resource_id || layer.rgba_pixels.empty() ||
+        layer.rgba_pixels.size() > maximum_texture_bytes) {
         return std::unexpected{worm_ui_nuklear_preview_visual_failure_t::invalid_image};
     }
     const auto end = textures.begin() + static_cast<std::ptrdiff_t>(texture_count);
@@ -141,7 +141,7 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
         return found->texture;
     }
     while (texture_count != 0 && (texture_count >= maximum_texture_entries ||
-                                  texture_bytes > maximum_texture_bytes - layer.rgba_byte_count)) {
+                                  texture_bytes > maximum_texture_bytes - layer.rgba_pixels.size())) {
         evict_texture();
     }
 
@@ -187,20 +187,20 @@ auto texture_for(SDL_Renderer* renderer, const WormUiPlayerPreviewView& view,
                                  .black_key = black_key,
                                  .width = layer.image_width,
                                  .height = layer.image_height,
-                                 .rgba_bytes = layer.rgba_byte_count,
+                                 .rgba_bytes = layer.rgba_pixels.size(),
                                  .texture = texture,
                                  .last_use = next_texture_use()};
-    texture_bytes += layer.rgba_byte_count;
+    texture_bytes += layer.rgba_pixels.size();
     return texture;
 }
 
-auto visual_fit_policy(WormUiVisualFitPolicy fit) -> wormedit::visual_fit_policy_t {
+auto visual_fit_policy(wormedit::visual_fit_policy_t fit) -> wormedit::visual_fit_policy_t {
     switch (fit) {
-    case WORM_UI_VISUAL_FIT_STRETCH:
+    case wormedit::visual_fit_policy_t::stretch:
         return wormedit::visual_fit_policy_t::stretch;
-    case WORM_UI_VISUAL_FIT_COVER:
+    case wormedit::visual_fit_policy_t::cover:
         return wormedit::visual_fit_policy_t::cover;
-    case WORM_UI_VISUAL_FIT_CONTAIN:
+    case wormedit::visual_fit_policy_t::contain:
         return wormedit::visual_fit_policy_t::contain;
     }
     return wormedit::visual_fit_policy_t::contain;
@@ -236,22 +236,21 @@ const char* worm_ui_nuklear_preview_visual_failure_message(
 
 worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visual_layers(
     struct nk_command_buffer* canvas, struct nk_rect viewport, struct SDL_Renderer* renderer,
-    const WormUiPlayerPreviewView* view) {
+    const wormedit::ui::player_preview_view_t* view) {
     worm_ui_nuklear_preview_visual_result_t result;
     if (!canvas || !view) {
         return result;
     }
-    if (view->visual_layer_count > WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY ||
-        (view->visual_layer_count != 0 && !view->visual_layers)) {
+    if (view->visual_layers.size() > wormedit::ui::player_preview_visual_layer_limit) {
         result.failure_count = 1;
         result.first_failure = worm_ui_nuklear_preview_visual_failure_t::invalid_image;
         return result;
     }
-    std::array<const WormUiPlayerPreviewVisualLayerView*,
-               WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY>
+    std::array<const wormedit::ui::player_preview_visual_layer_view_t*,
+               wormedit::ui::player_preview_visual_layer_limit>
         ordered{};
     std::size_t count{};
-    for (std::size_t index = 0; index < view->visual_layer_count; ++index) {
+    for (std::size_t index = 0; index < view->visual_layers.size(); ++index) {
         if (view->visual_layers[index].image_ready) {
             ordered[count++] = &view->visual_layers[index];
         }
@@ -270,18 +269,18 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
                   return left->kind < right->kind;
               });
     order_bga_composite_layers(std::span(ordered).first(count));
-    const auto record_failure = [&](std::uint64_t resource_id,
+    const auto record_failure = [&](wormedit::resource_id_t resource_id,
                                     worm_ui_nuklear_preview_visual_failure_t failure) {
         ++result.failure_count;
         if (result.first_failure == worm_ui_nuklear_preview_visual_failure_t::none) {
-            result.first_failed_resource_id = resource_id;
+            result.first_failed_resource_id = resource_id.value;
             result.first_failure = failure;
         }
     };
     for (std::size_t index = 0; index < count; ++index) {
         const auto uploaded = texture_for(renderer, *view, *ordered[index],
-            ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER ||
-            ordered[index]->kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2);
+            ordered[index]->kind == wormedit::visual_event_kind_t::layer ||
+            ordered[index]->kind == wormedit::visual_event_kind_t::layer2);
         if (!uploaded) {
             record_failure(ordered[index]->resource_id, uploaded.error());
             continue;
@@ -324,20 +323,20 @@ worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_visu
 
 worm_ui_nuklear_preview_visual_result_t worm_ui_nuklear_draw_player_preview_storyboard_sprites(
     struct nk_command_buffer* canvas, struct nk_rect viewport, struct SDL_Renderer* renderer,
-    const WormUiPlayerPreviewView* view, bool foreground) {
+    const wormedit::ui::player_preview_view_t* view, bool foreground) {
     worm_ui_nuklear_preview_visual_result_t result;
     if (!canvas || !view) {
         return result;
     }
-    const auto record_failure = [&](std::uint64_t resource_id,
+    const auto record_failure = [&](wormedit::resource_id_t resource_id,
                                     worm_ui_nuklear_preview_visual_failure_t failure) {
         ++result.failure_count;
         if (result.first_failure == worm_ui_nuklear_preview_visual_failure_t::none) {
-            result.first_failed_resource_id = resource_id;
+            result.first_failed_resource_id = resource_id.value;
             result.first_failure = failure;
         }
     };
-    for (std::size_t index = 0; index < view->storyboard_sprite_count; ++index) {
+    for (std::size_t index = 0; index < view->storyboard_sprites.size(); ++index) {
         const auto& sprite = view->storyboard_sprites[index];
         if ((sprite.layer_order >= 3) != foreground) {
             continue;

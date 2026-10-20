@@ -22,7 +22,7 @@ struct program_preferences_runtime_t {
 void load_recent_files(program_preferences_runtime_t& runtime);
 [[nodiscard]] auto remember_recent_file(program_preferences_runtime_t& runtime,
     const std::filesystem::path& path) -> std::string;
-void build_recent_files_view(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view);
+void build_recent_files_view(const program_preferences_runtime_t& runtime, wormedit::ui::workspace_view_t& view);
 
 [[nodiscard]] auto load_program_preferences_runtime() -> program_preferences_runtime_t;
 // Validation failure keeps previous values. Publication failure keeps accepted new values.

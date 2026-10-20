@@ -9,8 +9,8 @@ inline constexpr std::array<wormedit::signed_rational_t, 6> beat_fit_snap_steps{
     {1, 1}, {3, 4}, {1, 2}, {1, 3}, {1, 4}, {1, 10},
 }};
 
-void cancel_compose_navigation(WormUiWorkspaceAction* action);
-void append_compose_cancel_once(WormUiWorkspaceAction* action);
+void cancel_compose_navigation(wormedit::ui::workspace_action_t* action);
+void append_compose_cancel_once(wormedit::ui::workspace_action_t* action);
 bool compose_text_owned(const nk_context* context);
 
 // Razor slicing needs a selected BGM source lane and no competing tool. Input handlers enforce this
@@ -22,17 +22,17 @@ inline auto bmson_razor_eligible(const WormUiComposeView& view) -> bool {
 }
 
 void reset_bmson_marker_move_capture();
-void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
+void set_waveform_offset_drag_action(wormedit::ui::workspace_action_t* action,
                                     WormUiAudioOffsetDragAction kind,
                                     std::int64_t delta_frames);
 void reset_waveform_offset_drag();
-void cancel_beat_fit_drag(WormUiWorkspaceAction* action);
+void cancel_beat_fit_drag(wormedit::ui::workspace_action_t* action);
 bool compose_shortcut_modifier(std::uint16_t modifiers);
-void cancel_offset_fit_drag(WormUiWorkspaceAction* action);
-void append_beat_fit_input(WormUiWorkspaceAction* action,
+void cancel_offset_fit_drag(wormedit::ui::workspace_action_t* action);
+void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
                            WormUiComposeInputKind kind, double y, bool ctrl_held, bool onset_snap_held = false);
 auto compose_timing_target(const WormUiComposeView& view, double screen_y)
-    -> WormUiTimingTarget;
+    -> wormedit::ui::timing_target_t;
 bool compose_point_hits_note(const WormUiComposeView* view, double x, double y);
 // Starts a note paint stroke at the press position, with the armed Sounds sample if any.
 void append_note_paint_begin(const ComposePointerEventContext& input);

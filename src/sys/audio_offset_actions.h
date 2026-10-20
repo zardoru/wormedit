@@ -10,7 +10,7 @@
 
 namespace wormedit::sys {
 
-inline auto validate_audio_offset_drag_binding(const WormUiWorkspaceAction& action,
+inline auto validate_audio_offset_drag_binding(const wormedit::ui::workspace_action_t& action,
     const song_document_t& document, const workspace_controller_t& workspace,
     std::optional<std::uint32_t> selected_sample_rate) -> std::optional<std::string> {
     const auto supported_tab = workspace.active_tab == workspace_tab_t::audio_slices ||

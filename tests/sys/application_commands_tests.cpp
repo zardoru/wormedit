@@ -45,7 +45,7 @@ TEST_CASE("Application binding validation accepts current inputs and preserves m
     wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::compose,
         .selected_chart = wormedit::chart_id_t{2}};
     const wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2})}};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.timing_chart_id = 2;
     action.timing_document_revision = 7;
     action.audio_offset_drag_chart_id = 2;
@@ -70,7 +70,7 @@ TEST_CASE("Application timing stage validation keeps captured identity and reque
         .selected_chart = wormedit::chart_id_t{2}};
     wormedit::timing_lane_pseudonote_outcome_t stage{wormedit::timing_lane_pseudonote_proposal_t{.stamp = wormedit::chart_stamp_t::from(history.document, wormedit::chart_id_t{2}),
         .payload = {.report = {.existing_event = wormedit::object_id_t{3}}}}};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.timing_chart_id = 2;
     action.timing_object_id = 3;
     action.timing_document_revision = 7;
@@ -88,7 +88,7 @@ TEST_CASE("Application audio offset validation separates stamp expiry from missi
     const wormedit::song_document_t document{.id = wormedit::song_id_t{1}, .revision = 7};
     const wormedit::workspace_controller_t workspace{.active_tab = wormedit::workspace_tab_t::metadata,
         .selected_chart = wormedit::chart_id_t{2}};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.audio_offset_drag_chart_id = source == 0 ? 2 : 3;
     action.audio_offset_drag_document_revision = source == 0 ? 6 : 7;
     action.audio_offset_drag_sample_rate = 48'000;
@@ -190,7 +190,7 @@ namespace {
 struct AreaFixture {
     wormedit::document_history_t history;
     wormedit::editor_interaction_state_t state;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     AreaFixture() {
         using namespace wormedit;
         chart_document_t chart{
@@ -267,10 +267,10 @@ struct SoundImportDispatchFixture {
         workspace = *created.value;
     }
 
-    auto dispatch(const WormUiSoundImportItem* items, std::size_t item_count,
-                  const WormUiSoundImportGroup* groups, std::size_t group_count)
+    auto dispatch(const wormedit::ui::sound_import_item_t* items, std::size_t item_count,
+                  const wormedit::ui::sound_import_group_t* groups, std::size_t group_count)
         -> std::optional<std::string> {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
         action.sound_import_project_id = history.document.id.value;
         action.compose_input_chart_id = chart.value;
@@ -304,10 +304,10 @@ struct SoundSlotBatchDispatchFixture {
         workspace = *created.value;
     }
 
-    auto dispatch(const WormUiSoundImportItem* items, std::size_t count,
+    auto dispatch(const wormedit::ui::sound_import_item_t* items, std::size_t count,
                   std::uint16_t slot, bool confirmed = false,
                   std::uint64_t revision = 0) -> std::optional<std::string> {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH;
         action.sound_import_project_id = history.document.id.value;
         action.compose_input_chart_id = chart.value;
@@ -349,14 +349,14 @@ auto reviewed_sound_import_dispatch_commits_once() -> bool {
     const auto loop_main = sound_fixture_path("keysound-e4.ogg");
     const auto kick_layer = sound_fixture_path("keysound-g4.ogg");
     const std::array items{
-        WormUiSoundImportItem{kick_main.c_str(), "Kick Main", 2},
-        WormUiSoundImportItem{loop_main.c_str(), "Loop Main", 2},
-        WormUiSoundImportItem{kick_layer.c_str(), "Kick Layer", 2}};
+        wormedit::ui::sound_import_item_t{kick_main.c_str(), "Kick Main", 2},
+        wormedit::ui::sound_import_item_t{loop_main.c_str(), "Loop Main", 2},
+        wormedit::ui::sound_import_item_t{kick_layer.c_str(), "Kick Layer", 2}};
     const std::array kick_members{std::size_t{0}, std::size_t{2}};
     const std::array loop_members{std::size_t{1}};
     const std::array groups{
-        WormUiSoundImportGroup{"Renamed Kicks", 0, kick_members.data(), kick_members.size()},
-        WormUiSoundImportGroup{"Renamed Loops", existing_group.value, loop_members.data(),
+        wormedit::ui::sound_import_group_t{"Renamed Kicks", 0, kick_members.data(), kick_members.size()},
+        wormedit::ui::sound_import_group_t{"Renamed Loops", existing_group.value, loop_members.data(),
                                loop_members.size()}};
 
     const auto result = fixture.dispatch(items.data(), items.size(), groups.data(), groups.size());
@@ -390,13 +390,13 @@ auto rejected_sound_imports_leave_history_unchanged() -> bool {
     const auto one_path = sound_fixture_path("keysound-c4.ogg");
     const auto two_path = sound_fixture_path("keysound-e4.ogg");
     const std::array items{
-        WormUiSoundImportItem{one_path.c_str(), "One", 2},
-        WormUiSoundImportItem{two_path.c_str(), "Two", 2}};
+        wormedit::ui::sound_import_item_t{one_path.c_str(), "One", 2},
+        wormedit::ui::sound_import_item_t{two_path.c_str(), "Two", 2}};
     const std::array first{std::size_t{0}};
     const std::array second{std::size_t{1}};
     const std::array duplicate_names{
-        WormUiSoundImportGroup{"Same", 0, first.data(), first.size()},
-        WormUiSoundImportGroup{"same", 0, second.data(), second.size()}};
+        wormedit::ui::sound_import_group_t{"Same", 0, first.data(), first.size()},
+        wormedit::ui::sound_import_group_t{"same", 0, second.data(), second.size()}};
 
     const auto rejected = fixture.dispatch(items.data(), items.size(), duplicate_names.data(),
                                            duplicate_names.size());
@@ -427,8 +427,8 @@ auto fragmented_ungrouped_sound_import_reports_ranges() -> bool {
     const auto first_path = sound_fixture_path("keysound-c4.ogg");
     const auto second_path = sound_fixture_path("keysound-e4.ogg");
     const std::array items{
-        WormUiSoundImportItem{first_path.c_str(), "Loose 1", 2},
-        WormUiSoundImportItem{second_path.c_str(), "Loose 2", 2}};
+        wormedit::ui::sound_import_item_t{first_path.c_str(), "Loose 1", 2},
+        wormedit::ui::sound_import_item_t{second_path.c_str(), "Loose 2", 2}};
     const auto message = fixture.dispatch(items.data(), items.size(), nullptr, 0);
     if (!message || message->find("Group split across 2 ID ranges") == std::string::npos ||
         fixture.history.document.resources.size() < 2) return false;
@@ -449,8 +449,8 @@ auto sound_slot_batch_dispatch_commits_natural_order_once() -> bool {
     SoundSlotBatchDispatchFixture fixture;
     const auto first = sound_fixture_path("keysound-e4.ogg");
     const auto second = sound_fixture_path("keysound-c4.ogg");
-    const std::array items{WormUiSoundImportItem{first.c_str(), "Ten", 2},
-                           WormUiSoundImportItem{second.c_str(), "Two", 2}};
+    const std::array items{wormedit::ui::sound_import_item_t{first.c_str(), "Ten", 2},
+                           wormedit::ui::sound_import_item_t{second.c_str(), "Two", 2}};
     const auto result = fixture.dispatch(items.data(), items.size(), 10, true);
     if (!result || result->find("Assigned 2 sounds") == std::string::npos ||
         fixture.history.undo.size() != 1) return false;
@@ -475,13 +475,13 @@ auto rejected_sound_slot_batches_leave_history_unchanged() -> bool {
     const auto before_assets = fixture.history.document.audio_assets.size();
     const auto before_resources = fixture.history.document.resources.size();
     const auto one = sound_fixture_path("keysound-c4.ogg");
-    const std::array occupied{WormUiSoundImportItem{one.c_str(), "Replace", 2}};
+    const std::array occupied{wormedit::ui::sound_import_item_t{one.c_str(), "Replace", 2}};
     const auto needs_confirmation = fixture.dispatch(occupied.data(), occupied.size(), 5, false);
     if (!needs_confirmation || needs_confirmation->find("confirmation") == std::string::npos ||
         fixture.history.document.revision != before_revision || !fixture.history.undo.empty())
         return false;
     const auto missing_path = std::string{"/tmp/wormedit-absent-slot-import.wav"};
-    const std::array missing{WormUiSoundImportItem{missing_path.c_str(), "Missing", 2}};
+    const std::array missing{wormedit::ui::sound_import_item_t{missing_path.c_str(), "Missing", 2}};
     const auto rejected = fixture.dispatch(missing.data(), missing.size(), 6, true);
     return rejected && rejected->find("no longer readable") != std::string::npos &&
         fixture.history.document.revision == before_revision &&
@@ -538,11 +538,11 @@ void section_dispatch_preserves_model(std::uint8_t kind, bool reviewed) {
     section_dispatch_check(static_cast<std::uint8_t>(prepared.entries.front().kind) == kind);
     std::optional<std::string> message;
     if (reviewed) {
-        const WormUiSoundImportItem item{path.c_str(), "Section sound", kind, true};
+        const wormedit::ui::sound_import_item_t item{path.c_str(), "Section sound", kind, true};
         message = fixture.dispatch(&item, 1, nullptr, 0);
     } else {
         const auto* raw_path = path.c_str();
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_action = WORM_UI_COMPOSE_ACTION_IMPORT_SOUND_FILES;
         action.sound_import_kind = kind;
         action.compose_import_paths = &raw_path;
@@ -582,8 +582,8 @@ TEST_CASE("sound_import fixed section confirmation rejects stale revision atomic
           "[unit][sys][sounds][import][sound_import]") {
     SoundImportDispatchFixture fixture;
     const auto path = sound_fixture_path("keysound-c4.ogg");
-    const WormUiSoundImportItem item{path.c_str(), "Section stem", 1, true};
-    WormUiWorkspaceAction action{};
+    const wormedit::ui::sound_import_item_t item{path.c_str(), "Section stem", 1, true};
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT;
     action.sound_import_project_id = fixture.history.document.id.value;
     action.compose_input_chart_id = fixture.chart.value;
@@ -618,7 +618,7 @@ auto sound_import_notifications_preserve_outcomes() -> bool {
     using namespace wormedit;
     SoundImportDispatchFixture fixture;
     const auto path = sound_fixture_path("keysound-c4.ogg");
-    const WormUiSoundImportItem item{path.c_str(), "Imported", 2};
+    const wormedit::ui::sound_import_item_t item{path.c_str(), "Imported", 2};
     const auto accepted = fixture.dispatch(&item, 1, nullptr, 0);
     if (!accepted || fixture.history.undo.size() != 1) return false;
     fixture.center.drain_inbox(notification_time_t{0});
@@ -654,7 +654,7 @@ TEST_CASE("Direct sound slot actions reject stale chart stamps before payload pr
     const auto kind = GENERATE(WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
                               WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
     SoundSlotBatchDispatchFixture fixture;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = kind;
     action.compose_input_chart_id = fixture.chart.value;
     action.compose_input_document_revision = fixture.history.document.revision + 1;
@@ -1932,7 +1932,7 @@ namespace { void expect_keep_pitch(bool value) { CHECK(value); } }
 
 TEST_CASE("Keep pitch dispatch accepts backend preferences without changing documents", "[unit][sys][commands][keep-pitch]") {
     application_command_state_t state;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
     action.transport_keep_pitch = true;
     expect_keep_pitch(dispatch_transport_player_action(action, state) == "Keep pitch is unavailable.");
@@ -2001,7 +2001,7 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     notification_center_t center;
     notification_sink_t sink{center};
     application_command_state_t state;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_KEEP_PITCH;
     const auto rejected = dispatch_transport_player_action(action, state, sink);
     check_transport_notification(rejected == "Keep pitch is unavailable.");
@@ -2020,7 +2020,7 @@ TEST_CASE("transport UI producer posts typed rejection and accepted settings onc
     entries = center.snapshot(notification_capacity);
     require_transport_notification(entries.size() == 2);
     check_transport_notification(entries[0].severity == notification_severity_t::success);
-    check_transport_notification(!dispatch_transport_player_action(WormUiWorkspaceAction{}, state, sink));
+    check_transport_notification(!dispatch_transport_player_action(wormedit::ui::workspace_action_t{}, state, sink));
     center.drain_inbox(notification_time_t{0});
     check_transport_notification(center.snapshot(notification_capacity).size() == 2);
 }
@@ -2034,7 +2034,7 @@ TEST_CASE("transport UI playback callback owns notification publication", "[unit
         sink.post(notification_severity_t::error, notification_source_t::audio, "device failed");
         return std::string{"device failed"};
     };
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_PLAY_PAUSE;
     check_transport_notification(dispatch_transport_player_action(action, state, sink) == "device failed");
     center.drain_inbox(notification_time_t{0});
@@ -2492,7 +2492,7 @@ TEST_CASE("Toolbar stop is transient while genuine audio failure remains durable
     application_command_state_t state;
     int stops{};
     state.services.transport_stop = [&] { ++stops; };
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_STOP;
     check_transient_transport(dispatch_transport_player_action(action, state, sink) == "Audio preview stopped.");
     center.drain_inbox(notification_time_t{0});
@@ -2694,7 +2694,7 @@ void check_placement_audition(bool enabled) {
     const auto view = inspect_editor_interaction(history, *interaction);
     const auto y = editor_position_y_pixels(chart, std::get<editor_interaction_view_model_t>(view), position);
     REQUIRE(y.has_value());
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.shortcut_window_focused = true;
     action.compose_input_chart_id = interaction->chart.value;
     action.compose_input_document_revision = history.document.revision;
@@ -3429,7 +3429,7 @@ void check_catalog_rate_dispatch(const wormedit::audio::playback_rate_descriptor
     application_command_state_t state;
     state.services.transport_set_playback_rate = accept_catalog_rate;
     catalog_requested_rate = {};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_index = 255; // A contradictory legacy position must not control dispatch.
     action.transport_rate_id = static_cast<std::uint32_t>(entry.id);
@@ -3450,7 +3450,7 @@ TEST_CASE("Transport UI dispatch rejects unknown playback catalog ids", "[sys][c
     application_command_state_t state;
     state.services.transport_set_playback_rate = accept_catalog_rate;
     catalog_requested_rate = {};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
     action.transport_rate_id = 255;
     const auto status =

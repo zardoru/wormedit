@@ -4,34 +4,42 @@
 #include <string>
 #include <vector>
 
-typedef struct WormUiSoundImportItem {
+namespace wormedit::ui {
+struct sound_import_item_t {
     const char* path;
     const char* name;
     uint8_t kind;
     bool kind_fixed;
-} WormUiSoundImportItem;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundSlotImportItem {
+namespace wormedit::ui {
+struct sound_slot_import_item_t {
     const char* path;
     const char* name;
     uint64_t occupied_resource_id;
     const char* occupied_name;
     bool ambiguous;
-} WormUiSoundSlotImportItem;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundGroupAssignment {
+namespace wormedit::ui {
+struct sound_group_assignment_t {
     uint64_t group_id;
     const char* name;
     const uint64_t* sound_ids;
     size_t sound_count;
-} WormUiSoundGroupAssignment;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundImportGroup {
+namespace wormedit::ui {
+struct sound_import_group_t {
     const char* name;
     uint64_t existing_group_id;
     const size_t* member_indices;
     size_t member_count;
-} WormUiSoundImportGroup;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiComposeActionKind {
     WORM_UI_COMPOSE_ACTION_NONE = 0,
@@ -341,14 +349,15 @@ typedef enum WormUiComposeNavigationAction {
     WORM_UI_COMPOSE_NAVIGATION_DOUBLE_PAGE_FORWARD,
 } WormUiComposeNavigationAction;
 
-typedef struct WormUiComposeInputAction {
+namespace wormedit::ui {
+struct compose_input_action_t {
     WormUiComposeInputKind kind;
     uint32_t note_kind;
     uint64_t lane_id;
     uint64_t object_id;
     uint64_t timing_chart_id;
     uint64_t timing_document_revision;
-    WormUiTimingLaneKind timing_lane;
+    wormedit::timing_lane_kind_t timing_lane;
     uint64_t timing_anchor_chart_row;
     uint8_t resource_role;
     bool successive;
@@ -377,10 +386,11 @@ typedef struct WormUiComposeInputAction {
     bool bga_lane_kind_valid;
     uint8_t paint_intent; /* NOTE_PAINT: 0 legacy toggle, 1 draw, 2 erase;
                             SEMANTIC_LAYER_PAINT_BEGIN: 1 add, 2 remove. */
-} WormUiComposeInputAction;
+};
+} // namespace wormedit::ui
 
 /* Which part of a span (Kiai area, Speed transition, SV recipe) a drag holds; carried in
-   WormUiComposeInputAction::span_edge by KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT.
+   ui::compose_input_action_t::span_edge by KIAI_SPAN_EDIT, SPEED_SPAN_EDIT and RECIPE_RANGE_EDIT.
    CREATE only applies to Kiai: a new area from the press row to the pointer row. */
 typedef enum WormUiSpanHandle {
     WORM_UI_SPAN_HANDLE_BEGIN = 0,
@@ -395,7 +405,8 @@ typedef enum WormUiComposeViewportInputKind {
     WORM_UI_COMPOSE_VIEWPORT_INPUT_PINCH_ZOOM,
 } WormUiComposeViewportInputKind;
 
-typedef struct WormUiComposeViewportInput {
+namespace wormedit::ui {
+struct compose_viewport_input_t {
     WormUiComposeViewportInputKind kind;
     bool zoom_modifier;
     double delta_x;
@@ -403,7 +414,8 @@ typedef struct WormUiComposeViewportInput {
     double cursor_x_pixels;
     double cursor_y_pixels;
     double zoom_factor;
-} WormUiComposeViewportInput;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiMetadataEditKind {
     WORM_UI_METADATA_EDIT_NONE = 0,
@@ -436,31 +448,34 @@ typedef enum WormUiClipboardAction {
 /* A pointer press on the timing lanes, as raw as the panel knows it: y is a drawn-orientation
    viewport pixel row. The viewport height, downscroll flag and visible document slice travel with
    it so one sys function turns it into a document fraction (and then a row). */
-typedef struct WormUiTimingTarget {
+namespace wormedit::ui {
+struct timing_target_t {
     double screen_y;
     double viewport_height_pixels;
     double document_begin_fraction;
     double document_end_fraction;
     bool downscroll;
-} WormUiTimingTarget;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiWorkspaceAction {
+namespace wormedit::ui {
+struct workspace_action_t {
     wormedit::ui::file_jobs_action_t file_jobs;
     char menu_command_id[96];
     bool compose_menu_command;
     WormUiClipboardAction clipboard;
-    WormUiNotificationAction notifications;
-    WormUiOptionsAction options;
+    wormedit::ui::notification_action_t notifications;
+    wormedit::ui::options_action_t options;
     wormedit::ui::lane_keys_action_t lane_keys;
     WormUiCloseDecision close_decision;
     uint64_t close_project_id, close_revision;
-    WormUiProjectChartAction project_chart;
-    WormUiProjectOutputGroupAction project_output_group;
-    WormUiChartImportAction chart_import;
-    WormUiTapTimingAction tap_timing;
-    WormUiTimingSettingsAction timing_settings;
+    wormedit::ui::project_chart_action_t project_chart;
+    wormedit::ui::project_output_group_action_t project_output_group;
+    wormedit::ui::chart_import_action_t chart_import;
+    wormedit::ui::tap_timing_action_t tap_timing;
+    wormedit::ui::timing_settings_action_t timing_settings;
     WormUiWorkspaceActionKind kind;
-    struct WormUiExternalPlayerAction external_player;
+    struct wormedit::ui::external_player_action_t external_player;
     char project_path[WORM_UI_PROJECT_PATH_CAPACITY];
     // Stable text_encoding_t id; zero requests automatic detection.
     uint32_t bms_encoding_id;
@@ -500,7 +515,7 @@ typedef struct WormUiWorkspaceAction {
     int sound_usage_scope;
     bool sound_usage_position_valid;
     uint64_t visual_asset_id;
-    WormUiPlayerPreviewSkin player_preview_skin;
+    wormedit::player_preview_skin_t player_preview_skin;
     WormUiAudioOffsetDragAction audio_offset_drag_action;
     uint64_t audio_offset_drag_chart_id;
     uint64_t audio_offset_drag_document_revision;
@@ -608,7 +623,7 @@ typedef struct WormUiWorkspaceAction {
     /* Frontend-owned staging; valid through immediate workspace-action dispatch. */
     const uint64_t* compose_sound_resource_ids;
     size_t compose_sound_resource_count;
-    const WormUiSoundGroupAssignment* compose_sound_group_assignments;
+    const wormedit::ui::sound_group_assignment_t* compose_sound_group_assignments;
     size_t compose_sound_group_assignment_count;
     bool compose_sound_group_keep_ids_together;
     bool compose_sound_overwrite_note_layers;
@@ -636,9 +651,9 @@ typedef struct WormUiWorkspaceAction {
     /* 0 generic import, 1 Stems section, 2 Keysounds section. */
     uint8_t sound_import_kind;
     uint64_t sound_import_project_id;
-    const WormUiSoundImportItem* sound_import_items;
+    const wormedit::ui::sound_import_item_t* sound_import_items;
     size_t sound_import_item_count;
-    const WormUiSoundImportGroup* sound_import_groups;
+    const wormedit::ui::sound_import_group_t* sound_import_groups;
     size_t sound_import_group_count;
     uint16_t compose_sound_slot;
     uint64_t compose_bmson_channel_id;
@@ -659,26 +674,26 @@ typedef struct WormUiWorkspaceAction {
     uint8_t compose_semantic_layer_green;
     uint8_t compose_semantic_layer_blue;
     uint8_t compose_semantic_layer_alpha;
-    WormUiComposeInputAction compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
+    wormedit::ui::compose_input_action_t compose_inputs[WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY];
     size_t compose_input_count;
-    WormUiComposeViewportInput compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
+    wormedit::ui::compose_viewport_input_t compose_viewport_inputs[WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY];
     size_t compose_viewport_input_count;
     WormUiTimingRecipeForm compose_recipe_form;
     uint64_t compose_recipe_id;
     char timing_meter_numerator_text[32];
     char timing_meter_denominator_text[32];
-    WormUiTimingStageAction timing_stage_action;
+    wormedit::ui::timing_stage_action_t timing_stage_action;
     uint64_t timing_chart_id;
     uint64_t timing_document_revision;
     uint64_t timing_object_id;
-    WormUiTimingLaneKind timing_lane;
+    wormedit::timing_lane_kind_t timing_lane;
     bool timing_has_target_y;
-    WormUiTimingTarget timing_target;
+    wormedit::ui::timing_target_t timing_target;
     double timing_value;
     double timing_secondary_value;
     bool timing_transition_is_seconds;
     bool timing_toggle_primary;
-    WormUiTimingPauseUnit timing_pause_unit;
+    wormedit::pause_unit_t timing_pause_unit;
     char timing_bpm_decimal_text[64];
     bool timing_bpm_decimal_edited;
     int timing_bpm_step;
@@ -699,7 +714,8 @@ typedef struct WormUiWorkspaceAction {
     uint64_t shortcut_focused_lane_id;
     bool command_menu_invoked;
     char command_menu_command_id[129];
-} WormUiWorkspaceAction;
+};
+} // namespace wormedit::ui
 
 // Private application/frontend boundary. Implementations own all widget
 // toolkit state and translate semantic views into typed actions.
@@ -727,6 +743,6 @@ void worm_ui_frontend_notify(WormUiNotificationSeverity severity,
 uint64_t worm_ui_frontend_begin_project_dialog_for_testing(WormUiWorkspaceActionKind kind);
 void worm_ui_frontend_project_dialog_callback_for_testing(uint64_t generation,
     const char* const* files);
-WormUiWorkspaceAction worm_ui_frontend_consume_project_dialog_for_testing(void);
+wormedit::ui::workspace_action_t worm_ui_frontend_consume_project_dialog_for_testing(void);
 // Read queued draw text before render clears it; returns required bytes (no terminator).
 size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacity);

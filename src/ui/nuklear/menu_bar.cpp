@@ -7,21 +7,21 @@ namespace wormedit::ui {
 namespace {
 using Action = workspace_menu_action_t;
 
-void append_file(workspace_menu_t& menu, const WormUiWorkspaceView& view, bool blocked) {
+void append_file(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& view, bool blocked) {
     menu.push_back({"File", "New project", Action::new_project, "document.new_project", !blocked});
     menu.push_back({"File", "Open chart or project...", Action::open, nullptr, !blocked});
     menu.push_back({"File", "Save project", Action::save, "document.save_project", !blocked && view.project_loaded});
     menu.push_back({"File", "Save project as...", Action::save_as, nullptr, !blocked && view.project_loaded});
     menu.push_back({"File", "Close project", Action::close, nullptr, !blocked && view.project_loaded});
     menu.push_back({"File", "Export…", Action::export_output_group, "document.export_output_group",
-                    !blocked && view.project_loaded && view.selected_chart_id != 0});
+                    !blocked && view.project_loaded && view.selected_chart_id.value != 0});
     menu.push_back({"File", "Options...", Action::options, "workspace.options", !blocked});
     menu.push_back({"File", "Quit", Action::quit, nullptr, !blocked});
-    if (view.recent_file_count) menu.push_back({"File", "", Action::none, nullptr, false});
-    for (std::size_t index = 0; index < std::min(view.recent_file_count, std::size(view.recent_files)); ++index) {
+    if (view.recent_files.size()) menu.push_back({"File", "", Action::none, nullptr, false});
+    for (std::size_t index = 0; index < view.recent_files.size(); ++index) {
         const auto& entry = view.recent_files[index];
-        menu.push_back({"File", entry.label, static_cast<Action>(static_cast<int>(Action::recent_first) + index),
-                        nullptr, !blocked, false, nullptr, entry.path});
+        menu.push_back({"File", entry.label.data(), static_cast<Action>(static_cast<int>(Action::recent_first) + index),
+                        nullptr, !blocked, false, nullptr, entry.path.data()});
     }
 }
 
@@ -45,7 +45,7 @@ void append_edit(workspace_menu_t& menu, bool enabled) {
     menu.push_back({"Edit", "Move Selection to BGM", Action::move_to_bgm, "edit.move_to_bgm", enabled});
 }
 
-void append_view(workspace_menu_t& menu, const WormUiWorkspaceView& view, bool enabled, bool timing) {
+void append_view(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& view, bool enabled, bool timing) {
     menu.push_back({"View", "Player preview", Action::preview, nullptr, enabled && view.project_loaded, view.player_preview.visible});
     menu.push_back({"View", "Reset editor view", Action::reset_view, nullptr, enabled && view.compose.visible});
     menu.push_back({"View", "Sounds panel", Action::sounds, "view.toggle_sounds", enabled});
@@ -78,18 +78,17 @@ void append_playback(workspace_menu_t& menu, bool enabled) {
     menu.push_back({"Playback", "External stop", Action::external_stop, "transport.external_stop", enabled});
 }
 
-void apply_command_rows(workspace_menu_t& menu, const WormUiWorkspaceView& view) {
-    const auto count = std::min(view.menu_command_count, std::size(view.menu_commands));
+void apply_command_rows(workspace_menu_t& menu, const wormedit::ui::workspace_view_t& view) {
     for (auto& item : menu) {
         if (!item.command_id) continue;
-        const auto* end = view.menu_commands + count;
-        const auto* row = std::find_if(view.menu_commands, end, [&](const auto& command) {
-            return std::strcmp(command.id, item.command_id) == 0;
+        const auto end = view.menu_commands.end();
+        const auto row = std::find_if(view.menu_commands.begin(), end, [&](const auto& command) {
+            return command.id == item.command_id;
         });
         item.enabled = item.enabled && row != end && row->enabled;
         if (row == end) continue;
         item.checked = row->checked;
-        item.shortcut = row->shortcut;
+        item.shortcut = row->shortcut.data();
     }
 }
 
@@ -151,7 +150,7 @@ auto render_menu_entries(nk_context* context, const workspace_menu_t& model,
 }
 } // namespace
 
-auto build_workspace_menu(const WormUiWorkspaceView& view, bool blocked, bool text_owner,
+auto build_workspace_menu(const wormedit::ui::workspace_view_t& view, bool blocked, bool text_owner,
                           bool frame_timing) -> workspace_menu_t {
     workspace_menu_t menu;
     menu.reserve(40);

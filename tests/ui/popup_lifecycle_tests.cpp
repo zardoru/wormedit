@@ -100,8 +100,8 @@ TEST_CASE("Retained popups and view stamps remain aggregates with shared queries
     view.chart_id = 7;
     view.document_revision = 90;
     check_lifecycle(popup_context_matches(PopupContextStamp::from(view, 42), {11, 7, 90, 42}));
-    WormUiSetupView setup{};
-    setup.song_id = 12;
+    wormedit::ui::setup_view_t setup{};
+    setup.song_id = wormedit::song_id_t{12};
     setup.session_generation = 8;
     setup.document_revision = 91;
     check_lifecycle(popup_context_matches(PopupContextStamp::from(setup, 43), {12, 8, 91, 43}));

@@ -10,6 +10,9 @@
 
 #include <algorithm>
 #include <cstring>
+#include <functional>
+#include <span>
+#include <string_view>
 #include <string>
 
 namespace wormedit::ui::chrome {
@@ -424,9 +427,11 @@ inline void safe_combo_end(nk_context* context) {
     nk_style_pop_color(context);
 }
 
-inline auto safe_combo(nk_context* context, const char* const* items, int count,
-                       int selected, int item_height, struct nk_vec2 size) -> int {
-    if (!context || !context->current || !context->current->layout || !items || count <= 0)
+template<class Row, class Label>
+inline auto safe_combo(nk_context* context, std::span<const Row> items,
+                       int selected, int item_height, struct nk_vec2 size, Label label) -> int {
+    const auto count = static_cast<int>(items.size());
+    if (!context || !context->current || !context->current->layout || items.empty())
         return selected;
     selected = std::clamp(selected, 0, count - 1);
     const auto height = item_height <= metrics::control_compact
@@ -434,7 +439,8 @@ inline auto safe_combo(nk_context* context, const char* const* items, int count,
     if (popup_panel(context)) {
         for (int index = 0; index < count; ++index) {
             nk_layout_row_dynamic(context, height, 1);
-            if (nk_select_label(context, items[index], NK_TEXT_LEFT, selected == index))
+            if (nk_select_label(context, std::string_view{std::invoke(label, items[index])}.data(),
+                                NK_TEXT_LEFT, selected == index))
                 selected = index;
         }
         return selected;
@@ -443,16 +449,26 @@ inline auto safe_combo(nk_context* context, const char* const* items, int count,
     // Padding surrounds the rows; spacing belongs only between adjacent rows.
     size.y = std::min(size.y, count * height + (count - 1) * window.spacing.y +
                       2.0f * window.combo_padding.y);
-    if (safe_combo_begin_label(context, items[selected], size)) {
+    const auto selected_label = std::string_view{std::invoke(label, items[selected])};
+    if (safe_combo_begin_label(context, selected_label.data(), size)) {
         nk_layout_row_dynamic(context, height, 1);
         for (int index = 0; index < count; ++index)
-            if (nk_combo_item_label(context, items[index], NK_TEXT_LEFT)) selected = index;
+            if (nk_combo_item_label(context,
+                    std::string_view{std::invoke(label, items[index])}.data(), NK_TEXT_LEFT))
+                selected = index;
         // Nuklear includes the final row's spacing in its scroll extent, although
         // there is no following row. Keep it consistent with the fitted height.
         context->current->layout->row.height -= window.spacing.y;
         safe_combo_end(context);
     }
     return selected;
+}
+
+inline auto safe_combo(nk_context* context, const char* const* items, int count,
+                       int selected, int item_height, struct nk_vec2 size) -> int {
+    if (!items || count <= 0) return selected;
+    return safe_combo(context, std::span<const char* const>{items, static_cast<std::size_t>(count)},
+                      selected, item_height, size, std::identity{});
 }
 
 // Top-level windows (dialogs, floating tools) that cast a shadow over the workspace. The

@@ -89,9 +89,20 @@ auto pan_waveform_viewport(const waveform_viewport_t& viewport, double delta_pix
 
 auto waveform_view_t::from(const waveform_t& waveform, const waveform_viewport_t& viewport)
     -> waveform_view_outcome_t {
-    if (!is_waveform_viewport_valid(viewport) || viewport.total_frames != waveform.total_frames)
+    waveform_view_t result;
+    const auto status = result.refill(waveform, viewport);
+    if (!status) return std::unexpected(status.error());
+    return result;
+}
+
+auto waveform_view_t::refill(const waveform_t& waveform, const waveform_viewport_t& viewport)
+    -> result_t<void, failure_code_t> {
+    if (!is_waveform_viewport_valid(viewport) || viewport.total_frames != waveform.total_frames) {
+        columns.clear();
+        level_frames_per_bin = 0;
         return std::unexpected(failure_code_t::invalid_request);
-    return waveform_view_t::from(waveform, {.begin_frame = viewport.begin_frame,
+    }
+    return refill(waveform, {.begin_frame = viewport.begin_frame,
                                        .end_frame = waveform_viewport_end_frame(viewport),
                                        .pixel_width = viewport.pixel_width});
 }

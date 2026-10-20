@@ -84,6 +84,11 @@ struct waveform_projection_request_t {
 struct waveform_viewport_t;
 
 struct waveform_view_t {
+    [[nodiscard]] auto refill(const waveform_t& waveform, waveform_projection_request_t request)
+        -> result_t<void, failure_code_t>;
+    [[nodiscard]] auto refill(const waveform_t& waveform, const waveform_viewport_t& viewport)
+        -> result_t<void, failure_code_t>;
+
     [[nodiscard]] static auto from(const waveform_t& waveform, waveform_projection_request_t request)
         -> result_t<waveform_view_t, failure_code_t>;
 

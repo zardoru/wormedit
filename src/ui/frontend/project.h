@@ -1,25 +1,41 @@
 #pragma once
 #include "common.h"
 #include "catalog.h"
-#include <span>
+#include <wormedit/core/vocabulary.h>
+#include <algorithm>
+#include <array>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <utility>
 
-typedef enum WormUiRecoveryAction {
-    WORM_UI_RECOVERY_ACTION_INSPECT = 1 << 0,
-    WORM_UI_RECOVERY_ACTION_RECOVER = 1 << 1,
-    WORM_UI_RECOVERY_ACTION_SAVE_AS = 1 << 2,
-    WORM_UI_RECOVERY_ACTION_DISCARD = 1 << 3,
-    WORM_UI_RECOVERY_ACTION_QUARANTINE = 1 << 4,
-} WormUiRecoveryAction;
+namespace wormedit {
+struct song_document_t;
+enum class diagnostic_severity_t;
+namespace sys {
+struct chart_import_session_t;
+class project_chart_runtime_t;
+}
+} // namespace wormedit
 
-typedef struct WormUiRecoveryCandidateView {
-    const char* path_label;
-    const char* summary;
-    const char* disabled_reason;
-    size_t action_mask;
-    uint64_t scan_generation;
-    size_t row_index;
-    size_t candidate_index;
-} WormUiRecoveryCandidateView;
+
+namespace wormedit::ui {
+struct recovery_candidate_view_t {
+    std::string path_label;
+    std::string summary;
+    std::string_view disabled_reason;
+    std::vector<wormedit::native_project_recovery_action_t> actions;
+    std::uint64_t scan_generation{};
+    std::size_t row_index{}, candidate_index{};
+
+    [[nodiscard]] auto can(wormedit::native_project_recovery_action_t action) const -> bool {
+        return std::ranges::find(actions, action) != actions.end();
+    }
+    auto operator==(const recovery_candidate_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiWorkspaceActionKind {
     WORM_UI_WORKSPACE_ACTION_NONE = 0,
@@ -66,33 +82,49 @@ typedef enum WormUiChartImportActionKind {
     WORM_UI_CHART_IMPORT_CANCEL,
 } WormUiChartImportActionKind;
 
-typedef struct WormUiChartImportAction {
-    WormUiChartImportActionKind kind;
-    uint64_t chart_id;
-    uint64_t document_revision;
-} WormUiChartImportAction;
+namespace wormedit::ui {
+struct chart_import_action_t {
+    WormUiChartImportActionKind kind{};
+    wormedit::chart_id_t chart_id;
+    std::uint64_t document_revision{};
+    auto operator==(const chart_import_action_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiChartImportRowView {
-    uint64_t chart_id;
-    const char* label;   /* "Hard · 7 measures · 412 notes" */
-    bool selected;
-} WormUiChartImportRowView;
+namespace wormedit::ui {
+struct chart_import_row_view_t {
+    wormedit::chart_id_t chart_id;
+    std::string_view label;
+    bool selected{};
+    auto operator==(const chart_import_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-#define WORM_UI_CHART_IMPORT_NOTE_CAPACITY 24
 
-typedef struct WormUiChartImportView {
-    bool visible;
-    const char* path;     /* Text the path field starts from. */
-    const char* error;    /* Empty when the file read fine. */
-    const WormUiChartImportRowView* rows;
-    size_t row_count;
-    const char* summary;  /* "1 reused, 2 added, 1 missing" or empty before a file is loaded. */
-    /* Missing files and timing differences, one line each, capped. */
-    const char* notes[WORM_UI_CHART_IMPORT_NOTE_CAPACITY];
-    size_t note_count;
-    bool can_import;
-    uint64_t document_revision;
-} WormUiChartImportView;
+namespace wormedit::ui {
+struct chart_import_view_t {
+    bool visible{};
+    std::string_view path, error, summary;
+    std::vector<chart_import_row_view_t> rows;
+    std::vector<std::string_view> notes;
+    bool can_import{};
+    std::uint64_t document_revision{};
+
+    void reset() {
+        auto retained_rows = std::move(rows);
+        auto retained_notes = std::move(notes);
+        *this = {};
+        rows = std::move(retained_rows);
+        notes = std::move(retained_notes);
+        rows.clear();
+        notes.clear();
+    }
+    void refill(const wormedit::sys::chart_import_session_t&, std::uint64_t revision);
+    [[nodiscard]] static auto from(const wormedit::sys::chart_import_session_t& session,
+                                  std::uint64_t revision) -> chart_import_view_t;
+    auto operator==(const chart_import_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiWorkspaceTab {
     WORM_UI_WORKSPACE_TAB_SETUP = 0,
@@ -104,11 +136,14 @@ typedef enum WormUiWorkspaceTab {
     WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE,
 } WormUiWorkspaceTab;
 
-typedef struct WormUiWorkspaceTabItem {
-    const char* label;
-    bool enabled;
-    WormUiWorkspaceTab id;
-} WormUiWorkspaceTabItem;
+namespace wormedit::ui {
+struct workspace_tab_item_view_t {
+    std::string_view label;
+    bool enabled{};
+    wormedit::workspace_tab_t id{};
+    auto operator==(const workspace_tab_item_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiStepmaniaFileProfile {
     WORM_UI_STEPMANIA_FILE_SM = 0,
@@ -127,7 +162,6 @@ typedef enum WormUiStepmaniaImplementation {
     WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1,
 } WormUiStepmaniaImplementation;
 
-#define WORM_UI_PROJECT_CHART_CAPACITY 256
 
 typedef enum WormUiExistingFilesChoice {
     WORM_UI_EXISTING_FILES_ASK = 0,
@@ -148,41 +182,46 @@ typedef enum WormUiOutputPlanAction {
     WORM_UI_OUTPUT_PLAN_COPY,
 } WormUiOutputPlanAction;
 
-struct WormUiOutputPlanRow {
-    const char* path;
-    WormUiOutputPlanAction action;
-    uint64_t bytes;
+namespace wormedit::ui {
+struct output_plan_row_view_t {
+    std::string_view path;
+    WormUiOutputPlanAction action{};
+    std::uint64_t bytes{};
+    auto operator==(const output_plan_row_view_t&) const -> bool = default;
 };
+} // namespace wormedit::ui
 
-struct WormUiOutputDiagnosticRow {
-    const char* message;
-    uint8_t severity;
+namespace wormedit::ui {
+struct output_diagnostic_row_view_t {
+    std::string_view message;
+    wormedit::diagnostic_severity_t severity{};
+    auto operator==(const output_diagnostic_row_view_t&) const -> bool = default;
 };
+} // namespace wormedit::ui
 
-struct WormUiProjectOutputSuggestion {
-    const char* name;
-    uint8_t family;
-    const char* path;
-    bool has_stepmania_policy;
-    WormUiStepmaniaFileProfile stepmania_file_profile;
-    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
-    WormUiStepmaniaImplementation stepmania_implementation;
+namespace wormedit::ui {
+struct project_output_suggestion_view_t {
+    std::string_view name;
+    wormedit::format_family_t family{};
+    std::string_view path;
+    std::optional<wormedit::stepmania_export_policy_t> stepmania;
+    auto operator==(const project_output_suggestion_view_t&) const -> bool = default;
 };
+} // namespace wormedit::ui
 
-typedef struct WormUiProjectChartRow {
-    uint64_t chart_id;
-    const char* name;
-    const char* author;
-    const char* rating;
-    const char* mode;
-    uint32_t key_count;
-    const char* output_groups;
-    uint32_t compatible_output_families;
-    const char* output_incompatibility_reasons[5];
-    uint64_t note_count;
-    const char* length;
-    const char* diagnostic;
-} WormUiProjectChartRow;
+namespace wormedit::ui {
+struct project_chart_row_view_t {
+    wormedit::chart_id_t chart_id;
+    std::string_view name, author, rating, mode;
+    std::uint32_t key_count{};
+    std::string_view output_groups;
+    std::uint32_t compatible_output_families{};
+    std::array<std::string_view, 5> output_incompatibility_reasons;
+    std::uint64_t note_count{};
+    std::string_view length, diagnostic;
+    auto operator==(const project_chart_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiProjectChartActionKind {
     WORM_UI_PROJECT_CHART_NONE = 0,
@@ -196,42 +235,52 @@ typedef enum WormUiProjectChartActionKind {
     WORM_UI_PROJECT_CHART_REORDER,
 } WormUiProjectChartActionKind;
 
-typedef struct WormUiProjectChartAction {
-    WormUiProjectChartActionKind kind;
-    uint64_t document_revision;
-    uint64_t session_generation;
-    uint64_t chart_id;
-    size_t selected_count;
-    uint64_t selected_chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
-    bool edit_author;
-    const char* author;
-    bool edit_rating;
-    bool unset_rating;
-    const char* rating_numerator;
-    const char* rating_denominator;
-    uint64_t target_chart_id; // Reorder relative to this stable row ID.
-    bool insert_after;
-} WormUiProjectChartAction;
+namespace wormedit::ui {
+struct project_chart_action_t {
+    WormUiProjectChartActionKind kind{};
+    std::uint64_t document_revision{}, session_generation{};
+    wormedit::chart_id_t chart_id;
+    std::vector<wormedit::chart_id_t> selected_chart_ids;
+    bool edit_author{};
+    std::string author;
+    bool edit_rating{}, unset_rating{};
+    std::string rating_numerator, rating_denominator;
+    wormedit::chart_id_t target_chart_id;
+    bool insert_after{};
+    auto operator==(const project_chart_action_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiProjectOutputGroupView {
-    size_t document_index;
-    const char* name;
-    uint8_t family;
-    const char* path;
-    WormUiOutputDestinationKind destination_kind;
-    const uint64_t* chart_ids;
-    size_t chart_count;
-    const char* preview_status;
-    WormUiExistingFilesChoice existing_files;
-    bool has_stepmania_policy;
-    WormUiStepmaniaFileProfile stepmania_file_profile;
-    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
-    WormUiStepmaniaImplementation stepmania_implementation;
-    std::span<const WormUiOutputPlanRow> plan_rows;
-    bool plan_rows_truncated;
-    std::span<const WormUiOutputDiagnosticRow> diagnostics;
-    bool diagnostics_truncated;
-} WormUiProjectOutputGroupView;
+namespace wormedit::ui {
+struct project_output_group_view_t {
+    std::size_t document_index{};
+    std::string_view name;
+    wormedit::format_family_t family{};
+    std::string_view path;
+    wormedit::output_destination_kind_t destination_kind{};
+    std::vector<wormedit::chart_id_t> chart_ids;
+    std::string_view preview_status;
+    wormedit::existing_files_policy_t existing_files{};
+    std::optional<wormedit::stepmania_export_policy_t> stepmania;
+    std::vector<output_plan_row_view_t> plan_rows;
+    bool plan_rows_truncated{};
+    std::vector<output_diagnostic_row_view_t> diagnostics;
+    bool diagnostics_truncated{};
+    void reset() {
+        auto charts = std::move(chart_ids);
+        auto plans = std::move(plan_rows);
+        auto messages = std::move(diagnostics);
+        *this = {};
+        chart_ids = std::move(charts);
+        plan_rows = std::move(plans);
+        diagnostics = std::move(messages);
+        chart_ids.clear();
+        plan_rows.clear();
+        diagnostics.clear();
+    }
+    auto operator==(const project_output_group_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiProjectOutputGroupActionKind {
     WORM_UI_PROJECT_OUTPUT_GROUP_NONE = 0,
@@ -241,40 +290,49 @@ typedef enum WormUiProjectOutputGroupActionKind {
     WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
 } WormUiProjectOutputGroupActionKind;
 
-typedef struct WormUiProjectOutputGroupAction {
-    WormUiProjectOutputGroupActionKind kind;
-    uint64_t project_id;
-    uint64_t document_revision;
-    uint64_t session_generation;
-    size_t group_index;
-    const char* name;
-    const char* path;
-    uint8_t family;
-    WormUiOutputDestinationKind destination_kind;
-    WormUiExistingFilesChoice existing_files;
-    bool has_stepmania_policy;
-    WormUiStepmaniaFileProfile stepmania_file_profile;
-    WormUiStepmaniaTimingSyntax stepmania_timing_syntax;
-    WormUiStepmaniaImplementation stepmania_implementation;
-    size_t chart_count;
-    uint64_t chart_ids[WORM_UI_PROJECT_CHART_CAPACITY];
-} WormUiProjectOutputGroupAction;
+namespace wormedit::ui {
+struct project_output_group_action_t {
+    WormUiProjectOutputGroupActionKind kind{};
+    wormedit::song_id_t project_id;
+    std::uint64_t document_revision{}, session_generation{};
+    std::size_t group_index{};
+    std::string name, path;
+    wormedit::format_family_t family{};
+    wormedit::output_destination_kind_t destination_kind{};
+    wormedit::existing_files_policy_t existing_files{};
+    std::optional<wormedit::stepmania_export_policy_t> stepmania;
+    std::vector<wormedit::chart_id_t> chart_ids;
+    auto operator==(const project_output_group_action_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSetupView {
-    WormUiKindCatalogView output_families;
-    bool visible;
-    uint64_t song_id;
-    uint64_t document_revision;
-    uint64_t session_generation;
-    const WormUiProjectChartRow* charts;
-    size_t chart_row_count;
-    bool charts_truncated;
-    const WormUiProjectOutputGroupView* output_groups;
-    size_t output_group_count;
-    bool output_groups_truncated;
-    std::span<const WormUiProjectOutputSuggestion> output_suggestions;
-    uint64_t selected_chart_id;
-    size_t chart_count;
-    size_t audio_asset_count;
-    size_t visual_asset_count;
-} WormUiSetupView;
+namespace wormedit::ui {
+struct setup_view_t {
+    kind_catalog_view_t<wormedit::format_family_t> output_families;
+    bool visible{};
+    wormedit::song_id_t song_id;
+    std::uint64_t document_revision{}, session_generation{};
+    std::vector<project_chart_row_view_t> charts;
+    std::vector<project_output_group_view_t> output_groups;
+    std::vector<project_output_suggestion_view_t> output_suggestions;
+    wormedit::chart_id_t selected_chart_id;
+    std::size_t chart_count{}, audio_asset_count{}, visual_asset_count{};
+
+    void reset() {
+        auto families = std::move(output_families);
+        auto retained_charts = std::move(charts);
+        auto groups = std::move(output_groups);
+        auto suggestions = std::move(output_suggestions);
+        for (auto& group : groups) group.reset();
+        *this = {};
+        output_families = std::move(families);
+        charts = std::move(retained_charts);
+        output_groups = std::move(groups);
+        output_suggestions = std::move(suggestions);
+        charts.clear();
+        output_suggestions.clear();
+    }
+    void refill(wormedit::sys::project_chart_runtime_t&, const wormedit::song_document_t&);
+
+};
+} // namespace wormedit::ui

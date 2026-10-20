@@ -30,11 +30,11 @@ void worm_ui_nuklear_compose_handle_focus_lost();
 void worm_ui_nuklear_compose_discard_frame_input();
 
 void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
-                                           bool window_focused, WormUiWorkspaceAction* action);
+                                           bool window_focused, wormedit::ui::workspace_action_t* action);
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
-                                          const WormUiTimingView* timing_view,
-                                          WormUiWorkspaceAction* action, bool window_focused,
+                                          const wormedit::ui::timing_view_t* timing_view,
+                                          wormedit::ui::workspace_action_t* action, bool window_focused,
                                           bool ime_composition_active,
                                           const worm_ui_nuklear_pointer_click_t* double_clicks,
                                           std::size_t double_click_count,
@@ -45,11 +45,11 @@ void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const Worm
                                                         bool window_focused);
 
 void worm_ui_nuklear_render_compose_minimap(struct nk_context* context,
-    const WormUiComposeView* view, WormUiWorkspaceAction* action,
+    const WormUiComposeView* view, wormedit::ui::workspace_action_t* action,
     struct nk_rect bounds, bool window_focused);
 
 // The song-length bar under the transport seek bar: waveform of the zoomed window, measure
 // grid, playhead and the Compose viewport. Seeking and the beat-zero drag follow the window.
 void worm_ui_nuklear_render_compose_bgm_bar(struct nk_context* context,
-    const WormUiComposeView* view, WormUiWorkspaceAction* action,
+    const WormUiComposeView* view, wormedit::ui::workspace_action_t* action,
     struct nk_rect bounds, bool window_focused);

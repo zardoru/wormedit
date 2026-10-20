@@ -2,6 +2,8 @@
 #include "sys/preferences_runtime.h"
 #include "ui/frontend.h"
 #include <wormedit/core/notifications.h>
+#include <wormedit/core/keyed_cache.h>
+#include <tuple>
 
 namespace wormedit::sys {
 struct options_diagnostic_t {
@@ -16,8 +18,8 @@ struct options_runtime_t {
     program_preferences_t draft;
     program_preferences_t baseline;
     std::vector<options_diagnostic_t> diagnostics;
-    std::vector<WormUiOptionsDiagnostic> diagnostic_views;
-    std::vector<WormUiExternalPlayerDefinitionView> player_views;
+    keyed_cache_t<std::tuple<program_preferences_t, program_preferences_t, WormUiOptionsCategory>,
+                  bool> validation;
     std::string status;
     std::string current_field_layout_key;
     std::string current_field_layout_name;
@@ -33,10 +35,9 @@ void open_options(options_runtime_t&, const program_preferences_t&);
 // Later registered pages submit typed candidates; only the active category is copied.
 [[nodiscard]] auto edit_options_draft(options_runtime_t&, std::uint64_t revision,
     const program_preferences_t& candidate) -> bool;
-[[nodiscard]] auto options_view(options_runtime_t&) -> WormUiOptionsView;
 // Returns true only when an active category has been accepted into program preferences.
 [[nodiscard]] auto apply_options_action(options_runtime_t&, program_preferences_runtime_t&,
-    const WormUiOptionsAction&) -> bool;
+    const wormedit::ui::options_action_t&) -> bool;
 // Flips the click-audition preference through the same save path as the Options page and
 // mirrors the accepted value into `enabled`. Returns the save error, or empty on success.
 [[nodiscard]] auto toggle_audition_on_click(program_preferences_runtime_t&, bool& enabled)

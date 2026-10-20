@@ -38,25 +38,7 @@ struct color_rgba_t {
     auto operator==(const color_rgba_t&) const -> bool = default;
 };
 
-enum class format_family_t {
-    native_project,
-    bms,
-    stepmania,
-    osu_mania,
-    bmson,
-    midi,
-    quaver,
-};
 
-enum class text_encoding_t {
-    unknown,
-    ascii,
-    utf8,
-    cp932,
-    euc_kr,
-    cp949,
-    windows_1252,
-};
 
 struct source_provenance_t {
     format_family_t family{format_family_t::native_project};
@@ -89,15 +71,6 @@ struct position_span_t {
     auto operator==(const position_span_t&) const -> bool = default;
 };
 
-enum class lane_role_t {
-    playable,
-    scratch,
-    autoplay,
-    invisible,
-    mine,
-    free_zone,
-    foot_pedal,
-};
 
 enum class stage_group_t {
     none,
@@ -105,20 +78,6 @@ enum class stage_group_t {
     right,
 };
 
-enum class lane_glyph_t {
-    bar,
-    square,
-    arrow_left,
-    arrow_down,
-    arrow_up,
-    arrow_right,
-    // Appended after the cardinal arrows so stored values keep their meaning.
-    arrow_up_left,
-    arrow_up_right,
-    arrow_down_left,
-    arrow_down_right,
-    arrow_center,
-};
 
 struct midi_destination_t {
     std::uint8_t channel{};
@@ -330,12 +289,6 @@ enum class pause_kind_t {
     delay,
 };
 
-enum class pause_unit_t {
-    seconds,
-    milliseconds,
-    bms_stop_ticks,
-    beats,
-};
 
 struct pause_event_t {
     object_id_t id;
@@ -949,42 +902,11 @@ struct storyboard_document_t {
     std::optional<storyboard_document_model_t> model;
 };
 
-enum class existing_files_policy_t {
-    ask,
-    replace,
-    keep,
-};
 
-enum class output_destination_kind_t {
-    directory,
-    file,
-};
 
-enum class stepmania_profile_t {
-    sm,
-    ssc,
-};
 
-enum class stepmania_timing_syntax_t {
-    unspecified,
-    native_warps,
-    legacy_negative_bpm,
-    legacy_negative_stop,
-};
 
-enum class stepmania_implementation_profile_t {
-    unspecified,
-    stepmania_5_1,
-    etterna_0_75_1,
-};
 
-struct stepmania_export_policy_t {
-    stepmania_profile_t file_profile{stepmania_profile_t::ssc};
-    stepmania_timing_syntax_t timing_syntax{stepmania_timing_syntax_t::native_warps};
-    stepmania_implementation_profile_t implementation_profile{
-        stepmania_implementation_profile_t::unspecified};
-    auto operator==(const stepmania_export_policy_t&) const -> bool = default;
-};
 
 struct output_group_t {
     std::string name;

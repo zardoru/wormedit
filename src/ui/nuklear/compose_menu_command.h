@@ -5,7 +5,7 @@
 
 // A popup activation belongs to the chart/revision that drew it. Native/global
 // menu commands remain unstamped and resolve their target at invocation time.
-inline void emit_compose_menu_command(WormUiWorkspaceAction& action,
+inline void emit_compose_menu_command(wormedit::ui::workspace_action_t& action,
     const WormUiComposeView& view, const char* command) {
     if (action.menu_command_id[0]) return;
     std::snprintf(action.menu_command_id, sizeof(action.menu_command_id), "%s", command);

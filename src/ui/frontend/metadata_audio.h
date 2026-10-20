@@ -1,59 +1,86 @@
 #pragma once
 #include "catalog.h"
 #include "project.h"
-#include <span>
+#include <wormedit/core/metadata_limits.h>
+#include <array>
+#include <string>
+#include <vector>
+
+namespace wormedit::ui {
+inline constexpr std::size_t metadata_channel_map_lane_limit = 256;
+inline constexpr std::size_t audio_waveform_column_limit = 4096;
+inline constexpr std::size_t audio_sound_row_limit = 512;
+}
 #include <string_view>
 
-typedef struct WormUiMetadataFormatFieldView {
+struct WormUiComposeOutputGroupView;
+
+namespace wormedit::ui {
+struct metadata_format_field_view_t {
     bool chart_scoped;
-    uint8_t family;
+    format_family_t family;
     bool first_group_for_family;
     size_t group_index;
     size_t field_index;
     size_t group_field_count;
-    const char* name;
-    const char* value;
-    size_t name_bytes;
-    size_t value_bytes;
+    std::string name;
+    std::string value;
     bool has_source_order;
     size_t source_order;
-} WormUiMetadataFormatFieldView;
+    auto operator==(const metadata_format_field_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiMetadataFormatTargetView {
+namespace wormedit::ui {
+struct metadata_format_target_view_t {
     bool chart_scoped;
-    uint8_t family;
+    format_family_t family;
     bool group_exists;
     size_t group_index;
     size_t field_count;
-} WormUiMetadataFormatTargetView;
+    auto operator==(const metadata_format_target_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // One lane of the active layout segment on a BMS-family chart. channels is ordered visible,
 // invisible, long_note, mine; an unset channel is the empty string.
-typedef struct WormUiMetadataChannelMapLaneView {
-    uint64_t lane_id;
-    const char* name;
-    const char* channels[4];
-} WormUiMetadataChannelMapLaneView;
+namespace wormedit::ui {
+struct metadata_channel_map_lane_view_t {
+    lane_id_t lane_id;
+    std::string name;
+    std::array<std::string, 4> channels;
+    auto operator==(const metadata_channel_map_lane_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // One key-count profile offered for the chart's family. Custom is listed disabled with its reason.
-typedef struct WormUiMetadataLaneProfileChoice {
-    const char* label;
+namespace wormedit::ui {
+struct metadata_lane_profile_choice_view_t {
+    std::string label;
     bool enabled;
-    const char* reason;
-} WormUiMetadataLaneProfileChoice;
+    std::string reason;
+    auto operator==(const metadata_lane_profile_choice_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 // One difficulty offered by the Metadata multi-select; name is valid for the frame.
-typedef struct WormUiMetadataChartChoice {
-    uint64_t chart_id;
-    const char* name;
-} WormUiMetadataChartChoice;
+namespace wormedit::ui {
+struct metadata_chart_choice_view_t {
+    chart_id_t chart_id;
+    std::string name;
+    auto operator==(const metadata_chart_choice_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiAudioWaveformColumnView {
+namespace wormedit::ui {
+struct audio_waveform_column_view_t {
     float minimum[2];
     float maximum[2];
     float absolute_peak[2];
     float rms[2];
-} WormUiAudioWaveformColumnView;
+    auto operator==(const audio_waveform_column_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiMetadataDropDestination {
     WORM_UI_METADATA_DROP_NONE,
@@ -62,13 +89,17 @@ typedef enum WormUiMetadataDropDestination {
     WORM_UI_METADATA_DROP_OUTPUT_PATH,
 } WormUiMetadataDropDestination;
 
-typedef struct WormUiMetadataDropTarget {
+namespace wormedit::ui {
+struct metadata_drop_target_t {
     WormUiMetadataDropDestination destination;
     size_t output_group_index;
-} WormUiMetadataDropTarget;
+    auto operator==(const metadata_drop_target_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiMetadataView {
-    WormUiKindCatalogView format_families;
+namespace wormedit::ui {
+struct metadata_view_t {
+    wormedit::ui::kind_catalog_view_t<wormedit::format_family_t> format_families;
     bool visible;
     bool song_fields_editable;
     bool chart_fields_editable;
@@ -77,16 +108,12 @@ typedef struct WormUiMetadataView {
     bool search_tags_editable;
     uint64_t document_revision;
     bool has_chart;
-    uint64_t chart_id;
-    uint8_t selected_chart_source_family;
-    const char* title;
-    const char* artist;
-    size_t title_bytes;
-    size_t artist_bytes;
-    const char* chart_name;
-    const char* chart_author;
-    size_t chart_name_bytes;
-    size_t chart_author_bytes;
+    chart_id_t chart_id;
+    format_family_t selected_chart_source_family;
+    std::string title;
+    std::string artist;
+    std::string chart_name;
+    std::string chart_author;
     bool has_chart_rating;
     int64_t chart_rating_numerator;
     uint64_t chart_rating_denominator;
@@ -95,149 +122,160 @@ typedef struct WormUiMetadataView {
     int64_t audio_offset_numerator;
     uint64_t audio_offset_denominator;
     bool audio_waveform_has_selected_asset;
-    uint64_t audio_waveform_selected_asset_id;
+    asset_id_t audio_waveform_selected_asset_id;
     bool audio_waveform_analysis_pending;
     bool audio_waveform_available;
     uint64_t audio_waveform_total_frames;
     uint32_t audio_waveform_sample_rate;
-    const WormUiAudioWaveformColumnView* audio_waveform_columns;
-    size_t audio_waveform_column_count;
+    std::vector<wormedit::ui::audio_waveform_column_view_t> audio_waveform_columns;
     bool audio_offset_drag_active;
     int64_t audio_offset_drag_delta_frames;
     int64_t proposed_audio_offset_numerator;
     uint64_t proposed_audio_offset_denominator;
-    const char* const* search_tags;
-    const size_t* search_tag_bytes;
-    size_t search_tag_count;
-    bool format_fields_truncated;
-    const WormUiMetadataFormatFieldView* format_fields;
+    std::vector<std::string> search_tags;
+    std::vector<wormedit::ui::metadata_format_field_view_t> format_fields;
     size_t format_field_total_count;
-    size_t format_field_count;
-    const WormUiMetadataFormatTargetView* format_targets;
-    size_t format_target_count;
-    const char* project_directory;
-    const char* selected_music_source;
-    uint64_t selected_music_asset_id;
-    uint64_t next_import_asset_id;
+    std::vector<wormedit::ui::metadata_format_target_view_t> format_targets;
+    std::string project_directory;
+    std::string selected_music_source;
+    asset_id_t selected_music_asset_id;
+    asset_id_t next_import_asset_id;
     bool import_copy_pending;
     size_t selected_music_resource_count;
     size_t selected_music_channel_count;
-    const struct WormUiComposeOutputGroupView* output_groups;
-    size_t output_group_count;
-    bool output_groups_truncated;
-    const char* dropped_music_path;
-    WormUiMetadataDropTarget dropped_music_target;
-    const char* dropped_output_relative_path;
+    std::vector<WormUiComposeOutputGroupView> output_groups;
+    // Temporary: T-698 converts the nested Compose row text away from frame-arena storage.
+    bool output_group_text_truncated;
+    std::string dropped_music_path;
+    wormedit::ui::metadata_drop_target_t dropped_music_target;
+    std::string dropped_output_relative_path;
     size_t dropped_output_group_index;
-    const char* copy_preview_text;
+    std::string copy_preview_text;
     bool copy_preview_pending;
     bool copy_preview_export;
     bool copy_preview_import;
     size_t copy_preview_group_index;
-    uint64_t copy_preview_asset_id;
-    const char* copy_preview_source;
-    uint64_t channel_map_layout_segment_id;
-    bool channel_map_lanes_truncated;
-    const WormUiMetadataChannelMapLaneView* channel_map_lanes;
-    size_t channel_map_lane_count;
+    asset_id_t copy_preview_asset_id;
+    std::string copy_preview_source;
+    object_id_t channel_map_layout_segment_id;
+    std::vector<wormedit::ui::metadata_channel_map_lane_view_t> channel_map_lanes;
     // Preview state of the sealed proposal from the last Preview action; Apply needs it valid,
     // present and conflict-free.
     bool channel_map_preview_present;
     bool channel_map_preview_valid;
     size_t channel_map_preview_affected_note_count;
     size_t channel_map_preview_conflict_count;
-    const char* channel_map_preview_message;
+    std::string channel_map_preview_message;
     bool channel_map_apply_enabled;
+    bool channel_map_editable;
     // Key-count selector: the chart's family profiles, then Custom. current is the chart's own index.
-    const WormUiMetadataLaneProfileChoice* lane_profile_choices;
-    size_t lane_profile_choice_count;
+    std::vector<wormedit::ui::metadata_lane_profile_choice_view_t> lane_profile_choices;
     size_t lane_profile_current;
     bool lane_profile_preview_present;
     bool lane_profile_preview_valid;
     size_t lane_profile_mapped_note_count;
     size_t lane_profile_dropped_note_count;
     size_t lane_profile_collision_count;
-    const char* lane_profile_preview_message;
+    std::string lane_profile_preview_message;
     bool lane_profile_apply_enabled;
-    const WormUiMetadataChartChoice* chart_choices;
-    size_t chart_choice_count;
-    bool chart_choices_truncated;
-} WormUiMetadataView;
+    std::vector<wormedit::ui::metadata_chart_choice_view_t> chart_choices;
+    [[nodiscard]] auto find_format_field(format_family_t family, bool chart_scoped,
+                                          std::size_t field_index) const
+        -> const metadata_format_field_view_t* {
+        for (const auto& field : format_fields)
+            if (field.family == family && field.chart_scoped == chart_scoped &&
+                field.first_group_for_family && field.field_index == field_index) return &field;
+        return nullptr;
+    }
+    [[nodiscard]] auto find_song_format_target(format_family_t family) const
+        -> const metadata_format_target_view_t* {
+        for (const auto& target : format_targets)
+            if (!target.chart_scoped && target.family == family) return &target;
+        return nullptr;
+    }
+    void reset();
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundRowView {
-    uint64_t resource_id;
-    uint64_t asset_id;
-    const char* name;
-    const char* tags_text;
-    std::span<const std::string_view> tags;
-    const char* source_path;
+namespace wormedit::ui {
+struct sound_row_view_t {
+    resource_id_t resource_id;
+    asset_id_t asset_id;
+    std::string name;
+    std::string tags_text;
+    std::vector<std::string> tags;
+    std::string source_path;
     // 0 unspecified, 1 stem, 2 keysound, 3 sample (sound_kind_t, effective kind).
-    int kind;
+    sound_kind_t kind;
     uint64_t use_count;
     uint64_t duration_frames;
     uint32_t sample_rate;
     bool missing;
-    uint64_t bmson_channel_id;
+    object_id_t bmson_channel_id;
     bool bmson_channel_continues;
-} WormUiSoundRowView;
+    auto operator==(const sound_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundUsageRowView {
-    uint64_t chart_id;
-    uint64_t measure_id;
+namespace wormedit::ui {
+struct sound_usage_row_view_t {
+    chart_id_t chart_id;
+    measure_id_t measure_id;
     uint64_t row;
-    uint64_t object_id;
-    uint64_t channel_id;
-    uint64_t clip_id;
-    uint64_t referenced_resource_id;
-    uint64_t referenced_asset_id;
-    int kind;
-    int scope;
+    object_id_t object_id;
+    object_id_t channel_id;
+    clip_id_t clip_id;
+    resource_id_t referenced_resource_id;
+    asset_id_t referenced_asset_id;
+    sound_usage_kind_t kind;
+    sound_usage_scope_t scope;
     bool position_valid;
-    const char* chart_label;
-    const char* position_label;
-} WormUiSoundUsageRowView;
+    std::string chart_label;
+    std::string position_label;
+    auto operator==(const sound_usage_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiAudioWaveformViewportRequest {
-    uint64_t asset_id;
+namespace wormedit::ui {
+struct audio_waveform_viewport_request_t {
+    asset_id_t asset_id;
     uint64_t total_frames;
     uint64_t begin_frame;
     double frames_per_pixel;
     uint32_t pixel_width;
     bool valid;
-} WormUiAudioWaveformViewportRequest;
+    auto operator==(const audio_waveform_viewport_request_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiAudioSlicesView {
-    const WormUiSoundRowView* sound_rows;
-    size_t sound_row_count;
+namespace wormedit::ui {
+struct audio_slices_view_t {
+    std::vector<wormedit::ui::sound_row_view_t> sound_rows;
     bool sound_rows_truncated;
-    uint64_t selected_resource_id;
-    uint64_t selected_channel_id;
-    uint64_t selected_clip_id;
-    const WormUiSoundUsageRowView* usage_rows;
-    size_t usage_row_count;
+    resource_id_t selected_resource_id;
+    object_id_t selected_channel_id;
+    clip_id_t selected_clip_id;
+    std::vector<wormedit::ui::sound_usage_row_view_t> usage_rows;
     size_t usage_total_count;
     bool usage_rows_truncated;
     bool usage_valid;
-    uint64_t usage_song_id;
+    song_id_t usage_song_id;
     uint64_t usage_document_revision;
-    uint64_t usage_resource_id;
-    uint64_t usage_asset_id;
+    resource_id_t usage_resource_id;
+    asset_id_t usage_asset_id;
     bool visible;
-    bool assets_truncated;
-    const uint64_t* asset_ids;
-    size_t asset_count;
+    std::vector<asset_id_t> asset_ids;
     bool has_selected_asset;
-    uint64_t selected_asset_id;
+    asset_id_t selected_asset_id;
     bool analysis_pending;
     bool waveform_available;
     uint64_t total_frames;
     uint64_t waveform_begin_frame;
     uint64_t waveform_end_frame;
     uint32_t sample_rate;
-    const WormUiAudioWaveformColumnView* waveform_columns;
-    size_t waveform_column_count;
+    std::vector<wormedit::ui::audio_waveform_column_view_t> waveform_columns;
     bool has_chart;
-    uint64_t chart_id;
+    chart_id_t chart_id;
     uint64_t document_revision;
     bool timing_locked;
     int64_t offset_numerator;
@@ -246,16 +284,21 @@ typedef struct WormUiAudioSlicesView {
     int64_t offset_drag_delta_frames;
     int64_t proposed_offset_numerator;
     uint64_t proposed_offset_denominator;
-    WormUiKindCatalogView sound_kinds;
-} WormUiAudioSlicesView;
+    wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t> sound_kinds;
+    void reset();
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiSoundUsageRequest {
-    uint64_t selected_project_id;
-    uint64_t selected_resource_id;
-    uint64_t selected_channel_id;
-    uint64_t selected_clip_id;
+namespace wormedit::ui {
+struct sound_usage_request_t {
+    song_id_t selected_project_id;
+    resource_id_t selected_resource_id;
+    object_id_t selected_channel_id;
+    clip_id_t selected_clip_id;
     bool find_uses_open;
-} WormUiSoundUsageRequest;
+    auto operator==(const sound_usage_request_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiAudioOffsetDragAction {
     WORM_UI_AUDIO_OFFSET_DRAG_NONE = 0,

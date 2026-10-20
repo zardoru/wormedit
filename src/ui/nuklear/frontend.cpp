@@ -86,6 +86,7 @@ class RenderSubphaseScope {
 #include <mutex>
 #include <new>
 #include <stddef.h>
+#include <span>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -139,7 +140,7 @@ static void shutdown_stem_resize_cursor() {
     g_stem_resize_cursor_applied = g_stem_resize_cursor_attempted = false;
 }
 
-static void clear_inactive_stem_resize_cursor(const WormUiWorkspaceView& view, bool focused) {
+static void clear_inactive_stem_resize_cursor(const wormedit::ui::workspace_view_t& view, bool focused) {
     if (!g_compose_area_shortcuts_active || !focused || view.compose.input_occluded) {
         apply_stem_resize_cursor(false);
     }
@@ -155,7 +156,7 @@ static bool g_window_focused{true};
 static wormedit::ui::nuklear::notification_toast_state_t g_notification_state;
 static wormedit::ui::nuklear::notification_panel_state_t g_notification_history_state;
 static bool g_notification_history_close_pending;
-static WormUiNotificationView g_notification_view{};
+static wormedit::ui::notification_view_t g_notification_view{};
 static nk_context g_notification_context{};
 static bool g_notification_context_initialized{};
 static bool g_notification_modal{};
@@ -164,8 +165,8 @@ static bool g_notification_escape_captured{};
 // Esc deselects before it dismisses a toast: set each frame while Compose has something to clear.
 static bool g_compose_escape_has_selection{};
 
-static void render_notification_frame(const WormUiNotificationView& view,
-    WormUiWorkspaceAction& action, int width, int height, bool project_modal);
+static void render_notification_frame(const wormedit::ui::notification_view_t& view,
+    wormedit::ui::workspace_action_t& action, int width, int height, bool project_modal);
 
 static std::array<WormUiShortcutEvent, WORM_UI_SHORTCUT_EVENT_CAPACITY> g_shortcut_events{};
 static size_t g_shortcut_event_count{};
@@ -224,9 +225,8 @@ static void request_manual_new_project() {
     g_new_project_wizard.audio_path.clear();
 }
 
-static void sync_pending_audio_project(const WormUiWorkspaceView& view) {
-    const std::string pending =
-        view.pending_new_project_audio_path ? view.pending_new_project_audio_path : "";
+static void sync_pending_audio_project(const wormedit::ui::workspace_view_t& view) {
+    const std::string pending{view.pending_new_project_audio_path};
     if (pending.empty()) {
         g_new_project_wizard.last_pending_audio_path.clear();
         if (g_new_project_wizard.audio)
@@ -344,7 +344,7 @@ static void start_project_file_dialog(WormUiWorkspaceActionKind kind) {
                                save_filters, SDL_arraysize(save_filters), "Untitled.wormedit");
 }
 
-static void consume_project_file_dialog(WormUiWorkspaceAction& action) {
+static void consume_project_file_dialog(wormedit::ui::workspace_action_t& action) {
     std::unique_lock lock{g_project_dialog.mutex};
     if (!g_project_dialog.active || !g_project_dialog.ready) return;
     g_project_dialog.active = false;
@@ -373,8 +373,8 @@ void worm_ui_frontend_project_dialog_callback_for_testing(uint64_t generation, c
     project_file_dialog_callback(new std::uint64_t{generation}, files, 0);
 }
 
-WormUiWorkspaceAction worm_ui_frontend_consume_project_dialog_for_testing(void) {
-    WormUiWorkspaceAction action{};
+wormedit::ui::workspace_action_t worm_ui_frontend_consume_project_dialog_for_testing(void) {
+    wormedit::ui::workspace_action_t action{};
     consume_project_file_dialog(action);
     return action;
 }
@@ -407,8 +407,8 @@ static bool frontend_window_size(int* width, int* height) {
 }
 
 static bool nuklear_text_entry_active(void);
-static bool project_modal_active(const WormUiWorkspaceView& view);
-static bool external_project_modal_active(const WormUiWorkspaceView& view);
+static bool project_modal_active(const wormedit::ui::workspace_view_t& view);
+static bool external_project_modal_active(const wormedit::ui::workspace_view_t& view);
 static bool notification_history_focused();
 
 // Ctrl+A with the pointer over the Sounds or BGA dock list selects the rows shown there instead
@@ -508,7 +508,7 @@ static bool nuklear_text_entry_active(void) {
     return active_window->edit.active != 0;
 }
 
-static void expose_shortcut_input(WormUiWorkspaceAction* action, bool compose_lane_focused = false,
+static void expose_shortcut_input(wormedit::ui::workspace_action_t* action, bool compose_lane_focused = false,
                                   uint64_t focused_lane_id = 0) {
     if (!action) {
         return;
@@ -554,7 +554,7 @@ static void queue_compose_text_hotkeys(const char* text) {
 }
 
 // Turns the first queued hotkey into a Compose action; the rest are dropped.
-static void consume_compose_text_hotkeys(WormUiWorkspaceAction& action) {
+static void consume_compose_text_hotkeys(wormedit::ui::workspace_action_t& action) {
     const auto count = std::exchange(g_compose_text_hotkey_count, std::size_t{});
     if (count == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE ||
         worm_ui_nuklear_compose_state().inline_offset.bgm_column_count_edit.input_owned ||
@@ -587,12 +587,8 @@ static void queue_compose_wheel_event(const SDL_MouseWheelEvent* event) {
         wheel->mouse_x, wheel->mouse_y, wheel->modifiers, wheel->coarse_steps);
 }
 
-static int recovery_action_offered(const WormUiRecoveryCandidateView* candidate, size_t action) {
-    return candidate && (candidate->action_mask & action) != 0;
-}
-
-static void set_recovery_action(WormUiWorkspaceAction* action,
-                                const WormUiRecoveryCandidateView* candidate,
+static void set_recovery_action(wormedit::ui::workspace_action_t* action,
+                                const wormedit::ui::recovery_candidate_view_t* candidate,
                                 WormUiWorkspaceActionKind kind) {
     if (!action || !candidate) {
         return;
@@ -814,7 +810,7 @@ static bool capture_tap_timing_key(const SDL_KeyboardEvent& event) {
     return true;
 }
 
-WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
+wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t window_id, float x,
                                                                 float y) {
     if (!g_context ||
         (window_id != 0 && (!g_window || window_id != SDL_GetWindowID(g_window))) || !std::isfinite(x) ||
@@ -823,7 +819,7 @@ WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t window_i
     return worm_ui_nuklear_metadata_drop_target(x, y);
 }
 
-void worm_ui_frontend_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest* request) {
+void worm_ui_frontend_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t* request) {
     if (!request) return;
     worm_ui_nuklear_audio_waveform_viewport_request(*request);
 }
@@ -886,7 +882,7 @@ void worm_ui_frontend_keysound_dock_request(WormUiKeysoundDockRequest* request) 
 }
 
 bool worm_ui_frontend_stage_sound_slot_batch(uint64_t project, uint64_t chart, uint64_t revision,
-    uint16_t first_slot, const WormUiSoundSlotImportItem* items, size_t count, const char* reason) {
+    uint16_t first_slot, const wormedit::ui::sound_slot_import_item_t* items, size_t count, const char* reason) {
     auto& state = worm_ui_nuklear_compose_state();
     if (!state.keysound_filters.keysound_slots_mode) return false;
     if (wormedit::ui::nuklear::slot_review_active(state) || state.keysound_slots.keysound_pending_file) {
@@ -1127,8 +1123,8 @@ bool worm_ui_frontend_compose_dock_command(WormUiComposeDockCommand command,
     return false;
 }
 
-static void consume_layer_creation_request(const WormUiWorkspaceView& view,
-                                            WormUiWorkspaceAction& action) {
+static void consume_layer_creation_request(const wormedit::ui::workspace_view_t& view,
+                                            wormedit::ui::workspace_action_t& action) {
     auto& compose = worm_ui_nuklear_compose_state();
     const auto request = std::exchange(compose.layer_editor.layer_creation_request, std::nullopt);
     if (!request || !compose_dock_input_available() || !view.project_loaded || view.options.visible ||
@@ -1625,7 +1621,7 @@ static wormedit::ui::chrome::Dialog g_close_dialog;
 
 // Maps a dialog result to the close decision; Save also starts the save, through the file
 // dialog when the project has no native path yet.
-static void apply_close_result(const WormUiCloseConfirmationView& view, WormUiWorkspaceAction& action,
+static void apply_close_result(const wormedit::ui::close_confirmation_view_t& view, wormedit::ui::workspace_action_t& action,
                                wormedit::ui::chrome::DialogResult result) {
     using wormedit::ui::chrome::DialogResult;
     WormUiCloseDecision decision = WORM_UI_CLOSE_NONE;
@@ -1639,12 +1635,12 @@ static void apply_close_result(const WormUiCloseConfirmationView& view, WormUiWo
     }
     if (decision == WORM_UI_CLOSE_NONE) return;
     action.close_decision = decision;
-    action.close_project_id = view.project_id;
+    action.close_project_id = view.project_id.value;
     action.close_revision = view.revision;
 }
 
-static void render_close_confirmation(const WormUiCloseConfirmationView& view,
-    WormUiWorkspaceAction& action, int width, int height) {
+static void render_close_confirmation(const wormedit::ui::close_confirmation_view_t& view,
+    wormedit::ui::workspace_action_t& action, int width, int height) {
     if (!view.visible) return;
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_close_dialog;
@@ -1654,8 +1650,8 @@ static void render_close_confirmation(const WormUiCloseConfirmationView& view,
         chrome::dialog_text(dialog, g_context, view.application
             ? "Save your changes before quitting WormEdit?"
             : "Save your changes before closing this project?", chrome::color(chrome::UiColor::text));
-        if (view.status_text && view.status_text[0])
-            chrome::dialog_text(dialog, g_context, view.status_text, chrome::color(chrome::UiColor::conflict));
+        if (!view.status_text.empty())
+            chrome::dialog_text(dialog, g_context, view.status_text.data(), chrome::color(chrome::UiColor::conflict));
         chrome::dialog_footer_begin(dialog, g_context, 3, true, 120.0f);
         chrome::dialog_button(dialog, g_context, "Discard changes", chrome::DialogButtonRole::destructive);
         chrome::dialog_button(dialog, g_context, "Cancel", chrome::DialogButtonRole::secondary);
@@ -1664,7 +1660,7 @@ static void render_close_confirmation(const WormUiCloseConfirmationView& view,
     apply_close_result(view, action, chrome::dialog_end(dialog, g_context));
 }
 
-static void render_workspace_error(WormUiWorkspaceAction* action, int width, int height,
+static void render_workspace_error(wormedit::ui::workspace_action_t* action, int width, int height,
                                    const char* diagnostic, bool input_blocked = false) {
     worm_ui_nuklear_compose_discard_frame_input();
     if (nk_begin(g_context, "wormedit-workspace", nk_rect(0, 0, (float)width, (float)height),
@@ -1690,12 +1686,12 @@ static void render_workspace_error(WormUiWorkspaceAction* action, int width, int
     expose_shortcut_input(action);
 }
 
-WormUiWorkspaceAction worm_ui_frontend_workspace_error(
-    const char* diagnostic, const WormUiNotificationView* notifications,
-    const WormUiCloseConfirmationView* close) {
+wormedit::ui::workspace_action_t worm_ui_frontend_workspace_error(
+    const char* diagnostic, const wormedit::ui::notification_view_t* notifications,
+    const wormedit::ui::close_confirmation_view_t* close) {
     worm_ui_nuklear_compose_state().layer_editor.layer_creation_request.reset();
     worm_ui_nuklear_begin_image_quad_frame();
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     consume_project_file_dialog(action);
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
@@ -1709,7 +1705,7 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(
     if (!frontend_window_size(&width, &height)) {
         return action;
     }
-    g_notification_view = notifications ? *notifications : WormUiNotificationView{};
+    g_notification_view = notifications ? *notifications : wormedit::ui::notification_view_t{};
     const bool modal = close && close->visible;
     g_notification_modal = modal;
     g_notification_project_modal = modal;
@@ -1722,7 +1718,7 @@ WormUiWorkspaceAction worm_ui_frontend_workspace_error(
 using MenuAction = wormedit::ui::workspace_menu_action_t;
 static wormedit::ui::workspace_menu_t g_workspace_menu;
 
-static void refresh_workspace_menu_model(const WormUiWorkspaceView& view) {
+static void refresh_workspace_menu_model(const wormedit::ui::workspace_view_t& view) {
     g_workspace_menu = wormedit::ui::build_workspace_menu(view,
         project_modal_active(view) || view.options.visible || project_dialog_active(),
         nuklear_text_entry_active() || g_ime_composition_active, g_frame_timing_visible);
@@ -1734,7 +1730,7 @@ static void refresh_workspace_menu_model(const WormUiWorkspaceView& view) {
 }
 
 static void apply_workspace_menu_action(MenuAction chosen,
-                                         WormUiWorkspaceAction& action) {
+                                         wormedit::ui::workspace_action_t& action) {
     const auto found = std::ranges::find(g_workspace_menu, chosen, &wormedit::ui::workspace_menu_item_t::action);
     if (found == g_workspace_menu.end() || !found->enabled) return;
     if (found->recent_path) {
@@ -1755,7 +1751,7 @@ static void apply_workspace_menu_action(MenuAction chosen,
     case MenuAction::frame_timing: g_frame_timing_visible = !g_frame_timing_visible; break;
     case MenuAction::timing_settings: action.timing_settings.toggle = true; break;
     case MenuAction::preview: action.kind = WORM_UI_WORKSPACE_ACTION_TOGGLE_PLAYER_PREVIEW; break;
-    case MenuAction::external_preferences: action.external_player.kind = WORM_UI_EXTERNAL_PLAYER_OPEN; break;
+    case MenuAction::external_preferences: action.external_player.kind = wormedit::ui::external_player_action_kind_t::open; break;
     case MenuAction::about:
         g_help_dialog = HelpDialog::about;
         g_about_dialog = {};
@@ -1778,7 +1774,7 @@ static bool native_menu_active() {
 
 int worm_ui_frontend_title_bar_height(void) { return native_menu_active() ? 0 : 36; }
 
-static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspaceAction&
+static void service_native_menu(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t&
 #if defined(WORMEDIT_HAS_MACOS_MENU)
                                 action
 #endif
@@ -1789,7 +1785,7 @@ static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspace
     if (nuklear_text_entry_active() || g_ime_composition_active)
         for (auto& item : g_workspace_menu) if (item.command_id) item.enabled = false;
     char title[512]{};
-    std::snprintf(title, sizeof(title), "%s%s", view.project_title, view.dirty ? " *" : "");
+    std::snprintf(title, sizeof(title), "%s%s", view.project_title.data(), view.dirty ? " *" : "");
     if (std::strcmp(SDL_GetWindowTitle(g_window), title) != 0) SDL_SetWindowTitle(g_window, title);
     wormedit::sys::refresh_macos_menu(g_workspace_menu);
     const auto chosen = wormedit::sys::take_macos_menu_action();
@@ -1801,7 +1797,7 @@ static void service_native_menu(const WormUiWorkspaceView& view, WormUiWorkspace
 #endif
 }
 
-static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
+static void close_unavailable_inline_offset(const wormedit::ui::workspace_view_t& view) {
     auto& compose = worm_ui_nuklear_compose_state();
     if (!compose.inline_offset.inline_offset_open) return;
     const bool available = g_window_focused && view.project_loaded &&
@@ -1818,13 +1814,13 @@ static void close_unavailable_inline_offset(const WormUiWorkspaceView& view) {
 }
 
 // The screen title is centered on the window, not on the room left by the menus.
-static void render_title_label(const WormUiWorkspaceView& view) {
+static void render_title_label(const wormedit::ui::workspace_view_t& view) {
     struct nk_rect bounds{};
     if (nk_widget(&bounds, g_context) == NK_WIDGET_INVALID) return;
     const auto* font = g_context->style.font;
     if (!font) return;
     char title[512]{};
-    std::snprintf(title, sizeof(title), "%s%s", view.project_title, view.dirty ? " *" : "");
+    std::snprintf(title, sizeof(title), "%s%s", view.project_title.data(), view.dirty ? " *" : "");
     const auto length = static_cast<int>(std::strlen(title));
     const auto width = font->width(font->userdata, font->height, title, length);
     const auto window = nk_window_get_bounds(g_context);
@@ -1872,7 +1868,7 @@ struct MenuPointerCapture {
     }
 };
 
-static void render_menu_titles(WormUiWorkspaceAction& action) {
+static void render_menu_titles(wormedit::ui::workspace_action_t& action) {
     for (const auto* title : wormedit::ui::workspace_menu_titles) {
         const auto chosen = wormedit::ui::render_workspace_menu(g_context, g_workspace_menu,
             title, g_window_focused, g_menu_popup_open, g_menu_popup_release_pending);
@@ -1881,8 +1877,8 @@ static void render_menu_titles(WormUiWorkspaceAction& action) {
     }
 }
 
-static void render_title_bar(const WormUiWorkspaceView* view,
-                             WormUiWorkspaceAction* action) {
+static void render_title_bar(const wormedit::ui::workspace_view_t* view,
+                             wormedit::ui::workspace_action_t* action) {
     const bool menu_was_open = g_menu_popup_open;
     (void)wormedit::ui::chrome::popup_update_release_pending(g_context, g_menu_popup_release_pending);
     g_menu_popup_open = false;
@@ -1923,23 +1919,23 @@ static void render_title_bar(const WormUiWorkspaceView* view,
         g_menu_pointer_capture->capture();
 }
 
-static void render_workspace_tabs(const WormUiWorkspaceView* view,
-                                  WormUiWorkspaceAction* action) {
+static void render_workspace_tabs(const wormedit::ui::workspace_view_t* view,
+                                  wormedit::ui::workspace_action_t* action) {
     int visible_tabs = 0;
-    for (const auto& item : view->tabs) visible_tabs += item.label != nullptr;
+    for (const auto& item : view->tabs) visible_tabs += !item.label.empty();
     nk_layout_row_dynamic(g_context, 32, visible_tabs);
     for (int tab = 0; tab < WORM_UI_WORKSPACE_TAB_COUNT; ++tab) {
         const auto& item = view->tabs[tab];
-        if (!item.label) continue;
+        if (item.label.empty()) continue;
         if (!item.enabled) nk_widget_disable_begin(g_context);
         const bool selected = tab == static_cast<int>(view->active_tab);
         const bool clicked = wormedit::ui::chrome::mode_button(
-            g_context, item.label, nullptr, selected);
+            g_context, item.label.data(), nullptr, selected);
         if (!item.enabled) nk_widget_disable_end(g_context);
         if (clicked && item.enabled && !selected &&
             action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action->kind = WORM_UI_WORKSPACE_ACTION_SWITCH_TAB;
-            action->tab = item.id;
+            action->tab = static_cast<WormUiWorkspaceTab>(item.id);
         }
     }
 }
@@ -1952,8 +1948,8 @@ static bool status_minimap_available(const WormUiComposeView& view) {
            worm_ui_nuklear_compose_overview_valid(&view);
 }
 
-static void render_minimap_preferences(const WormUiWorkspaceView& view,
-                                      WormUiWorkspaceAction* action, struct nk_rect bounds) {
+static void render_minimap_preferences(const wormedit::ui::workspace_view_t& view,
+                                      wormedit::ui::workspace_action_t* action, struct nk_rect bounds) {
     static bool open = false;
     static struct nk_rect popup_bounds{};
     if (nk_input_mouse_clicked(&g_context->input, NK_BUTTON_RIGHT, bounds)) {
@@ -1984,8 +1980,8 @@ static void render_minimap_preferences(const WormUiWorkspaceView& view,
     nk_popup_end(g_context);
 }
 
-static void render_status_minimap(const WormUiWorkspaceView& view,
-                                  WormUiWorkspaceAction* action, bool available) {
+static void render_status_minimap(const wormedit::ui::workspace_view_t& view,
+                                  wormedit::ui::workspace_action_t* action, bool available) {
     if (available && view.compose.bgm_bar_row_count == 0) {
         const auto bounds = nk_widget_bounds(g_context);
         nk_widget_disable_begin(g_context);
@@ -2002,7 +1998,7 @@ static void render_status_minimap(const WormUiWorkspaceView& view,
     const bool readonly = (g_context->current->layout->flags & NK_WINDOW_ROM) != 0;
     const bool focused = g_window_focused && interactive && !readonly &&
         !g_new_project_wizard.open && !project_dialog_active() &&
-        (!view.pending_bms_encoding_path || !view.pending_bms_encoding_path[0]);
+        view.pending_bms_encoding_path.empty();
     worm_ui_nuklear_render_compose_bgm_bar(g_context, &view.compose, action, bounds, focused);
     if (available && g_window_focused && !g_new_project_wizard.open && !project_dialog_active())
         render_minimap_preferences(view, action, bounds);
@@ -2016,34 +2012,35 @@ static void render_elided_status_label(std::string_view text, nk_flags alignment
     nk_label_colored(g_context, label.c_str(), alignment, color);
 }
 
-static auto workspace_status_line(const WormUiWorkspaceView& view, std::size_t selected) -> std::string {
-    const auto* line = view.notifications.current_text ? view.notifications.current_text : view.status_text;
-    std::string status = line;
+static auto workspace_status_line(const wormedit::ui::workspace_view_t& view, std::size_t selected) -> std::string {
+    const auto line = view.notifications.current_text.empty()
+        ? view.status_text : view.notifications.current_text;
+    std::string status{line};
     if (selected != 0)
         status = std::to_string(selected) + " objects selected · " + status;
     return status;
 }
 
-static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspaceAction* action) {
+static void render_transport_rate(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t* action) {
     const auto& rates = view.playback_rates;
-    if (!rates.entries || rates.count == 0) return;
-    int index = static_cast<int>(rates.count) - 1;
-    for (std::size_t i = 0; i < rates.count; ++i)
+    if (rates.entries.empty()) return;
+    int index = static_cast<int>(rates.entries.size()) - 1;
+    for (std::size_t i = 0; i < rates.entries.size(); ++i)
         if (rates.entries[i].id == view.transport_rate_id) index = static_cast<int>(i);
     int target = index;
     nk_spacing(g_context, 1);
     if (!view.transport_rate_available) nk_widget_disable_begin(g_context);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_left, "Slower playback rate"}.render(g_context) &&
         index > 0) target = index - 1;
-    nk_label(g_context, rates.entries[index].label, NK_TEXT_CENTERED);
+    nk_label(g_context, rates.entries[index].label.data(), NK_TEXT_CENTERED);
     if (wormedit::ui::chrome::IconButton{Glyph::chevron_right, "Faster playback rate"}.render(g_context) &&
-        index + 1 < static_cast<int>(rates.count)) target = index + 1;
+        index + 1 < static_cast<int>(rates.entries.size())) target = index + 1;
     if (!view.transport_rate_available) nk_widget_disable_end(g_context);
     nk_spacing(g_context, 1);
     if (view.transport_rate_available && target != index && action->kind == WORM_UI_WORKSPACE_ACTION_NONE) {
         action->kind = WORM_UI_WORKSPACE_ACTION_TRANSPORT_SET_RATE;
         action->transport_rate_index = static_cast<uint8_t>(target);
-        action->transport_rate_id = rates.entries[target].id;
+        action->transport_rate_id = static_cast<std::uint32_t>(rates.entries[target].id);
     }
     if (!view.transport_keep_pitch_available) nk_widget_disable_begin(g_context);
     const auto* keep_pitch_hint = view.transport_keep_pitch_available
@@ -2057,8 +2054,8 @@ static void render_transport_rate(const WormUiWorkspaceView& view, WormUiWorkspa
     if (!view.transport_keep_pitch_available) nk_widget_disable_end(g_context);
 }
 
-static void render_metronome_toggle(const WormUiWorkspaceView& view,
-                                    WormUiWorkspaceAction& action) {
+static void render_metronome_toggle(const wormedit::ui::workspace_view_t& view,
+                                    wormedit::ui::workspace_action_t& action) {
     if (!view.transport_metronome_available) nk_widget_disable_begin(g_context);
     const auto hint = view.transport_metronome_enabled ? "Disable metronome" : "Enable metronome";
     if (wormedit::ui::chrome::IconButton{Glyph::metronome, hint,
@@ -2068,21 +2065,21 @@ static void render_metronome_toggle(const WormUiWorkspaceView& view,
     if (!view.transport_metronome_available) nk_widget_disable_end(g_context);
 }
 
-static bool notification_badge_visible(const WormUiNotificationView& view) {
+static bool notification_badge_visible(const wormedit::ui::notification_view_t& view) {
     return view.unread_warnings != 0 || view.unread_errors != 0;
 }
 
-static nk_color notification_status_color(const WormUiNotificationView& view) {
+static nk_color notification_status_color(const wormedit::ui::notification_view_t& view) {
     using wormedit::ui::theme::UiColor;
-    if (view.current_severity == WORM_UI_NOTIFICATION_ERROR)
+    if (view.current_severity == wormedit::notification_severity_t::error)
         return wormedit::ui::theme::ui(UiColor::accent);
-    if (view.current_severity == WORM_UI_NOTIFICATION_WARNING)
+    if (view.current_severity == wormedit::notification_severity_t::warning)
         return wormedit::ui::theme::ui(UiColor::text_bright);
     return wormedit::ui::theme::ui(UiColor::text);
 }
 
-static void render_notification_badge(const WormUiNotificationView& view,
-                                     WormUiWorkspaceAction& action) {
+static void render_notification_badge(const wormedit::ui::notification_view_t& view,
+                                     wormedit::ui::workspace_action_t& action) {
     char label[64]{};
     std::snprintf(label, sizeof(label), "%zu warnings · %zu errors", view.unread_warnings,
                   view.unread_errors);
@@ -2100,17 +2097,18 @@ static void render_notification_badge(const WormUiNotificationView& view,
         action.notifications = {WORM_UI_NOTIFICATION_ACTION_OPEN_HISTORY, 0};
 }
 
-static void render_notification_landing_status(const WormUiWorkspaceView& view,
-                                               WormUiWorkspaceAction& action) {
+static void render_notification_landing_status(const wormedit::ui::workspace_view_t& view,
+                                               wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(g_context, 38, 1);
-    const auto* text = view.notifications.current_text ? view.notifications.current_text : view.status_text;
-    nk_label_wrap(g_context, text);
+    const auto text = view.notifications.current_text.empty()
+        ? view.status_text : view.notifications.current_text;
+    nk_text_wrap(g_context, text.data(), static_cast<int>(text.size()));
     if (!notification_badge_visible(view.notifications)) return;
     nk_layout_row_dynamic(g_context, 28, 1);
     render_notification_badge(view.notifications, action);
 }
 
-static bool snap_badge_available(const WormUiWorkspaceView& view) {
+static bool snap_badge_available(const wormedit::ui::workspace_view_t& view) {
     const auto own = wormedit::ui::chrome::context_menu_owns_input(
         worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu);
     return g_window_focused && view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
@@ -2121,8 +2119,8 @@ static bool snap_badge_available(const WormUiWorkspaceView& view) {
         (!compose_popup_owns_input() || own);
 }
 
-static void render_status_transport_buttons(const WormUiWorkspaceView* view,
-                                            WormUiWorkspaceAction* action) {
+static void render_status_transport_buttons(const wormedit::ui::workspace_view_t* view,
+                                            wormedit::ui::workspace_action_t* action) {
     if (!view->transport_available) nk_widget_disable_begin(g_context);
     const char* play_hint = view->transport_playing ? "Pause playback"
                             : view->transport_paused ? "Resume playback"
@@ -2149,8 +2147,8 @@ static void render_status_transport_buttons(const WormUiWorkspaceView* view,
     render_metronome_toggle(*view, *action);
 }
 
-static void render_status_bar(const WormUiWorkspaceView* view,
-                              WormUiWorkspaceAction* action) {
+static void render_status_bar(const wormedit::ui::workspace_view_t* view,
+                              wormedit::ui::workspace_action_t* action) {
     const auto selected = view->compose.visible ? std::max(view->compose.selected_object_count,
         view->compose.selected_note_count + view->compose.selected_bgm_event_count) : 0;
     const bool snap_label_visible = view->compose.visible && view->compose.area_snap_denominator != 0;
@@ -2193,7 +2191,7 @@ static void render_status_bar(const WormUiWorkspaceView* view,
     nk_labelf(g_context, NK_TEXT_RIGHT, "%llu:%02llu",
               static_cast<unsigned long long>(seconds / 60),
               static_cast<unsigned long long>(seconds % 60));
-    const auto details = std::string{view->artist} + " · " + view->selected_difficulty;
+    const auto details = std::string{view->artist} + " · " + std::string{view->selected_difficulty};
     render_elided_status_label(details, NK_TEXT_RIGHT, g_context->style.text.color);
 }
 
@@ -2207,45 +2205,30 @@ static void prepare_workspace_content_scroll(nk_context* context, bool compose_v
 }
 
 struct WorkspaceRenderContext {
-    const WormUiWorkspaceView& view;
-    WormUiWorkspaceAction& action;
+    wormedit::ui::workspace_view_t& view;
+    wormedit::ui::workspace_action_t& action;
     int width;
     int height;
 };
 
-static auto recovery_panel_height(const WormUiWorkspaceView& view) -> float {
-    float height = 40.0f +
-                   (view.recovery_notice && view.recovery_notice[0] ? 22.0f : 0.0f) +
-                   static_cast<float>(view.recovery_candidate_count) * 48.0f +
-                   static_cast<float>(view.recovery_diagnostic_count) * 18.0f;
-    for (size_t row = 0; row < view.recovery_candidate_count; ++row) {
-        const auto* candidate = &view.recovery_candidates[row];
-        if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
-            height += 25.0f;
-            if (g_recovery_save_as_destination[0] == '\0') height += 18.0f;
-        }
-        if (candidate->disabled_reason && candidate->disabled_reason[0]) height += 20.0f;
-    }
-    return height;
-}
 
-static void render_recovery_buttons(const WormUiRecoveryCandidateView* candidate,
-                                   WormUiWorkspaceAction& action) {
+static void render_recovery_buttons(const wormedit::ui::recovery_candidate_view_t* candidate,
+                                   wormedit::ui::workspace_action_t& action) {
     const struct {
-        size_t bit;
+        wormedit::native_project_recovery_action_t action;
         const char* label;
         WormUiWorkspaceActionKind kind;
     } buttons[] = {
-        {WORM_UI_RECOVERY_ACTION_INSPECT, "Inspect", WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
-        {WORM_UI_RECOVERY_ACTION_RECOVER, "Recover", WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
-        {WORM_UI_RECOVERY_ACTION_SAVE_AS, "Save as", WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
-        {WORM_UI_RECOVERY_ACTION_DISCARD, "Discard", WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
-        {WORM_UI_RECOVERY_ACTION_QUARANTINE, "Quarantine",
+        {wormedit::native_project_recovery_action_t::inspect_read_only, "Inspect", WORM_UI_WORKSPACE_ACTION_RECOVERY_INSPECT},
+        {wormedit::native_project_recovery_action_t::recover_into_session, "Recover", WORM_UI_WORKSPACE_ACTION_RECOVERY_RECOVER},
+        {wormedit::native_project_recovery_action_t::save_as_new_project, "Save as", WORM_UI_WORKSPACE_ACTION_RECOVERY_SAVE_AS},
+        {wormedit::native_project_recovery_action_t::discard, "Discard", WORM_UI_WORKSPACE_ACTION_RECOVERY_DISCARD},
+        {wormedit::native_project_recovery_action_t::quarantine, "Quarantine",
          WORM_UI_WORKSPACE_ACTION_RECOVERY_QUARANTINE},
     };
     nk_layout_row_dynamic(g_context, 25, 5);
     for (size_t button = 0; button < sizeof(buttons) / sizeof(buttons[0]); ++button) {
-        const int offered = recovery_action_offered(candidate, buttons[button].bit);
+        const bool offered = candidate && candidate->can(buttons[button].action);
         if (!offered) nk_widget_disable_begin(g_context);
         const int clicked = nk_button_label(g_context, buttons[button].label);
         if (!offered) nk_widget_disable_end(g_context);
@@ -2257,14 +2240,14 @@ static void render_recovery_buttons(const WormUiRecoveryCandidateView* candidate
     }
 }
 
-static void render_recovery_candidate(const WormUiRecoveryCandidateView* candidate,
-                                      WormUiWorkspaceAction& action) {
+static void render_recovery_candidate(const wormedit::ui::recovery_candidate_view_t* candidate,
+                                      wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(g_context, 20, 1);
     nk_labelf(g_context, NK_TEXT_LEFT, "%s  %s",
-              candidate->path_label ? candidate->path_label : "(unknown recovery path)",
-              candidate->summary ? candidate->summary : "");
+              candidate->path_label.empty() ? "(unknown recovery path)" : candidate->path_label.c_str(),
+              candidate->summary.c_str());
     render_recovery_buttons(candidate, action);
-    if (recovery_action_offered(candidate, WORM_UI_RECOVERY_ACTION_SAVE_AS)) {
+    if (candidate->can(wormedit::native_project_recovery_action_t::save_as_new_project)) {
         nk_layout_row_begin(g_context, NK_DYNAMIC, 25, 2);
         nk_layout_row_push(g_context, 0.18f);
         nk_label(g_context, "New project path", NK_TEXT_LEFT);
@@ -2279,44 +2262,51 @@ static void render_recovery_candidate(const WormUiRecoveryCandidateView* candida
                      NK_TEXT_LEFT);
         }
     }
-    if (candidate->disabled_reason && candidate->disabled_reason[0]) {
+    if (!candidate->disabled_reason.empty()) {
         nk_layout_row_dynamic(g_context, 20, 1);
-        nk_label(g_context, candidate->disabled_reason, NK_TEXT_LEFT);
+        nk_text(g_context, candidate->disabled_reason.data(),
+                 static_cast<int>(candidate->disabled_reason.size()), NK_TEXT_LEFT);
     }
 }
 
-static auto render_recovery_panel(const WormUiWorkspaceView& view,
-                                  WormUiWorkspaceAction& action) -> float {
+static auto render_recovery_panel(const wormedit::ui::workspace_view_t& view,
+                                  wormedit::ui::workspace_action_t& action) -> float {
     if (!view.recovery_panel_visible || !view.recovery_has_actionable_candidate) return 0.0f;
-    const auto height = recovery_panel_height(view);
-    nk_layout_row_dynamic(g_context, 24, 1);
-    nk_label(g_context, view.recovery_heading ? view.recovery_heading : "Recovery", NK_TEXT_LEFT);
-    if (view.recovery_notice && view.recovery_notice[0]) {
-        nk_layout_row_dynamic(g_context, 22, 1);
-        nk_label(g_context, view.recovery_notice, NK_TEXT_LEFT);
+    const auto height = view.recovery_panel_height(g_recovery_save_as_destination[0] != '\0');
+    const bool scrollable = view.has_scrollable_recovery();
+    if (scrollable) {
+        nk_layout_row_dynamic(g_context, height, 1);
+        if (!nk_group_begin(g_context, "project-recovery-scroll", 0)) return height;
     }
-    for (size_t row = 0; row < view.recovery_candidate_count; ++row)
+    nk_layout_row_dynamic(g_context, 24, 1);
+    nk_label(g_context, view.recovery_heading.empty() ? "Recovery" : view.recovery_heading.data(), NK_TEXT_LEFT);
+    if (!view.recovery_notice.empty()) {
+        nk_layout_row_dynamic(g_context, 22, 1);
+        nk_label(g_context, view.recovery_notice.data(), NK_TEXT_LEFT);
+    }
+    for (size_t row = 0; row < view.recovery_candidates.size(); ++row)
         render_recovery_candidate(&view.recovery_candidates[row], action);
     if (view.recovery_rows_truncated) {
         nk_layout_row_dynamic(g_context, 18, 1);
         nk_label(g_context, "Additional recovery candidates are not shown.", NK_TEXT_LEFT);
     }
-    for (size_t diagnostic = 0; diagnostic < view.recovery_diagnostic_count; ++diagnostic) {
-        if (view.recovery_diagnostics[diagnostic]) {
+    for (size_t diagnostic = 0; diagnostic < view.recovery_diagnostics.size(); ++diagnostic) {
+        if (!view.recovery_diagnostics[diagnostic].empty()) {
             nk_layout_row_dynamic(g_context, 18, 1);
-            nk_label(g_context, view.recovery_diagnostics[diagnostic], NK_TEXT_LEFT);
+            nk_label(g_context, view.recovery_diagnostics[diagnostic].c_str(), NK_TEXT_LEFT);
         }
     }
+    if (scrollable) nk_group_end(g_context);
     return height;
 }
 
-static auto render_recovery_above_content(const WormUiWorkspaceView& view,
-    WormUiWorkspaceAction& action) -> float {
+static auto render_recovery_above_content(const wormedit::ui::workspace_view_t& view,
+    wormedit::ui::workspace_action_t& action) -> float {
     if (view.setup.visible) return 0.0f;
     return render_recovery_panel(view, action);
 }
 
-static bool history_owns_content_input(const WormUiWorkspaceView& view) {
+static bool history_owns_content_input(const wormedit::ui::workspace_view_t& view) {
     if (!g_context || g_notification_project_modal || notification_editor_text_owned() ||
         notification_document_gesture_active() || notification_external_pointer_active()) return false;
     if (g_notification_history_state.pointer_owned_this_frame || history_pointer_capture_active()) return true;
@@ -2353,7 +2343,7 @@ static bool modeless_window_owns_pointer(const char* name, struct nk_rect fallba
     return false;
 }
 
-static bool file_jobs_own_pointer(const WormUiWorkspaceView& view) {
+static bool file_jobs_own_pointer(const wormedit::ui::workspace_view_t& view) {
     int width{}, height{};
     if (!frontend_window_size(&width, &height)) return false;
     const auto bounds = file_job_bounds(view.file_jobs, height);
@@ -2362,14 +2352,14 @@ static bool file_jobs_own_pointer(const WormUiWorkspaceView& view) {
            (view.file_jobs.preview.active && modeless_window_owns_pointer(file_job_titles[2], bounds[2]));
 }
 
-static bool modeless_timing_owns_pointer(const WormUiWorkspaceView& view) {
+static bool modeless_timing_owns_pointer(const wormedit::ui::workspace_view_t& view) {
     return (view.timing_settings_visible && modeless_window_owns_pointer(
                 "Timing Settings", nk_rect(340, 120, 420, 430))) ||
            (view.tap_timing.visible && modeless_window_owns_pointer(
                 "Tap timing", nk_rect(300, 110, 470, 530)));
 }
 
-static bool options_owns_content_input(const WormUiWorkspaceView& view) {
+static bool options_owns_content_input(const wormedit::ui::workspace_view_t& view) {
     if (view.close_confirmation.visible) return true;
     if (g_menu_popup_open || g_menu_popup_release_pending) return true;
     if (history_owns_content_input(view)) return true;
@@ -2393,7 +2383,7 @@ static bool options_owns_content_input(const WormUiWorkspaceView& view) {
     return nk_window_is_active(g_context, "Options") && nuklear_text_entry_active();
 }
 
-static void retire_sound_picker(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+static void retire_sound_picker(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible &&
         !view.options.visible && !project_modal_active(view)) return;
     auto& state = worm_ui_nuklear_compose_state();
@@ -2401,7 +2391,7 @@ static void retire_sound_picker(const WormUiWorkspaceView& view, WormUiWorkspace
     render_compose_sound_picker(g_context, view.compose, action, state, false);
 }
 
-static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+static void retire_bookmark_editors(const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
     if (view.active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE && view.compose.visible) return;
     auto& state = worm_ui_nuklear_compose_state();
     worm_ui_nuklear_bookmark_chooser_cancel(g_context, state.bookmark_ui.bookmark_chooser);
@@ -2412,14 +2402,14 @@ static void retire_bookmark_editors(const WormUiWorkspaceView& view, WormUiWorks
         nk_rect(0, 0, 0, 0), false);
 }
 
-static bool audio_content_interactive(const WormUiWorkspaceView& view) {
+static bool audio_content_interactive(const wormedit::ui::workspace_view_t& view) {
     return g_window_focused && !view.options.visible && !options_owns_content_input(view) &&
         !project_modal_active(view) && !project_dialog_active() && !g_notification_modal &&
         !g_menu_popup_open;
 }
 
-static void render_workspace_content(const WormUiWorkspaceView& view,
-                                     WormUiWorkspaceAction& action) {
+static void render_workspace_content(wormedit::ui::workspace_view_t& view,
+                                     wormedit::ui::workspace_action_t& action) {
     const bool metadata_interactive = g_window_focused && view.metadata.visible &&
         !options_owns_content_input(view) && !project_modal_active(view) &&
         !project_dialog_active() && !g_notification_modal && !g_menu_popup_open;
@@ -2449,7 +2439,7 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         worm_ui_nuklear_render_metadata_panel(g_context, &view.metadata, &action,
                                               metadata_interactive);
     } else if (view.compose.visible) {
-        auto compose = view.compose;
+        auto& compose = view.compose;
         compose.input_occluded = options_owns_content_input(view);
         worm_ui_nuklear_render_compose_panel(
             g_context, &compose, &view.timing, &action, g_window_focused,
@@ -2462,45 +2452,34 @@ static void render_workspace_content(const WormUiWorkspaceView& view,
         worm_ui_nuklear_render_compare_panel(g_context, &view.compare, &action);
     } else {
         nk_layout_row_dynamic(g_context, 24, 1);
-        if (view.summary_line_count == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
-        for (size_t line = 0; line < view.summary_line_count; ++line) {
-            if (view.summary_lines[line]) nk_label(g_context, view.summary_lines[line], NK_TEXT_LEFT);
+        if (view.summary_lines.size() == 0) nk_label(g_context, "No items in this view.", NK_TEXT_LEFT);
+        for (size_t line = 0; line < view.summary_lines.size(); ++line) {
+            if (!view.summary_lines[line].empty()) nk_label(g_context, view.summary_lines[line].c_str(), NK_TEXT_LEFT);
         }
     }
     nk_group_end(g_context);
 }
 
-static auto workspace_base_view_valid(const WormUiWorkspaceView& view) -> bool {
-    return view.project_title && view.artist && view.selected_difficulty && view.status_text &&
-           view.git_hash && view.tab_heading &&
-           view.summary_line_count <= WORM_UI_WORKSPACE_SUMMARY_CAPACITY &&
-           view.recovery_candidate_count <= WORM_UI_RECOVERY_ROW_CAPACITY &&
-           view.recovery_diagnostic_count <= WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY &&
-           view.active_tab >= WORM_UI_WORKSPACE_TAB_SETUP &&
+static auto workspace_base_view_valid(const wormedit::ui::workspace_view_t& view) -> bool {
+    return view.active_tab >= WORM_UI_WORKSPACE_TAB_SETUP &&
            view.active_tab <= WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE;
 }
 
-static auto metadata_workspace_view_valid(const WormUiMetadataView& metadata) -> bool {
+static auto metadata_workspace_view_valid(const wormedit::ui::metadata_view_t& metadata) -> bool {
     return !metadata.visible ||
-           (metadata.format_field_count <= WORM_UI_METADATA_FORMAT_FIELD_CAPACITY &&
-            metadata.format_target_count <= WORM_UI_METADATA_FORMAT_TARGET_CAPACITY &&
-            metadata.audio_waveform_column_count <= WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY &&
-            (metadata.audio_waveform_column_count == 0 || metadata.audio_waveform_columns) &&
+           (metadata.audio_waveform_columns.size() <= wormedit::ui::audio_waveform_column_limit &&
             !(metadata.audio_waveform_analysis_pending && metadata.audio_waveform_available) &&
-            (metadata.audio_waveform_available || metadata.audio_waveform_column_count == 0) &&
+            (metadata.audio_waveform_available || metadata.audio_waveform_columns.size() == 0) &&
             (!metadata.audio_waveform_available ||
-             (metadata.audio_waveform_column_count != 0 &&
+             (metadata.audio_waveform_columns.size() != 0 &&
               metadata.audio_waveform_total_frames != 0 &&
               metadata.audio_waveform_sample_rate != 0 &&
               metadata.audio_waveform_has_selected_asset)));
 }
 
-static auto workspace_validation_error(const WormUiWorkspaceView& view) -> const char* {
+static auto workspace_validation_error(const wormedit::ui::workspace_view_t& view) -> const char* {
     if (!view.project_loaded)
-        return view.project_title && view.status_text &&
-                       view.recovery_candidate_count <= WORM_UI_RECOVERY_ROW_CAPACITY &&
-                       view.recovery_diagnostic_count <= WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY
-                   ? nullptr : "Empty workspace view data is invalid.";
+        return nullptr;
     if (!workspace_base_view_valid(view)) return "Workspace view data is invalid.";
     if (!worm_ui_nuklear_setup_view_valid(&view.setup)) return "Project view data is invalid.";
     if (!metadata_workspace_view_valid(view.metadata)) return "Metadata view data is invalid.";
@@ -2541,8 +2520,8 @@ static void render_seek_grip(struct nk_rect bounds, nk_size position, nk_size st
     }
 }
 
-static void report_transport_seek_hover(const WormUiWorkspaceView& view,
-                                        WormUiWorkspaceAction& action, struct nk_rect bounds) {
+static void report_transport_seek_hover(const wormedit::ui::workspace_view_t& view,
+                                        wormedit::ui::workspace_action_t& action, struct nk_rect bounds) {
     if (view.compose.selected_audio_asset_id == 0 || view.transport_sample_rate == 0 ||
         view.transport_end_frame == 0 || !nk_input_is_mouse_hovering_rect(&g_context->input, bounds))
         return;
@@ -2572,8 +2551,8 @@ static void report_transport_seek_hover(const WormUiWorkspaceView& view,
         wormedit::ui::chrome::timing_tooltip(g_context, compose.hover_timing_label);
 }
 
-static void render_transport_seek_bar(const WormUiWorkspaceView& view,
-                                      WormUiWorkspaceAction& action) {
+static void render_transport_seek_bar(const wormedit::ui::workspace_view_t& view,
+                                      wormedit::ui::workspace_action_t& action) {
     constexpr nk_size seek_steps = 10'000;
     nk_layout_row_dynamic(g_context, preview_row_height, 1);
     if (view.transport_end_frame == 0) {
@@ -2619,8 +2598,8 @@ static void render_bgm_bar_placeholder() {
                  wormedit::ui::chrome::color(wormedit::ui::theme::UiColor::text_muted));
 }
 
-static void render_transport_seek_control(const WormUiWorkspaceView& view,
-                                         WormUiWorkspaceAction& action) {
+static void render_transport_seek_control(const wormedit::ui::workspace_view_t& view,
+                                         wormedit::ui::workspace_action_t& action) {
     render_transport_seek_bar(view, action);
     // Without song audio, on other tabs, or when hidden from the toolbar the row does not exist.
     if (!view.compose.visible || !view.compose.bgm_bar_reserved) return;
@@ -2629,9 +2608,9 @@ static void render_transport_seek_control(const WormUiWorkspaceView& view,
     else render_bgm_bar_placeholder();
 }
 
-static void render_recent_project_list(const WormUiWorkspaceView& view,
-                                       WormUiWorkspaceAction& action, float height) {
-    const auto count = std::min(view.recent_file_count, std::size(view.recent_files));
+static void render_recent_project_list(const wormedit::ui::workspace_view_t& view,
+                                       wormedit::ui::workspace_action_t& action, float height) {
+    const auto count = view.recent_files.size();
     if (!count) return;
     nk_layout_row_dynamic(g_context, 30, 1);
     nk_label(g_context, "Recent projects and charts", NK_TEXT_LEFT);
@@ -2645,19 +2624,19 @@ static void render_recent_project_list(const WormUiWorkspaceView& view,
         nk_layout_row_dynamic(g_context, 34, 1);
         const auto bounds = nk_widget_bounds(g_context);
         if (blocked) nk_widget_disable_begin(g_context);
-        const bool chosen = nk_button_label(g_context, entry.label);
+        const bool chosen = nk_button_label(g_context, entry.label.data());
         if (blocked) nk_widget_disable_end(g_context);
         if (chosen && !blocked && action.kind == WORM_UI_WORKSPACE_ACTION_NONE) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            std::snprintf(action.project_path, sizeof(action.project_path), "%s", entry.path);
+            std::snprintf(action.project_path, sizeof(action.project_path), "%s", entry.path.data());
         }
         if (wormedit::ui::nuklear::tooltip::hovered(g_context, bounds))
-            wormedit::ui::nuklear::tooltip::text(g_context, entry.path);
+            wormedit::ui::nuklear::tooltip::text(g_context, entry.path.data());
     }
     nk_group_end(g_context);
 }
 
-static void render_startup_buttons(WormUiWorkspaceAction& action) {
+static void render_startup_buttons(wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(g_context, 42, 1);
     const bool dialog_busy = project_dialog_active();
     if (dialog_busy) nk_widget_disable_begin(g_context);
@@ -2670,8 +2649,8 @@ static void render_startup_buttons(WormUiWorkspaceAction& action) {
     if (dialog_busy) nk_widget_disable_end(g_context);
 }
 
-static void render_empty_project_content(const WormUiWorkspaceView& view,
-                                         WormUiWorkspaceAction& action, float height) {
+static void render_empty_project_content(const wormedit::ui::workspace_view_t& view,
+                                         wormedit::ui::workspace_action_t& action, float height) {
     nk_layout_row_dynamic(g_context, height, 1);
     if (!nk_group_begin(g_context, "empty-project-content", NK_WINDOW_NO_SCROLLBAR)) return;
     const auto area = nk_window_get_content_region(g_context);
@@ -2703,13 +2682,13 @@ static void render_empty_project_content(const WormUiWorkspaceView& view,
     nk_group_end(g_context);
 }
 
-static void cancel_new_project_wizard(WormUiWorkspaceAction& action) {
+static void cancel_new_project_wizard(wormedit::ui::workspace_action_t& action) {
     if (g_new_project_wizard.audio && action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action.kind = WORM_UI_WORKSPACE_ACTION_CANCEL_AUDIO_PROJECT;
     g_new_project_wizard.open = false;
 }
 
-static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
+static void confirm_new_project_wizard(wormedit::ui::workspace_action_t& action) {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
     const auto& audio_path = g_new_project_wizard.audio_path;
     if (g_new_project_wizard.audio && audio_path.size() >= sizeof(action.project_path)) return;
@@ -2721,28 +2700,28 @@ static void confirm_new_project_wizard(WormUiWorkspaceAction& action) {
     g_new_project_wizard.open = false;
 }
 
-static bool external_project_modal_active(const WormUiWorkspaceView& view) {
+static bool external_project_modal_active(const wormedit::ui::workspace_view_t& view) {
     return (view.lane_keys && view.lane_keys->visible) || view.file_jobs.opening.active || (g_help_dialog != HelpDialog::none) || view.close_confirmation.visible || view.chart_import.visible ||
            g_new_project_wizard.open ||
            worm_ui_nuklear_sound_import_active() ||
            worm_ui_nuklear_compose_state().keysound_slots.keysound_slot_batch.open ||
            worm_ui_nuklear_compose_state().keysound_catalog.keysound_group_review.open ||
-           (view.pending_bms_encoding_path && view.pending_bms_encoding_path[0]);
+           !view.pending_bms_encoding_path.empty();
 }
 
-static bool project_modal_active(const WormUiWorkspaceView& view) {
+static bool project_modal_active(const wormedit::ui::workspace_view_t& view) {
     const auto& state = worm_ui_nuklear_compose_state();
     return external_project_modal_active(view) || state.dialogs.export_dialog_open || state.preview_audio.open ||
         state.layer_editor.layer_creation_context.has_value();
 }
 
-static void render_about_body(const WormUiWorkspaceView& view) {
+static void render_about_body(const wormedit::ui::workspace_view_t& view) {
     namespace chrome = wormedit::ui::chrome;
     const auto text = chrome::color(chrome::UiColor::text);
     const auto muted = chrome::color(chrome::UiColor::text_muted);
     chrome::dialog_text(g_about_dialog, g_context, "WormEdit " WORMEDIT_VERSION, text);
     char build[160]{};
-    std::snprintf(build, sizeof(build), "Build %s", view.git_hash ? view.git_hash : "unknown");
+    std::snprintf(build, sizeof(build), "Build %s", view.git_hash.empty() ? "unknown" : view.git_hash.data());
     chrome::dialog_text(g_about_dialog, g_context, build, muted);
     chrome::dialog_text(g_about_dialog, g_context, "Created and directed by zardoru.", text);
     chrome::dialog_text(g_about_dialog, g_context,
@@ -2755,7 +2734,7 @@ static void render_about_body(const WormUiWorkspaceView& view) {
         (void)SDL_OpenURL("https://github.com/zardoru/wormedit");
 }
 
-static void render_shortcut_sheet(const WormUiWorkspaceView& view) {
+static void render_shortcut_sheet(const wormedit::ui::workspace_view_t& view) {
     namespace chrome = wormedit::ui::chrome;
     constexpr std::array rows{
         std::pair{"edit.tool_select", "Select tool"},
@@ -2768,14 +2747,13 @@ static void render_shortcut_sheet(const WormUiWorkspaceView& view) {
         std::pair{"timing.toggle_lock", "Timing lock"},
         std::pair{"measures.split_at_cursor", "Split measure at cursor"},
         std::pair{"transport.loop_selection", "Loop selected range"}};
-    const auto count = std::min(view.menu_command_count, std::size(view.menu_commands));
-    const auto* end = view.menu_commands + count;
+    const auto end = view.menu_commands.end();
     for (const auto& [id, label] : rows) {
-        const auto* command = std::find_if(view.menu_commands, end, [id](const auto& row) {
-            return std::strcmp(row.id, id) == 0;
+        const auto command = std::find_if(view.menu_commands.begin(), end, [id](const auto& row) {
+            return row.id == id;
         });
         const char* shortcut = command == end ? "Unavailable" :
-            (command->shortcut[0] ? command->shortcut : "Unbound");
+            (!command->shortcut.empty() ? command->shortcut.data() : "Unbound");
         const float columns[]{0.58f, 0.42f};
         nk_layout_row(g_context, NK_DYNAMIC, wormedit::ui::metrics::menu_item_height, 2, columns);
         nk_label(g_context, label, NK_TEXT_LEFT);
@@ -2791,7 +2769,7 @@ static void render_shortcut_sheet(const WormUiWorkspaceView& view) {
         "Draw: press/release for a tap; move the cursor while held for a hold.", chrome::color(chrome::UiColor::text));
 }
 
-static void render_about(const WormUiWorkspaceView& view) {
+static void render_about(const wormedit::ui::workspace_view_t& view) {
     if (g_help_dialog == HelpDialog::none) return;
     namespace chrome = wormedit::ui::chrome;
     const bool shortcuts = g_help_dialog == HelpDialog::shortcuts;
@@ -2807,7 +2785,7 @@ static void render_about(const WormUiWorkspaceView& view) {
         g_help_dialog = HelpDialog::none;
 }
 
-static nk_flags workspace_window_flags(const WormUiWorkspaceView& view) {
+static nk_flags workspace_window_flags(const wormedit::ui::workspace_view_t& view) {
     const auto flags = NK_WINDOW_NO_SCROLLBAR | NK_WINDOW_BACKGROUND;
     return flags | ((project_modal_active(view) || command_menu_owns_input()) ? NK_WINDOW_NO_INPUT : 0);
 }
@@ -3001,8 +2979,8 @@ static auto render_new_project_layout_choice(const new_project_layout_catalog_vi
     return true;
 }
 
-static void render_new_project_wizard(const WormUiWorkspaceView& view,
-                                      WormUiWorkspaceAction& action, int width, int height) {
+static void render_new_project_wizard(const wormedit::ui::workspace_view_t& view,
+                                      wormedit::ui::workspace_action_t& action, int width, int height) {
     if (!g_new_project_wizard.open)
         return;
     namespace chrome = wormedit::ui::chrome;
@@ -3037,14 +3015,14 @@ static void render_new_project_wizard(const WormUiWorkspaceView& view,
         cancel_new_project_wizard(action);
 }
 
-static void cancel_bms_encoding_dialog(WormUiWorkspaceAction& action) {
+static void cancel_bms_encoding_dialog(wormedit::ui::workspace_action_t& action) {
     if (action.kind == WORM_UI_WORKSPACE_ACTION_NONE)
         action.kind = WORM_UI_WORKSPACE_ACTION_CANCEL_BMS_ENCODING;
 }
 
-static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
-                                       WormUiWorkspaceAction& action, int width, int height) {
-    const std::string path = view.pending_bms_encoding_path ? view.pending_bms_encoding_path : "";
+static void render_bms_encoding_dialog(const wormedit::ui::workspace_view_t& view,
+                                       wormedit::ui::workspace_action_t& action, int width, int height) {
+    const std::string path{view.pending_bms_encoding_path};
     if (path.empty()) {
         g_bms_encoding_path_seen.clear();
         return;
@@ -3055,9 +3033,9 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
         g_bms_encoding_choice = 0;
     }
     std::array<const char*, wormedit::text_encoding_count> labels{};
-    const int count = static_cast<int>(std::min(view.bms_encodings.count, labels.size()));
+    const int count = static_cast<int>(std::min(view.bms_encodings.entries.size(), labels.size()));
     for (int i = 0; i < count; ++i)
-        labels[static_cast<std::size_t>(i)] = view.bms_encodings.entries[i].label;
+        labels[static_cast<std::size_t>(i)] = view.bms_encodings.entries[i].label.data();
     if (g_bms_encoding_choice >= count) g_bms_encoding_choice = 0;
     namespace chrome = wormedit::ui::chrome;
     auto& dialog = g_project_modal_dialog;
@@ -3079,7 +3057,7 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
             action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
             count > 0 && path.size() < sizeof(action.project_path)) {
             action.kind = WORM_UI_WORKSPACE_ACTION_OPEN_FILE;
-            action.bms_encoding_id = view.bms_encodings.entries[g_bms_encoding_choice].id;
+            action.bms_encoding_id = static_cast<std::uint32_t>(view.bms_encodings.entries[g_bms_encoding_choice].id);
             std::memcpy(action.project_path, path.c_str(), path.size() + 1);
         }
     }
@@ -3088,7 +3066,7 @@ static void render_bms_encoding_dialog(const WormUiWorkspaceView& view,
 }
 
 static void render_project_modals(const WorkspaceRenderContext& frame) {
-    if (!frame.view.pending_bms_encoding_path || !frame.view.pending_bms_encoding_path[0])
+    if (frame.view.pending_bms_encoding_path.empty())
         render_new_project_wizard(frame.view, frame.action, frame.width, frame.height);
     render_bms_encoding_dialog(frame.view, frame.action, frame.width, frame.height);
 }
@@ -3115,33 +3093,33 @@ static void render_empty_project_window(const WorkspaceRenderContext& frame) {
 
 struct GpuWorkSection {
     const char* heading;
-    uint32_t available;
-    WormUiFrameGpuWork latest;
-    const WormUiFrameGpuWorkStats* stats;
+    bool available;
+    wormedit::ui::frame_gpu_work_view_t latest;
+    std::span<const wormedit::ui::frame_gpu_work_stats_view_t> stats;
 };
 
-static void render_gpu_work_section(const WormUiFrameTimingView& timer,
+static void render_gpu_work_section(const wormedit::ui::frame_timing_view_t& timer,
                                     const GpuWorkSection& section) {
     nk_layout_row_dynamic(g_context, 22, 1);
     nk_label(g_context, section.heading, NK_TEXT_LEFT);
-    const uint64_t latest[WORM_UI_FRAME_GPU_WORK_COUNT]{section.latest.vertices,
+    const std::array latest{section.latest.vertices,
         section.latest.indices, section.latest.draw_calls, section.latest.clip_rect_changes,
         section.latest.texture_switches};
-    for (std::size_t metric = 0; metric < WORM_UI_FRAME_GPU_WORK_COUNT; ++metric) {
+    for (std::size_t metric = 0; metric < timer.gpu_work.size(); ++metric) {
         const auto summary = section.stats[metric];
         nk_layout_row_dynamic(g_context, 22, 1);
         if (!section.available || summary.count == 0)
-            nk_labelf(g_context, NK_TEXT_LEFT, "  %s: N/A", timer.gpu_work_names[metric]);
+            nk_labelf(g_context, NK_TEXT_LEFT, "  %s: N/A", timer.gpu_work_names[metric].data());
         else
             nk_labelf(g_context, NK_TEXT_LEFT, "  %s: last %llu, avg %.0f, p99 %.0f",
-                timer.gpu_work_names[metric], static_cast<unsigned long long>(latest[metric]),
+                timer.gpu_work_names[metric].data(), static_cast<unsigned long long>(latest[metric]),
                 summary.average, summary.p99);
     }
 }
 
 // The panel draws in its own pass, so its GPU work is reported on its own and
 // never folded into the application's numbers.
-static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
+static void render_gpu_work_summary(const wormedit::ui::frame_timing_view_t& timer) {
     render_gpu_work_section(timer, {"GPU work - application (excludes this panel):",
         timer.gpu_work_available, timer.gpu_work_latest, timer.gpu_work});
     render_gpu_work_section(timer, {"GPU work - this panel only:",
@@ -3151,16 +3129,18 @@ static void render_gpu_work_summary(const WormUiFrameTimingView& timer) {
 
 // nk_chart_begin keeps the themed background and plot bounds; one polyline
 // replaces NK_CHART_LINES' per-point line segments and filled point markers.
-static void render_frame_time_graph(const WormUiFrameTimingView& timer) {
+static void render_frame_time_graph(const wormedit::ui::frame_timing_view_t& timer) {
     nk_layout_row_dynamic(g_context, 90, 1);
-    const auto count = std::min<std::size_t>(timer.count, WORM_UI_FRAME_TIMING_CAPACITY);
+    const auto count = timer.frame_ms.size();
     const auto maximum_ms = static_cast<float>(count == 0 ? 1.0 : std::max(1.0,
-        *std::max_element(timer.frame_ms, timer.frame_ms + count)));
+        *std::ranges::max_element(timer.frame_ms)));
     if (!nk_chart_begin(g_context, NK_CHART_LINES, static_cast<int>(count), 0.0f, maximum_ms))
         return;
     const auto& chart = g_context->current->layout->chart;
     const float step = count == 0 ? 0.0f : chart.w / static_cast<float>(count);
-    std::array<float, 2 * WORM_UI_FRAME_TIMING_CAPACITY> points{};
+    static std::vector<float> points;
+    points.reserve(2 * timer.frame_ms.capacity());
+    points.resize(2 * count);
     for (std::size_t i = 0; i < count; ++i) {
         const float ratio = static_cast<float>(timer.frame_ms[i]) / maximum_ms;
         points[2 * i] = chart.x + step * static_cast<float>(i);
@@ -3174,7 +3154,8 @@ static void render_frame_time_graph(const WormUiFrameTimingView& timer) {
 
 static void render_frame_timing_overlay(int width, int height) {
     if (!g_frame_timing_visible) return;
-    const auto timer = worm_ui_frame_timing_view();
+    static wormedit::ui::frame_timing_view_t timer;
+    worm_ui_frame_timing_view(timer);
     const float panel_width = std::min(480.0f, static_cast<float>(width));
     const float panel_height = std::min(720.0f, static_cast<float>(height) - 42.0f);
     // Drawn in a diagnostic pass so its GPU work is reported apart from the application's.
@@ -3200,22 +3181,22 @@ static void render_frame_timing_overlay(int width, int height) {
                 timer.projection_heap_allocations.p99);
         else nk_label(g_context, "Projection new: unavailable (allocation hook inactive)", NK_TEXT_LEFT);
         render_gpu_work_summary(timer);
-        for (std::size_t i = 0; i < WORM_UI_FRAME_TIMING_PHASE_COUNT; ++i) {
+        for (std::size_t i = 0; i < timer.phases.size(); ++i) {
             const auto summary = timer.phases[i];
             nk_layout_row_dynamic(g_context, 22, 1);
-            if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i]);
+            if (summary.count == 0) nk_labelf(g_context, NK_TEXT_LEFT, "%s: N/A", timer.phase_names[i].data());
             else if (summary.cpu_count == 0)
                 nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms",
-                          timer.phase_names[i], summary.average_ms, summary.p99_ms);
+                          timer.phase_names[i].data(), summary.average_ms, summary.p99_ms);
             else nk_labelf(g_context, NK_TEXT_LEFT, "%s: avg %.3f ms, p99 %.3f ms (cpu p99 %.3f)",
-                           timer.phase_names[i], summary.average_ms, summary.p99_ms, summary.cpu_p99_ms);
+                           timer.phase_names[i].data(), summary.average_ms, summary.p99_ms, summary.cpu_p99_ms);
         }
     }
     nk_end(g_context);
 }
 
 static void render_workspace_main_window(const WorkspaceRenderContext& frame) {
-    const auto& view = frame.view;
+    auto& view = frame.view;
     auto& action = frame.action;
     if (!view.project_loaded) {
         render_empty_project_window(frame);
@@ -3277,7 +3258,7 @@ static void render_file_job(const wormedit::ui::file_job_view_t& job, const char
     if (nk_begin(g_context, title, bounds,
                  NK_WINDOW_BORDER | NK_WINDOW_TITLE | NK_WINDOW_MOVABLE | NK_WINDOW_NO_SCROLLBAR)) {
         nk_layout_row_dynamic(g_context, 24, 1);
-        nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.c_str(), NK_TEXT_LEFT);
+        nk_label(g_context, job.cancelling ? "Cancelling…" : job.label.data(), NK_TEXT_LEFT);
         auto completed = static_cast<nk_size>(job.completed);
         nk_progress(g_context, &completed, static_cast<nk_size>(std::max<std::size_t>(1, job.total)), NK_FIXED);
         nk_layout_row_dynamic(g_context, 18, 1);
@@ -3331,13 +3312,13 @@ static void render_auxiliary_windows(const WorkspaceRenderContext& frame) {
                                           &frame.action, frame.width, frame.height);
 }
 
-static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
+static void remember_context_menu_scope(const wormedit::ui::workspace_view_t* view) {
     namespace chrome = wormedit::ui::chrome;
     auto& catalog = worm_ui_nuklear_compose_state().keysound_catalog;
-    if (!view || catalog.keysound_slots_project != view->project_id ||
-        catalog.keysound_slots_chart != view->selected_chart_id)
+    if (!view || catalog.keysound_slots_project != view->project_id.value ||
+        catalog.keysound_slots_chart != view->selected_chart_id.value)
         catalog.keysound_selected_slot_explicit = false;
-    const auto project = view ? view->project_id : 0;
+    const auto project = view ? view->project_id.value : 0;
     const auto chart = view ? view->compose.chart_id : 0;
     const auto tab = view ? view->active_tab : WORM_UI_WORKSPACE_TAB_METADATA;
     const bool changed = project != g_context_project || chart != g_context_chart || tab != g_context_tab;
@@ -3363,8 +3344,8 @@ static void remember_context_menu_scope(const WormUiWorkspaceView* view) {
     g_context_tab = tab;
 }
 
-static void remember_notification_frame(const WormUiWorkspaceView* view) {
-    g_notification_view = view ? view->notifications : WormUiNotificationView{};
+static void remember_notification_frame(const wormedit::ui::workspace_view_t* view) {
+    g_notification_view = view ? view->notifications : wormedit::ui::notification_view_t{};
     g_notification_project_modal = view && project_modal_active(*view);
     g_notification_modal = g_notification_project_modal || (view && view->options.visible);
     g_compose_escape_has_selection = view && view->active_tab == WORM_UI_WORKSPACE_TAB_COMPOSE &&
@@ -3372,8 +3353,8 @@ static void remember_notification_frame(const WormUiWorkspaceView* view) {
          view->compose.selected_bgm_event_count != 0 || view->compose.area_range_available);
 }
 
-static void render_notification_history(const WormUiNotificationView& view,
-    WormUiWorkspaceAction& action, int width, int height, bool project_modal) {
+static void render_notification_history(const wormedit::ui::notification_view_t& view,
+    wormedit::ui::workspace_action_t& action, int width, int height, bool project_modal) {
     if (g_notification_history_close_pending) {
         action.notifications = {WORM_UI_NOTIFICATION_ACTION_CLOSE_HISTORY, 0};
         g_notification_history_close_pending = false;
@@ -3391,11 +3372,12 @@ static void render_notification_history(const WormUiNotificationView& view,
         close_notification_history_windows();
 }
 
-static void render_notification_frame(const WormUiNotificationView& view,
-    WormUiWorkspaceAction& action, int width, int height, bool project_modal) {
+static void render_notification_frame(const wormedit::ui::notification_view_t& view,
+    wormedit::ui::workspace_action_t& action, int width, int height, bool project_modal) {
     render_notification_history(view, action, width, height, project_modal);
-    const bool valid_count = view.toast_count <= WORM_UI_NOTIFICATION_TOAST_CAPACITY;
-    const auto visible = project_modal || !valid_count ? WormUiNotificationView{} : view;
+    const bool valid_count = view.toasts.size() <= wormedit::ui::notification_view_t::maximum_visible_toasts;
+    const wormedit::ui::notification_view_t empty;
+    const auto& visible = project_modal || !valid_count ? empty : view;
     wormedit::ui::nuklear::render_notification_overlay(g_context,
         g_notification_context_initialized ? &g_notification_context : nullptr,
         visible, g_notification_state, width, height);
@@ -3404,7 +3386,7 @@ static void render_notification_frame(const WormUiNotificationView& view,
         action.notifications.kind == WORM_UI_NOTIFICATION_ACTION_NONE) action.notifications = pending;
 }
 
-static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
+static void retire_unavailable_layer_actions(const wormedit::ui::workspace_view_t& view) {
     if (!g_window_focused || !view.project_loaded || view.options.visible || external_project_modal_active(view))
         worm_ui_nuklear_compose_state().dialogs.export_dialog_open = false;
     if (!g_window_focused || !view.project_loaded || view.options.visible || external_project_modal_active(view))
@@ -3425,9 +3407,9 @@ static void retire_unavailable_layer_actions(const WormUiWorkspaceView& view) {
     state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
-static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUiWorkspaceAction& action) {
+static void consume_pending_save_request(const wormedit::ui::workspace_view_t* view, wormedit::ui::workspace_action_t& action) {
     if (g_save_project_requested) {
-        const bool same_project = view && view->project_id == g_save_project_request_id;
+        const bool same_project = view && view->project_id.value == g_save_project_request_id;
         const bool eligible = same_project && view->project_loaded && action.kind == WORM_UI_WORKSPACE_ACTION_NONE &&
                               !project_modal_active(*view) && !project_dialog_active() &&
                               !g_new_project_wizard.open;
@@ -3442,7 +3424,7 @@ static void consume_pending_save_request(const WormUiWorkspaceView* view, WormUi
     }
 }
 
-WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) {
+wormedit::ui::workspace_action_t worm_ui_frontend_compose(wormedit::ui::workspace_view_t* view) {
     struct RequestFrame {
         ~RequestFrame() { wormedit::ui::chrome::context_menu_finish_frame(); }
     } request_frame;
@@ -3453,7 +3435,7 @@ WormUiWorkspaceAction worm_ui_frontend_compose(const WormUiWorkspaceView* view) 
     remember_notification_frame(view);
     remember_context_menu_scope(view);
     worm_ui_nuklear_begin_image_quad_frame();
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_NONE;
     action.tab = WORM_UI_WORKSPACE_TAB_SETUP;
     action.audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_DRAG_NONE;
@@ -3591,7 +3573,7 @@ size_t worm_ui_frontend_copy_drawn_text_for_testing(char* output, size_t capacit
     return length;
 }
 
-size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnText* output,
+size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(wormedit::ui::testing_drawn_text_view_t* output,
                                                             size_t capacity) {
     size_t count = 0;
     if (!g_headless || !g_context) return count;
@@ -3605,16 +3587,14 @@ size_t worm_ui_frontend_copy_drawn_text_bounds_for_testing(WormUiTestingDrawnTex
             target.y = text->y;
             target.width = text->w;
             target.height = text->h;
-            const auto length = std::min(static_cast<size_t>(text->length), sizeof(target.text) - 1);
-            std::memcpy(target.text, text->string, length);
-            target.text[length] = '\0';
+            target.text.assign(text->string, static_cast<size_t>(text->length));
         }
         ++count;
     }
     return count;
 }
 
-bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output) {
+bool worm_ui_frontend_compose_viewport_for_testing(wormedit::ui::testing_rect_view_t* output) {
     if (!g_headless || !output) return false;
     const auto viewport = compose_canvas_viewport_for_testing();
     if (!viewport) return false;
@@ -3622,7 +3602,7 @@ bool worm_ui_frontend_compose_viewport_for_testing(WormUiTestingRect* output) {
     return true;
 }
 
-bool worm_ui_frontend_window_bounds_for_testing(const char* name, WormUiTestingRect* output) {
+bool worm_ui_frontend_window_bounds_for_testing(const char* name, wormedit::ui::testing_rect_view_t* output) {
     if (!g_headless || !g_context || !name || !output) return false;
     const auto* window = nk_window_find(g_context, name);
     if (!window) return false;

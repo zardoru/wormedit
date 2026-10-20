@@ -10,5 +10,5 @@ void worm_ui_nuklear_dismiss_layer_popup(struct nk_context* context);
 
 void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
                                            const WormUiComposeView* view,
-                                           WormUiWorkspaceAction* action,
+                                           wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state);

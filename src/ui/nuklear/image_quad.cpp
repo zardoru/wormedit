@@ -6,7 +6,7 @@
 
 namespace {
 
-std::array<WormUiNuklearImageQuad, WORM_UI_PLAYER_PREVIEW_STORYBOARD_CAPACITY> image_quads{};
+std::array<WormUiNuklearImageQuad, wormedit::ui::maximum_preview_storyboard_instances> image_quads{};
 std::size_t image_quad_count{};
 
 } // namespace

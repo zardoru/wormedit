@@ -37,9 +37,9 @@ inline auto notification_toast_bounds(int width, int height, std::size_t index)
 }
 
 struct notification_toast_state_t {
-    std::array<notification_rect_t, WORM_UI_NOTIFICATION_TOAST_CAPACITY> bounds{};
-    std::array<notification_rect_t, WORM_UI_NOTIFICATION_TOAST_CAPACITY> close_bounds{};
-    std::array<std::uint64_t, WORM_UI_NOTIFICATION_TOAST_CAPACITY> ids{};
+    std::array<notification_rect_t, ui::notification_view_t::maximum_visible_toasts> bounds{};
+    std::array<notification_rect_t, ui::notification_view_t::maximum_visible_toasts> close_bounds{};
+    std::array<std::uint64_t, ui::notification_view_t::maximum_visible_toasts> ids{};
     std::size_t count{};
     std::uint64_t captured_id{};
     std::uint32_t captured_buttons{};
@@ -119,27 +119,27 @@ inline void notification_focus_lost(notification_toast_state_t& state) {
 }
 
 inline auto notification_take_action(notification_toast_state_t& state)
-    -> WormUiNotificationAction {
+    -> wormedit::ui::notification_action_t {
     const auto id = state.dismiss_pending;
     state.dismiss_pending = 0;
     return {id == 0 ? WORM_UI_NOTIFICATION_ACTION_NONE : WORM_UI_NOTIFICATION_ACTION_DISMISS, id};
 }
 
-inline auto notification_escape_target(const WormUiNotificationView& view, bool window_focused,
+inline auto notification_escape_target(const wormedit::ui::notification_view_t& view, bool window_focused,
                                         bool text_active, bool ime_active, bool gesture_active,
                                         bool modal_active) -> std::optional<std::uint64_t> {
     if (!window_focused || text_active || ime_active || gesture_active || modal_active ||
-        view.toast_count == 0 || view.toast_count > WORM_UI_NOTIFICATION_TOAST_CAPACITY)
+        view.toasts.empty() || view.toasts.size() > ui::notification_view_t::maximum_visible_toasts)
         return std::nullopt;
     return view.toasts[0].id == 0 ? std::nullopt : std::optional{view.toasts[0].id};
 }
 
-void render_notification_toasts(nk_context* context, const WormUiNotificationView& view,
+void render_notification_toasts(nk_context* context, const wormedit::ui::notification_view_t& view,
                                 notification_toast_state_t& state, int width, int height);
 // A separate context keeps Nuklear's window insertion and popup focus isolated
 // from the editor. It borrows the editor font/style, never its input queues.
 void render_notification_overlay(nk_context* primary, nk_context* overlay,
-                                  const WormUiNotificationView& view,
+                                  const wormedit::ui::notification_view_t& view,
                                   notification_toast_state_t& state, int width, int height);
 
 } // namespace wormedit::ui::nuklear

@@ -90,25 +90,25 @@ int copy_metadata_text(char* destination, size_t capacity, const char* source,
     return 1;
 }
 
-static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
+static void initialize_metadata_buffers(const wormedit::ui::metadata_view_t* metadata) {
     if (!metadata) {
         return;
     }
     worm_ui_nuklear_cancel_metadata_tag_drag();
     state.buffer_revision = metadata->document_revision;
     state.buffer_has_chart = metadata->has_chart;
-    state.buffer_chart_id = metadata->has_chart ? metadata->chart_id : 0;
+    state.buffer_chart_id = metadata->has_chart ? metadata->chart_id.value : 0;
     state.song_buffers_valid = metadata->song_fields_editable &&
                                copy_metadata_text(state.title.data(), state.title.size(),
-                                                  metadata->title, metadata->title_bytes) &&
+                                                  metadata->title.c_str(), metadata->title.size()) &&
                                copy_metadata_text(state.artist.data(), state.artist.size(),
-                                                  metadata->artist, metadata->artist_bytes);
+                                                  metadata->artist.c_str(), metadata->artist.size());
     state.chart_buffers_valid =
         metadata->has_chart && metadata->chart_fields_editable &&
-        copy_metadata_text(state.chart_name.data(), state.chart_name.size(), metadata->chart_name,
-                           metadata->chart_name_bytes) &&
+        copy_metadata_text(state.chart_name.data(), state.chart_name.size(), metadata->chart_name.c_str(),
+                           metadata->chart_name.size()) &&
         copy_metadata_text(state.chart_author.data(), state.chart_author.size(),
-                           metadata->chart_author, metadata->chart_author_bytes);
+                           metadata->chart_author.c_str(), metadata->chart_author.size());
     state.chart_rating_text.fill('\0');
     state.audio_offset_text.fill('\0');
     state.chart_resolution_text.fill('\0');
@@ -128,15 +128,14 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     }
     state.tag_buffers_valid =
         metadata->search_tags_editable &&
-        metadata->search_tag_count <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
-        (metadata->search_tag_count == 0 || (metadata->search_tags && metadata->search_tag_bytes));
+        metadata->search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
     state.search_tags.clear();
     if (state.tag_buffers_valid) {
-        state.search_tags.reserve(metadata->search_tag_count);
-        for (size_t index = 0; index < metadata->search_tag_count; ++index) {
-            std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> tag{};
-            if (!copy_metadata_text(tag.data(), tag.size(), metadata->search_tags[index],
-                                    metadata->search_tag_bytes[index])) {
+        state.search_tags.reserve(metadata->search_tags.size());
+        for (size_t index = 0; index < metadata->search_tags.size(); ++index) {
+            std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1> tag{};
+            if (!copy_metadata_text(tag.data(), tag.size(), metadata->search_tags[index].c_str(),
+                                    metadata->search_tags[index].size())) {
                 state.tag_buffers_valid = 0;
                 state.search_tags.clear();
                 break;
@@ -161,8 +160,8 @@ static void initialize_metadata_buffers(const WormUiMetadataView* metadata) {
     initialize_typed_field_buffers(metadata);
 }
 
-static int metadata_buffer_key_changed(const WormUiMetadataView* metadata) {
-    const uint64_t chart_id = metadata && metadata->has_chart ? metadata->chart_id : 0;
+static int metadata_buffer_key_changed(const wormedit::ui::metadata_view_t* metadata) {
+    const uint64_t chart_id = metadata && metadata->has_chart ? metadata->chart_id.value : 0;
     const int has_chart = metadata && metadata->has_chart;
     return metadata && (state.buffer_revision != metadata->document_revision ||
                         state.buffer_chart_id != chart_id || state.buffer_has_chart != has_chart);
@@ -203,8 +202,8 @@ void render_footer_buttons(nk_context* context, bool revert_enabled, bool apply_
 }
 
 void worm_ui_nuklear_render_metadata_panel(struct nk_context* context,
-                                           const WormUiMetadataView* metadata,
-                                           WormUiWorkspaceAction* action, bool window_focused) {
+                                           const wormedit::ui::metadata_view_t* metadata,
+                                           wormedit::ui::workspace_action_t* action, bool window_focused) {
     if (!context || !metadata || !action || !metadata->visible) {
         worm_ui_nuklear_cancel_metadata_tag_drag();
         return;

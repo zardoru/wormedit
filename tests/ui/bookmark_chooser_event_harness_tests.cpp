@@ -80,7 +80,7 @@ auto click(nuklear_event_harness_t& harness, float x, float y)
     return {pressed, harness.frame(release)};
 }
 
-auto has_bookmark_action(const WormUiWorkspaceAction& action, std::uint64_t id) -> bool {
+auto has_bookmark_action(const wormedit::ui::workspace_action_t& action, std::uint64_t id) -> bool {
     return action.compose_action == WORM_UI_COMPOSE_ACTION_GO_TO_BOOKMARK &&
            action.compose_bookmark_id == id;
 }
@@ -258,7 +258,7 @@ struct chooser_host_fixture_t {
     bookmark_chooser_state_t state{};
     WormUiBookmarkChooserView view{.project_id = 3, .chart_id = 7,
                                   .document_revision = 11};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     bool owned{};
 
     chooser_host_fixture_t() {

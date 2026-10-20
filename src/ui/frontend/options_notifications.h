@@ -1,5 +1,23 @@
 #pragma once
 #include "timing_preview.h"
+#include <array>
+#include <chrono>
+#include <cstdint>
+#include <string>
+#include <string_view>
+#include <vector>
+#include <utility>
+
+namespace wormedit {
+struct song_document_t;
+class notification_center_t;
+enum class move_collision_policy_t : std::uint32_t;
+namespace sys {
+struct options_runtime_t;
+struct notification_history_runtime_t;
+}
+} // namespace wormedit
+
 
 typedef enum WormUiOptionsCategory {
     WORM_UI_OPTIONS_GENERAL = 0, WORM_UI_OPTIONS_EDITOR, WORM_UI_OPTIONS_AUDIO,
@@ -28,59 +46,70 @@ typedef enum WormUiOptionsField {
     WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME,
     WORM_UI_OPTIONS_FIELD_OSU_SKIN_DIRECTORY
 } WormUiOptionsField;
-typedef struct WormUiOptionsDiagnostic {
-    WormUiOptionsField field;
-    const char* message;
-} WormUiOptionsDiagnostic;
+namespace wormedit::ui {
+struct options_diagnostic_view_t {
+    WormUiOptionsField field{};
+    std::string_view message;
+    auto operator==(const options_diagnostic_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 // Input & shortcuts rows: one per registry command, at most the registry's command cap.
-#define WORM_UI_SHORTCUT_ROW_CAPACITY 512
-typedef struct WormUiShortcutRowView {
-    const char* label;
-    const char* chord;
-    bool conflict;
-} WormUiShortcutRowView;
-typedef struct WormUiOptionsView {
-    bool visible;
-    uint64_t revision;
-    WormUiOptionsCategory category;
-    bool changed;
-    bool can_apply;
-    uint32_t autosave_minutes, recent_files_count, default_snap, ui_scale_percent;
-    uint32_t scroll_directions[6];
-    uint32_t playhead_anchor_percent, area_band_alpha;
-    uint32_t move_collision_policy;
-    bool note_kind_palette_visible, lane_key_legend_visible;
-    bool audition_on_click;
-    bool invert_scroll_wheel;
-    bool confirm_unsaved_close, keep_pitch, frame_timing_overlay;
-    bool snap_colored_grid;
-    uint32_t snap_grid_opacity_percent;
-    uint32_t field_waveform_opacity_percent;
-    bool minimap_click_moves_paused_playhead;
-    uint32_t keysound_budget_mib;
-    std::string osu_skin_directory;
-    uint64_t rate_numerator, rate_denominator;
-    uint32_t p1_scratch_position, p2_scratch_position;
-    const char* field_scheme; // Default skin for layouts without an override.
-    const char* current_field_layout_key;
-    const char* current_field_layout_name;
-    const char* current_layout_field_scheme; // Empty inherits the default.
-    const WormUiComposeLaneView* current_field_layout_lanes;
-    size_t current_field_layout_lane_count;
-    const char* theme;
-    const char* dock_layout;
-    const char* shortcut_profile_path;
-    const struct WormUiExternalPlayerDefinitionView* players;
-    size_t player_count, selected_player;
-    const WormUiOptionsDiagnostic* diagnostics;
-    size_t diagnostic_count;
-    const char* status;
-    // Input & shortcuts page only; empty when that page is not the active category.
-    const WormUiShortcutRowView* shortcut_rows;
-    size_t shortcut_row_count;
-    bool shortcut_capturing;
-    size_t shortcut_capture_row;
-} WormUiOptionsView;
+namespace wormedit::ui {
+struct shortcut_row_view_t {
+    std::string_view command_id, label, chord;
+    bool conflict{};
+    auto operator==(const shortcut_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
+namespace wormedit::ui {
+struct options_view_t {
+    bool visible{};
+    std::uint64_t revision{};
+    WormUiOptionsCategory category{};
+    bool changed{}, can_apply{};
+    std::uint32_t autosave_minutes{}, recent_files_count{}, default_snap{}, ui_scale_percent{};
+    std::array<std::uint32_t, 6> scroll_directions{};
+    std::uint32_t playhead_anchor_percent{}, area_band_alpha{};
+    wormedit::move_collision_policy_t move_collision_policy{};
+    bool note_kind_palette_visible{}, lane_key_legend_visible{}, audition_on_click{}, invert_scroll_wheel{};
+    bool confirm_unsaved_close{}, keep_pitch{}, frame_timing_overlay{}, snap_colored_grid{};
+    std::uint32_t snap_grid_opacity_percent{}, field_waveform_opacity_percent{};
+    bool minimap_click_moves_paused_playhead{};
+    std::uint32_t keysound_budget_mib{};
+    std::string_view osu_skin_directory;
+    std::uint64_t rate_numerator{}, rate_denominator{};
+    std::uint32_t p1_scratch_position{}, p2_scratch_position{};
+    std::string_view field_scheme, current_field_layout_key, current_field_layout_name;
+    std::string_view current_layout_field_scheme;
+    std::vector<WormUiComposeLaneView> current_field_layout_lanes;
+    std::string_view theme, dock_layout, shortcut_profile_path;
+    std::vector<external_player_definition_view_t> players;
+    std::size_t selected_player{};
+    std::vector<options_diagnostic_view_t> diagnostics;
+    std::string_view status;
+    std::vector<shortcut_row_view_t> shortcut_rows;
+    bool shortcut_capturing{};
+    std::string_view shortcut_capture_command_id;
+
+    void reset() {
+        auto lanes = std::move(current_field_layout_lanes);
+        auto retained_players = std::move(players);
+        auto retained_diagnostics = std::move(diagnostics);
+        auto shortcuts = std::move(shortcut_rows);
+        *this = {};
+        current_field_layout_lanes = std::move(lanes);
+        players = std::move(retained_players);
+        diagnostics = std::move(retained_diagnostics);
+        shortcut_rows = std::move(shortcuts);
+        current_field_layout_lanes.clear();
+        players.clear();
+        diagnostics.clear();
+        shortcut_rows.clear();
+    }
+    void refill(wormedit::sys::options_runtime_t&);
+    [[nodiscard]] static auto from(wormedit::sys::options_runtime_t&) -> options_view_t;
+};
+} // namespace wormedit::ui
 typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_NONE = 0, WORM_UI_OPTIONS_OPEN, WORM_UI_OPTIONS_CLOSE,
     WORM_UI_OPTIONS_SELECT_CATEGORY, WORM_UI_OPTIONS_APPLY,
@@ -88,22 +117,21 @@ typedef enum WormUiOptionsActionKind {
     WORM_UI_OPTIONS_SHORTCUT_CAPTURE, WORM_UI_OPTIONS_SHORTCUT_CANCEL
 } WormUiOptionsActionKind;
 // EDIT_FIELD payload is consumed immediately; strings are bounded and owned.
-#define WORM_UI_OPTIONS_TEXT_CAPACITY 4097
-typedef struct WormUiOptionsAction {
-    WormUiOptionsActionKind kind;
-    uint64_t revision;
-    WormUiOptionsCategory category;
-    WormUiOptionsField field;
-    uint64_t integer, denominator;
-    bool boolean;
-    uint32_t player_index;
-    uint32_t family_index;
-    // SHORTCUT_CAPTURE: index into the view's shortcut rows.
-    uint32_t shortcut_row;
-    char text[WORM_UI_OPTIONS_TEXT_CAPACITY];
-} WormUiOptionsAction;
+namespace wormedit::ui {
+struct options_action_t {
+    WormUiOptionsActionKind kind{};
+    std::uint64_t revision{};
+    WormUiOptionsCategory category{};
+    WormUiOptionsField field{};
+    std::uint64_t integer{}, denominator{};
+    bool boolean{};
+    std::uint32_t player_index{}, family_index{};
+    std::string shortcut_command_id;
+    std::string text;
+    auto operator==(const options_action_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-#define WORM_UI_NOTIFICATION_TOAST_CAPACITY 3
 
 typedef enum WormUiNotificationSeverity {
     WORM_UI_NOTIFICATION_HINT = 0,
@@ -121,14 +149,16 @@ typedef enum WormUiNotificationProducerSource {
 typedef void (*WormUiNotificationPostCallback)(void* context, WormUiNotificationSeverity severity,
     WormUiNotificationProducerSource source, const char* message);
 
-typedef struct WormUiNotificationToastView {
-    uint64_t id;
-    WormUiNotificationSeverity severity;
-    const char* message;
-    uint32_t repeat_count;
-} WormUiNotificationToastView;
+namespace wormedit::ui {
+struct notification_toast_view_t {
+    std::uint64_t id{};
+    wormedit::notification_severity_t severity{};
+    std::string_view message;
+    std::uint32_t repeat_count{};
+    auto operator==(const notification_toast_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-#define WORM_UI_NOTIFICATION_HISTORY_CAPACITY 256
 
 typedef enum WormUiNotificationTargetAvailability {
     WORM_UI_NOTIFICATION_NO_TARGET = 0,
@@ -137,35 +167,63 @@ typedef enum WormUiNotificationTargetAvailability {
     WORM_UI_NOTIFICATION_TARGET_MISSING
 } WormUiNotificationTargetAvailability;
 
-typedef struct WormUiNotificationHistoryRow {
-    uint64_t id;
-    WormUiNotificationSeverity severity;
-    uint32_t source;
-    const char* message;
-    const char* detail;
-    uint32_t repeat_count;
-    uint64_t age_seconds;
-    bool read;
-    WormUiNotificationTargetAvailability target;
-} WormUiNotificationHistoryRow;
+namespace wormedit::ui {
+struct notification_history_row_view_t {
+    std::uint64_t id{};
+    wormedit::notification_severity_t severity{};
+    wormedit::notification_source_t source{};
+    std::string_view message, detail;
+    std::uint32_t repeat_count{};
+    std::uint64_t age_seconds{};
+    bool read{};
+    WormUiNotificationTargetAvailability target{};
+    auto operator==(const notification_history_row_view_t&) const -> bool = default;
+};
+} // namespace wormedit::ui
 
-typedef struct WormUiNotificationHistoryView {
-    bool visible;
-    size_t row_count;
-    const WormUiNotificationHistoryRow* rows;
-} WormUiNotificationHistoryView;
+namespace wormedit::ui {
+struct notification_history_view_t {
+    bool visible{};
+    std::vector<notification_history_row_view_t> rows;
 
-typedef struct WormUiNotificationView {
-    bool edit_gesture_active;
-    bool history_available;
-    WormUiNotificationHistoryView history;
-    const char* current_text;
-    WormUiNotificationSeverity current_severity;
-    size_t unread_warnings;
-    size_t unread_errors;
-    size_t toast_count;
-    WormUiNotificationToastView toasts[WORM_UI_NOTIFICATION_TOAST_CAPACITY];
-} WormUiNotificationView;
+    void reset() {
+        visible = false;
+        rows.clear();
+    }
+    void refill(wormedit::sys::notification_history_runtime_t&, const wormedit::notification_center_t&,
+                const wormedit::song_document_t&, std::chrono::nanoseconds now,
+                std::uint64_t document_generation = 0);
+    [[nodiscard]] static auto from(wormedit::sys::notification_history_runtime_t&,
+                const wormedit::notification_center_t&, const wormedit::song_document_t&,
+                std::chrono::nanoseconds now, std::uint64_t document_generation = 0)
+                -> notification_history_view_t;
+};
+} // namespace wormedit::ui
+
+namespace wormedit::ui {
+struct notification_view_t {
+    static constexpr std::size_t maximum_visible_toasts = 3;
+    bool edit_gesture_active{}, history_available{};
+    notification_history_view_t history;
+    std::string_view current_text;
+    wormedit::notification_severity_t current_severity{};
+    std::size_t unread_warnings{}, unread_errors{};
+    std::vector<notification_toast_view_t> toasts;
+
+    void reset() {
+        auto retained_history = std::move(history);
+        auto retained_toasts = std::move(toasts);
+        *this = {};
+        history = std::move(retained_history);
+        toasts = std::move(retained_toasts);
+        history.reset();
+        toasts.clear();
+    }
+    void refill(const wormedit::notification_center_t&, std::chrono::nanoseconds now);
+    [[nodiscard]] static auto from(const wormedit::notification_center_t&,
+                std::chrono::nanoseconds now) -> notification_view_t;
+};
+} // namespace wormedit::ui
 
 typedef enum WormUiNotificationActionKind {
     WORM_UI_NOTIFICATION_ACTION_NONE = 0,
@@ -177,7 +235,10 @@ typedef enum WormUiNotificationActionKind {
     WORM_UI_NOTIFICATION_ACTION_DISMISS_ALL
 } WormUiNotificationActionKind;
 
-typedef struct WormUiNotificationAction {
-    WormUiNotificationActionKind kind;
-    uint64_t id;
-} WormUiNotificationAction;
+namespace wormedit::ui {
+struct notification_action_t {
+    WormUiNotificationActionKind kind{};
+    std::uint64_t id{};
+    auto operator==(const notification_action_t&) const -> bool = default;
+};
+} // namespace wormedit::ui

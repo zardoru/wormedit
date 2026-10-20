@@ -10,7 +10,7 @@
 #include <optional>
 #include <string>
 
-struct WormUiWorkspaceAction;
+namespace wormedit::ui { struct workspace_action_t; }
 
 namespace wormedit::sys {
 
@@ -38,11 +38,11 @@ public:
   metadata_asset_t(metadata_asset_t&&) = delete;
   auto operator=(metadata_asset_t&&) -> metadata_asset_t& = delete;
 
-  auto start_copy_preview(const WormUiWorkspaceAction& action,
+  auto start_copy_preview(const wormedit::ui::workspace_action_t& action,
                           const wormedit::document_history_t& history,
                           const wormedit::workspace_controller_t& workspace,
                           const std::filesystem::path& asset_base) -> std::string;
-  auto start_import_copy(const WormUiWorkspaceAction& action,
+  auto start_import_copy(const wormedit::ui::workspace_action_t& action,
                          const wormedit::document_history_t& history,
                          const wormedit::workspace_controller_t& workspace,
                          const std::filesystem::path& asset_base,

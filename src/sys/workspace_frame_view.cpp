@@ -11,7 +11,7 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
     flattened.view.metadata.audio_waveform_has_selected_asset =
         args.workspace.transport.audio_asset.has_value();
     flattened.view.metadata.audio_waveform_selected_asset_id =
-        args.workspace.transport.audio_asset ? args.workspace.transport.audio_asset->value : 0;
+        args.workspace.transport.audio_asset.value_or(asset_id_t{});
 
     auto& audio_view = flattened.view.audio_slices;
     audio_view.document_revision = args.history.document.revision;
@@ -20,7 +20,7 @@ void populate_workspace_frame_view(frontend_workspace_view_t& flattened,
         const auto selected = args.history.document.find_chart(*args.selected_chart);
         if (selected != nullptr) {
             audio_view.has_chart = true;
-            audio_view.chart_id = selected->id.value;
+            audio_view.chart_id = selected->id;
             audio_view.offset_numerator =
                 selected->beat_zero_audio_offset_seconds.numerator;
             audio_view.offset_denominator =

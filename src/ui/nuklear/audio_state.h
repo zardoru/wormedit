@@ -3,6 +3,7 @@
 #include <cstdint>
 #include <span>
 #include <string_view>
+#include <string>
 #include <wormedit/audio/waveform_viewport.h>
 
 struct worm_ui_nuklear_audio_state_t {
@@ -33,7 +34,7 @@ struct worm_ui_nuklear_audio_state_t {
     char search_text[128]{};
     char tag_filter[128]{};
     char new_tag[257]{};
-    [[nodiscard]] auto matches_tags(std::span<const std::string_view> tags) const -> bool;
+    [[nodiscard]] auto matches_tags(std::span<const std::string> tags) const -> bool;
     // The selected resource may share an audio asset with another catalog entry.
     std::uint64_t selected_project_id{};
     std::uint64_t selected_resource_id{};
@@ -54,5 +55,5 @@ void worm_ui_nuklear_reset_audio_state();
 
 // The native adapter guards text, IME, modal, and tab ownership before queuing.
 [[nodiscard]] auto worm_ui_nuklear_audio_list_key_command(int direction, bool audition) noexcept -> bool;
-struct WormUiAudioWaveformViewportRequest;
-void worm_ui_nuklear_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest& request) noexcept;
+namespace wormedit::ui { struct audio_waveform_viewport_request_t; }
+void worm_ui_nuklear_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t& request) noexcept;

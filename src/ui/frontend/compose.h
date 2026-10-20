@@ -14,7 +14,7 @@ typedef struct WormUiComposeRect {
 typedef struct WormUiComposePasteGhostView {
     WormUiComposeRect bounds;
     uint8_t kind; /* 0 note endpoint, 1 hold body, 2 BGM event, 3 timing object */
-    uint8_t glyph; /* note glyph; for kind 3 the WormUiTimingLaneKind. Kind 3 bounds carry only top/bottom */
+    uint8_t glyph; /* note glyph; for kind 3 the wormedit::timing_lane_kind_t. Kind 3 bounds carry only top/bottom */
 } WormUiComposePasteGhostView;
 
 typedef struct WormUiComposeBandView {
@@ -94,7 +94,7 @@ typedef struct WormUiComposeRecipeAreaView {
     WormUiComposeRect bounds;
     uint64_t recipe_id;
     const char* label;
-    uint8_t lane; /* WormUiTimingLaneKind */
+    uint8_t lane; /* wormedit::timing_lane_kind_t */
     uint8_t curve;
     bool enabled;
     bool selected;
@@ -490,18 +490,6 @@ typedef struct WormUiComposeBranchChoiceView {
     bool can_clear;
 } WormUiComposeBranchChoiceView;
 
-typedef enum WormUiTimingLaneKind {
-    WORM_UI_TIMING_LANE_BPM = 0,
-    WORM_UI_TIMING_LANE_SCROLL,
-    WORM_UI_TIMING_LANE_SPEED,
-    WORM_UI_TIMING_LANE_STOP,
-    WORM_UI_TIMING_LANE_DELAY,
-    WORM_UI_TIMING_LANE_WARP,
-    WORM_UI_TIMING_LANE_KIAI,
-    WORM_UI_TIMING_LANE_ANCHOR,
-    WORM_UI_TIMING_LANE_COUNT,
-} WormUiTimingLaneKind;
-
 typedef struct WormUiTimingMarkerView {
     uint64_t object_id;
     uint64_t source_order;
@@ -510,7 +498,7 @@ typedef struct WormUiTimingMarkerView {
     double marker_left_fraction;
     double marker_right_fraction;
     uint64_t chart_row;
-    WormUiTimingLaneKind lane;
+    wormedit::timing_lane_kind_t lane;
     const char* short_label;
     const char* detail;
     bool fixed_initial;
@@ -810,9 +798,9 @@ typedef struct WormUiComposeQuantizeGhostView {
 // Coordinates are relative to the scene viewport; no chart/core types cross
 // the private frontend boundary.
 typedef struct WormUiComposeView {
-    WormUiKindCatalogView timing_lanes;
-    WormUiKindCatalogView timing_lane_captions;
-    WormUiKindCatalogView note_palette;
+    wormedit::ui::kind_catalog_view_t<wormedit::timing_lane_kind_t> timing_lanes;
+    wormedit::ui::kind_catalog_view_t<wormedit::timing_lane_kind_t> timing_lane_captions;
+    wormedit::ui::kind_catalog_view_t<wormedit::note_kind_t> note_palette;
     // A modeless program window owns this frame's content input.
     bool input_occluded;
     uint32_t armed_note_kind;
@@ -1102,7 +1090,7 @@ typedef struct WormUiComposeView {
     bool timing_focus;
     bool timing_stage_active;
     bool timing_stage_valid;
-    WormUiTimingLaneKind timing_stage_lane;
+    wormedit::timing_lane_kind_t timing_stage_lane;
     double timing_stage_y_pixels;
     const WormUiComposeResourceView* resources;
     uint64_t selected_audio_asset_id;

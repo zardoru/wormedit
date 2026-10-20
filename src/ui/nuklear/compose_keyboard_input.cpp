@@ -103,7 +103,7 @@ static auto compose_shift_keys(uint16_t modifiers) -> std::uint8_t {
            ((modifiers & SDL_KMOD_RSHIFT) != 0 ? 2 : 0);
 }
 
-static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceAction* action) {
+static bool release_compose_key_hold(const auto& key_event, wormedit::ui::workspace_action_t* action) {
     if (!key_event.down) {
         const auto held = state.keyboard_navigation.tab_navigation.current_action();
         const bool tab_release = key_event.keycode == static_cast<std::uint32_t>(SDLK_TAB);
@@ -155,7 +155,7 @@ static bool release_compose_key_hold(const auto& key_event, WormUiWorkspaceActio
     return false;
 }
 
-static void append_measure_navigation_step(WormUiWorkspaceAction* action,
+static void append_measure_navigation_step(wormedit::ui::workspace_action_t* action,
                                        WormUiComposeNavigationAction navigation,
                                        std::uint16_t modifiers, const WormUiComposeView& view,
                                        bool pointer_paint_mode_active) {
@@ -186,7 +186,7 @@ static auto compose_page_navigation(WormUiComposeNavigationAction action)
 }
 
 static bool process_compose_tab_key(const auto& event, const WormUiComposeView& view,
-                                    WormUiWorkspaceAction* action, bool pointer_paint_mode_active) {
+                                    wormedit::ui::workspace_action_t* action, bool pointer_paint_mode_active) {
     if (event.keycode != static_cast<std::uint32_t>(SDLK_TAB)) return false;
     state.keyboard_navigation.raw_tab_down = true;
     const auto step = state.keyboard_navigation.tab_navigation.press_tab(SDL_GetTicks());
@@ -197,7 +197,7 @@ static bool process_compose_tab_key(const auto& event, const WormUiComposeView& 
 
 static bool process_compose_horizontal_tab_key(const auto& event,
                                                const WormUiComposeView& view,
-                                               WormUiWorkspaceAction* action,
+                                               wormedit::ui::workspace_action_t* action,
                                                bool pointer_paint_mode_active) {
     if (event.keycode != static_cast<std::uint32_t>(SDLK_LEFT) &&
         event.keycode != static_cast<std::uint32_t>(SDLK_RIGHT)) return false;
@@ -214,7 +214,7 @@ static bool process_compose_horizontal_tab_key(const auto& event,
 
 static bool process_compose_navigation_key(const auto& key_event,
                                            const WormUiComposeView* view,
-                                           WormUiWorkspaceAction* action,
+                                           wormedit::ui::workspace_action_t* action,
                                            bool pointer_paint_mode_active) {
     const auto key = key_event.keycode;
     if (key != static_cast<uint32_t>(SDLK_UP) && key != static_cast<uint32_t>(SDLK_DOWN) &&
@@ -257,7 +257,7 @@ static bool process_compose_navigation_key(const auto& key_event,
 
 static bool process_compose_escape(const auto& key_event,
                                    const WormUiComposeView* view,
-                                   WormUiWorkspaceAction* action) {
+                                   wormedit::ui::workspace_action_t* action) {
     if (key_event.keycode != static_cast<uint32_t>(SDLK_ESCAPE)) return false;
     const auto pending = has_compose_gesture_capture();
     cancel_compose_gestures(action);
@@ -269,7 +269,7 @@ static bool process_compose_escape(const auto& key_event,
 }
 
 static void process_compose_lane_key(const auto& key_event, const WormUiComposeView* view,
-                                    WormUiWorkspaceAction* action) {
+                                    wormedit::ui::workspace_action_t* action) {
     if (!wormedit::ui::compose_notes_editable(compose_mode_of(*view))) return;
     if (!view->note_paint_mode_active && view->selected_note_count == 0 &&
         view->selected_bgm_event_count == 0) return;
@@ -293,7 +293,7 @@ static void process_compose_lane_key(const auto& key_event, const WormUiComposeV
 }
 
 static auto compose_pointer_paint_mode_active(const WormUiComposeView* view,
-                                              const WormUiWorkspaceAction* action) -> bool {
+                                              const wormedit::ui::workspace_action_t* action) -> bool {
     return view->note_paint_mode_active ||
            action->compose_action == WORM_UI_COMPOSE_ACTION_TOGGLE_NOTE_PAINT_MODE ||
            view->semantic_layer_paint_mode_active ||
@@ -301,7 +301,7 @@ static auto compose_pointer_paint_mode_active(const WormUiComposeView* view,
 }
 
 static void cancel_holds_for_pointer_paint(bool pointer_paint_mode_active,
-                                          WormUiWorkspaceAction* action) {
+                                          wormedit::ui::workspace_action_t* action) {
     if (!pointer_paint_mode_active) return;
     if (state.range_selection.space_range_hold_active) {
         append_compose_cancel_once(action);
@@ -317,7 +317,7 @@ static void cancel_holds_for_pointer_paint(bool pointer_paint_mode_active,
 }
 
 static bool process_compose_latched_range(const auto& event, const WormUiComposeView& view,
-                                          WormUiWorkspaceAction* action,
+                                          wormedit::ui::workspace_action_t* action,
                                           bool pointer_paint_mode_active) {
     if (event.keycode != static_cast<std::uint32_t>(SDLK_SPACE) ||
         (event.modifiers & SDL_KMOD_CTRL) == 0 ||
@@ -334,7 +334,7 @@ static bool process_compose_latched_range(const auto& event, const WormUiCompose
 }
 
 static void process_compose_key_event(const auto& key_event, const WormUiComposeView* view,
-                                      WormUiWorkspaceAction* action, bool keyboard_ready,
+                                      wormedit::ui::workspace_action_t* action, bool keyboard_ready,
                                       bool pointer_paint_mode_active) {
     if (release_compose_key_hold(key_event, action)) return;
     if (key_event.down && state.range_selection.space_range_hold_active && !state.range_selection.space_range_latched)
@@ -377,7 +377,7 @@ static bool go_to_measure_shortcut(const worm_ui_nuklear_compose_key_event_t& ev
 }
 
 static bool process_go_to_measure_keys(nk_context* context, const WormUiComposeView& view,
-                                       WormUiWorkspaceAction* action, bool window_focused,
+                                       wormedit::ui::workspace_action_t* action, bool window_focused,
                                        bool ime_composition_active) {
     if (state.dialogs.go_to_measure_open) {
         for (size_t index = 0; index < state.input_queue.key_event_count; ++index) {
@@ -415,13 +415,13 @@ bool compose_text_owned(const nk_context* context) {
     return active->popup.win ? active->popup.win->edit.active != 0 : active->edit.active != 0;
 }
 
-static void release_discarded_compose_keys(WormUiWorkspaceAction* action) {
+static void release_discarded_compose_keys(wormedit::ui::workspace_action_t* action) {
     worm_ui_nuklear_dispatch_compose_keys(state, false, [&](const auto& event) {
         (void)release_compose_key_hold(event, action);
     });
 }
 
-static void cancel_compose_shift_range(WormUiWorkspaceAction* action) {
+static void cancel_compose_shift_range(wormedit::ui::workspace_action_t* action) {
     if (!state.range_selection.space_range_hold_active) return;
     append_compose_cancel_once(action);
     state.range_selection.space_range_hold_active = false;
@@ -431,7 +431,7 @@ static void cancel_compose_shift_range(WormUiWorkspaceAction* action) {
 }
 
 void process_compose_key_events(struct nk_context* context, const WormUiComposeView* view,
-                                       WormUiWorkspaceAction* action, bool window_focused,
+                                       wormedit::ui::workspace_action_t* action, bool window_focused,
                                        bool ime_composition_active) {
     if (state.inline_timing.inline_timing_open || state.dialogs.go_to_measure_open || ime_composition_active ||
         compose_text_owned(context)) {

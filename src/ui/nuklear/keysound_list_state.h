@@ -66,7 +66,7 @@ struct worm_ui_keysound_group_review_t {
     std::vector<worm_ui_keysound_group_candidate_t> candidates;
     std::vector<worm_ui_keysound_group_proposal_t> groups;
     std::vector<worm_ui_keysound_group_assignment_t> staged_assignments;
-    std::vector<WormUiSoundGroupAssignment> staged_payload;
+    std::vector<wormedit::ui::sound_group_assignment_t> staged_payload;
     std::string message;
 };
 enum class worm_ui_sound_group_review_action_t : std::uint8_t { none, confirm, cancel };

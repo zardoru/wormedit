@@ -49,7 +49,7 @@ auto normalized_recent_path(const std::filesystem::path& path) -> std::string {
     if (error) return {};
     auto normalized = std::filesystem::weakly_canonical(absolute, error);
     const auto text = (error ? absolute.lexically_normal() : normalized).string();
-    if (text.size() >= sizeof(WormUiWorkspaceAction{}.project_path) || text.find('\0') != std::string::npos) return {};
+    if (text.size() >= sizeof(wormedit::ui::workspace_action_t{}.project_path) || text.find('\0') != std::string::npos) return {};
     return text;
 }
 void prepend_recent(program_preferences_runtime_t& runtime, std::string path) {
@@ -96,10 +96,12 @@ auto remember_recent_file(program_preferences_runtime_t& runtime,
     return saved ? std::string{} : "Could not save recent files: " + saved.error();
 }
 
-void build_recent_files_view(const program_preferences_runtime_t& runtime, WormUiWorkspaceView& view) {
-    view.recent_file_count = std::min({runtime.recent_files.size(),
-        static_cast<std::size_t>(runtime.preferences.general.recent_files_count), std::size(view.recent_files)});
-    for (std::size_t index = 0; index < view.recent_file_count; ++index)
-        view.recent_files[index] = {runtime.recent_files[index].label.c_str(), runtime.recent_files[index].path.c_str()};
+void build_recent_files_view(const program_preferences_runtime_t& runtime, wormedit::ui::workspace_view_t& view) {
+    const auto count = std::min(runtime.recent_files.size(),
+        static_cast<std::size_t>(runtime.preferences.general.recent_files_count));
+    view.recent_files.resize(count);
+    for (std::size_t index = 0; index < count; ++index)
+        view.recent_files[index] = {.label = runtime.recent_files[index].label,
+                                    .path = runtime.recent_files[index].path};
 }
 } // namespace wormedit::sys

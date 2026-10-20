@@ -17,8 +17,8 @@ struct PopupContextStamp {
     static auto from(const WormUiComposeView& view, std::uint64_t object = 0) -> PopupContextStamp {
         return {view.project_id, view.chart_id, view.document_revision, object};
     }
-    static auto from(const WormUiSetupView& view, std::uint64_t chart) -> PopupContextStamp {
-        return {view.song_id, view.session_generation, view.document_revision, chart};
+    static auto from(const wormedit::ui::setup_view_t& view, std::uint64_t chart) -> PopupContextStamp {
+        return {view.song_id.value, view.session_generation, view.document_revision, chart};
     }
 };
 

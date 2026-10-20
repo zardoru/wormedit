@@ -101,7 +101,7 @@ struct imported_resource_metadata_t {
     std::optional<std::pair<std::uint32_t, std::uint32_t>> image;
 };
 
-auto import_resource_role(const WormUiWorkspaceAction& action)
+auto import_resource_role(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_role_t>;
 
 auto inspect_imported_resource(const std::filesystem::path& path, wormedit::resource_role_t role)
@@ -129,7 +129,7 @@ compose_action_outcome_t start_resource_copy(compose_action_context_t& context,
 compose_action_outcome_t start_output_export(compose_action_context_t& context,
                                              output_group_export_plan_t plan);
 
-auto compose_placement_kind(const WormUiWorkspaceAction& action)
+auto compose_placement_kind(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_placement_kind_t>;
 
 auto apply_compose_resource_placement(compose_action_context_t& context,
@@ -159,7 +159,7 @@ auto make_existing_beat_section_edit(compose_action_context_t& context,
                                      const wormedit::chart_document_t& chart)
     -> std::variant<wormedit::marker_edit_action_t, std::string>;
 
-std::string_view beat_section_success(const WormUiWorkspaceAction& action, bool from_selection);
+std::string_view beat_section_success(const wormedit::ui::workspace_action_t& action, bool from_selection);
 
 struct edit_beat_section_action_t {
     const chart_document_t* chart{};
@@ -350,7 +350,7 @@ void find_bms_leaf_target(const wormedit::bms_control_node_t& node, std::uint64_
 auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64_t id)
     -> const wormedit::bms_control_node_t*;
 
-auto run_bms_block_command(const WormUiWorkspaceAction& action,
+auto run_bms_block_command(const wormedit::ui::workspace_action_t& action,
                            wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t;

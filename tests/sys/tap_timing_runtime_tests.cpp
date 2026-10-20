@@ -32,6 +32,15 @@ void check_timing_estimate(const tap_timing_runtime_t& runtime) {
 }
 } // namespace
 
+TEST_CASE("Tap timing publishes empty status text when no message is present", "[sys][tap-timing]") {
+    tap_timing_runtime_t runtime;
+    CHECK(runtime.state().status.empty());
+    record_timing_taps(runtime);
+    CHECK(runtime.state().status.empty());
+    runtime.reset();
+    CHECK(runtime.state().status.empty());
+}
+
 TEST_CASE("Tap timing captured proposal rejects a stale Apply request without an undo",
           "[sys][tap-timing][tap-stamp]") {
     tap_timing_runtime_t runtime;

@@ -25,7 +25,7 @@ void require_bga_draw_source(const worm_ui_nuklear_compose_state_t& state) {
 void require_bga_auto_advance(const worm_ui_nuklear_compose_state_t& state) {
     REQUIRE(state.bga_catalog.bga_auto_increment_on_place);
 }
-void check_resource_place(const WormUiComposeInputAction* input) {
+void check_resource_place(const wormedit::ui::compose_input_action_t* input) {
     REQUIRE(input != nullptr);
     CHECK(input->resource_id == 1400);
     CHECK(input->paint_intent == 1);
@@ -54,7 +54,7 @@ void check_bga_request(const WormUiBgaDockRequest& request) {
     CHECK(std::strcmp(request.search, "a") == 0);
 }
 auto find_resource_place(const std::vector<workspace_action_snapshot_t>& frames)
-    -> const WormUiComposeInputAction* {
+    -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames)
         for (std::size_t index = 0; index < frame.get().compose_input_count; ++index) {
             const auto& input = frame.get().compose_inputs[index];
@@ -91,7 +91,7 @@ auto click(nuklear_event_harness_t& harness, float x, float y, bool twice = fals
 }
 auto canvas_point(nuklear_event_harness_t& harness, double x, double y)
     -> std::pair<float, float> {
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     const auto& compose = harness.view().compose;
     return {viewport.x + static_cast<float>(x / compose.viewport_width_pixels) * viewport.width,
@@ -135,7 +135,7 @@ TEST_CASE("BGA dock auto advance follows eligible filtered order after placement
     (void)harness.frame();
     // Match chart-model dimensions to the actual first-frame editor viewport.
     // Keep the lane in the visible editor area, left of the floating dock.
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     const auto lane_left = std::min(430.0, static_cast<double>(viewport.width) - 64.0);
     REQUIRE(lane_left > 300.0);

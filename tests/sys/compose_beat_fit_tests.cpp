@@ -37,7 +37,7 @@ struct fit_fixture_t {
     application_command_state_t application;
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     bool downscroll;
 
     explicit fit_fixture_t(bool down) : history(document_history_t::from(fit_song(down))), downscroll(down) {

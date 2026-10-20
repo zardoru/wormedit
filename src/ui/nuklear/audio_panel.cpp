@@ -3,7 +3,6 @@
 #include "ui/field/rect.h"
 #include "ui/nuklear/bmson_lane_mode_ui.h"
 #include "ui/nuklear/audio_panel.h"
-#include "ui/nuklear/catalog_view.h"
 
 #include <wormedit/core/rational.h>
 #include <wormedit/core/catalogs.h>
@@ -65,12 +64,12 @@ void cancel_offset_pointer_drag() {
     audio.offset_drag_delta_frames = 0;
 }
 
-auto offset_pointer_drag_matches(const WormUiAudioSlicesView* view) -> bool {
+auto offset_pointer_drag_matches(const wormedit::ui::audio_slices_view_t* view) -> bool {
     return view && audio.offset_drag_active && view->visible && view->waveform_available &&
            view->has_chart && view->has_selected_asset && view->offset_drag_active &&
-           !view->timing_locked && view->chart_id == audio.offset_drag_chart_id &&
+           !view->timing_locked && view->chart_id.value == audio.offset_drag_chart_id &&
            view->document_revision == audio.offset_drag_document_revision &&
-           view->selected_asset_id == audio.offset_drag_asset_id &&
+           view->selected_asset_id.value == audio.offset_drag_asset_id &&
            view->total_frames == audio.offset_drag_total_frames &&
            view->sample_rate == audio.offset_drag_sample_rate;
 }
@@ -92,7 +91,7 @@ auto offset_pointer_delta(float pointer_x) -> std::int64_t {
     return static_cast<std::int64_t>(std::round(frames));
 }
 
-void set_offset_drag_action(WormUiWorkspaceAction* action, WormUiAudioOffsetDragAction kind,
+void set_offset_drag_action(wormedit::ui::workspace_action_t* action, WormUiAudioOffsetDragAction kind,
                             std::int64_t delta_frames) {
     if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) {
         return;
@@ -104,45 +103,42 @@ void set_offset_drag_action(WormUiWorkspaceAction* action, WormUiAudioOffsetDrag
     action->audio_offset_drag_delta_frames = delta_frames;
 }
 
-void render_audio_asset_catalog(struct nk_context* context, const WormUiAudioSlicesView& view,
-                                WormUiWorkspaceAction& action) {
+void render_audio_asset_catalog(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                                wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, 22, 1);
-    if (view.asset_count == 0) {
+    if (view.asset_ids.size() == 0) {
         nk_label(context, "No audio assets are registered in this project.", NK_TEXT_LEFT);
         return;
     }
     nk_label(context, "Source assets", NK_TEXT_LEFT);
     constexpr int buttons_per_row = 4;
-    for (std::size_t begin = 0; begin < view.asset_count; begin += buttons_per_row) {
+    for (std::size_t begin = 0; begin < view.asset_ids.size(); begin += buttons_per_row) {
         nk_layout_row_dynamic(context, 26, buttons_per_row);
         for (std::size_t slot = 0; slot < buttons_per_row; ++slot) {
             const auto index = begin + slot;
-            if (index >= view.asset_count) {
+            if (index >= view.asset_ids.size()) {
                 nk_label(context, "", NK_TEXT_LEFT);
                 continue;
             }
             char label[48]{};
             const bool selected =
-                view.has_selected_asset && view.selected_asset_id == view.asset_ids[index];
+                view.has_selected_asset && view.selected_asset_id.value == view.asset_ids[index].value;
             std::snprintf(label, sizeof(label), "%sAsset %llu", selected ? "• " : "",
-                          static_cast<unsigned long long>(view.asset_ids[index]));
+                          static_cast<unsigned long long>(view.asset_ids[index].value));
             if (nk_button_label(context, label) && !selected) {
                 audio.selected_resource_id = 0;
                 audio.selected_channel_id = 0;
                 audio.selected_clip_id = 0;
                 action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-                action.audio_asset_id = view.asset_ids[index];
+                action.audio_asset_id = view.asset_ids[index].value;
             }
         }
     }
-    if (view.assets_truncated) {
-        nk_layout_row_dynamic(context, 18, 1);
-        nk_label(context, "Additional audio assets are hidden by the view cap.", NK_TEXT_LEFT);
-    }
+
 }
 
-void update_offset_pointer_drag(struct nk_context* context, const WormUiAudioSlicesView& view,
-                                WormUiWorkspaceAction& action, struct nk_rect bounds) {
+void update_offset_pointer_drag(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                                wormedit::ui::workspace_action_t& action, struct nk_rect bounds) {
     if (context->current->flags & NK_WINDOW_NO_INPUT) return;
     const bool can_drag_offset = view.has_chart && !view.timing_locked;
     const auto& left_button = context->input.mouse.buttons[NK_BUTTON_LEFT];
@@ -173,9 +169,9 @@ void update_offset_pointer_drag(struct nk_context* context, const WormUiAudioSli
         audio.offset_drag_anchor_x = context->input.mouse.pos.x;
         audio.offset_drag_width = bounds.w;
         audio.offset_drag_frames_per_pixel = audio.waveform_viewport.frames_per_pixel;
-        audio.offset_drag_chart_id = view.chart_id;
+        audio.offset_drag_chart_id = view.chart_id.value;
         audio.offset_drag_document_revision = view.document_revision;
-        audio.offset_drag_asset_id = view.selected_asset_id;
+        audio.offset_drag_asset_id = view.selected_asset_id.value;
         audio.offset_drag_total_frames = view.total_frames;
         audio.offset_drag_sample_rate = view.sample_rate;
         audio.offset_drag_delta_frames = 0;
@@ -183,7 +179,7 @@ void update_offset_pointer_drag(struct nk_context* context, const WormUiAudioSli
     }
 }
 
-void cancel_stale_offset_drag(const WormUiAudioSlicesView& view, WormUiWorkspaceAction& action,
+void cancel_stale_offset_drag(const wormedit::ui::audio_slices_view_t& view, wormedit::ui::workspace_action_t& action,
                               bool window_focused) {
     if (audio.offset_drag_active &&
         (!offset_pointer_drag_matches(&view) || audio.offset_escape_pending ||
@@ -199,18 +195,16 @@ void cancel_stale_offset_drag(const WormUiAudioSlicesView& view, WormUiWorkspace
 
 namespace {
 
-auto sound_usage_view_valid(const WormUiAudioSlicesView& view) -> bool {
-    if (view.usage_row_count > WORM_UI_SOUND_USAGE_ROW_CAPACITY ||
-        (view.usage_row_count != 0 && !view.usage_rows) ||
-        (view.usage_valid &&
-         (view.usage_song_id == 0 || view.usage_document_revision == 0 ||
-          view.usage_resource_id == 0 || view.usage_resource_id != view.selected_resource_id)))
+auto sound_usage_view_valid(const wormedit::ui::audio_slices_view_t& view) -> bool {
+    if ((view.usage_valid &&
+         (view.usage_song_id.value == 0 || view.usage_document_revision == 0 ||
+          view.usage_resource_id.value == 0 || view.usage_resource_id.value != view.selected_resource_id.value)))
         return false;
-    for (std::size_t index = 0; index < view.usage_row_count; ++index) {
+    for (std::size_t index = 0; index < view.usage_rows.size(); ++index) {
         const auto& row = view.usage_rows[index];
-        if (row.chart_id == 0 || row.kind < 0 || row.kind > 3 || row.scope < 0 || row.scope > 1 ||
-            (row.position_valid && row.measure_id == 0) || (!row.position_valid && row.kind != 3) ||
-            !row.chart_label || !row.position_label)
+        if (row.chart_id.value == 0 || static_cast<int>(row.kind) > 3 || static_cast<int>(row.scope) > 1 ||
+            (row.position_valid && row.measure_id.value == 0) || (!row.position_valid && static_cast<int>(row.kind) != 3) ||
+            !row.chart_label.c_str() || !row.position_label.c_str())
             return false;
     }
     return true;
@@ -218,30 +212,27 @@ auto sound_usage_view_valid(const WormUiAudioSlicesView& view) -> bool {
 
 } // namespace
 
-int worm_ui_nuklear_audio_slices_view_valid(const WormUiAudioSlicesView* view) {
-    if (!view || view->asset_count > WORM_UI_AUDIO_ASSET_CAPACITY ||
-        (view->asset_count != 0 && !view->asset_ids) ||
-        view->waveform_column_count > WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY ||
-        (view->waveform_column_count != 0 && !view->waveform_columns) ||
-        view->sound_row_count > WORM_UI_SOUND_ROW_CAPACITY ||
-        (view->sound_row_count != 0 && !view->sound_rows) || !sound_usage_view_valid(*view) ||
-        (view->has_selected_asset && view->selected_asset_id == 0) ||
+int worm_ui_nuklear_audio_slices_view_valid(const wormedit::ui::audio_slices_view_t* view) {
+    if (!view || view->waveform_columns.size() > wormedit::ui::audio_waveform_column_limit ||
+        view->sound_rows.size() > wormedit::ui::audio_sound_row_limit ||
+        !sound_usage_view_valid(*view) ||
+        (view->has_selected_asset && view->selected_asset_id.value == 0) ||
         (view->analysis_pending && view->waveform_available) ||
-        (!view->waveform_available && view->waveform_column_count != 0) ||
-        (view->waveform_available && (view->waveform_column_count == 0 || view->total_frames == 0 ||
+        (!view->waveform_available && view->waveform_columns.size() != 0) ||
+        (view->waveform_available && (view->waveform_columns.size() == 0 || view->total_frames == 0 ||
                                       view->sample_rate == 0 || !view->has_selected_asset)) ||
-        (view->has_chart && (view->chart_id == 0 || view->offset_denominator == 0)) ||
+        (view->has_chart && (view->chart_id.value == 0 || view->offset_denominator == 0)) ||
         (view->offset_drag_active &&
          (!view->has_chart || !view->waveform_available || view->timing_locked ||
           view->proposed_offset_denominator == 0))) {
         return 0;
     }
-    for (std::size_t index = 0; index < view->asset_count; ++index) {
-        if (view->asset_ids[index] == 0) {
+    for (std::size_t index = 0; index < view->asset_ids.size(); ++index) {
+        if (view->asset_ids[index].value == 0) {
             return 0;
         }
     }
-    for (std::size_t index = 0; index < view->waveform_column_count; ++index) {
+    for (std::size_t index = 0; index < view->waveform_columns.size(); ++index) {
         for (std::size_t channel = 0; channel < 2; ++channel) {
             const auto& column = view->waveform_columns[index];
             if (!std::isfinite(column.minimum[channel]) ||
@@ -259,14 +250,14 @@ int worm_ui_nuklear_audio_slices_view_valid(const WormUiAudioSlicesView* view) {
 
 namespace {
 
-void update_waveform_viewport(nk_context* context, const WormUiAudioSlicesView& view,
+void update_waveform_viewport(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
                               struct nk_rect bounds, bool wheel_zoom) {
     using namespace wormedit::audio;
     const auto width = static_cast<std::uint32_t>(std::max(1.0f, bounds.w));
     auto& viewport = audio.waveform_viewport;
-    if (audio.waveform_asset_id != view.selected_asset_id || viewport.total_frames != view.total_frames) {
+    if (audio.waveform_asset_id != view.selected_asset_id.value || viewport.total_frames != view.total_frames) {
         viewport = fit_waveform_viewport(view.total_frames, width);
-        audio.waveform_asset_id = view.selected_asset_id;
+        audio.waveform_asset_id = view.selected_asset_id.value;
         audio.waveform_pan_active = false;
     } else if (viewport.pixel_width != width) {
         audio.waveform_pan_active = false;
@@ -304,8 +295,9 @@ auto waveform_height(nk_context* context, bool embedded) -> float {
         {.minimum = 80.0f, .reserved = 82.0f});
 }
 
-void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesView* view,
-                            WormUiWorkspaceAction* action, bool embedded = false) {
+void render_waveform_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t* view,
+                            wormedit::ui::workspace_action_t* action, bool embedded,
+                            std::span<const wormedit::ui::audio_waveform_column_view_t> columns) {
     nk_layout_row_dynamic(context, 22, 1);
     if (!view->has_selected_asset) {
         nk_label(context, "Select an asset to build its waveform overview.", NK_TEXT_LEFT);
@@ -313,7 +305,7 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     }
     if (view->analysis_pending) {
         nk_labelf(context, NK_TEXT_LEFT, "Analyzing asset %llu…",
-                  static_cast<unsigned long long>(view->selected_asset_id));
+                  static_cast<unsigned long long>(view->selected_asset_id.value));
         return;
     }
     if (!view->waveform_available) {
@@ -354,7 +346,7 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
     nk_push_scissor(canvas, nk_rect(overlap.x, overlap.y, overlap.w, overlap.h));
     nk_fill_rect(canvas, bounds, 2.0f, nk_rgb(22, 25, 33));
     const auto channel_height = bounds.h * 0.5f;
-    const auto column_width = bounds.w / static_cast<float>(view->waveform_column_count);
+    const auto column_width = bounds.w / static_cast<float>(columns.size());
     const auto displayed_delta = audio.offset_drag_active   ? audio.offset_drag_delta_frames
                                  : view->offset_drag_active ? view->offset_drag_delta_frames
                                                             : 0;
@@ -368,8 +360,8 @@ void render_waveform_column(struct nk_context* context, const WormUiAudioSlicesV
         const auto amplitude = channel_height * 0.42f;
         nk_stroke_line(canvas, bounds.x, center, bounds.x + bounds.w, center, 1.0f,
                        nk_rgb(57, 63, 77));
-        for (std::size_t index = 0; index < view->waveform_column_count; ++index) {
-            const auto& column = view->waveform_columns[index];
+        for (std::size_t index = 0; index < columns.size(); ++index) {
+            const auto& column = columns[index];
             const auto x =
                 bounds.x + (static_cast<float>(index) + 0.5f) * column_width + waveform_shift;
             const auto minimum = std::clamp(column.minimum[channel], -1.0f, 1.0f);
@@ -433,54 +425,54 @@ auto sound_usage_scope_name(int scope) -> const char* {
     return scope == 0 ? "Resource" : "Shared asset";
 }
 
-auto row_matches(const WormUiSoundRowView& row, const std::string& needle) -> bool {
+auto row_matches(const wormedit::ui::sound_row_view_t& row, const std::string& needle) -> bool {
     if (needle.empty()) {
         return true;
     }
-    return ascii_lowercase(row.name ? row.name : "").find(needle) != std::string::npos ||
-           ascii_lowercase(row.tags_text ? row.tags_text : "").find(needle) != std::string::npos;
+    return ascii_lowercase(row.name.c_str() ? row.name.c_str() : "").find(needle) != std::string::npos ||
+           ascii_lowercase(row.tags_text.c_str() ? row.tags_text.c_str() : "").find(needle) != std::string::npos;
 }
 
-void select_sound(const WormUiAudioSlicesView& view, const WormUiSoundRowView& row,
-                  WormUiWorkspaceAction& action) {
+void select_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& row,
+                  wormedit::ui::workspace_action_t& action) {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE) return;
-    audio.selected_project_id = view.usage_song_id;
-    audio.selected_resource_id = row.resource_id;
+    audio.selected_project_id = view.usage_song_id.value;
+    audio.selected_resource_id = row.resource_id.value;
     audio.selected_channel_id = 0;
     audio.selected_clip_id = 0;
-    action.audio_resource_id = row.resource_id;
-    if ((!view.has_selected_asset || view.selected_asset_id != row.asset_id) && row.asset_id != 0) {
+    action.audio_resource_id = row.resource_id.value;
+    if ((!view.has_selected_asset || view.selected_asset_id.value != row.asset_id.value) && row.asset_id.value != 0) {
         action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_AUDIO_ASSET;
-        action.audio_asset_id = row.asset_id;
+        action.audio_asset_id = row.asset_id.value;
     } else action.kind = WORM_UI_WORKSPACE_ACTION_SELECT_SOUND_RESOURCE;
 }
 
-void audition_sound(const WormUiAudioSlicesView& view, const WormUiSoundRowView& row,
-                    WormUiWorkspaceAction& action) {
-    if (row.missing || row.asset_id == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
+void audition_sound(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& row,
+                    wormedit::ui::workspace_action_t& action) {
+    if (row.missing || row.asset_id.value == 0 || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
     action.compose_action = WORM_UI_COMPOSE_ACTION_AUDITION_SOUND;
-    action.compose_resource_id = row.resource_id;
-    action.compose_input_project_id = view.usage_song_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_resource_id = row.resource_id.value;
+    action.compose_input_project_id = view.usage_song_id.value;
+    action.compose_input_chart_id = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
 }
 
-using sound_rows_t = std::vector<const WormUiSoundRowView*>;
+using sound_rows_t = std::vector<const wormedit::ui::sound_row_view_t*>;
 
-auto filtered_sound_rows(const WormUiAudioSlicesView& view) -> sound_rows_t {
+auto filtered_sound_rows(const wormedit::ui::audio_slices_view_t& view) -> sound_rows_t {
     sound_rows_t rows;
     const auto needle = ascii_lowercase(audio.search_text);
-    for (std::size_t index = 0; index < view.sound_row_count; ++index)
+    for (std::size_t index = 0; index < view.sound_rows.size(); ++index)
         if (row_matches(view.sound_rows[index], needle) && audio.matches_tags(view.sound_rows[index].tags))
             rows.push_back(&view.sound_rows[index]);
     return rows;
 }
 
-auto handle_sound_list_keys(nk_context* context, const WormUiAudioSlicesView& view,
-                            const sound_rows_t& rows, WormUiWorkspaceAction& action) -> int {
+auto handle_sound_list_keys(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                            const sound_rows_t& rows, wormedit::ui::workspace_action_t& action) -> int {
     const auto found = std::ranges::find_if(rows, [](const auto* row) {
-        return row->resource_id == audio.selected_resource_id;
+        return row->resource_id.value == audio.selected_resource_id;
     });
     int selected = found == rows.end() ? -1 : static_cast<int>(found - rows.begin());
     if (!rows.empty() && audio.sound_list_focused) {
@@ -499,14 +491,14 @@ auto handle_sound_list_keys(nk_context* context, const WormUiAudioSlicesView& vi
     return selected;
 }
 
-void render_sound_list_row(nk_context* context, const WormUiAudioSlicesView& view,
-                           const WormUiSoundRowView& row, WormUiWorkspaceAction& action) {
-    nk_bool active = row.resource_id == audio.selected_resource_id ? nk_true : nk_false;
+void render_sound_list_row(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                           const wormedit::ui::sound_row_view_t& row, wormedit::ui::workspace_action_t& action) {
+    nk_bool active = row.resource_id.value == audio.selected_resource_id ? nk_true : nk_false;
     nk_layout_row_dynamic(context, 28, 1);
     const auto bounds = nk_widget_bounds(context);
     char label[320]{};
     std::snprintf(label, sizeof(label), "%s%s  ·  %s", row.missing ? "! " : "",
-                  row.name ? row.name : "(unnamed)", wormedit::ui::kind_label(view.sound_kinds, row.kind, "Sound"));
+                  row.name.c_str() ? row.name.c_str() : "(unnamed)", view.sound_kinds.label(static_cast<wormedit::sound_kind_t>(static_cast<int>(row.kind)), "Sound"));
     if (nk_selectable_label(context, label, NK_TEXT_LEFT, &active)) select_sound(view, row, action);
     if (!(context->current->flags & NK_WINDOW_NO_INPUT) &&
         nk_input_is_mouse_click_down_in_rect(&context->input, NK_BUTTON_DOUBLE, bounds, nk_true)) {
@@ -515,8 +507,8 @@ void render_sound_list_row(nk_context* context, const WormUiAudioSlicesView& vie
     }
 }
 
-void render_sound_list_column(struct nk_context* context, const WormUiAudioSlicesView& view,
-                              WormUiWorkspaceAction& action) {
+void render_sound_list_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                              wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Sounds", NK_TEXT_LEFT);
     wormedit::ui::chrome::section_separator(context);
@@ -552,7 +544,7 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
                             static_cast<int>(std::max<std::size_t>(1, rows.size())))) {
         if (rows.empty()) {
             nk_layout_row_dynamic(context, 28, 1);
-            nk_label(context, view.sound_row_count ? "No matches" : "No sounds yet", NK_TEXT_LEFT);
+            nk_label(context, view.sound_rows.size() ? "No matches" : "No sounds yet", NK_TEXT_LEFT);
         } else {
             for (int index = list.begin; index < list.end && index < static_cast<int>(rows.size()); ++index)
                 render_sound_list_row(context, view, *rows[static_cast<std::size_t>(index)], action);
@@ -563,19 +555,19 @@ void render_sound_list_column(struct nk_context* context, const WormUiAudioSlice
     nk_label(context, "↑/↓ Select · Space / double-click Play", NK_TEXT_LEFT);
 }
 
-auto selected_sound(const WormUiAudioSlicesView& view) -> const WormUiSoundRowView* {
-    if (audio.selected_resource_id != 0 && view.sound_rows) {
+auto selected_sound(const wormedit::ui::audio_slices_view_t& view) -> const wormedit::ui::sound_row_view_t* {
+    if (audio.selected_resource_id != 0 && !view.sound_rows.empty()) {
         const auto rows =
-            std::span<const WormUiSoundRowView>{view.sound_rows, view.sound_row_count};
+            std::span<const wormedit::ui::sound_row_view_t>{view.sound_rows};
         const auto found =
-            std::ranges::find(rows, audio.selected_resource_id, &WormUiSoundRowView::resource_id);
-        if (found != rows.end() && audio.selected_project_id == view.usage_song_id)
+            std::ranges::find(rows, wormedit::resource_id_t{audio.selected_resource_id}, &wormedit::ui::sound_row_view_t::resource_id);
+        if (found != rows.end() && audio.selected_project_id == view.usage_song_id.value)
             return &*found;
     }
-    for (std::size_t index = 0; index < view.sound_row_count; ++index) {
-        if (view.has_selected_asset && view.sound_rows[index].asset_id == view.selected_asset_id) {
-            audio.selected_project_id = view.usage_song_id;
-            audio.selected_resource_id = view.sound_rows[index].resource_id;
+    for (std::size_t index = 0; index < view.sound_rows.size(); ++index) {
+        if (view.has_selected_asset && view.sound_rows[index].asset_id.value == view.selected_asset_id.value) {
+            audio.selected_project_id = view.usage_song_id.value;
+            audio.selected_resource_id = view.sound_rows[index].resource_id.value;
             audio.selected_channel_id = 0;
             audio.selected_clip_id = 0;
             return &view.sound_rows[index];
@@ -584,34 +576,34 @@ auto selected_sound(const WormUiAudioSlicesView& view) -> const WormUiSoundRowVi
     return nullptr;
 }
 
-void dispatch_sound_usage_activation(const WormUiAudioSlicesView& view,
-                                     const WormUiSoundUsageRowView& row,
-                                     WormUiWorkspaceAction& action) {
+void dispatch_sound_usage_activation(const wormedit::ui::audio_slices_view_t& view,
+                                     const wormedit::ui::sound_usage_row_view_t& row,
+                                     wormedit::ui::workspace_action_t& action) {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_NONE || !view.usage_valid ||
-        view.usage_song_id == 0 || view.usage_document_revision == 0 ||
-        view.usage_resource_id == 0 || view.usage_resource_id != view.selected_resource_id)
+        view.usage_song_id.value == 0 || view.usage_document_revision == 0 ||
+        view.usage_resource_id.value == 0 || view.usage_resource_id.value != view.selected_resource_id.value)
         return;
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
-    action.sound_usage_song_id = view.usage_song_id;
+    action.sound_usage_song_id = view.usage_song_id.value;
     action.sound_usage_document_revision = view.usage_document_revision;
-    action.sound_usage_resource_id = view.usage_resource_id;
-    action.sound_usage_asset_id = view.usage_asset_id;
-    action.sound_usage_chart_id = row.chart_id;
-    action.sound_usage_measure_id = row.measure_id;
+    action.sound_usage_resource_id = view.usage_resource_id.value;
+    action.sound_usage_asset_id = view.usage_asset_id.value;
+    action.sound_usage_chart_id = row.chart_id.value;
+    action.sound_usage_measure_id = row.measure_id.value;
     action.sound_usage_row = row.row;
-    action.sound_usage_object_id = row.object_id;
-    action.sound_usage_channel_id = row.channel_id;
-    action.sound_usage_clip_id = row.clip_id;
-    action.sound_usage_referenced_resource_id = row.referenced_resource_id;
-    action.sound_usage_referenced_asset_id = row.referenced_asset_id;
-    action.sound_usage_kind = row.kind;
-    action.sound_usage_scope = row.scope;
+    action.sound_usage_object_id = row.object_id.value;
+    action.sound_usage_channel_id = row.channel_id.value;
+    action.sound_usage_clip_id = row.clip_id.value;
+    action.sound_usage_referenced_resource_id = row.referenced_resource_id.value;
+    action.sound_usage_referenced_asset_id = row.referenced_asset_id.value;
+    action.sound_usage_kind = static_cast<int>(row.kind);
+    action.sound_usage_scope = static_cast<int>(row.scope);
     action.sound_usage_position_valid = row.position_valid;
 }
 
-void render_sound_usage_rows(struct nk_context* context, const WormUiAudioSlicesView& view,
-                             WormUiWorkspaceAction& action) {
-    if (!view.usage_valid || view.usage_resource_id != view.selected_resource_id) {
+void render_sound_usage_rows(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                             wormedit::ui::workspace_action_t& action) {
+    if (!view.usage_valid || view.usage_resource_id.value != view.selected_resource_id.value) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "Usage results are unavailable for this sound.", NK_TEXT_LEFT);
         return;
@@ -619,15 +611,15 @@ void render_sound_usage_rows(struct nk_context* context, const WormUiAudioSlices
     nk_layout_row_dynamic(context, 20, 1);
     nk_labelf(context, NK_TEXT_LEFT, "%zu use(s)%s", view.usage_total_count,
               view.usage_rows_truncated ? " · showing first 1,024" : "");
-    if (view.usage_row_count == 0) {
+    if (view.usage_rows.size() == 0) {
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "This sound has no chart uses.", NK_TEXT_LEFT);
         return;
     }
-    for (std::size_t index = 0; index < view.usage_row_count; ++index) {
+    for (std::size_t index = 0; index < view.usage_rows.size(); ++index) {
         const auto& row = view.usage_rows[index];
-        const char* chart_label = row.chart_label ? row.chart_label : "(unnamed chart)";
-        const char* position_label = row.position_label ? row.position_label : "Source clip";
+        const char* chart_label = row.chart_label.c_str() ? row.chart_label.c_str() : "(unnamed chart)";
+        const char* position_label = row.position_label.c_str() ? row.position_label.c_str() : "Source clip";
         nk_bool active = nk_false;
         nk_layout_row_dynamic(context, 22, 1);
         if (nk_selectable_label(context, chart_label, NK_TEXT_LEFT, &active))
@@ -636,20 +628,20 @@ void render_sound_usage_rows(struct nk_context* context, const WormUiAudioSlices
         if (nk_selectable_label(context, position_label, NK_TEXT_LEFT, &active))
             dispatch_sound_usage_activation(view, row, action);
         nk_layout_row_dynamic(context, 17, 1);
-        nk_labelf(context, NK_TEXT_LEFT, "%s · %s", sound_usage_kind_name(row.kind),
-                  sound_usage_scope_name(row.scope));
+        nk_labelf(context, NK_TEXT_LEFT, "%s · %s", sound_usage_kind_name(static_cast<int>(row.kind)),
+                  sound_usage_scope_name(static_cast<int>(row.scope)));
     }
 }
 
-auto sound_source_copy_available(const WormUiAudioSlicesView& view, const WormUiSoundRowView& sound)
+auto sound_source_copy_available(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound)
     -> bool {
-    return view.has_chart && view.chart_id != 0 && view.document_revision != 0 &&
-           sound.asset_id != 0 && !sound.missing && sound.source_path && sound.source_path[0];
+    return view.has_chart && view.chart_id.value != 0 && view.document_revision != 0 &&
+           sound.asset_id.value != 0 && !sound.missing && sound.source_path.c_str() && sound.source_path.c_str()[0];
 }
 
-void render_sound_source_copy_button(struct nk_context* context, const WormUiAudioSlicesView& view,
-                                     const WormUiSoundRowView& sound,
-                                     WormUiWorkspaceAction& action) {
+void render_sound_source_copy_button(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                                     const wormedit::ui::sound_row_view_t& sound,
+                                     wormedit::ui::workspace_action_t& action) {
     const auto can_copy = sound_source_copy_available(view, sound);
     if (!can_copy)
         nk_widget_disable_begin(context);
@@ -658,36 +650,36 @@ void render_sound_source_copy_button(struct nk_context* context, const WormUiAud
         nk_widget_disable_end(context);
     if (!clicked || !can_copy || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE)
         return;
-    action.compose_resource_asset_id = sound.asset_id;
-    action.compose_input_chart_id = view.chart_id;
+    action.compose_resource_asset_id = sound.asset_id.value;
+    action.compose_input_chart_id = view.chart_id.value;
     action.compose_input_document_revision = view.document_revision;
     action.compose_action = WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_PROJECT;
 }
 
-void reset_sound_properties(const WormUiAudioSlicesView& view, const WormUiSoundRowView& sound) {
-    audio.properties_project_id = view.usage_song_id;
-    audio.properties_resource_id = sound.resource_id;
+void reset_sound_properties(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound) {
+    audio.properties_project_id = view.usage_song_id.value;
+    audio.properties_resource_id = sound.resource_id.value;
     audio.properties_revision = view.document_revision;
-    std::snprintf(audio.properties_name, sizeof(audio.properties_name), "%s", sound.name ? sound.name : "");
-    audio.properties_kind = std::clamp(sound.kind, 0, 3);
+    std::snprintf(audio.properties_name, sizeof(audio.properties_name), "%s", sound.name.c_str() ? sound.name.c_str() : "");
+    audio.properties_kind = std::clamp(static_cast<int>(sound.kind), 0, 3);
     audio.new_tag[0] = '\0';
 }
 
-void submit_sound_tags(const WormUiAudioSlicesView& view, const WormUiSoundRowView& sound,
-                       std::vector<std::string> tags, WormUiWorkspaceAction& action) {
+void submit_sound_tags(const wormedit::ui::audio_slices_view_t& view, const wormedit::ui::sound_row_view_t& sound,
+                       std::vector<std::string> tags, wormedit::ui::workspace_action_t& action) {
     if (action.sound_properties_apply) return;
     action.sound_properties_apply = true;
-    action.sound_properties_project_id = view.usage_song_id;
-    action.sound_properties_chart_id = view.has_chart ? view.chart_id : 0;
-    action.sound_properties_resource_id = sound.resource_id;
+    action.sound_properties_project_id = view.usage_song_id.value;
+    action.sound_properties_chart_id = view.has_chart ? view.chart_id.value : 0;
+    action.sound_properties_resource_id = sound.resource_id.value;
     action.sound_properties_document_revision = view.document_revision;
-    std::snprintf(action.sound_properties_name, sizeof(action.sound_properties_name), "%s", sound.name);
+    std::snprintf(action.sound_properties_name, sizeof(action.sound_properties_name), "%s", sound.name.c_str());
     action.sound_properties_kind = static_cast<std::uint8_t>(sound.kind);
     action.sound_properties_tags = std::move(tags);
 }
 
-void render_sound_tags(nk_context* context, const WormUiAudioSlicesView& view,
-                       const WormUiSoundRowView& sound, WormUiWorkspaceAction& action) {
+void render_sound_tags(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                       const wormedit::ui::sound_row_view_t& sound, wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, 20, 1);
     nk_label(context, "Tags (click to remove)", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 25, 2);
@@ -710,24 +702,24 @@ void render_sound_tags(nk_context* context, const WormUiAudioSlicesView& view,
     }
 }
 
-void render_sound_kind_properties(nk_context* context, const WormUiKindCatalogView& catalog) {
+void render_sound_kind_properties(nk_context* context, const wormedit::ui::kind_catalog_view_t<wormedit::sound_kind_t>& catalog) {
     std::array<const char*, wormedit::sound_kind_count> labels{};
-    if (catalog.count == 0 || catalog.count > labels.size()) return;
+    if (catalog.entries.size() == 0 || catalog.entries.size() > labels.size()) return;
     int current = 0;
-    for (std::size_t index = 0; index < catalog.count; ++index) {
-        labels[index] = catalog.entries[index].label;
-        if (catalog.entries[index].id == static_cast<std::uint32_t>(audio.properties_kind))
+    for (std::size_t index = 0; index < catalog.entries.size(); ++index) {
+        labels[index] = catalog.entries[index].label.data();
+        if (catalog.entries[index].id == static_cast<wormedit::sound_kind_t>(audio.properties_kind))
             current = static_cast<int>(index);
     }
     const auto selected = wormedit::ui::chrome::safe_combo(context, labels.data(),
-        static_cast<int>(catalog.count), current, 26, nk_vec2(220, 160));
+        static_cast<int>(catalog.entries.size()), current, 26, nk_vec2(220, 160));
     audio.properties_kind = static_cast<int>(catalog.entries[static_cast<std::size_t>(selected)].id);
 }
 
-void render_editable_sound_properties(nk_context* context, const WormUiAudioSlicesView& view,
-                                      const WormUiSoundRowView& sound, WormUiWorkspaceAction& action) {
-    if (audio.properties_project_id != view.usage_song_id ||
-        audio.properties_resource_id != sound.resource_id ||
+void render_editable_sound_properties(nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                                      const wormedit::ui::sound_row_view_t& sound, wormedit::ui::workspace_action_t& action) {
+    if (audio.properties_project_id != view.usage_song_id.value ||
+        audio.properties_resource_id != sound.resource_id.value ||
         audio.properties_revision != view.document_revision)
         reset_sound_properties(view, sound);
     nk_layout_row_dynamic(context, 20, 1);
@@ -739,19 +731,19 @@ void render_editable_sound_properties(nk_context* context, const WormUiAudioSlic
     nk_label(context, "Kind", NK_TEXT_LEFT);
     nk_layout_row_dynamic(context, 28, 1);
     render_sound_kind_properties(context, view.sound_kinds);
-    const bool changed = std::string_view{audio.properties_name} != (sound.name ? sound.name : "") ||
-                         audio.properties_kind != sound.kind;
-    const bool can_apply = changed && audio.properties_name[0] && view.usage_song_id &&
-                           sound.resource_id && view.document_revision;
+    const bool changed = std::string_view{audio.properties_name} != (sound.name.c_str() ? sound.name.c_str() : "") ||
+                         audio.properties_kind != static_cast<int>(sound.kind);
+    const bool can_apply = changed && audio.properties_name[0] && view.usage_song_id.value &&
+                           sound.resource_id.value && view.document_revision;
     nk_layout_row_dynamic(context, 28, 2);
     if (!can_apply) nk_widget_disable_begin(context);
     const auto apply = nk_button_label(context, "Apply");
     if (!can_apply) nk_widget_disable_end(context);
     if (apply && can_apply && !action.sound_properties_apply) {
         action.sound_properties_apply = true;
-        action.sound_properties_project_id = view.usage_song_id;
-        action.sound_properties_chart_id = view.has_chart ? view.chart_id : 0;
-        action.sound_properties_resource_id = sound.resource_id;
+        action.sound_properties_project_id = view.usage_song_id.value;
+        action.sound_properties_chart_id = view.has_chart ? view.chart_id.value : 0;
+        action.sound_properties_resource_id = sound.resource_id.value;
         action.sound_properties_document_revision = view.document_revision;
         std::snprintf(action.sound_properties_name, sizeof(action.sound_properties_name), "%s", audio.properties_name);
         action.sound_properties_kind = static_cast<std::uint8_t>(audio.properties_kind);
@@ -760,8 +752,8 @@ void render_editable_sound_properties(nk_context* context, const WormUiAudioSlic
     nk_layout_row_dynamic(context, 22, 1);
 }
 
-void render_sound_properties_column(struct nk_context* context, const WormUiAudioSlicesView& view,
-                                    WormUiWorkspaceAction& action) {
+void render_sound_properties_column(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                                    wormedit::ui::workspace_action_t& action) {
     nk_layout_row_dynamic(context, 22, 1);
     nk_label(context, "Properties", NK_TEXT_LEFT);
     wormedit::ui::chrome::section_separator(context);
@@ -773,10 +765,10 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
     }
     render_editable_sound_properties(context, view, *selected, action);
     if (selected->bmson_channel_id && view.has_chart && !view.timing_locked) {
-        const bool stem = selected->kind == 1;
+        const bool stem = selected->kind == wormedit::sound_kind_t::stem;
         if (nk_button_label(context, stem ? "Kind: Keysound (pack into columns)" : "Kind: Stem (make stem)"))
-            request_bmson_lane_mode(action, view.usage_song_id, view.chart_id, view.document_revision,
-                selected->bmson_channel_id, !stem, selected->bmson_channel_continues, true);
+            request_bmson_lane_mode(action, view.usage_song_id.value, view.chart_id.value, view.document_revision,
+                selected->bmson_channel_id.value, !stem, selected->bmson_channel_continues, true);
     }
     nk_labelf(context, NK_TEXT_LEFT, "Used %llu time(s)", static_cast<unsigned long long>(selected->use_count));
     if (selected->sample_rate != 0) {
@@ -785,24 +777,24 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
                   selected->sample_rate);
     }
     render_sound_tags(context, view, *selected, action);
-    if (selected->source_path && selected->source_path[0]) {
-        nk_label(context, selected->source_path, NK_TEXT_LEFT);
+    if (!selected->source_path.empty()) {
+        nk_label(context, selected->source_path.c_str(), NK_TEXT_LEFT);
     }
     if (selected->missing) {
         nk_label_colored(context, "The audio file is missing.", NK_TEXT_LEFT,
                          nk_rgb(255, 120, 120));
     }
-    if (view.selected_channel_id != 0 || view.selected_clip_id != 0) {
+    if (view.selected_channel_id.value != 0 || view.selected_clip_id.value != 0) {
         nk_layout_row_dynamic(context, 20, 1);
         nk_labelf(context, NK_TEXT_LEFT, "Source channel %llu · clip %llu",
-                  static_cast<unsigned long long>(view.selected_channel_id),
-                  static_cast<unsigned long long>(view.selected_clip_id));
+                  static_cast<unsigned long long>(view.selected_channel_id.value),
+                  static_cast<unsigned long long>(view.selected_clip_id.value));
     }
     nk_layout_row_dynamic(context, 25, 1);
     if (nk_button_label(context, audio.find_uses_open ? "Hide uses" : "Find uses")) {
         if (!audio.find_uses_open && audio.selected_resource_id == 0) {
-            audio.selected_project_id = view.usage_song_id;
-            audio.selected_resource_id = selected->resource_id;
+            audio.selected_project_id = view.usage_song_id.value;
+            audio.selected_resource_id = selected->resource_id.value;
         }
         audio.find_uses_open = !audio.find_uses_open;
     }
@@ -811,8 +803,8 @@ void render_sound_properties_column(struct nk_context* context, const WormUiAudi
     render_sound_source_copy_button(context, view, *selected, action);
 }
 
-void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesView& view,
-                          WormUiWorkspaceAction& action) {
+void render_sound_columns(struct nk_context* context, const wormedit::ui::audio_slices_view_t& view,
+                          wormedit::ui::workspace_action_t& action) {
     const auto height = wormedit::ui::layout::remaining_content_height(context,
         {.minimum = 80.0f, .reserved = 8.0f});
     constexpr auto gutter = wormedit::ui::metrics::gap_large;
@@ -830,7 +822,7 @@ void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesVie
         nk_layout_row_dynamic(context, 22, 1);
         nk_label(context, "Waveform", NK_TEXT_LEFT);
         wormedit::ui::chrome::section_separator(context);
-        render_waveform_column(context, &view, &action);
+        render_waveform_column(context, &view, &action, false, view.waveform_columns);
         nk_group_end(context);
     }
     if (nk_group_begin(context, "sound_properties", NK_WINDOW_BORDER)) {
@@ -843,17 +835,18 @@ void render_sound_columns(struct nk_context* context, const WormUiAudioSlicesVie
 } // namespace
 
 void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
-                                         const WormUiAudioSlicesView* view,
-                                         WormUiWorkspaceAction* action, bool show_asset_catalog,
-                                         bool window_focused) {
+                                         const wormedit::ui::audio_slices_view_t* view,
+                                         wormedit::ui::workspace_action_t* action, bool show_asset_catalog,
+                                         bool window_focused,
+                                         std::span<const wormedit::ui::audio_waveform_column_view_t> columns) {
     if (!context || !view || !action) {
         return;
     }
-    if (view->usage_song_id != 0 && audio.selected_project_id != view->usage_song_id) {
-        audio.selected_project_id = view->usage_song_id;
-        audio.selected_resource_id = view->selected_resource_id;
-        audio.selected_channel_id = view->selected_channel_id;
-        audio.selected_clip_id = view->selected_clip_id;
+    if (view->usage_song_id.value != 0 && audio.selected_project_id != view->usage_song_id.value) {
+        audio.selected_project_id = view->usage_song_id.value;
+        audio.selected_resource_id = view->selected_resource_id.value;
+        audio.selected_channel_id = view->selected_channel_id.value;
+        audio.selected_clip_id = view->selected_clip_id.value;
         audio.find_uses_open = false;
         audio.waveform_asset_id = 0;
         audio.sound_list_focused = false;
@@ -888,24 +881,25 @@ void worm_ui_nuklear_render_audio_slices(struct nk_context* context,
             action->sound_import_pick_requested = true;
         nk_label(context, "Drop audio files anywhere here to import", NK_TEXT_RIGHT);
         render_sound_columns(context, *view, *action);
-        render_bmson_lane_mode_confirmation(context, *action, view->usage_song_id, view->chart_id,
+        render_bmson_lane_mode_confirmation(context, *action, view->usage_song_id.value, view->chart_id.value,
             view->document_revision, window_focused, true);
         return;
     }
     if (show_asset_catalog) {
         render_audio_asset_catalog(context, *view, *action);
     }
-    render_waveform_column(context, view, action, !show_asset_catalog);
+    render_waveform_column(context, view, action, !show_asset_catalog,
+        columns.empty() ? std::span<const wormedit::ui::audio_waveform_column_view_t>{view->waveform_columns} : columns);
 }
 
-void worm_ui_frontend_sound_usage_request(WormUiSoundUsageRequest* request) {
+void worm_ui_frontend_sound_usage_request(wormedit::ui::sound_usage_request_t* request) {
     if (!request)
         return;
     const auto& state = worm_ui_nuklear_audio_state();
-    request->selected_project_id = state.selected_project_id;
-    request->selected_resource_id = state.selected_resource_id;
-    request->selected_channel_id = state.selected_channel_id;
-    request->selected_clip_id = state.selected_clip_id;
+    request->selected_project_id = wormedit::song_id_t{state.selected_project_id};
+    request->selected_resource_id = wormedit::resource_id_t{state.selected_resource_id};
+    request->selected_channel_id = wormedit::object_id_t{state.selected_channel_id};
+    request->selected_clip_id = wormedit::clip_id_t{state.selected_clip_id};
     request->find_uses_open = state.find_uses_open;
 }
 
@@ -918,11 +912,11 @@ void worm_ui_frontend_select_sound_usage_source(std::uint64_t project_id, std::u
     state.selected_clip_id = clip_id;
 }
 
-void worm_ui_nuklear_audio_waveform_viewport_request(WormUiAudioWaveformViewportRequest& request) noexcept {
+void worm_ui_nuklear_audio_waveform_viewport_request(wormedit::ui::audio_waveform_viewport_request_t& request) noexcept {
     request = {};
     if (!audio.waveform_asset_id || !wormedit::audio::is_waveform_viewport_valid(audio.waveform_viewport)) return;
     const auto& viewport = audio.waveform_viewport;
-    request.asset_id = audio.waveform_asset_id;
+    request.asset_id = wormedit::asset_id_t{audio.waveform_asset_id};
     request.total_frames = viewport.total_frames;
     request.begin_frame = viewport.begin_frame;
     request.frames_per_pixel = viewport.frames_per_pixel;

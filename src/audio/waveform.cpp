@@ -612,6 +612,16 @@ auto waveform_level_for_zoom(const waveform_t& waveform, double source_frames_pe
 
 auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_request_t request)
     -> waveform_view_outcome_t {
+    waveform_view_t result;
+    const auto status = result.refill(waveform, request);
+    if (!status) return std::unexpected(status.error());
+    return result;
+}
+
+auto waveform_view_t::refill(const waveform_t& waveform, waveform_projection_request_t request)
+    -> result_t<void, failure_code_t> {
+    columns.clear();
+    level_frames_per_bin = 0;
     if (!is_valid_waveform_geometry(waveform)) {
         return std::unexpected(failure_code_t::invalid_data);
     }
@@ -635,10 +645,8 @@ auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_reque
         return std::unexpected(failure_code_t::invalid_data);
     }
 
-    waveform_view_t result{
-        .level_frames_per_bin = level->frames_per_bin,
-    };
-    result.columns.reserve(column_count);
+    level_frames_per_bin = level->frames_per_bin;
+    columns.reserve(column_count);
     const auto frames_per_column = visible_frames / column_count;
     const auto remainder = visible_frames % column_count;
     auto begin_frame = request.begin_frame;
@@ -659,6 +667,8 @@ auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_reque
         for (auto bin_index = first_bin; bin_index <= last_bin; ++bin_index) {
             const auto& bin = level->bins[static_cast<std::size_t>(bin_index)];
             if (!is_valid_bin(bin, level->frames_per_bin)) {
+                columns.clear();
+                level_frames_per_bin = 0;
                 return std::unexpected(failure_code_t::invalid_data);
             }
             weighted_frames += static_cast<double>(bin.frame_count);
@@ -676,10 +686,10 @@ auto waveform_view_t::from(const waveform_t& waveform, waveform_projection_reque
             column.rms[channel] =
                 static_cast<float>(std::sqrt(weighted_squares[channel] / weighted_frames));
         }
-        result.columns.push_back(column);
+        columns.push_back(column);
         begin_frame = end_frame;
     }
-    return result;
+    return {};
 }
 
 auto waveform_analysis_result_t::from(waveform_analysis_outcome_t&& outcome) -> waveform_analysis_result_t {

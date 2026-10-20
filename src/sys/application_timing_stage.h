@@ -3,7 +3,7 @@
 #include <wormedit/core/timing_lane_controller.h>
 
 namespace wormedit::sys {
-inline auto validate_timing_stage_binding(const WormUiWorkspaceAction& action,
+inline auto validate_timing_stage_binding(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     const wormedit::timing_lane_pseudonote_outcome_t& stage) -> std::optional<std::string> {
     const auto* report = stage.report();
@@ -23,7 +23,7 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
                                    const wormedit::chart_indices_t& indices, double fraction,
                                    std::uint64_t active_denominator)
     -> std::optional<wormedit::local_position_t>;
-auto begin_timing_stage(const WormUiWorkspaceAction& action,
+auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked,
                         std::uint64_t active_snap_denominator)
@@ -31,6 +31,6 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
 auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
                         const wormedit::chart_document_t& chart,
                         const wormedit::chart_indices_t& indices,
-                        const WormUiWorkspaceAction& action, std::uint64_t active_snap_denominator)
+                        const wormedit::ui::workspace_action_t& action, std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t>;
 } // namespace wormedit::sys

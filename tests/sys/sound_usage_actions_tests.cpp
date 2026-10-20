@@ -38,12 +38,12 @@ auto usage_history() -> document_history_t {
 }
 
 auto usage_action(const document_history_t& history, bool source_row = false)
-    -> WormUiWorkspaceAction {
+    -> wormedit::ui::workspace_action_t {
     const auto usage = sound_usage_view_t::from(history.document, resource_id_t{20});
     const auto kind =
         source_row ? sound_usage_kind_t::sound_channel_source : sound_usage_kind_t::note;
     const auto found = std::ranges::find(usage.rows, kind, &sound_usage_row_t::kind);
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.kind = WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE;
     if (found == usage.rows.end())
         return action;
@@ -65,8 +65,8 @@ auto usage_action(const document_history_t& history, bool source_row = false)
     return action;
 }
 
-auto valid_request() -> WormUiSoundUsageRequest {
-    return {.selected_project_id = 1, .selected_resource_id = 20, .find_uses_open = true};
+auto valid_request() -> wormedit::ui::sound_usage_request_t {
+    return {.selected_project_id = song_id_t{1}, .selected_resource_id = resource_id_t{20}, .find_uses_open = true};
 }
 
 auto audio_workspace(const song_document_t& document) -> std::optional<workspace_controller_t> {
@@ -226,7 +226,7 @@ TEST_CASE("sound usage action rejects stale project context and malformed rows a
         reject([](auto& a) { ++a.sound_usage_document_revision; }, [](auto&) {}, [](auto&) {});
     }
     SECTION("stale selected resource") {
-        reject([](auto&) {}, [](auto& r) { r.selected_resource_id = 99; }, [](auto&) {});
+        reject([](auto&) {}, [](auto& r) { r.selected_resource_id = resource_id_t{99}; }, [](auto&) {});
     }
     SECTION("stale asset") {
         reject([](auto& a) { ++a.sound_usage_asset_id; }, [](auto&) {}, [](auto&) {});

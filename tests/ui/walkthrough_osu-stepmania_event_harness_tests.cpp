@@ -85,9 +85,9 @@ struct charting_t {
         populate_compose_view(flattened, history, workspace, cache, 1600, 1000,
                               interaction, commands, nullptr);
         auto& view = harness.view();
-        view.project_id = history.document.id.value;
+        view.project_id.value = history.document.id.value;
         view.document_revision = history.document.revision;
-        view.selected_chart_id = workspace.selected_chart->value;
+        view.selected_chart_id.value = workspace.selected_chart->value;
         view.compose = flattened.view.compose;
         view.timing_settings_visible = commands.preferences.timing_settings_visible;
     }
@@ -138,20 +138,20 @@ auto preview_group(document_history_t& history, std::size_t index,
         history.document.output_groups[index].stepmania = policy;
     project_chart_runtime_t runtime;
     task_scheduler_t scheduler{1, 1};
-    WormUiSetupView view{.visible = true};
-    build_project_chart_view(runtime, history.document, view);
-    const WormUiProjectOutputGroupAction action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
-        .project_id = history.document.id.value, .document_revision = history.document.revision,
+    wormedit::ui::setup_view_t view{.visible = true};
+    view.refill(runtime, history.document);
+    const wormedit::ui::project_output_group_action_t action{.kind = WORM_UI_PROJECT_OUTPUT_GROUP_PREVIEW,
+        .project_id = history.document.id, .document_revision = history.document.revision,
         .session_generation = runtime.session_generation, .group_index = index};
     (void)apply_project_output_group_ui_action(runtime, history, action, scheduler, root);
     expect(runtime.preview_job());
     for (int attempt = 0; attempt < 1000 && runtime.preview_job()->is_busy(); ++attempt) {
-        build_project_chart_view(runtime, history.document, view);
+        view.refill(runtime, history.document);
         std::this_thread::sleep_for(std::chrono::milliseconds{1});
     }
-    build_project_chart_view(runtime, history.document, view);
+    view.refill(runtime, history.document);
     expect(!runtime.preview_job()->is_busy());
-    return view.output_groups[index].preview_status;
+    return std::string{view.output_groups[index].preview_status};
 }
 
 }
@@ -170,7 +170,7 @@ TEST_CASE("Osu StepMania walkthrough opens Timing focus and visible settings fro
     const auto* settings = find_command(flow.registry, {"timing.open_settings"});
     expect(settings);
     auto& view = flow.harness.view();
-    view.command_menu_count = 1;
+    view.command_menu_rows.resize(1);
     view.command_menu_rows[0] = {.id = settings->definition.id.value.c_str(),
         .label = settings->definition.display_name.c_str(), .enabled = settings->definition.enabled};
     expect(worm_ui_frontend_open_command_menu());
@@ -356,7 +356,7 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     // The application owns command availability; use its registry labels with an enabled chart.
     const auto* command = find_command(registry, {"timing.tap_assistant"});
     expect(command);
-    harness.view().command_menu_count = 1;
+    harness.view().command_menu_rows.resize(1);
     harness.view().command_menu_rows[0] = {.id = command->definition.id.value.c_str(), .label = command->definition.display_name.c_str(), .enabled = true};
     (void)harness.frame();
     expect(worm_ui_frontend_open_command_menu());
@@ -379,15 +379,14 @@ TEST_CASE("Osu StepMania walkthrough palette searches registry labels and previe
     expect(status.starts_with("Preview: 2 file(s), 0 conversion warning(s), 0 conversion error(s)."));
     expect(std::filesystem::is_empty(root));
     // Render the production preview text through the Project tab surface.
-    const auto chart = history.document.charts.front().id.value;
-    const WormUiProjectOutputGroupView group{.name = "osu!mania", .path = "osu",
-        .chart_ids = &chart, .chart_count = 1, .preview_status = status.c_str()};
+    const auto chart = history.document.charts.front().id;
+    const wormedit::ui::project_output_group_view_t group{.name = "osu!mania", .path = "osu",
+        .chart_ids = {chart}, .preview_status = status.c_str()};
     auto& setup = harness.view().setup;
     harness.view().active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
     harness.view().compose.visible = false;
     setup.visible = true;
-    setup.output_groups = &group;
-    setup.output_group_count = 1;
+    setup.output_groups = {group};
     (void)harness.frame();
     expect(harness.drawn_text().find("Preview: 2 file(s)") != std::string::npos);
     const output_group_export_request_t request{.document = history.document,
@@ -540,13 +539,12 @@ TEST_CASE("Export preview lists a new BME chart and its conversion warnings",
     expect(std::filesystem::is_empty(root));
     nuklear_event_harness_t harness{1280, 1000};
     expect(harness.ready());
-    const WormUiProjectOutputGroupView group{.name = "BMS", .path = "bms",
+    const wormedit::ui::project_output_group_view_t group{.name = "BMS", .path = "bms",
         .preview_status = status.c_str()};
     harness.view().active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
     harness.view().compose.visible = false;
     harness.view().setup.visible = true;
-    harness.view().setup.output_groups = &group;
-    harness.view().setup.output_group_count = 1;
+    harness.view().setup.output_groups = {group};
     (void)harness.frame();
     expect(harness.drawn_text().find(
                "Preview: 1 file(s), 1 conversion warning(s), 0 conversion error(s).") !=

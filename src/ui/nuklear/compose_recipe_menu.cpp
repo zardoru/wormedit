@@ -14,21 +14,21 @@ namespace chrome = wormedit::ui::chrome;
 chrome::ContextMenu menu{.title = "SV recipe actions"};
 std::uint64_t menu_recipe{};
 
-// Command ids carried in WormUiComposeInputAction::span_edge by RECIPE_COMMAND.
+// Command ids carried in ui::compose_input_action_t::span_edge by RECIPE_COMMAND.
 enum recipe_command_t : std::uint8_t { toggle_enabled = 0, materialize = 1, remove = 2 };
 
-void queue_command(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void queue_command(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                    recipe_command_t command) {
     append_compose_input(&action, WORM_UI_COMPOSE_INPUT_RECIPE_COMMAND, 0.0, 0.0, 0, false,
                          WORM_UI_COMPOSE_SELECTION_REPLACE,
                          WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, menu_recipe, 0, false,
-                         WORM_UI_TIMING_LANE_SCROLL, view.chart_id, view.document_revision);
+                         wormedit::timing_lane_kind_t::scroll, view.chart_id, view.document_revision);
     if (action.compose_input_count != 0)
         action.compose_inputs[action.compose_input_count - 1].span_edge = command;
 }
 
 void menu_entry(nk_context* context, const char* title, const char* disabled_reason,
-                const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                 recipe_command_t command) {
     if (chrome::context_menu_item(menu, context, title, disabled_reason))
         queue_command(view, action, command);
@@ -40,7 +40,7 @@ auto find_area(const WormUiComposeView& view, std::uint64_t id) -> const WormUiC
     return nullptr;
 }
 
-void render_menu(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action) {
+void render_menu(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
     if (!menu.open) return;
     const auto* area = find_area(view, menu_recipe);
     if (!area) {
@@ -70,7 +70,7 @@ auto area_at(const WormUiComposeView& view, struct nk_rect viewport, float x, fl
     for (size_t index = 0; index < view.recipe_area_count; ++index) {
         const auto& area = view.recipe_areas[index];
         const auto extent = compose_timing_lane_inner_extent(
-            view, static_cast<WormUiTimingLaneKind>(area.lane));
+            view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
         if (!extent) continue;
         const auto left = viewport.x + static_cast<float>(extent->first) * x_scale;
         const auto right = viewport.x + static_cast<float>(extent->second) * x_scale;
@@ -95,7 +95,7 @@ void reset_compose_recipe_menu() {
 }
 
 void process_compose_recipe_menu(nk_context* context, const WormUiComposeView& view,
-                                 WormUiWorkspaceAction& action, struct nk_rect viewport,
+                                 wormedit::ui::workspace_action_t& action, struct nk_rect viewport,
                                  double input_right, bool focused) {
     (void)chrome::context_menu_update(menu, context);
     if (!view.scene_available || view.viewport_width_pixels <= 0 || view.viewport_height_pixels <= 0 ||

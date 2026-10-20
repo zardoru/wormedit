@@ -11,7 +11,7 @@ struct Confirmation {
     uint64_t channel{};
 } confirmation;
 
-void emit(WormUiWorkspaceAction& action, uint64_t project, uint64_t chart,
+void emit(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
           uint64_t revision, uint64_t channel, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
@@ -27,7 +27,7 @@ bool bmson_lane_mode_confirmation_owns_input(bool sounds_tab) {
 }
 void reset_bmson_lane_mode_confirmation() { confirmation = {}; }
 
-void request_bmson_lane_mode(WormUiWorkspaceAction& action, uint64_t project, uint64_t chart,
+void request_bmson_lane_mode(wormedit::ui::workspace_action_t& action, uint64_t project, uint64_t chart,
     uint64_t revision, uint64_t channel, bool stem, bool continues, bool sounds_tab, uint64_t resource) {
     if ((!channel && !resource) || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (!stem && continues) {
@@ -40,7 +40,7 @@ void request_bmson_lane_mode(WormUiWorkspaceAction& action, uint64_t project, ui
     action.compose_resource_id = resource;
 }
 
-void render_bmson_lane_mode_confirmation(nk_context* context, WormUiWorkspaceAction& action,
+void render_bmson_lane_mode_confirmation(nk_context* context, wormedit::ui::workspace_action_t& action,
     uint64_t project, uint64_t chart, uint64_t revision, bool focused, bool sounds_tab) {
     (void)wormedit::ui::chrome::popup_update_release_pending(context, confirmation.release_pending);
     if (!confirmation.open) return;

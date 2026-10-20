@@ -5,7 +5,7 @@
 #include <wormedit/core/workspace.h>
 #include <wormedit/core/notifications.h>
 namespace wormedit::sys {
-auto dispatch_recovery_ui_action(const WormUiWorkspaceAction& action,
+auto dispatch_recovery_ui_action(const wormedit::ui::workspace_action_t& action,
     native_project_recovery_controller_t& controller, document_history_t& history,
     workspace_controller_t& workspace,
     std::optional<native_project_document_version_t> scanned_primary_version,

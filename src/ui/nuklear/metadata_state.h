@@ -22,10 +22,10 @@ struct worm_ui_nuklear_metadata_state_t {
     bool song_buffers_valid{};
     bool chart_buffers_valid{};
     bool tag_buffers_valid{};
-    std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> title{};
-    std::array<char, WORM_UI_METADATA_TITLE_BYTES + 1> artist{};
-    std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> chart_name{};
-    std::array<char, WORM_UI_METADATA_CHART_TEXT_BYTES + 1> chart_author{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_title_bytes + 1> title{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_title_bytes + 1> artist{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_chart_text_bytes + 1> chart_name{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_chart_text_bytes + 1> chart_author{};
     // Single-field exact rationals, parsed by worm_ui_nuklear_parse_metadata_rational().
     std::array<char, 64> chart_rating_text{};
     std::array<char, 64> audio_offset_text{};
@@ -60,9 +60,9 @@ struct worm_ui_nuklear_metadata_state_t {
     // Metadata multi-select of difficulties; reset with the rest of the state.
     std::vector<std::uint64_t> batch_selected_charts;
     std::vector<std::uint64_t> batch_action_chart_ids;
-    std::vector<std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1>> search_tags;
+    std::vector<std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1>> search_tags;
     std::vector<const char*> search_tag_pointers;
-    std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> new_search_tag{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1> new_search_tag{};
     std::size_t selected_format_field{std::numeric_limits<std::size_t>::max()};
     bool format_target_valid{};
     bool format_target_chart_scoped{};
@@ -99,8 +99,8 @@ struct worm_ui_nuklear_metadata_state_t {
     std::size_t selected_output_group_index{std::numeric_limits<std::size_t>::max()};
     std::uint64_t output_path_buffer_revision{std::numeric_limits<std::uint64_t>::max()};
     std::size_t output_path_buffer_group_index{std::numeric_limits<std::size_t>::max()};
-    std::array<char, WORM_UI_METADATA_OUTPUT_PATH_BYTES + 1> output_path{};
-    std::array<char, WORM_UI_METADATA_OUTPUT_PATH_BYTES + 1> output_path_source{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_output_path_bytes + 1> output_path{};
+    std::array<char, wormedit::default_metadata_edit_limits.maximum_output_path_bytes + 1> output_path_source{};
     bool output_path_buffer_valid{};
     std::array<char, WORM_UI_COMPOSE_IMPORT_PATH_BYTES + 1> external_music_path{};
     std::array<char, 192> external_music_error{};
@@ -130,9 +130,9 @@ struct worm_ui_nuklear_metadata_state_t {
 void worm_ui_nuklear_reset_metadata_state();
 void worm_ui_nuklear_clear_metadata_drop_targets();
 void worm_ui_nuklear_set_metadata_drop_target(
-    WormUiMetadataDropTarget target, worm_ui_nuklear_metadata_state_t::drop_rectangle_t rect);
+    wormedit::ui::metadata_drop_target_t target, worm_ui_nuklear_metadata_state_t::drop_rectangle_t rect);
 [[nodiscard]] auto worm_ui_nuklear_metadata_drop_target(float x, float y)
-    -> WormUiMetadataDropTarget;
+    -> wormedit::ui::metadata_drop_target_t;
 
 struct worm_ui_nuklear_metadata_rational_t {
     std::int64_t numerator{};

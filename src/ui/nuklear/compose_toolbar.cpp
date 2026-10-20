@@ -26,7 +26,7 @@ static auto compose_inspector_icon(bool visible) -> Glyph {
     return visible ? Glyph::panel_right_close : Glyph::panel_right_open;
 }
 
-static void append_bgm_horizontal_scroll(WormUiWorkspaceAction* action,
+static void append_bgm_horizontal_scroll(wormedit::ui::workspace_action_t* action,
                                          const WormUiComposeView* view, double delta_pixels) {
     if (!action || !view || !std::isfinite(delta_pixels) || delta_pixels == 0.0 ||
         action->compose_viewport_input_count >= WORM_UI_COMPOSE_VIEWPORT_INPUT_CAPACITY ||
@@ -366,7 +366,7 @@ static void render_compose_bgm_column_count_controls(const ComposeToolbarContext
     if (!editable) nk_widget_disable_end(context);
 }
 
-static void request_toolbar_offset_nudge(WormUiWorkspaceAction* action,
+static void request_toolbar_offset_nudge(wormedit::ui::workspace_action_t* action,
                                          const WormUiComposeView* view, std::int64_t frames) {
     if (action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE) return;
     action->audio_offset_drag_action = WORM_UI_AUDIO_OFFSET_NUDGE;
@@ -529,8 +529,8 @@ auto note_palette_kind_allowed(const WormUiComposeView& view, uint32_t kind) -> 
 bool compose_note_palette_has_buttons(const WormUiComposeView& view) {
     if (view.hitsounds.visible) return true;
     if (!view.note_kind_palette_visible) return false;
-    for (std::size_t index = 0; index < view.note_palette.count; ++index)
-        if (note_palette_kind_allowed(view, view.note_palette.entries[index].id)) return true;
+    for (std::size_t index = 0; index < view.note_palette.entries.size(); ++index)
+        if (note_palette_kind_allowed(view, static_cast<std::uint32_t>(view.note_palette.entries[index].id))) return true;
     return false;
 }
 
@@ -644,13 +644,13 @@ void render_compose_note_palette_column(const ComposeToolbarContext& toolbar) {
             .render(toolbar.context) &&
         toolbar.action->compose_action == WORM_UI_COMPOSE_ACTION_NONE)
         toolbar.action->compose_action = WORM_UI_COMPOSE_ACTION_SELECT_TOOL;
-    const auto count = toolbar.view->note_kind_palette_visible ? toolbar.view->note_palette.count : 0;
+    const auto count = toolbar.view->note_kind_palette_visible ? toolbar.view->note_palette.entries.size() : 0;
     for (std::size_t index = 0; index < count; ++index) {
         const auto& descriptor = toolbar.view->note_palette.entries[index];
-        const auto kind = descriptor.id;
+        const auto kind = static_cast<std::uint32_t>(descriptor.id);
         if (!note_palette_kind_allowed(*toolbar.view, kind)) continue;
         nk_layout_row_static(toolbar.context, 30, 30, 1);
-        if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label,
+        if (wormedit::ui::chrome::IconButton{note_palette_icon(kind), descriptor.label.data(),
                 toolbar.view->note_paint_mode_active &&
                     toolbar.view->armed_note_kind == kind}.render(toolbar.context) &&
             toolbar.action->compose_input_count < WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) {

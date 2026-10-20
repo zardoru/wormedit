@@ -1,12 +1,18 @@
 #pragma once
 #include "sys/bookmark_chooser_view.h"
+#include "sys/metadata_projection_cache.h"
 #include "sys/compose_resource_presenter.h"
 
 #include "sys/sound_list_view.h"
+#include "sys/sound_usage_view.h"
 #include "sys/projection_notification_feedback.h"
 #include "ui/frontend.h"
 
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+#include <wormedit/audio/waveform.h>
+#endif
 #include <wormedit/core/arena.h>
+#include <wormedit/core/bmson_lane_mode.h>
 #include <wormedit/core/grid.h>
 #include <wormedit/core/interaction_state.h>
 #include <wormedit/core/notifications.h>
@@ -17,6 +23,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <filesystem>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -91,27 +98,15 @@ struct frontend_workspace_view_t {
     [[nodiscard]] auto owned_arena_committed_bytes() const noexcept -> std::size_t {
         return owned_arena_ ? owned_arena_->committed_bytes() : 0;
     }
-    WormUiWorkspaceView view{};
+    wormedit::ui::workspace_view_t view{};
     std::vector<projection_feedback_t> projection_feedback;
     // Refresh pointers into inline storage after from returns or this object moves.
     void rebind_view_pointers();
 
-    struct {
-        std::array<const char*, WORM_UI_WORKSPACE_SUMMARY_CAPACITY> lines{};
-        bool truncated{};
-    } summary;
-    struct {
-        frame_span<const char*> search_tag;
-        frame_span<std::size_t> search_tag_length;
-        frame_span<WormUiMetadataFormatFieldView> format_field;
-        frame_span<WormUiMetadataFormatTargetView> format_target;
-        frame_span<WormUiMetadataChannelMapLaneView> channel_map_lane;
-        // Arena-owned text is published directly; persistent sources retain ownership.
-        bool text_truncated{};
-        struct {
-            frame_span<WormUiComposeOutputGroupView> view;
-        } output_group;
-    } metadata;
+    std::size_t summary_size{};
+    std::vector<std::pair<std::filesystem::path, std::string>> recovery_diagnostic_paths;
+    void reset();
+
     struct {
         std::string hover_tooltip;
         std::string selected_note_label;
@@ -195,12 +190,15 @@ struct frontend_workspace_view_t {
             lane_key{};
         std::optional<wormedit::editor_interaction_view_model_t> interaction_view;
     } compose;
-    struct {
-        frame_span<std::uint64_t> asset;
-        frame_span<WormUiSoundRowView> sound_row;
-        frame_span<WormUiSoundUsageRowView> usage_row;
-        std::vector<WormUiAudioWaveformColumnView> waveform;
-    } audio;
+    std::uint64_t query_session_generation{};
+    keyed_cache_t<std::tuple<document_stamp_t, chart_id_t, std::uint64_t>,
+        std::vector<bmson_channel_resource_binding_t>> sound_lane_modes_cache;
+    sound_list_cache_t sound_list_cache;
+    metadata_projection_cache_t metadata_projection_cache;
+    sound_usage_cache_t sound_usage_cache;
+#if defined(WORMEDIT_HAS_AUDIO_DECODER)
+    audio::waveform_view_t audio_waveform_projection;
+#endif
 
     [[nodiscard]] static auto from(const workspace_view_t& source,
                                    const song_document_t& document, const std::string& status,
@@ -208,23 +206,28 @@ struct frontend_workspace_view_t {
                                    bool recovery_scan_configured,
                                    frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
                                    WormUiKeysoundDockRequest keysound_request = {},
-                                   WormUiSoundUsageRequest sound_usage_request = {},
+                                   wormedit::ui::sound_usage_request_t sound_usage_request = {},
                                    WormUiBookmarkChooserRequest bookmark_chooser_request = {},
                                    keysound_list_cache_t* keysound_cache = nullptr,
                                    const bookmark_chooser_indices_t& bookmark_indices = {},
                                    compose_resource_catalog_cache_t* resource_catalog_cache = nullptr) -> frontend_workspace_view_t;
 
-    [[nodiscard]] static auto from(const application_frame_projection_context_t& context)
-        -> frontend_workspace_view_t;
+    void refill(const workspace_view_t& source,
+                                   const song_document_t& document, const std::string& status,
+                                   const native_project_recovery_controller_view_t& recovery,
+                                   bool recovery_scan_configured,
+                                   frame_arena_t* arena = nullptr, dock_sort_t keysound_sort = dock_sort_t::natural_name,
+                                   WormUiKeysoundDockRequest keysound_request = {},
+                                   wormedit::ui::sound_usage_request_t sound_usage_request = {},
+                                   WormUiBookmarkChooserRequest bookmark_chooser_request = {},
+                                   keysound_list_cache_t* keysound_cache = nullptr,
+                                   const bookmark_chooser_indices_t& bookmark_indices = {},
+                                   compose_resource_catalog_cache_t* resource_catalog_cache = nullptr);
+
+    void refill(const application_frame_projection_context_t& context);
   private:
     frame_arena_t* arena_{};
     std::shared_ptr<frame_arena_t> owned_arena_;
 };
-
-// Borrowed notification strings remain valid until the center's next frame-
-// thread mutation. Project after draining, then draw before dispatching actions.
-[[nodiscard]] auto build_notification_view(const notification_center_t& center,
-                                             notification_time_t now)
-    -> WormUiNotificationView;
 
 } // namespace wormedit::sys

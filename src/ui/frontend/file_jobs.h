@@ -1,7 +1,7 @@
 #pragma once
 
 #include <cstddef>
-#include <string>
+#include <string_view>
 
 namespace wormedit::ui {
 struct file_job_view_t {
@@ -9,7 +9,8 @@ struct file_job_view_t {
     bool cancelling{};
     std::size_t completed{};
     std::size_t total{};
-    std::string label;
+    // Producers select process-lifetime phase labels.
+    std::string_view label;
 };
 struct file_jobs_view_t {
     file_job_view_t opening;

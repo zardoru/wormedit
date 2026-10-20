@@ -36,13 +36,13 @@ struct worm_ui_nuklear_preview_visual_result_t {
 worm_ui_nuklear_draw_player_preview_visual_layers(struct nk_command_buffer* canvas,
                                                   struct nk_rect viewport,
                                                   struct SDL_Renderer* renderer,
-                                                  const WormUiPlayerPreviewView* view);
+                                                  const wormedit::ui::player_preview_view_t* view);
 
 [[nodiscard]] worm_ui_nuklear_preview_visual_result_t
 worm_ui_nuklear_draw_player_preview_storyboard_sprites(struct nk_command_buffer* canvas,
                                                        struct nk_rect viewport,
                                                        struct SDL_Renderer* renderer,
-                                                       const WormUiPlayerPreviewView* view,
+                                                       const wormedit::ui::player_preview_view_t* view,
                                                        bool foreground);
 
 [[nodiscard]] const char* worm_ui_nuklear_preview_visual_failure_message(

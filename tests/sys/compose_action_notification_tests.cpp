@@ -33,7 +33,7 @@
 
 // Native drop hit testing is unrelated to the action dispatcher in this
 // headless target; no rendered metadata pane can accept a file drop.
-WormUiMetadataDropTarget worm_ui_frontend_metadata_drop_target(uint32_t, float, float) {
+wormedit::ui::metadata_drop_target_t worm_ui_frontend_metadata_drop_target(uint32_t, float, float) {
     return {};
 }
 
@@ -105,21 +105,21 @@ struct action_notification_fixture_t {
             .stamp = document_stamp_t::from(history.document.revision),
             .payload = hold_gesture_t{pending_hold_t{}}};
     }
-    auto action(WormUiComposeActionKind kind) const -> WormUiWorkspaceAction {
-        WormUiWorkspaceAction value{};
+    auto action(WormUiComposeActionKind kind) const -> wormedit::ui::workspace_action_t {
+        wormedit::ui::workspace_action_t value{};
         value.compose_action = kind;
         value.compose_input_chart_id = state.chart.value;
         value.compose_input_project_id = history.document.id.value;
         value.compose_input_document_revision = history.document.revision;
         return value;
     }
-    auto dispatch(const WormUiWorkspaceAction& value, bool post_notifications = true)
+    auto dispatch(const wormedit::ui::workspace_action_t& value, bool post_notifications = true)
         -> std::string {
         return dispatch_compose_view_action(value, history, workspace, state, 800, application,
                                             asset_base, scheduler, resource_copy, export_runtime,
                                             false, sink, post_notifications);
     }
-    auto dispatch_workspace(const WormUiWorkspaceAction& value,
+    auto dispatch_workspace(const wormedit::ui::workspace_action_t& value,
                             std::optional<editor_interaction_state_t>& interaction) -> bool {
         metadata_drop_state_t drop;
         runtime::metadata_asset_t metadata{sink};
@@ -165,7 +165,7 @@ struct bga_input_fixture_t : action_notification_fixture_t {
         state.bga_revealed_lane_mask = 4;
         state.viewport_height_pixels = 600;
     }
-    auto input(WormUiComposeInputKind kind, std::uint8_t lane_kind) -> WormUiWorkspaceAction {
+    auto input(WormUiComposeInputKind kind, std::uint8_t lane_kind) -> wormedit::ui::workspace_action_t {
         auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
         value.compose_input_viewport_width_pixels = 900;
         value.compose_input_count = 1;
@@ -185,7 +185,7 @@ struct bga_input_fixture_t : action_notification_fixture_t {
         check_action(event.resource == resource_id_t{31});
         check_action(event.position == local_position_t{measure_id_t{1}, 240});
     }
-    auto dispatch_input(WormUiWorkspaceAction& value) -> std::string {
+    auto dispatch_input(wormedit::ui::workspace_action_t& value) -> std::string {
         return dispatch_compose_input_action(value, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }
@@ -305,7 +305,7 @@ TEST_CASE("Compose dispatcher rejects stale actions without changing history", "
 TEST_CASE("Compose NONE remains quiet even with an absent chart", "[compose-action-notifications]") {
     action_notification_fixture_t fixture;
     fixture.workspace.selected_chart.reset();
-    check_action(fixture.dispatch(WormUiWorkspaceAction{}) == "");
+    check_action(fixture.dispatch(wormedit::ui::workspace_action_t{}) == "");
     check_action(fixture.entries().empty());
     check_action(fixture.history.undo.empty());
 }
@@ -910,7 +910,7 @@ TEST_CASE("Compose area quantize records the applied report rows", "[compose-act
 
 namespace {
 auto draw_bga_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind,
-    uint64_t row, bool erase = false) -> WormUiWorkspaceAction {
+    uint64_t row, bool erase = false) -> wormedit::ui::workspace_action_t {
     auto value = fixture.input(kind, 5);
     value.compose_inputs[0].resource_id = erase ? 0 : 31;
     value.compose_inputs[0].paint_intent = erase ? 2 : 1;
@@ -987,7 +987,7 @@ TEST_CASE("Draw source choice projects session state without changing the docume
 
 namespace {
 auto note_draw_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint8_t intent)
-    -> WormUiWorkspaceAction {
+    -> wormedit::ui::workspace_action_t {
     auto value = fixture.input(kind, 0);
     value.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_SAMPLE;
     value.compose_inputs[0].resource_id = 0;
@@ -1395,7 +1395,7 @@ TEST_CASE("Compose quantize preset rename to the existing name is a history no-o
 
 namespace {
 auto draw_bgm_input(bga_input_fixture_t& fixture, WormUiComposeInputKind kind, uint64_t row,
-                    bool erase = false) -> WormUiWorkspaceAction {
+                    bool erase = false) -> wormedit::ui::workspace_action_t {
     auto value = draw_bga_input(fixture, kind, row, erase);
     value.compose_inputs[0].resource_role = WORM_UI_COMPOSE_RESOURCE_ROLE_BGM;
     value.compose_inputs[0].lane_id = 50;
@@ -1410,7 +1410,7 @@ void prepare_bgm_draw_fixture(bga_input_fixture_t& fixture) {
     fixture.application.project.compose_gesture.note_paint_mode_active = true;
 }
 auto draw_stroke_input(bga_input_fixture_t& fixture, bool bgm, WormUiComposeInputKind kind,
-                       uint64_t row) -> WormUiWorkspaceAction {
+                       uint64_t row) -> wormedit::ui::workspace_action_t {
     return bgm ? draw_bgm_input(fixture, kind, row) : draw_bga_input(fixture, kind, row);
 }
 
@@ -1549,7 +1549,7 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
     metadata_drop_state_t drop;
     runtime::metadata_asset_t metadata{fixture.sink};
     std::optional<editor_interaction_state_t> interaction{fixture.state};
-    const auto dispatch = [&](WormUiWorkspaceAction action) {
+    const auto dispatch = [&](wormedit::ui::workspace_action_t action) {
         action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
         action.compose_input_document_revision = fixture.history.document.revision;
         return dispatch_compose_workspace_action(action, fixture.history, fixture.workspace,
@@ -1573,14 +1573,14 @@ TEST_CASE("Compose workspace boundary creates and removes a BMS branch block and
         return raw;
     }();
     require_action(statement != nullptr);
-    WormUiWorkspaceAction create{};
+    wormedit::ui::workspace_action_t create{};
     create.compose_action = WORM_UI_COMPOSE_ACTION_CREATE_BMS_BRANCH_BLOCK;
     create.compose_branch_statement_id = statement->id.value;
     check_action(dispatch(create));
     check_action(fixture.history.undo.size() == 1);
     const auto* block = find_node(bms_control_kind_t::random);
     require_action(block != nullptr);
-    WormUiWorkspaceAction remove{};
+    wormedit::ui::workspace_action_t remove{};
     remove.compose_action = WORM_UI_COMPOSE_ACTION_REMOVE_BMS_BRANCH_BLOCK;
     remove.compose_branch_id = block->id.value;
     // The created block holds the wrapped statement, so removal rejects without changing history.
@@ -2315,7 +2315,7 @@ TEST_CASE("Standalone sound edits use shared stale feedback without mutation",
     const std::uint64_t resource = 21;
     action.compose_sound_resource_ids = &resource;
     action.compose_sound_resource_count = 1;
-    const WormUiSoundGroupAssignment assignment{.name = "Group", .sound_ids = &resource,
+    const wormedit::ui::sound_group_assignment_t assignment{.name = "Group", .sound_ids = &resource,
                                                .sound_count = 1};
     action.compose_sound_group_assignments = &assignment;
     action.compose_sound_group_assignment_count = 1;
@@ -2796,7 +2796,7 @@ struct measure_lane_input_fixture_t : action_notification_fixture_t {
         state.viewport_height_pixels = 600;
     }
     auto input(WormUiComposeInputKind kind, std::uint64_t row = 0, std::uint64_t measure = 0)
-        -> WormUiWorkspaceAction {
+        -> wormedit::ui::workspace_action_t {
         auto value = action(WORM_UI_COMPOSE_ACTION_NONE);
         value.compose_input_viewport_width_pixels = 900;
         value.compose_input_count = 1;
@@ -2807,7 +2807,7 @@ struct measure_lane_input_fixture_t : action_notification_fixture_t {
                 compose_field_downscroll(history.document.charts.front(), application.preferences.editor_preferences))};
         return value;
     }
-    auto dispatch_input(WormUiWorkspaceAction value) -> std::string {
+    auto dispatch_input(wormedit::ui::workspace_action_t value) -> std::string {
         return dispatch_compose_input_action(value, history, workspace, state, viewport,
             navigation, application, cache, 0, &sink);
     }

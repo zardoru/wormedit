@@ -2,6 +2,38 @@
 
 ## Active queue (2026-10-20)
 
+Completed **T-691–T-693** (2026-10-20) in parallel: project/options/notifications,
+metadata/audio, and timing/player-preview surfaces use retained C++ views with owned lists and
+core IDs/enums. The final timing codec is gone. Populated warmed allocation regressions pass;
+metadata/query caches invalidate on source, revision and project-session changes. Preview/Delete
+no longer read unopened export-editor state, and idle Tap timing publishes empty status safely.
+GATE passes **4,361/4,361**, build, whitespace and complexity across **172 changed translation
+units** (`/tmp/wormedit-gate.Iv9GMV`); the separate event harness passes **590/590** and verbose
+documentation checks pass **5/5**. Isolated real-window checks cover Project, Metadata, populated
+Audio Slices/waveform, Options/shortcuts/players, chart import, notifications, Player preview and
+timing overlay. Workspace projection drops **71→65 new / 9248→8646 requested bytes** in the
+identical warmed preview fixture; unrelated core preview-scene allocations remain. No general
+frame-time improvement is claimed. Ratchets: **64 C structs / 50 capacities / 121 count fields /
+0 codecs**; no complexity allowance increased.
+
+**Next: T-694's remaining payload ownership, strong IDs and type-owned parsing.** Its eight
+declarations/consumers have C++ names, but this is explicitly a partial checkpoint, not a completed
+conversion. A small Sonnet audit covered its retained admission/input bounds. T-695 is also
+unblocked; Compose cards T-695–T-698 must run sequentially. See the
+[conversion cards](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-691-convert-the-project-and-optionsnotifications-surfaces)
+for ownership extensions, bounds, allocation measurements and verification evidence.
+
+Completed **T-690** (2026-10-20): catalog, workspace and runtime views are C++ types;
+main/Compare roots persist and refill in place, converted lists retain capacity, and legacy UI
+storage cutoffs are removed while real retention/render budgets remain. Recovery scrolls all
+controller-retained rows. Shared shortcut text and runtime diagnostic storage pass warmed
+allocation checks. GATE passes **4,351/4,351**, whitespace and complexity across 48 changed
+translation units (`/tmp/wormedit-gate.gOnv6y`); isolated startup, Project, Compose, timing-overlay
+and two-pane Compare checks pass. Ratchets: **117 C structs / 73 capacities / 174 count fields**;
+the single timing codec remains. See [the card](../../docs/chart-editor-plan/tasks/frontend-cxx-views.md#t-690-convert-the-catalog-workspace-and-runtime-surfaces)
+for ownership extensions, bounds and build/visual evidence. T-691–T-693 are now complete;
+T-694 remains partial as recorded above.
+
 Completed selection-safety follow-up (2026-10-20): pressing outside a retained area no longer
 clears it; note clicks commit selection on release, and Escape cancels pending mouse capture or
 the active gesture without also clearing the previous selection. Accepted selection changes

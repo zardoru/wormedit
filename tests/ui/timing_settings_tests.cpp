@@ -99,7 +99,7 @@ TEST_CASE("Timing modeless panel blank body and disabled controls own pointer in
     view.compose.scene_available = true;
     view.compose.timing_lane_visibility_mask = 0xff;
     view.timing.stage_active = true;
-    view.timing.stage_lane = WORM_UI_TIMING_LANE_BPM;
+    view.timing.stage_lane = wormedit::timing_lane_kind_t::bpm;
     const auto focus = worm_ui_nuklear_compose_state().input_queue.keyboard_focus;
     (void)harness.frame();
     CHECK_FALSE(click_text(harness, "BPM: On").get().compose_action ==
@@ -143,7 +143,7 @@ TEST_CASE("Timing Settings owns blank-body clicks, cannot be dragged, and close 
     view.timing_settings_visible = true;
     (void)harness.frame();
     (void)harness.frame();
-    WormUiTestingRect before{};
+    wormedit::ui::testing_rect_view_t before{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Timing Settings", &before));
     // A drag from the title row does not move the dialog.
     SDL_Event down{};
@@ -168,7 +168,7 @@ TEST_CASE("Timing Settings owns blank-body clicks, cannot be dragged, and close 
     down.button.down = false;
     down.button.x = motion.motion.x;
     (void)harness.frame(std::array{down});
-    WormUiTestingRect bounds{};
+    wormedit::ui::testing_rect_view_t bounds{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Timing Settings", &bounds));
     CHECK(bounds.x == before.x);
     CHECK(bounds.y == before.y);

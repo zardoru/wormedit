@@ -11,7 +11,7 @@ struct worm_ui_nuklear_timing_state_t {
     std::uint64_t stage_buffers_chart{};
     std::uint64_t stage_buffers_revision{};
     std::uint64_t stage_buffers_object{};
-    WormUiTimingLaneKind stage_buffers_lane{WORM_UI_TIMING_LANE_BPM};
+    wormedit::timing_lane_kind_t stage_buffers_lane{wormedit::timing_lane_kind_t::bpm};
     double stage_buffers_y{};
     std::array<char, 64> bpm_decimal{};
     bool bpm_decimal_edited{};

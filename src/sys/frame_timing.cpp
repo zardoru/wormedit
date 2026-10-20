@@ -437,11 +437,13 @@ frame_phase_scope_t::~frame_phase_scope_t() {
 
 namespace {
 using wormedit::sys::frame_gpu_work_count;
-static_assert(WORM_UI_FRAME_GPU_WORK_COUNT == frame_gpu_work_count);
 void view_gpu_work(const wormedit::sys::frame_timing_t& timer,
-                   wormedit::sys::frame_gpu_work_source_t source, uint32_t& available,
-                   WormUiFrameGpuWork& latest,
-                   WormUiFrameGpuWorkStats (&stats)[WORM_UI_FRAME_GPU_WORK_COUNT]) {
+                   wormedit::sys::frame_gpu_work_source_t source, bool& available,
+                   wormedit::ui::frame_gpu_work_view_t& latest,
+                   std::vector<wormedit::ui::frame_gpu_work_stats_view_t>& stats) {
+    available = false;
+    latest = {};
+    stats.resize(frame_gpu_work_count);
     if (timer.size() != 0) {
         const auto& work = wormedit::sys::frame_timing_t::gpu_work(timer.sample(timer.size() - 1), source);
         available = work.measured;
@@ -452,19 +454,21 @@ void view_gpu_work(const wormedit::sys::frame_timing_t& timer,
         stats[metric] = {summary.count, summary.average, summary.p99};
     }
 }
-auto gpu_work_sample(const WormUiFrameGpuWork& work) -> wormedit::sys::frame_gpu_work_t {
+auto gpu_work_sample(const wormedit::ui::frame_gpu_work_view_t& work) -> wormedit::sys::frame_gpu_work_t {
     return {{work.vertices, work.indices, work.draw_calls, work.clip_rect_changes,
              work.texture_switches}, true};
 }
 } // namespace
 
-WormUiFrameTimingView worm_ui_frame_timing_view() {
+void worm_ui_frame_timing_view(wormedit::ui::frame_timing_view_t& result) {
     using namespace wormedit::sys;
     const auto& timer = frame_timing();
-    static_assert(WORM_UI_FRAME_TIMING_PHASE_COUNT == frame_phase_count);
-    WormUiFrameTimingView result{};
-    result.count = timer.size();
-    for (std::size_t i = 0; i < result.count; ++i)
+    result.frame_ms.reserve(frame_timing_capacity);
+    result.frame_ms.resize(timer.size());
+    result.phase_names.resize(frame_phase_count);
+    result.phases.resize(frame_phase_count);
+    result.gpu_work_names.resize(frame_gpu_work_count);
+    for (std::size_t i = 0; i < timer.size(); ++i)
         result.frame_ms[i] = timer.sample(i).frame_ms;
     const auto frame = timer.summary();
     const auto frame_cpu = timer.cpu_summary();
@@ -477,6 +481,9 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
         result.phase_names[i] = frame_phase_names[index];
         result.phases[i] = {summary.count, summary.average_ms, summary.p99_ms, cpu.count, cpu.p99_ms};
     }
+    result.heap_allocations_available = false;
+    result.projection_heap_allocations_latest = 0;
+    result.projection_heap_bytes_latest = 0;
     if (timer.size() != 0) {
         const auto& latest = timer.sample(timer.size() - 1);
         result.heap_allocations_available = latest.heap_measured;
@@ -496,14 +503,13 @@ WormUiFrameTimingView worm_ui_frame_timing_view() {
                   result.gpu_work_latest, result.gpu_work);
     view_gpu_work(timer, frame_gpu_work_source_t::diagnostic, result.diagnostic_gpu_work_available,
                   result.diagnostic_gpu_work_latest, result.diagnostic_gpu_work);
-    return result;
 }
 
-void worm_ui_frame_timing_record_gpu_work(WormUiFrameGpuWork work) {
+void worm_ui_frame_timing_record_gpu_work(wormedit::ui::frame_gpu_work_view_t work) {
     wormedit::sys::frame_timing().record_gpu_work(gpu_work_sample(work));
 }
 
-void worm_ui_frame_timing_record_diagnostic_gpu_work(WormUiFrameGpuWork work) {
+void worm_ui_frame_timing_record_diagnostic_gpu_work(wormedit::ui::frame_gpu_work_view_t work) {
     wormedit::sys::frame_timing().record_gpu_work(
         gpu_work_sample(work), wormedit::sys::frame_gpu_work_source_t::diagnostic);
 }

@@ -24,7 +24,7 @@ struct fixture_t {
     nuklear_event_harness_t harness{1280, 900};
     fixture_t() {
         auto& view = harness.view();
-        view.command_menu_count = 4;
+        view.command_menu_rows.resize(4);
         view.command_menu_rows[0] = {.id = "disabled", .label = "Disabled alpha", .enabled = false};
         view.command_menu_rows[1] = {.id = "first", .label = "First alpha", .enabled = true};
         view.command_menu_rows[2] = {.id = "second", .label = "Second beta", .enabled = true};
@@ -97,13 +97,13 @@ TEST_CASE("Command menu cancels stale contexts and modal ownership",
     }
 }
 
-TEST_CASE("Command menu can find a registry command beyond the first twenty rows",
+TEST_CASE("Command menu finds commands beyond the retired 512-row storage limit",
           "[frontend-state][event-harness][command-menu]") {
     fixture_t fixture;
     auto& view = fixture.harness.view();
-    view.command_menu_count = 40;
-    for (std::size_t i = 0; i < 39; ++i) view.command_menu_rows[i] = {.id = "other", .label = "Other", .enabled = true};
-    view.command_menu_rows[39] = {.id = "needle", .label = "Needle late command", .enabled = true};
+    view.command_menu_rows.resize(513);
+    for (std::size_t i = 0; i < 512; ++i) view.command_menu_rows[i] = {.id = "other", .label = "Other", .enabled = true};
+    view.command_menu_rows[512] = {.id = "needle", .label = "Needle late command", .enabled = true};
     (void)fixture.harness.frame();
     fixture.open(); fixture.type("needle");
     const auto result = fixture.press(SDLK_RETURN, SDL_SCANCODE_RETURN);

@@ -199,4 +199,12 @@ auto sound_usage_view_t::from(const song_document_t& document, resource_id_t res
     return projection;
 }
 
+auto sound_usage_cache_t::view_for(const song_document_t& document, resource_id_t resource,
+                                    std::uint64_t session_generation)
+    -> const sound_usage_view_t& {
+    return projection_.get_or_build(std::tuple{document_stamp_t::from(document), resource, session_generation}, [&] {
+        return sound_usage_view_t::from(document, resource);
+    });
+}
+
 } // namespace wormedit::sys

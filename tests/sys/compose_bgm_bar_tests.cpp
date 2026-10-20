@@ -111,7 +111,7 @@ TEST_CASE("bgm bar measure marks cover the window in order", "[sys][bgm-bar]") {
 }
 
 TEST_CASE("bgm bar inputs are consumed and the rest are kept in order", "[sys][bgm-bar]") {
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     auto push = [&](WormUiComposeInputKind kind, double fraction, double amount) {
         auto& input = action.compose_inputs[action.compose_input_count++];
         input = {};

@@ -55,7 +55,7 @@ auto branch_statement_editor_state(const WormUiComposeView& view)
     return state;
 }
 
-void set_choice_action(WormUiWorkspaceAction* action, std::uint64_t branch, std::int64_t value) {
+void set_choice_action(wormedit::ui::workspace_action_t* action, std::uint64_t branch, std::int64_t value) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
     }
@@ -64,7 +64,7 @@ void set_choice_action(WormUiWorkspaceAction* action, std::uint64_t branch, std:
     action->compose_branch_value = value;
 }
 
-void set_clear_action(WormUiWorkspaceAction* action, std::uint64_t branch) {
+void set_clear_action(wormedit::ui::workspace_action_t* action, std::uint64_t branch) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         return;
     }
@@ -74,7 +74,7 @@ void set_clear_action(WormUiWorkspaceAction* action, std::uint64_t branch) {
 }
 
 void choice_button(struct nk_context* context, const char* label, bool enabled,
-                   WormUiWorkspaceAction* action, std::uint64_t branch, std::int64_t value) {
+                   wormedit::ui::workspace_action_t* action, std::uint64_t branch, std::int64_t value) {
     if (!enabled) {
         nk_widget_disable_begin(context);
     }
@@ -88,7 +88,7 @@ void choice_button(struct nk_context* context, const char* label, bool enabled,
 }
 
 void render_branch_choice(struct nk_context* context, const WormUiComposeBranchChoiceView& choice,
-                          WormUiWorkspaceAction* action) {
+                          wormedit::ui::workspace_action_t* action) {
     char identity[96]{};
     if (choice.has_source_order) {
         std::snprintf(identity, sizeof(identity), "%s #%zu",
@@ -200,7 +200,7 @@ auto selected_branch_statement(const WormUiComposeView& view,
     return nullptr;
 }
 
-void set_statement_action(WormUiWorkspaceAction* action, const WormUiComposeView& view,
+void set_statement_action(wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
                           const branch_statement_editor_state_t& state,
                           WormUiComposeActionKind kind, bool include_text) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
@@ -215,7 +215,7 @@ void set_statement_action(WormUiWorkspaceAction* action, const WormUiComposeView
 }
 
 void statement_button(struct nk_context* context, const char* label, bool enabled,
-                      WormUiWorkspaceAction* action, const WormUiComposeView& view,
+                      wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
                       const branch_statement_editor_state_t& state,
                       WormUiComposeActionKind kind, bool include_text) {
     if (!enabled) nk_widget_disable_begin(context);
@@ -226,7 +226,7 @@ void statement_button(struct nk_context* context, const char* label, bool enable
 }
 
 void render_branch_statement_editor(struct nk_context* context, const WormUiComposeView& view,
-                                    WormUiWorkspaceAction* action,
+                                    wormedit::ui::workspace_action_t* action,
                                     branch_statement_editor_state_t& state) {
     const auto* selected = selected_branch_statement(view, state.selected_statement_id);
     if (!selected) {
@@ -279,7 +279,7 @@ void render_branch_statement_editor(struct nk_context* context, const WormUiComp
 struct branch_tree_context_t {
     struct nk_context* context;
     const WormUiComposeView& view;
-    WormUiWorkspaceAction* action;
+    wormedit::ui::workspace_action_t* action;
     branch_statement_editor_state_t& state;
 };
 
@@ -421,7 +421,7 @@ auto selected_outline_node(const WormUiComposeView& view, std::uint64_t node_id)
     return result;
 }
 
-void set_block_action(WormUiWorkspaceAction* action, const WormUiComposeView& view,
+void set_block_action(wormedit::ui::workspace_action_t* action, const WormUiComposeView& view,
                       WormUiComposeActionKind kind, std::uint64_t node, std::uint64_t statement,
                       std::int64_t value) {
     if (!action || action->compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
@@ -478,7 +478,7 @@ bool worm_ui_nuklear_bms_branch_panel_visible(const WormUiComposeView* view) {
 
 void worm_ui_nuklear_render_bms_branch_panel(struct nk_context* context,
                                              const WormUiComposeView* view,
-                                             WormUiWorkspaceAction* action) {
+                                             wormedit::ui::workspace_action_t* action) {
     if (!context || !view || !action || !worm_ui_nuklear_bms_branch_panel_visible(view)) {
         return;
     }

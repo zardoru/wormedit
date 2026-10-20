@@ -7,5 +7,5 @@
 // payloads are the ones the inspector emitted before these controls moved here.
 void worm_ui_nuklear_render_compose_bmson_tab(struct nk_context* context,
                                               const WormUiComposeView* view,
-                                              WormUiWorkspaceAction* action,
+                                              wormedit::ui::workspace_action_t* action,
                                               worm_ui_nuklear_compose_state_t* state);

@@ -134,7 +134,7 @@ auto bgm_bar_measure_marks(const wormedit::measure_index_t& measures,
     return marks;
 }
 
-auto consume_bgm_bar_inputs(WormUiWorkspaceAction& action, bgm_bar_range_t& range,
+auto consume_bgm_bar_inputs(wormedit::ui::workspace_action_t& action, bgm_bar_range_t& range,
                             std::optional<bgm_bar_pan_override_t>& pan_override,
                             const bgm_bar_input_context_t& context) -> bool {
     if (action.compose_input_count > WORM_UI_COMPOSE_INPUT_ACTION_CAPACITY) return false;

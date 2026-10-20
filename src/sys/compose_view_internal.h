@@ -428,11 +428,11 @@ void append_compose_initial_bpm(const wormedit::chart_document_t& chart,
     if (initial) {
         const auto index = static_cast<std::size_t>(initial - chart.bpms.data());
         append(initial->position, initial->id.value, initial->provenance.source_order, index,
-               WORM_UI_TIMING_LANE_BPM, compose_timing_short_number(initial->beats_per_minute),
+               wormedit::timing_lane_kind_t::bpm, compose_timing_short_number(initial->beats_per_minute),
                "BPM " + compose_timing_decimal_detail(initial->beats_per_minute), true);
     } else if (!chart.measures.empty()) {
         append(wormedit::local_position_t{chart.measures.front().id, 0}, 0, 0, 0,
-               WORM_UI_TIMING_LANE_BPM, "?", "Initial BPM missing", true);
+               wormedit::timing_lane_kind_t::bpm, "?", "Initial BPM missing", true);
     }
 }
 
@@ -446,18 +446,18 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
         if (&chart.bpms[index] == initial_bpm)
             continue;
         append(chart.bpms[index].position, chart.bpms[index].id.value,
-               chart.bpms[index].provenance.source_order, index, WORM_UI_TIMING_LANE_BPM,
+               chart.bpms[index].provenance.source_order, index, wormedit::timing_lane_kind_t::bpm,
                compose_timing_short_number(chart.bpms[index].beats_per_minute),
                "BPM " + compose_timing_decimal_detail(chart.bpms[index].beats_per_minute), false);
     }
     for (std::size_t index = 0; index < chart.scrolls.size(); ++index)
         append(chart.scrolls[index].position, chart.scrolls[index].id.value,
-               chart.scrolls[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SCROLL,
+               chart.scrolls[index].provenance.source_order, index, wormedit::timing_lane_kind_t::scroll,
                compose_timing_short_number(chart.scrolls[index].multiplier),
                "Scroll " + compose_timing_decimal_detail(chart.scrolls[index].multiplier), false);
     for (std::size_t index = 0; index < chart.speeds.size(); ++index)
         append(chart.speeds[index].position, chart.speeds[index].id.value,
-               chart.speeds[index].provenance.source_order, index, WORM_UI_TIMING_LANE_SPEED,
+               chart.speeds[index].provenance.source_order, index, wormedit::timing_lane_kind_t::speed,
                compose_timing_short_number(chart.speeds[index].multiplier),
                "Speed " + compose_timing_decimal_detail(chart.speeds[index].multiplier) +
                    compose_speed_transition_detail(chart.speeds[index]),
@@ -465,8 +465,8 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
     for (std::size_t index = 0; index < chart.pauses.size(); ++index)
         append(chart.pauses[index].position, chart.pauses[index].id.value,
                chart.pauses[index].provenance.source_order, index,
-               chart.pauses[index].kind == wormedit::pause_kind_t::stop ? WORM_UI_TIMING_LANE_STOP
-                                                                        : WORM_UI_TIMING_LANE_DELAY,
+               chart.pauses[index].kind == wormedit::pause_kind_t::stop ? wormedit::timing_lane_kind_t::stop
+                                                                        : wormedit::timing_lane_kind_t::delay,
                compose_timing_short_number(chart.pauses[index].duration),
                std::string(chart.pauses[index].kind == wormedit::pause_kind_t::stop ? "Stop "
                                                                                     : "Delay ") +
@@ -478,14 +478,14 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
         const auto end = (measures).row_of(chart.warps[index].span.end);
         const auto rows = begin && end && *end >= *begin ? *end - *begin : 0;
         append(chart.warps[index].span.begin, chart.warps[index].id.value,
-               chart.warps[index].provenance.source_order, index, WORM_UI_TIMING_LANE_WARP,
+               chart.warps[index].provenance.source_order, index, wormedit::timing_lane_kind_t::warp,
                std::to_string(rows), "Warp " + std::to_string(rows) + " rows", false);
     }
     // Kiai events are not markers: Compose draws each merged Kiai area instead (see
     // populate_compose_kiai_and_sv), and edits it as one area.
     for (std::size_t index = 0; index < chart.timing_anchors.size(); ++index)
         append(chart.timing_anchors[index].position, chart.timing_anchors[index].id.value, index,
-               index, WORM_UI_TIMING_LANE_ANCHOR,
+               index, wormedit::timing_lane_kind_t::anchor,
                std::to_string(chart.timing_anchors[index].source_sample_frame),
                "Anchor at sample frame " +
                    std::to_string(chart.timing_anchors[index].source_sample_frame) +
@@ -496,7 +496,7 @@ void append_compose_chart_timing_markers(const wormedit::chart_document_t& chart
 void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened);
 
 auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
-                                    WormUiTimingLaneKind lane, std::uint64_t id) -> bool;
+                                    wormedit::timing_lane_kind_t lane, std::uint64_t id) -> bool;
 
 auto compose_bga_event_selected(const wormedit::editor_interaction_view_model_t& interaction,
                                 std::uint64_t id) -> bool;
@@ -999,7 +999,7 @@ void append_area_bar_line_geometry(wormedit::editor_area_geometry_snapshot_t& sn
 void cache_area_object_geometry(const compose_projection_context_t<wormedit::editor_interaction_view_model_t>& input);
 
 auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
-    -> std::optional<WormUiTimingLaneKind>;
+    -> std::optional<wormedit::timing_lane_kind_t>;
 
 auto paste_timing_ghost_span(const wormedit::chart_clipboard_payload_t& object)
     -> std::pair<wormedit::local_position_t, wormedit::local_position_t>;

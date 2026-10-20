@@ -1,5 +1,6 @@
 #include "sys/notification_history_runtime.h"
 #include "sys/application_command_dispatch.h"
+#include "sys/frame_timing.h"
 
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -8,6 +9,7 @@
 using namespace wormedit;
 using namespace wormedit::sys;
 using namespace std::chrono_literals;
+
 
 namespace {
 auto history_chart(std::uint64_t id) -> chart_document_t {
@@ -59,15 +61,15 @@ TEST_CASE("history projection borrows newest bounded rows and clamps future time
                     "Message " + std::to_string(index));
     center.drain_inbox(10s);
     notification_history_runtime_t runtime;
-    CHECK(runtime.project(center, history_song(), 20s).row_count == 0);
+    CHECK(ui::notification_history_view_t::from(runtime, center, history_song(), 20s).rows.size() == 0);
     runtime.visible = true;
-    const auto view = runtime.project(center, history_song(), 20s);
+    const auto view = ui::notification_history_view_t::from(runtime, center, history_song(), 20s);
     const auto entries = center.borrowed_snapshot(notification_capacity);
-    REQUIRE(view.row_count == notification_capacity);
+    REQUIRE(view.rows.size() == notification_capacity);
     CHECK(view.rows[0].message == entries.back().message.c_str());
     CHECK(view.rows[255].id == entries.front().id);
     CHECK(view.rows[0].age_seconds == 10);
-    CHECK(runtime.project(center, history_song(), 0ns).rows[0].age_seconds == 0);
+    CHECK(ui::notification_history_view_t::from(runtime, center, history_song(), 0ns).rows[0].age_seconds == 0);
 }
 
 TEST_CASE("opening history marks existing entries read once and does not discard later unread",
@@ -108,8 +110,8 @@ TEST_CASE("migrated long UTF8 messages retain full history and clipboard payload
     center.drain_inbox(0ns);
     notification_history_runtime_t runtime;
     runtime.visible = true;
-    const auto view = runtime.project(center, history_song(), 0ns);
-    REQUIRE(view.row_count == 1);
+    const auto view = ui::notification_history_view_t::from(runtime, center, history_song(), 0ns);
+    REQUIRE(view.rows.size() == 1);
     CHECK(std::string_view{view.rows[0].detail} == message);
     CHECK(notification_copy_payload(center, view.rows[0].id) == message);
     CHECK(std::string_view{view.rows[0].message} == std::string(196, 'a') + "…");
@@ -200,16 +202,16 @@ TEST_CASE("history availability cache invalidates document revision and identity
     notification_history_runtime_t runtime;
     runtime.visible = true;
     auto document = history_song();
-    CHECK(runtime.project(center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
+    CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
     document.charts[0].measures[0].notes.clear();
     ++document.revision;
-    CHECK(runtime.project(center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
+    CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
     auto replacement = history_song();
     replacement.revision = document.revision;
-    CHECK(runtime.project(center, replacement, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
+    CHECK(ui::notification_history_view_t::from(runtime, center, replacement, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
     replacement.id = song_id_t{2};
     replacement.charts[0].measures[0].notes.clear();
-    CHECK(runtime.project(center, replacement, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
+    CHECK(ui::notification_history_view_t::from(runtime, center, replacement, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
 }
 
 TEST_CASE("history availability cache follows row identity after eviction and insertion", "[sys][notifications]") {
@@ -218,14 +220,14 @@ TEST_CASE("history availability cache follows row identity after eviction and in
     notification_history_runtime_t runtime;
     runtime.visible = true;
     const auto document = history_song();
-    runtime.project(center, document, 0ns);
+    ui::notification_history_view_t::from(runtime, center, document, 0ns);
     center.dismiss(existing);
     post_target(center, object_id_t{999});
-    CHECK(runtime.project(center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
+    CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
     center.post({notification_severity_t::info, notification_source_t::system, "Other", {}, object_id_t{302}});
     center.drain_inbox(1s);
-    const auto view = runtime.project(center, document, 1s);
-    REQUIRE(view.row_count == 2);
+    const auto view = ui::notification_history_view_t::from(runtime, center, document, 1s);
+    REQUIRE(view.rows.size() == 2);
     CHECK(view.rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
     CHECK(view.rows[1].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
 }
@@ -237,9 +239,9 @@ TEST_CASE("history availability cache invalidates same-id same-revision reloads 
     notification_history_runtime_t runtime;
     runtime.visible = true;
     auto document = history_song();
-    CHECK(runtime.project(center, document, 0ns, 1).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
+    CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns, 1).rows[0].target == WORM_UI_NOTIFICATION_TARGET_POSITION);
     auto reloaded = history_song();
     reloaded.charts[0].measures[0].notes.clear();
     document = std::move(reloaded);
-    CHECK(runtime.project(center, document, 0ns, 2).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
+    CHECK(ui::notification_history_view_t::from(runtime, center, document, 0ns, 2).rows[0].target == WORM_UI_NOTIFICATION_TARGET_MISSING);
 }

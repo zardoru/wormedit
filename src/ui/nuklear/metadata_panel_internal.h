@@ -14,8 +14,8 @@ struct metadata_tree_identity_t {
 
 struct MetadataPanel {
     nk_context* context;
-    const WormUiMetadataView* metadata;
-    WormUiWorkspaceAction* action;
+    const wormedit::ui::metadata_view_t* metadata;
+    wormedit::ui::workspace_action_t* action;
     bool window_focused;
 };
 

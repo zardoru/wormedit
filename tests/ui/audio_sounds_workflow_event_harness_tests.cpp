@@ -29,11 +29,11 @@ auto pointer(float x, float y, bool down) -> SDL_Event {
 }
 struct fixture_t {
     nuklear_event_harness_t harness;
-    std::array<WormUiSoundRowView, 3> rows{{
-        {.resource_id=101, .asset_id=11, .name="Kick", .kind=2},
-        {.resource_id=102, .asset_id=22, .name="Snare", .kind=2},
-        {.resource_id=103, .asset_id=33, .name="Missing", .kind=2, .missing=true}}};
-    std::array<WormUiAudioWaveformColumnView, 8> columns{};
+    std::array<wormedit::ui::sound_row_view_t, 3> rows{{
+        {.resource_id=wormedit::resource_id_t{101}, .asset_id=wormedit::asset_id_t{11}, .name="Kick", .kind=static_cast<wormedit::sound_kind_t>(2)},
+        {.resource_id=wormedit::resource_id_t{102}, .asset_id=wormedit::asset_id_t{22}, .name="Snare", .kind=static_cast<wormedit::sound_kind_t>(2)},
+        {.resource_id=wormedit::resource_id_t{103}, .asset_id=wormedit::asset_id_t{33}, .name="Missing", .kind=static_cast<wormedit::sound_kind_t>(2), .missing=true}}};
+    std::array<wormedit::ui::audio_waveform_column_view_t, 8> columns{};
     std::size_t release_shortcuts{}, release_compose_inputs{};
     explicit fixture_t(int width = 1280, int height = 900) : harness{width, height} {
         auto& workspace = harness.view();
@@ -43,10 +43,10 @@ struct fixture_t {
         view.visible = true; view.usage_song_id=workspace.project_id;
         view.document_revision=workspace.document_revision;
         view.has_chart=true; view.chart_id=workspace.selected_chart_id; view.offset_denominator=1;
-        view.sound_rows=rows.data(); view.sound_row_count=rows.size();
-        view.has_selected_asset=true; view.selected_asset_id=11; view.selected_resource_id=101;
+        view.sound_rows.assign(rows.data(), rows.data() + rows.size());
+        view.has_selected_asset=true; view.selected_asset_id=wormedit::asset_id_t{11}; view.selected_resource_id=wormedit::resource_id_t{101};
         view.waveform_available=true; view.total_frames=480000; view.sample_rate=48000;
-        view.waveform_columns=columns.data(); view.waveform_column_count=columns.size();
+        view.waveform_columns.assign(columns.data(), columns.data() + columns.size());
         view.waveform_end_frame=view.total_frames;
         (void)harness.frame(); (void)harness.frame();
     }
@@ -101,11 +101,11 @@ TEST_CASE("Sounds waveform zoom retains pointer anchor and asset change resets v
     (void)fixture.click(plus->first,plus->second);
     expect(state.waveform_viewport.frames_per_pixel<before.frames_per_pixel);
     expect(state.waveform_viewport.begin_frame>0);
-    WormUiAudioWaveformViewportRequest request{};
+    wormedit::ui::audio_waveform_viewport_request_t request{};
     worm_ui_nuklear_audio_waveform_viewport_request(request);
-    expect(request.valid); expect(request.asset_id==11);
+    expect(request.valid); expect(request.asset_id==wormedit::asset_id_t{11});
     expect(request.begin_frame==state.waveform_viewport.begin_frame);
-    fixture.harness.view().audio_slices.selected_asset_id=22;
+    fixture.harness.view().audio_slices.selected_asset_id=wormedit::asset_id_t{22};
     (void)fixture.harness.frame();
     expect(state.waveform_viewport.begin_frame==0);
     expect(state.waveform_asset_id==22);
@@ -137,7 +137,8 @@ TEST_CASE("Sounds tag chips emit one stamped add or remove without applying name
           "[event-harness][sounds-workflow][sound-tags]") {
     fixture_t fixture;
     const std::array<std::string_view, 2> tags{"Drum", "Kick"};
-    fixture.rows[0].tags = tags;
+    fixture.rows[0].tags.assign(tags.begin(), tags.end());
+    fixture.harness.view().audio_slices.sound_rows[0].tags = fixture.rows[0].tags;
     auto& state = worm_ui_nuklear_audio_state();
     std::strcpy(state.properties_name, "Unapplied name");
     std::strcpy(state.new_tag, "Low");
@@ -223,7 +224,7 @@ TEST_CASE("Sounds double click selects and auditions the clicked resource with i
     expect(result.get().audio_resource_id==102);
     expect(result.get().compose_action==WORM_UI_COMPOSE_ACTION_AUDITION_SOUND);
     expect(result.get().compose_resource_id==102);
-    expect(result.get().compose_input_project_id==fixture.harness.view().project_id);
+    expect(result.get().compose_input_project_id==fixture.harness.view().project_id.value);
     expect(result.get().compose_input_document_revision==fixture.harness.view().document_revision);
 }
 

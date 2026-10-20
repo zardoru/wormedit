@@ -14,7 +14,7 @@ void preview_audio_dialog_t::begin(const WormUiComposeView& view) {
 }
 
 void preview_audio_dialog_t::render(nk_context* context, const WormUiComposeView& view,
-                                   WormUiWorkspaceAction& action) {
+                                   wormedit::ui::workspace_action_t& action) {
     if (!open) return;
     if (draft.project != view.project_id || draft.chart != view.chart_id || draft.revision != view.document_revision) {
         open = false;

@@ -5,6 +5,7 @@
 #include "sys/audio_fallback.h"
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
 #include <wormedit/core/keyed_cache.h>
 #include <wormedit/core/resource_assignment.h>
 #include <wormedit/core/natural_order.h>
@@ -38,6 +39,7 @@ enum class resource_use_filter_t : std::uint8_t { all, used, unused, missing };
 struct sound_list_row_t {
     resource_id_t resource;
     std::string name;
+    std::string source_path;
     sound_kind_t kind{sound_kind_t::unspecified};
     std::uint32_t tag_count{};
     // Tags joined with ", " for display.
@@ -55,6 +57,7 @@ struct sound_list_request_t {
     std::string tag;
     std::size_t first_row{};
     std::size_t row_limit{64};
+    auto operator==(const sound_list_request_t&) const -> bool = default;
 };
 
 struct sound_list_view_t {
@@ -68,6 +71,21 @@ struct sound_list_view_t {
 
     [[nodiscard]] static auto from(const song_document_t& document,
                                    const sound_list_request_t& request) -> sound_list_view_t;
+};
+
+class sound_list_cache_t {
+  public:
+    [[nodiscard]] auto view_for(const song_document_t& document, const sound_list_request_t& request,
+                                std::uint64_t session_generation = 0)
+        -> const sound_list_view_t&;
+  private:
+    struct key_t {
+        document_stamp_t stamp;
+        sound_list_request_t request;
+        std::uint64_t session_generation;
+        auto operator==(const key_t&) const -> bool = default;
+    };
+    keyed_cache_t<key_t, sound_list_view_t> projection_;
 };
 
 // The kind shown for a resource: the explicit one, else stem for BGM/music-only

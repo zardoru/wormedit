@@ -1,4 +1,4 @@
-#include "sys/timing_lane_ui.h"
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include "sys/timing_view.h"
 #include "sys/recipe_form.h"
@@ -14,6 +14,8 @@
 #include <cmath>
 #include <cstdio>
 #include <functional>
+#include <format>
+#include <iterator>
 #include <ranges>
 #include <limits>
 #include <type_traits>
@@ -23,43 +25,8 @@
 namespace wormedit::sys {
 namespace {
 
-template<class T>
-auto allocate_timing_rows(frontend_workspace_view_t& flattened, frame_span<T>& rows,
-                          std::size_t count, std::size_t limit) -> bool {
-    auto* arena = flattened.arena();
-    rows = arena ? arena_array<T>(*arena, std::min(count, limit)) : frame_span<T>{};
-    if (count > limit || rows.capacity() != std::min(count, limit)) {
-        flattened.view.timing.truncated = true;
-        return false;
-    }
-    return true;
-}
-
-auto timing_display_text(frontend_workspace_view_t& flattened, std::string_view text)
-    -> const char* {
-    auto* arena = flattened.arena();
-    if (const auto* owned = arena ? arena_string(*arena, text) : nullptr) return owned;
-    flattened.view.timing.truncated = true;
-    return "Timing display text truncated (frame storage limit).";
-}
-
-auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double {
-    float recovery_height = 0.0f;
-    if (view.recovery_panel_visible) {
-        recovery_height = 40.0f + (view.recovery_notice && view.recovery_notice[0] ? 22.0f : 0.0f) +
-                          static_cast<float>(view.recovery_candidate_count) * 48.0f +
-                          static_cast<float>(view.recovery_diagnostic_count) * 18.0f;
-        for (std::size_t row = 0; row < view.recovery_candidate_count; ++row) {
-            const auto& candidate = view.recovery_candidates[row];
-            if ((candidate.action_mask & WORM_UI_RECOVERY_ACTION_SAVE_AS) != 0) {
-                recovery_height += 25.0f;
-                if (candidate.path_label == nullptr || candidate.path_label[0] == '\0')
-                    recovery_height += 18.0f;
-            }
-            if (candidate.disabled_reason && candidate.disabled_reason[0])
-                recovery_height += 20.0f;
-        }
-    }
+auto compose_surface_height(int window_height, const wormedit::ui::workspace_view_t& view) -> double {
+    const auto recovery_height = view.recovery_panel_visible ? view.recovery_panel_height() : 0.0f;
     const auto content_height =
         window_height > 300 ? static_cast<float>(window_height) - 165.0f -
                                   (view.compose.bgm_bar_reserved ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
@@ -93,23 +60,8 @@ auto timing_stage_grid_step(const wormedit::chart_document_t& chart,
 }
 
 
-auto timing_pause_unit_to_ui(wormedit::pause_unit_t unit) -> WormUiTimingPauseUnit {
-    using unit_t = wormedit::pause_unit_t;
-    switch (unit) {
-    case unit_t::seconds:
-        return WORM_UI_TIMING_PAUSE_SECONDS;
-    case unit_t::milliseconds:
-        return WORM_UI_TIMING_PAUSE_MILLISECONDS;
-    case unit_t::bms_stop_ticks:
-        return WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS;
-    case unit_t::beats:
-        return WORM_UI_TIMING_PAUSE_BEATS;
-    }
-    return WORM_UI_TIMING_PAUSE_SECONDS;
-}
-
 struct timing_stage_value_context_t {
-    WormUiTimingView& view;
+    wormedit::ui::timing_view_t& view;
     const wormedit::chart_document_t& chart;
     const wormedit::measure_index_t* measures;
     const wormedit::timing_lane_pseudonote_state_t& stage;
@@ -121,28 +73,22 @@ template <typename Value>
 void build_timing_stage_value_view(timing_stage_value_context_t& context, const Value& value) {
     auto& view = context.view;
     const auto set_primary = [&](std::int64_t numerator, std::uint64_t denominator) {
-        (void)std::snprintf(view.stage_primary_numerator_text,
-                            sizeof(view.stage_primary_numerator_text), "%lld",
-                            static_cast<long long>(numerator));
-        (void)std::snprintf(view.stage_primary_denominator_text,
-                            sizeof(view.stage_primary_denominator_text), "%llu",
-                            static_cast<unsigned long long>(denominator));
+        view.stage_primary_numerator_text.clear();
+        std::format_to(std::back_inserter(view.stage_primary_numerator_text), "{}", numerator);
+        view.stage_primary_denominator_text.clear();
+        std::format_to(std::back_inserter(view.stage_primary_denominator_text), "{}", denominator);
     };
     const auto set_secondary = [&](std::uint64_t numerator, std::uint64_t denominator) {
-        (void)std::snprintf(view.stage_secondary_numerator_text,
-                            sizeof(view.stage_secondary_numerator_text), "%llu",
-                            static_cast<unsigned long long>(numerator));
-        (void)std::snprintf(view.stage_secondary_denominator_text,
-                            sizeof(view.stage_secondary_denominator_text), "%llu",
-                            static_cast<unsigned long long>(denominator));
+        view.stage_secondary_numerator_text.clear();
+        std::format_to(std::back_inserter(view.stage_secondary_numerator_text), "{}", numerator);
+        view.stage_secondary_denominator_text.clear();
+        std::format_to(std::back_inserter(view.stage_secondary_denominator_text), "{}", denominator);
     };
     if constexpr (std::is_same_v<Value, wormedit::timing_bpm_value_t>) {
         view.stage_value = static_cast<double>(wormedit::to_long_double(value.beats_per_minute));
         set_primary(value.beats_per_minute.numerator, value.beats_per_minute.denominator);
         if (const auto formatted = wormedit::format_bpm_text(value.beats_per_minute)) {
-            (void)std::snprintf(view.stage_primary_decimal_text,
-                                sizeof(view.stage_primary_decimal_text), "%s",
-                                formatted->decimal.c_str());
+            view.stage_primary_decimal_text = formatted->decimal;
             view.stage_primary_decimal_exact = formatted->decimal_exact;
         }
     } else if constexpr (std::is_same_v<Value, wormedit::timing_scroll_value_t>) {
@@ -156,7 +102,7 @@ void build_timing_stage_value_view(timing_stage_value_context_t& context, const 
         set_secondary(value.transition_beats.numerator, value.transition_beats.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_pause_value_t>) {
         view.stage_value = static_cast<double>(wormedit::to_long_double(value.duration));
-        view.stage_pause_unit = timing_pause_unit_to_ui(value.source_unit);
+        view.stage_pause_unit = value.source_unit;
         set_primary(value.duration.numerator, value.duration.denominator);
     } else if constexpr (std::is_same_v<Value, wormedit::timing_warp_value_t>) {
         const auto end_row = context.measures
@@ -172,25 +118,22 @@ void build_timing_stage_value_view(timing_stage_value_context_t& context, const 
                                             static_cast<long double>(step)
                                       : 1.0L;
         view.stage_secondary_value = static_cast<double>(length_steps);
-        (void)std::snprintf(view.stage_secondary_numerator_text,
-                            sizeof(view.stage_secondary_numerator_text), "%.0Lf", length_steps);
-        (void)std::snprintf(view.stage_secondary_denominator_text,
-                            sizeof(view.stage_secondary_denominator_text), "1");
+        view.stage_secondary_numerator_text.clear();
+        std::format_to(std::back_inserter(view.stage_secondary_numerator_text), "{:.0f}", length_steps);
+        view.stage_secondary_denominator_text = "1";
     } else if constexpr (std::is_same_v<Value, wormedit::timing_kiai_value_t>) {
         view.stage_toggle_primary = value.enabled;
     } else if constexpr (std::is_same_v<Value, wormedit::timing_anchor_value_t>) {
         view.stage_toggle_primary = value.locked;
-        (void)std::snprintf(view.stage_primary_numerator_text,
-                            sizeof(view.stage_primary_numerator_text), "%llu",
-                            static_cast<unsigned long long>(value.source_sample_frame));
-        (void)std::snprintf(view.stage_primary_denominator_text,
-                            sizeof(view.stage_primary_denominator_text), "1");
+        view.stage_primary_numerator_text.clear();
+        std::format_to(std::back_inserter(view.stage_primary_numerator_text), "{}", value.source_sample_frame);
+        view.stage_primary_denominator_text = "1";
     }
 }
 
 template <typename RowToPixels>
 void populate_timing_stage_view(
-    frontend_workspace_view_t& flattened, WormUiTimingView& view,
+    wormedit::ui::timing_view_t& view,
     const wormedit::chart_document_t& chart, const wormedit::measure_index_t* measures,
     const wormedit::timing_lane_pseudonote_outcome_t* stage,
     const timing_grid_state_t& timing_grid, std::uint64_t revision, RowToPixels row_to_pixels) {
@@ -200,15 +143,15 @@ void populate_timing_stage_view(
         view.stage_active = true;
         view.stage_valid = stage->value.has_value();
         view.stage_existing_object_id =
-            report->existing_event.has_value() ? report->existing_event->value : 0;
-        view.stage_lane = ui_codec<WormUiTimingLaneKind>::from(report->kind);
+            report->existing_event.value_or(wormedit::object_id_t{});
+        view.stage_lane = report->kind;
         const auto stage_row =
             measures ? (*measures).row_of(report->position) : std::nullopt;
         view.stage_marker_y_pixels =
             stage_row ? row_to_pixels(static_cast<long double>(*stage_row)) : 0.0;
         view.stage_transition_is_seconds = false;
         view.stage_toggle_primary = false;
-        view.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
+        view.stage_pause_unit = wormedit::pause_unit_t::seconds;
         timing_stage_value_context_t value_context{view, chart, measures, *report, timing_grid,
                                                    stage_row};
         std::visit(
@@ -217,8 +160,7 @@ void populate_timing_stage_view(
             },
             report->value);
         if (!stage->diagnostics.empty()) {
-            view.stage_status_text = timing_display_text(flattened,
-                stage->diagnostics.front().message);
+            view.stage_status_text = stage->diagnostics.front().message;
         }
     }
 }
@@ -235,12 +177,12 @@ auto build_compose_total_rows(const wormedit::chart_document_t& chart) -> std::u
     return total_rows;
 }
 
-void populate_initial_bpm(WormUiTimingView& view, const wormedit::chart_document_t& chart) {
+void populate_initial_bpm(wormedit::ui::timing_view_t& view, const wormedit::chart_document_t& chart) {
     if (!chart.measures.empty()) {
         for (const auto& bpm : chart.bpms) {
             if (bpm.position.measure == chart.measures.front().id && bpm.position.row == 0) {
                 view.initial_bpm_present = true;
-                view.initial_bpm_event_id = bpm.id.value;
+                view.initial_bpm_event_id = bpm.id;
                 view.initial_bpm_value =
                     static_cast<double>(to_long_double(bpm.beats_per_minute));
             }
@@ -261,7 +203,7 @@ void populate_timing_view_for_compose(
     if (selected == nullptr) return;
     const auto& chart = *selected;
     auto& view = flattened.view.timing;
-    view.chart_id = chart.id.value;
+    view.chart_id = chart.id;
     view.document_revision = history.document.revision;
     view.viewport_width_pixels = std::max(160.0, static_cast<double>(window_width) - 48.0);
     view.viewport_height_pixels = compose_surface_height(window_height, flattened.view);
@@ -270,8 +212,8 @@ void populate_timing_view_for_compose(
     view.scene_available = view.total_rows != 0;
     populate_initial_bpm(view, chart);
     view.active_snap_denominator = timing_grid.active_denominator;
-    view.supported_snap_denominators = timing_grid.supported_denominators.data();
-    view.supported_snap_denominator_count = timing_grid.supported_denominators.size();
+    view.supported_snap_denominators.assign(timing_grid.supported_denominators.begin(),
+                                            timing_grid.supported_denominators.end());
     const auto* report = stage ? stage->report() : nullptr;
     const bool editing_stage = report && report->lifecycle.status() == wormedit::proposal_status_t::active;
     if (!editing_stage) return;
@@ -281,7 +223,7 @@ void populate_timing_view_for_compose(
         return measures && measures->total_rows > 0
             ? static_cast<double>(row / measures->total_rows * view.viewport_height_pixels) : 0.0;
     };
-    populate_timing_stage_view(flattened, view, chart, measures, stage, timing_grid,
+    populate_timing_stage_view(view, chart, measures, stage, timing_grid,
                               history.document.revision, row_to_pixels);
 }
 

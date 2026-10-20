@@ -13,7 +13,7 @@
 namespace wormedit::sys {
 namespace {
 
-auto row_matches(const WormUiWorkspaceAction& action, const sound_usage_row_t& row) -> bool {
+auto row_matches(const wormedit::ui::workspace_action_t& action, const sound_usage_row_t& row) -> bool {
     const auto& position = row.position;
     return action.sound_usage_chart_id == row.chart.value &&
            action.sound_usage_kind == static_cast<int>(row.kind) &&
@@ -65,15 +65,15 @@ auto rejection(std::string message) -> sound_usage_action_result_t {
 
 } // namespace
 
-auto dispatch_sound_usage_action(const WormUiWorkspaceAction& action,
-                                 const WormUiSoundUsageRequest& request,
+auto dispatch_sound_usage_action(const wormedit::ui::workspace_action_t& action,
+                                 const wormedit::ui::sound_usage_request_t& request,
                                  document_history_t& history, workspace_controller_t& workspace,
                                  std::optional<editor_interaction_state_t>& interaction)
     -> sound_usage_action_result_t {
     if (action.kind != WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE ||
         workspace.active_tab != workspace_tab_t::audio_slices || !request.find_uses_open ||
-        request.selected_project_id != history.document.id.value ||
-        request.selected_resource_id != action.sound_usage_resource_id ||
+        request.selected_project_id != history.document.id ||
+        request.selected_resource_id != resource_id_t{action.sound_usage_resource_id} ||
         action.sound_usage_song_id != history.document.id.value ||
         action.sound_usage_document_revision != history.document.revision)
         return rejection("Sound usage results changed; refresh Find uses.");

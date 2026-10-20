@@ -64,7 +64,7 @@ class RenderSubphaseScope {
 // application and the diagnostic windows each own a set, so neither's
 // clip-rect and texture-switch tracking sees the other's draws.
 struct GpuSubmissionCounters {
-    WormUiFrameGpuWork work{};
+    wormedit::ui::frame_gpu_work_view_t work{};
     SDL_Rect current_clip{};
     SDL_Rect previous_clip{};
     SDL_Texture* previous_texture{};

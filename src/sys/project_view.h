@@ -20,8 +20,6 @@
 
 namespace wormedit::sys {
 
-inline constexpr std::size_t maximum_project_chart_rows = 256;
-
 struct project_chart_row_view_t {
     chart_id_t chart;
     std::string name;
@@ -53,7 +51,6 @@ using project_chart_table_cache_t = wormedit::keyed_cache_t<
 struct project_chart_table_view_t {
     std::vector<project_chart_row_view_t> rows;
     std::size_t total_charts{};
-    bool rows_truncated{};
 
     [[nodiscard]] static auto from(const song_document_t& document) -> project_chart_table_view_t;
 
@@ -66,6 +63,9 @@ struct project_chart_table_view_t {
 
 enum class project_chart_command_kind_t { create, duplicate, erase, move_up, move_down, open, batch_metadata, reorder };
 struct project_chart_command_t {
+    [[nodiscard]] static auto from(const ui::project_chart_action_t&,
+                                   std::optional<chart_id_t> active_chart = {})
+        -> result_t<project_chart_command_t, std::string>;
     project_chart_command_kind_t kind{project_chart_command_kind_t::open};
     std::uint64_t expected_revision{};
     chart_id_t chart; // create: active chart template; other actions: target row.
@@ -96,18 +96,11 @@ class project_chart_runtime_t {
     explicit project_chart_runtime_t(std::uint64_t generation) : session_generation(generation) {}
     std::uint64_t session_generation{1};
     project_chart_table_cache_t cache;
-    std::vector<WormUiProjectChartRow> rows;
     std::map<std::uint64_t, std::string> row_errors;
-    std::vector<WormUiProjectOutputGroupView> output_groups;
-    std::vector<WormUiProjectOutputSuggestion> output_suggestions;
-    std::vector<std::vector<uint64_t>> output_group_charts;
     std::vector<std::string> output_group_status;
     std::vector<std::string> output_group_paths;
     std::vector<std::optional<output_group_export_preparation_t>> output_group_previews;
-    std::vector<std::vector<WormUiOutputPlanRow>> output_group_plan_rows;
     std::vector<std::vector<std::string>> output_group_plan_paths;
-    std::vector<std::vector<WormUiOutputDiagnosticRow>> output_group_diagnostic_rows;
-    std::vector<std::vector<std::string>> output_group_diagnostic_messages;
     song_id_t output_group_song;
     uint64_t output_group_revision{};
     [[nodiscard]] auto preview_job() noexcept -> output_preview_job_t* {
@@ -134,14 +127,13 @@ struct project_chart_ui_result_t {
     bool applied{};
     notification_severity_t severity{notification_severity_t::warning};
 };
-void build_project_chart_view(project_chart_runtime_t& runtime, const song_document_t& document,
-                              WormUiSetupView& view);
+
 [[nodiscard]] auto apply_project_chart_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectChartAction& action,
+    document_history_t& history, const wormedit::ui::project_chart_action_t& action,
     std::optional<chart_id_t> active_chart = std::nullopt) -> project_chart_ui_result_t;
 
 [[nodiscard]] auto apply_project_output_group_ui_action(project_chart_runtime_t& runtime,
-    document_history_t& history, const WormUiProjectOutputGroupAction& action,
+    document_history_t& history, const wormedit::ui::project_output_group_action_t& action,
     task_scheduler_t& scheduler, const std::filesystem::path& asset_base = {}) -> project_chart_ui_result_t;
 
 } // namespace wormedit::sys

@@ -17,6 +17,7 @@
 
 namespace {
 constexpr const char* window_id = "Command menu";
+constexpr std::size_t maximum_visible_matches = 20;
 struct context_t {
     std::uint64_t project{}, chart{}, revision{};
     WormUiWorkspaceTab tab{};
@@ -38,16 +39,16 @@ auto contains(std::string_view label, std::string_view query) -> bool {
             return wormedit::text_util::ascii_iequal(static_cast<char>(left), static_cast<char>(right));
         }) != label.end();
 }
-auto matching_rows(const WormUiWorkspaceView& view) -> std::vector<std::size_t> {
+auto matching_rows(const wormedit::ui::workspace_view_t& view) -> std::vector<std::size_t> {
     std::vector<std::size_t> rows;
-    const auto count = std::min(view.command_menu_count, std::size_t{WORM_UI_COMMAND_MENU_CAPACITY});
-    for (std::size_t i = 0; i < count && rows.size() < 20; ++i) {
+    const auto count = view.command_menu_rows.size();
+    for (std::size_t i = 0; i < count && rows.size() < maximum_visible_matches; ++i) {
         const auto& row = view.command_menu_rows[i];
-        if (row.id && row.label && contains(row.label, state.query.data())) rows.push_back(i);
+        if (!row.id.empty() && !row.label.empty() && contains(row.label, state.query.data())) rows.push_back(i);
     }
     return rows;
 }
-void move_selection(const WormUiWorkspaceView& view, const std::vector<std::size_t>& rows, int delta) {
+void move_selection(const wormedit::ui::workspace_view_t& view, const std::vector<std::size_t>& rows, int delta) {
     if (rows.empty()) { state.selected = 0; return; }
     auto selected = std::min(state.selected, rows.size() - 1);
     for (std::size_t tried = 0; tried < rows.size(); ++tried) {
@@ -56,7 +57,7 @@ void move_selection(const WormUiWorkspaceView& view, const std::vector<std::size
         if (view.command_menu_rows[rows[selected]].enabled) { state.selected = selected; return; }
     }
 }
-void select_enabled(const WormUiWorkspaceView& view, const std::vector<std::size_t>& rows) {
+void select_enabled(const wormedit::ui::workspace_view_t& view, const std::vector<std::size_t>& rows) {
     if (rows.empty()) return;
     state.selected = std::min(state.selected, rows.size() - 1);
     if (!view.command_menu_rows[rows[state.selected]].enabled) move_selection(view, rows, 1);
@@ -66,12 +67,12 @@ void select_enabled(const WormUiWorkspaceView& view, const std::vector<std::size
         state.movement -= delta;
     }
 }
-void activate_command(const WormUiWorkspaceView& view, std::size_t index,
-                      WormUiWorkspaceAction& action) {
+void activate_command(const wormedit::ui::workspace_view_t& view, std::size_t index,
+                      wormedit::ui::workspace_action_t& action) {
     const auto& row = view.command_menu_rows[index];
-    if (!state.open || state.current != state.opened || !row.enabled || !row.id ||
-        std::strlen(row.id) >= sizeof(action.command_menu_command_id) || action.menu_command_id[0]) return;
-    std::snprintf(action.command_menu_command_id, sizeof(action.command_menu_command_id), "%s", row.id);
+    if (!state.open || state.current != state.opened || !row.enabled || row.id.empty() ||
+        row.id.size() >= sizeof(action.command_menu_command_id) || action.menu_command_id[0]) return;
+    std::snprintf(action.command_menu_command_id, sizeof(action.command_menu_command_id), "%s", row.id.data());
     action.command_menu_invoked = true;
     action.compose_input_project_id = state.opened.project;
     action.compose_input_chart_id = state.opened.chart;
@@ -86,8 +87,8 @@ void render_query(nk_context* context) {
         state.query.data(), static_cast<int>(state.query.size()), nk_filter_default, state.focus_pending);
     if (previous != state.query) state.selected = 0;
 }
-void render_rows(nk_context* context, const WormUiWorkspaceView& view,
-                 WormUiWorkspaceAction& action, int height) {
+void render_rows(nk_context* context, const wormedit::ui::workspace_view_t& view,
+                 wormedit::ui::workspace_action_t& action, int height) {
     const auto rows = matching_rows(view);
     select_enabled(view, rows);
     if (state.activate && !rows.empty()) activate_command(view, rows[state.selected], action);
@@ -105,9 +106,9 @@ void render_rows(nk_context* context, const WormUiWorkspaceView& view,
         const auto bounds = nk_widget_bounds(context);
         if (!row.enabled) nk_widget_disable_begin(context);
         nk_bool selected = state.selected == i;
-        const bool clicked = nk_selectable_label(context, row.label, NK_TEXT_LEFT, &selected);
+        const bool clicked = nk_selectable_label(context, row.label.data(), NK_TEXT_LEFT, &selected);
         const auto& style = context->style.selectable;
-        wormedit::ui::chrome::draw_row_shortcut(context, bounds, row.shortcut,
+        wormedit::ui::chrome::draw_row_shortcut(context, bounds, row.shortcut.data(),
             state.selected == i ? style.text_normal_active
                                 : wormedit::ui::chrome::color(wormedit::ui::chrome::UiColor::text_muted));
         if (!row.enabled) nk_widget_disable_end(context);
@@ -121,9 +122,9 @@ auto quiet(const nk_context& context) -> bool {
 }
 }
 
-void prepare_command_menu(const WormUiWorkspaceView* view, bool available) {
+void prepare_command_menu(const wormedit::ui::workspace_view_t* view, bool available) {
     state.available = available && view;
-    if (view) state.current = {view->project_id, view->selected_chart_id,
+    if (view) state.current = {view->project_id.value, view->selected_chart_id.value,
                               view->document_revision, view->active_tab};
     if (state.open && (!state.available || state.current != state.opened)) cancel_command_menu();
 }
@@ -168,8 +169,8 @@ auto capture_command_menu_text(nk_context* context, const SDL_Event& event) -> b
     if (state.open) { auto copy = event; nk_sdl_handle_event(context, &copy); }
     return true;
 }
-void render_command_menu(nk_context* context, const WormUiWorkspaceView& view,
-                         WormUiWorkspaceAction& action, int width, int height) {
+void render_command_menu(nk_context* context, const wormedit::ui::workspace_view_t& view,
+                         wormedit::ui::workspace_action_t& action, int width, int height) {
     if (!state.open) {
         nk_window_close(context, window_id);
         if (quiet(*context)) state.release_pending = false;

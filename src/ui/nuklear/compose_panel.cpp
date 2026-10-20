@@ -106,8 +106,8 @@ static bool compose_geometry_overlay_valid(const WormUiComposeView* view) {
     const auto stage_valid = !view->timing_stage_active ||
         (std::isfinite(view->timing_stage_y_pixels) && view->timing_stage_y_pixels >= 0.0 &&
          view->timing_stage_y_pixels <= view->viewport_height_pixels &&
-         view->timing_stage_lane >= WORM_UI_TIMING_LANE_BPM &&
-         view->timing_stage_lane <= WORM_UI_TIMING_LANE_ANCHOR);
+         view->timing_stage_lane >= wormedit::timing_lane_kind_t::bpm &&
+         view->timing_stage_lane <= wormedit::timing_lane_kind_t::anchor);
     const auto playhead_valid = !view->playhead_visible ||
         (std::isfinite(view->playhead_y_pixels) && view->playhead_y_pixels >= 0.0 &&
          view->playhead_y_pixels <= view->viewport_height_pixels);
@@ -233,7 +233,7 @@ static bool compose_recipe_areas_valid(const WormUiComposeView* view) {
     for (size_t index = 0; index < view->recipe_area_count; ++index) {
         const auto& area = view->recipe_areas[index];
         if (!compose_rect_valid(&area.bounds) || area.recipe_id == 0 || !area.label ||
-            (area.lane != WORM_UI_TIMING_LANE_SCROLL && area.lane != WORM_UI_TIMING_LANE_SPEED) ||
+            (area.lane != static_cast<std::uint8_t>(wormedit::timing_lane_kind_t::scroll) && area.lane != static_cast<std::uint8_t>(wormedit::timing_lane_kind_t::speed)) ||
             area.graph_first > view->recipe_graph_point_count ||
             area.graph_count > view->recipe_graph_point_count - area.graph_first) return false;
     }
@@ -257,13 +257,13 @@ static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view
         const auto& marker = view->timing_preview_markers[index];
         if (!std::isfinite(marker.marker_y_pixels) || marker.marker_y_pixels < 0.0 ||
             marker.marker_y_pixels > view->viewport_height_pixels ||
-            marker.lane < WORM_UI_TIMING_LANE_BPM || marker.lane > WORM_UI_TIMING_LANE_ANCHOR)
+            marker.lane < wormedit::timing_lane_kind_t::bpm || marker.lane > wormedit::timing_lane_kind_t::anchor)
             return 0;
     }
     for (size_t index = 0; index < view->timing_marker_count; ++index) {
         const auto& marker = view->timing_markers[index];
         const auto missing_initial = marker.fixed_initial &&
-            marker.lane == WORM_UI_TIMING_LANE_BPM && marker.chart_row == 0;
+            marker.lane == wormedit::timing_lane_kind_t::bpm && marker.chart_row == 0;
         if ((marker.object_id == 0 && !missing_initial) || !std::isfinite(marker.marker_y_pixels) ||
             marker.marker_y_pixels < 0.0 ||
             marker.marker_y_pixels > view->viewport_height_pixels ||
@@ -271,8 +271,8 @@ static bool compose_geometry_timing_elements_valid(const WormUiComposeView* view
             !std::isfinite(marker.marker_right_fraction) ||
             marker.marker_left_fraction < 0.0 ||
             marker.marker_right_fraction <= marker.marker_left_fraction ||
-            marker.marker_right_fraction > 1.0 || marker.lane < WORM_UI_TIMING_LANE_BPM ||
-            marker.lane > WORM_UI_TIMING_LANE_ANCHOR) {
+            marker.marker_right_fraction > 1.0 || marker.lane < wormedit::timing_lane_kind_t::bpm ||
+            marker.lane > wormedit::timing_lane_kind_t::anchor) {
             return 0;
         }
     }
@@ -742,7 +742,7 @@ static void render_compose_waveform_overview(const ComposeOverviewContext& overv
 
 void worm_ui_nuklear_render_compose_minimap(
     struct nk_context* context, const WormUiComposeView* view,
-    WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
+    wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
     action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
@@ -898,7 +898,7 @@ void draw_bgm_bar_markers(struct nk_command_buffer* canvas, const WormUiComposeV
     }
 }
 
-void append_bgm_bar_input(WormUiWorkspaceAction* action, WormUiComposeInputKind kind,
+void append_bgm_bar_input(wormedit::ui::workspace_action_t* action, WormUiComposeInputKind kind,
                           double amount, double audio_fraction) {
     append_compose_input(action, kind, amount);
     if (action->compose_input_count == 0) return;
@@ -908,7 +908,7 @@ void append_bgm_bar_input(WormUiWorkspaceAction* action, WormUiComposeInputKind 
 
 // Wheel zoom centers on the visible field span; Shift+wheel or middle-drag pans the range.
 void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeView& view,
-                                WormUiWorkspaceAction* action,
+                                wormedit::ui::workspace_action_t* action,
                                 const BgmBarGeometry& geometry) {
     static bool middle_dragged = false;
     auto& input = context->input;
@@ -942,7 +942,7 @@ void process_bgm_bar_view_input(struct nk_context* context, const WormUiComposeV
 }
 
 void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeView* view,
-                              WormUiWorkspaceAction* action, const BgmBarGeometry& geometry) {
+                              wormedit::ui::workspace_action_t* action, const BgmBarGeometry& geometry) {
     if (!nk_input_is_mouse_hovering_rect(&context->input, geometry.bounds)) return;
     constexpr char instructions[] =
         "Wheel: zoom   Shift+wheel or middle-drag: pan   Middle-click: whole song";
@@ -974,7 +974,7 @@ void report_compose_bgm_hover(struct nk_context* context, const WormUiComposeVie
 
 void worm_ui_nuklear_render_compose_bgm_bar(
     struct nk_context* context, const WormUiComposeView* view,
-    WormUiWorkspaceAction* action, struct nk_rect bounds, bool window_focused) {
+    wormedit::ui::workspace_action_t* action, struct nk_rect bounds, bool window_focused) {
     if (!context || !view || !action) return;
     const bool overview_valid = worm_ui_nuklear_compose_overview_valid(view);
     action->minimap_visible_begin_fraction = overview_valid ? view->waveform_overview_visible_begin_fraction : 0;
@@ -1017,8 +1017,8 @@ void worm_ui_nuklear_render_compose_bgm_bar(
 struct ComposePanelRenderContext {
     struct nk_context* context;
     const WormUiComposeView* view;
-    const WormUiTimingView* timing_view;
-    WormUiWorkspaceAction* action;
+    const wormedit::ui::timing_view_t* timing_view;
+    wormedit::ui::workspace_action_t* action;
     bool window_focused;
     bool ime_composition_active;
     const worm_ui_nuklear_pointer_click_t* double_clicks;
@@ -1067,13 +1067,13 @@ static void render_compose_inline_timing_editor(const ComposePanelRenderContext&
     const auto& timing = *panel.timing_view;
     if (!timing.stage_active) {
         // The opening double-click reaches the application after this frame.
-        if (panel.action->timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN) return;
+        if (panel.action->timing_stage_action == wormedit::ui::timing_stage_action_t::begin) return;
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
     }
-    if (timing.chart_id != state.inline_timing.inline_timing_chart_id ||
+    if (timing.chart_id.value != state.inline_timing.inline_timing_chart_id ||
         timing.document_revision != state.inline_timing.inline_timing_revision ||
-        timing.stage_existing_object_id != state.inline_timing.inline_timing_object_id ||
+        timing.stage_existing_object_id.value != state.inline_timing.inline_timing_object_id ||
         timing.stage_lane != state.inline_timing.inline_timing_lane) {
         dismiss_compose_inline_timing_popup(panel.context, viewport);
         return;
@@ -1354,7 +1354,7 @@ static void close_go_to_measure(nk_context* context) {
 }
 
 static void confirm_go_to_measure(const WormUiComposeView& view,
-                                  WormUiWorkspaceAction& action, nk_context* context) {
+                                  wormedit::ui::workspace_action_t& action, nk_context* context) {
     const auto number = worm_ui_nuklear_compose_measure_number(view,
                                                               state.dialogs.go_to_measure_text.data());
     if (!number) {
@@ -1373,7 +1373,7 @@ static void confirm_go_to_measure(const WormUiComposeView& view,
 }
 
 static void render_go_to_measure(nk_context* context, const WormUiComposeView& view,
-                                 WormUiWorkspaceAction& action, bool window_focused) {
+                                 wormedit::ui::workspace_action_t& action, bool window_focused) {
     if (!state.dialogs.go_to_measure_open) return;
     if (!window_focused || view.chart_id != state.dialogs.go_to_measure_chart_id ||
         view.document_revision != state.dialogs.go_to_measure_revision) {
@@ -1510,8 +1510,8 @@ static auto compose_dock_layout(nk_context* context, const WormUiComposeView* vi
 
 static void render_compose_inspector_contents(nk_context* context,
                                                const WormUiComposeView* view,
-                                               const WormUiTimingView* timing_view,
-                                               WormUiWorkspaceAction* action) {
+                                               const wormedit::ui::timing_view_t* timing_view,
+                                               wormedit::ui::workspace_action_t* action) {
     const ComposeInspectorContext inspector{context, view, timing_view, action};
     render_compose_recipe_form(inspector);
     render_compose_label_search(inspector);
@@ -1533,7 +1533,7 @@ static void render_compose_dock(nk_context* context, struct nk_rect bounds, cons
 }
 
 static void render_compose_side_docks(nk_context* context, const WormUiComposeView* view,
-    const WormUiTimingView* timing_view, WormUiWorkspaceAction* action, const ComposeDockLayout& layout) {
+    const wormedit::ui::timing_view_t* timing_view, wormedit::ui::workspace_action_t* action, const ComposeDockLayout& layout) {
     const auto [compose_body_bounds, compose_body_height, inspector_drawn, inspector_width,
         layers_drawn, layers_width, sounds_drawn, sounds_width, bga_drawn, bga_width, measures_drawn, measures_width, branch_drawn, branch_width, side_width] = layout;
     const auto editor_width = compose_body_bounds.w;
@@ -1579,8 +1579,8 @@ static void render_compose_side_docks(nk_context* context, const WormUiComposeVi
 }
 
 void worm_ui_nuklear_render_compose_panel(struct nk_context* context, const WormUiComposeView* view,
-                                          const WormUiTimingView* timing_view,
-                                          WormUiWorkspaceAction* action, bool window_focused,
+                                          const wormedit::ui::timing_view_t* timing_view,
+                                          wormedit::ui::workspace_action_t* action, bool window_focused,
                                           bool ime_composition_active,
                                           const worm_ui_nuklear_pointer_click_t* double_clicks,
                                           std::size_t double_click_count,

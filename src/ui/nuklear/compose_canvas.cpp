@@ -1,4 +1,3 @@
-#include "ui/nuklear/catalog_view.h"
 #include "ui/field/rect.h"
 #include "ui/hitsound_icons.h"
 #include "ui/compose_draw_source_labels.h"
@@ -46,8 +45,8 @@ using wormedit::ui::compose_bgm_head_bounds;
 
 namespace {
 wormedit::ui::field::renderer_t* tile_renderer_override{};
-std::optional<WormUiTestingRect> last_compose_viewport_for_testing;
-std::optional<WormUiTestingRect> quantize_overlay_viewport;
+std::optional<wormedit::ui::testing_rect_view_t> last_compose_viewport_for_testing;
+std::optional<wormedit::ui::testing_rect_view_t> quantize_overlay_viewport;
 bool quantize_ghosts_drawn_this_frame{};
 WormUiTestingComposeGhostDrawState quantize_ghost_draw_state{};
 auto paint_field(nk_context* context) -> wormedit::ui::field::renderer_t& {
@@ -380,7 +379,7 @@ void draw_compose_quantize_ghosts_after_docks(nk_context* context,
     wormedit::ui::nuklear::insert_compose_field(context, canvas, viewport);
 }
 
-auto compose_canvas_viewport_for_testing() -> std::optional<WormUiTestingRect> {
+auto compose_canvas_viewport_for_testing() -> std::optional<wormedit::ui::testing_rect_view_t> {
     return last_compose_viewport_for_testing;
 }
 
@@ -992,8 +991,8 @@ static auto compose_lane_key_color(uint8_t key_color, uint8_t role) -> uint8_t {
 }
 
 struct ComposeTimingLaneLayout {
-    std::array<struct nk_rect, WORM_UI_TIMING_LANE_COUNT> lanes{};
-    std::array<struct nk_color, WORM_UI_TIMING_LANE_COUNT> colors{};
+    std::array<struct nk_rect, wormedit::timing_lane_kind_count> lanes{};
+    std::array<struct nk_color, wormedit::timing_lane_kind_count> colors{};
     float field_left{};
 };
 
@@ -1042,7 +1041,7 @@ static void compose_timing_lane_layout(const ComposePaintContext& paint, Compose
     }
     for (size_t index = 0; index < layout.lanes.size(); ++index) {
         const auto extent = wormedit::ui::compose_timing_lane_extent(
-            *paint.view, static_cast<WormUiTimingLaneKind>(index));
+            *paint.view, static_cast<wormedit::timing_lane_kind_t>(index));
         if (!extent) continue;
         const WormUiComposeRect bounds{extent->first, 0, extent->second,
                                        paint.view->viewport_height_pixels};
@@ -1050,7 +1049,7 @@ static void compose_timing_lane_layout(const ComposePaintContext& paint, Compose
     }
 }
 
-constexpr std::array<wormedit::ui::lucide::Glyph, WORM_UI_TIMING_LANE_COUNT> timing_lane_icons{
+constexpr std::array<wormedit::ui::lucide::Glyph, wormedit::timing_lane_kind_count> timing_lane_icons{
     wormedit::ui::lucide::Glyph::metronome, wormedit::ui::lucide::Glyph::waves_horizontal,
     wormedit::ui::lucide::Glyph::gauge, wormedit::ui::lucide::Glyph::pause,
     wormedit::ui::lucide::Glyph::hourglass, wormedit::ui::lucide::Glyph::fast_forward,
@@ -1059,7 +1058,7 @@ constexpr std::array<wormedit::ui::lucide::Glyph, WORM_UI_TIMING_LANE_COUNT> tim
 static void draw_compose_timing_header(const ComposePaintContext& paint, std::size_t index,
                                         struct nk_rect lane, nk_color tint) {
     if (lane.w < 17.0f) return;
-    const auto* caption = wormedit::ui::kind_label(paint.view->timing_lane_captions, static_cast<std::uint32_t>(index), "");
+    const auto* caption = paint.view->timing_lane_captions.label(static_cast<wormedit::timing_lane_kind_t>(static_cast<std::uint32_t>(index)), "");
     const auto* font = paint.context->style.font;
     const auto length = static_cast<int>(strlen(caption));
     const auto caption_width = font->width(font->userdata, font->height, caption, length);
@@ -1097,7 +1096,7 @@ static void draw_compose_timing_header_tooltip(const ComposePaintContext& paint,
         if (lane.w <= 0) continue;
         if (wormedit::ui::nuklear::tooltip::hovered(paint.context,
                 nk_rect(lane.x, paint.viewport.y, lane.w, 20))) {
-            wormedit::ui::nuklear::tooltip::text(paint.context, wormedit::ui::kind_label(paint.view->timing_lanes, static_cast<std::uint32_t>(index), ""));
+            wormedit::ui::nuklear::tooltip::text(paint.context, paint.view->timing_lanes.label(static_cast<wormedit::timing_lane_kind_t>(static_cast<std::uint32_t>(index)), ""));
             return;
         }
     }
@@ -1822,7 +1821,7 @@ static void draw_compose_unbound_lane_keys_hint(const ComposePaintContext& paint
 
 // The inner horizontal extent of a visible timing lane in document pixels; empty when the lane is
 // hidden. Same slot arithmetic as the marker rectangles.
-auto compose_timing_lane_inner_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
+auto compose_timing_lane_inner_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
     -> std::optional<std::pair<double, double>> {
     return wormedit::ui::compose_timing_inner_extent(view, lane);
 }
@@ -1866,7 +1865,7 @@ static void draw_compose_kiai_drag_preview(const ComposePaintContext& paint,
 }
 
 static void draw_compose_kiai_spans(const ComposePaintContext& paint) {
-    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_KIAI);
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::kiai);
     if (!extent) return;
     draw_compose_kiai_drag_preview(paint, *extent);
     for (size_t index = 0; index < paint.view->kiai_span_count; ++index) {
@@ -1897,7 +1896,7 @@ static void draw_compose_recipe_drag_preview(const ComposePaintContext& paint) {
         areas, [](const auto& area) { return area.recipe_id == state.timing_drag.recipe_drag_id; });
     if (found == areas.end()) return;
     const auto extent = compose_timing_lane_inner_extent(
-        *paint.view, static_cast<WormUiTimingLaneKind>(found->lane));
+        *paint.view, static_cast<wormedit::timing_lane_kind_t>(found->lane));
     if (!extent) return;
     double top = found->bounds.top, bottom = found->bounds.bottom;
     const bool begin_is_top = !paint.view->downscroll;
@@ -1957,7 +1956,7 @@ static void draw_compose_recipe_areas(const ComposePaintContext& paint) {
     for (size_t index = 0; index < paint.view->recipe_area_count; ++index) {
         const auto& area = paint.view->recipe_areas[index];
         const auto extent = compose_timing_lane_inner_extent(
-            *paint.view, static_cast<WormUiTimingLaneKind>(area.lane));
+            *paint.view, static_cast<wormedit::timing_lane_kind_t>(area.lane));
         if (!extent) continue;
         const WormUiComposeRect bounds{extent->first, area.bounds.top, extent->second, area.bounds.bottom};
         const auto rect = compose_screen_rect(&bounds, paint.view, paint.viewport);
@@ -2001,7 +2000,7 @@ static void draw_compose_speed_drag_preview(const ComposePaintContext& paint,
 }
 
 static void draw_compose_speed_spans(const ComposePaintContext& paint) {
-    const auto extent = compose_timing_lane_inner_extent(*paint.view, WORM_UI_TIMING_LANE_SPEED);
+    const auto extent = compose_timing_lane_inner_extent(*paint.view, wormedit::timing_lane_kind_t::speed);
     if (!extent) return;
     draw_compose_speed_drag_preview(paint, *extent);
     for (size_t index = 0; index < paint.view->speed_span_count; ++index) {
@@ -2020,7 +2019,7 @@ static void draw_compose_speed_spans(const ComposePaintContext& paint) {
 }
 
 // A value curve inside one timing lane: a faint 1.0x reference line, then the polyline.
-static void draw_compose_value_graph(const ComposePaintContext& paint, WormUiTimingLaneKind lane,
+static void draw_compose_value_graph(const ComposePaintContext& paint, wormedit::timing_lane_kind_t lane,
                                      const WormUiComposeSvGraphPointView* points, size_t count,
                                      double one_fraction, struct nk_color color) {
     const auto extent = compose_timing_lane_inner_extent(*paint.view, lane);
@@ -2044,13 +2043,13 @@ static void draw_compose_value_graph(const ComposePaintContext& paint, WormUiTim
 }
 
 static void draw_compose_sv_graph(const ComposePaintContext& paint) {
-    draw_compose_value_graph(paint, WORM_UI_TIMING_LANE_SCROLL, paint.view->sv_graph_points,
+    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::scroll, paint.view->sv_graph_points,
                              paint.view->sv_graph_point_count, paint.view->sv_graph_one_fraction,
                              nk_rgb(110, 222, 236));
 }
 
 static void draw_compose_speed_graph(const ComposePaintContext& paint) {
-    draw_compose_value_graph(paint, WORM_UI_TIMING_LANE_SPEED, paint.view->speed_graph_points,
+    draw_compose_value_graph(paint, wormedit::timing_lane_kind_t::speed, paint.view->speed_graph_points,
                              paint.view->speed_graph_point_count,
                              paint.view->speed_graph_one_fraction, nk_rgb(137, 207, 239));
 }
@@ -3158,7 +3157,7 @@ static bool draw_compose_paste_arrow(const ComposePaintContext& paint,
 static auto compose_timing_ghost_rect(const ComposePaintContext& paint,
                                       const WormUiComposePasteGhostView& ghost) -> struct nk_rect {
     WormUiTimingMarkerView marker{};
-    marker.lane = static_cast<WormUiTimingLaneKind>(ghost.glyph);
+    marker.lane = static_cast<wormedit::timing_lane_kind_t>(ghost.glyph);
     marker.marker_y_pixels = (ghost.bounds.top + ghost.bounds.bottom) * 0.5;
     marker.marker_left_fraction = 0.0;
     marker.marker_right_fraction = 1.0;
@@ -3216,7 +3215,7 @@ static auto compose_idle_bgm_move_hint(const WormUiComposeView& view) -> const c
     return "drag BGM to move";
 }
 
-auto compose_editor_status_hint(const WormUiComposeView* view, const WormUiTimingView* timing_view)
+auto compose_editor_status_hint(const WormUiComposeView* view, const wormedit::ui::timing_view_t* timing_view)
     -> const char* {
     if (const auto* conflict = compose_move_status_hint(view))
         return conflict;
@@ -3240,7 +3239,7 @@ auto compose_editor_status_hint(const WormUiComposeView* view, const WormUiTimin
         return "Resource replacement armed · click an existing object · Esc disarms";
     if (state.bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off)
         return "BMSON razor armed · click/drag in selected BGM lane · Esc disarms";
-    if (timing_view->stage_active && timing_view->stage_existing_object_id != 0)
+    if (timing_view->stage_active && bool(timing_view->stage_existing_object_id))
         return "Drag outlined timing marker to resnap · edit/apply in side inspector";
     if (view->semantic_layer_paint_mode_active)
         return "";
@@ -3281,7 +3280,7 @@ static void bind_compose_field_layout(const WormUiComposeView& view) {
 
 void draw_compose_scene_canvas(nk_context* context, const WormUiComposeView* view,
                                       nk_command_buffer* canvas, struct nk_rect viewport) {
-    last_compose_viewport_for_testing = WormUiTestingRect{
+    last_compose_viewport_for_testing = wormedit::ui::testing_rect_view_t{
         viewport.x, viewport.y, viewport.w, viewport.h};
     quantize_overlay_viewport = last_compose_viewport_for_testing;
     static_paint_indices.refresh(*view);

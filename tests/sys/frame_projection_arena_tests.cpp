@@ -3,6 +3,7 @@
 #include <wormedit/core/catalogs.h>
 #include <wormedit/formats/bms.h>
 #include "sys/frame_timing.h"
+#include "sys/notification_history_runtime.h"
 #include "sys/workspace_view.h"
 #include <wormedit/core/lane_profiles.h>
 #include <wormedit/audio/playback_rate.h>
@@ -119,32 +120,53 @@ auto frame_summary_model() -> wormedit::workspace_view_t {
 }
 }
 
-TEST_CASE("Workspace summary uses the application arena with stable contents and zero warmed new",
+TEST_CASE("Workspace summary retains owned text and zero warmed allocations",
           "[sys][frame-arena][projection]") {
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     const auto model = frame_summary_model();
     const wormedit::song_document_t document;
     const std::string status = "ready";
-    auto fill = [&] {
-        arena.reset();
-        return frontend_workspace_view_t::from(model, document, status, {}, false, &arena);
-    };
-    const auto first = fill();
+    frontend_workspace_view_t second(&arena);
+    second.refill(model, document, status, {}, false, &arena);
     const auto used = arena.used_bytes();
+    const auto* first_text = second.view.summary_lines[0].data();
+    arena.reset();
     const auto before = frame_heap_allocation_snapshot();
-    auto second = fill();
-    second.rebind_view_pointers();
+    second.refill(model, document, status, {}, false, &arena);
     const auto after = frame_heap_allocation_snapshot();
     check_frame_storage(after.count == before.count);
     check_frame_storage(arena.used_bytes() == used);
-    check_frame_storage(second.view.summary_line_count == 5);
-    check_frame_storage(std::strcmp(second.view.summary_lines[0], "Measures: 1042") == 0);
-    check_frame_storage(std::strcmp(second.view.summary_lines[1], "Notes: 50000") == 0);
-    check_frame_storage(std::strcmp(second.view.summary_lines[3], "Visible lane definitions: 4") == 0);
-    check_frame_storage(first.summary.lines[0] == second.summary.lines[0]);
+    check_frame_storage(second.view.summary_lines.size() == 5);
+    check_frame_storage(std::strcmp(second.view.summary_lines[0].c_str(), "Measures: 1042") == 0);
+    check_frame_storage(std::strcmp(second.view.summary_lines[1].c_str(), "Notes: 50000") == 0);
+    check_frame_storage(std::strcmp(second.view.summary_lines[3].c_str(), "Visible lane definitions: 4") == 0);
+    check_frame_storage(first_text == second.view.summary_lines[0].data());
 }
 
-TEST_CASE("Standalone workspace summary owns persistent arena storage after a move",
+TEST_CASE("Persistent workspace refill retains converted capacity without warmed allocations",
+          "[sys][projection][steady-state]") {
+    frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
+    const auto model = frame_summary_model();
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    frontend_workspace_view_t projection(&arena);
+    projection.refill(model, document, status, {}, false, &arena);
+    projection.view.compose.measure_lane.selected_bar_lines.reserve(8);
+    projection.view.compose.measure_lane.selected_bar_lines.push_back(wormedit::measure_id_t{5});
+    const auto capacity = projection.view.compose.measure_lane.selected_bar_lines.capacity();
+    projection.view.compare.visible = true;
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    projection.refill(model, document, status, {}, false, &arena);
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(projection.view.compose.measure_lane.selected_bar_lines.capacity() == capacity);
+    check_frame_storage(projection.view.compose.measure_lane.selected_bar_lines.empty());
+    check_frame_storage(!projection.view.compare.visible);
+    check_frame_storage(projection.view.summary_lines.size() == 5);
+}
+
+TEST_CASE("Standalone workspace summary owns text independently of arena storage after a move",
           "[sys][frame-arena][projection]") {
     const auto model = frame_summary_model();
     const wormedit::song_document_t document;
@@ -152,15 +174,14 @@ TEST_CASE("Standalone workspace summary owns persistent arena storage after a mo
     auto projection = frontend_workspace_view_t::from(model, document, status, {}, false);
     auto retained = std::move(projection);
     retained.rebind_view_pointers();
-    check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
+    check_frame_storage(std::strcmp(retained.view.summary_lines[1].c_str(), "Notes: 50000") == 0);
     frame_arena_t frame({.chunk_bytes = 64, .maximum_bytes = 64});
     const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, &frame);
-    check_frame_storage(limited.summary.truncated);
-    check_frame_storage(limited.view.summary_line_count < 5);
-    check_frame_storage(std::strcmp(retained.view.summary_lines[1], "Notes: 50000") == 0);
+    check_frame_storage(limited.view.summary_lines.size() == 5);
+    check_frame_storage(std::strcmp(retained.view.summary_lines[1].c_str(), "Notes: 50000") == 0);
 }
 
-TEST_CASE("Audio asset view publishes arena IDs and truncates only its exhausted unit",
+TEST_CASE("Audio asset owned IDs remain complete independently of frame arena exhaustion",
           "[sys][frame-arena][projection]") {
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::audio_slices;
@@ -171,15 +192,13 @@ TEST_CASE("Audio asset view publishes arena IDs and truncates only its exhausted
     frame_arena_t arena({.chunk_bytes = 1024, .maximum_bytes = 4096});
     auto projection = frontend_workspace_view_t::from(model, document, status, {}, false, &arena);
     projection.rebind_view_pointers();
-    REQUIRE(projection.view.audio_slices.asset_ids);
-    check_frame_storage(projection.view.audio_slices.asset_count == 2);
-    check_frame_storage(projection.view.audio_slices.asset_ids[0] == 7);
-    check_frame_storage(projection.view.audio_slices.asset_ids[1] == 9);
+    REQUIRE(!projection.view.audio_slices.asset_ids.empty());
+    check_frame_storage(projection.view.audio_slices.asset_ids.size() == 2);
+    check_frame_storage(projection.view.audio_slices.asset_ids[0] == wormedit::asset_id_t{7});
+    check_frame_storage(projection.view.audio_slices.asset_ids[1] == wormedit::asset_id_t{9});
     frame_arena_t exhausted({.chunk_bytes = 8, .maximum_bytes = 8});
     const auto limited = frontend_workspace_view_t::from(model, document, status, {}, false, &exhausted);
-    check_frame_storage(limited.view.audio_slices.assets_truncated);
-    check_frame_storage(limited.view.audio_slices.asset_count == 0);
-    check_frame_storage(limited.view.audio_slices.asset_ids == nullptr);
+    check_frame_storage(limited.view.audio_slices.asset_ids.size() == 2);
     check_frame_storage(limited.view.audio_slices.visible);
 }
 
@@ -215,17 +234,17 @@ auto project_metadata_arena(const wormedit::workspace_view_t& model,
                             frame_arena_t* arena = nullptr) -> frontend_workspace_view_t {
     return frontend_workspace_view_t::from(model, document, "ready", {}, false, arena);
 }
-void check_metadata_fields(const WormUiMetadataFormatFieldView& field) {
+void check_metadata_fields(const wormedit::ui::metadata_format_field_view_t& field) {
     check_frame_storage(field.chart_scoped);
-    check_frame_storage(field.family == static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+    check_frame_storage(field.family == wormedit::format_family_t::bms);
     check_frame_storage(field.first_group_for_family);
     check_frame_storage(field.group_index == 2);
     check_frame_storage(field.field_index == 3);
     check_frame_storage(field.group_field_count == 4);
-    check_frame_storage(std::strcmp(field.name, "field-name") == 0);
-    check_frame_storage(std::strcmp(field.value, "field-value") == 0);
-    check_frame_storage(field.name_bytes == 10);
-    check_frame_storage(field.value_bytes == 11);
+    check_frame_storage(std::strcmp(field.name.c_str(), "field-name") == 0);
+    check_frame_storage(std::strcmp(field.value.c_str(), "field-value") == 0);
+    check_frame_storage(field.name.size() == 10);
+    check_frame_storage(field.value.size() == 11);
     check_frame_storage(field.has_source_order && field.source_order == 17);
 }
 }
@@ -243,13 +262,13 @@ TEST_CASE("Metadata arena lists own source text and preserve field and target id
     moved.rebind_view_pointers();
     const auto& view = moved.view.metadata;
     REQUIRE(view.search_tags_editable);
-    REQUIRE(view.search_tag_count == 2);
-    check_frame_storage(std::strcmp(view.search_tags[0], "tag") == 0);
-    check_frame_storage(view.search_tag_bytes[0] == 3);
-    REQUIRE(view.format_field_count == 1);
+    REQUIRE(view.search_tags.size() == 2);
+    check_frame_storage(std::strcmp(view.search_tags[0].c_str(), "tag") == 0);
+    check_frame_storage(view.search_tags[0].size() == 3);
+    REQUIRE(view.format_fields.size() == 1);
     check_metadata_fields(view.format_fields[0]);
-    REQUIRE(view.format_target_count == 14);
-    check_frame_storage(view.format_targets[1].family == static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+    REQUIRE(view.format_targets.size() == 14);
+    check_frame_storage(view.format_targets[1].family == wormedit::format_family_t::bms);
     check_frame_storage(view.format_targets[1].group_exists);
     check_frame_storage(!view.format_targets[1].chart_scoped);
     check_frame_storage(view.format_targets[11].group_exists);
@@ -259,40 +278,38 @@ TEST_CASE("Metadata arena lists own source text and preserve field and target id
 TEST_CASE("Metadata tags retain exact count and byte rejection boundaries",
           "[sys][frame-arena][metadata]") {
     const auto document = metadata_arena_document();
-    auto model = metadata_arena_model(WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    auto model = metadata_arena_model(wormedit::default_metadata_edit_limits.maximum_search_tags);
     auto accepted = project_metadata_arena(model, document);
     check_frame_storage(accepted.view.metadata.search_tags_editable);
-    check_frame_storage(accepted.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    check_frame_storage(accepted.view.metadata.search_tags.size() == wormedit::default_metadata_edit_limits.maximum_search_tags);
     auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
     tab.search_tags.push_back("overflow");
     auto rejected_count = project_metadata_arena(model, document);
     check_frame_storage(!rejected_count.view.metadata.search_tags_editable);
     check_frame_storage(!rejected_count.view.metadata.song_fields_editable);
-    check_frame_storage(rejected_count.view.metadata.search_tags == nullptr);
-    check_frame_storage(rejected_count.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY + 1);
-    tab.search_tags = {std::string(WORM_UI_METADATA_SEARCH_TAG_BYTES, 'a')};
+    check_frame_storage(rejected_count.view.metadata.search_tags.size() == wormedit::default_metadata_edit_limits.maximum_search_tags + 1);
+    tab.search_tags = {std::string(wormedit::default_metadata_edit_limits.maximum_search_tag_bytes, 'a')};
     auto accepted_bytes = project_metadata_arena(model, document);
     check_frame_storage(accepted_bytes.view.metadata.search_tags_editable);
-    check_frame_storage(accepted_bytes.view.metadata.search_tag_bytes[0] == WORM_UI_METADATA_SEARCH_TAG_BYTES);
+    check_frame_storage(accepted_bytes.view.metadata.search_tags[0].size() == wormedit::default_metadata_edit_limits.maximum_search_tag_bytes);
     tab.search_tags.front().push_back('a');
     auto rejected_bytes = project_metadata_arena(model, document);
     check_frame_storage(!rejected_bytes.view.metadata.search_tags_editable);
-    check_frame_storage(rejected_bytes.view.metadata.search_tags == nullptr);
+
 }
 
-TEST_CASE("Metadata arena exhaustion publishes only complete fields and no partial tag list",
+TEST_CASE("Metadata owned lists remain complete independently of frame arena exhaustion",
           "[sys][frame-arena][metadata]") {
     auto model = metadata_arena_model();
     const auto document = metadata_arena_document();
     frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
     auto rejected = project_metadata_arena(model, document, &tiny);
-    check_frame_storage(!rejected.view.metadata.search_tags_editable);
-    check_frame_storage(rejected.view.metadata.search_tags == nullptr);
-    check_frame_storage(rejected.view.metadata.search_tag_bytes == nullptr);
-    check_frame_storage(rejected.view.metadata.format_fields_truncated);
-    check_frame_storage(rejected.view.metadata.format_field_count == 0);
+    check_frame_storage(rejected.view.metadata.search_tags_editable);
+
+
+    check_frame_storage(rejected.view.metadata.format_fields.size() == 1);
     check_frame_storage(rejected.view.metadata.selected_chart_source_family ==
-        static_cast<std::uint8_t>(wormedit::format_family_t::bms));
+        wormedit::format_family_t::bms);
     auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
     tab.search_tags.clear();
     auto second = tab.format_fields.front();
@@ -300,34 +317,59 @@ TEST_CASE("Metadata arena exhaustion publishes only complete fields and no parti
     tab.format_fields.push_back(std::move(second));
     frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
     auto prefix = project_metadata_arena(model, document, &limited);
-    REQUIRE(prefix.view.metadata.format_field_count == 1);
+    REQUIRE(prefix.view.metadata.format_fields.size() == 2);
     check_frame_storage(prefix.view.metadata.format_field_total_count == 2);
-    check_frame_storage(prefix.view.metadata.format_fields_truncated);
+
     check_metadata_fields(prefix.view.metadata.format_fields[0]);
 }
 
-TEST_CASE("Metadata fields retain 128-entry limit and full source total",
+TEST_CASE("Metadata fields include rows beyond the former storage cap",
           "[sys][frame-arena][metadata]") {
     auto model = metadata_arena_model();
     const auto document = metadata_arena_document();
     auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
-    tab.format_fields.resize(WORM_UI_METADATA_FORMAT_FIELD_CAPACITY, tab.format_fields.front());
+    tab.format_fields.resize(128U, tab.format_fields.front());
     auto accepted = project_metadata_arena(model, document);
-    check_frame_storage(!accepted.view.metadata.format_fields_truncated);
-    check_frame_storage(accepted.view.metadata.format_field_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
+
+    check_frame_storage(accepted.view.metadata.format_fields.size() == 128U);
     tab.format_fields.push_back(tab.format_fields.front());
     auto capped = project_metadata_arena(model, document);
-    check_frame_storage(capped.view.metadata.format_fields_truncated);
-    check_frame_storage(capped.view.metadata.format_field_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
-    check_frame_storage(capped.view.metadata.format_field_total_count == WORM_UI_METADATA_FORMAT_FIELD_CAPACITY + 1);
-    check_metadata_fields(capped.view.metadata.format_fields[WORM_UI_METADATA_FORMAT_FIELD_CAPACITY - 1]);
+
+    check_frame_storage(capped.view.metadata.format_fields.size() == 129U);
+    check_frame_storage(capped.view.metadata.format_field_total_count == 128U + 1);
+    check_metadata_fields(capped.view.metadata.format_fields[128U - 1]);
+}
+
+TEST_CASE("Metadata owned strings retain capacity across warmed refills",
+          "[sys][metadata][steady-state]") {
+    auto model = metadata_arena_model();
+    auto& tab = std::get<wormedit::workspace_metadata_view_t>(model.tab_view);
+    tab.title.assign(80, 't');
+    tab.search_tags[0].assign(300, 's');
+    tab.format_fields[0].name.assign(80, 'n');
+    tab.format_fields[0].value.assign(300, 'v');
+    const auto document = metadata_arena_document();
+    const std::string status = "ready";
+    frame_arena_t arena;
+    frontend_workspace_view_t frame(&arena);
+    frame.refill(model, document, status, {}, false, &arena);
+    const auto* tag = frame.view.metadata.search_tags[0].data();
+    const auto* value = frame.view.metadata.format_fields[0].value.data();
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    frame.refill(model, document, status, {}, false, &arena);
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(frame.view.metadata.search_tags[0] == tab.search_tags[0]);
+    check_frame_storage(frame.view.metadata.search_tags[0].data() == tag);
+    check_frame_storage(frame.view.metadata.format_fields[0].value.data() == value);
 }
 
 TEST_CASE("Metadata arena list storage stays bounded through 1000 dense resets",
           "[sys][frame-arena][metadata]") {
     const auto document = metadata_arena_document();
     const auto smaller = metadata_arena_model(1000);
-    const auto dense = metadata_arena_model(WORM_UI_METADATA_SEARCH_TAG_CAPACITY);
+    const auto dense = metadata_arena_model(wormedit::default_metadata_edit_limits.maximum_search_tags);
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
     auto project = [&](const auto& model) {
         arena.reset();
@@ -348,7 +390,7 @@ TEST_CASE("Metadata arena list storage stays bounded through 1000 dense resets",
         const auto frame = project(dense);
         const auto after = frame_heap_allocation_snapshot();
         exact = exact && frame.view.metadata.search_tags_editable &&
-            frame.view.metadata.search_tag_count == WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+            frame.view.metadata.search_tags.size() == wormedit::default_metadata_edit_limits.maximum_search_tags;
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed;
         allocation_count_independent = allocation_count_independent && after.count - before.count == small_count;
     }
@@ -384,12 +426,12 @@ struct metadata_text_fixture_t {
     auto project(frame_arena_t* arena = nullptr) -> frontend_workspace_view_t {
         frontend_workspace_view_t frame(arena);
         frame.view.metadata.visible = true;
-        frame.view.metadata.chart_id = 1;
+        frame.view.metadata.chart_id = wormedit::chart_id_t{1};
         populate_metadata_view_projection(frame, history, workspace, base, drop, runtime);
         return frame;
     }
     void start_preview() {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_input_chart_id = 1;
         action.compose_input_document_revision = history.document.revision;
         action.compose_resource_asset_id = 8;
@@ -400,13 +442,13 @@ struct metadata_text_fixture_t {
         REQUIRE(runtime.copy_preview_key());
     }
 };
-void check_metadata_text(const WormUiMetadataView& view) {
-    check_frame_storage(std::strcmp(view.project_directory, "/tmp/metadata-arena-project-directory") == 0);
-    check_frame_storage(std::strcmp(view.selected_music_source, "audio/a-long-selected-music-source.wav") == 0);
-    check_frame_storage(std::strcmp(view.dropped_music_path, "/tmp/a-long-dropped-audio-source.wav") == 0);
-    check_frame_storage(std::strcmp(view.dropped_output_relative_path, "exports/a-long-dropped-output.bms") == 0);
-    check_frame_storage(view.selected_music_asset_id == 7);
-    REQUIRE(view.output_group_count == 1);
+void check_metadata_text(const wormedit::ui::metadata_view_t& view) {
+    check_frame_storage(std::strcmp(view.project_directory.c_str(), "/tmp/metadata-arena-project-directory") == 0);
+    check_frame_storage(std::strcmp(view.selected_music_source.c_str(), "audio/a-long-selected-music-source.wav") == 0);
+    check_frame_storage(std::strcmp(view.dropped_music_path.c_str(), "/tmp/a-long-dropped-audio-source.wav") == 0);
+    check_frame_storage(std::strcmp(view.dropped_output_relative_path.c_str(), "exports/a-long-dropped-output.bms") == 0);
+    check_frame_storage(view.selected_music_asset_id == wormedit::asset_id_t{7});
+    REQUIRE(view.output_groups.size() == 1);
     check_frame_storage(std::strcmp(view.output_groups[0].name, "Long retained output group name") == 0);
     check_frame_storage(std::strcmp(view.output_groups[0].relative_output_path, "exports/chart.bms") == 0);
     check_frame_storage(std::strcmp(view.output_groups[0].relative_asset_directory,
@@ -430,30 +472,28 @@ TEST_CASE("Metadata frame text and output groups survive source mutation and pro
     auto moved = std::move(retained);
     moved.rebind_view_pointers();
     check_metadata_text(moved.view.metadata);
-    check_frame_storage(!moved.metadata.text_truncated);
-    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_text,
+    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_text.c_str(),
         "Inspecting destination bytes in the background...") == 0);
-    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_source,
+    check_frame_storage(std::strcmp(moved.view.metadata.copy_preview_source.c_str(),
         "/tmp/arena-copy-preview-source.wav") == 0);
 }
 
-TEST_CASE("Metadata text exhaustion publishes null paths and complete output group prefixes",
+TEST_CASE("Metadata scalar text is owned while unconverted output rows preserve complete prefixes",
           "[sys][frame-arena][metadata-text]") {
     metadata_text_fixture_t fixture;
     fixture.start_preview();
     frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
     auto failed = fixture.project(&tiny);
-    check_frame_storage(failed.metadata.text_truncated);
-    check_frame_storage(failed.view.metadata.project_directory == nullptr);
-    check_frame_storage(failed.view.metadata.selected_music_source == nullptr);
-    check_frame_storage(failed.view.metadata.copy_preview_source == nullptr);
-    check_frame_storage(failed.view.metadata.output_group_count == 0);
-    check_frame_storage(failed.view.metadata.output_groups_truncated);
-    const auto* diagnostic = failed.view.metadata.copy_preview_text;
-    REQUIRE(diagnostic);
+    check_frame_storage(!failed.view.metadata.project_directory.empty());
+    check_frame_storage(!failed.view.metadata.selected_music_source.empty());
+    check_frame_storage(!failed.view.metadata.copy_preview_source.empty());
+    check_frame_storage(failed.view.metadata.output_groups.size() == 0);
+    check_frame_storage(failed.view.metadata.output_group_text_truncated);
+    const auto diagnostic = failed.view.metadata.copy_preview_text;
+    REQUIRE(!diagnostic.empty());
     tiny.reset();
-    check_frame_storage(std::strcmp(diagnostic,
-        "Metadata display text truncated (frame storage limit).") == 0);
+    check_frame_storage(std::strcmp(diagnostic.c_str(),
+        "Inspecting destination bytes in the background...") == 0);
     fixture.runtime.clear_copy_preview_key();
     auto second = fixture.history.document.output_groups.front();
     second.name.assign(4096, 'x');
@@ -461,27 +501,27 @@ TEST_CASE("Metadata text exhaustion publishes null paths and complete output gro
     frame_arena_t limited({.chunk_bytes = 1024, .maximum_bytes = 1024});
     auto prefix = fixture.project(&limited);
     check_metadata_text(prefix.view.metadata);
-    check_frame_storage(prefix.view.metadata.output_groups_truncated);
+    check_frame_storage(prefix.view.metadata.output_group_text_truncated);
 }
 
-TEST_CASE("Metadata output groups retain their capacity and selected chart filtering",
+TEST_CASE("Metadata output groups retain selected chart filtering beyond the former capacity",
           "[sys][frame-arena][metadata-text]") {
     metadata_text_fixture_t fixture;
     auto& groups = fixture.history.document.output_groups;
     groups.resize(WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY, groups.front());
     groups.front().charts = {wormedit::chart_id_t{2}};
     auto accepted = fixture.project();
-    check_frame_storage(accepted.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1);
+    check_frame_storage(accepted.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY - 1);
     check_frame_storage(accepted.view.metadata.output_groups[0].document_index == 1);
-    check_frame_storage(!accepted.view.metadata.output_groups_truncated);
+    check_frame_storage(!accepted.view.metadata.output_group_text_truncated);
     groups.push_back(groups.back());
     auto exact = fixture.project();
-    check_frame_storage(exact.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
-    check_frame_storage(!exact.view.metadata.output_groups_truncated);
+    check_frame_storage(exact.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
+    check_frame_storage(!exact.view.metadata.output_group_text_truncated);
     groups.push_back(groups.back());
     auto truncated = fixture.project();
-    check_frame_storage(truncated.view.metadata.output_group_count == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY);
-    check_frame_storage(truncated.view.metadata.output_groups_truncated);
+    check_frame_storage(truncated.view.metadata.output_groups.size() == WORM_UI_COMPOSE_OUTPUT_GROUP_CAPACITY + 1);
+    check_frame_storage(!truncated.view.metadata.output_group_text_truncated);
 }
 
 TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projections",
@@ -503,7 +543,7 @@ TEST_CASE("Metadata frame text keeps stable warmed storage across 1000 projectio
         const auto frame = fixture.project(&arena);
         const auto finish = frame_heap_allocation_snapshot();
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            !frame.metadata.text_truncated && frame.view.metadata.output_group_count == 1;
+            !frame.view.metadata.output_group_text_truncated && frame.view.metadata.output_groups.size() == 1;
         consistent = consistent && finish.count - start.count == allocations;
     }
     check_frame_storage(stable);
@@ -543,22 +583,22 @@ auto project_setup_recovery(const wormedit::native_project_recovery_controller_v
                             frame_arena_t* arena = nullptr) -> frontend_workspace_view_t {
     return frontend_workspace_view_t::from(setup_arena_model(), {}, "ready", recovery, true, arena);
 }
-void check_recovery_arena_rows(const WormUiWorkspaceView& view) {
-    REQUIRE(view.recovery_candidate_count == 2);
+void check_recovery_arena_rows(const wormedit::ui::workspace_view_t& view) {
+    REQUIRE(view.recovery_candidates.size() == 2);
     const auto& active = view.recovery_candidates[0];
-    check_frame_storage(std::strcmp(active.path_label, "/tmp/a-long-actionable-recovery-path.wormedit") == 0);
-    check_frame_storage(std::strcmp(active.summary, "valid · newer") == 0);
-    check_frame_storage(active.disabled_reason == nullptr);
-    check_frame_storage(active.action_mask == (WORM_UI_RECOVERY_ACTION_INSPECT |
-        WORM_UI_RECOVERY_ACTION_RECOVER | WORM_UI_RECOVERY_ACTION_SAVE_AS |
-        WORM_UI_RECOVERY_ACTION_DISCARD | WORM_UI_RECOVERY_ACTION_QUARANTINE));
+    check_frame_storage(active.path_label == "/tmp/a-long-actionable-recovery-path.wormedit");
+    check_frame_storage(active.summary == "valid · newer");
+    check_frame_storage(active.disabled_reason.empty());
+    using action_t = wormedit::native_project_recovery_action_t;
+    for (const auto action : {action_t::inspect_read_only, action_t::recover_into_session,
+                              action_t::save_as_new_project, action_t::discard, action_t::quarantine})
+        check_frame_storage(active.can(action));
     check_frame_storage(active.scan_generation == 9 && active.row_index == 2 && active.candidate_index == 8);
     const auto& inactive = view.recovery_candidates[1];
-    check_frame_storage(std::strcmp(inactive.summary,
-        "invalid · older · revision 42 · session 0 · recommended recovery") == 0);
-    check_frame_storage(std::strcmp(inactive.disabled_reason,
-        "No safe action is available for this candidate.") == 0);
-    check_frame_storage(inactive.action_mask == 0);
+    check_frame_storage(inactive.summary ==
+        "invalid · older · revision 42 · session 0 · recommended recovery");
+    check_frame_storage(inactive.disabled_reason == "No safe action is available for this candidate.");
+    check_frame_storage(inactive.actions.empty());
     check_frame_storage(inactive.scan_generation == 9 && inactive.row_index == 4 && inactive.candidate_index == 3);
 }
 }
@@ -575,10 +615,10 @@ TEST_CASE("Setup and Recovery arena text preserves source-independent ordering a
     check_frame_storage(moved.view.recovery_has_actionable_candidate);
     check_frame_storage(moved.view.recovery_panel_visible);
     check_frame_storage(!moved.view.recovery_rows_truncated);
-    REQUIRE(moved.view.recovery_diagnostic_count == 2);
-    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[0],
+    REQUIRE(moved.view.recovery_diagnostics.size() == 2);
+    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[0].c_str(),
         "First retained recovery diagnostic (recovery/candidate.wormedit)") == 0);
-    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[1],
+    check_frame_storage(std::strcmp(moved.view.recovery_diagnostics[1].c_str(),
         "Second retained recovery diagnostic") == 0);
 }
 
@@ -591,50 +631,45 @@ TEST_CASE("Recovery arena summaries retain maximum numeric values and disabled a
     active.recovery_session_sequence = std::numeric_limits<std::uint64_t>::max();
     active.available_actions = {wormedit::native_project_recovery_action_t::inspect_read_only};
     const auto frame = project_setup_recovery(recovery);
-    check_frame_storage(std::strcmp(frame.view.recovery_candidates[0].summary,
-        "valid · newer · revision 18446744073709551615 · session 18446744073709551615") == 0);
-    check_frame_storage(std::strcmp(frame.view.recovery_candidates[0].disabled_reason,
-        "Unavailable actions are disabled by the recovery controller's safety checks.") == 0);
-    check_frame_storage(frame.view.recovery_candidates[0].action_mask == WORM_UI_RECOVERY_ACTION_INSPECT);
-    recovery.rows.resize(WORM_UI_RECOVERY_ROW_CAPACITY + 1, active);
-    recovery.diagnostics.resize(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY + 1, recovery.diagnostics.front());
+    check_frame_storage(frame.view.recovery_candidates[0].summary ==
+        "valid · newer · revision 18446744073709551615 · session 18446744073709551615");
+    check_frame_storage(frame.view.recovery_candidates[0].disabled_reason ==
+        "Unavailable actions are disabled by the recovery controller's safety checks.");
+    check_frame_storage(frame.view.recovery_candidates[0].can(
+        wormedit::native_project_recovery_action_t::inspect_read_only));
+    recovery.rows.resize(5, active);
+    recovery.diagnostics.resize(5, recovery.diagnostics.front());
     const auto bounded = project_setup_recovery(recovery);
-    check_frame_storage(bounded.view.recovery_candidate_count == WORM_UI_RECOVERY_ROW_CAPACITY);
-    check_frame_storage(bounded.view.recovery_rows_truncated);
-    check_frame_storage(bounded.view.recovery_diagnostic_count == WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY);
+    check_frame_storage(bounded.view.recovery_candidates.size() == 5);
+    check_frame_storage(!bounded.view.recovery_rows_truncated);
+    check_frame_storage(bounded.view.recovery_diagnostics.size() == 5);
 }
 
-TEST_CASE("Setup and Recovery exhaustion retains immutable notices and only complete rows",
+TEST_CASE("Recovery owns complete rows independently of frame arena exhaustion",
           "[sys][frame-arena][setup-recovery]") {
     const auto recovery = recovery_arena_model();
     frame_arena_t tiny({.chunk_bytes = 8, .maximum_bytes = 8});
-    const auto failed = project_setup_recovery(recovery, &tiny);
-    check_frame_storage(failed.view.recovery_candidate_count == 0);
-    check_frame_storage(failed.view.recovery_rows_truncated);
-    const auto* notice = failed.view.recovery_notice;
-    const auto* diagnostic = failed.view.recovery_diagnostics[0];
-    tiny.reset();
-    check_frame_storage(std::strcmp(notice, "Recovery display text truncated (frame storage limit).") == 0);
-    check_frame_storage(std::strcmp(diagnostic, "Recovery display text truncated (frame storage limit).") == 0);
-    auto prefix_model = recovery_arena_model();
-    prefix_model.rows[0].path_label.assign(4096, 'p');
-    frame_arena_t limited({.chunk_bytes = 512, .maximum_bytes = 512});
-    const auto prefix = project_setup_recovery(prefix_model, &limited);
-    check_frame_storage(prefix.view.recovery_candidate_count == 1);
-    check_frame_storage(prefix.view.recovery_rows_truncated);
-    check_frame_storage(prefix.view.recovery_candidates[0].candidate_index == 8);
+    const auto complete = project_setup_recovery(recovery, &tiny);
+    check_recovery_arena_rows(complete.view);
+    check_frame_storage(!complete.view.recovery_rows_truncated);
+    auto long_model = recovery_arena_model();
+    long_model.rows[0].path_label.assign(4096, 'p');
+    const auto long_rows = project_setup_recovery(long_model, &tiny);
+    REQUIRE(long_rows.view.recovery_candidates.size() == 2);
+    check_frame_storage(!long_rows.view.recovery_rows_truncated);
+    check_frame_storage(long_rows.view.recovery_candidates[1].path_label.size() == 4096);
 }
 
-TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 projections",
+TEST_CASE("Warmed Setup and Recovery refill allocates no heap across 1000 projections",
           "[sys][frame-arena][setup-recovery]") {
     auto recovery = recovery_arena_model();
-    recovery.diagnostics[0].path.clear();
     const auto model = setup_arena_model();
     const wormedit::song_document_t document;
     const std::string status = "ready";
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    auto project = [&] { return frontend_workspace_view_t::from(model, document, status, recovery, true, &arena); };
-    (void)project();
+    frontend_workspace_view_t frame(&arena);
+    auto project = [&] { frame.refill(model, document, status, recovery, true, &arena); };
+    project();
     const auto used = arena.used_bytes();
     const auto committed = arena.committed_bytes();
     bool stable = true;
@@ -642,11 +677,11 @@ TEST_CASE("Warmed Setup and Recovery arena copies allocate no heap across 1000 p
     for (int iteration = 0; iteration < 1000; ++iteration) {
         arena.reset();
         const auto start = frame_heap_allocation_snapshot();
-        const auto frame = project();
+        project();
         const auto finish = frame_heap_allocation_snapshot();
         zero_new = zero_new && finish.count == start.count;
         stable = stable && arena.used_bytes() == used && arena.committed_bytes() == committed &&
-            frame.view.recovery_candidate_count == 2;
+            frame.view.recovery_candidates.size() == 2;
     }
     check_frame_storage(zero_new);
     check_frame_storage(stable);
@@ -1131,17 +1166,21 @@ TEST_CASE("Compose branch storage exhaustion retains complete row and diagnostic
 TEST_CASE("Warmed Compose branch projection remains stable for 1000 arena resets", "[sys][frame-arena][compose-branch]") {
     const auto model = branch_arena_model();
     frame_arena_t arena({.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024});
-    (void)project_branch_arena(model, &arena);
+    const wormedit::song_document_t document;
+    const std::string status = "ready";
+    frontend_workspace_view_t frame(&arena);
+    auto refill = [&] { frame.refill(model, document, status, {}, false, &arena); };
+    refill();
     const auto used = arena.used_bytes(), committed = arena.committed_bytes();
     arena.reset();
     const auto before = frame_heap_allocation_snapshot();
-    (void)project_branch_arena(model, &arena);
+    refill();
     const auto remaining = frame_heap_allocation_snapshot().count - before.count;
     bool stable = true;
     for (int iteration = 0; iteration < 1000; ++iteration) {
         arena.reset();
         const auto start = frame_heap_allocation_snapshot();
-        const auto frame = project_branch_arena(model, &arena);
+        refill();
         stable = stable && frame_heap_allocation_snapshot().count - start.count == remaining &&
             arena.used_bytes() == used && arena.committed_bytes() == committed &&
             frame.view.compose.branch_row_count == 3 && frame.view.compose.branch_choice_count == 3 &&
@@ -1278,6 +1317,35 @@ TEST_CASE("Sound section arena exhaustion preserves count and pointer consistenc
     check_frame_storage(document.resources.front().sound_group == wormedit::sound_group_id_t{9});
 }
 
+TEST_CASE("Audio sound rows reuse query and text storage until the document changes",
+          "[sys][audio][steady-state]") {
+    auto document = compose_resource_document(1);
+    document.resources[0].name.assign(80, 'n');
+    document.resources[0].tags = {std::string(80, 't')};
+    wormedit::workspace_view_t model;
+    model.active_tab = wormedit::workspace_tab_t::audio_slices;
+    model.tab_view = wormedit::workspace_audio_slices_view_t{};
+    const std::string status = "ready";
+    frame_arena_t arena;
+    frontend_workspace_view_t frame(&arena);
+    frame.refill(model, document, status, {}, false, &arena);
+    check_frame_storage(!frame.view.audio_slices.sound_rows.empty());
+    arena.reset();
+    const auto before = frame_heap_allocation_snapshot();
+    frame.refill(model, document, status, {}, false, &arena);
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(frame.view.audio_slices.sound_rows[0].name == document.resources[0].name);
+    document.resources[0].name = "Changed";
+    ++document.revision;
+    frame.refill(model, document, status, {}, false, &arena);
+    check_frame_storage(frame.view.audio_slices.sound_rows[0].name == "Changed");
+    document.resources[0].name = "Reopened";
+    ++frame.query_session_generation;
+    frame.refill(model, document, status, {}, false, &arena);
+    check_frame_storage(frame.view.audio_slices.sound_rows[0].name == "Reopened");
+}
+
 TEST_CASE("Sound usage rows and labels remain arena owned after source changes and move",
           "[sys][frame-arena][sound-usage]") {
     auto document = compose_resource_document(1);
@@ -1293,19 +1361,19 @@ TEST_CASE("Sound usage rows and labels remain arena owned after source changes a
     wormedit::workspace_view_t model;
     model.active_tab = wormedit::workspace_tab_t::audio_slices;
     model.tab_view = wormedit::workspace_audio_slices_view_t{};
-    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, nullptr, dock_sort_t::natural_name, {}, {.selected_project_id = 8, .selected_resource_id = 1, .find_uses_open = true});
-    REQUIRE(frame.view.audio_slices.usage_row_count == 1);
+    auto frame = frontend_workspace_view_t::from(model, document, "ready", {}, false, nullptr, dock_sort_t::natural_name, {}, {.selected_project_id = wormedit::song_id_t{8}, .selected_resource_id = wormedit::resource_id_t{1}, .find_uses_open = true});
+    REQUIRE(frame.view.audio_slices.usage_rows.size() == 1);
     document.charts.front().metadata.name = "Changed";
     document.charts.front().measures.clear();
     auto moved = std::move(frame);
     moved.rebind_view_pointers();
     const auto& view = moved.view.audio_slices;
     check_frame_storage(view.usage_valid);
-    check_frame_storage(view.usage_song_id == 8 && view.usage_document_revision == 11);
+    check_frame_storage(view.usage_song_id == wormedit::song_id_t{8} && view.usage_document_revision == 11);
     check_frame_storage(view.usage_total_count == 1 && !view.usage_rows_truncated);
-    check_frame_storage(view.usage_rows[0].object_id == 60);
-    check_frame_storage(std::strcmp(view.usage_rows[0].chart_label, "Difficulty") == 0);
-    check_frame_storage(std::strcmp(view.usage_rows[0].position_label, "Measure 1, row 120") == 0);
+    check_frame_storage(view.usage_rows[0].object_id == wormedit::object_id_t{60});
+    check_frame_storage(std::strcmp(view.usage_rows[0].chart_label.c_str(), "Difficulty") == 0);
+    check_frame_storage(std::strcmp(view.usage_rows[0].position_label.c_str(), "Measure 1, row 120") == 0);
 }
 
 namespace {
@@ -1430,9 +1498,9 @@ TEST_CASE("Workspace projects every stable new-project catalog identity", "[sys]
 }
 
 namespace {
-void check_playback_rate_catalog_entry(const WormUiKindDescriptorView& actual,
+void check_playback_rate_catalog_entry(const wormedit::ui::kind_descriptor_view_t<wormedit::audio::playback_rate_id_t>& actual,
                                        const wormedit::audio::playback_rate_descriptor_t& expected) {
-    CHECK(actual.id == static_cast<std::uint32_t>(expected.id));
+    CHECK(actual.id == expected.id);
     CHECK(std::string_view{actual.label} == expected.label);
 }
 } // namespace
@@ -1440,8 +1508,8 @@ void check_playback_rate_catalog_entry(const WormUiKindDescriptorView& actual,
 TEST_CASE("Workspace projects playback rate ids and labels from the catalog", "[sys][catalog-wiring]") {
     wormedit::workspace_view_t model;
     auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
-    REQUIRE(frame.view.playback_rates.count == wormedit::audio::playback_rate_catalog.size());
-    for (std::size_t i = 0; i < frame.view.playback_rates.count; ++i)
+    REQUIRE(frame.view.playback_rates.entries.size() == wormedit::audio::playback_rate_catalog.size());
+    for (std::size_t i = 0; i < frame.view.playback_rates.entries.size(); ++i)
         check_playback_rate_catalog_entry(frame.view.playback_rates.entries[i], wormedit::audio::playback_rate_catalog[i]);
 }
 
@@ -1451,12 +1519,12 @@ TEST_CASE("Workspace offers supported BMS encodings with stable ids and language
     std::size_t index = 0;
     for (const auto& encoding : wormedit::bms_text_encodings) {
         if (!encoding.offered || !wormedit::is_bms_text_encoding_supported(encoding.kind)) continue;
-        REQUIRE(index < frame.view.bms_encodings.count);
-        check_frame_storage(frame.view.bms_encodings.entries[index].id == static_cast<std::uint32_t>(encoding.kind));
+        REQUIRE(index < frame.view.bms_encodings.entries.size());
+        check_frame_storage(frame.view.bms_encodings.entries[index].id == encoding.kind);
         check_frame_storage(std::string_view{frame.view.bms_encodings.entries[index].label} == encoding.choice_label);
         ++index;
     }
-    check_frame_storage(index == frame.view.bms_encodings.count);
+    check_frame_storage(index == frame.view.bms_encodings.entries.size());
 }
 
 TEST_CASE("Workspace output families preserve SM SSC presentation and D9 exclusions", "[sys][catalog-wiring]") {
@@ -1466,24 +1534,24 @@ TEST_CASE("Workspace output families preserve SM SSC presentation and D9 exclusi
     std::size_t index = 0;
     for (const auto& family : wormedit::format_families) {
         if (!family.offered_as_output) continue;
-        REQUIRE(index < output.count);
-        check_frame_storage(output.entries[index].id == static_cast<std::uint32_t>(family.kind));
+        REQUIRE(index < output.entries.size());
+        check_frame_storage(output.entries[index].id == family.kind);
         check_frame_storage(std::string_view{output.entries[index].label} == family.output_label);
         ++index;
     }
-    check_frame_storage(index == output.count);
-    check_frame_storage(output.count == 5);
-    check_frame_storage(output.entries[2].id == static_cast<std::uint32_t>(wormedit::format_family_t::stepmania));
+    check_frame_storage(index == output.entries.size());
+    check_frame_storage(output.entries.size() == 5);
+    check_frame_storage(output.entries[2].id == wormedit::format_family_t::stepmania);
     check_frame_storage(std::string_view{output.entries[2].label} == "SM/SSC");
-    check_frame_storage(frame.view.metadata.format_families.count == wormedit::format_families.size());
+    check_frame_storage(frame.view.metadata.format_families.entries.size() == wormedit::format_families.size());
 }
 
 namespace {
 void check_timing_catalog_entry(const WormUiComposeView& view, std::size_t index) {
     const auto& expected = wormedit::timing_lanes[index];
-    check_frame_storage(view.timing_lanes.entries[index].id == static_cast<std::uint32_t>(expected.kind));
+    check_frame_storage(view.timing_lanes.entries[index].id == expected.kind);
     check_frame_storage(std::string_view{view.timing_lanes.entries[index].label} == expected.label);
-    check_frame_storage(view.timing_lane_captions.entries[index].id == static_cast<std::uint32_t>(expected.kind));
+    check_frame_storage(view.timing_lane_captions.entries[index].id == expected.kind);
     check_frame_storage(std::string_view{view.timing_lane_captions.entries[index].label} == expected.short_label);
 }
 }
@@ -1491,14 +1559,14 @@ TEST_CASE("Workspace projects timing and note presentation with catalog identiti
     wormedit::workspace_view_t model;
     const auto frame = frontend_workspace_view_t::from(model, {}, "ready", {}, false, nullptr);
     const auto& view = frame.view.compose;
-    REQUIRE(view.timing_lanes.count == wormedit::timing_lanes.size());
-    REQUIRE(view.timing_lane_captions.count == wormedit::timing_lanes.size());
-    for (std::size_t index = 0; index < view.timing_lanes.count; ++index)
+    REQUIRE(view.timing_lanes.entries.size() == wormedit::timing_lanes.size());
+    REQUIRE(view.timing_lane_captions.entries.size() == wormedit::timing_lanes.size());
+    for (std::size_t index = 0; index < view.timing_lanes.entries.size(); ++index)
         check_timing_catalog_entry(view, index);
-    REQUIRE(view.note_palette.count == wormedit::note_palette_kinds.size());
-    for (std::size_t index = 0; index < view.note_palette.count; ++index) {
+    REQUIRE(view.note_palette.entries.size() == wormedit::note_palette_kinds.size());
+    for (std::size_t index = 0; index < view.note_palette.entries.size(); ++index) {
         const auto kind = wormedit::note_palette_kinds[index];
-        check_frame_storage(view.note_palette.entries[index].id == static_cast<std::uint32_t>(kind));
+        check_frame_storage(view.note_palette.entries[index].id == kind);
         check_frame_storage(std::string_view{view.note_palette.entries[index].label} ==
               wormedit::find_catalog_entry(wormedit::note_kinds, kind)->palette_label);
     }
@@ -1509,4 +1577,242 @@ TEST_CASE("BMS action identities reject unoffered and invalid encodings", "[sys]
     check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::unknown)));
     check_frame_storage(!is_bms_encoding_offered(static_cast<std::uint32_t>(wormedit::text_encoding_t::ascii)));
     check_frame_storage(!is_bms_encoding_offered(std::numeric_limits<std::uint32_t>::max()));
+}
+
+TEST_CASE("notification views refill retained storage without warm allocations",
+          "[notifications][frontend][allocation]") {
+    wormedit::notification_center_t center;
+    center.post(wormedit::notification_severity_t::error, wormedit::notification_source_t::system,
+                std::string(180, 'E'));
+    center.drain_inbox(std::chrono::nanoseconds{0});
+    wormedit::sys::notification_history_runtime_t runtime;
+    runtime.visible = true;
+    wormedit::song_document_t document;
+    wormedit::ui::notification_view_t view;
+    view.refill(center, std::chrono::nanoseconds{0});
+    view.history.refill(runtime, center, document, std::chrono::nanoseconds{0});
+    const auto before = frame_heap_allocation_snapshot();
+    view.reset();
+    view.refill(center, std::chrono::nanoseconds{0});
+    view.history.refill(runtime, center, document, std::chrono::nanoseconds{0});
+    const auto after = frame_heap_allocation_snapshot();
+    CHECK(after.count == before.count);
+    CHECK(after.bytes == before.bytes);
+    REQUIRE(view.toasts.size() == 1);
+    REQUIRE(view.history.rows.size() == 1);
+    CHECK(view.toasts.front().message == view.history.rows.front().message);
+}
+
+TEST_CASE("Warmed retained timing projection preserves storage without heap allocations",
+          "[sys][timing-projection][allocation]") {
+    auto document = metadata_arena_document();
+    document.id = wormedit::song_id_t{1};
+    auto& chart = document.charts.front();
+    chart.divisions_per_standard_measure = 960;
+    chart.measures.push_back({.id = wormedit::measure_id_t{1},
+                              .definition = {{1, 1}, wormedit::meter_t{4, 4}}});
+    auto history = wormedit::document_history_t::from(std::move(document));
+    wormedit::workspace_controller_t workspace;
+    workspace.selected_chart = wormedit::chart_id_t{1};
+    frontend_workspace_view_t flattened;
+    timing_scene_cache_t cache;
+    timing_grid_state_t grid{.supported_denominators = {1, 2, 4, 8}, .active_denominator = 4};
+    populate_timing_view_for_compose(flattened, history, workspace, cache,
+                                    1280, 980, grid, nullptr);
+    const auto* denominators = flattened.view.timing.supported_snap_denominators.data();
+    const auto before = frame_heap_allocation_snapshot();
+    flattened.view.timing.reset();
+    populate_timing_view_for_compose(flattened, history, workspace, cache,
+                                    1280, 980, grid, nullptr);
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(after.bytes == before.bytes);
+    check_frame_storage(flattened.view.timing.supported_snap_denominators.data() == denominators);
+    check_frame_storage(flattened.view.timing.supported_snap_denominators == grid.supported_denominators);
+}
+
+#include "sys/options_runtime.h"
+#include "sys/project_view.h"
+#include "sys/shortcut_rows.h"
+
+TEST_CASE("Project options and shortcut projections reuse warmed nested storage",
+          "[sys][project-options][allocation]") {
+    auto document = metadata_arena_document();
+    document.id = wormedit::song_id_t{1};
+    document.output_groups.push_back({.name = std::string(180, 'g'),
+        .family = wormedit::format_family_t::bms, .charts = {wormedit::chart_id_t{1}},
+        .destination_kind = wormedit::output_destination_kind_t::file,
+        .relative_output_path = "exports/a-long-retained-output-chart.bms"});
+    project_chart_runtime_t project;
+    frontend_workspace_view_t frame;
+    frame.view.setup.visible = true;
+    frame.view.setup.refill(project, document);
+    REQUIRE_FALSE(document.output_groups.empty());
+    project.output_group_previews[0].emplace();
+    project.output_group_previews[0]->files.push_back({
+        .path = std::string(180, 'p'), .bytes = 123});
+    project.output_group_previews[0]->converted.diagnostics.push_back({
+        .severity = wormedit::diagnostic_severity_t::warning, .message = std::string(180, 'w')});
+    project.output_group_plan_paths[0].clear();
+    frame.view.setup.refill(project, document);
+    options_runtime_t options;
+    open_options(options, wormedit::program_preferences_t{});
+    options.draft.audio.osu_skin_directory = std::string(180, 's');
+    frame.view.options.refill(options);
+    wormedit::command_registry_t registry;
+    for (const auto* id : {"test.first", "test.second"}) {
+        REQUIRE(wormedit::register_command(registry, {.definition = {
+            .id = {id}, .display_name = id, .localization_key = id,
+            .category = wormedit::command_category_t::edit,
+            .focus_scope = wormedit::command_focus_scope_t::global,
+            .default_shortcuts = {{.key = wormedit::shortcut_key_t::s}},
+            .enabled = true,
+            .invoke = [](const wormedit::command_invocation_context_t&) {
+                return wormedit::dispatch_outcome_t{.value = true};
+            }}}).value);
+    }
+    shortcut_rows_projection_t shortcuts;
+    shortcuts.refill(registry, wormedit::shortcut_primary_modifier_t::control);
+    frame.view.options.shortcut_rows.assign(shortcuts.rows().begin(), shortcuts.rows().end());
+    const auto* plans = frame.view.setup.output_groups.front().plan_rows.data();
+    const auto before = frame_heap_allocation_snapshot();
+    frame.reset();
+    frame.view.setup.visible = true;
+    frame.view.setup.refill(project, document);
+    frame.view.options.refill(options);
+    shortcuts.refill(registry, wormedit::shortcut_primary_modifier_t::control);
+    frame.view.options.shortcut_rows.assign(shortcuts.rows().begin(), shortcuts.rows().end());
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(after.bytes == before.bytes);
+    REQUIRE(frame.view.setup.output_groups.front().plan_rows.size() == 1);
+    check_frame_storage(frame.view.setup.output_groups.front().plan_rows.data() == plans);
+    check_frame_storage(frame.view.setup.output_groups.front().plan_rows.front().path.size() == 180);
+    check_frame_storage(frame.view.setup.output_groups.front().diagnostics.front().message.size() == 180);
+    REQUIRE(frame.view.options.shortcut_rows.size() == 2);
+    check_frame_storage(frame.view.options.shortcut_rows.front().conflict);
+}
+namespace {
+struct metadata_supplemental_fixture_t : metadata_text_fixture_t {
+    frame_arena_t arena{{.chunk_bytes = 1024 * 1024, .maximum_bytes = 2 * 1024 * 1024}};
+    frontend_workspace_view_t frame{&arena};
+    metadata_supplemental_fixture_t() {
+        base = std::filesystem::path{"/tmp"} / std::string(180, 'p');
+        history.document.audio_assets.front().source_path = std::string(180, 'm') + ".wav";
+        history.document.output_groups.front().relative_output_path = std::string(180, 'o') + ".bms";
+        auto& chart = history.document.charts.front();
+        const auto profile = wormedit::make_bms_7k_profile();
+        chart.source_family = wormedit::format_family_t::bms;
+        chart.lane_layouts.push_back({.id = wormedit::object_id_t{10}, .layout = profile.layout});
+        chart.input_profile = profile.input;
+        std::vector<wormedit::channel_map_replacement_t> replacements;
+        for (const auto& lane : profile.layout.lanes)
+            replacements.push_back({lane.id, lane.bms_channels});
+        drop.channel_map_preview = wormedit::channel_map_proposal_t::propose(history.document,
+            history.document.revision, chart.id, chart.lane_layouts.front().id, replacements);
+        drop.lane_profile_preview = wormedit::lane_migration_proposal_t::propose(history.document,
+            history.document.revision, chart.id, profile);
+        REQUIRE(drop.channel_map_preview->value);
+        REQUIRE(drop.lane_profile_preview->value);
+        start_preview();
+    }
+    void refill() {
+        arena.reset();
+        frame.reset();
+        frame.view.metadata.visible = true;
+        frame.view.metadata.has_chart = true;
+        frame.view.metadata.chart_id = wormedit::chart_id_t{1};
+        populate_metadata_view_projection(frame, history, workspace, base, drop, runtime);
+    }
+    void check_warmed_refill() {
+        const auto before = frame_heap_allocation_snapshot();
+        refill();
+        const auto after = frame_heap_allocation_snapshot();
+        check_frame_storage(after.count == before.count);
+        check_frame_storage(after.bytes == before.bytes);
+    }
+    void check_populated() const {
+        const auto& metadata = frame.view.metadata;
+        check_frame_storage(metadata.project_directory == base.generic_string());
+        check_frame_storage(metadata.selected_music_source ==
+                            history.document.audio_assets.front().source_path.generic_string());
+        check_frame_storage(metadata.output_groups.size() == 1);
+        check_frame_storage(!metadata.copy_preview_source.empty());
+        check_frame_storage(metadata.channel_map_preview_present);
+        check_frame_storage(metadata.lane_profile_preview_present);
+        check_frame_storage(metadata.lane_profile_choices.size() > 1);
+        check_frame_storage(!metadata.channel_map_preview_message.empty());
+        check_frame_storage(!metadata.lane_profile_preview_message.empty());
+    }
+};
+}
+
+TEST_CASE("Populated supplemental metadata reuses warmed paths previews and profile catalog",
+          "[sys][frame-arena][metadata-text][allocation]") {
+    metadata_supplemental_fixture_t fixture;
+    fixture.refill();
+    fixture.refill();
+    fixture.check_warmed_refill();
+    fixture.check_populated();
+    check_frame_storage(fixture.frame.view.metadata.channel_map_preview_valid);
+    check_frame_storage(fixture.frame.view.metadata.lane_profile_preview_valid);
+    check_frame_storage(fixture.frame.view.metadata.channel_map_preview_affected_note_count == 0);
+    check_frame_storage(fixture.frame.view.metadata.channel_map_preview_conflict_count == 0);
+    check_frame_storage(fixture.frame.view.metadata.lane_profile_mapped_note_count == 0);
+    check_frame_storage(fixture.frame.view.metadata.lane_profile_dropped_note_count == 0);
+    check_frame_storage(fixture.frame.view.metadata.lane_profile_collision_count == 0);
+    check_frame_storage(fixture.frame.metadata_projection_cache.lane_targets.build_count() == 1);
+    check_frame_storage(fixture.frame.metadata_projection_cache.channel_summary.build_count() == 1);
+}
+
+TEST_CASE("Supplemental metadata caches invalidate changed paths previews and reopened charts",
+          "[sys][frame-arena][metadata-text]") {
+    metadata_supplemental_fixture_t fixture;
+    fixture.refill();
+    fixture.base /= "changed";
+    fixture.history.document.audio_assets.front().source_path = std::string(190, 'n') + ".wav";
+    auto& group = fixture.history.document.output_groups.front();
+    group.relative_output_path = "different/changed.bms";
+    const auto stamp = wormedit::chart_stamp_t{
+        .document = wormedit::document_stamp_t::from(fixture.history.document),
+        .chart = wormedit::chart_id_t{1}};
+    fixture.drop.channel_map_preview = wormedit::channel_map_proposal_outcome_t{};
+    fixture.drop.channel_map_preview->diagnostics.push_back(wormedit::channel_map_diagnostic_t::from(
+        wormedit::channel_map_issue_t::duplicate_channel, std::string(160, 'd'), stamp, {}));
+    fixture.refill();
+    fixture.check_populated();
+    check_frame_storage(fixture.frame.view.metadata.channel_map_preview_message == std::string(160, 'd'));
+    check_frame_storage(std::string_view{fixture.frame.view.metadata.output_groups.front().relative_output_path}
+                        == "different/changed.bms");
+    fixture.drop.channel_map_preview->diagnostics.front().message = std::string(170, 'e');
+    fixture.history.document.charts.front().lane_layouts.front().layout = wormedit::make_bms_5k_profile().layout;
+    ++fixture.frame.query_session_generation;
+    fixture.refill();
+    check_frame_storage(fixture.frame.view.metadata.channel_map_preview_message == std::string(170, 'e'));
+    check_frame_storage(fixture.frame.metadata_projection_cache.channel_summary.build_count() == 3);
+    check_frame_storage(fixture.frame.metadata_projection_cache.lane_targets.build_count() == 2);
+    check_frame_storage(fixture.frame.view.metadata.lane_profile_current + 1 <
+                        fixture.frame.view.metadata.lane_profile_choices.size());
+    fixture.check_warmed_refill();
+    group.destination_kind = wormedit::output_destination_kind_t::file;
+    fixture.refill();
+    check_frame_storage(std::string_view{fixture.frame.view.metadata.output_groups.front().relative_asset_directory}
+                        == "different/assets");
+    ++fixture.history.document.revision;
+    fixture.refill();
+    check_frame_storage(fixture.frame.metadata_projection_cache.lane_targets.build_count() == 3);
+    fixture.check_warmed_refill();
+}
+
+TEST_CASE("Output suggestions query long profile identities without copying text",
+          "[sys][project-options][allocation]") {
+    wormedit::chart_document_t chart;
+    chart.lane_layouts.emplace_back();
+    chart.lane_layouts.front().layout.profile_id.assign(180, 'p');
+    const auto before = frame_heap_allocation_snapshot();
+    const auto suggestions = wormedit::suggested_output_groups(chart);
+    const auto after = frame_heap_allocation_snapshot();
+    check_frame_storage(suggestions.empty());
+    check_frame_storage(after.count == before.count);
+    check_frame_storage(after.bytes == before.bytes);
 }

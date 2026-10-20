@@ -15,7 +15,7 @@ auto begin_compose_note_label_inline(inline_label_editor_t& editor,
 
 // Stages the commit: APPLY_NOTE_LABEL for text, CLEAR_NOTE_LABEL for an empty field. The captured
 // chart and document revision travel with it so a stale editor applies nothing.
-void stage_note_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+void stage_note_label_inline(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                              const inline_label_editor_t& editor);
 
 // Inspector-list entry points: the same inline editor opens at `anchor` for a bookmark or a beat
@@ -27,5 +27,5 @@ auto begin_compose_bookmark_rename_anchored(inline_label_editor_t& editor,
 auto begin_compose_section_label_inline(inline_label_editor_t& editor,
                                         const WormUiComposeView& view, std::uint64_t section_id,
                                         float anchor_x, float anchor_y) -> bool;
-void stage_section_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+void stage_section_label_inline(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                                 const inline_label_editor_t& editor);

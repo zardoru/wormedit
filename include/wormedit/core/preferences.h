@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/measure.h>
 #include <wormedit/core/atomic_file_storage.h>
 
@@ -38,9 +40,7 @@ struct lane_key_preferences_t {
 
 inline constexpr std::size_t maximum_preferences_bytes = 1024 * 1024;
 inline constexpr std::size_t maximum_preferences_depth = 16;
-inline constexpr std::size_t maximum_external_players = 64;
 inline constexpr std::size_t maximum_field_scheme_overrides = 128;
-inline constexpr std::size_t maximum_preference_string_bytes = 4096;
 
 struct general_preferences_t {
     std::uint32_t autosave_minutes{5};

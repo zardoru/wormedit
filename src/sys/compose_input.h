@@ -30,15 +30,15 @@ auto propose_bmson_bgm_marker(const wormedit::document_history_t& history,
                             wormedit::object_id_t reference, wormedit::local_position_t position,
                             bool restart, wormedit::notification_severity_t* severity = nullptr) -> std::string;
 // Commit frontend geometry after routing input against the displayed frame.
-void refresh_compose_editor_width(const WormUiWorkspaceAction& action,
+void refresh_compose_editor_width(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application);
 // Consumes runtime mix controls even for BGM-only charts without editor interaction state.
-auto dispatch_compose_bgm_mix_inputs(WormUiWorkspaceAction& action,
+auto dispatch_compose_bgm_mix_inputs(wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application,
     const wormedit::notification_sink_t* notifications = nullptr) -> std::string;
-auto dispatch_compose_input_action(WormUiWorkspaceAction& ui_action,
+auto dispatch_compose_input_action(wormedit::ui::workspace_action_t& ui_action,
                                    const compose_input_inputs_t& environment,
                                    wormedit::editor_interaction_state_t& state,
                                    double viewport_delta_seconds, bool post_notifications = true)

@@ -392,7 +392,8 @@ auto apply_batch_chart_metadata_edit(document_history_t& history,
     -> document_command_result_t {
     auto transaction = document_command_transaction_t(history);
     auto& result = transaction.outcome();
-    if (action.charts.empty() || action.charts.size() > 256) return transaction.reject(diagnostic_code_t::invalid_id, "select between 1 and 256 charts");
+    if (action.charts.empty() || action.charts.size() > maximum_batch_chart_metadata_charts)
+        return transaction.reject(diagnostic_code_t::invalid_id, "select between 1 and 256 charts");
     if ((action.author && !is_valid_bounded_text(*action.author, limits.maximum_chart_text_bytes)) ||
         (action.edit_rating && action.rating && action.rating->denominator == 0))
         return transaction.reject(diagnostic_code_t::invalid_id, "batch metadata has invalid author text or rating");

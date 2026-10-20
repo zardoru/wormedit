@@ -24,16 +24,15 @@ auto document_with_revision(std::uint64_t revision, bool with_bpm = true) -> son
 }
 
 // A visible view without a scene must always carry a status the frontend can show.
-void check_unavailable_view_has_status(const WormUiPlayerPreviewView& view) {
+void check_unavailable_view_has_status(const wormedit::ui::player_preview_view_t& view) {
     CHECK(view.visible);
     CHECK_FALSE(view.scene_available);
-    REQUIRE(view.status_text != nullptr);
-    CHECK_FALSE(std::string_view{view.status_text}.empty());
+    CHECK_FALSE(view.status_text.empty());
     CHECK(view.viewport_width_pixels > 0.0);
     CHECK(view.viewport_height_pixels > 0.0);
 }
 
-void populate_visible(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+void populate_visible(sys::player_preview_presenter_t& presenter, wormedit::ui::player_preview_view_t& view,
                       const document_history_t& history, std::optional<chart_id_t> chart) {
     presenter.populate(view, history, chart, true, player_preview_skin_t::mania, 0, 48'000, {});
 }
@@ -45,7 +44,7 @@ TEST_CASE("player preview reports a status when the index cannot be built",
     // A chart without a BPM has no timing, so the index cannot be compiled.
     const auto history = document_history_t::from(document_with_revision(9, false));
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
 
     populate_visible(presenter, view, history, chart_id_t{7});
     check_unavailable_view_has_status(view);
@@ -59,7 +58,7 @@ TEST_CASE("player preview reports a status when no chart is usable",
           "[unit][sys][player-preview]") {
     const auto history = document_history_t::from(document_with_revision(9));
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
 
     populate_visible(presenter, view, history, std::nullopt);
     check_unavailable_view_has_status(view);
@@ -70,10 +69,10 @@ TEST_CASE("player preview reports a status when no chart is usable",
 TEST_CASE("player preview publishes a scene for a valid chart", "[unit][sys][player-preview]") {
     const auto history = document_history_t::from(document_with_revision(9));
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
 
     populate_visible(presenter, view, history, chart_id_t{7});
     CHECK(view.visible);
-    CHECK(view.project_id == 1);
+    CHECK(view.project_id == song_id_t{1});
     CHECK(view.document_revision == 9);
 }

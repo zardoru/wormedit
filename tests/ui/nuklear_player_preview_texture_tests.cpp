@@ -71,13 +71,12 @@ struct texture_fixture_t {
     }
 };
 
-auto uploaded_texture(SDL_Renderer* renderer, WormUiPlayerPreviewView& view,
-                      WormUiPlayerPreviewVisualLayerView& layer) -> SDL_Texture* {
+auto uploaded_texture(SDL_Renderer* renderer, wormedit::ui::player_preview_view_t& view,
+                      wormedit::ui::player_preview_visual_layer_view_t& layer) -> SDL_Texture* {
     nuklear_buffer_t storage;
     nk_command_buffer canvas{};
     nk_command_buffer_init(&canvas, &storage.value, NK_CLIPPING_OFF);
-    view.visual_layers = &layer;
-    view.visual_layer_count = 1;
+    view.visual_layers = {layer};
     const auto result = worm_ui_nuklear_draw_player_preview_visual_layers(
         &canvas, nk_rect(0.0F, 0.0F, 16.0F, 16.0F), renderer, &view);
     REQUIRE(result.drew_image);
@@ -103,25 +102,26 @@ auto render_center_pixel(SDL_Renderer* renderer, SDL_Texture* texture)
     return pixel;
 }
 
-auto solid_bga_layer(WormUiPlayerPreviewVisualKind kind, std::uint64_t resource,
-                     const std::array<std::uint8_t, 4>& pixels) -> WormUiPlayerPreviewVisualLayerView {
-    return {.object_id = resource, .resource_id = resource, .kind = kind,
-        .draw_order = kind == WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO ? 99U : 0U,
+auto solid_bga_layer(wormedit::visual_event_kind_t kind, std::uint64_t resource,
+                     const std::array<std::uint8_t, 4>& pixels) -> wormedit::ui::player_preview_visual_layer_view_t {
+    return {.object_id = wormedit::object_id_t{resource}, .resource_id = wormedit::resource_id_t{resource}, .kind = kind,
+        .draw_order = kind == wormedit::visual_event_kind_t::video ? 99U : 0U,
         .static_image = true, .image_ready = true, .image_content_id = 1,
-        .image_width = 1, .image_height = 1, .rgba_pixels = pixels.data(), .rgba_byte_count = pixels.size()};
+        .image_width = 1, .image_height = 1, .rgba_pixels = pixels};
 }
 
 void require_bga_texture(bool value) { REQUIRE(value); }
 void check_bga_texture(bool value) { CHECK(value); }
 
 auto render_bga_composite(SDL_Renderer* renderer,
-                          std::span<const WormUiPlayerPreviewVisualLayerView> layers)
+                          std::span<const wormedit::ui::player_preview_visual_layer_view_t> layers)
     -> std::array<std::uint8_t, 4> {
     nuklear_buffer_t storage;
     nk_command_buffer canvas{};
     nk_command_buffer_init(&canvas, &storage.value, NK_CLIPPING_OFF);
-    WormUiPlayerPreviewView view{.visual_fit = WORM_UI_VISUAL_FIT_STRETCH,
-        .project_id = 1, .document_revision = 2, .visual_layers = layers.data(), .visual_layer_count = layers.size()};
+    wormedit::ui::player_preview_view_t view{.visual_fit = wormedit::visual_fit_policy_t::stretch,
+        .project_id = wormedit::song_id_t{1}, .document_revision = 2,
+        .visual_layers = {layers.begin(), layers.end()}};
     const auto result = worm_ui_nuklear_draw_player_preview_visual_layers(
         &canvas, nk_rect(0, 0, 16, 16), renderer, &view);
     require_bga_texture(result.failure_count == 0);
@@ -156,9 +156,9 @@ TEST_CASE("BGA composites video base then Layer then Layer 2 regardless of draw 
     texture_fixture_t fixture;
     REQUIRE(fixture.renderer);
     const std::array<std::uint8_t, 4> red{255, 0, 0, 255}, green{0, 255, 0, 255}, blue{0, 0, 255, 255};
-    const std::array layers{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2, 3, blue),
-        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 2, green),
-        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO, 1, red)};
+    const std::array layers{solid_bga_layer(wormedit::visual_event_kind_t::layer2, 3, blue),
+        solid_bga_layer(wormedit::visual_event_kind_t::layer, 2, green),
+        solid_bga_layer(wormedit::visual_event_kind_t::video, 1, red)};
     CHECK(render_bga_composite(fixture.renderer.get(), layers) == blue);
     CHECK(render_bga_composite(fixture.renderer.get(), std::span(layers).subspan(1)) == green);
 }
@@ -167,8 +167,8 @@ TEST_CASE("BGA black key keeps base black opaque and separates same-resource cac
     texture_fixture_t fixture;
     REQUIRE(fixture.renderer);
     const std::array<std::uint8_t, 4> black{0, 0, 0, 255};
-    const std::array base{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND, 4, black)};
-    const std::array overlay{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 4, black)};
+    const std::array base{solid_bga_layer(wormedit::visual_event_kind_t::background, 4, black)};
+    const std::array overlay{solid_bga_layer(wormedit::visual_event_kind_t::layer, 4, black)};
     CHECK(render_bga_composite(fixture.renderer.get(), base) == black);
     CHECK(render_bga_composite(fixture.renderer.get(), overlay) == std::array<std::uint8_t, 4>{0, 0, 255, 255});
     CHECK(render_bga_composite(fixture.renderer.get(), base) == black);
@@ -179,8 +179,8 @@ TEST_CASE("BGA base preserves storyboard draw-order placement", "[bga][texture]"
     texture_fixture_t fixture;
     REQUIRE(fixture.renderer);
     const std::array<std::uint8_t, 4> red{255, 0, 0, 255}, white{255, 255, 255, 255};
-    std::array layers{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND, 7, red),
-        solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_STORYBOARD, 8, white)};
+    std::array layers{solid_bga_layer(wormedit::visual_event_kind_t::background, 7, red),
+        solid_bga_layer(wormedit::visual_event_kind_t::storyboard, 8, white)};
     layers[0].draw_order = 2;
     layers[1].draw_order = 0;
     CHECK(render_bga_composite(fixture.renderer.get(), layers) == red);
@@ -192,13 +192,13 @@ TEST_CASE("BGA layer preserves nonblack alpha and keys only exact RGB black", "[
     texture_fixture_t fixture;
     REQUIRE(fixture.renderer);
     const std::array<std::uint8_t, 4> red_alpha{255, 0, 0, 128}, near_black{0, 0, 1, 255};
-    const std::array alpha_layer{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2, 5, red_alpha)};
+    const std::array alpha_layer{solid_bga_layer(wormedit::visual_event_kind_t::layer2, 5, red_alpha)};
     const auto blended = render_bga_composite(fixture.renderer.get(), alpha_layer);
     check_bga_texture(blended[0] >= 127);
     check_bga_texture(blended[0] <= 128);
     check_bga_texture(blended[2] >= 126);
     check_bga_texture(blended[2] <= 127);
-    const std::array near_layer{solid_bga_layer(WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER, 6, near_black)};
+    const std::array near_layer{solid_bga_layer(wormedit::visual_event_kind_t::layer, 6, near_black)};
     check_bga_texture(render_bga_composite(fixture.renderer.get(), near_layer) == near_black);
     check_bga_texture(red_alpha[3] == 128);
 }
@@ -209,9 +209,9 @@ TEST_CASE("player preview uploads and replaces renderer-backed video textures",
     REQUIRE(fixture.renderer);
     INFO("SDL renderer: " << SDL_GetRendererName(fixture.renderer.get()));
 
-    WormUiPlayerPreviewView view{
-        .visual_fit = WORM_UI_VISUAL_FIT_STRETCH,
-        .project_id = 1,
+    wormedit::ui::player_preview_view_t view{
+        .visual_fit = wormedit::visual_fit_policy_t::stretch,
+        .project_id = wormedit::song_id_t{1},
         .document_revision = 2,
     };
     std::array<std::uint8_t, 2U * 2U * 4U> pixels{};
@@ -219,17 +219,16 @@ TEST_CASE("player preview uploads and replaces renderer-backed video textures",
         pixels[index] = 255;
         pixels[index + 3] = 255;
     }
-    WormUiPlayerPreviewVisualLayerView layer{
-        .object_id = 3,
-        .resource_id = 4,
-        .kind = WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO,
+    wormedit::ui::player_preview_visual_layer_view_t layer{
+        .object_id = wormedit::object_id_t{3},
+        .resource_id = wormedit::resource_id_t{4},
+        .kind = wormedit::visual_event_kind_t::video,
         .video_frame = true,
         .image_ready = true,
         .image_content_id = 1,
         .image_width = 2,
         .image_height = 2,
-        .rgba_pixels = pixels.data(),
-        .rgba_byte_count = pixels.size(),
+        .rgba_pixels = pixels,
     };
 
     auto* red_texture = uploaded_texture(fixture.renderer.get(), view, layer);
@@ -253,45 +252,45 @@ TEST_CASE("player preview uploads and replaces renderer-backed video textures",
 
 TEST_CASE("player preview validates event-linked video diagnostic invariants",
           "[unit][frontend][visual][player-preview][diagnostic]") {
-    WormUiPlayerPreviewVisualLayerView layer{
-        .object_id = 3,
-        .resource_id = 4,
-        .kind = WORM_UI_PLAYER_PREVIEW_VISUAL_VIDEO,
+    wormedit::ui::player_preview_visual_layer_view_t layer{
+        .object_id = wormedit::object_id_t{3},
+        .resource_id = wormedit::resource_id_t{4},
+        .kind = wormedit::visual_event_kind_t::video,
         .video_clock_ready = true,
         .video_elapsed_sample_frames = 5,
         .video_time_numerator = 1,
         .video_time_denominator = 2,
         .video_frame = true,
         .image_pending = true,
-        .diagnostic = WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE,
+        .diagnostic = wormedit::ui::player_preview_visual_diagnostic_t::video_frame_late,
         .diagnostic_text = "late",
     };
-    WormUiPlayerPreviewView view{
+    wormedit::ui::player_preview_view_t view{
         .visible = true,
         .scene_available = true,
-        .skin = WORM_UI_PLAYER_PREVIEW_SKIN_MANIA,
-        .visual_fit = WORM_UI_VISUAL_FIT_CONTAIN,
-        .project_id = 1,
-        .chart_id = 2,
+        .skin = wormedit::player_preview_skin_t::mania,
+        .visual_fit = wormedit::visual_fit_policy_t::contain,
+        .project_id = wormedit::song_id_t{1},
+        .chart_id = wormedit::chart_id_t{2},
         .document_revision = 3,
         .sample_frame = 5,
         .viewport_width_pixels = 300.0,
         .viewport_height_pixels = 420.0,
-        .visual_layers = &layer,
-        .visual_layer_count = 1,
+        .visual_layers = {layer},
     };
 
     CHECK(worm_ui_nuklear_player_preview_view_valid(&view));
-    layer.diagnostic_text = nullptr;
+    auto& projected = view.visual_layers.front();
+    projected.diagnostic_text = {};
     CHECK_FALSE(worm_ui_nuklear_player_preview_view_valid(&view));
-    layer.diagnostic_text = "late";
-    layer.image_pending = false;
+    projected.diagnostic_text = "late";
+    projected.image_pending = false;
     CHECK_FALSE(worm_ui_nuklear_player_preview_view_valid(&view));
-    layer.image_pending = true;
-    layer.video_clock_ready = false;
-    layer.video_elapsed_sample_frames = 0;
-    layer.video_time_numerator = 0;
-    layer.video_time_denominator = 0;
+    projected.image_pending = true;
+    projected.video_clock_ready = false;
+    projected.video_elapsed_sample_frames = 0;
+    projected.video_time_numerator = 0;
+    projected.video_time_denominator = 0;
     CHECK_FALSE(worm_ui_nuklear_player_preview_view_valid(&view));
 }
 
@@ -342,23 +341,20 @@ TEST_CASE("Nuklear converts dense geometry with indices above 65535", "[unit][fr
     nk_free(&context);
 }
 
-TEST_CASE("player preview rejects invalid visual layer ranges before reading them",
+TEST_CASE("player preview rejects an exceeded visual work budget and accepts an empty list",
           "[unit][frontend][visual][player-preview][texture]") {
     nk_command_buffer canvas{};
-    WormUiPlayerPreviewVisualLayerView layer{};
-    WormUiPlayerPreviewView view{.visual_layers = &layer,
-        .visual_layer_count = WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER_CAPACITY + 1};
+    wormedit::ui::player_preview_view_t view;
+    view.visual_layers.resize(wormedit::ui::player_preview_visual_layer_limit + 1);
     const auto oversized = worm_ui_nuklear_draw_player_preview_visual_layers(
         &canvas, nk_rect(0, 0, 16, 16), nullptr, &view);
     CHECK_FALSE(oversized.drew_image);
     CHECK(oversized.failure_count == 1);
     CHECK(oversized.first_failure == worm_ui_nuklear_preview_visual_failure_t::invalid_image);
 
-    view.visual_layers = nullptr;
-    view.visual_layer_count = 1;
-    const auto missing = worm_ui_nuklear_draw_player_preview_visual_layers(
+    view.visual_layers.clear();
+    const auto empty = worm_ui_nuklear_draw_player_preview_visual_layers(
         &canvas, nk_rect(0, 0, 16, 16), nullptr, &view);
-    CHECK_FALSE(missing.drew_image);
-    CHECK(missing.failure_count == 1);
-    CHECK(missing.first_failure == worm_ui_nuklear_preview_visual_failure_t::invalid_image);
+    CHECK_FALSE(empty.drew_image);
+    CHECK(empty.failure_count == 0);
 }

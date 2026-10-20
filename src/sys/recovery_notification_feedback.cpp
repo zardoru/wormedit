@@ -35,7 +35,7 @@ auto first_recovery_diagnostic(
 }
 
 auto recovery_action_request(
-    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
     const std::optional<wormedit::native_project_document_version_t>& scanned_primary_version,
     const wormedit::native_project_recovery_action_target_t& target,
     std::string& error) -> wormedit::native_project_recovery_controller_action_t {
@@ -89,7 +89,7 @@ auto recovery_action_request(
 
 auto load_recovered_document(
     const wormedit::native_project_recovery_action_outcome_t& result,
-    const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
+    const wormedit::ui::workspace_action_t& action, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered,
     const wormedit::notification_sink_t& notifications) -> std::string {
@@ -133,7 +133,7 @@ auto load_recovered_document(
 } // namespace
 
 auto dispatch_recovery_ui_action(
-    const WormUiWorkspaceAction& action, wormedit::native_project_recovery_controller_t& controller,
+    const wormedit::ui::workspace_action_t& action, wormedit::native_project_recovery_controller_t& controller,
     wormedit::document_history_t& history, wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::native_project_document_version_t> scanned_primary_version,
     wormedit::native_project_autosave_loop_t& autosave_loop, bool& recovered,

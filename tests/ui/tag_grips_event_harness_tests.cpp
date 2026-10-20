@@ -43,10 +43,9 @@ struct tag_fixture_t {
         view.song_fields_editable = true;
         view.search_tags_editable = true;
         view.document_revision = 1;
-        view.title = "Song"; view.title_bytes = 4;
-        view.artist = "Artist"; view.artist_bytes = 6;
-        view.search_tags = tags.data(); view.search_tag_bytes = bytes.data();
-        view.search_tag_count = tags.size();
+        view.title = "Song";
+        view.artist = "Artist";
+        view.search_tags.assign(tags.begin(), tags.end());
         (void)harness.frame();
         (void)harness.frame();
     }

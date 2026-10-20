@@ -147,7 +147,7 @@ struct compose_timing_marker_payload_t {
     std::optional<std::uint64_t> row;
     std::uint64_t id{};
     std::size_t source_order{}, storage_order{};
-    WormUiTimingLaneKind lane{};
+    wormedit::timing_lane_kind_t lane{};
     std::string short_label, detail;
     bool fixed_initial{};
 };
@@ -616,19 +616,19 @@ struct application_command_state_t {
         std::vector<wormedit::bga_stroke_target_t> targets;
         std::set<std::pair<uint64_t, uint8_t>> visited;
 
-        [[nodiscard]] static auto propose(const WormUiComposeInputAction& input,
+        [[nodiscard]] static auto propose(const wormedit::ui::compose_input_action_t& input,
             const compose_input_detail::compose_input_context_t& context,
             const wormedit::chart_document_t& chart) -> bga_draw_stroke_outcome_t;
-        [[nodiscard]] static auto is_lane_valid(const WormUiComposeInputAction& input) -> bool;
+        [[nodiscard]] static auto is_lane_valid(const wormedit::ui::compose_input_action_t& input) -> bool;
         [[nodiscard]] auto revise(wormedit::chart_stamp_t captured,
-            const WormUiComposeInputAction& input, const wormedit::chart_document_t& chart,
+            const wormedit::ui::compose_input_action_t& input, const wormedit::chart_document_t& chart,
             const wormedit::editor_interaction_state_t& state, std::optional<uint64_t> row,
             bool is_beginning) -> bga_draw_stroke_outcome_t;
     };
     static_assert(wormedit::staged_proposal<bga_draw_stroke_t,
-        std::tuple<const WormUiComposeInputAction&,
+        std::tuple<const wormedit::ui::compose_input_action_t&,
             const compose_input_detail::compose_input_context_t&, const wormedit::chart_document_t&>,
-        std::tuple<wormedit::chart_stamp_t, const WormUiComposeInputAction&,
+        std::tuple<wormedit::chart_stamp_t, const wormedit::ui::compose_input_action_t&,
             const wormedit::chart_document_t&, const wormedit::editor_interaction_state_t&,
             std::optional<uint64_t>, bool>>);
     struct minimap_start_frame_t {
@@ -794,7 +794,7 @@ inline auto toggle_transport_metronome(application_command_state_t& state) -> bo
     return state.metronome && state.metronome->set_enabled(!state.metronome->settings.enabled);
 }
 inline void apply_timing_settings_action(application_command_state_t& state,
-                                         const WormUiTimingSettingsAction& action) {
+                                         const wormedit::ui::timing_settings_action_t& action) {
     if (action.toggle) state.preferences.timing_settings_visible = !state.preferences.timing_settings_visible;
     if (action.close) state.preferences.timing_settings_visible = false;
     if (!state.metronome) return;
@@ -812,7 +812,7 @@ struct compose_horizontal_layout_t {
     double bga_pane_width_pixels{};
 };
 
-auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double;
+auto compose_surface_height(int window_height, const wormedit::ui::workspace_view_t& view) -> double;
 auto compose_mode_family(const wormedit::lane_layout_t& layout) -> wormedit::editor_mode_family_t;
 auto compose_field_downscroll(const wormedit::chart_document_t& chart) -> bool;
 auto compose_field_downscroll(const wormedit::chart_document_t& chart,
@@ -843,7 +843,7 @@ auto apply_compose_paste(application_command_state_t& application_state,
     wormedit::document_history_t& history, wormedit::editor_interaction_state_t& state,
     std::string& status, wormedit::notification_severity_t* severity = nullptr) -> bool;
 
-auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
+auto toggle_compose_audio_offset_lock(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
     std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,

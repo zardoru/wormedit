@@ -27,7 +27,7 @@ constexpr float row_height = 38.0f;
 struct LayersPanel {
     nk_context* context;
     const WormUiComposeView* view;
-    WormUiWorkspaceAction* action;
+    wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
@@ -427,7 +427,7 @@ void worm_ui_nuklear_dismiss_layer_popup(struct nk_context* context) {
 
 void worm_ui_nuklear_render_compose_layers(struct nk_context* context,
                                            const WormUiComposeView* view,
-                                           WormUiWorkspaceAction* action,
+                                           wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     if (state->layer_editor.layers_panel_chart_id != view->chart_id ||

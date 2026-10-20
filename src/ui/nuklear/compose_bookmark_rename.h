@@ -50,6 +50,6 @@ auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
                                         bool window_focused) -> bool;
 
 void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView& view,
-                                    WormUiWorkspaceAction& action,
+                                    wormedit::ui::workspace_action_t& action,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused);

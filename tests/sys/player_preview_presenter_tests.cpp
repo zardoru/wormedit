@@ -56,7 +56,7 @@ auto document() -> song_document_t {
             .charts = {std::move(chart)}};
 }
 
-auto wait_for_frame(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+auto wait_for_frame(sys::player_preview_presenter_t& presenter, wormedit::ui::player_preview_view_t& view,
                     const document_history_t& history, visual::image_job_t& image_job,
                     visual::video_frame_job_t& video_job, std::uint64_t sample_frame,
                     std::uint64_t different_content_id = 0) -> bool {
@@ -65,7 +65,7 @@ auto wait_for_frame(sys::player_preview_presenter_t& presenter, WormUiPlayerPrev
     while (std::chrono::steady_clock::now() < deadline) {
         presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania,
                            sample_frame, 48'000, directory, image_job, video_job);
-        if (view.visual_layer_count == 1 && view.visual_layers[0].image_ready &&
+        if (view.visual_layers.size() == 1 && view.visual_layers[0].image_ready &&
             view.visual_layers[0].image_content_id != different_content_id) {
             return true;
         }
@@ -74,16 +74,16 @@ auto wait_for_frame(sys::player_preview_presenter_t& presenter, WormUiPlayerPrev
     return false;
 }
 
-auto wait_for_diagnostic(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+auto wait_for_diagnostic(sys::player_preview_presenter_t& presenter, wormedit::ui::player_preview_view_t& view,
                          const document_history_t& history, visual::image_job_t& image_job,
                          visual::video_frame_job_t& video_job,
-                         WormUiPlayerPreviewVisualDiagnostic diagnostic) -> bool {
+                         wormedit::ui::player_preview_visual_diagnostic_t diagnostic) -> bool {
     const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
     while (std::chrono::steady_clock::now() < deadline) {
         presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                            48'000, directory, image_job, video_job);
-        if (view.visual_layer_count == 1 && view.visual_layers[0].diagnostic == diagnostic) {
+        if (view.visual_layers.size() == 1 && view.visual_layers[0].diagnostic == diagnostic) {
             return true;
         }
         std::this_thread::yield();
@@ -116,14 +116,14 @@ struct temporary_bga_image_t {
     }
 };
 
-auto wait_for_bga_layers(sys::player_preview_presenter_t& presenter, WormUiPlayerPreviewView& view,
+auto wait_for_bga_layers(sys::player_preview_presenter_t& presenter, wormedit::ui::player_preview_view_t& view,
                          const document_history_t& history, visual::image_job_t& image_job,
                          visual::video_frame_job_t& video_job, const std::filesystem::path& directory) -> bool {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
     while (std::chrono::steady_clock::now() < deadline) {
         presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania,
                            0, 48'000, directory, image_job, video_job);
-        if (view.visual_layer_count == 2 && std::all_of(view.visual_layers, view.visual_layers + 2,
+        if (view.visual_layers.size() == 2 && std::all_of(view.visual_layers.begin(), view.visual_layers.end(),
             [](const auto& layer) { return layer.image_ready; })) return true;
         std::this_thread::yield();
     }
@@ -152,12 +152,12 @@ TEST_CASE("player preview publishes decoded Layer 2 and base sharing one image",
     task_scheduler_t video_scheduler{1, 2};
     visual::video_frame_job_t video_job{video_cache, video_scheduler};
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
     REQUIRE(wait_for_bga_layers(presenter, view, history, image_job, video_job, image.path.parent_path()));
-    CHECK(view.visual_layers[0].kind == WORM_UI_PLAYER_PREVIEW_VISUAL_BACKGROUND);
-    CHECK(view.visual_layers[1].kind == WORM_UI_PLAYER_PREVIEW_VISUAL_LAYER2);
+    CHECK(view.visual_layers[0].kind == visual_event_kind_t::background);
+    CHECK(view.visual_layers[1].kind == visual_event_kind_t::layer2);
     CHECK(view.visual_layers[1].image_width == 2);
-    CHECK(view.visual_layers[0].rgba_pixels == view.visual_layers[1].rgba_pixels);
+    CHECK(view.visual_layers[0].rgba_pixels.data() == view.visual_layers[1].rgba_pixels.data());
 }
 
 TEST_CASE("player preview asynchronously publishes and replaces exact video frames",
@@ -170,11 +170,11 @@ TEST_CASE("player preview asynchronously publishes and replaces exact video fram
     task_scheduler_t video_scheduler{1, 2};
     visual::video_frame_job_t video_job{video_cache, video_scheduler};
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
 
     REQUIRE(wait_for_frame(presenter, view, history, image_job, video_job, 24'000));
     REQUIRE(view.visual_layers[0].video_frame);
-    REQUIRE(view.visual_layers[0].rgba_byte_count == 16U * 16U * 4U);
+    REQUIRE(view.visual_layers[0].rgba_pixels.size() == 16U * 16U * 4U);
     CHECK(view.visual_layers[0].rgba_pixels[0] > 240);
     CHECK(view.visual_layers[0].rgba_pixels[1] < 16);
     CHECK(view.visual_layers[0].rgba_pixels[2] < 16);
@@ -222,7 +222,7 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
     REQUIRE(blocker);
 
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
     const auto directory = std::filesystem::path{WORMEDIT_FIXTURE_DIR} / "video";
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
@@ -230,11 +230,11 @@ TEST_CASE("player preview links a late video frame diagnostic to its event",
     presenter.populate(view, history, chart_id_t{7}, true, player_preview_skin_t::mania, 24'000,
                        48'000, directory, image_job, video_job);
 
-    REQUIRE(view.visual_layer_count == 1);
+    REQUIRE(view.visual_layers.size() == 1);
     const auto& layer = view.visual_layers[0];
-    CHECK(layer.object_id == 4);
-    CHECK(layer.diagnostic == WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_FRAME_LATE);
-    REQUIRE(layer.diagnostic_text);
+    CHECK(layer.object_id == object_id_t{4});
+    CHECK(layer.diagnostic == wormedit::ui::player_preview_visual_diagnostic_t::video_frame_late);
+    REQUIRE_FALSE(layer.diagnostic_text.empty());
     CHECK(std::string_view{layer.diagnostic_text}.find("presentation deadline") !=
           std::string_view::npos);
 }
@@ -251,15 +251,15 @@ TEST_CASE("player preview publishes an event-linked video decoder failure",
     task_scheduler_t video_scheduler{1, 2};
     visual::video_frame_job_t video_job{video_cache, video_scheduler};
     sys::player_preview_presenter_t presenter;
-    WormUiPlayerPreviewView view{};
+    wormedit::ui::player_preview_view_t view{};
 
     REQUIRE(wait_for_diagnostic(presenter, view, history, image_job, video_job,
-                                WORM_UI_PLAYER_PREVIEW_VISUAL_DIAGNOSTIC_VIDEO_DECODE_FAILED));
-    REQUIRE(view.visual_layer_count == 1);
+                                wormedit::ui::player_preview_visual_diagnostic_t::video_decode_failed));
+    REQUIRE(view.visual_layers.size() == 1);
     const auto& layer = view.visual_layers[0];
-    CHECK(layer.object_id == 4);
+    CHECK(layer.object_id == object_id_t{4});
     CHECK_FALSE(layer.image_pending);
-    REQUIRE(layer.diagnostic_text);
+    REQUIRE_FALSE(layer.diagnostic_text.empty());
     CHECK(std::string_view{layer.diagnostic_text}.find("could not be opened") !=
           std::string_view::npos);
 }

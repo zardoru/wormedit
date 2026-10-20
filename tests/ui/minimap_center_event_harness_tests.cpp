@@ -36,7 +36,7 @@ auto left_button_down(float x, float y) -> SDL_Event {
 void prepare_overview(nuklear_event_harness_t& harness,
                       WormUiComposeWaveformOverviewRowView& row) {
     auto& workspace = harness.view();
-    workspace.project_id = 11;
+    workspace.project_id.value = 11;
     workspace.document_revision = 5;
     auto& compose = workspace.compose;
     compose.project_id = 11;
@@ -56,13 +56,13 @@ void prepare_overview(nuklear_event_harness_t& harness,
 }
 
 auto matches_capture(const worm_ui_nuklear_overview_capture_t& capture,
-                     const WormUiWorkspaceView& workspace, double left, double width) -> bool {
+                     const wormedit::ui::workspace_view_t& workspace, double left, double width) -> bool {
     return worm_ui_nuklear_overview_capture_matches(
         capture, workspace.compose, left, width, true, true);
 }
 
 void check_capture_match(const worm_ui_nuklear_overview_capture_t& capture,
-                         const WormUiWorkspaceView& workspace, double left, double width,
+                         const wormedit::ui::workspace_view_t& workspace, double left, double width,
                          bool expected, std::string_view context,
                          const std::source_location location = std::source_location::current()) {
     INFO(context << " at " << location.file_name() << ':' << location.line());
@@ -126,12 +126,12 @@ TEST_CASE("minimap capture matching invalidates project, chart, revision, asset,
         .window_begin = 0.2,
         .window_end = 0.6,
         .window_capture = true,
-        .project_id = harness.view().project_id};
+        .project_id = harness.view().project_id.value};
     check_capture_match(capture, harness.view(), 20.0, 500.0, true, "valid revision-zero capture");
-    ++harness.view().project_id;
+    ++harness.view().project_id.value;
     ++view.project_id;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "project stamp");
-    harness.view().project_id = capture.project_id;
+    harness.view().project_id.value = capture.project_id;
     view.project_id = capture.project_id;
     view.chart_id += 1;
     check_capture_match(capture, harness.view(), 20.0, 500.0, false, "chart stamp");

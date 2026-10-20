@@ -407,7 +407,7 @@ void populate_bgm_bar(frontend_workspace_view_t& flattened, compose_scene_cache_
 void populate_audio_waveform_views(
     frontend_workspace_view_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
-    int window_width, const WormUiAudioWaveformViewportRequest* viewport_request) {
+    int window_width, const wormedit::ui::audio_waveform_viewport_request_t* viewport_request) {
     if (!flattened.view.audio_slices.visible && !flattened.view.metadata.visible)
         return;
 
@@ -421,14 +421,14 @@ void populate_audio_waveform_views(
     const auto available_width = std::max(window_width - 80, 1);
     const auto pixel_width =
         std::min(static_cast<std::size_t>(available_width),
-                 static_cast<std::size_t>(WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY));
+                 static_cast<std::size_t>(wormedit::ui::audio_waveform_column_limit));
     auto viewport = wormedit::audio::fit_waveform_viewport(
         waveform.total_frames, static_cast<std::uint32_t>(pixel_width));
     if (audio.visible && viewport_request && viewport_request->valid &&
         viewport_request->asset_id == audio.selected_asset_id &&
         viewport_request->total_frames == waveform.total_frames &&
         viewport_request->pixel_width > 0 &&
-        viewport_request->pixel_width <= WORM_UI_AUDIO_WAVEFORM_COLUMN_CAPACITY &&
+        viewport_request->pixel_width <= wormedit::ui::audio_waveform_column_limit &&
         std::isfinite(viewport_request->frames_per_pixel) &&
         viewport_request->frames_per_pixel > 0) {
         viewport = wormedit::audio::clamp_waveform_viewport({
@@ -437,33 +437,31 @@ void populate_audio_waveform_views(
             .frames_per_pixel = viewport_request->frames_per_pixel,
             .pixel_width = viewport_request->pixel_width});
     }
-    const auto projection = wormedit::audio::waveform_view_t::from(waveform, viewport);
-    if (!projection)
+    auto& projection = flattened.audio_waveform_projection;
+    if (!projection.refill(waveform, viewport))
         return;
 
-    flattened.audio.waveform.reserve(projection->columns.size());
-    for (const auto& column : projection->columns) {
-        flattened.audio.waveform.push_back({
+    audio.waveform_columns.resize(projection.columns.size());
+    for (std::size_t i = 0; i < projection.columns.size(); ++i) {
+        const auto& column = projection.columns[i];
+        audio.waveform_columns[i] = {
             .minimum = {column.minimum[0], column.minimum[1]},
             .maximum = {column.maximum[0], column.maximum[1]},
             .absolute_peak = {column.absolute_peak[0], column.absolute_peak[1]},
             .rms = {column.rms[0], column.rms[1]},
-        });
+        };
     }
     audio.waveform_available = true;
     audio.total_frames = waveform.total_frames;
     audio.waveform_begin_frame = viewport.begin_frame;
     audio.waveform_end_frame = wormedit::audio::waveform_viewport_end_frame(viewport);
     audio.sample_rate = waveform.sample_rate;
-    audio.waveform_columns = flattened.audio.waveform.data();
-    audio.waveform_column_count = flattened.audio.waveform.size();
 
     auto& metadata = flattened.view.metadata;
     metadata.audio_waveform_available = true;
     metadata.audio_waveform_total_frames = waveform.total_frames;
     metadata.audio_waveform_sample_rate = waveform.sample_rate;
-    metadata.audio_waveform_columns = flattened.audio.waveform.data();
-    metadata.audio_waveform_column_count = flattened.audio.waveform.size();
+    metadata.audio_waveform_columns.assign(audio.waveform_columns.begin(), audio.waveform_columns.end());
 }
 
 auto populate_compose_waveform_projection(

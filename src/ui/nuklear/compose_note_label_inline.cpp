@@ -39,7 +39,7 @@ auto note_label_inline_bounds(const inline_label_editor_t& editor, struct nk_rec
     return nk_rect(x, y, width, popup_height);
 }
 
-void stage_note_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+void stage_note_label_inline(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                              const inline_label_editor_t& editor) {
     action.compose_action = editor.label[0] == '\0' ? WORM_UI_COMPOSE_ACTION_CLEAR_NOTE_LABEL
                                                     : WORM_UI_COMPOSE_ACTION_APPLY_NOTE_LABEL;
@@ -85,7 +85,7 @@ auto begin_compose_section_label_inline(inline_label_editor_t& editor,
     return true;
 }
 
-void stage_section_label_inline(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+void stage_section_label_inline(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                                 const inline_label_editor_t& editor) {
     action.compose_action = WORM_UI_COMPOSE_ACTION_UPDATE_BEAT_SECTION_LABEL;
     action.compose_section_id = editor.bookmark_id;

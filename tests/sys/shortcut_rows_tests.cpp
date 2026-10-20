@@ -8,7 +8,6 @@
 
 using namespace wormedit;
 using wormedit::sys::capture_shortcut_batch;
-using wormedit::sys::build_shortcut_rows_view;
 using wormedit::sys::shortcut_chord_text;
 using wormedit::sys::shortcut_rows_projection_t;
 
@@ -46,7 +45,7 @@ auto event(std::uint16_t usage, shortcut_modifiers_t modifiers, bool repeat = fa
 }
 
 auto row_conflicts(const shortcut_rows_projection_t& projection, std::size_t index) -> bool {
-    return projection.rows[index].conflict;
+    return projection.rows()[index].conflict;
 }
 
 } // namespace
@@ -71,10 +70,10 @@ auto register_unbound_and_bound(command_registry_t& registry) -> void {
 }
 
 void check_unbound_and_bound_rows(const shortcut_rows_projection_t& projection) {
-    REQUIRE(projection.rows.size() == 2);
-    CHECK(std::string(projection.rows[0].label) == "test.unbound");
-    CHECK(std::string(projection.rows[0].chord) == "Unbound");
-    CHECK(std::string(projection.rows[1].chord) == "Ctrl+S");
+    REQUIRE(projection.rows().size() == 2);
+    CHECK(std::string(projection.rows()[0].label) == "test.unbound");
+    CHECK(std::string(projection.rows()[0].chord) == "Unbound");
+    CHECK(std::string(projection.rows()[1].chord) == "Ctrl+S");
     CHECK_FALSE(row_conflicts(projection, 0));
     CHECK_FALSE(row_conflicts(projection, 1));
 }
@@ -83,7 +82,7 @@ TEST_CASE("projection shows unbound commands and labels from ids", "[sys][shortc
     command_registry_t registry;
     register_unbound_and_bound(registry);
     shortcut_rows_projection_t projection;
-    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
+    projection.refill(registry, shortcut_primary_modifier_t::control);
     check_unbound_and_bound_rows(projection);
 }
 
@@ -96,7 +95,7 @@ auto register_conflicting_trio(command_registry_t& registry) -> void {
 }
 
 void check_conflicting_trio_rows(const shortcut_rows_projection_t& projection) {
-    REQUIRE(projection.rows.size() == 3);
+    REQUIRE(projection.rows().size() == 3);
     CHECK(row_conflicts(projection, 0));
     CHECK(row_conflicts(projection, 1));
     CHECK_FALSE(row_conflicts(projection, 2));
@@ -106,7 +105,7 @@ TEST_CASE("projection flags every command in a conflicting pair", "[sys][shortcu
     command_registry_t registry;
     register_conflicting_trio(registry);
     shortcut_rows_projection_t projection;
-    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
+    projection.refill(registry, shortcut_primary_modifier_t::control);
     check_conflicting_trio_rows(projection);
 }
 
@@ -192,10 +191,10 @@ TEST_CASE("projection shows the primary modifier as the platform key", "[sys][sh
         {shortcut_chord_t{.key = shortcut_key_t::z,
                           .modifiers = static_cast<shortcut_modifiers_t>(primary_modifier() | shift_modifier())}})).value);
     shortcut_rows_projection_t projection;
-    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::control, projection);
-    CHECK(std::string(projection.rows[0].chord) == "Ctrl+Shift+Z");
-    build_shortcut_rows_view(registry, shortcut_primary_modifier_t::meta, projection);
-    CHECK(std::string(projection.rows[0].chord) == "Shift+⌘+Z");
+    projection.refill(registry, shortcut_primary_modifier_t::control);
+    CHECK(std::string(projection.rows()[0].chord) == "Ctrl+Shift+Z");
+    projection.refill(registry, shortcut_primary_modifier_t::meta);
+    CHECK(std::string(projection.rows()[0].chord) == "Shift+⌘+Z");
 }
 
 TEST_CASE("palette shortcut text follows bindings and is empty when unbound", "[sys][shortcut-rows]") {
@@ -209,4 +208,59 @@ TEST_CASE("palette shortcut text follows bindings and is empty when unbound", "[
     registry.commands[0].current_shortcuts = {shortcut_chord_t{.key = shortcut_key_t::q, .modifiers = 0}};
     shortcuts.refresh(registry, shortcut_primary_modifier_t::control);
     CHECK(std::string(shortcuts.text(0)) == "Q");
+}
+
+TEST_CASE("shortcut rows retain every command allowed by the registry",
+          "[sys][shortcut-rows]") {
+    command_registry_t registry;
+    for (std::size_t index = 0; index < maximum_registered_commands; ++index)
+        REQUIRE(register_command(registry, command("test.command." + std::to_string(index), {})).value);
+    shortcut_rows_projection_t projection;
+    projection.refill(registry, shortcut_primary_modifier_t::control);
+    REQUIRE(projection.rows().size() == maximum_registered_commands);
+    CHECK(projection.rows().back().command_id ==
+          "test.command." + std::to_string(maximum_registered_commands - 1));
+    registry.commands.back().current_shortcuts = {{.key = shortcut_key_t::q}};
+    projection.refill(registry, shortcut_primary_modifier_t::control);
+    CHECK(projection.rows().back().chord == "Q");
+}
+
+namespace {
+void check_scope_conflict(const command_registry_t& registry,
+                          shortcut_rows_projection_t& projection, bool expected) {
+    projection.refill(registry, shortcut_primary_modifier_t::control);
+    REQUIRE_FALSE(projection.rows().empty());
+    CHECK(projection.rows().front().conflict == expected);
+}
+} // namespace
+
+TEST_CASE("shortcut conflicts refresh when command scope changes without remapping",
+          "[sys][shortcut-rows]") {
+    command_registry_t registry;
+    const shortcut_chord_t shared{.key = shortcut_key_t::q};
+    REQUIRE(register_command(registry, command("test.first", {shared})).value);
+    REQUIRE(register_command(registry, command("test.second", {shared})).value);
+    shortcut_rows_projection_t projection;
+    check_scope_conflict(registry, projection, true);
+    auto& first = registry.commands.front().definition;
+    auto& second = registry.commands.back().definition;
+    first.focus_scope = command_focus_scope_t::modal;
+    check_scope_conflict(registry, projection, false);
+    second.focus_scope = command_focus_scope_t::modal;
+    first.focus_context = "first-dialog";
+    second.focus_context = "second-dialog";
+    check_scope_conflict(registry, projection, false);
+    second.focus_context = first.focus_context;
+    check_scope_conflict(registry, projection, true);
+    first.focus_scope = second.focus_scope = command_focus_scope_t::lane;
+    first.tab = workspace_tab_t::compose;
+    second.tab = workspace_tab_t::setup;
+    check_scope_conflict(registry, projection, false);
+    second.tab = first.tab;
+    check_scope_conflict(registry, projection, true);
+    first.lane = lane_id_t{1};
+    second.lane = lane_id_t{2};
+    check_scope_conflict(registry, projection, false);
+    second.lane = first.lane;
+    check_scope_conflict(registry, projection, true);
 }

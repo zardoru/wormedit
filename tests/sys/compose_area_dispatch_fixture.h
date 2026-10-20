@@ -7,7 +7,7 @@
 namespace wormedit::sys {
 // Standalone area tests retain their boundary; production borrows the existing dispatch context.
 inline auto
-dispatch_compose_area_action(const WormUiWorkspaceAction& action, document_history_t& history,
+dispatch_compose_area_action(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                              editor_interaction_state_t& state,
                              notification_sink_t notifications = notification_sink_t::muted(),
                              bool timing_locked = false) -> std::optional<std::string> {

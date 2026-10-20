@@ -1,20 +1,16 @@
 #pragma once
 
 #include <wormedit/core/document.h>
+#include <wormedit/core/command.h>
+#include <wormedit/core/keyed_cache.h>
 
 #include <optional>
 #include <vector>
+#include <tuple>
 
 namespace wormedit::sys {
 
-enum class sound_usage_kind_t : std::uint8_t {
-    note,
-    bgm,
-    sound_channel_event,
-    sound_channel_source,
-};
 
-enum class sound_usage_scope_t : std::uint8_t { resource_reference, shared_asset_reference };
 
 struct sound_usage_row_t {
     chart_id_t chart;
@@ -42,6 +38,15 @@ struct sound_usage_view_t {
     // Projects direct resource references and chart uses of the resource's shared audio asset.
     [[nodiscard]] static auto from(const song_document_t& document, resource_id_t resource)
         -> sound_usage_view_t;
+};
+
+class sound_usage_cache_t {
+  public:
+    [[nodiscard]] auto view_for(const song_document_t& document, resource_id_t resource,
+                                std::uint64_t session_generation = 0)
+        -> const sound_usage_view_t&;
+  private:
+    keyed_cache_t<std::tuple<document_stamp_t, resource_id_t, std::uint64_t>, sound_usage_view_t> projection_;
 };
 
 inline constexpr std::size_t sound_usage_projection_limit = 1024;

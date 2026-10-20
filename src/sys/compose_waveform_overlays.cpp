@@ -233,7 +233,7 @@ void append_hold_preview_rects(proposed_grid_context_t& projection) {
 void append_proposed_marker(proposed_grid_context_t& projection,
                             wormedit::local_position_t position, std::uint64_t id,
                             std::size_t source_order, std::size_t storage_order,
-                            WormUiTimingLaneKind lane) {
+                            wormedit::timing_lane_kind_t lane) {
     auto& markers = projection.preview_markers();
     if (markers.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
         projection.view().truncated = true;
@@ -256,7 +256,7 @@ void append_proposed_marker(proposed_grid_context_t& projection,
 
 template <typename Events>
 void append_standard_event_markers(proposed_grid_context_t& projection,
-                                   const Events& events, WormUiTimingLaneKind lane) {
+                                   const Events& events, wormedit::timing_lane_kind_t lane) {
     for (std::size_t index = 0; index < events.size(); ++index)
         append_proposed_marker(projection, events[index].position, events[index].id.value,
                                events[index].provenance.source_order, index, lane);
@@ -266,7 +266,7 @@ void append_pause_markers(proposed_grid_context_t& projection) {
     const auto& pauses = projection.scope.chart_scope.chart.pauses;
     for (std::size_t index = 0; index < pauses.size(); ++index) {
         const auto lane = pauses[index].kind == wormedit::pause_kind_t::stop
-                              ? WORM_UI_TIMING_LANE_STOP : WORM_UI_TIMING_LANE_DELAY;
+                              ? wormedit::timing_lane_kind_t::stop : wormedit::timing_lane_kind_t::delay;
         append_proposed_marker(projection, pauses[index].position, pauses[index].id.value,
                                pauses[index].provenance.source_order, index, lane);
     }
@@ -277,14 +277,14 @@ void append_warp_markers(proposed_grid_context_t& projection) {
     for (std::size_t index = 0; index < warps.size(); ++index)
         append_proposed_marker(projection, warps[index].span.begin, warps[index].id.value,
                                warps[index].provenance.source_order, index,
-                               WORM_UI_TIMING_LANE_WARP);
+                               wormedit::timing_lane_kind_t::warp);
 }
 
 void append_anchor_markers(proposed_grid_context_t& projection) {
     const auto& anchors = projection.scope.chart_scope.chart.timing_anchors;
     for (std::size_t index = 0; index < anchors.size(); ++index)
         append_proposed_marker(projection, anchors[index].position, anchors[index].id.value,
-                               index, index, WORM_UI_TIMING_LANE_ANCHOR);
+                               index, index, wormedit::timing_lane_kind_t::anchor);
 }
 
 void layout_proposed_marker_overlaps(proposed_grid_context_t& projection) {
@@ -314,15 +314,15 @@ void append_proposed_markers(proposed_grid_context_t& projection) {
     auto& markers = projection.preview_markers();
     markers.clear();
     append_standard_event_markers(projection, projection.scope.chart_scope.chart.bpms,
-                                  WORM_UI_TIMING_LANE_BPM);
+                                  wormedit::timing_lane_kind_t::bpm);
     append_standard_event_markers(projection, projection.scope.chart_scope.chart.scrolls,
-                                  WORM_UI_TIMING_LANE_SCROLL);
+                                  wormedit::timing_lane_kind_t::scroll);
     append_standard_event_markers(projection, projection.scope.chart_scope.chart.speeds,
-                                  WORM_UI_TIMING_LANE_SPEED);
+                                  wormedit::timing_lane_kind_t::speed);
     append_pause_markers(projection);
     append_warp_markers(projection);
     append_standard_event_markers(projection, projection.scope.chart_scope.chart.kiai,
-                                  WORM_UI_TIMING_LANE_KIAI);
+                                  wormedit::timing_lane_kind_t::kiai);
     append_anchor_markers(projection);
     layout_proposed_marker_overlaps(projection);
 }

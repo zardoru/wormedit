@@ -78,7 +78,7 @@ void verify_compose_motion_and_wheel(nuklear_event_harness_t& harness) {
 void verify_history_reopens(nuklear_event_harness_t& harness) {
     harness.view().notifications.history.visible = true;
     (void)harness.frame();
-    WormUiTestingRect reopened_bounds{};
+    wormedit::ui::testing_rect_view_t reopened_bounds{};
     CHECK(worm_ui_frontend_window_bounds_for_testing("Notifications", &reopened_bounds));
     CHECK(harness.drawn_text().find("No notifications") != std::string::npos);
 }

@@ -2544,7 +2544,7 @@ auto find_bms_control_node(const wormedit::bms_control_node_t& node, std::uint64
     return nullptr;
 }
 
-auto run_bms_block_command(const WormUiWorkspaceAction& action,
+auto run_bms_block_command(const wormedit::ui::workspace_action_t& action,
                            wormedit::document_history_t& history,
                            const wormedit::chart_document_t& chart, wormedit::chart_id_t chart_id)
     -> compose_action_outcome_t {
@@ -2700,7 +2700,7 @@ auto apply_compose_quantize_settings_action_t::perform(compose_action_context_t&
 }
 
 struct select_compose_quantize_preset_action_t {
-    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
     const quantization_preset_t* selected_preset{};
     auto operator==(const select_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
@@ -2806,7 +2806,7 @@ auto save_compose_quantize_preset_action_t::perform(compose_action_context_t& co
 }
 
 struct delete_compose_quantize_preset_action_t {
-    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
     auto operator==(const delete_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
     auto perform(compose_action_context_t& context) const -> compose_action_outcome_t;
@@ -2856,7 +2856,7 @@ auto delete_compose_quantize_preset_action_t::perform(compose_action_context_t& 
 }
 
 struct rename_compose_quantize_preset_action_t {
-    decltype(WormUiWorkspaceAction::compose_quantize_preset_index) index{};
+    decltype(wormedit::ui::workspace_action_t::compose_quantize_preset_index) index{};
     std::string_view name{};
     auto operator==(const rename_compose_quantize_preset_action_t&) const -> bool = default;
     auto validate(compose_action_context_t& context) -> std::optional<compose_action_outcome_t>;
@@ -3480,7 +3480,7 @@ auto perform_compose_view_action(compose_action_context_t& context) -> compose_a
     return perform_routed_compose_action(context, *route);
 }
 } // namespace compose_action_detail
-auto resource_path_tab_action(const WormUiWorkspaceAction& action,
+auto resource_path_tab_action(const wormedit::ui::workspace_action_t& action,
                               wormedit::workspace_tab_t tab) -> bool {
     if (tab == wormedit::workspace_tab_t::audio_slices)
         return action.compose_action == WORM_UI_COMPOSE_ACTION_AUDITION_SOUND ||
@@ -3494,19 +3494,19 @@ auto resource_path_tab_action(const WormUiWorkspaceAction& action,
          action.compose_action == WORM_UI_COMPOSE_ACTION_COPY_RESOURCE_TO_EXPORT);
 }
 
-auto is_initial_layout_workspace_action(const WormUiWorkspaceAction& action) -> bool {
+auto is_initial_layout_workspace_action(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_LANE_PROFILE ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_APPLY_LANE_LAYOUT_PROFILE;
 }
 
-auto is_chart_only_workspace_action(const WormUiWorkspaceAction& action) -> bool {
+auto is_chart_only_workspace_action(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.compose_action == WORM_UI_COMPOSE_ACTION_SET_BGM_COLUMN_COUNT ||
         is_initial_layout_workspace_action(action) ||
         action.compose_action == WORM_UI_COMPOSE_ACTION_RELINK_SOUND_FALLBACK;
 }
 
 auto temporary_compose_interaction_is_current(
-    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace, bool initial_layout_action) -> bool {
     const auto* selected = selected_chart(history, workspace);
     return workspace.active_tab == wormedit::workspace_tab_t::compose &&
@@ -3525,7 +3525,7 @@ auto temporary_compose_interaction_expired_message(bool initial_layout_action, b
         : wormedit::stale_action_message("BGM column count edit");
 }
 
-auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
+auto dispatch_compose_view_action(const wormedit::ui::workspace_action_t& action,
                                   const compose_action_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state,
                                   double viewport_height, bool metadata_import_busy,
@@ -3564,7 +3564,7 @@ auto dispatch_compose_view_action(const WormUiWorkspaceAction& action,
     return finish_compose_action(context, perform_compose_view_action(context));
 }
 
-auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
+auto dispatch_project_export_action(const wormedit::ui::workspace_action_t& action,
                                     const compose_action_inputs_t& environment,
                                     bool metadata_import_busy) -> bool {
     auto& history = environment.document.history;
@@ -3607,7 +3607,7 @@ auto dispatch_project_export_action(const WormUiWorkspaceAction& action,
 }
 
 namespace {
-auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceAction& action,
+auto dispatch_compose_workspace_action_with_resources(const wormedit::ui::workspace_action_t& action,
                                                       const compose_action_inputs_t& environment,
                                                       double viewport_height,
                                                       bool metadata_import_busy) -> bool {
@@ -3683,7 +3683,7 @@ auto dispatch_compose_workspace_action_with_resources(const WormUiWorkspaceActio
 }
 } // namespace
 
-auto dispatch_compose_workspace_action(const WormUiWorkspaceAction& action,
+auto dispatch_compose_workspace_action(const wormedit::ui::workspace_action_t& action,
                                        const compose_action_inputs_t& environment,
                                        double viewport_height, bool metadata_import_busy) -> bool {
     if (!environment.resources)

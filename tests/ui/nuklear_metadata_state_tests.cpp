@@ -198,7 +198,7 @@ TEST_CASE("Metadata rational action text borrows state arrays after its pointer 
           "[unit][frontend][metadata]") {
     worm_ui_nuklear_reset_metadata_state();
     auto& state = worm_ui_nuklear_metadata_state();
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     {
         const auto wire = state.rational_action_text(-125, 1000);
         action.metadata_audio_offset_numerator_text = wire.numerator;

@@ -95,7 +95,7 @@ auto find_bmson_marker_source(const wormedit::chart_document_t& chart,
 
 namespace wormedit::sys::compose_input_detail {
 template <typename PositionAtComposeY>
-auto dispatch_bmson_razor_input(const WormUiComposeInputAction& input,
+auto dispatch_bmson_razor_input(const wormedit::ui::compose_input_action_t& input,
                                 const wormedit::document_history_t& history,
                                 const wormedit::editor_interaction_state_t& state,
                                 application_command_state_t& application_state, bool gesture_active,
@@ -244,7 +244,7 @@ inline auto input_diagnostic_feedback(const wormedit::diagnostic_list_t& diagnos
         source);
 }
 
-auto dispatch_compose_navigation_input(const WormUiComposeInputAction&,
+auto dispatch_compose_navigation_input(const wormedit::ui::compose_input_action_t&,
                                        wormedit::document_history_t&,
                                        wormedit::editor_interaction_state_t&,
                                        wormedit::editor_navigation_input_controller_t&,
@@ -252,7 +252,7 @@ auto dispatch_compose_navigation_input(const WormUiComposeInputAction&,
                                        const wormedit::notification_sink_t*)
     -> compose_input_family_result_t;
 
-auto dispatch_compose_cursor_input(const WormUiComposeInputAction&, wormedit::document_history_t&,
+auto dispatch_compose_cursor_input(const wormedit::ui::compose_input_action_t&, wormedit::document_history_t&,
                                    wormedit::editor_interaction_state_t&,
                                    application_command_state_t&,
                                    const wormedit::notification_sink_t*)
@@ -262,13 +262,13 @@ void audition_created_note(bool enabled, const wormedit::document_history_t& his
                            const wormedit::editor_interaction_state_t& state,
                            wormedit::editor_interaction_result_t& result);
 
-auto dispatch_compose_lane_key_press(const WormUiComposeInputAction&, wormedit::document_history_t&,
+auto dispatch_compose_lane_key_press(const wormedit::ui::compose_input_action_t&, wormedit::document_history_t&,
                                      wormedit::editor_interaction_state_t&,
                                      application_command_state_t&, compose_scene_cache_t&,
                                      wormedit::editor_interaction_result_t&, std::string_view&)
     -> compose_input_family_result_t;
 
-auto dispatch_compose_lane_key_release(const WormUiComposeInputAction&,
+auto dispatch_compose_lane_key_release(const wormedit::ui::compose_input_action_t&,
                                        wormedit::document_history_t&,
                                        wormedit::workspace_controller_t&,
                                        wormedit::editor_interaction_state_t&,
@@ -276,7 +276,7 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction&,
     -> compose_input_family_result_t;
 
 auto dispatch_compose_keyboard_input(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     wormedit::editor_navigation_input_controller_t& navigation_input,
     application_command_state_t& application, wormedit::editor_interaction_result_t& result,
@@ -284,20 +284,20 @@ auto dispatch_compose_keyboard_input(
     compose_scene_cache_t& scene_cache) -> compose_input_family_result_t;
 
 auto dispatch_compose_navigation_input(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::editor_interaction_state_t& state,
     wormedit::editor_navigation_input_controller_t& navigation_input,
     application_command_state_t& application, const wormedit::notification_sink_t* notifications)
     -> compose_input_family_result_t;
 
-auto dispatch_compose_cursor_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_cursor_input(const wormedit::ui::compose_input_action_t& input,
                                    wormedit::document_history_t& history,
                                    wormedit::editor_interaction_state_t& state,
                                    application_command_state_t& application,
                                    const wormedit::notification_sink_t* notifications)
     -> compose_input_family_result_t;
 
-auto note_paint_sound(const WormUiComposeInputAction& input)
+auto note_paint_sound(const wormedit::ui::compose_input_action_t& input)
     -> std::optional<wormedit::resource_id_t>;
 
 void advance_sound_after_paint_commit(const wormedit::editor_interaction_result_t& result,
@@ -316,7 +316,7 @@ auto compose_stem_geometry(const wormedit::document_history_t& history,
                            std::optional<wormedit::resource_id_t> sound)
     -> std::optional<wormedit::bmson_source_geometry_t>;
 
-auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
+auto dispatch_compose_lane_key_press(const wormedit::ui::compose_input_action_t& input,
                                      wormedit::document_history_t& history,
                                      wormedit::editor_interaction_state_t& state,
                                      application_command_state_t& application,
@@ -327,7 +327,7 @@ auto dispatch_compose_lane_key_press(const WormUiComposeInputAction& input,
 auto lane_key_sound(const wormedit::editor_interaction_state_t& state, std::uint64_t lane)
     -> std::optional<wormedit::resource_id_t>;
 
-auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
+auto dispatch_compose_lane_key_release(const wormedit::ui::compose_input_action_t& input,
                                        wormedit::document_history_t& history,
                                        wormedit::workspace_controller_t& workspace,
                                        wormedit::editor_interaction_state_t& state,
@@ -336,12 +336,12 @@ auto dispatch_compose_lane_key_release(const WormUiComposeInputAction& input,
 
 struct bmson_compose_context_t {
     const compose_input_inputs_t& environment;
-    const WormUiWorkspaceAction& action;
+    const wormedit::ui::workspace_action_t& action;
     wormedit::editor_interaction_state_t& state;
     bool gesture_active;
 };
 
-auto begin_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_context_t& context)
+auto begin_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bmson_compose_context_t& context)
     -> compose_input_family_result_t;
 
 template <typename VirtualBmsRowAt>
@@ -370,7 +370,7 @@ auto virtual_bms_move_target(const wormedit::chart_document_t& chart,
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
-auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_context_t& context,
+auto update_bmson_bgm_move(const wormedit::ui::compose_input_action_t& input, bmson_compose_context_t& context,
                            PositionAtComposeY&& position_at_compose_y,
                            VirtualBmsRowAt&& virtual_bms_row_at) -> compose_input_family_result_t {
     using namespace wormedit;
@@ -429,10 +429,10 @@ auto update_bmson_bgm_move(const WormUiComposeInputAction& input, bmson_compose_
     return feedback;
 }
 
-auto revise_bmson_draft_marker(const WormUiComposeInputAction& input,
+auto revise_bmson_draft_marker(const wormedit::ui::compose_input_action_t& input,
                              bmson_compose_context_t& context) -> compose_input_family_result_t;
 
-auto toggle_bmson_restart(const WormUiComposeInputAction& input, bmson_compose_context_t& context)
+auto toggle_bmson_restart(const wormedit::ui::compose_input_action_t& input, bmson_compose_context_t& context)
     -> compose_input_family_result_t;
 
 auto retained_bmson_source_geometry(const bmson_compose_context_t& context,
@@ -444,13 +444,13 @@ auto bmson_stem_drop_matches(const wormedit::song_document_t& document,
                              const wormedit::chart_document_t& chart, std::uint64_t resource,
                              wormedit::object_id_t channel) -> bool;
 
-auto apply_bmson_draw_point(const WormUiComposeInputAction& input, bmson_compose_context_t& context,
+auto apply_bmson_draw_point(const wormedit::ui::compose_input_action_t& input, bmson_compose_context_t& context,
                             const wormedit::chart_document_t& chart,
                             wormedit::local_position_t position)
     -> wormedit::document_command_result_t;
 
 template <typename PositionAtComposeY>
-auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
+auto insert_bmson_stem_point(const wormedit::ui::compose_input_action_t& input,
                              bmson_compose_context_t& context,
                              PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
@@ -490,8 +490,8 @@ auto insert_bmson_stem_point(const WormUiComposeInputAction& input,
 }
 
 template <typename PositionAtComposeY, typename VirtualBmsRowAt>
-auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
-                                  const WormUiComposeInputAction& input,
+auto dispatch_bmson_compose_input(const wormedit::ui::workspace_action_t& ui_action,
+                                  const wormedit::ui::compose_input_action_t& input,
                                   const compose_input_inputs_t& environment,
                                   wormedit::editor_interaction_state_t& state, bool gesture_active,
                                   PositionAtComposeY&& position_at_compose_y,
@@ -561,13 +561,13 @@ auto dispatch_bmson_compose_input(const WormUiWorkspaceAction& ui_action,
     }
 }
 
-void update_compose_viewport_pointer_input(const WormUiWorkspaceAction& ui_action,
+void update_compose_viewport_pointer_input(const wormedit::ui::workspace_action_t& ui_action,
                                            wormedit::viewport_input_controller_t& viewport_input,
                                            compose_scene_cache_t& scene_cache,
                                            double bgm_pane_width, double bgm_pane_left_pixels,
                                            double viewport_width_pixels);
 
-void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool gesture_active,
+void update_compose_pointer_hover(const wormedit::ui::workspace_action_t& ui_action, bool gesture_active,
                                   const wormedit::chart_document_t* chart,
                                   const wormedit::editor_interaction_view_model_t* interaction_view,
                                   std::uint64_t revision, double field_left_pixels,
@@ -576,7 +576,7 @@ void update_compose_pointer_hover(const WormUiWorkspaceAction& ui_action, bool g
 
 struct compose_input_context_t {
     const compose_input_inputs_t& environment;
-    WormUiWorkspaceAction& ui_action;
+    wormedit::ui::workspace_action_t& ui_action;
     wormedit::editor_interaction_state_t& state;
     const wormedit::notification_sink_t* notifications{};
     const wormedit::chart_document_t* input_chart{};
@@ -601,7 +601,7 @@ struct compose_input_context_t {
                                  .chart = wormedit::chart_id_t{ui_action.compose_input_chart_id}});
     }
 
-    auto is_timing_input_current(const WormUiComposeInputAction& input) const -> bool {
+    auto is_timing_input_current(const wormedit::ui::compose_input_action_t& input) const -> bool {
         const wormedit::chart_stamp_t stamp{
             .document = {.project = environment.document.history.document.id,
                          .revision = input.timing_document_revision},
@@ -759,7 +759,7 @@ struct compose_gesture_context_t {
 };
 
 template <typename HitTargetAt>
-auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
+auto begin_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& input,
                                compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
                                const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
@@ -801,7 +801,7 @@ auto begin_alt_pointer_gesture(const WormUiComposeInputAction& input,
 }
 
 template <typename PositionAtComposeY>
-auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
+auto update_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& input,
                                 compose_gesture_context_t& context,
                                 PositionAtComposeY&& position_at_compose_y,
                                 const compose_scene_cache_t& cache)
@@ -861,7 +861,7 @@ auto update_alt_pointer_gesture(const WormUiComposeInputAction& input,
 }
 
 template <typename HitTargetAt, typename PositionAtComposeY>
-auto dispatch_alt_pointer_gesture(const WormUiComposeInputAction& input,
+auto dispatch_alt_pointer_gesture(const wormedit::ui::compose_input_action_t& input,
                                   compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
                                   PositionAtComposeY&& position_at_compose_y,
                                   const compose_scene_cache_t& cache)
@@ -872,7 +872,7 @@ auto dispatch_alt_pointer_gesture(const WormUiComposeInputAction& input,
 }
 
 template <typename HitTargetAt>
-auto dispatch_note_paint_gesture(const WormUiComposeInputAction& input,
+auto dispatch_note_paint_gesture(const wormedit::ui::compose_input_action_t& input,
                                  compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
                                  const compose_scene_cache_t& cache)
     -> compose_input_family_result_t {
@@ -971,13 +971,13 @@ struct semantic_layer_paint_target_t {
     std::optional<wormedit::object_id_t> bgm_event;
 };
 
-auto apply_semantic_layer_paint_target(const WormUiComposeInputAction& input,
+auto apply_semantic_layer_paint_target(const wormedit::ui::compose_input_action_t& input,
                                        compose_gesture_context_t& context,
                                        const semantic_layer_paint_target_t& target,
                                        const wormedit::semantic_layer_t* layer)
     -> compose_input_family_result_t;
 
-auto handle_empty_semantic_layer_paint_target(const WormUiComposeInputAction& input,
+auto handle_empty_semantic_layer_paint_target(const wormedit::ui::compose_input_action_t& input,
                                               compose_gesture_context_t& context)
     -> compose_input_family_result_t;
 
@@ -985,7 +985,7 @@ auto handle_inactive_semantic_layer_paint(compose_gesture_context_t& context)
     -> compose_input_family_result_t;
 
 template <typename HitTargetAt, typename BgmEventAt>
-auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input,
+auto dispatch_semantic_layer_paint_gesture(const wormedit::ui::compose_input_action_t& input,
                                            compose_gesture_context_t& context,
                                            HitTargetAt&& hit_target_at, BgmEventAt&& bgm_event_at)
     -> compose_input_family_result_t {
@@ -1021,7 +1021,7 @@ auto dispatch_semantic_layer_paint_gesture(const WormUiComposeInputAction& input
 }
 
 template <typename HitTargetAt, typename PositionAtComposeY>
-auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
+auto dispatch_note_move_gesture(const wormedit::ui::compose_input_action_t& input,
                                 compose_gesture_context_t& context, HitTargetAt&& hit_target_at,
                                 PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
@@ -1087,7 +1087,7 @@ auto dispatch_note_move_gesture(const WormUiComposeInputAction& input,
 }
 
 template <typename PositionAtComposeY>
-auto dispatch_bar_line_move_gesture(const WormUiComposeInputAction& input,
+auto dispatch_bar_line_move_gesture(const wormedit::ui::compose_input_action_t& input,
                                     compose_gesture_context_t& context,
                                     PositionAtComposeY&& position_at_compose_y)
     -> compose_input_family_result_t {
@@ -1135,7 +1135,7 @@ auto dispatch_bar_line_move_gesture(const WormUiComposeInputAction& input,
 }
 
 template <typename HitTargetAt, typename BgmEventAt, typename PositionAtComposeY>
-auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_gesture_input(const wormedit::ui::compose_input_action_t& input,
                                     const compose_input_inputs_t& environment,
                                     wormedit::editor_interaction_state_t& state,
                                     wormedit::editor_interaction_result_t& result,
@@ -1175,7 +1175,7 @@ auto dispatch_compose_gesture_input(const WormUiComposeInputAction& input,
 
 template <typename SelectionMode, typename InputSourceY>
 auto dispatch_compose_selection_input(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::editor_interaction_state_t& state, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted, SelectionMode&& selection_mode, InputSourceY&& input_source_y,
     double field_left_pixels, double field_width_pixels,
@@ -1251,27 +1251,27 @@ void capture_fit_onsets(compose_scene_cache_t& cache,
                         const wormedit::editor_interaction_state_t& state,
                         const wormedit::workspace_controller_t& workspace);
 
-auto begin_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_history_t&,
+auto begin_compose_beat_fit(const wormedit::ui::compose_input_action_t&, wormedit::document_history_t&,
                             wormedit::workspace_controller_t&,
                             wormedit::editor_interaction_state_t&, application_command_state_t&,
                             compose_scene_cache_t&, const wormedit::chart_document_t*)
     -> compose_input_family_result_t;
 
-auto fit_onset_target(compose_scene_cache_t& cache, const WormUiComposeInputAction& input,
+auto fit_onset_target(compose_scene_cache_t& cache, const wormedit::ui::compose_input_action_t& input,
                       std::uint64_t frame) -> std::uint64_t;
 
-auto revise_compose_beat_fit(const WormUiComposeInputAction&, wormedit::document_history_t&,
+auto revise_compose_beat_fit(const wormedit::ui::compose_input_action_t&, wormedit::document_history_t&,
                              wormedit::workspace_controller_t&,
                              wormedit::editor_interaction_state_t&, application_command_state_t&,
                              compose_scene_cache_t&) -> compose_input_family_result_t;
 
 auto dispatch_compose_beat_fit_input(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
     const wormedit::chart_document_t* input_chart) -> std::optional<compose_input_family_result_t>;
 
-auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_t& input,
                                        compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
 
@@ -1280,45 +1280,45 @@ auto previous_beat_fit_anchor(const wormedit::chart_document_t& chart,
     -> std::optional<wormedit::local_position_t>;
 
 auto begin_compose_beat_fit(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t;
 
-auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
+auto revise_beat_fit_proposal(const wormedit::ui::compose_input_action_t& input,
                               const wormedit::document_history_t& history,
                               const wormedit::proposal_t<wormedit::beat_interval_drag_t>& drag,
                               std::uint64_t target_frame, bool timing_locked)
     -> wormedit::beat_interval_drag_outcome_t;
 
-auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
+auto revise_compose_beat_fit(const wormedit::ui::compose_input_action_t& input,
                              wormedit::document_history_t& history,
                              wormedit::workspace_controller_t& workspace,
                              wormedit::editor_interaction_state_t& state,
                              application_command_state_t& application_state,
                              compose_scene_cache_t& scene_cache) -> compose_input_family_result_t;
 
-auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto seek_compose_waveform(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                            wormedit::editor_interaction_result_t& result,
                            std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto click_compose_waveform(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto focus_compose_note_label(const WormUiComposeInputAction& input,
+auto focus_compose_note_label(const wormedit::ui::compose_input_action_t& input,
                               compose_input_context_t& context,
                               wormedit::editor_interaction_result_t& result,
                               std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_bgm_event(const WormUiComposeInputAction& input,
+auto select_compose_bgm_event(const wormedit::ui::compose_input_action_t& input,
                               compose_input_context_t& context,
                               wormedit::editor_interaction_result_t& result,
                               std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_timing_marker(const WormUiComposeInputAction& input,
+auto select_compose_timing_marker(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> std::optional<std::string>;
@@ -1328,7 +1328,7 @@ auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_
                         const wormedit::measure_index_t& index, double y_pixels)
     -> std::optional<std::uint64_t>;
 
-auto move_compose_timing_selection(const WormUiComposeInputAction& input,
+auto move_compose_timing_selection(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string>;
@@ -1338,7 +1338,7 @@ auto kiai_manipulated_rows(const wormedit::kiai_span_t* span, std::uint8_t edge,
                            std::uint64_t total_rows)
     -> std::optional<std::pair<std::uint64_t, std::uint64_t>>;
 
-auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted) -> std::optional<std::string>;
 
@@ -1347,7 +1347,7 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
                               const wormedit::speed_event_t& speed, std::uint64_t begin_row,
                               std::uint64_t end_row) -> std::optional<wormedit::rational_t>;
 
-auto edit_compose_speed_span(const WormUiComposeInputAction& input,
+auto edit_compose_speed_span(const wormedit::ui::compose_input_action_t& input,
                              compose_input_context_t& context,
                              wormedit::editor_interaction_result_t& result,
                              std::string_view& accepted) -> std::optional<std::string>;
@@ -1355,7 +1355,7 @@ auto edit_compose_speed_span(const WormUiComposeInputAction& input,
 auto find_input_recipe(const wormedit::chart_document_t& chart, std::uint64_t id)
     -> const wormedit::sv_recipe_t*;
 
-auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
+auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input,
                                compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> std::optional<std::string>;
@@ -1365,7 +1365,7 @@ auto run_compose_recipe_command(std::uint64_t id, std::uint8_t command,
                                 wormedit::editor_interaction_result_t& result,
                                 std::string_view& accepted) -> std::optional<std::string>;
 
-auto place_note_from_pointer(const WormUiComposeInputAction& input,
+auto place_note_from_pointer(const wormedit::ui::compose_input_action_t& input,
                              compose_input_context_t& context, const auto& target,
                              wormedit::editor_interaction_result_t& result,
                              std::string_view& accepted) -> void {
@@ -1392,13 +1392,13 @@ auto place_note_from_pointer(const WormUiComposeInputAction& input,
         context.state.hold() ? "Hold gesture started; click its end row." : "Note placed.";
 }
 
-auto place_virtual_note_from_pointer(const WormUiComposeInputAction& input,
+auto place_virtual_note_from_pointer(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context, std::uint64_t row,
                                      wormedit::lane_id_t lane,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> void;
 
-auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
+auto finish_virtual_hold_at_authored_row(const wormedit::ui::compose_input_action_t& input,
                                          compose_input_context_t& context,
                                          const wormedit::chart_document_t& chart,
                                          wormedit::local_position_t position,
@@ -1408,7 +1408,7 @@ auto finish_virtual_hold_at_authored_row(const WormUiComposeInputAction& input,
 
 auto pointer_click_places_notes(const compose_input_context_t& context) -> bool;
 
-auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
+auto select_or_place_virtual_pointer(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context,
                                      const wormedit::chart_document_t& chart,
                                      const wormedit::editor_interaction_view_model_t& view,
@@ -1416,30 +1416,30 @@ auto select_or_place_virtual_pointer(const WormUiComposeInputAction& input,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_same_sound(const WormUiComposeInputAction& input,
+auto select_compose_same_sound(const wormedit::ui::compose_input_action_t& input,
                                compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_pointer_target(const WormUiComposeInputAction& input,
+auto select_compose_pointer_target(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_bga_event(const WormUiComposeInputAction& input,
+auto select_compose_bga_event(const wormedit::ui::compose_input_action_t& input,
                               compose_input_context_t& context,
                               wormedit::editor_interaction_result_t& result,
                               std::string_view& accepted) -> std::optional<std::string>;
 
-auto move_compose_bga_event(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto move_compose_bga_event(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted) -> std::optional<std::string>;
 
-auto move_compose_bookmark(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto move_compose_bookmark(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                            wormedit::editor_interaction_result_t& result,
                            std::string_view& accepted) -> std::optional<std::string>;
 
-auto select_compose_bms_measure(const WormUiComposeInputAction& input,
+auto select_compose_bms_measure(const wormedit::ui::compose_input_action_t& input,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
                                 std::string_view& accepted) -> std::optional<std::string>;
@@ -1451,7 +1451,7 @@ struct resource_pointer_spec_t {
     bool replacing;
 };
 
-auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_context_t& context)
+auto resource_pointer_spec(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context)
     -> std::variant<resource_pointer_spec_t, std::string>;
 
 struct resource_pointer_target_t {
@@ -1461,7 +1461,7 @@ struct resource_pointer_target_t {
     bool handled_virtual{};
 };
 
-auto resource_pointer_bga_kind(const WormUiComposeInputAction& input,
+auto resource_pointer_bga_kind(const wormedit::ui::compose_input_action_t& input,
                                wormedit::resource_placement_kind_t kind)
     -> std::optional<wormedit::visual_event_kind_t>;
 
@@ -1469,7 +1469,7 @@ void advance_dock_after_placement(const wormedit::song_document_t& document,
                                   wormedit::resource_id_t placed,
                                   wormedit::resource_role_t required_role);
 
-auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
+auto place_virtual_sample_resource(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::editor_interaction_view_model_t& view,
@@ -1477,7 +1477,7 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> bool;
 
-auto place_virtual_source_resource(const WormUiComposeInputAction& input,
+auto place_virtual_source_resource(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::editor_interaction_view_model_t& view,
@@ -1486,24 +1486,24 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
                                    std::string_view& accepted) -> bool;
 
 auto resolve_resource_pointer_target(
-    const WormUiComposeInputAction& input, compose_input_context_t& context,
+    const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
     const wormedit::chart_document_t& chart, const wormedit::editor_interaction_view_model_t& view,
     const resource_pointer_spec_t& spec, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> std::variant<resource_pointer_target_t, std::string>;
 
-auto replacement_target_for_resource(const WormUiComposeInputAction& input,
+auto replacement_target_for_resource(const wormedit::ui::compose_input_action_t& input,
                                      const wormedit::chart_document_t& chart,
                                      const resource_pointer_spec_t& spec,
                                      wormedit::local_position_t position,
                                      const resource_pointer_target_t& pointer)
     -> std::variant<wormedit::editor_selection_object_t, std::string>;
 
-auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
+auto dispatch_resource_pointer(const wormedit::ui::compose_input_action_t& input,
                                compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> compose_input_family_result_t;
 
-auto dispatch_compose_undo_redo(const WormUiComposeInputAction& input,
+auto dispatch_compose_undo_redo(const wormedit::ui::compose_input_action_t& input,
                                 compose_input_context_t& context) -> compose_input_family_result_t;
 
 auto retire_interrupted_compose_input(wormedit::document_history_t& history,
@@ -1522,24 +1522,24 @@ auto compose_input_rejection(std::string message,
                              const wormedit::editor_interaction_result_t& result)
     -> compose_input_family_result_t;
 
-auto reveal_compose_bga_lane_input(const WormUiComposeInputAction& input,
+auto reveal_compose_bga_lane_input(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> compose_input_family_result_t;
 
-auto dispatch_timing_lane_area_input(const WormUiComposeInputAction& input,
+auto dispatch_timing_lane_area_input(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto dispatch_compose_bga_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_bga_input(const wormedit::ui::compose_input_action_t& input,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
                                 std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto dispatch_unhandled_compose_input(const WormUiComposeInputAction& input,
+auto dispatch_unhandled_compose_input(const wormedit::ui::compose_input_action_t& input,
                                       compose_input_context_t& context,
                                       wormedit::editor_interaction_result_t& result,
                                       std::string_view& accepted) -> compose_input_family_result_t;
@@ -1549,61 +1549,61 @@ auto compose_input_edits_notes(WormUiComposeInputKind kind) -> bool;
 auto compose_input_notification_source(WormUiComposeInputKind kind)
     -> wormedit::notification_source_t;
 
-auto input_result_severity(const WormUiComposeInputAction& input,
+auto input_result_severity(const wormedit::ui::compose_input_action_t& input,
                            const wormedit::editor_interaction_result_t& result)
     -> wormedit::notification_severity_t;
 
-auto dispatch_note_to_bgm_input(const WormUiComposeInputAction& input,
+auto dispatch_note_to_bgm_input(const wormedit::ui::compose_input_action_t& input,
                                 compose_input_context_t& context,
                                 wormedit::editor_interaction_result_t& result,
                                 std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto lane_key_places_inside_warp(const WormUiComposeInputAction& input,
+auto lane_key_places_inside_warp(const wormedit::ui::compose_input_action_t& input,
                                  const compose_input_context_t& context) -> bool;
 
-auto dispatch_compose_input_families(const WormUiComposeInputAction& input,
+auto dispatch_compose_input_families(const wormedit::ui::compose_input_action_t& input,
                                      compose_input_context_t& context,
                                      wormedit::editor_interaction_result_t& result,
                                      std::string_view& accepted) -> compose_input_family_result_t;
 
-auto dispatch_compose_paste_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_paste_input(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t>;
 
-auto bga_draw_row(const WormUiComposeInputAction& input, const compose_input_context_t& context,
+auto bga_draw_row(const wormedit::ui::compose_input_action_t& input, const compose_input_context_t& context,
                   const wormedit::chart_document_t& chart, const wormedit::measure_index_t& index)
     -> std::optional<uint64_t>;
 
-auto begin_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto begin_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                     const wormedit::chart_document_t& chart) -> bool;
 
 auto apply_bgm_draw_stroke(wormedit::document_command_transaction_t& transaction,
                            const application_command_state_t::bga_draw_stroke_proposal_t& stroke,
                            uint64_t lane) -> wormedit::document_command_result_t;
 
-auto apply_bga_draw(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto apply_bga_draw(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                      wormedit::editor_interaction_result_t& result,
                      wormedit::document_command_transaction_t& transaction) -> void;
 
 
 auto bga_draw_stop(std::string_view text) -> compose_input_family_result_t;
 
-auto dispatch_bga_draw_input(const WormUiComposeInputAction& input,
+auto dispatch_bga_draw_input(const wormedit::ui::compose_input_action_t& input,
                              compose_input_context_t& context,
                              wormedit::editor_interaction_result_t& result,
                              std::string_view& accepted)
     -> std::optional<compose_input_family_result_t>;
 
-auto select_lane_key_without_selection(const WormUiComposeInputAction& input,
+auto select_lane_key_without_selection(const wormedit::ui::compose_input_action_t& input,
                                        const compose_input_context_t& context) -> bool;
 
-auto dispatch_compose_input_event(const WormUiComposeInputAction& input,
+auto dispatch_compose_input_event(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> compose_input_family_result_t;
 
-auto pointer_placement_keeps_cursor(const WormUiComposeInputAction& input,
+auto pointer_placement_keeps_cursor(const wormedit::ui::compose_input_action_t& input,
                                     const wormedit::editor_interaction_result_t& result) -> bool;
 
 void restore_pointer_placement_cursor(compose_input_context_t& context,
@@ -1616,19 +1616,19 @@ struct compose_input_step_t {
     std::string status;
 };
 
-auto process_compose_input_result(const WormUiComposeInputAction& input,
+auto process_compose_input_result(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context,
                                   compose_input_family_result_t&& dispatched,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view accepted) -> compose_input_step_t;
 
-auto dispatch_compose_input_with_travel(const WormUiComposeInputAction& input,
+auto dispatch_compose_input_with_travel(const wormedit::ui::compose_input_action_t& input,
                                         compose_input_context_t& context,
                                         wormedit::editor_interaction_result_t& result,
                                         std::string_view& accepted)
     -> compose_input_family_result_t;
 
-void finish_interrupted_compose_travel(const WormUiComposeInputAction& input,
+void finish_interrupted_compose_travel(const wormedit::ui::compose_input_action_t& input,
                                        compose_input_context_t& context);
 
 auto dispatch_compose_input_batch(compose_input_context_t& context) -> std::string;
@@ -1641,7 +1641,7 @@ void apply_compose_viewport_scroll(const wormedit::viewport_scroll_action_t& scr
 void apply_compose_viewport_actions(const wormedit::viewport_action_batch_t& actions,
                                     compose_input_context_t& context, std::string& status);
 
-void apply_compose_pinch_zoom(const WormUiComposeViewportInput& input,
+void apply_compose_pinch_zoom(const wormedit::ui::compose_viewport_input_t& input,
                               compose_input_context_t& context, std::string& status);
 
 auto dispatch_compose_viewport_batch(compose_input_context_t& context,
@@ -1653,10 +1653,10 @@ void reset_compose_autoscroll_if_idle(compose_input_context_t& context);
 } // namespace wormedit::sys::compose_input_detail
 
 namespace wormedit::sys {
-auto consume_minimap_preferences(WormUiWorkspaceAction& action,
+auto consume_minimap_preferences(wormedit::ui::workspace_action_t& action,
                                  application_command_state_t& application) -> bool;
 
-auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
+auto dispatch_compose_input_action_impl(wormedit::ui::workspace_action_t& ui_action,
                                         const compose_input_inputs_t& environment,
                                         wormedit::editor_interaction_state_t& state,
                                         double viewport_delta_seconds,
@@ -1666,8 +1666,8 @@ auto dispatch_compose_input_action_impl(WormUiWorkspaceAction& ui_action,
 } // namespace wormedit::sys
 
 namespace wormedit::sys::compose_input_detail {
-auto dispatch_bgm_mix_toggle(const WormUiComposeInputAction& input,
-                             const WormUiWorkspaceAction& action,
+auto dispatch_bgm_mix_toggle(const wormedit::ui::compose_input_action_t& input,
+                             const wormedit::ui::workspace_action_t& action,
                              const wormedit::document_history_t& history,
                              const wormedit::workspace_controller_t& workspace,
                              application_command_state_t& application, bool& accepted)

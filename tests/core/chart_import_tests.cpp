@@ -212,14 +212,14 @@ TEST_CASE("Chart import session reads a file through the opener, previews, and c
     REQUIRE(session.error.empty());
     // One difficulty in the file: it is ticked for the user.
     REQUIRE(session.selected.size() == 1);
-    auto view = sys::chart_import_view(session, history.document.revision);
+    auto view = ui::chart_import_view_t::from(session, history.document.revision);
     CHECK(view.visible);
     CHECK(view.can_import);
-    CHECK(view.row_count == 1);
+    CHECK(view.rows.size() == 1);
     CHECK(std::string(view.summary).find("reused") != std::string::npos);
-    CHECK(view.note_count >= 1);
+    CHECK(view.notes.size() >= 1);
     sys::chart_import_toggle(session, session.source->charts.front().id, history.document, scratch.root / "project");
-    CHECK_FALSE(sys::chart_import_view(session, history.document.revision).can_import);
+    CHECK_FALSE(ui::chart_import_view_t::from(session, history.document.revision).can_import);
     sys::chart_import_toggle(session, session.source->charts.front().id, history.document, scratch.root / "project");
     const auto result = sys::chart_import_confirm(session, history, history.document.revision, scratch.root / "project");
     REQUIRE(result.command.applied);
@@ -238,7 +238,7 @@ TEST_CASE("Chart import session reports unreadable files and keeps the project u
     sys::chart_import_begin(session);
     sys::chart_import_load(session, scratch.root / "source" / "missing.sm", history.document, scratch.root / "project");
     CHECK_FALSE(session.error.empty());
-    CHECK_FALSE(sys::chart_import_view(session, revision).can_import);
+    CHECK_FALSE(ui::chart_import_view_t::from(session, revision).can_import);
     sys::chart_import_load(session, scratch.root / "source" / "readme.txt", history.document, scratch.root / "project");
     CHECK_FALSE(session.error.empty());
     const auto result = sys::chart_import_confirm(session, history, revision, scratch.root / "project");

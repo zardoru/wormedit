@@ -20,7 +20,7 @@ void expect_options_notification(const options_runtime_t& runtime,
     CHECK(runtime.notification->message == message);
 }
 auto action(const options_runtime_t& r, WormUiOptionsActionKind kind,
-    WormUiOptionsCategory category = WORM_UI_OPTIONS_GENERAL) -> WormUiOptionsAction {
+    WormUiOptionsCategory category = WORM_UI_OPTIONS_GENERAL) -> wormedit::ui::options_action_t {
     return {.kind = kind, .revision = r.revision, .category = category};
 }
 void select(options_runtime_t& r, program_preferences_runtime_t& p, WormUiOptionsCategory category) {
@@ -54,7 +54,7 @@ TEST_CASE("Options opening and category switching retain isolated drafts", "[opt
     select(r, program, WORM_UI_OPTIONS_AUDIO);
     select(r, program, WORM_UI_OPTIONS_GENERAL);
     expect_options(r.draft.general.autosave_minutes == 12);
-    const auto view = options_view(r);
+    const auto view = wormedit::ui::options_view_t::from(r);
     expect_options(view.changed && view.can_apply && view.autosave_minutes == 12);
 }
 TEST_CASE("Options validates individual draft fields and stale actions atomically", "[options]") {
@@ -65,8 +65,8 @@ TEST_CASE("Options validates individual draft fields and stale actions atomicall
     auto candidate = r.draft;
     candidate.general.autosave_minutes = 0;
     expect_options(edit_options_draft(r, old_revision, candidate));
-    const auto view = options_view(r);
-    expect_options(!view.can_apply && view.diagnostic_count == 1);
+    const auto view = wormedit::ui::options_view_t::from(r);
+    expect_options(!view.can_apply && view.diagnostics.size() == 1);
     expect_options(view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_AUTOSAVE);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options_notification(r, notification_severity_t::warning,
@@ -119,7 +119,7 @@ TEST_CASE("Options conflicts require Revert and defaults remain draft only", "[o
     expect_options(program.preferences.general.autosave_minutes == 17 && !r.status.empty());
     (void)apply_options_action(r, program, action(r, WORM_UI_OPTIONS_REVERT));
     expect_options(r.draft.general.autosave_minutes == 17);
-    expect_options(!options_view(r).changed);
+    expect_options(!wormedit::ui::options_view_t::from(r).changed);
     (void)apply_options_action(r, program, action(r, WORM_UI_OPTIONS_CLOSE));
     program.preferences.general.autosave_minutes = 19;
     open_options(r, program.preferences);
@@ -140,7 +140,7 @@ TEST_CASE("Options no-op skips publication and publication failure keeps accepte
     expect_options(edit_options_draft(r, r.revision, candidate));
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.general.autosave_minutes == 12);
-    expect_options(!options_view(r).changed && r.status.find("saving failed") != std::string::npos);
+    expect_options(!wormedit::ui::options_view_t::from(r).changed && r.status.find("saving failed") != std::string::npos);
     expect_options_notification(r, notification_severity_t::error, r.status);
     expect_options(std::filesystem::is_directory(target));
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_NONE)));
@@ -164,8 +164,8 @@ TEST_CASE("Options page validation catches unsupported rates paths scales and pl
         candidate.display.ui_scale_percent = 99;
         candidate.players.selected = 999;
         expect_options(edit_options_draft(r, r.revision, candidate));
-        const auto view = options_view(r);
-        expect_options(!view.can_apply && view.diagnostic_count == 1 && view.diagnostics[0].field == field);
+        const auto view = wormedit::ui::options_view_t::from(r);
+        expect_options(!view.can_apply && view.diagnostics.size() == 1 && view.diagnostics[0].field == field);
     }
 }
 
@@ -177,13 +177,13 @@ TEST_CASE("Options oversized invalid text rejects the active page before prefere
     auto candidate = r.draft;
     candidate.display.theme = std::string(maximum_preference_string_bytes + 1, 'x');
     expect_options(edit_options_draft(r, r.revision, candidate));
-    expect_options(!options_view(r).can_apply);
+    expect_options(!wormedit::ui::options_view_t::from(r).can_apply);
     expect_options(!apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.theme.empty());
     candidate.display.theme = std::string(1, static_cast<char>(0xff));
     expect_options(edit_options_draft(r, r.revision, candidate));
-    const auto view = options_view(r);
-    expect_options(!view.can_apply && view.diagnostic_count == 1 &&
+    const auto view = wormedit::ui::options_view_t::from(r);
+    expect_options(!view.can_apply && view.diagnostics.size() == 1 &&
                    view.diagnostics[0].field == WORM_UI_OPTIONS_FIELD_THEME);
 }
 
@@ -209,10 +209,10 @@ TEST_CASE("Options registered page field actions update only the current draft",
     expect_options(r.revision == revision && r.draft.display.ui_scale_percent == 0);
     edit.field = WORM_UI_OPTIONS_FIELD_AUTOSAVE; edit.integer = 0;
     (void)apply_options_action(r, program, edit);
-    expect_options(!options_view(r).can_apply && r.draft.general.autosave_minutes == 0);
+    expect_options(!wormedit::ui::options_view_t::from(r).can_apply && r.draft.general.autosave_minutes == 0);
     edit.revision = r.revision; edit.integer = 15;
     (void)apply_options_action(r, program, edit);
-    expect_options(options_view(r).can_apply);
+    expect_options(wormedit::ui::options_view_t::from(r).can_apply);
     expect_options(apply_options_action(r, program, action(r, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.general.autosave_minutes == 15);
 }
@@ -223,13 +223,13 @@ TEST_CASE("Options bounded text and player actions reject malformed payloads wit
     select(r, program, WORM_UI_OPTIONS_INPUT);
     auto edit = action(r, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_INPUT);
     edit.field = WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH;
-    std::fill(std::begin(edit.text), std::end(edit.text), 'x');
+    edit.text.assign(wormedit::maximum_preference_string_bytes + 1, 'x');
     const auto revision = r.revision;
     (void)apply_options_action(r, program, edit);
     expect_options(r.revision == revision && r.draft.general.shortcut_profile_path == "shortcuts.json");
-    std::fill(std::begin(edit.text), std::end(edit.text), '\0');
+    edit.text.clear();
     (void)apply_options_action(r, program, edit);
-    expect_options(!options_view(r).can_apply);
+    expect_options(!wormedit::ui::options_view_t::from(r).can_apply);
     select(r, program, WORM_UI_OPTIONS_PLAYERS);
     edit = action(r, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_PLAYERS);
     edit.field = WORM_UI_OPTIONS_FIELD_PLAYER_PATH; edit.player_index = 999;
@@ -237,7 +237,7 @@ TEST_CASE("Options bounded text and player actions reject malformed payloads wit
     (void)apply_options_action(r, program, edit);
     expect_options(r.draft.players == before);
     edit.field = WORM_UI_OPTIONS_FIELD_PLAYER_NAME; edit.player_index = 0;
-    std::copy_n("Test player", 12, edit.text);
+    edit.text = "Test player";
     (void)apply_options_action(r, program, edit);
     expect_options(r.draft.players.players[0].name == "Test player");
     expect_options(program.preferences.players == before);
@@ -263,11 +263,11 @@ TEST_CASE("Editor Options typed edits retain page isolation and reject invalid f
     edit.family_index = 2;
     edit.integer = 3;
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(!options_view(runtime).can_apply);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).can_apply);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
     expect_options(runtime.draft.editor == editor_preferences_t{});
-    expect_options(options_view(runtime).can_apply);
+    expect_options(wormedit::ui::options_view_t::from(runtime).can_apply);
     expect_options(program.preferences.general.autosave_minutes == 5);
 }
 
@@ -278,12 +278,12 @@ TEST_CASE("Editor options save the note click audition toggle", "[options][audit
     options_runtime_t runtime;
     open_options(runtime, program.preferences);
     select(runtime, program, WORM_UI_OPTIONS_EDITOR);
-    expect_options(options_view(runtime).audition_on_click);
-    const WormUiOptionsAction edit{.kind = WORM_UI_OPTIONS_EDIT_FIELD,
+    expect_options(wormedit::ui::options_view_t::from(runtime).audition_on_click);
+    const wormedit::ui::options_action_t edit{.kind = WORM_UI_OPTIONS_EDIT_FIELD,
         .revision = runtime.revision, .category = WORM_UI_OPTIONS_EDITOR,
         .field = WORM_UI_OPTIONS_FIELD_AUDITION_ON_CLICK, .boolean = false};
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(!options_view(runtime).audition_on_click);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).audition_on_click);
     expect_options(apply_options_action(runtime, program,
         action(runtime, WORM_UI_OPTIONS_APPLY, WORM_UI_OPTIONS_EDITOR)));
     expect_options(!program.preferences.editor.audition_on_click);
@@ -300,14 +300,14 @@ TEST_CASE("Options Audio clamps wide keysound actions and applies persisted budg
     edit.field = WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     (void)apply_options_action(runtime, program, edit);
-    expect_options(options_view(runtime).keysound_budget_mib == 8192);
+    expect_options(wormedit::ui::options_view_t::from(runtime).keysound_budget_mib == 8192);
     expect_options(program.preferences.audio.keysound_budget_mib == 512);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.audio.keysound_budget_mib == 8192);
     edit.revision = runtime.revision;
     edit.integer = 0;
     (void)apply_options_action(runtime, program, edit);
-    expect_options(options_view(runtime).keysound_budget_mib == 256);
+    expect_options(wormedit::ui::options_view_t::from(runtime).keysound_budget_mib == 256);
 }
 
 TEST_CASE("Editing collision policy applies to disk and Defaults restores Reject", "[options][bgm-move]") {
@@ -321,12 +321,12 @@ TEST_CASE("Editing collision policy applies to disk and Defaults restores Reject
     edit.field = WORM_UI_OPTIONS_FIELD_MOVE_COLLISION_POLICY;
     edit.integer = 1;
     (void)apply_options_action(runtime, program, edit);
-    expect_options(options_view(runtime).move_collision_policy == 1 && options_view(runtime).can_apply);
+    expect_options(wormedit::ui::options_view_t::from(runtime).move_collision_policy == move_collision_policy_t::displace_to_bgm && wormedit::ui::options_view_t::from(runtime).can_apply);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.editor.move_collision_policy ==
         move_collision_policy_t::displace_to_bgm);
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS));
-    expect_options(options_view(runtime).move_collision_policy == 0);
+    expect_options(wormedit::ui::options_view_t::from(runtime).move_collision_policy == move_collision_policy_t::reject);
 }
 
 TEST_CASE("Field theme Options edits stay draft until Apply and persist independently of chrome", "[options][theme]") {
@@ -337,10 +337,10 @@ TEST_CASE("Field theme Options edits stay draft until Apply and persist independ
     select(runtime,program,WORM_UI_OPTIONS_DISPLAY);
     auto edit=action(runtime,WORM_UI_OPTIONS_EDIT_FIELD,WORM_UI_OPTIONS_DISPLAY);
     edit.field=WORM_UI_OPTIONS_FIELD_FIELD_SCHEME;
-    std::strcpy(edit.text,"ibmsc-o2mania");
+    edit.text = "ibmsc-o2mania";
     expect_options(!(apply_options_action(runtime,program,edit)));
     expect_options(program.preferences.display.field_scheme=="wormedit");
-    expect_options(std::string(options_view(runtime).field_scheme)=="ibmsc-o2mania");
+    expect_options(std::string(wormedit::ui::options_view_t::from(runtime).field_scheme)=="ibmsc-o2mania");
     expect_options(apply_options_action(runtime,program,action(runtime,WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.field_scheme=="ibmsc-o2mania");
     expect_options(program.preferences.display.theme.empty());
@@ -364,15 +364,15 @@ TEST_CASE("Appearance snap grid opt-out stays draft until Apply and supports Def
     edit.field = WORM_UI_OPTIONS_FIELD_SNAP_COLORED_GRID;
     edit.boolean = false;
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(!options_view(runtime).snap_colored_grid);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).snap_colored_grid);
     expect_options(program.preferences.display.snap_colored_grid);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(!load_program_preferences(program.path).contents.preferences.display.snap_colored_grid);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
-    expect_options(options_view(runtime).snap_colored_grid);
+    expect_options(wormedit::ui::options_view_t::from(runtime).snap_colored_grid);
     expect_options(!program.preferences.display.snap_colored_grid);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
-    expect_options(!options_view(runtime).snap_colored_grid);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).snap_colored_grid);
 }
 
 TEST_CASE("Grid opacity draft Apply Revert Defaults and wide values stay bounded", "[options][snap-grid][opacity]") {
@@ -385,18 +385,18 @@ TEST_CASE("Grid opacity draft Apply Revert Defaults and wide values stay bounded
     edit.field = WORM_UI_OPTIONS_FIELD_SNAP_GRID_OPACITY;
     edit.integer = 60;
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(options_view(runtime).snap_grid_opacity_percent == 60);
+    expect_options(wormedit::ui::options_view_t::from(runtime).snap_grid_opacity_percent == 60);
     expect_options(program.preferences.display.snap_grid_opacity_percent == 35);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.display.snap_grid_opacity_percent == 60);
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(options_view(runtime).snap_grid_opacity_percent == 100);
+    expect_options(wormedit::ui::options_view_t::from(runtime).snap_grid_opacity_percent == 100);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
-    expect_options(options_view(runtime).snap_grid_opacity_percent == 60);
+    expect_options(wormedit::ui::options_view_t::from(runtime).snap_grid_opacity_percent == 60);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
-    expect_options(options_view(runtime).snap_grid_opacity_percent == 35);
+    expect_options(wormedit::ui::options_view_t::from(runtime).snap_grid_opacity_percent == 35);
     expect_options(program.preferences.display.snap_grid_opacity_percent == 60);
 }
 
@@ -410,18 +410,18 @@ TEST_CASE("Field waveform opacity previews as a draft and supports Apply Revert 
     edit.field = WORM_UI_OPTIONS_FIELD_FIELD_WAVEFORM_OPACITY;
     edit.integer = 40;
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(options_view(runtime).field_waveform_opacity_percent == 40);
+    expect_options(wormedit::ui::options_view_t::from(runtime).field_waveform_opacity_percent == 40);
     expect_options(program.preferences.display.field_waveform_opacity_percent == 75);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.display.field_waveform_opacity_percent == 40);
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(options_view(runtime).field_waveform_opacity_percent == 100);
+    expect_options(wormedit::ui::options_view_t::from(runtime).field_waveform_opacity_percent == 100);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
-    expect_options(options_view(runtime).field_waveform_opacity_percent == 40);
+    expect_options(wormedit::ui::options_view_t::from(runtime).field_waveform_opacity_percent == 40);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
-    expect_options(options_view(runtime).field_waveform_opacity_percent == 75);
+    expect_options(wormedit::ui::options_view_t::from(runtime).field_waveform_opacity_percent == 75);
 }
 
 TEST_CASE("Wheel inversion stays an Editor draft until applied", "[options][feedback]") {
@@ -434,14 +434,14 @@ TEST_CASE("Wheel inversion stays an Editor draft until applied", "[options][feed
     edit.field = WORM_UI_OPTIONS_FIELD_INVERT_SCROLL_WHEEL;
     edit.boolean = true;
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(options_view(runtime).invert_scroll_wheel);
+    expect_options(wormedit::ui::options_view_t::from(runtime).invert_scroll_wheel);
     expect_options(!program.preferences.editor.invert_scroll_wheel);
     expect_options(apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(load_program_preferences(program.path).contents.preferences.editor.invert_scroll_wheel);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
-    expect_options(!options_view(runtime).invert_scroll_wheel);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).invert_scroll_wheel);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
-    expect_options(options_view(runtime).invert_scroll_wheel);
+    expect_options(wormedit::ui::options_view_t::from(runtime).invert_scroll_wheel);
 }
 
 TEST_CASE("Scratch presentation precedence preserves chart layout and independent overrides", "[options][scratch-presentation]") {
@@ -472,7 +472,7 @@ TEST_CASE("Appearance scratch edits preview independently and Apply persists the
     edit.field = WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION;
     edit.integer = 3;
     expect_options(!apply_options_action(runtime, program, edit));
-    auto view = options_view(runtime);
+    auto view = wormedit::ui::options_view_t::from(runtime);
     expect_options(view.p1_scratch_position == 3 && view.p2_scratch_position == 0);
     expect_options(program.preferences.display.scratch_positions[0] == 0);
     edit.revision = runtime.revision;
@@ -486,13 +486,13 @@ TEST_CASE("Appearance scratch edits preview independently and Apply persists the
     edit.revision = runtime.revision;
     edit.integer = std::numeric_limits<std::uint64_t>::max();
     expect_options(!apply_options_action(runtime, program, edit));
-    expect_options(!options_view(runtime).can_apply);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).can_apply);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.scratch_positions[1] == 1);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT)));
-    expect_options(options_view(runtime).p2_scratch_position == 1);
+    expect_options(wormedit::ui::options_view_t::from(runtime).p2_scratch_position == 1);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_DEFAULTS)));
-    view = options_view(runtime);
+    view = wormedit::ui::options_view_t::from(runtime);
     expect_options(view.p1_scratch_position == 0 && view.p2_scratch_position == 0);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_CLOSE)));
     expect_options(!runtime.visible);
@@ -520,13 +520,13 @@ TEST_CASE("Recent files persist normalized successful paths newest first", "[opt
     expect_options(reloaded.recent_files[1].path == runtime.recent_files[1].path);
     expect_options(reloaded.warnings.empty());
     reloaded.preferences.general.recent_files_count = 1;
-    WormUiWorkspaceView view{};
+    wormedit::ui::workspace_view_t view{};
     build_recent_files_view(reloaded, view);
-    require_recent(view.recent_file_count == 1);
+    require_recent(view.recent_files.size() == 1);
     expect_options(std::string_view{view.recent_files[0].path} == runtime.recent_files[0].path);
     reloaded.preferences.general.recent_files_count = 100;
     build_recent_files_view(reloaded, view);
-    expect_options(view.recent_file_count == 2);
+    expect_options(view.recent_files.size() == 2);
 }
 
 TEST_CASE("Recent files cap history and retain missing entries for normal open diagnostics", "[options][recent-files]") {
@@ -555,10 +555,10 @@ TEST_CASE("Corrupt recent files do not prevent preference startup", "[options][r
 }
 
 namespace {
-auto layout_skin_action(const options_runtime_t& runtime, const char* scheme) -> WormUiOptionsAction {
+auto layout_skin_action(const options_runtime_t& runtime, const char* scheme) -> wormedit::ui::options_action_t {
     auto result = action(runtime, WORM_UI_OPTIONS_EDIT_FIELD, WORM_UI_OPTIONS_DISPLAY);
     result.field = WORM_UI_OPTIONS_FIELD_LAYOUT_FIELD_SCHEME;
-    std::snprintf(result.text, sizeof(result.text), "%s", scheme);
+    result.text = scheme;
     return result;
 }
 }
@@ -574,7 +574,7 @@ TEST_CASE("Options layout skin overrides apply revert and inherit without changi
     expect_options(!apply_options_action(runtime, program, layout_skin_action(runtime, "bmse")));
     expect_options(program.preferences.display.field_scheme_overrides.empty());
     expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
-    const auto view = options_view(runtime);
+    const auto view = wormedit::ui::options_view_t::from(runtime);
     expect_options(std::string_view{view.current_field_layout_key} == "beat-7k");
     expect_options(std::string_view{view.current_field_layout_name} == "Beat 7 keys");
     expect_options(std::string_view{view.current_layout_field_scheme} == "bmse");
@@ -583,7 +583,7 @@ TEST_CASE("Options layout skin overrides apply revert and inherit without changi
     expect_options(load_program_preferences(program.path).contents.preferences.display.field_scheme_overrides.at("beat-7k") == "bmse");
     (void)apply_options_action(runtime, program, layout_skin_action(runtime, ""));
     expect_options(runtime.draft.display.field_scheme_overrides.empty());
-    expect_options(std::string_view{options_view(runtime).current_layout_field_scheme}.empty());
+    expect_options(std::string_view{wormedit::ui::options_view_t::from(runtime).current_layout_field_scheme}.empty());
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT));
     expect_options(resolve_field_scheme(runtime.draft.display, "beat-7k") == "bmse");
     (void)apply_options_action(runtime, program, layout_skin_action(runtime, ""));
@@ -608,7 +608,7 @@ TEST_CASE("Options layout changes reject stale choices and retain other draft ov
     (void)apply_options_action(runtime, program, stale);
     expect_options(runtime.draft.display.field_scheme_overrides.size() == 1);
     expect_options(runtime.draft.display.field_scheme_overrides.at("beat-7k") == "bmse");
-    expect_options(std::string_view{options_view(runtime).current_layout_field_scheme}.empty());
+    expect_options(std::string_view{wormedit::ui::options_view_t::from(runtime).current_layout_field_scheme}.empty());
     (void)apply_options_action(runtime, program, layout_skin_action(runtime, "custom-unknown"));
     expect_options(resolve_field_scheme(runtime.draft.display, "pump-single") == "custom-unknown");
     const auto revision = runtime.revision;
@@ -654,11 +654,11 @@ TEST_CASE("Options layout skin validation and category isolation preserve accept
     auto invalid = runtime.draft;
     invalid.display.field_scheme_overrides.emplace("beat-7k", std::string(maximum_preference_string_bytes + 1, 'x'));
     expect_options(edit_options_draft(runtime, runtime.revision, invalid));
-    expect_options(!options_view(runtime).can_apply);
+    expect_options(!wormedit::ui::options_view_t::from(runtime).can_apply);
     expect_options(!apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_APPLY)));
     expect_options(program.preferences.display.field_scheme_overrides.empty());
     (void)apply_options_action(runtime, program, action(runtime, WORM_UI_OPTIONS_REVERT));
-    expect_options(options_view(runtime).can_apply);
+    expect_options(wormedit::ui::options_view_t::from(runtime).can_apply);
     (void)apply_options_action(runtime, program, layout_skin_action(runtime, "bmse"));
     select(runtime, program, WORM_UI_OPTIONS_GENERAL);
     auto general = runtime.draft;

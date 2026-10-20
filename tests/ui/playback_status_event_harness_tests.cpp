@@ -12,7 +12,7 @@
 
 namespace {
 auto text_bounds(const nuklear_event_harness_t& harness, std::string_view text)
-    -> WormUiTestingDrawnText {
+    -> wormedit::ui::testing_drawn_text_view_t {
     const auto rows = harness.drawn_text_bounds();
     const auto found = std::ranges::find_if(rows, [&](const auto& row) {
         return std::string_view{row.text} == text;
@@ -21,7 +21,7 @@ auto text_bounds(const nuklear_event_harness_t& harness, std::string_view text)
     return *found;
 }
 
-void check_position(const WormUiTestingDrawnText& actual, const WormUiTestingDrawnText& expected) {
+void check_position(const wormedit::ui::testing_drawn_text_view_t& actual, const wormedit::ui::testing_drawn_text_view_t& expected) {
     CHECK(actual.x == expected.x);
     CHECK(actual.y == expected.y);
     CHECK(actual.width == expected.width);

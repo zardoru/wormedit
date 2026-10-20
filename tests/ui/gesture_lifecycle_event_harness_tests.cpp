@@ -29,7 +29,7 @@ auto lifecycle_motion(float x, float y) -> SDL_Event {
     event.motion.x = x; event.motion.y = y;
     return event;
 }
-auto lifecycle_has(const WormUiWorkspaceAction& action, WormUiComposeInputKind kind) -> bool {
+auto lifecycle_has(const wormedit::ui::workspace_action_t& action, WormUiComposeInputKind kind) -> bool {
     for (std::size_t i = 0; i < action.compose_input_count; ++i)
         if (action.compose_inputs[i].kind == kind) return true;
     return false;
@@ -58,7 +58,7 @@ struct lifecycle_fixture_t {
     WormUiComposeBgmEventView bgm{};
     WormUiComposeBgaEventView bga{};
     WormUiComposeBookmarkView bookmark{};
-    WormUiTestingRect rect{};
+    wormedit::ui::testing_rect_view_t rect{};
     float x{}, y{};
     SDL_Keymod modifiers{SDL_KMOD_NONE};
     lifecycle_family family;
@@ -106,18 +106,18 @@ struct lifecycle_fixture_t {
         auto& t = harness.view().timing;
         speed.bounds = {0, 300, 0, 500}; speed.object_id = 17;
         recipe.bounds = {0, 300, 0, 500}; recipe.recipe_id = 18;
-        recipe.lane = WORM_UI_TIMING_LANE_SCROLL; recipe.enabled = true;
+        recipe.lane = static_cast<uint8_t>(wormedit::timing_lane_kind_t::scroll); recipe.enabled = true;
         recipe.evaluable = recipe.begin_visible = recipe.end_visible = true;
         recipe.label = "Test recipe";
-        marker.object_id = 19; marker.lane = WORM_UI_TIMING_LANE_BPM;
+        marker.object_id = 19; marker.lane = wormedit::timing_lane_kind_t::bpm;
         marker.marker_y_pixels = 300; marker.marker_right_fraction = 1;
         if (family == lifecycle_family::speed) { v.speed_spans = &speed; v.speed_span_count = 1; }
         if (family == lifecycle_family::recipe) { v.recipe_areas = &recipe; v.recipe_area_count = 1; }
         if (family == lifecycle_family::timing_marker) { v.timing_markers = &marker; v.timing_marker_count = 1; }
         if (family == lifecycle_family::timing_stage) {
             v.timing_stage_active = t.stage_active = true;
-            v.timing_stage_lane = t.stage_lane = WORM_UI_TIMING_LANE_BPM;
-            v.timing_stage_y_pixels = 300; t.stage_existing_object_id = 19;
+            v.timing_stage_lane = t.stage_lane = wormedit::timing_lane_kind_t::bpm;
+            v.timing_stage_y_pixels = 300; t.stage_existing_object_id = wormedit::object_id_t{19};
         }
         if (family == lifecycle_family::beat_fit || family == lifecycle_family::offset_fit) {
             beat.chart_row = 480; beat.kind = 1; beat.y_pixels = 300;
@@ -167,13 +167,13 @@ struct lifecycle_fixture_t {
     }
     void choose_pointer() {
         auto& v = harness.view().compose;
-        std::optional<WormUiTimingLaneKind> lane;
+        std::optional<wormedit::timing_lane_kind_t> lane;
         switch (family) {
-        case lifecycle_family::kiai: lane = WORM_UI_TIMING_LANE_KIAI; break;
-        case lifecycle_family::speed: lane = WORM_UI_TIMING_LANE_SPEED; break;
-        case lifecycle_family::recipe: lane = WORM_UI_TIMING_LANE_SCROLL; break;
+        case lifecycle_family::kiai: lane = wormedit::timing_lane_kind_t::kiai; break;
+        case lifecycle_family::speed: lane = wormedit::timing_lane_kind_t::speed; break;
+        case lifecycle_family::recipe: lane = wormedit::timing_lane_kind_t::scroll; break;
         case lifecycle_family::timing_marker:
-        case lifecycle_family::timing_stage: lane = WORM_UI_TIMING_LANE_BPM; break;
+        case lifecycle_family::timing_stage: lane = wormedit::timing_lane_kind_t::bpm; break;
         case lifecycle_family::beat_fit:
         case lifecycle_family::offset_fit: x = screen_x(32); return;
         default: return;
@@ -602,10 +602,10 @@ TEST_CASE("Timing stage release clears its pointer capture and retains the stage
     (void)f.begin();
     const auto motion = lifecycle_motion(f.x, f.y + 30);
     const auto moved = f.harness.frame(std::span{&motion, 1});
-    lifecycle_check(moved.get().timing_stage_action == WORM_UI_TIMING_STAGE_MOVE);
+    lifecycle_check(moved.get().timing_stage_action == wormedit::ui::timing_stage_action_t::move);
     const auto release = lifecycle_button(f.x, f.y + 40, false);
     const auto result = f.harness.frame(std::span{&release, 1});
-    lifecycle_check(result.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    lifecycle_check(result.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
     lifecycle_check(!f.active());
     lifecycle_check(f.harness.view().timing.stage_active);
 }

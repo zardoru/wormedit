@@ -5,7 +5,7 @@
 #include <cstdint>
 #include <cstdio>
 
-static void render_timing_lane_visibility(nk_context* context, const WormUiWorkspaceView& workspace, WormUiWorkspaceAction* action) {
+static void render_timing_lane_visibility(nk_context* context, const wormedit::ui::workspace_view_t& workspace, wormedit::ui::workspace_action_t* action) {
     const auto* view = &workspace.compose;
     const auto* timing_view = &workspace.timing;
     nk_layout_row_dynamic(context, 15, 1);
@@ -15,15 +15,15 @@ static void render_timing_lane_visibility(nk_context* context, const WormUiWorks
         nk_layout_row_begin(context, NK_DYNAMIC, wormedit::ui::metrics::control_default, 2);
         for (std::size_t column = 0; column < 2; ++column) {
             const auto index = row * 2 + column;
-            if (index >= view->timing_lane_captions.count) continue;
+            if (index >= view->timing_lane_captions.entries.size()) continue;
             const auto& descriptor = view->timing_lane_captions.entries[index];
-            const auto lane = descriptor.id;
+            const auto lane = static_cast<std::uint32_t>(descriptor.id);
             const auto bit = static_cast<std::uint8_t>(1U << lane);
             const auto visible = (view->timing_lane_visibility_mask & bit) != 0;
             const auto editing_lane = timing_view->stage_active &&
                                       static_cast<std::size_t>(timing_view->stage_lane) == lane;
             char label[16]{};
-            (void)snprintf(label, sizeof(label), "%s: %s", descriptor.label, visible ? "On" : "Off");
+            (void)snprintf(label, sizeof(label), "%s: %s", descriptor.label.data(), visible ? "On" : "Off");
             nk_layout_row_push(context, wormedit::ui::chrome::property_label_ratio);
             const auto disabled = !view->scene_available || (editing_lane && visible);
             if (disabled) nk_widget_disable_begin(context);
@@ -39,8 +39,8 @@ static void render_timing_lane_visibility(nk_context* context, const WormUiWorks
 
 }
 
-static void render_metronome_controls(nk_context* context, const WormUiWorkspaceView& view,
-                                      WormUiWorkspaceAction& action) {
+static void render_metronome_controls(nk_context* context, const wormedit::ui::workspace_view_t& view,
+                                      wormedit::ui::workspace_action_t& action) {
     constexpr auto row = wormedit::ui::metrics::control_default;
     nk_layout_row_dynamic(context, row, 1);
     nk_bool enabled = view.transport_metronome_enabled;
@@ -77,7 +77,7 @@ static void render_metronome_controls(nk_context* context, const WormUiWorkspace
 }
 
 void worm_ui_nuklear_render_timing_settings_panel(nk_context* context,
-    const WormUiWorkspaceView& view, WormUiWorkspaceAction& action) {
+    const wormedit::ui::workspace_view_t& view, wormedit::ui::workspace_action_t& action) {
     namespace chrome = wormedit::ui::chrome;
     if (!context || !view.timing_settings_visible) return;
     static chrome::Dialog dialog;

@@ -156,7 +156,8 @@ TEST_CASE("Global menus dismiss on Escape and right outside click and switch by 
     require_popup(harness.ready());
     auto& view = harness.view();
     view.compose.clipboard_copy_available = true;
-    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), view);
+    wormedit::sys::command_shortcut_text_t menu_shortcuts_0;
+    wormedit::sys::build_menu_commands_view(wormedit::command_registry_t::from({}), view, menu_shortcuts_0);
     (void)harness.frame();
 
     const auto file_title = harness.drawn_text_center("File");
@@ -353,7 +354,7 @@ TEST_CASE("Context menu row focus clears across project tab and focus changes",
     prepare_keyboard_note(harness, hold, layers);
     namespace chrome = wormedit::ui::chrome;
     chrome::context_menu_focus(chrome::KeyboardContextTarget::layers, 7);
-    ++harness.view().project_id;
+    ++harness.view().project_id.value;
     (void)harness.frame();
     check_popup(chrome::context_menu_focused_target() == chrome::KeyboardContextTarget::none);
     check_popup(chrome::context_menu_focused_object() == 0);
@@ -372,17 +373,17 @@ TEST_CASE("Context menu row focus clears across project tab and focus changes",
 TEST_CASE("Project chart keyboard menu opens the focused row and respects Options",
           "[frontend-state][event-harness][keyboard-context]") {
     nuklear_event_harness_t harness{1280, 900};
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Keyboard chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Keyboard chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     auto& workspace = harness.view();
     workspace.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
     workspace.compose.visible = false;
     auto& setup = workspace.setup;
     setup.visible = true;
-    setup.song_id = 1;
+    setup.song_id = wormedit::song_id_t{1};
     setup.session_generation = 1;
-    setup.charts = &row;
-    setup.chart_row_count = setup.chart_count = 1;
+    setup.charts = {row};
+    setup.chart_count = 1;
     (void)harness.frame();
     const auto name = harness.drawn_text_center("Keyboard chart");
     require_popup(name.has_value());
@@ -393,15 +394,15 @@ TEST_CASE("Project chart keyboard menu opens the focused row and respects Option
     (void)press_context_key(harness, SDLK_HOME, SDL_SCANCODE_HOME);
     const auto activated = press_context_key(harness, SDLK_RETURN, SDL_SCANCODE_RETURN);
     check_popup(activated.get().project_chart.kind == WORM_UI_PROJECT_CHART_OPEN);
-    check_popup(activated.get().project_chart.chart_id == 10);
+    check_popup(activated.get().project_chart.chart_id == wormedit::chart_id_t{10});
     (void)harness.frame();
     workspace.options.visible = true;
     (void)harness.frame();
     (void)press_context_key(harness, SDLK_F10, SDL_SCANCODE_F10, SDL_KMOD_RSHIFT);
     check_popup(!harness.drawn_text_center("Duplicate").has_value());
     workspace.options.visible = false;
-    ++workspace.project_id;
-    ++setup.song_id;
+    ++workspace.project_id.value;
+    ++setup.song_id.value;
     ++setup.session_generation;
     (void)harness.frame();
     (void)press_context_key(harness, SDLK_APPLICATION, SDL_SCANCODE_APPLICATION);

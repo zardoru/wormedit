@@ -61,7 +61,7 @@ TEST_CASE("Timing settings commands use the metronome owner and unavailable defa
     wormedit::sys::metronome_t metronome;
     metronome.settings.available = true;
     state.metronome = &metronome;
-    WormUiTimingSettingsAction action{};
+    wormedit::ui::timing_settings_action_t action{};
     action.change_enable = action.change_volume = action.change_count_in = true;
     action.enabled = true;
     action.volume = 25;

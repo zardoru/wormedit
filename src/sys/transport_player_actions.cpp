@@ -22,7 +22,7 @@ auto toggle_metronome_status(application_command_state_t& state,
 
 } // namespace
 
-auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
+auto dispatch_transport_player_action(const wormedit::ui::workspace_action_t& action,
                                       application_command_state_t& application_state,
                                       notification_sink_t notifications)
     -> std::optional<std::string> {
@@ -64,7 +64,7 @@ auto dispatch_transport_player_action(const WormUiWorkspaceAction& action,
         return publish_transport_feedback(notifications, notification_severity_t::info,
             application_state.project.compose_view.player_preview_visible ? "Player preview shown." : "Player preview hidden.");
     case WORM_UI_WORKSPACE_ACTION_SELECT_PLAYER_PREVIEW_SKIN:
-        if (action.player_preview_skin > WORM_UI_PLAYER_PREVIEW_SKIN_ARROWS) {
+        if (action.player_preview_skin > wormedit::player_preview_skin_t::arrows) {
             return publish_transport_feedback(notifications, notification_severity_t::warning, "Unknown player-preview skin ignored.");
         }
         application_state.project.compose_view.player_preview_skin =

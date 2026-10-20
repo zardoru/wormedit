@@ -101,7 +101,7 @@ void close_pending_popup(nk_context* context, inline_label_editor_t& editor) {
     clear_editor_after_close(editor);
 }
 
-void stage_rename(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+void stage_rename(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
                   const inline_label_editor_t& editor) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     if (editor.kind == inline_label_kind_t::note_label) {
@@ -169,7 +169,7 @@ auto compose_bookmark_rename_owns_input(const inline_label_editor_t& editor,
 }
 
 void render_compose_bookmark_rename(nk_context* context, const WormUiComposeView& view,
-                                    WormUiWorkspaceAction& action,
+                                    wormedit::ui::workspace_action_t& action,
                                     inline_label_editor_t& editor,
                                     struct nk_rect viewport, bool window_focused) {
     (void)wormedit::ui::chrome::popup_update_release_pending(

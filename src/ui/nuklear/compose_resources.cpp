@@ -17,7 +17,7 @@ namespace {
 struct ResourcePanel {
     nk_context* context;
     const WormUiComposeView* view;
-    WormUiWorkspaceAction* action;
+    wormedit::ui::workspace_action_t* action;
     worm_ui_nuklear_compose_state_t* state;
 };
 
@@ -88,13 +88,13 @@ void render_export_group_choices(const ResourcePanel& panel) {
     }
 }
 
-void stamp_action(const WormUiComposeView& view, WormUiWorkspaceAction& action) {
+void stamp_action(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action) {
     action.compose_input_project_id = view.project_id;
     action.compose_input_chart_id = view.chart_id;
     action.compose_input_document_revision = view.document_revision;
 }
 
-auto action_available(const WormUiWorkspaceAction& action) -> bool {
+auto action_available(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.kind == WORM_UI_WORKSPACE_ACTION_NONE && action.compose_input_count == 0 &&
         (action.compose_action == WORM_UI_COMPOSE_ACTION_NONE ||
          action.compose_action == WORM_UI_COMPOSE_ACTION_SET_SEMANTIC_LAYER_WINDOW);
@@ -281,7 +281,7 @@ void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
 }
 
 void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
-    WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state) {
+    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state) {
     ResourcePanel panel{context, &view, &action, &state};
     state.preview_audio.render(context, view, action);
     render_export_dialog(panel);
@@ -290,7 +290,7 @@ void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiCom
 }
 
 void worm_ui_nuklear_render_compose_resources(nk_context* context, const WormUiComposeView* view,
-    WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
+    wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
     if (!context || !view || !action || !state) return;
     update_selection_state(*view, *state);
 }

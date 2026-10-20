@@ -1,24 +1,24 @@
 #include "sys/menu_command_view.h"
-#include "sys/shortcut_rows.h"
 #include "ui/workspace_menu.h"
-#include <cstdio>
 
 namespace wormedit::sys {
-void build_menu_commands_view(const command_registry_t& registry, WormUiWorkspaceView& view, shortcut_primary_modifier_t primary) {
-    static_assert(ui::workspace_menu_command_ids.size() <= WORM_UI_MENU_COMMAND_CAPACITY);
-    view.menu_command_count = 0;
+void build_menu_commands_view(const command_registry_t& registry, ui::workspace_view_t& view,
+                              command_shortcut_text_t& shortcuts,
+                              shortcut_primary_modifier_t primary) {
+    shortcuts.refresh(registry, primary);
+    view.menu_commands.resize(ui::workspace_menu_command_ids.size());
+    std::size_t count{};
     for (const auto* id : ui::workspace_menu_command_ids) {
         const auto* command = find_command(registry, {id});
         if (!command) continue;
-        auto& row = view.menu_commands[view.menu_command_count++];
-        row = {};
-        std::snprintf(row.id, sizeof(row.id), "%s", id);
-        std::snprintf(row.label, sizeof(row.label), "%s", command->definition.display_name.c_str());
-        const auto shortcut = command->current_shortcuts.empty() ? std::string{}
-            : shortcut_chord_text(command->current_shortcuts.front(), primary);
-        std::snprintf(row.shortcut, sizeof(row.shortcut), "%s", shortcut.c_str());
+        auto& row = view.menu_commands[count++];
+        row.id = id;
+        row.label = command->definition.display_name;
+        const auto command_index = static_cast<std::size_t>(command - registry.commands.data());
+        row.shortcut = shortcuts.first_text(command_index);
         row.enabled = command->definition.enabled;
         row.checked = command->definition.checked.value_or(false);
     }
+    view.menu_commands.resize(count);
 }
 }

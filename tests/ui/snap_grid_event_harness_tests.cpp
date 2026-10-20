@@ -45,7 +45,7 @@ void prepare(nuklear_event_harness_t& harness) {
     static_cast<void>(mouse(harness, target->first, target->second, false));
     require_grid(worm_ui_nuklear_compose_state().snap_grid.snap_grid_menu.open);
 }
-void check_snap(const WormUiWorkspaceAction& action, std::uint64_t denominator) {
+void check_snap(const wormedit::ui::workspace_action_t& action, std::uint64_t denominator) {
     INFO("action " << action.compose_action << " snap " << action.compose_snap_denominator);
     check_grid(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_EDIT_SNAP);
     check_grid(action.compose_snap_denominator == denominator);

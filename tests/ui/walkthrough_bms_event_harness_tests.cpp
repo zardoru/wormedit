@@ -120,8 +120,8 @@ struct walkthrough_t {
         require_step(interaction);
         require_step(flattened.view.compose.scene_available);
         auto& view = harness.view();
-        view.project_id = history.document.id.value;
-        view.selected_chart_id = workspace.value->selected_chart->value;
+        view.project_id.value = history.document.id.value;
+        view.selected_chart_id.value = workspace.value->selected_chart->value;
         view.document_revision = history.document.revision;
         view.compose = flattened.view.compose;
         view.compose.visible = true;
@@ -150,7 +150,7 @@ auto import_review(walkthrough_t& flow) -> resource_id_t {
     const auto chart = flow.history.document.charts.front().id;
     const auto prepared = prepare_keysound_import(flow.history.document, chart, paths);
     require_step(prepared.entries.size() == 1);
-    const WormUiSoundImportItem item{
+    const wormedit::ui::sound_import_item_t item{
         .path = path.c_str(), .name = "keysound-c4.ogg", .kind = 2, .kind_fixed = false};
     require_step(worm_ui_frontend_stage_sound_import(1, chart.value, flow.history.document.revision,
                                                 &item, 1, nullptr, 0, false, ""));
@@ -178,12 +178,10 @@ void check_bms_metadata(walkthrough_t& flow) {
     require_step(model.value);
     auto metadata = frontend_workspace_view_t::from(*model.value, flow.history.document, "", {}, false);
     check_step(metadata.view.metadata.has_chart);
-    check_step(metadata.view.metadata.selected_chart_source_family ==
-               static_cast<std::uint8_t>(format_family_t::bms));
-    const auto targets = std::span{metadata.view.metadata.format_targets,
-                                   metadata.view.metadata.format_target_count};
+    check_step(metadata.view.metadata.selected_chart_source_family == format_family_t::bms);
+    const auto targets = std::span{metadata.view.metadata.format_targets};
     check_step(std::ranges::any_of(targets, [](const auto& target) {
-        return target.chart_scoped && target.family == static_cast<std::uint8_t>(format_family_t::bms);
+        return target.chart_scoped && target.family == format_family_t::bms;
     }));
 }
 
@@ -444,28 +442,27 @@ TEST_CASE("BMS walkthrough Project group edit preview and export emit their prod
     nuklear_event_harness_t harness{1600, 1200};
     require_step(harness.ready());
     const std::uint64_t chart_id = 2;
-    const WormUiProjectChartRow chart{
-        .chart_id = chart_id, .name = "Normal", .author = "Author", .rating = "4",
+    const wormedit::ui::project_chart_row_view_t chart{
+        .chart_id = wormedit::chart_id_t{chart_id}, .name = "Normal", .author = "Author", .rating = "4",
         .mode = "BME 7K", .output_groups = "BMS",
         .compatible_output_families = std::uint32_t{1} <<
                                       static_cast<std::uint8_t>(format_family_t::bms),
         .length = "2 s", .diagnostic = ""};
-    const WormUiProjectOutputGroupView group{
-        .document_index = 0, .name = "BMS", .family = static_cast<std::uint8_t>(format_family_t::bms),
-        .path = "song/normal.bme", .chart_ids = &chart_id, .chart_count = 1,
+    const wormedit::ui::project_output_group_view_t group{
+        .document_index = 0, .name = "BMS", .family = format_family_t::bms,
+        .path = "song/normal.bme", .chart_ids = {wormedit::chart_id_t{chart_id}},
         .preview_status = "Preview not run"};
     auto& view = harness.view();
     view.active_tab = WORM_UI_WORKSPACE_TAB_SETUP;
     view.compose.visible = false;
     view.setup.visible = true;
-    view.setup.song_id = 1;
+    view.setup.song_id = wormedit::song_id_t{1};
     view.setup.document_revision = 1;
     // Group export remains available without a selected chart row.
-    view.setup.selected_chart_id = 0;
-    view.setup.charts = &chart;
-    view.setup.chart_count = view.setup.chart_row_count = 1;
-    view.setup.output_groups = &group;
-    view.setup.output_group_count = 1;
+    view.setup.selected_chart_id = {};
+    view.setup.charts = {chart};
+    view.setup.chart_count = 1;
+    view.setup.output_groups = {group};
     (void)harness.frame();
     (void)click_text(harness, "⋯");
     (void)harness.frame();
@@ -521,7 +518,7 @@ void select_import_slot(walkthrough_t& flow, const char* label) {
     require_step(dock.selected_slot_explicit);
 }
 
-void apply_sound_action(walkthrough_t& flow, const WormUiWorkspaceAction& action) {
+void apply_sound_action(walkthrough_t& flow, const wormedit::ui::workspace_action_t& action) {
     const auto before = flow.history.document.revision;
     const auto result = dispatch_compose_sound_action(action, flow.history, *flow.workspace.value,
         *flow.workspace.value->selected_chart, flow.application);
@@ -549,7 +546,7 @@ void confirm_sound_review(walkthrough_t& flow, bool slots) {
 auto assign_initial_slot(walkthrough_t& flow, std::uint16_t slot) -> resource_id_t {
     const auto path = slot_import_paths().front();
     const std::array paths{path.c_str()};
-    const WormUiWorkspaceAction action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
+    const wormedit::ui::workspace_action_t action{.compose_action = WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT,
         .compose_input_chart_id = flow.workspace.value->selected_chart->value,
         .compose_input_document_revision = flow.history.document.revision,
         .compose_import_paths = paths.data(), .compose_import_path_count = paths.size(),

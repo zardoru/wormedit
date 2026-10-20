@@ -31,14 +31,10 @@ struct compare_scene_cache_t {
         panes_t> panes;
     double shared_scroll_measures{};
     double pixels_per_measure{wormedit::default_pixels_per_standard_measure};
-    std::vector<std::uint64_t> chart_ids;
-    std::vector<std::string> chart_names;
-    std::vector<const char*> chart_name_pointers;
+    std::vector<wormedit::chart_id_t> available_charts;
     struct diagnostic_rows_t {
-        std::vector<std::string> diagnostic_labels;
-        std::vector<const char*> diagnostic_label_pointers;
-        std::vector<std::uint64_t> diagnostic_rows, diagnostic_measures;
-        std::vector<std::uint8_t> diagnostic_has_rows;
+        std::vector<std::string> labels;
+        std::vector<ui::compare_diagnostic_view_t> rows;
     };
     wormedit::keyed_cache_t<wormedit::document_stamp_t, wormedit::diagnostic_list_t> diagnostics;
     wormedit::keyed_cache_t<std::pair<wormedit::chart_id_t, std::uint64_t>,

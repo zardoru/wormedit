@@ -6,66 +6,66 @@
 #include <cstddef>
 #include <vector>
 
+using namespace wormedit;
+
 TEST_CASE("Nuklear setup view bounds every scalar export choice",
           "[unit][frontend][setup]") {
-    WormUiProjectOutputGroupView group{
+    wormedit::ui::project_output_group_view_t group{
         .name = "StepMania",
-        .family = 2,
+        .family = format_family_t::stepmania,
         .path = "ssc",
         .preview_status = "Ready",
-        .has_stepmania_policy = true,
-        .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC,
-        .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS,
-        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_STEP_MANIA_5_1,
+        .stepmania = stepmania_export_policy_t{stepmania_profile_t::ssc,
+            stepmania_timing_syntax_t::native_warps, stepmania_implementation_profile_t::stepmania_5_1},
         };
-    WormUiSetupView view{
+    wormedit::ui::setup_view_t view{
         .visible = true,
-        .output_groups = &group,
-        .output_group_count = 1,
+        .output_groups = {group},
     };
     CHECK(worm_ui_nuklear_setup_view_valid(&view));
 
-    group.stepmania_file_profile = static_cast<WormUiStepmaniaFileProfile>(99);
+    auto& policy = view.output_groups.front().stepmania;
+    policy->file_profile = static_cast<stepmania_profile_t>(99);
     CHECK_FALSE(worm_ui_nuklear_setup_view_valid(&view));
-    group.stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC;
-    group.has_stepmania_policy = false;
+    policy->file_profile = stepmania_profile_t::ssc;
+    policy.reset();
     CHECK_FALSE(worm_ui_nuklear_setup_view_valid(&view));
 
-    WormUiSetupView hidden{};
+    wormedit::ui::setup_view_t hidden{};
     CHECK(worm_ui_nuklear_setup_view_valid(&hidden));
     CHECK_FALSE(worm_ui_nuklear_setup_view_valid(nullptr));
 }
 
 namespace {
 void expect_project_state(bool value) { CHECK(value); }
-auto selection_view(WormUiProjectChartRow* rows, size_t count) -> WormUiSetupView {
-    return {.visible = true, .song_id = 1, .document_revision = 4, .session_generation = 1,
-        .charts = rows, .chart_row_count = count};
+auto selection_view(wormedit::ui::project_chart_row_view_t* rows, size_t count) -> wormedit::ui::setup_view_t {
+    return {.visible = true, .song_id = song_id_t{1}, .document_revision = 4, .session_generation = 1,
+        .charts = {rows, rows + count}};
 }
 }
 
 TEST_CASE("Project chart selection follows stable IDs through reorder deletion and sessions", "[unit][frontend][setup]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}, {.chart_id = 30}};
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}}, {.chart_id = chart_id_t{20}}, {.chart_id = chart_id_t{30}}};
     auto view = selection_view(rows, 3);
     project_chart_selection_t state;
     worm_ui_nuklear_reconcile_project_selection(state, view);
     worm_ui_nuklear_toggle_project_chart_selection(state, 10);
     worm_ui_nuklear_toggle_project_chart_selection(state, 30);
-    std::swap(rows[0], rows[2]);
+    std::swap(view.charts[0], view.charts[2]);
     ++view.document_revision;
     worm_ui_nuklear_reconcile_project_selection(state, view);
-    expect_project_state(state.count == 2 && worm_ui_nuklear_project_chart_selected(state, 10));
+    expect_project_state(state.ids.size() == 2 && worm_ui_nuklear_project_chart_selected(state, 10));
     expect_project_state(worm_ui_nuklear_project_chart_selected(state, 30));
-    view.chart_row_count = 2; // reordered chart 10 is now removed
+    view.charts.resize(2); // reordered chart 10 is now removed
     worm_ui_nuklear_reconcile_project_selection(state, view);
-    expect_project_state(state.count == 1 && state.ids[0] == 30);
+    expect_project_state(state.ids.size() == 1 && state.ids[0] == 30);
     ++view.session_generation;
     worm_ui_nuklear_reconcile_project_selection(state, view);
-    expect_project_state(state.count == 0);
+    expect_project_state(state.ids.size() == 0);
 }
 
 TEST_CASE("Project delete confirmation expires after revisions and session changes", "[unit][frontend][setup]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10}};
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}}};
     auto view = selection_view(rows, 1);
     project_chart_selection_t state;
     worm_ui_nuklear_reconcile_project_selection(state, view);
@@ -83,25 +83,25 @@ TEST_CASE("Project delete confirmation expires after revisions and session chang
     expect_project_state(state.pending_delete == 0);
 }
 
-TEST_CASE("Project chart view bounds rows and requires complete scalar row strings", "[unit][frontend][setup]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+TEST_CASE("Project chart view owns every row and requires valid identity", "[unit][frontend][setup]") {
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""}};
     auto view = selection_view(rows, 1);
     expect_project_state(worm_ui_nuklear_setup_view_valid(&view));
-    view.chart_row_count = 257;
+    view.charts.resize(257, view.charts.front());
+    expect_project_state(worm_ui_nuklear_setup_view_valid(&view));
+    view.charts.resize(1);
+    view.charts.front().chart_id = {};
     expect_project_state(!worm_ui_nuklear_setup_view_valid(&view));
-    view.chart_row_count = 1;
-    rows[0].length = nullptr;
-    expect_project_state(!worm_ui_nuklear_setup_view_valid(&view));
-    view.charts = nullptr;
-    expect_project_state(!worm_ui_nuklear_setup_view_valid(&view));
+    view.charts.clear();
+    expect_project_state(worm_ui_nuklear_setup_view_valid(&view));
 }
 
 namespace {
 const std::array<std::uint64_t, 5> shown_rows{10, 20, 30, 40, 50};
 
 auto selected_ids(const project_chart_selection_t& state) -> std::vector<std::uint64_t> {
-    return {state.ids.begin(), state.ids.begin() + static_cast<std::ptrdiff_t>(state.count)};
+    return {state.ids.begin(), state.ids.begin() + static_cast<std::ptrdiff_t>(state.ids.size())};
 }
 }
 
@@ -143,33 +143,33 @@ TEST_CASE("Header select-all toggles every shown row and reports partial state",
     CHECK(worm_ui_nuklear_project_selection_summary(state, shown_rows) == project_selection_summary_t::partial);
     worm_ui_nuklear_toggle_all_project_charts(state, shown_rows);
     CHECK(worm_ui_nuklear_project_selection_summary(state, shown_rows) == project_selection_summary_t::all);
-    CHECK(state.count == shown_rows.size());
+    CHECK(state.ids.size() == shown_rows.size());
     worm_ui_nuklear_toggle_all_project_charts(state, shown_rows);
-    CHECK(state.count == 0);
+    CHECK(state.ids.size() == 0);
 }
 
 TEST_CASE("Selection anchor is dropped when its chart leaves the table", "[unit][frontend][setup]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}};
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}}, {.chart_id = chart_id_t{20}}};
     auto view = selection_view(rows, 2);
     project_chart_selection_t state;
     worm_ui_nuklear_reconcile_project_selection(state, view);
     worm_ui_nuklear_click_project_chart(state, std::array<std::uint64_t, 2>{10, 20}, 20, false, false);
     CHECK(state.anchor == 20);
-    view.chart_row_count = 1;
+    view.charts.resize(1);
     worm_ui_nuklear_reconcile_project_selection(state, view);
     CHECK(state.anchor == 0);
-    CHECK(state.count == 0);
+    CHECK(state.ids.size() == 0);
 }
 
 TEST_CASE("Project chart drag retains stable destination IDs and captured guards", "[frontend][setup][chart-reorder]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}, {.chart_id = 30}};
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}}, {.chart_id = chart_id_t{20}}, {.chart_id = chart_id_t{30}}};
     auto view = selection_view(rows, 3);
     project_chart_drag_t drag;
     expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 10));
     worm_ui_nuklear_target_chart_drag(drag, view, 30, true);
     const auto result = worm_ui_nuklear_finish_chart_drag(drag, view);
     expect_project_state(result.kind == WORM_UI_PROJECT_CHART_REORDER);
-    expect_project_state(result.chart_id == 10 && result.target_chart_id == 30 && result.insert_after);
+    expect_project_state(result.chart_id == chart_id_t{10} && result.target_chart_id == chart_id_t{30} && result.insert_after);
     expect_project_state(result.document_revision == 4 && result.session_generation == 1);
     expect_project_state(drag.source == 0);
     expect_project_state(worm_ui_nuklear_begin_chart_drag(drag, view, 20));
@@ -181,7 +181,7 @@ TEST_CASE("Project chart drag retains stable destination IDs and captured guards
 }
 
 TEST_CASE("Project chart drags cancel when their document session or visible rows expire", "[frontend][setup][chart-reorder]") {
-    WormUiProjectChartRow rows[]{{.chart_id = 10}, {.chart_id = 20}};
+    wormedit::ui::project_chart_row_view_t rows[]{{.chart_id = chart_id_t{10}}, {.chart_id = chart_id_t{20}}};
     const auto original = selection_view(rows, 2);
     for (int change = 0; change < 5; ++change) {
         auto view = original;
@@ -191,8 +191,8 @@ TEST_CASE("Project chart drags cancel when their document session or visible row
         if (change == 0) ++view.document_revision;
         if (change == 1) ++view.session_generation;
         if (change == 2) view.visible = false;
-        if (change == 3) view.chart_row_count = 1;
-        if (change == 4) ++view.song_id;
+        if (change == 3) view.charts.resize(1);
+        if (change == 4) ++view.song_id.value;
         expect_project_state(worm_ui_nuklear_finish_chart_drag(drag, view).kind == WORM_UI_PROJECT_CHART_NONE);
         expect_project_state(drag.source == 0);
     }

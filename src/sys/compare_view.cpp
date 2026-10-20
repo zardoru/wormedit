@@ -89,31 +89,25 @@ void build_diagnostics_view(compare_scene_cache_t::diagnostic_rows_t& rows,
                             const wormedit::song_document_t& document,
                             const wormedit::chart_document_t& chart,
                             const wormedit::diagnostic_list_t& diagnostics) {
-    rows.diagnostic_labels.clear();
-    rows.diagnostic_label_pointers.clear();
-    rows.diagnostic_rows.clear();
-    rows.diagnostic_measures.clear();
-    rows.diagnostic_has_rows.clear();
+    rows.labels.clear();
+    rows.rows.clear();
     for (const auto& diagnostic : diagnostics) {
-        if (rows.diagnostic_labels.size() == 256) break;
         auto position = std::optional<wormedit::local_position_t>{};
         if (diagnostic.object) {
             const auto target = diagnostic_position(document, *diagnostic.object);
             if (diagnostic_belongs_to_other_chart(document, chart, *diagnostic.object, target))
                 continue;
-            if (target.availability == WORM_UI_NOTIFICATION_TARGET_POSITION) {
+            if (target.availability == WORM_UI_NOTIFICATION_TARGET_POSITION)
                 position = target.position;
-            }
         }
-        rows.diagnostic_labels.push_back("[" + std::to_string(static_cast<int>(diagnostic.code)) +
-                                          "] " + diagnostic.message);
-        rows.diagnostic_rows.push_back(position ? position->row : 0);
-        rows.diagnostic_measures.push_back(position ? position->measure.value : 0);
-        rows.diagnostic_has_rows.push_back(position.has_value() ? 1 : 0);
+        rows.labels.push_back("[" + std::to_string(static_cast<int>(diagnostic.code)) +
+                              "] " + diagnostic.message);
+        rows.rows.push_back({.row = position ? position->row : 0,
+            .measure = position ? position->measure : wormedit::measure_id_t{},
+            .has_row = position.has_value()});
     }
-    rows.diagnostic_label_pointers.reserve(rows.diagnostic_labels.size());
-    for (const auto& label : rows.diagnostic_labels)
-        rows.diagnostic_label_pointers.push_back(label.c_str());
+    for (std::size_t index = 0; index < rows.rows.size(); ++index)
+        rows.rows[index].label = rows.labels[index];
 }
 
 } // namespace
@@ -156,11 +150,14 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
                            compare_scene_cache_t& cache,
                            application_command_state_t& application_state,
                            int window_width, int window_height) {
+    first_pane.reset();
+    second_pane.reset();
     auto& view = result.view.compare;
     view.visible = workspace.active_tab == wormedit::workspace_tab_t::compare_validate;
     if (!view.visible) return;
 
-    std::vector<wormedit::chart_id_t> available;
+    auto& available = cache.available_charts;
+    available.clear();
     available.reserve(history.document.charts.size());
     for (const auto& chart : history.document.charts) available.push_back(chart.id);
     const auto pair = choose_compare_chart_pair(available, workspace.selected_chart,
@@ -171,25 +168,14 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
     const auto second_id = pair ? pair->second : wormedit::chart_id_t{};
     const auto* first = history.document.find_chart(first_id);
     const auto* second = history.document.find_chart(second_id);
-    view.first_chart_id = first_id.value;
-    view.second_chart_id = second_id.value;
+    view.first_chart_id = first_id;
+    view.second_chart_id = second_id;
     view.first_difficulty = first ? difficulty_name(*first).c_str() : "No difficulty";
     view.second_difficulty = second ? difficulty_name(*second).c_str() : "No comparison";
     view.has_two_difficulties = pair.has_value() && first && second;
-    view.chart_count = std::min(history.document.charts.size(), std::size_t{256});
-    cache.chart_ids.clear();
-    cache.chart_names.clear();
-    cache.chart_name_pointers.clear();
-    cache.chart_ids.reserve(view.chart_count);
-    cache.chart_names.reserve(view.chart_count);
-    cache.chart_name_pointers.reserve(view.chart_count);
-    for (std::size_t index = 0; index < view.chart_count; ++index) {
-        cache.chart_ids.push_back(history.document.charts[index].id.value);
-        cache.chart_names.push_back(difficulty_name(history.document.charts[index]));
-    }
-    for (const auto& name : cache.chart_names) cache.chart_name_pointers.push_back(name.c_str());
-    view.chart_ids = cache.chart_ids.data();
-    view.chart_names = cache.chart_name_pointers.data();
+    view.charts.clear();
+    for (const auto& chart : history.document.charts)
+        view.charts.push_back({.id = chart.id, .label = difficulty_name(chart)});
     if (first) {
         cache_compare_diagnostics(cache, history.document);
         const auto key = std::pair{first->id, history.document.revision};
@@ -201,19 +187,11 @@ void populate_compare_view(frontend_workspace_view_t& result, frontend_workspace
                 }));
         }
         const auto& rows = cache.diagnostics_projection.value();
-        view.diagnostic_count = rows.diagnostic_labels.size();
-        view.diagnostic_labels = rows.diagnostic_label_pointers.data();
-        view.diagnostic_rows = rows.diagnostic_rows.data();
-        view.diagnostic_measures = rows.diagnostic_measures.data();
-        view.diagnostic_chart_id = first->id.value;
-        view.diagnostic_has_rows = rows.diagnostic_has_rows.data();
+        view.diagnostics.assign(rows.rows.begin(), rows.rows.end());
+        view.diagnostic_chart_id = first->id;
     } else {
-        view.diagnostic_count = 0;
-        view.diagnostic_labels = nullptr;
-        view.diagnostic_rows = nullptr;
-        view.diagnostic_measures = nullptr;
-        view.diagnostic_chart_id = 0;
-        view.diagnostic_has_rows = nullptr;
+        view.diagnostics.clear();
+        view.diagnostic_chart_id = {};
     }
     if (!view.has_two_difficulties) return;
 

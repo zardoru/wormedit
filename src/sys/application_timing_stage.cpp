@@ -1,6 +1,7 @@
-#include "sys/timing_lane_ui.h"
+#include <wormedit/core/timing_lane_catalog.h>
 #include "sys/application_timing_stage.h"
 #include "sys/application_edit_inputs.h"
+#include "core/timing_event_internal.h"
 #include "sys/timing_edit_runtime.h"
 #include "sys/timing_view.h"
 #if defined(WORMEDIT_HAS_MACOS_MENU)
@@ -85,22 +86,6 @@ auto timing_position_from_fraction(const wormedit::chart_document_t& chart,
     return measures->position_at(snapped_row);
 }
 
-auto timing_pause_unit_from_ui(WormUiTimingPauseUnit unit)
-    -> std::optional<wormedit::pause_unit_t> {
-    using unit_t = wormedit::pause_unit_t;
-    switch (unit) {
-    case WORM_UI_TIMING_PAUSE_SECONDS:
-        return unit_t::seconds;
-    case WORM_UI_TIMING_PAUSE_MILLISECONDS:
-        return unit_t::milliseconds;
-    case WORM_UI_TIMING_PAUSE_BMS_STOP_TICKS:
-        return unit_t::bms_stop_ticks;
-    case WORM_UI_TIMING_PAUSE_BEATS:
-        return unit_t::beats;
-    }
-    return std::nullopt;
-}
-
 auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart,
                                     const wormedit::chart_indices_t& indices,
                                     wormedit::timing_lane_kind_t kind,
@@ -142,7 +127,7 @@ auto make_initial_timing_value_for_stage(const wormedit::chart_document_t& chart
     return std::nullopt;
 }
 
-auto begin_timing_stage(const WormUiWorkspaceAction& action,
+auto begin_timing_stage(const wormedit::ui::workspace_action_t& action,
                         const wormedit::document_history_t& history,
                         const wormedit::workspace_controller_t& workspace, bool timing_locked,
                         std::uint64_t active_snap_denominator)
@@ -154,12 +139,12 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         history.document.revision != action.timing_document_revision) {
         return rejected;
     }
-    const auto requested_kind = ui_codec<WormUiTimingLaneKind>::into(action.timing_lane);
+    const auto requested_kind = wormedit::find_catalog_entry(wormedit::timing_lanes, action.timing_lane);
     if (!requested_kind) {
         return rejected;
     }
     if (action.timing_object_id != 0) {
-        auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{*requested_kind, object_id_t{action.timing_object_id}}, timing_locked);
+        auto preview = timing_lane_pseudonote_preview_t::propose(history, chart_id_t{action.timing_chart_id}, wormedit::timing_lane_event_ref_t{requested_kind->kind, object_id_t{action.timing_object_id}}, timing_locked);
         if (preview.report()->lifecycle.status() == proposal_status_t::active &&
             action.timing_has_target_y) {
             const auto chart =
@@ -193,7 +178,7 @@ auto begin_timing_stage(const WormUiWorkspaceAction& action,
         return rejected;
     }
 
-    const auto kind = *requested_kind;
+    const auto kind = requested_kind->kind;
     auto initial = make_initial_timing_value_for_stage(
         *found, *history.indices(found->id), kind, *position, active_snap_denominator);
     if (!initial) {
@@ -231,7 +216,7 @@ auto timing_unsigned_ratio_in_bounds(std::uint64_t numerator, std::uint64_t deno
 
 struct TimingStageInput {
     const wormedit::timing_lane_pseudonote_state_t& preview;
-    const WormUiWorkspaceAction& action;
+    const wormedit::ui::workspace_action_t& action;
     std::optional<std::int64_t> primary_numerator;
     std::optional<std::uint64_t> primary_unsigned;
     std::optional<std::uint64_t> primary_denominator;
@@ -310,11 +295,8 @@ auto timing_stage_speed_value(const TimingStageInput& input)
         input.action.timing_transition_is_seconds}};
 }
 
-auto timing_pause_maximum_duration(std::optional<wormedit::pause_unit_t> unit) -> long double {
-    if (!unit) {
-        return 0.0L;
-    }
-    switch (*unit) {
+auto timing_pause_maximum_duration(wormedit::pause_unit_t unit) -> long double {
+    switch (unit) {
     case wormedit::pause_unit_t::seconds:
         return 86'400.0L;
     case wormedit::pause_unit_t::milliseconds:
@@ -329,17 +311,17 @@ auto timing_pause_maximum_duration(std::optional<wormedit::pause_unit_t> unit) -
 auto timing_stage_pause_value(const TimingStageInput& input)
     -> std::optional<wormedit::timing_lane_value_t> {
     using namespace wormedit;
-    const auto unit = timing_pause_unit_from_ui(input.action.timing_pause_unit);
+    const auto unit = input.action.timing_pause_unit;
     const auto maximum = timing_pause_maximum_duration(unit);
     if (!input.primary_numerator || !input.primary_denominator || *input.primary_numerator < 0 ||
-        !unit ||
+        !wormedit::is_valid_pause_unit(unit) ||
         (!input.preview.existing_event &&
          !timing_unsigned_ratio_in_bounds(static_cast<std::uint64_t>(*input.primary_numerator),
                                           *input.primary_denominator, maximum))) {
         return std::nullopt;
     }
     return timing_lane_value_t{
-        timing_pause_value_t{{*input.primary_numerator, *input.primary_denominator}, *unit}};
+        timing_pause_value_t{{*input.primary_numerator, *input.primary_denominator}, unit}};
 }
 
 auto timing_stage_warp_value(const TimingStageInput& input, const wormedit::chart_document_t& chart,
@@ -392,7 +374,7 @@ auto timing_stage_anchor_value(const TimingStageInput& input)
 auto timing_stage_value(const wormedit::timing_lane_pseudonote_state_t& preview,
                         const wormedit::chart_document_t& chart,
                         const wormedit::chart_indices_t& indices,
-                        const WormUiWorkspaceAction& action, std::uint64_t active_snap_denominator)
+                        const wormedit::ui::workspace_action_t& action, std::uint64_t active_snap_denominator)
     -> std::optional<wormedit::timing_lane_value_t> {
     using namespace wormedit;
     const TimingStageInput input{

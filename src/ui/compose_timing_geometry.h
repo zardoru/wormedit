@@ -14,7 +14,7 @@ namespace wormedit::ui {
 inline constexpr double compose_measure_rail_width = 42.0;
 // Numeric lanes fit a sign, five significant digits and a decimal at the
 // normal field font. Boolean Kiai and Anchor lanes keep their compact width.
-inline constexpr std::array<double, WORM_UI_TIMING_LANE_COUNT> compose_timing_lane_widths{
+inline constexpr std::array<double, wormedit::timing_lane_kind_count> compose_timing_lane_widths{
     64, 64, 64, 48, 48, 48, 24, 24};
 
 // Pointer targets and slice-point tiles use the head; area selection keeps the full tail.
@@ -40,7 +40,7 @@ inline auto compose_timing_right(const WormUiComposeView& view) -> double {
 
 // One horizontal partition for projection, picking, markers and span gestures.
 // Narrow surfaces compress the partition proportionally to preserve the field.
-inline auto compose_timing_lane_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
+inline auto compose_timing_lane_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
     -> std::optional<std::pair<double, double>> {
     const auto ordinal = static_cast<unsigned>(lane);
     if (ordinal >= compose_timing_lane_widths.size() ||
@@ -57,18 +57,18 @@ inline auto compose_timing_lane_extent(const WormUiComposeView& view, WormUiTimi
 }
 
 inline auto compose_timing_lane_at(const WormUiComposeView& view, double x)
-    -> std::optional<WormUiTimingLaneKind> {
+    -> std::optional<wormedit::timing_lane_kind_t> {
     if (!std::isfinite(x) || x < compose_measure_rail_width || x >= compose_timing_right(view))
         return std::nullopt;
-    for (unsigned ordinal = 0; ordinal < WORM_UI_TIMING_LANE_COUNT; ++ordinal) {
-        const auto lane = static_cast<WormUiTimingLaneKind>(ordinal);
+    for (unsigned ordinal = 0; ordinal < wormedit::timing_lane_kind_count; ++ordinal) {
+        const auto lane = static_cast<wormedit::timing_lane_kind_t>(ordinal);
         const auto extent = compose_timing_lane_extent(view, lane);
         if (extent && x >= extent->first && x < extent->second) return lane;
     }
     return std::nullopt;
 }
 
-inline auto compose_timing_inner_extent(const WormUiComposeView& view, WormUiTimingLaneKind lane)
+inline auto compose_timing_inner_extent(const WormUiComposeView& view, wormedit::timing_lane_kind_t lane)
     -> std::optional<std::pair<double, double>> {
     const auto extent = compose_timing_lane_extent(view, lane);
     if (!extent) return std::nullopt;

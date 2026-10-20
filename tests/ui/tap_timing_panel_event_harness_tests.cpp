@@ -24,7 +24,7 @@ auto click(nuklear_event_harness_t& harness, std::string_view label) -> workspac
         return pressed;
     return released;
 }
-void ready(WormUiTapTimingView& view) {
+void ready(wormedit::ui::tap_timing_view_t& view) {
     view.visible = view.music_available = view.source_available = view.playing = true;
     view.estimate_available = view.stable = view.apply_available = true;
     view.tap_count = 9; view.tap_capacity = 16; view.beats_per_measure = 4;
@@ -46,7 +46,7 @@ TEST_CASE("Compact Tap tempo shows the readout hierarchy and content fit", "[tap
     expect_tap(text.find("beat 0 at 12.3 ms") != std::string::npos);
     expect_tap(text.find("9 / 16 taps") != std::string::npos);
     expect_tap(text.find("First tap assigns") == std::string::npos);
-    WormUiTestingRect bounds{};
+    wormedit::ui::testing_rect_view_t bounds{};
     expect_tap(worm_ui_frontend_window_bounds_for_testing("Tap timing", &bounds));
     expect_tap(bounds.width == 420);
     expect_tap(bounds.height < 350);

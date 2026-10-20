@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 
 namespace wormedit::sys {
 
@@ -49,7 +50,7 @@ struct tap_timing_state_t {
     std::uint64_t tap_count{};
     std::uint64_t tap_capacity{16};
     std::optional<tap_tempo_estimate_t> estimate;
-    const char* status{};
+    std::string_view status;
 };
 
 struct tap_timing_assist_publication_t {

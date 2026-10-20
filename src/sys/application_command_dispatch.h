@@ -45,7 +45,7 @@ auto reject_application_command(
 
 
 // Stamped Compose activations must be checked before refreshing/invoking the registry.
-inline auto compose_menu_command_is_current(const WormUiWorkspaceAction& action,
+inline auto compose_menu_command_is_current(const wormedit::ui::workspace_action_t& action,
     const document_history_t& history, const workspace_controller_t& workspace) -> bool {
     return !action.compose_menu_command ||
         (action.shortcut_window_focused && !action.shortcut_ime_composition_active &&

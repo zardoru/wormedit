@@ -1,6 +1,6 @@
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
-auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_context_t& context)
+auto resource_pointer_spec(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context)
     -> std::variant<resource_pointer_spec_t, std::string> {
     using namespace wormedit;
     if (context.gesture_active)
@@ -33,7 +33,7 @@ auto resource_pointer_spec(const WormUiComposeInputAction& input, compose_input_
                                    input.kind == WORM_UI_COMPOSE_INPUT_RESOURCE_POINTER_REPLACE};
 }
 
-auto resource_pointer_bga_kind(const WormUiComposeInputAction& input,
+auto resource_pointer_bga_kind(const wormedit::ui::compose_input_action_t& input,
                                wormedit::resource_placement_kind_t kind)
     -> std::optional<wormedit::visual_event_kind_t> {
     return kind == wormedit::resource_placement_kind_t::bga_background
@@ -48,7 +48,7 @@ void advance_dock_after_placement(const wormedit::song_document_t& document,
     worm_ui_frontend_resource_placed(placed.value, next.value_or(wormedit::resource_id_t{}).value);
 }
 
-auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
+auto place_virtual_sample_resource(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::editor_interaction_view_model_t& view,
@@ -75,7 +75,7 @@ auto place_virtual_sample_resource(const WormUiComposeInputAction& input,
     return true;
 }
 
-auto place_virtual_source_resource(const WormUiComposeInputAction& input,
+auto place_virtual_source_resource(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    const wormedit::chart_document_t& chart,
                                    const wormedit::editor_interaction_view_model_t& view,
@@ -113,7 +113,7 @@ auto place_virtual_source_resource(const WormUiComposeInputAction& input,
 }
 
 auto resolve_resource_pointer_target(
-    const WormUiComposeInputAction& input, compose_input_context_t& context,
+    const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
     const wormedit::chart_document_t& chart, const wormedit::editor_interaction_view_model_t& view,
     const resource_pointer_spec_t& spec, wormedit::editor_interaction_result_t& result,
     std::string_view& accepted) -> std::variant<resource_pointer_target_t, std::string> {
@@ -142,7 +142,7 @@ auto resolve_resource_pointer_target(
     return target;
 }
 
-auto replacement_target_for_resource(const WormUiComposeInputAction& input,
+auto replacement_target_for_resource(const wormedit::ui::compose_input_action_t& input,
                                      const wormedit::chart_document_t& chart,
                                      const resource_pointer_spec_t& spec,
                                      wormedit::local_position_t position,
@@ -180,7 +180,7 @@ auto replacement_target_for_resource(const WormUiComposeInputAction& input,
     return *target;
 }
 
-auto dispatch_resource_pointer(const WormUiComposeInputAction& input,
+auto dispatch_resource_pointer(const wormedit::ui::compose_input_action_t& input,
                                compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> compose_input_family_result_t {

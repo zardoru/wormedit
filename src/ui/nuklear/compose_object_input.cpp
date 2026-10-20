@@ -185,7 +185,7 @@ static bool prepare_bga_pointer_target(const WormUiComposeView& view, double x, 
     return open_bga_stack_for_event(view, target_id);
 }
 
-static void set_bga_pointer_kind(WormUiWorkspaceAction* action, std::uint8_t role,
+static void set_bga_pointer_kind(wormedit::ui::workspace_action_t* action, std::uint8_t role,
                                  const WormUiComposeView& view, double x, double y) {
     if (role != WORM_UI_COMPOSE_RESOURCE_ROLE_BGA || action->compose_input_count == 0) return;
     auto& output = action->compose_inputs[action->compose_input_count - 1];

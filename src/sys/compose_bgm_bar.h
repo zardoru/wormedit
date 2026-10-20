@@ -102,7 +102,7 @@ struct bgm_bar_input_context_t {
     asset_id_t asset;
 };
 
-auto consume_bgm_bar_inputs(WormUiWorkspaceAction& action, bgm_bar_range_t& range,
+auto consume_bgm_bar_inputs(wormedit::ui::workspace_action_t& action, bgm_bar_range_t& range,
                             std::optional<bgm_bar_pan_override_t>& pan_override,
                             const bgm_bar_input_context_t& context) -> bool;
 

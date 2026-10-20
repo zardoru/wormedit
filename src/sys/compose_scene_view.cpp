@@ -692,7 +692,7 @@ bool initialize_compose_view_state(
         retained_state && retained_state->is_pending();
     view.timing_stage_active = false;
     view.timing_stage_valid = false;
-    view.timing_stage_lane = WORM_UI_TIMING_LANE_BPM;
+    view.timing_stage_lane = wormedit::timing_lane_kind_t::bpm;
     view.timing_stage_y_pixels = 0.0;
     view.timing_lane_visibility_mask = effective_compose_timing_lane_mask(application_state);
     view.timing_focus = application_state.project.compose_view.compose_timing_focus;

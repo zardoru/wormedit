@@ -65,7 +65,7 @@ import_keysound_files(document_history_t& history, workspace_controller_t& works
 
 // Applies the Sounds properties draft atomically while retaining tags and bindings.
 [[nodiscard]] auto
-dispatch_sound_properties_action(const WormUiWorkspaceAction& action, document_history_t& history,
+dispatch_sound_properties_action(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                                  workspace_controller_t& workspace,
                                  notification_sink_t notifications = notification_sink_t::muted())
     -> bool;
@@ -73,7 +73,7 @@ dispatch_sound_properties_action(const WormUiWorkspaceAction& action, document_h
 // Keysound listbox actions. Returns nullopt for any other action. The status
 // message is always non-empty on success or failure.
 [[nodiscard]] auto
-dispatch_compose_sound_action(const WormUiWorkspaceAction& action, document_history_t& history,
+dispatch_compose_sound_action(const wormedit::ui::workspace_action_t& action, document_history_t& history,
                               workspace_controller_t& workspace, chart_id_t chart,
                               application_command_state_t& application_state,
                               notification_sink_t notifications = notification_sink_t::muted())

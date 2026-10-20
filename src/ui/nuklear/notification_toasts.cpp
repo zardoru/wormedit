@@ -8,19 +8,19 @@
 namespace wormedit::ui::nuklear {
 namespace {
 
-auto severity_label(WormUiNotificationSeverity severity) -> const char* {
-    return severity == WORM_UI_NOTIFICATION_ERROR ? "Error" : "Warning";
+auto severity_label(wormedit::notification_severity_t severity) -> const char* {
+    return severity == wormedit::notification_severity_t::error ? "Error" : "Warning";
 }
 
-auto severity_color(WormUiNotificationSeverity severity) -> nk_color {
-    return theme::ui(severity == WORM_UI_NOTIFICATION_ERROR ? theme::UiColor::accent
+auto severity_color(wormedit::notification_severity_t severity) -> nk_color {
+    return theme::ui(severity == wormedit::notification_severity_t::error ? theme::UiColor::accent
                                                            : theme::UiColor::text_bright);
 }
 
-void render_message_detail(nk_context* context, const char* message,
+void render_message_detail(nk_context* context, std::string_view message,
                            notification_rect_t bounds) {
     const auto mouse = context->input.mouse.pos;
-    if (!message || !notification_contains(bounds, mouse.x, mouse.y)) return;
+    if (message.empty() || !notification_contains(bounds, mouse.x, mouse.y)) return;
     const auto plan = tooltip::plan_text(context, message);
     if (!plan) return;
     const auto placement = tooltip::place(context, plan->outer_width, plan->content_height);
@@ -29,7 +29,7 @@ void render_message_detail(nk_context* context, const char* message,
     tooltip::end(context);
 }
 
-void render_one_toast(nk_context* context, const WormUiNotificationToastView& toast,
+void render_one_toast(nk_context* context, const wormedit::ui::notification_toast_view_t& toast,
                       notification_toast_state_t& state, std::size_t index,
                       int width, int height) {
     constexpr std::array names{"notification-toast-0", "notification-toast-1",
@@ -53,7 +53,7 @@ void render_one_toast(nk_context* context, const WormUiNotificationToastView& to
         nk_label(context, "×", NK_TEXT_CENTERED);
         nk_layout_row_end(context);
         nk_layout_row_dynamic(context, std::max(0.0f, bounds.height - 38.0f), 1);
-        nk_label_wrap(context, toast.message ? toast.message : "");
+        nk_text_wrap(context, toast.message.data(), static_cast<int>(toast.message.size()));
         render_message_detail(context, toast.message, bounds);
     }
     nk_end(context);
@@ -61,7 +61,7 @@ void render_one_toast(nk_context* context, const WormUiNotificationToastView& to
 
 } // namespace
 
-void render_notification_toasts(nk_context* context, const WormUiNotificationView& view,
+void render_notification_toasts(nk_context* context, const wormedit::ui::notification_view_t& view,
                                 notification_toast_state_t& state, int width, int height) {
     state.bounds.fill({});
     state.close_bounds.fill({});
@@ -70,7 +70,7 @@ void render_notification_toasts(nk_context* context, const WormUiNotificationVie
     if (!context || width <= 0 || height <= 0) return;
     tooltip::set_viewport(nk_rect(0.0F, 0.0F, static_cast<float>(width),
                                   static_cast<float>(height)));
-    const auto count = std::min(view.toast_count, std::size_t{WORM_UI_NOTIFICATION_TOAST_CAPACITY});
+    const auto count = std::min(view.toasts.size(), ui::notification_view_t::maximum_visible_toasts);
     for (std::size_t index = 0; index < count; ++index) {
         if (notification_toast_bounds(width, height, index).height == 0) break;
         render_one_toast(context, view.toasts[index], state, index, width, height);
@@ -79,7 +79,7 @@ void render_notification_toasts(nk_context* context, const WormUiNotificationVie
 }
 
 void render_notification_overlay(nk_context* primary, nk_context* overlay,
-                                  const WormUiNotificationView& view,
+                                  const wormedit::ui::notification_view_t& view,
                                   notification_toast_state_t& state, int width, int height) {
     if (!primary || !overlay) {
         notification_focus_lost(state);

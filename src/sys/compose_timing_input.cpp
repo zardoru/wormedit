@@ -1,14 +1,14 @@
-#include "sys/timing_lane_ui.h"
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing.h>
 #include "core/timing_arithmetic.h"
 #include "sys/compose_input_internal.h"
 namespace wormedit::sys::compose_input_detail {
-auto select_compose_timing_marker(const WormUiComposeInputAction& input,
+auto select_compose_timing_marker(const wormedit::ui::compose_input_action_t& input,
                                   compose_input_context_t& context,
                                   wormedit::editor_interaction_result_t& result,
                                   std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
-    const auto identity = ui_codec<WormUiTimingLaneKind>::descriptor(input.timing_lane);
+    const auto identity = wormedit::find_catalog_entry(wormedit::timing_lanes, input.timing_lane);
     const auto mode = context.selection_mode(input.selection_mode);
     if (!identity || !mode || input.object_id == 0)
         return "Timing marker selection is stale or invalid.";
@@ -38,12 +38,12 @@ auto timing_pointer_row(compose_input_context_t& context, const wormedit::chart_
     return snapped;
 }
 
-auto move_compose_timing_selection(const WormUiComposeInputAction& input,
+auto move_compose_timing_selection(const wormedit::ui::compose_input_action_t& input,
                                    compose_input_context_t& context,
                                    wormedit::editor_interaction_result_t& result,
                                    std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
-    const auto identity = ui_codec<WormUiTimingLaneKind>::descriptor(input.timing_lane);
+    const auto identity = wormedit::find_catalog_entry(wormedit::timing_lanes, input.timing_lane);
     const auto* chart = context.chart();
     const auto view = compose_view_for_state(context.environment.document.history, context.state);
     if (!identity || !chart || !view || !std::isfinite(input.y_pixels))
@@ -104,7 +104,7 @@ auto kiai_manipulated_rows(const wormedit::kiai_span_t* span, std::uint8_t edge,
     return std::pair{moved->begin, moved->end};
 }
 
-auto edit_compose_kiai_span(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto edit_compose_kiai_span(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted) -> std::optional<std::string> {
     using namespace wormedit;
@@ -174,7 +174,7 @@ auto speed_transition_between(const wormedit::chart_document_t& chart,
     return timing_arithmetic::subtract_exact<rational_t>(end->value, begin->value);
 }
 
-auto edit_compose_speed_span(const WormUiComposeInputAction& input,
+auto edit_compose_speed_span(const wormedit::ui::compose_input_action_t& input,
                              compose_input_context_t& context,
                              wormedit::editor_interaction_result_t& result,
                              std::string_view& accepted) -> std::optional<std::string> {
@@ -247,7 +247,7 @@ auto find_input_recipe(const wormedit::chart_document_t& chart, std::uint64_t id
     return found == chart.sv_recipes.end() ? nullptr : &*found;
 }
 
-auto edit_compose_recipe_range(const WormUiComposeInputAction& input,
+auto edit_compose_recipe_range(const wormedit::ui::compose_input_action_t& input,
                                compose_input_context_t& context,
                                wormedit::editor_interaction_result_t& result,
                                std::string_view& accepted) -> std::optional<std::string> {

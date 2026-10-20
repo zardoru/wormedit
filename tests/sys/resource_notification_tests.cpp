@@ -59,8 +59,8 @@ struct resource_notification_fixture_t {
         center.drain_inbox(notification_time_t{0});
         return center.snapshot(notification_capacity);
     }
-    auto inspect_action() const -> WormUiWorkspaceAction {
-        WormUiWorkspaceAction action{};
+    auto inspect_action() const -> wormedit::ui::workspace_action_t {
+        wormedit::ui::workspace_action_t action{};
         action.compose_input_chart_id = 1;
         action.compose_input_document_revision = history.document.revision;
         action.compose_resource_asset_id = 1;

@@ -31,7 +31,7 @@ struct metadata_notification_fixture_t {
         workspace = *binding.value;
     }
 
-    auto dispatch(const WormUiWorkspaceAction& action, bool timing_locked = false) -> std::optional<std::string> {
+    auto dispatch(const wormedit::ui::workspace_action_t& action, bool timing_locked = false) -> std::optional<std::string> {
         return dispatch_metadata_action(action, history, workspace, timing_locked, drop, assets,
                                         {}, scheduler, false, false, sink);
     }
@@ -42,8 +42,8 @@ struct metadata_notification_fixture_t {
     }
 };
 
-auto song_edit(const metadata_notification_fixture_t& fixture) -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+auto song_edit(const metadata_notification_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.metadata_edit = WORM_UI_METADATA_EDIT_SONG;
     action.metadata_document_revision = fixture.history.document.revision;
     action.metadata_title = "New title";
@@ -83,8 +83,8 @@ auto redivision_song(std::uint64_t row) -> song_document_t {
 }
 
 auto redivision_action(const metadata_notification_fixture_t& fixture, std::uint64_t resolution)
-    -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+    -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.metadata_edit = WORM_UI_METADATA_EDIT_REDIVIDE_CHART;
     action.metadata_document_revision = fixture.history.document.revision;
     action.metadata_chart_id = 1;
@@ -115,7 +115,7 @@ struct channel_map_request_t {
     std::array<std::uint64_t, 2> lane_ids{};
     std::array<std::string, 8> texts{};
     std::array<const char*, 8> text_pointers{};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
 
     void point() {
         for (std::size_t index = 0; index < texts.size(); ++index)
@@ -207,7 +207,7 @@ TEST_CASE("metadata malformed and stale edits post once without mutation", "[uni
     expect_edit_entry(entries[0], notification_severity_t::error, *stale);
     check_metadata_notification(fixture.history.document.revision == revision);
     check_metadata_notification(fixture.history.undo.empty());
-    check_metadata_notification(!fixture.dispatch(WormUiWorkspaceAction{}));
+    check_metadata_notification(!fixture.dispatch(wormedit::ui::workspace_action_t{}));
     check_metadata_notification(fixture.entries().size() == 2);
 }
 
@@ -260,7 +260,7 @@ TEST_CASE("channel-map preview with a conflict keeps apply rejected and the docu
     check_metadata_notification(!fixture.drop.channel_map_preview->value ||
         channel_map_preview_view_t::from(*fixture.drop.channel_map_preview).report->conflict_count > 0);
 
-    WormUiWorkspaceAction apply{};
+    wormedit::ui::workspace_action_t apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
     apply.metadata_document_revision = revision;
     apply.metadata_chart_id = 2;
@@ -286,7 +286,7 @@ TEST_CASE("channel-map preview then apply swaps two lanes as one undoable comman
     require_metadata_notification(fixture.drop.channel_map_preview->value.has_value());
     check_metadata_notification(fixture.drop.channel_map_preview->value->payload.report.conflict_count == 0);
 
-    WormUiWorkspaceAction apply{};
+    wormedit::ui::workspace_action_t apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
     apply.metadata_document_revision = fixture.history.document.revision;
     apply.metadata_chart_id = 2;
@@ -315,7 +315,7 @@ TEST_CASE("stale channel-map preview rejects apply without touching the document
     require_metadata_notification(fixture.dispatch(title) == "Metadata updated.");
     const auto revision = fixture.history.document.revision;
 
-    WormUiWorkspaceAction apply{};
+    wormedit::ui::workspace_action_t apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_CHANNEL_MAP;
     apply.metadata_document_revision = revision;
     apply.metadata_chart_id = 2;
@@ -336,7 +336,7 @@ TEST_CASE("batch metadata edit writes every selected difficulty in one undo step
                                            fixture.history.document.charts[1].id.value};
     const auto undo_before = fixture.history.undo.size();
 
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.metadata_edit = WORM_UI_METADATA_EDIT_BATCH_CHART;
     action.metadata_batch_chart_ids = ids.data();
     action.metadata_batch_chart_count = ids.size();
@@ -375,11 +375,11 @@ auto song_format_group(const metadata_notification_fixture_t& fixture, format_fa
     return nullptr;
 }
 
-WormUiWorkspaceAction typed_format_action(const metadata_notification_fixture_t& fixture,
+wormedit::ui::workspace_action_t typed_format_action(const metadata_notification_fixture_t& fixture,
                                           WormUiMetadataEditKind kind, format_family_t family,
                                           const char* name, const char* value,
                                           std::size_t index) {
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.metadata_edit = kind;
     action.metadata_document_revision = fixture.history.document.revision;
     action.metadata_format_family = static_cast<std::uint8_t>(family);
@@ -441,8 +441,8 @@ auto lane_profile_index_for_other_profile(const metadata_notification_fixture_t&
 }
 
 auto lane_profile_preview_action(const metadata_notification_fixture_t& fixture, std::size_t index)
-    -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+    -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.metadata_edit = WORM_UI_METADATA_EDIT_PREVIEW_LANE_PROFILE;
     action.metadata_document_revision = fixture.history.document.revision;
     action.metadata_chart_id = 2;
@@ -462,7 +462,7 @@ TEST_CASE("key-count preview then apply changes the family profile as one undoab
     require_metadata_notification(fixture.drop.lane_profile_preview.has_value());
     require_metadata_notification(fixture.drop.lane_profile_preview->value.has_value());
 
-    WormUiWorkspaceAction apply{};
+    wormedit::ui::workspace_action_t apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
     apply.metadata_document_revision = fixture.history.document.revision;
     apply.metadata_chart_id = 2;
@@ -487,7 +487,7 @@ TEST_CASE("stale key-count preview rejects apply without touching the document",
     require_metadata_notification(fixture.dispatch(title) == "Metadata updated.");
     const auto revision = fixture.history.document.revision;
 
-    WormUiWorkspaceAction apply{};
+    wormedit::ui::workspace_action_t apply{};
     apply.metadata_edit = WORM_UI_METADATA_EDIT_APPLY_LANE_PROFILE;
     apply.metadata_document_revision = revision;
     apply.metadata_chart_id = 2;

@@ -10,7 +10,7 @@ struct document_edit_inputs_t;
 // Borrow the existing document owner for this synchronous resource operation.
 struct resource_action_context_t {
     using outcome_type = compose_action_outcome_t;
-    const WormUiWorkspaceAction& action;
+    const wormedit::ui::workspace_action_t& action;
     const document_edit_inputs_t& document;
     chart_id_t chart;
 };

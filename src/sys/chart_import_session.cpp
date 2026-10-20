@@ -35,7 +35,7 @@ void rebuild_view_storage(chart_import_session_t& session) {
         session.row_labels.push_back((item.name.empty() ? std::string{"Untitled"} : item.name) + " · " +
             family_name(item.family) + " · " + std::to_string(item.notes) + " notes");
     for (std::size_t index = 0; index < difficulties.size(); ++index)
-        session.row_views.push_back({.chart_id = difficulties[index].chart.value,
+        session.row_views.push_back({.chart_id = difficulties[index].chart,
             .label = session.row_labels[index].c_str(),
             .selected = is_selected(session, difficulties[index].chart)});
     if (session.selected.empty() || !session.proposal.diagnostics.empty()) return;
@@ -52,8 +52,6 @@ void rebuild_view_storage(chart_import_session_t& session) {
     if (listed > listed_missing_files)
         session.note_lines.push_back("… and " + std::to_string(listed - listed_missing_files) + " more missing files");
     for (const auto& difference : proposal.timing_differences) session.note_lines.push_back(difference.message);
-    if (session.note_lines.size() > WORM_UI_CHART_IMPORT_NOTE_CAPACITY)
-        session.note_lines.resize(WORM_UI_CHART_IMPORT_NOTE_CAPACITY);
 }
 
 void replan(chart_import_session_t& session, const song_document_t& target,
@@ -127,20 +125,24 @@ auto chart_import_confirm(chart_import_session_t& session, document_history_t& h
     return result;
 }
 
-auto chart_import_view(const chart_import_session_t& session, std::uint64_t document_revision)
-    -> WormUiChartImportView {
-    WormUiChartImportView view{};
-    view.visible = session.open;
-    view.path = session.path_text.c_str();
-    view.error = session.error.c_str();
-    view.rows = session.row_views.data();
-    view.row_count = session.row_views.size();
-    view.summary = session.summary.c_str();
-    for (const auto& line : session.note_lines)
-        if (view.note_count < WORM_UI_CHART_IMPORT_NOTE_CAPACITY) view.notes[view.note_count++] = line.c_str();
-    view.can_import = session.source && !session.selected.empty() && session.proposal.diagnostics.empty();
-    view.document_revision = document_revision;
-    return view;
+} // namespace wormedit::sys
+
+void wormedit::ui::chart_import_view_t::refill(
+    const sys::chart_import_session_t& session, std::uint64_t revision) {
+    visible = session.open;
+    path = session.path_text;
+    error = session.error;
+    rows.assign(session.row_views.begin(), session.row_views.end());
+    summary = session.summary;
+    notes.clear();
+    for (const auto& line : session.note_lines) notes.push_back(line);
+    can_import = session.source && !session.selected.empty() && session.proposal.diagnostics.empty();
+    document_revision = revision;
 }
 
-} // namespace wormedit::sys
+auto wormedit::ui::chart_import_view_t::from(
+    const sys::chart_import_session_t& session, std::uint64_t revision) -> chart_import_view_t {
+    chart_import_view_t result;
+    result.refill(session, revision);
+    return result;
+}

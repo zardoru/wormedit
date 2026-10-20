@@ -34,16 +34,16 @@ struct recovery_fixture_t {
         std::error_code error;
         std::filesystem::remove_all(directory, error);
     }
-    auto action(WormUiWorkspaceActionKind kind) -> WormUiWorkspaceAction {
+    auto action(WormUiWorkspaceActionKind kind) -> wormedit::ui::workspace_action_t {
         const auto target = controller.view().rows.at(1).target;
-        WormUiWorkspaceAction value{};
+        wormedit::ui::workspace_action_t value{};
         value.kind = kind;
         value.recovery_scan_generation = target.scan_generation;
         value.recovery_row_index = target.row_index;
         value.recovery_candidate_index = target.candidate_index;
         return value;
     }
-    auto dispatch(const WormUiWorkspaceAction& action) -> std::string {
+    auto dispatch(const wormedit::ui::workspace_action_t& action) -> std::string {
         return dispatch_recovery_ui_action(action, controller, history, workspace,
             native_project_document_version_t{song_id_t{417}, 5}, autosave, recovered, sink);
     }

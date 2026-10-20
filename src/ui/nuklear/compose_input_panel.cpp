@@ -168,7 +168,7 @@ auto has_compose_gesture_capture() -> bool {
     return pending;
 }
 
-void cancel_compose_gestures(WormUiWorkspaceAction* action) {
+void cancel_compose_gestures(wormedit::ui::workspace_action_t* action) {
     const auto pending = has_compose_gesture_capture();
     // Audio offset is a separate transaction, so preserve its stamp until the deferred cancel.
     state.input_queue.waveform_offset_cancel_pending |= state.waveform_drag.waveform_beat_zero_drag_active;
@@ -194,7 +194,7 @@ void cancel_compose_gestures(WormUiWorkspaceAction* action) {
     } else state.input_queue.cancel_pending = true;
 }
 
-void set_waveform_offset_drag_action(WormUiWorkspaceAction* action,
+void set_waveform_offset_drag_action(wormedit::ui::workspace_action_t* action,
                                             WormUiAudioOffsetDragAction kind,
                                             std::int64_t delta_frames) {
     if (!action || action->audio_offset_drag_action != WORM_UI_AUDIO_OFFSET_DRAG_NONE)
@@ -213,13 +213,13 @@ void reset_waveform_offset_drag() {
 }
 
 void append_compose_input(
-    WormUiWorkspaceAction* action, WormUiComposeInputKind kind, double x_pixels,
+    wormedit::ui::workspace_action_t* action, WormUiComposeInputKind kind, double x_pixels,
     double y_pixels, uint64_t lane_id, bool successive,
     WormUiComposeSelectionMode selection_mode,
     WormUiComposeNavigationAction navigation_action,
     uint64_t object_id, uint8_t resource_role,
     bool razor_stroke_start,
-    WormUiTimingLaneKind timing_lane,
+    wormedit::timing_lane_kind_t timing_lane,
     uint64_t timing_chart_id, uint64_t timing_document_revision,
     uint64_t timing_anchor_chart_row) {
     if (!action) {
@@ -232,7 +232,7 @@ void append_compose_input(
             .object_id = 0,
             .timing_chart_id = 0,
             .timing_document_revision = 0,
-            .timing_lane = WORM_UI_TIMING_LANE_BPM,
+            .timing_lane = wormedit::timing_lane_kind_t::bpm,
             .timing_anchor_chart_row = 0,
             .resource_role = 0,
             .successive = false,
@@ -273,7 +273,7 @@ void append_compose_input(
     };
 }
 
-void append_beat_fit_input(WormUiWorkspaceAction* action,
+void append_beat_fit_input(wormedit::ui::workspace_action_t* action,
                                   WormUiComposeInputKind kind, double y,
                                   bool ctrl_held, bool onset_snap_held) {
     append_compose_input(action, kind, 0.0, y);
@@ -287,7 +287,7 @@ void append_beat_fit_input(WormUiWorkspaceAction* action,
     event.beat_fit_snap_step_denominator = beat_fit_snap_steps[index].denominator;
 }
 
-void cancel_beat_fit_drag(WormUiWorkspaceAction* action) {
+void cancel_beat_fit_drag(wormedit::ui::workspace_action_t* action) {
     if (state.waveform_drag.beat_fit_drag_active) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_BEAT_FIT_CANCEL);
         state.waveform_drag.beat_fit_drag_active = false;
@@ -295,7 +295,7 @@ void cancel_beat_fit_drag(WormUiWorkspaceAction* action) {
     }
 }
 
-void cancel_offset_fit_drag(WormUiWorkspaceAction* action) {
+void cancel_offset_fit_drag(wormedit::ui::workspace_action_t* action) {
     if (!state.waveform_drag.offset_fit_drag_active) return;
     append_compose_input(action, WORM_UI_COMPOSE_INPUT_OFFSET_FIT_CANCEL);
     state.waveform_drag.offset_fit_drag_active = false;
@@ -303,7 +303,7 @@ void cancel_offset_fit_drag(WormUiWorkspaceAction* action) {
 }
 
 void
-update_compose_pointer_navigation(WormUiWorkspaceAction* action,
+update_compose_pointer_navigation(wormedit::ui::workspace_action_t* action,
                                   std::optional<WormUiComposeNavigationAction> desired_action) {
     if (!action) {
         return;
@@ -328,7 +328,7 @@ update_compose_pointer_navigation(WormUiWorkspaceAction* action,
     }
 }
 
-void cancel_compose_navigation(WormUiWorkspaceAction* action) {
+void cancel_compose_navigation(wormedit::ui::workspace_action_t* action) {
     const bool pending = state.keyboard_navigation.tab_navigation_needs_cancel || state.keyboard_navigation.tab_navigation.tab_down ||
                          state.keyboard_navigation.navigation_key_active || state.keyboard_navigation.pointer_navigation_active;
     if (action && pending) {
@@ -343,7 +343,7 @@ void cancel_compose_navigation(WormUiWorkspaceAction* action) {
     state.keyboard_navigation.pointer_navigation_active = false;
 }
 
-bool compose_action_has_cancel(const WormUiWorkspaceAction* action) {
+bool compose_action_has_cancel(const wormedit::ui::workspace_action_t* action) {
     if (!action) {
         return false;
     }
@@ -355,7 +355,7 @@ bool compose_action_has_cancel(const WormUiWorkspaceAction* action) {
     return false;
 }
 
-void append_compose_cancel_once(WormUiWorkspaceAction* action) {
+void append_compose_cancel_once(wormedit::ui::workspace_action_t* action) {
     if (action && !compose_action_has_cancel(action)) {
         append_compose_input(action, WORM_UI_COMPOSE_INPUT_CANCEL_GESTURE);
     }
@@ -538,7 +538,7 @@ WormUiComposeSelectionMode compose_selection_mode(uint16_t modifiers) {
     return compose_pointer_selection_mode(modifiers);
 }
 
-static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) {
+static void cancel_pending_compose_panel_actions(wormedit::ui::workspace_action_t* action) {
     if (state.inline_timing.inline_timing_open) worm_ui_nuklear_inline_timing_cancel(state, *action);
     cancel_compose_gestures(action);
     state.resource_picker.resource_pointer_mode = worm_ui_nuklear_compose_resource_pointer_mode_t::off;
@@ -546,7 +546,7 @@ static void cancel_pending_compose_panel_actions(WormUiWorkspaceAction* action) 
     state.inline_timing.inline_timing_open = false;
 }
 
-static void reset_compose_revision_state(bool, WormUiWorkspaceAction* action) {
+static void reset_compose_revision_state(bool, wormedit::ui::workspace_action_t* action) {
     cancel_compose_gestures(action);
     state.inline_offset.bgm_column_count_edit = {};
     state.inline_timing.inline_timing_open = false;
@@ -554,7 +554,7 @@ static void reset_compose_revision_state(bool, WormUiWorkspaceAction* action) {
     state.layer_editor.semantic_layer_color_editor_visible = false;
 }
 
-static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
+static void clear_inactive_compose_panel(wormedit::ui::workspace_action_t* action) {
     cancel_compose_gestures(action);
     state.inline_offset.bgm_column_count_edit = {};
     state.input_queue.key_event_count = 0;
@@ -568,7 +568,7 @@ static void clear_inactive_compose_panel(WormUiWorkspaceAction* action) {
 
 static void cancel_disabled_compose_paint_modes(const WormUiComposeView* view,
                                                 bool window_focused,
-                                                WormUiWorkspaceAction* action) {
+                                                wormedit::ui::workspace_action_t* action) {
     if ((state.pointer_capture.note_paint_pointer_active || state.pointer_capture.draw_erase_pointer_active) &&
         (!window_focused || !view->scene_available || !view->note_paint_mode_active ||
          view->input_occluded || view->timing_focus)) {
@@ -587,7 +587,7 @@ static void retain_compose_core_gesture_presence(const WormUiComposeView* view, 
     if (view && active && view->visible) state.input_queue.core_gesture_active = view->editor_gesture_active;
 }
 
-static void sync_armed_resource_context(const WormUiComposeView& view, WormUiWorkspaceAction& action,
+static void sync_armed_resource_context(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                                         bool project_changed, bool chart_changed) {
     if (project_changed) {
         reset_armed_resource(state, compose_resource_reset_reason_t::project_changed);
@@ -612,7 +612,7 @@ static void sync_pointer_hold_acceptance(const WormUiComposeView& view) {
     }
 }
 
-static void stamp_visible_compose_input(const WormUiComposeView* view, WormUiWorkspaceAction& action) {
+static void stamp_visible_compose_input(const WormUiComposeView* view, wormedit::ui::workspace_action_t& action) {
     if (!view || !view->visible) return;
     // Modal occlusion cancels captures; cleanup still belongs to the visible chart.
     wormedit::ui::stamp_compose_input(action, *view, wormedit::ui::compose_project_stamp_t::include);
@@ -620,7 +620,7 @@ static void stamp_visible_compose_input(const WormUiComposeView* view, WormUiWor
 }
 
 void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool compose_tab_active,
-                                           bool window_focused, WormUiWorkspaceAction* action) {
+                                           bool window_focused, wormedit::ui::workspace_action_t* action) {
     state.input_queue.pointer_modifiers = static_cast<std::uint16_t>(SDL_GetModState());
     retain_compose_core_gesture_presence(view, compose_tab_active);
     if (!action) {
@@ -670,8 +670,8 @@ void worm_ui_nuklear_prepare_compose_panel(const WormUiComposeView* view, bool c
 }
 
 auto compose_timing_target(const WormUiComposeView& view, double screen_y)
-    -> WormUiTimingTarget {
-    return WormUiTimingTarget{screen_y, view.viewport_height_pixels,
+    -> wormedit::ui::timing_target_t {
+    return wormedit::ui::timing_target_t{screen_y, view.viewport_height_pixels,
                               view.timing_document_begin_fraction,
                               view.timing_document_end_fraction, view.downscroll};
 }
@@ -686,22 +686,21 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     const auto timing_right = compose_timing_right(view);
     if (timing_view.stage_active || click_x < compose_measure_rail_width ||
         click_x >= timing_right ||
-        action.timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
+        action.timing_stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     const auto clicked_lane = wormedit::ui::compose_timing_lane_at(view, click_x);
     if (!clicked_lane) return false;
-    const auto clicked_timing_lane_ordinal = static_cast<std::size_t>(*clicked_lane);
     const auto* clicked_marker = compose_timing_marker_at(view, click_x, click_y);
     const auto existing_object_id = clicked_marker ? clicked_marker->object_id : 0;
-    action.timing_stage_action = WORM_UI_TIMING_STAGE_BEGIN;
-    action.timing_chart_id = timing_view.chart_id;
+    action.timing_stage_action = wormedit::ui::timing_stage_action_t::begin;
+    action.timing_chart_id = timing_view.chart_id.value;
     action.timing_document_revision = timing_view.document_revision;
-    action.timing_lane = static_cast<WormUiTimingLaneKind>(clicked_timing_lane_ordinal);
+    action.timing_lane = *clicked_lane;
     action.timing_object_id = existing_object_id;
     if (existing_object_id == 0) {
         action.timing_has_target_y = true;
         action.timing_target = clicked_marker && clicked_marker->fixed_initial
-            ? WormUiTimingTarget{0.0, 1.0, 0.0, 1.0, false}
+            ? wormedit::ui::timing_target_t{0.0, 1.0, 0.0, 1.0, false}
             : compose_timing_target(view, click_y);
     }
     if (clicked_marker && existing_object_id != 0) {
@@ -714,13 +713,13 @@ static bool begin_timing_stage_from_rail_click(const ComposeDoubleClickContext& 
     state.timing_marker.timing_missing_initial_selected = clicked_marker && clicked_marker->fixed_initial &&
                                             existing_object_id == 0;
     if (timing_view.initial_bpm_editable &&
-        clicked_timing_lane_ordinal != WORM_UI_TIMING_LANE_KIAI) {
+        *clicked_lane != wormedit::timing_lane_kind_t::kiai) {
         state.inline_timing.inline_timing_open = true;
         state.inline_timing.inline_timing_focus_pending = true;
-        state.inline_timing.inline_timing_chart_id = timing_view.chart_id;
+        state.inline_timing.inline_timing_chart_id = timing_view.chart_id.value;
         state.inline_timing.inline_timing_revision = timing_view.document_revision;
         state.inline_timing.inline_timing_object_id = existing_object_id;
-        state.inline_timing.inline_timing_lane = static_cast<WormUiTimingLaneKind>(clicked_timing_lane_ordinal);
+        state.inline_timing.inline_timing_lane = *clicked_lane;
         state.inline_timing.inline_timing_anchor_screen_x = static_cast<float>(
             input.viewport.x + click_x * input.viewport.w / view.viewport_width_pixels);
         state.inline_timing.inline_timing_anchor_screen_y = static_cast<float>(
@@ -742,7 +741,7 @@ static bool begin_bookmark_rename_from_double_click(const ComposeDoubleClickCont
                                                          click_y);
 }
 
-static void arm_compose_stem_source(WormUiWorkspaceAction& action, std::uint64_t resource) {
+static void arm_compose_stem_source(wormedit::ui::workspace_action_t& action, std::uint64_t resource) {
     set_armed_resource(state, resource, compose_resource_origin_t::sounds);
     worm_ui_nuklear_pick_draw_source(state, action, 1, resource);
 }
@@ -849,16 +848,16 @@ static auto begin_timing_quick_insert(const ComposePointerEventContext& input) -
     const auto ctrl = (input.pointer_modifiers & SDL_KMOD_CTRL) != 0;
     const auto alt = (input.pointer_modifiers & SDL_KMOD_ALT) != 0;
     if ((input.pointer_modifiers & other_modifiers) != 0 || ctrl == alt) return false;
-    const auto wanted = ctrl ? WORM_UI_TIMING_LANE_BPM : WORM_UI_TIMING_LANE_ANCHOR;
+    const auto wanted = ctrl ? wormedit::timing_lane_kind_t::bpm : wormedit::timing_lane_kind_t::anchor;
     const auto allowed = ctrl ? wormedit::ui::compose_ctrl_click_inserts_matching_bpm(mode)
                               : wormedit::ui::compose_alt_click_inserts_anchor(mode);
     const auto lane = wormedit::ui::compose_timing_lane_at(view, input.pointer_started_x);
     if (!allowed || !lane || *lane != wanted || !timing.initial_bpm_editable ||
-        timing.stage_active || input.action->timing_stage_action != WORM_UI_TIMING_STAGE_NONE)
+        timing.stage_active || input.action->timing_stage_action != wormedit::ui::timing_stage_action_t::none)
         return false;
     auto& action = *input.action;
-    action.timing_stage_action = WORM_UI_TIMING_STAGE_QUICK_INSERT;
-    action.timing_chart_id = timing.chart_id;
+    action.timing_stage_action = wormedit::ui::timing_stage_action_t::quick_insert;
+    action.timing_chart_id = timing.chart_id.value;
     action.timing_document_revision = timing.document_revision;
     action.timing_lane = wanted;
     action.timing_object_id = 0;
@@ -951,7 +950,7 @@ static auto update_bookmark_move_capture(const ComposePointerEventContext& input
         append_compose_input(input.action, WORM_UI_COMPOSE_INPUT_BOOKMARK_MOVE,
             input.pointer_x, input.pointer_y, 0, false, WORM_UI_COMPOSE_SELECTION_REPLACE,
             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, state.bookmark_ui.bookmark_move_id, 0, false,
-            WORM_UI_TIMING_LANE_BPM, state.bookmark_ui.bookmark_move_chart_id,
+            wormedit::timing_lane_kind_t::bpm, state.bookmark_ui.bookmark_move_chart_id,
             state.bookmark_ui.bookmark_move_revision);
     reset_bookmark_move_capture();
     if (!moved) replay_bookmark_press_as_paint(input);
@@ -1103,7 +1102,7 @@ static auto handle_compose_bgm_click(const ComposePointerEventContext& input,
             input.pointer_x, input.pointer_y, 0, false,
             compose_selection_mode(input.pointer_modifiers),
             WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD, bga_event_id, 0, false,
-            WORM_UI_TIMING_LANE_BPM, view.chart_id, view.document_revision);
+            wormedit::timing_lane_kind_t::bpm, view.chart_id, view.document_revision);
         return true;
     }
     if (state.bmson_input.bmson_razor_mode != worm_ui_nuklear_bmson_razor_mode_t::off &&
@@ -1170,7 +1169,7 @@ static auto update_bga_event_move_capture(const ComposePointerEventContext& inpu
                 input.pointer_x, input.pointer_y, 0, false,
                 WORM_UI_COMPOSE_SELECTION_REPLACE,
                 WORM_UI_COMPOSE_NAVIGATION_CURSOR_BACKWARD,
-                state.bga_interaction.bga_event_move_object_id, 0, false, WORM_UI_TIMING_LANE_BPM,
+                state.bga_interaction.bga_event_move_object_id, 0, false, wormedit::timing_lane_kind_t::bpm,
                 state.timing_drag.bga_capture.chart, state.timing_drag.bga_capture.revision,
                 state.bga_interaction.bga_event_move_anchor_row);
             if (input.action->compose_input_count != 0) {

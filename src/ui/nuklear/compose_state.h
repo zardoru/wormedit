@@ -395,7 +395,7 @@ struct worm_ui_nuklear_compose_state_t {
         bool timing_missing_initial_selected{};
         std::uint64_t timing_marker_object_id{};
         std::uint64_t timing_marker_chart_row{};
-        WormUiTimingLaneKind timing_marker_lane{WORM_UI_TIMING_LANE_BPM};
+        wormedit::timing_lane_kind_t timing_marker_lane{wormedit::timing_lane_kind_t::bpm};
         double timing_marker_anchor_y_pixels{};
         double timing_marker_current_y_pixels{};
     } timing_marker;
@@ -419,7 +419,7 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t inline_timing_seen_chart_id{};
         std::uint64_t inline_timing_seen_revision{};
         std::uint64_t inline_timing_seen_object_id{};
-        WormUiTimingLaneKind inline_timing_seen_lane{WORM_UI_TIMING_LANE_BPM};
+        wormedit::timing_lane_kind_t inline_timing_seen_lane{wormedit::timing_lane_kind_t::bpm};
         double inline_timing_seen_stage_y{};
         bool inline_timing_focus_pending{};
         bool inline_timing_popup_close_pending{};
@@ -427,7 +427,7 @@ struct worm_ui_nuklear_compose_state_t {
         std::uint64_t inline_timing_chart_id{};
         std::uint64_t inline_timing_revision{};
         std::uint64_t inline_timing_object_id{};
-        WormUiTimingLaneKind inline_timing_lane{WORM_UI_TIMING_LANE_BPM};
+        wormedit::timing_lane_kind_t inline_timing_lane{wormedit::timing_lane_kind_t::bpm};
         float inline_timing_anchor_screen_x{};
         float inline_timing_anchor_screen_y{};
         std::array<char, 64> inline_timing_text{};
@@ -825,7 +825,7 @@ void worm_ui_nuklear_advance_resource_picker(std::uint64_t placed_resource_id,
 // can create a note (lane key, paint, Alt-hold, click) captures it the same way at press time.
 void worm_ui_nuklear_tag_last_compose_input_sound(const worm_ui_nuklear_compose_state_t& state,
                                                   const WormUiComposeView& view,
-                                                  WormUiWorkspaceAction& action);
+                                                  wormedit::ui::workspace_action_t& action);
 
 void worm_ui_nuklear_reset_compose_state();
 
@@ -833,23 +833,23 @@ void worm_ui_nuklear_reset_compose_state();
                                                         const WormUiComposeView& view) -> bool;
 void worm_ui_nuklear_cancel_inline_offset(worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_update_inline_offset(worm_ui_nuklear_compose_state_t& state,
-                                          const WormUiComposeView& view, WormUiWorkspaceAction& action,
+                                          const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                                           bool committed, bool deactivated);
 
-void worm_ui_nuklear_inline_timing_initial_text(const WormUiTimingView& view, char* destination,
+void worm_ui_nuklear_inline_timing_initial_text(const wormedit::ui::timing_view_t& view, char* destination,
                                                 std::size_t capacity);
 [[nodiscard]] auto worm_ui_nuklear_inline_timing_review_new_stage(
-    worm_ui_nuklear_compose_state_t& state, const WormUiTimingView& view,
-    const WormUiWorkspaceAction& action, float anchor_x, float anchor_y) -> bool;
+    worm_ui_nuklear_compose_state_t& state, const wormedit::ui::timing_view_t& view,
+    const wormedit::ui::workspace_action_t& action, float anchor_x, float anchor_y) -> bool;
 void worm_ui_nuklear_inline_timing_cancel(worm_ui_nuklear_compose_state_t& state,
-                                         WormUiWorkspaceAction& action);
+                                         wormedit::ui::workspace_action_t& action);
 void worm_ui_nuklear_inline_timing_update(worm_ui_nuklear_compose_state_t& state,
-                                         const WormUiTimingView& view,
-                                         WormUiWorkspaceAction& action,
+                                         const wormedit::ui::timing_view_t& view,
+                                         wormedit::ui::workspace_action_t& action,
                                          bool committed, bool deactivated);
-[[nodiscard]] auto worm_ui_nuklear_inline_timing_confirm(const WormUiTimingView& view,
+[[nodiscard]] auto worm_ui_nuklear_inline_timing_confirm(const wormedit::ui::timing_view_t& view,
                                                          const char* text,
-                                                         WormUiWorkspaceAction& action) -> bool;
+                                                         wormedit::ui::workspace_action_t& action) -> bool;
 
 [[nodiscard]] auto worm_ui_nuklear_compose_file_dialog_begin()
     -> std::optional<std::uint64_t>;
@@ -874,7 +874,7 @@ auto worm_ui_nuklear_begin_shift_range(worm_ui_nuklear_compose_state_t& state,
 auto worm_ui_nuklear_release_shift_range(worm_ui_nuklear_compose_state_t& state,
     std::uint8_t released_key) -> bool;
 
-void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, WormUiWorkspaceAction&, uint8_t kind, uint64_t id);
+void worm_ui_nuklear_pick_draw_source(worm_ui_nuklear_compose_state_t&, wormedit::ui::workspace_action_t&, uint8_t kind, uint64_t id);
 
 struct nk_context;
 bool worm_ui_nuklear_compose_context_click(const nk_context*, const WormUiComposeView&);

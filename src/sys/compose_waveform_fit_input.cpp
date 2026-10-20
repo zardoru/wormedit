@@ -54,7 +54,7 @@ void capture_fit_onsets(compose_scene_cache_t& cache,
 #endif
 }
 
-auto fit_onset_target(compose_scene_cache_t& cache, const WormUiComposeInputAction& input,
+auto fit_onset_target(compose_scene_cache_t& cache, const wormedit::ui::compose_input_action_t& input,
                       std::uint64_t frame) -> std::uint64_t {
     cache.timing.beat_fit_onset_snapped = false;
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
@@ -76,7 +76,7 @@ auto fit_onset_target(compose_scene_cache_t& cache, const WormUiComposeInputActi
 }
 
 auto dispatch_compose_beat_fit_input(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
     const wormedit::chart_document_t* input_chart) -> std::optional<compose_input_family_result_t> {
@@ -104,7 +104,7 @@ auto dispatch_compose_beat_fit_input(
     }
 }
 
-auto dispatch_compose_offset_fit_input(const WormUiComposeInputAction& input,
+auto dispatch_compose_offset_fit_input(const wormedit::ui::compose_input_action_t& input,
                                        compose_input_context_t& context)
     -> std::optional<compose_input_family_result_t> {
     using namespace wormedit;
@@ -224,7 +224,7 @@ auto previous_beat_fit_anchor(const wormedit::chart_document_t& chart,
 }
 
 auto begin_compose_beat_fit(
-    const WormUiComposeInputAction& input, wormedit::document_history_t& history,
+    const wormedit::ui::compose_input_action_t& input, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     application_command_state_t& application_state, compose_scene_cache_t& scene_cache,
     const wormedit::chart_document_t* input_chart) -> compose_input_family_result_t {
@@ -274,7 +274,7 @@ auto begin_compose_beat_fit(
         notification_severity_t::hint, notification_source_t::input);
 }
 
-auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
+auto revise_beat_fit_proposal(const wormedit::ui::compose_input_action_t& input,
                               const wormedit::document_history_t& history,
                               const wormedit::proposal_t<wormedit::beat_interval_drag_t>& drag,
                               std::uint64_t target_frame, bool timing_locked)
@@ -291,7 +291,7 @@ auto revise_beat_fit_proposal(const WormUiComposeInputAction& input,
     return frame_update.value->revise(history.document, {.is_timing_locked = timing_locked}, *snapped_bpm);
 }
 
-auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
+auto revise_compose_beat_fit(const wormedit::ui::compose_input_action_t& input,
                              wormedit::document_history_t& history,
                              wormedit::workspace_controller_t& workspace,
                              wormedit::editor_interaction_state_t& state,
@@ -365,7 +365,7 @@ auto revise_compose_beat_fit(const WormUiComposeInputAction& input,
     return compose_input_family_result_t::from(std::move(outcome));
 }
 
-auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto seek_compose_waveform(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                            wormedit::editor_interaction_result_t& result,
                            std::string_view& accepted)
     -> std::optional<compose_input_family_result_t> {
@@ -406,7 +406,7 @@ auto seek_compose_waveform(const WormUiComposeInputAction& input, compose_input_
     return std::nullopt;
 }
 
-auto click_compose_waveform(const WormUiComposeInputAction& input, compose_input_context_t& context,
+auto click_compose_waveform(const wormedit::ui::compose_input_action_t& input, compose_input_context_t& context,
                             wormedit::editor_interaction_result_t& result,
                             std::string_view& accepted)
     -> std::optional<compose_input_family_result_t> {

@@ -1,6 +1,8 @@
 #include <wormedit/core/bmson_lane_mode.h>
 #include "sys/workspace_view.h"
 #include "sys/catalog_view.h"
+#include <charconv>
+#include <tuple>
 #include <cstdarg>
 #include <cstdio>
 #include <cstring>
@@ -121,38 +123,6 @@ auto recovery_comparison_name(wormedit::native_project_recovery_comparison_t com
     return "unknown comparison";
 }
 
-auto metadata_value_summary(std::string_view value) -> std::string {
-    constexpr std::size_t readable_value_limit = 96;
-    if (value.size() <= readable_value_limit)
-        return std::string(value);
-    return "<" + std::to_string(value.size()) + " UTF-8 bytes>";
-}
-
-auto recovery_action_mask(const std::vector<wormedit::native_project_recovery_action_t>& actions)
-    -> size_t {
-    using action_t = wormedit::native_project_recovery_action_t;
-    size_t mask{};
-    for (const auto action : actions) {
-        switch (action) {
-        case action_t::inspect_read_only:
-            mask |= WORM_UI_RECOVERY_ACTION_INSPECT;
-            break;
-        case action_t::recover_into_session:
-            mask |= WORM_UI_RECOVERY_ACTION_RECOVER;
-            break;
-        case action_t::save_as_new_project:
-            mask |= WORM_UI_RECOVERY_ACTION_SAVE_AS;
-            break;
-        case action_t::discard:
-            mask |= WORM_UI_RECOVERY_ACTION_DISCARD;
-            break;
-        case action_t::quarantine:
-            mask |= WORM_UI_RECOVERY_ACTION_QUARANTINE;
-            break;
-        }
-    }
-    return mask;
-}
 
 auto recovery_number_suffix(const char* label, std::optional<std::uint64_t> value)
     -> std::array<char, 64> {
@@ -162,67 +132,44 @@ auto recovery_number_suffix(const char* label, std::optional<std::uint64_t> valu
     return suffix;
 }
 
-auto recovery_summary(frame_arena_t& arena,
-                      const wormedit::native_project_recovery_banner_row_t& row,
-                      bool recommended) -> const char* {
+void populate_recovery_candidate(
+    frontend_workspace_view_t& result,
+    const wormedit::native_project_recovery_controller_view_t& recovery,
+    std::size_t source_index, std::size_t index) {
+    const auto& row = recovery.rows[source_index];
+    auto& projected = result.view.recovery_candidates[index];
+    projected.path_label = row.path_label;
     const auto revision = recovery_number_suffix("revision", row.version
         ? std::optional<std::uint64_t>{row.version->revision} : std::nullopt);
     const auto session = recovery_number_suffix("session", row.recovery_session_sequence);
-    return arena_format(arena, "%s · %s%s%s%s", recovery_status_name(row.status).data(),
-        recovery_comparison_name(row.comparison).data(), revision.data(), session.data(),
-        recommended ? " · recommended recovery" : "");
+    projected.summary = recovery_status_name(row.status);
+    projected.summary += " · ";
+    projected.summary += recovery_comparison_name(row.comparison);
+    projected.summary += revision.data();
+    projected.summary += session.data();
+    if (recovery.preferred_recovery_row == source_index) projected.summary += " · recommended recovery";
+    projected.disabled_reason = {};
+    if (row.available_actions.empty())
+        projected.disabled_reason = "No safe action is available for this candidate.";
+    else if (row.available_actions.size() != 5)
+        projected.disabled_reason = "Unavailable actions are disabled by the recovery controller's safety checks.";
+    projected.actions.assign(row.available_actions.begin(), row.available_actions.end());
+    projected.scan_generation = row.target.scan_generation;
+    projected.row_index = row.target.row_index;
+    projected.candidate_index = row.target.candidate_index;
 }
 
-auto populate_recovery_candidate(
-    frontend_workspace_view_t& result,
-    const wormedit::native_project_recovery_controller_view_t& recovery,
-    std::size_t source_index, std::size_t index) -> bool {
-    const auto& row = recovery.rows[source_index];
-    auto* arena = result.arena();
-    const auto* path = arena ? arena_string(*arena, row.path_label) : nullptr;
-    const auto* summary = arena ? recovery_summary(*arena, row,
-        recovery.preferred_recovery_row == source_index) : nullptr;
-    if (!path || !summary) {
-        result.view.recovery_rows_truncated = true;
-        result.view.recovery_notice = "Recovery display text truncated (frame storage limit).";
-        return false;
-    }
-    const auto action_mask = recovery_action_mask(row.available_actions);
-    constexpr auto all_recovery_actions =
-        WORM_UI_RECOVERY_ACTION_INSPECT | WORM_UI_RECOVERY_ACTION_RECOVER |
-        WORM_UI_RECOVERY_ACTION_SAVE_AS | WORM_UI_RECOVERY_ACTION_DISCARD |
-        WORM_UI_RECOVERY_ACTION_QUARANTINE;
-    const char* disabled_reason = nullptr;
-    if (row.available_actions.empty()) {
-        disabled_reason = "No safe action is available for this candidate.";
-    } else if (action_mask != all_recovery_actions) {
-        disabled_reason =
-            "Unavailable actions are disabled by the recovery controller's safety checks.";
-    }
-    result.view.recovery_candidates[index] = {
-        .path_label = path, .summary = summary, .disabled_reason = disabled_reason,
-        .action_mask = action_mask,
-        .scan_generation = row.target.scan_generation,
-        .row_index = row.target.row_index,
-        .candidate_index = row.target.candidate_index,
-    };
-    return true;
-}
-
-void populate_bounded_recovery_candidates(
+void populate_recovery_candidates(
     frontend_workspace_view_t& result,
     const wormedit::native_project_recovery_controller_view_t& recovery) {
-    const auto capacity = result.view.recovery_candidate_count;
-    result.view.recovery_candidate_count = 0;
+    result.view.recovery_candidates.resize(recovery.rows.size());
+    std::size_t output_index{};
     // Keep actionable rows ahead of inactive rows without changing action tokens.
     for (const bool actionable : {true, false}) {
         for (std::size_t source_index = 0; source_index < recovery.rows.size(); ++source_index) {
-            if (result.view.recovery_candidate_count == capacity) return;
             const bool row_actionable = !recovery.rows[source_index].available_actions.empty();
-            if (row_actionable != actionable) continue;
-            if (!populate_recovery_candidate(result, recovery, source_index,
-                                              result.view.recovery_candidate_count)) return;
-            ++result.view.recovery_candidate_count;
+            if (row_actionable == actionable)
+                populate_recovery_candidate(result, recovery, source_index, output_index++);
         }
     }
 }
@@ -247,27 +194,22 @@ void populate_recovery_view(
             "Unavailable: this starter workspace has no opened project path or configured "
             "recovery directory.";
     }
-    const auto recovery_row_count =
-        std::min(recovery.rows.size(), static_cast<std::size_t>(WORM_UI_RECOVERY_ROW_CAPACITY));
-    result.view.recovery_candidate_count = recovery_row_count;
-    result.view.recovery_rows_truncated =
-        result.view.recovery_rows_truncated || recovery_row_count < recovery.rows.size();
-    populate_bounded_recovery_candidates(result, recovery);
-    const auto recovery_diagnostic_count =
-        std::min(recovery.diagnostics.size(),
-                 static_cast<std::size_t>(WORM_UI_RECOVERY_DIAGNOSTIC_CAPACITY));
-    auto* arena = result.arena();
-    for (std::size_t index = 0; index < recovery_diagnostic_count; ++index) {
+    populate_recovery_candidates(result, recovery);
+    result.view.recovery_diagnostics.resize(recovery.diagnostics.size());
+    result.recovery_diagnostic_paths.resize(recovery.diagnostics.size());
+    for (std::size_t index = 0; index < recovery.diagnostics.size(); ++index) {
         const auto& diagnostic = recovery.diagnostics[index];
-        const auto* text = arena ? (diagnostic.path.empty()
-            ? arena_string(*arena, diagnostic.message)
-            : arena_format(*arena, "%s (%s)", diagnostic.message.c_str(),
-                           diagnostic.path.generic_string().c_str())) : nullptr;
-        result.view.recovery_diagnostics[result.view.recovery_diagnostic_count++] = text
-            ? text : "Recovery display text truncated (frame storage limit).";
-        if (!text) {
-            result.view.recovery_rows_truncated = true;
-            break;
+        auto& text = result.view.recovery_diagnostics[index];
+        text = diagnostic.message;
+        if (!diagnostic.path.empty()) {
+            text += " (";
+            auto& [path, generic_path] = result.recovery_diagnostic_paths[index];
+            if (path != diagnostic.path) {
+                path = diagnostic.path;
+                generic_path = path.generic_string();
+            }
+            text += generic_path;
+            text += ')';
         }
     }
 }
@@ -278,41 +220,29 @@ struct workspace_projection_context_t {
     const wormedit::song_document_t& document;
     dock_sort_t keysound_sort;
     WormUiKeysoundDockRequest keysound_request;
-    WormUiSoundUsageRequest sound_usage_request;
+    wormedit::ui::sound_usage_request_t sound_usage_request;
     WormUiBookmarkChooserRequest bookmark_chooser_request;
     keysound_list_cache_t* keysound_cache{};
     bookmark_chooser_indices_t bookmark_indices;
     compose_resource_catalog_cache_t* resource_catalog_cache{};
 };
 
-void publish_workspace_summary(frontend_workspace_view_t& result, const char* text) {
-    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
-        return;
-    if (!text) {
-        text = "Workspace summary truncated (frame storage limit).";
-        result.summary.truncated = true;
-    }
-    const auto index = result.view.summary_line_count++;
-    result.summary.lines[index] = text;
-    result.view.summary_lines[index] = text;
+auto workspace_summary_line(frontend_workspace_view_t& result) -> std::string& {
+    if (result.summary_size == result.view.summary_lines.size())
+        result.view.summary_lines.emplace_back();
+    return result.view.summary_lines[result.summary_size++];
 }
 void append_workspace_summary(const workspace_projection_context_t& projection,
                               std::string_view line) {
-    const auto& result = projection.result;
-    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
-        return;
-    auto* arena = projection.result.arena();
-    publish_workspace_summary(projection.result, arena ? arena_string(*arena, line) : nullptr);
+    workspace_summary_line(projection.result) = line;
 }
-template<class... Args>
-void append_workspace_format(const workspace_projection_context_t& projection,
-                             const char* format, Args... arguments) {
-    const auto& result = projection.result;
-    if (result.summary.truncated || result.view.summary_line_count >= result.summary.lines.size())
-        return;
-    auto* arena = projection.result.arena();
-    publish_workspace_summary(projection.result,
-        arena ? arena_format(*arena, format, arguments...) : nullptr);
+void append_workspace_count(const workspace_projection_context_t& projection,
+                            std::string_view label, std::size_t count) {
+    auto& line = workspace_summary_line(projection.result);
+    line = label;
+    std::array<char, std::numeric_limits<std::size_t>::digits10 + 1> digits{};
+    const auto converted = std::to_chars(digits.data(), digits.data() + digits.size(), count);
+    line.append(digits.data(), converted.ptr);
 }
 
 void populate_setup_tab(const workspace_projection_context_t& projection, const wormedit::workspace_setup_view_t& tab) {
@@ -327,122 +257,98 @@ void populate_setup_tab(const workspace_projection_context_t& projection, const 
 
 }
 
-template<class T>
-auto metadata_rows(frontend_workspace_view_t& result, std::size_t count) -> frame_span<T> {
-    auto* arena = result.arena();
-    return arena ? arena_array<T>(*arena, count) : frame_span<T>{};
-}
-
-void populate_metadata_search_tags(frontend_workspace_view_t& result,
+void populate_metadata_search_tags(frontend_workspace_view_t&,
                                    const wormedit::workspace_metadata_view_t& tab,
-                                   WormUiMetadataView& metadata) {
-    if (!metadata.search_tags_editable) return;
-    if (std::ranges::any_of(tab.search_tags, [](const auto& tag) {
-        return tag.size() > WORM_UI_METADATA_SEARCH_TAG_BYTES;
-    })) {
-        metadata.search_tags_editable = false;
-        return;
-    }
-    result.metadata.search_tag = metadata_rows<const char*>(result, tab.search_tags.size());
-    result.metadata.search_tag_length = metadata_rows<std::size_t>(result, tab.search_tags.size());
-    auto* arena = result.arena();
-    metadata.search_tags_editable = arena &&
-        result.metadata.search_tag.capacity() == tab.search_tags.size() &&
-        result.metadata.search_tag_length.capacity() == tab.search_tags.size();
-    if (!metadata.search_tags_editable) return;
-    for (const auto& tag : tab.search_tags) {
-        const auto* text = arena_string(*arena, tag);
-        if (!text) { metadata.search_tags_editable = false; return; }
-        (void)result.metadata.search_tag.push_back(text);
-        (void)result.metadata.search_tag_length.push_back(tag.size());
-    }
-}
-
-void populate_metadata_format_fields(frontend_workspace_view_t& result,
-                                     const wormedit::workspace_metadata_view_t& tab,
-                                     WormUiMetadataView& metadata) {
-    metadata.format_field_total_count = tab.format_fields.size();
-    const auto count = std::min<std::size_t>(tab.format_fields.size(),
-                                            WORM_UI_METADATA_FORMAT_FIELD_CAPACITY);
-    metadata.format_fields_truncated = count != tab.format_fields.size();
-    result.metadata.format_field = metadata_rows<WormUiMetadataFormatFieldView>(result, count);
-    auto* arena = result.arena();
-    if (!arena || result.metadata.format_field.capacity() != count) {
-        metadata.format_fields_truncated = true;
-        return;
-    }
-    for (std::size_t index = 0; index < count; ++index) {
-        const auto& field = tab.format_fields[index];
-        const auto* name = arena_string(*arena, field.name);
-        const auto* value = arena_string(*arena, field.value);
-        if (!name || !value) { metadata.format_fields_truncated = true; break; }
-        (void)result.metadata.format_field.push_back({
-            .chart_scoped = field.chart_scoped,
-            .family = static_cast<std::uint8_t>(field.family),
-            .first_group_for_family = field.first_group_for_family,
-            .group_index = field.group_index, .field_index = field.field_index,
-            .group_field_count = field.group_field_count,
-            .name = name, .value = value,
-            .name_bytes = field.name.size(), .value_bytes = field.value.size(),
-            .has_source_order = field.source_order.has_value(),
-            .source_order = field.source_order.value_or(0),
+                                   wormedit::ui::metadata_view_t& metadata) {
+    metadata.search_tags.resize(tab.search_tags.size());
+    for (std::size_t i = 0; i < tab.search_tags.size(); ++i)
+        metadata.search_tags[i] = tab.search_tags[i];
+    metadata.search_tags_editable = metadata.search_tags_editable &&
+        std::ranges::none_of(tab.search_tags, [](const auto& tag) {
+            return tag.size() > wormedit::default_metadata_edit_limits.maximum_search_tag_bytes;
         });
-    }
-    metadata.format_field_count = result.metadata.format_field.size();
-    metadata.format_fields = result.metadata.format_field.data();
 }
 
-void append_metadata_format_targets(frontend_workspace_view_t& result, auto& metadata,
-                                    const auto& groups, bool chart_scoped) {
+void populate_metadata_format_fields(frontend_workspace_view_t&,
+                                     const wormedit::workspace_metadata_view_t& tab,
+                                     wormedit::ui::metadata_view_t& metadata) {
+    metadata.format_field_total_count = tab.format_fields.size();
+    metadata.format_fields.resize(tab.format_fields.size());
+    for (std::size_t i = 0; i < tab.format_fields.size(); ++i) {
+        const auto& field = tab.format_fields[i];
+        auto& row = metadata.format_fields[i];
+        row.chart_scoped = field.chart_scoped;
+        row.family = field.family;
+        row.first_group_for_family = field.first_group_for_family;
+        row.group_index = field.group_index;
+        row.field_index = field.field_index;
+        row.group_field_count = field.group_field_count;
+        row.name = field.name;
+        row.value = field.value;
+        row.has_source_order = field.source_order.has_value();
+        row.source_order = field.source_order.value_or(0);
+    }
+}
+
+void append_metadata_format_targets(wormedit::ui::metadata_view_t& metadata,
+                                    const std::vector<wormedit::format_metadata_t>& groups,
+                                    bool chart_scoped) {
     std::array<const wormedit::format_metadata_t*, wormedit::format_families.size()> first_groups{};
-    std::array<std::size_t, wormedit::format_families.size()> first_group_indices{};
-    for (std::size_t group_index = 0; group_index < groups.size(); ++group_index) {
-        const auto family_index = static_cast<std::size_t>(groups[group_index].family);
-        if (family_index < first_groups.size() && first_groups[family_index] == nullptr) {
-            first_groups[family_index] = &groups[group_index];
-            first_group_indices[family_index] = group_index;
+    std::array<std::size_t, wormedit::format_families.size()> first_indices{};
+    for (std::size_t i = 0; i < groups.size(); ++i) {
+        const auto family = static_cast<std::size_t>(groups[i].family);
+        if (family < first_groups.size() && first_groups[family] == nullptr) {
+            first_groups[family] = &groups[i];
+            first_indices[family] = i;
         }
     }
     for (const auto& descriptor : wormedit::format_families) {
         if (!descriptor.offered_as_metadata) continue;
-        const auto family = descriptor.kind;
-        const auto family_index = static_cast<std::size_t>(family);
-        const auto* found = first_groups[family_index];
-        (void)result.metadata.format_target.push_back({
-            .chart_scoped = chart_scoped,
-            .family = static_cast<std::uint8_t>(family),
-            .group_exists = found != nullptr,
-            .group_index = found == nullptr ? 0 : first_group_indices[family_index],
-            .field_count = found == nullptr ? 0 : found->ordered_fields.size(),
-        });
-        metadata.format_target_count = result.metadata.format_target.size();
+        const auto i = static_cast<std::size_t>(descriptor.kind);
+        const auto* found = first_groups[i];
+        metadata.format_targets.push_back({
+            .chart_scoped = chart_scoped, .family = descriptor.kind,
+            .group_exists = found != nullptr, .group_index = found ? first_indices[i] : 0,
+            .field_count = found ? found->ordered_fields.size() : 0});
     }
 }
 
 void populate_metadata_format_targets(const workspace_projection_context_t& projection,
                                       const wormedit::workspace_metadata_view_t& tab,
-                                      auto& metadata) {
-    const auto& document = projection.document;
+                                      wormedit::ui::metadata_view_t& metadata) {
+    const auto* selected = tab.selected_difficulty
+        ? projection.document.find_chart(tab.selected_difficulty->id) : nullptr;
+    if (selected) metadata.selected_chart_source_family = selected->source_family;
+    metadata.format_targets.clear();
+    append_metadata_format_targets(metadata, projection.document.metadata.format_groups, false);
+    if (selected) append_metadata_format_targets(metadata, selected->metadata.format_groups, true);
+}
+
+void populate_metadata_summary(const workspace_projection_context_t& projection,
+                               const workspace_metadata_view_t& tab) {
     auto& result = projection.result;
-    const auto selected = tab.selected_difficulty
-        ? document.find_chart(tab.selected_difficulty->id) : nullptr;
-    if (selected != nullptr)
-        metadata.selected_chart_source_family = static_cast<std::uint8_t>(selected->source_family);
-    const auto count = metadata_family_view.count * (selected ? 2u : 1u);
-    result.metadata.format_target = metadata_rows<WormUiMetadataFormatTargetView>(result, count);
-    if (result.metadata.format_target.capacity() != count) {
-        metadata.format_fields_truncated = true;
-        return;
+    auto& title_line = workspace_summary_line(result);
+    title_line = "Song title: "; title_line += tab.title;
+    auto& artist_line = workspace_summary_line(result);
+    artist_line = "Artist: "; artist_line += tab.artist;
+    append_workspace_count(projection, "Search tags: ", tab.search_tags.size());
+    auto& author_line = workspace_summary_line(result);
+    author_line = "Chart author: ";
+    author_line += tab.chart_author.empty() ? "(unset)" : tab.chart_author;
+    append_workspace_count(projection, "Format-specific fields: ", tab.format_fields.size());
+    for (const auto& field : tab.format_fields) {
+        auto& line = workspace_summary_line(result);
+        line = field.chart_scoped ? "Difficulty · " : "Song · ";
+        line += format_family_label(field.family);
+        line += " · "; line += field.name; line += ": ";
+        if (field.value.size() <= 96) line += field.value;
+        else { line += '<'; line += std::to_string(field.value.size()); line += " UTF-8 bytes>"; }
     }
-    append_metadata_format_targets(result, metadata, document.metadata.format_groups, false);
-    if (selected == nullptr) return;
-    append_metadata_format_targets(result, metadata, selected->metadata.format_groups, true);
 }
 
 void populate_metadata_tab(const workspace_projection_context_t& projection, const wormedit::workspace_metadata_view_t& tab) {
     auto& result = projection.result;
     const auto& source = projection.source;
-    const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
                 result.view.project_title = tab.title.c_str();
                 result.view.artist = tab.artist.c_str();
                 auto& metadata = result.view.metadata;
@@ -450,36 +356,25 @@ void populate_metadata_tab(const workspace_projection_context_t& projection, con
                 metadata.document_revision = source.document_revision;
                 metadata.title = tab.title.c_str();
                 metadata.artist = tab.artist.c_str();
-                metadata.title_bytes = tab.title.size();
-                metadata.artist_bytes = tab.artist.size();
-                metadata.search_tag_count = tab.search_tags.size();
                 metadata.song_fields_editable =
-                    tab.title.size() <= WORM_UI_METADATA_TITLE_BYTES &&
-                    tab.artist.size() <= WORM_UI_METADATA_TITLE_BYTES &&
-                    tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+                    tab.title.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
+                    tab.artist.size() <= wormedit::default_metadata_edit_limits.maximum_title_bytes &&
+                    tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
                 metadata.search_tags_editable =
-                    tab.search_tags.size() <= WORM_UI_METADATA_SEARCH_TAG_CAPACITY;
+                    tab.search_tags.size() <= wormedit::default_metadata_edit_limits.maximum_search_tags;
                 populate_metadata_search_tags(result, tab, metadata);
-                metadata.search_tags = metadata.search_tags_editable
-                                           ? result.metadata.search_tag.data()
-                                           : nullptr;
-                metadata.search_tag_bytes = metadata.search_tags_editable
-                                                ? result.metadata.search_tag_length.data()
-                                                : nullptr;
                 metadata.song_fields_editable =
                     metadata.song_fields_editable && metadata.search_tags_editable;
                 metadata.has_chart = tab.selected_difficulty.has_value();
                 metadata.audio_offset_editable = metadata.has_chart;
                 if (tab.selected_difficulty) {
-                    metadata.chart_id = tab.selected_difficulty->id.value;
+                    metadata.chart_id = tab.selected_difficulty->id;
                     metadata.chart_name = tab.selected_difficulty->difficulty_name.c_str();
                     metadata.chart_author = tab.chart_author.c_str();
-                    metadata.chart_name_bytes = tab.selected_difficulty->difficulty_name.size();
-                    metadata.chart_author_bytes = tab.chart_author.size();
                     metadata.chart_fields_editable =
                         tab.selected_difficulty->difficulty_name.size() <=
-                            WORM_UI_METADATA_CHART_TEXT_BYTES &&
-                        tab.chart_author.size() <= WORM_UI_METADATA_CHART_TEXT_BYTES;
+                            wormedit::default_metadata_edit_limits.maximum_chart_text_bytes &&
+                        tab.chart_author.size() <= wormedit::default_metadata_edit_limits.maximum_chart_text_bytes;
                     metadata.has_chart_rating = tab.selected_difficulty->rating.has_value();
                     if (tab.selected_difficulty->rating) {
                         metadata.chart_rating_numerator =
@@ -493,18 +388,7 @@ void populate_metadata_tab(const workspace_projection_context_t& projection, con
                 }
                 populate_metadata_format_fields(result, tab, metadata);
                 populate_metadata_format_targets(projection, tab, metadata);
-                metadata.format_targets = result.metadata.format_target.data();
-                append("Song title: " + tab.title);
-                append("Artist: " + tab.artist);
-                append("Search tags: " + std::to_string(tab.search_tags.size()));
-                append("Chart author: " +
-                       (tab.chart_author.empty() ? std::string("(unset)") : tab.chart_author));
-                append("Format-specific fields: " + std::to_string(tab.format_fields.size()));
-                for (const auto& field : tab.format_fields) {
-                    append(std::string(field.chart_scoped ? "Difficulty · " : "Song · ") +
-                           std::string(wormedit::format_family_label(field.family)) + " · " + field.name +
-                           ": " + metadata_value_summary(field.value));
-                }
+    populate_metadata_summary(projection, tab);
 
 }
 void populate_timing_tab(const workspace_projection_context_t& projection, const wormedit::workspace_timing_view_t& tab) {
@@ -1165,11 +1049,11 @@ void populate_compose_tab(const workspace_projection_context_t& projection, cons
                 populate_compose_keysounds(projection, tab.chart);
                 populate_bookmark_chooser(projection, tab.chart);
                 populate_compose_branch_outline(result, outline);
-                append_workspace_format(projection, "Measures: %zu", static_cast<std::size_t>(tab.measure_count));
-                append_workspace_format(projection, "Notes: %zu", static_cast<std::size_t>(tab.note_count));
-                append_workspace_format(projection, "Layout segments: %zu", static_cast<std::size_t>(tab.layout_segment_count));
-                append_workspace_format(projection, "Visible lane definitions: %zu", static_cast<std::size_t>(tab.lane_count));
-                append_workspace_format(projection, "Semantic layers: %zu", static_cast<std::size_t>(tab.layer_count));
+                append_workspace_count(projection, "Measures: ", static_cast<std::size_t>(tab.measure_count));
+                append_workspace_count(projection, "Notes: ", static_cast<std::size_t>(tab.note_count));
+                append_workspace_count(projection, "Layout segments: ", static_cast<std::size_t>(tab.layout_segment_count));
+                append_workspace_count(projection, "Visible lane definitions: ", static_cast<std::size_t>(tab.lane_count));
+                append_workspace_count(projection, "Semantic layers: ", static_cast<std::size_t>(tab.layer_count));
 
 }
 void populate_storyboard_tab(const workspace_projection_context_t& projection, const wormedit::workspace_storyboard_view_t& tab) {
@@ -1179,15 +1063,19 @@ void populate_storyboard_tab(const workspace_projection_context_t& projection, c
 
 }
 void populate_sound_lane_modes(const workspace_projection_context_t& projection) {
-    using namespace wormedit;
-    const auto chart = projection.document.find_chart(chart_id_t{projection.result.view.selected_chart_id});
-    if (chart == nullptr || chart->source_family != format_family_t::bmson) return;
-    const auto bindings = bmson_lane_mode_resource_bindings(projection.document, chart->id);
-    for (auto& row : projection.result.audio.sound_row) {
-        const auto binding = std::ranges::find(bindings, resource_id_t{row.resource_id},
+    const auto* chart = projection.document.find_chart(projection.result.view.selected_chart_id);
+    if (!chart || chart->source_family != format_family_t::bmson) return;
+    const auto& bindings = projection.result.sound_lane_modes_cache.get_or_build(
+        std::tuple{document_stamp_t::from(projection.document), chart->id, projection.result.query_session_generation}, [&] {
+            return bmson_lane_mode_resource_bindings(projection.document, chart->id);
+        });
+    for (auto& row : projection.result.view.audio_slices.sound_rows) {
+        const auto binding = std::ranges::find(bindings, row.resource_id,
                                                &bmson_channel_resource_binding_t::resource);
+        row.bmson_channel_id = {};
+        row.bmson_channel_continues = false;
         if (binding == bindings.end() || binding->ambiguous || !binding->channel) continue;
-        row.bmson_channel_id = binding->channel->value;
+        row.bmson_channel_id = *binding->channel;
         const auto channel = std::ranges::find(chart->sound_channels, *binding->channel, &sound_channel_t::id);
         if (channel != chart->sound_channels.end())
             row.bmson_channel_continues = std::ranges::any_of(channel->events,
@@ -1195,164 +1083,104 @@ void populate_sound_lane_modes(const workspace_projection_context_t& projection)
     }
 }
 
-auto build_sound_tags_view(frame_arena_t& arena, const std::vector<std::string>& source)
-    -> std::optional<std::span<const std::string_view>> {
-    auto tags = arena_array<std::string_view>(arena, source.size());
-    if (tags.capacity() < source.size()) return std::nullopt;
-    for (const auto& tag : source) {
-        const auto* text = arena_string(arena, tag);
-        if (!text) return std::nullopt;
-        (void)tags.push_back(text);
-    }
-    return std::span<const std::string_view>{tags.data(), tags.size()};
-}
-
 void populate_sound_rows(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& audio = result.view.audio_slices;
-    auto* arena = result.arena();
-    wormedit::sys::sound_list_request_t request;
-    request.row_limit = WORM_UI_SOUND_ROW_CAPACITY;
-    const auto list = wormedit::sys::sound_list_view_t::from(projection.document, request);
+    const sound_list_request_t request{.row_limit = ui::audio_sound_row_limit};
+    const auto& list = result.sound_list_cache.view_for(projection.document, request, result.query_session_generation);
     audio.sound_rows_truncated = list.total_matching > list.rows.size();
-    result.audio.sound_row = arena ? arena_array<WormUiSoundRowView>(*arena, list.rows.size())
-                                   : frame_span<WormUiSoundRowView>{};
-    if (result.audio.sound_row.capacity() < list.rows.size()) {
-        audio.sound_rows_truncated = true;
-        return;
-    }
-    for (const auto& row : list.rows) {
+    audio.sound_rows.resize(list.rows.size());
+    for (std::size_t i = 0; i < list.rows.size(); ++i) {
+        const auto& row = list.rows[i];
         const auto resource = std::ranges::find(projection.document.resources, row.resource,
-                                                &wormedit::resource_entry_t::id);
-        const auto asset = resource == projection.document.resources.end()
-                               ? wormedit::asset_id_t{}
-                               : resource->asset;
-        const auto properties =
-            wormedit::sys::sound_properties_view_t::from(projection.document, row.resource);
-        WormUiSoundRowView view{};
-        view.resource_id = row.resource.value;
-        view.asset_id = asset.value;
-        view.name = arena_string(*arena, row.name);
-        view.tags_text = arena_string(*arena, row.tags_text);
-        const auto tags = build_sound_tags_view(*arena, properties.tags);
-        if (!tags) {
-            audio.sound_rows_truncated = true;
-            break;
-        }
-        view.tags = *tags;
-        view.source_path = arena_string(*arena, properties.source_path);
-        view.kind = static_cast<int>(row.kind);
+                                                &resource_entry_t::id);
+        auto& view = audio.sound_rows[i];
+        view.resource_id = row.resource;
+        view.asset_id = resource == projection.document.resources.end() ? asset_id_t{} : resource->asset;
+        view.name = row.name;
+        view.tags_text = row.tags_text;
+        if (resource == projection.document.resources.end()) view.tags.clear();
+        else view.tags = resource->tags;
+        view.source_path = row.source_path;
+        view.kind = row.kind;
         view.use_count = row.use_count;
         view.duration_frames = row.duration_frames;
         view.sample_rate = row.sample_rate;
         view.missing = row.missing;
-        (void)result.audio.sound_row.push_back(view);
+        view.bmson_channel_id = {};
+        view.bmson_channel_continues = false;
     }
     populate_sound_lane_modes(projection);
-    audio.sound_rows = result.audio.sound_row.data();
-    audio.sound_row_count = result.audio.sound_row.size();
 }
-auto usage_position_label(const song_document_t& document, const sound_usage_row_t& row)
-    -> std::string {
-    if (!row.position)
-        return "Source clip";
-    const auto chart = document.find_chart(row.chart);
-    if (chart == nullptr)
-        return "Unavailable position";
-    const auto measure =
-        chart->find_measure(row.position->measure);
-    if (measure == nullptr)
-        return "Unavailable position";
-    return "Measure " + std::to_string((measure - chart->measures.data()) + 1) +
-           ", row " + std::to_string(row.position->row);
+
+void build_sound_usage_position_label(std::string& label, const song_document_t& document,
+                                      const sound_usage_row_t& row) {
+    if (!row.position) { label = "Source clip"; return; }
+    const auto* chart = document.find_chart(row.chart);
+    const auto* measure = chart ? chart->find_measure(row.position->measure) : nullptr;
+    if (!measure) { label = "Unavailable position"; return; }
+    std::array<char, 96> text{};
+    std::snprintf(text.data(), text.size(), "Measure %llu, row %llu",
+        static_cast<unsigned long long>(measure - chart->measures.data() + 1),
+        static_cast<unsigned long long>(row.position->row));
+    label = text.data();
 }
 
 void populate_sound_usage(const workspace_projection_context_t& projection) {
     auto& result = projection.result;
     auto& view = result.view.audio_slices;
     const auto& request = projection.sound_usage_request;
-    view.usage_song_id = projection.document.id.value;
+    view.usage_song_id = projection.document.id;
     view.usage_document_revision = projection.document.revision;
-    if (request.selected_project_id != projection.document.id.value) return;
+    if (request.selected_project_id != projection.document.id) { view.usage_rows.clear(); return; }
     view.selected_resource_id = request.selected_resource_id;
     view.selected_channel_id = request.selected_channel_id;
     view.selected_clip_id = request.selected_clip_id;
-    if (!request.find_uses_open || !request.selected_resource_id)
-        return;
-    const auto usage =
-        sound_usage_view_t::from(projection.document, resource_id_t{request.selected_resource_id});
-    view.usage_song_id = usage.song.value;
+    if (!request.find_uses_open || !request.selected_resource_id) { view.usage_rows.clear(); return; }
+    const auto& usage = result.sound_usage_cache.view_for(projection.document, request.selected_resource_id,
+                                                       result.query_session_generation);
+    view.usage_song_id = usage.song;
     view.usage_document_revision = usage.revision;
-    view.usage_resource_id = usage.resource.value;
-    view.usage_asset_id = usage.asset.value;
+    view.usage_resource_id = usage.resource;
+    view.usage_asset_id = usage.asset;
     view.usage_valid = usage.valid;
     view.usage_total_count = usage.total_matching;
     view.usage_rows_truncated = usage.truncated;
-    auto* arena = result.arena();
-    if (!arena) {
-        view.usage_rows_truncated = true;
-        return;
-    }
-    result.audio.usage_row = arena_array<WormUiSoundUsageRowView>(*arena, usage.rows.size());
-    for (const auto& row : usage.rows) {
-        WormUiSoundUsageRowView item{};
-        item.chart_id = row.chart.value;
-        item.measure_id = row.position ? row.position->measure.value : 0;
+    view.usage_rows.resize(usage.rows.size());
+    for (std::size_t i = 0; i < usage.rows.size(); ++i) {
+        const auto& row = usage.rows[i];
+        auto& item = view.usage_rows[i];
+        item.chart_id = row.chart;
+        item.measure_id = row.position ? row.position->measure : measure_id_t{};
         item.row = row.position ? row.position->row : 0;
         item.position_valid = row.position.has_value();
-        item.object_id = row.object.value;
-        item.channel_id = row.channel.value;
-        item.clip_id = row.clip.value;
-        item.referenced_resource_id = row.referenced_resource.value;
-        item.referenced_asset_id = row.referenced_asset.value;
-        item.kind = static_cast<int>(row.kind);
-        item.scope = static_cast<int>(row.scope);
-        item.chart_label = arena_string(*arena, row.chart_name);
-        item.position_label = arena_string(*arena, usage_position_label(projection.document, row));
-        if (!item.chart_label || !item.position_label || !result.audio.usage_row.push_back(item)) {
-            view.usage_rows_truncated = true;
-            break;
-        }
+        item.object_id = row.object;
+        item.channel_id = row.channel;
+        item.clip_id = row.clip;
+        item.referenced_resource_id = row.referenced_resource;
+        item.referenced_asset_id = row.referenced_asset;
+        item.kind = row.kind;
+        item.scope = row.scope;
+        item.chart_label = row.chart_name;
+        build_sound_usage_position_label(item.position_label, projection.document, row);
     }
-    view.usage_rows = result.audio.usage_row.data();
-    view.usage_row_count = result.audio.usage_row.size();
 }
 
 void populate_audio_slices_tab(const workspace_projection_context_t& projection,
-                               const wormedit::workspace_audio_slices_view_t& tab) {
-    auto& result = projection.result;
-    const auto append = [&](std::string line) {
-        append_workspace_summary(projection, std::move(line));
-    };
-                auto& audio = result.view.audio_slices;
-                audio.visible = true;
-                populate_sound_rows(projection);
+                               const workspace_audio_slices_view_t& tab) {
+    auto& audio = projection.result.view.audio_slices;
+    audio.visible = true;
+    populate_sound_rows(projection);
     populate_sound_usage(projection);
-                audio.assets_truncated = tab.audio_assets.size() > WORM_UI_AUDIO_ASSET_CAPACITY;
-                audio.asset_count =
-                    std::min(tab.audio_assets.size(),
-                             static_cast<std::size_t>(WORM_UI_AUDIO_ASSET_CAPACITY));
-                auto* arena = result.arena();
-                result.audio.asset = arena
-                    ? arena_array<std::uint64_t>(*arena, audio.asset_count)
-                    : frame_span<std::uint64_t>{};
-                if (result.audio.asset.capacity() < audio.asset_count) {
-                    audio.assets_truncated = true;
-                    audio.asset_count = 0;
-                }
-                for (std::size_t index = 0; index < audio.asset_count; ++index)
-                    (void)result.audio.asset.push_back(tab.audio_assets[index].value);
-                audio.asset_ids = result.audio.asset.data();
-                audio.has_selected_asset = tab.transport.audio_asset.has_value();
-                audio.selected_asset_id =
-                    tab.transport.audio_asset.value_or(wormedit::asset_id_t{}).value;
-                append("Audio assets: " + std::to_string(tab.audio_assets.size()));
-                append("Clips: " + std::to_string(tab.clip_count));
-                append("Selected chart sound channels: " + std::to_string(tab.sound_channel_count));
-                append(std::string("Transport: ") +
-                       (tab.transport.playing ? "playing" : "stopped"));
-
+    audio.asset_ids.assign(tab.audio_assets.begin(), tab.audio_assets.end());
+    audio.has_selected_asset = tab.transport.audio_asset.has_value();
+    audio.selected_asset_id = tab.transport.audio_asset.value_or(asset_id_t{});
+    append_workspace_count(projection, "Audio assets: ", tab.audio_assets.size());
+    append_workspace_count(projection, "Clips: ", tab.clip_count);
+    append_workspace_count(projection, "Selected chart sound channels: ", tab.sound_channel_count);
+    append_workspace_summary(projection, tab.transport.playing ? "Transport: playing" : "Transport: stopped");
 }
+
 void populate_compare_tab(const workspace_projection_context_t& projection, const wormedit::workspace_compare_validate_view_t& tab) {
     const auto append = [&](std::string line) { append_workspace_summary(projection, std::move(line)); };
                 append("Compared difficulties: " + std::to_string(tab.comparison_charts.size()));
@@ -1390,21 +1218,47 @@ struct workspace_tab_visitor {
 
 } // namespace
 
+namespace {
+template<class View, class... Containers>
+void reset_workspace_storage(View& view, Containers&... containers) {
+    auto storage = std::tuple{std::move(containers)...};
+    view = {};
+    std::tie(containers...) = std::move(storage);
+}
+} // namespace
+
+void frontend_workspace_view_t::reset() {
+    if (!arena_ && owned_arena_) owned_arena_->reset();
+    projection_feedback.clear();
+    summary_size = 0;
+    reset_workspace_storage(view,
+        view.recent_files, view.menu_commands, view.summary_lines,
+        view.recovery_candidates, view.recovery_diagnostics, view.command_menu_rows,
+        view.setup, view.options, view.chart_import, view.notifications,
+        view.metadata, view.audio_slices, view.timing, view.player_preview, view.external_player,
+        view.compare.charts, view.compare.diagnostics,
+        view.playback_rates.entries, view.bms_encodings.entries, view.sound_kinds.entries,
+        view.compose.timing_lanes.entries,
+        view.compose.timing_lane_captions.entries, view.compose.note_palette.entries,
+        view.compose.measure_lane.selected_bar_lines);
+    view.setup.reset();
+    view.options.reset();
+    view.chart_import.reset();
+    view.notifications.reset();
+    view.metadata.reset();
+    view.audio_slices.reset();
+    view.timing.reset();
+    view.player_preview.reset();
+    view.external_player.reset();
+    view.menu_commands.clear();
+    view.recent_files.clear();
+    view.command_menu_rows.clear();
+    view.compare.charts.clear();
+    view.compare.diagnostics.clear();
+    view.compose.measure_lane.selected_bar_lines.clear();
+}
+
 void frontend_workspace_view_t::rebind_view_pointers() {
-    for (std::size_t index = 0; index < view.summary_line_count; ++index) {
-        view.summary_lines[index] = summary.lines[index];
-    }
-
-    auto& metadata_view = view.metadata;
-    metadata_view.search_tags = metadata_view.search_tags_editable
-                                   ? metadata.search_tag.data()
-                                   : nullptr;
-    metadata_view.search_tag_bytes = metadata_view.search_tags_editable
-                                        ? metadata.search_tag_length.data()
-                                        : nullptr;
-    metadata_view.format_fields = metadata.format_field.data();
-    metadata_view.format_targets = metadata.format_target.data();
-
     auto& compose_view = view.compose;
     compose_view.bookmark_chooser.rows = compose.bookmark_chooser_row.data();
     compose_view.resources = compose.resource.view.data();
@@ -1422,21 +1276,22 @@ void frontend_workspace_view_t::rebind_view_pointers() {
     compose_view.branch_rows = compose.branch.row.data();
     compose_view.branch_choices = compose.branch.choice.data();
 
-    view.audio_slices.asset_ids = audio.asset.data();
-    view.audio_slices.sound_rows = audio.sound_row.data();
-    view.audio_slices.usage_rows = audio.usage_row.data();
 }
 
-auto build_notification_view(const notification_center_t& center, notification_time_t now)
-    -> WormUiNotificationView {
-    WormUiNotificationView result{};
+} // namespace wormedit::sys
+
+void wormedit::ui::notification_view_t::refill(const notification_center_t& center,
+                                             std::chrono::nanoseconds now) {
+    current_text = {};
+    current_severity = {};
+    toasts.clear();
     if (const auto* current = center.current_line()) {
-        result.current_text = current->message.c_str();
-        result.current_severity = static_cast<WormUiNotificationSeverity>(current->severity);
+        current_text = current->message;
+        current_severity = current->severity;
     }
     const auto unread = center.unread_counts();
-    result.unread_warnings = unread.warnings;
-    result.unread_errors = unread.errors;
+    unread_warnings = unread.warnings;
+    unread_errors = unread.errors;
     const auto entries = center.borrowed_snapshot(notification_capacity);
     for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry) {
         if (entry->severity != notification_severity_t::warning &&
@@ -1445,30 +1300,55 @@ auto build_notification_view(const notification_center_t& center, notification_t
         if (entry->severity == notification_severity_t::warning &&
             now - entry->timestamp >= std::chrono::seconds{8})
             continue;
-        auto& toast = result.toasts[result.toast_count++];
-        toast = {entry->id, static_cast<WormUiNotificationSeverity>(entry->severity),
-                 entry->message.c_str(), entry->count};
-        if (result.toast_count == WORM_UI_NOTIFICATION_TOAST_CAPACITY) break;
+        toasts.push_back({.id = entry->id, .severity = entry->severity,
+                         .message = entry->message, .repeat_count = entry->count});
+        if (toasts.size() == maximum_visible_toasts) break;
     }
+}
+
+auto wormedit::ui::notification_view_t::from(const notification_center_t& center,
+                                           std::chrono::nanoseconds now) -> notification_view_t {
+    notification_view_t result;
+    result.refill(center, now);
     return result;
 }
+
+namespace wormedit::sys {
 
 auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
                        const wormedit::song_document_t& document, const std::string& status,
                        const wormedit::native_project_recovery_controller_view_t& recovery,
                        bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
-    WormUiKeysoundDockRequest keysound_request, WormUiSoundUsageRequest sound_usage_request,
+    WormUiKeysoundDockRequest keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
                        WormUiBookmarkChooserRequest bookmark_chooser_request,
                        keysound_list_cache_t* keysound_cache,
                        const bookmark_chooser_indices_t& bookmark_indices,
                        compose_resource_catalog_cache_t* resource_catalog_cache) -> frontend_workspace_view_t {
     frontend_workspace_view_t result(arena);
+    result.refill(source, document, status, recovery, recovery_scan_configured, arena,
+                  keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
+                  keysound_cache, bookmark_indices, resource_catalog_cache);
+    return result;
+}
+
+void frontend_workspace_view_t::refill(const wormedit::workspace_view_t& source,
+                       const wormedit::song_document_t& document, const std::string& status,
+                       const wormedit::native_project_recovery_controller_view_t& recovery,
+                       bool recovery_scan_configured, frame_arena_t* arena, dock_sort_t keysound_sort,
+    WormUiKeysoundDockRequest keysound_request, wormedit::ui::sound_usage_request_t sound_usage_request,
+                       WormUiBookmarkChooserRequest bookmark_chooser_request,
+                       keysound_list_cache_t* keysound_cache,
+                       const bookmark_chooser_indices_t& bookmark_indices,
+                       compose_resource_catalog_cache_t* resource_catalog_cache) {
+    arena_ = arena;
+    reset();
+    auto& result = *this;
     result.view.project_title = document.metadata.title.c_str();
     result.view.artist = document.metadata.artist.c_str();
-    result.view.project_id = document.id.value;
+    result.view.project_id = document.id;
     result.view.document_revision = document.revision;
     result.view.selected_chart_id = source.selected_difficulty
-        ? source.selected_difficulty->id.value : 0;
+        ? source.selected_difficulty->id : chart_id_t{};
     result.view.selected_difficulty = source.selected_difficulty.has_value()
                                           ? source.selected_difficulty->difficulty_name.c_str()
                                           : "No difficulty";
@@ -1484,29 +1364,40 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
     for (const auto& tab : workspace_tabs) {
         const auto index = static_cast<std::size_t>(tab.kind);
         result.view.tabs[index] = {
-            .label = tab.kind == workspace_tab_t::timing ? nullptr : tab.label.data(),
+            .label = tab.kind == workspace_tab_t::timing ? std::string_view{} : tab.label,
             .enabled = is_workspace_tab_enabled(tab.kind),
-            .id = static_cast<WormUiWorkspaceTab>(tab.kind),
+            .id = tab.kind,
         };
     }
     result.view.tab_heading = source.active_tab == workspace_tab_t::timing
         ? "Compose" : workspace_tabs[static_cast<std::size_t>(source.active_tab)].label.data();
-    result.view.sound_kinds = sound_kind_view;
+    result.view.sound_kinds.refill(sound_kind_view);
     result.view.new_project_layouts = new_project_layout_view;
-    result.view.playback_rates = playback_rate_view;
-    result.view.bms_encodings = bms_encoding_view;
-    result.view.compose.timing_lanes = timing_lane_view;
-    result.view.compose.timing_lane_captions = timing_caption_view;
-    result.view.compose.note_palette = note_palette_view;
-    result.view.setup.output_families = output_family_view;
-    result.view.metadata.format_families = metadata_family_view;
-    result.view.transport_rate_id = static_cast<std::uint32_t>(audio::playback_rate_id_t::normal);
+    result.view.playback_rates.refill(playback_rate_view);
+    result.view.bms_encodings.refill(bms_encoding_view);
+    result.view.compose.timing_lanes.refill(timing_lane_view);
+    result.view.compose.timing_lane_captions.refill(timing_caption_view);
+    result.view.compose.note_palette.refill(note_palette_view);
+    result.view.setup.output_families.refill(output_family_view);
+    result.view.metadata.format_families.refill(metadata_family_view);
+    result.view.transport_rate_id = audio::playback_rate_id_t::normal;
 
     const workspace_projection_context_t projection{
         result,        source,           document,
         keysound_sort, keysound_request, sound_usage_request, bookmark_chooser_request,
         keysound_cache, bookmark_indices, resource_catalog_cache};
     std::visit(workspace_tab_visitor{projection}, source.tab_view);
+    if (!view.metadata.visible) {
+        view.metadata.search_tags.clear();
+        view.metadata.format_fields.clear();
+        view.metadata.channel_map_lanes.clear();
+        view.metadata.lane_profile_choices.clear();
+        view.metadata.chart_choices.clear();
+    }
+    if (!view.audio_slices.visible) {
+        view.audio_slices.sound_rows.clear();
+        view.audio_slices.usage_rows.clear();
+    }
     // Export is project UI and must not depend on building a Compose scene.
     const auto* compose_tab = std::get_if<workspace_compose_view_t>(&source.tab_view);
     const auto selected = source.selected_difficulty ? source.selected_difficulty->id
@@ -1515,8 +1406,47 @@ auto frontend_workspace_view_t::from(const wormedit::workspace_view_t& source,
     result.view.compose.chart_id = selected.value;
     result.view.compose.document_revision = document.revision;
     populate_compose_output_groups(projection, selected);
-    result.view.audio_slices.sound_kinds = sound_kind_view;
-    return result;
+    result.view.audio_slices.sound_kinds.refill(sound_kind_view);
+    view.summary_lines.resize(summary_size);
+    rebind_view_pointers();
 }
 
 } // namespace wormedit::sys
+
+namespace wormedit::ui {
+
+void metadata_view_t::reset() {
+    sys::reset_workspace_storage(*this,
+        title, artist, chart_name,
+        chart_author, project_directory, selected_music_source,
+        dropped_music_path, dropped_output_relative_path, copy_preview_text,
+        copy_preview_source, channel_map_preview_message, lane_profile_preview_message,
+        audio_waveform_columns, search_tags, format_fields,
+        format_targets, output_groups, channel_map_lanes,
+        lane_profile_choices, chart_choices, format_families.entries);
+    title.clear();
+    artist.clear();
+    chart_name.clear();
+    chart_author.clear();
+    project_directory.clear();
+    selected_music_source.clear();
+    dropped_music_path.clear();
+    dropped_output_relative_path.clear();
+    copy_preview_text.clear();
+    copy_preview_source.clear();
+    channel_map_preview_message.clear();
+    lane_profile_preview_message.clear();
+    audio_waveform_columns.clear();
+    format_targets.clear();
+    output_groups.clear();
+}
+
+void audio_slices_view_t::reset() {
+    sys::reset_workspace_storage(*this,
+        sound_rows, usage_rows, asset_ids,
+        waveform_columns, sound_kinds.entries);
+    asset_ids.clear();
+    waveform_columns.clear();
+}
+
+} // namespace wormedit::ui

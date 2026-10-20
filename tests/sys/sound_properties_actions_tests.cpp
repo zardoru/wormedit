@@ -9,7 +9,7 @@ void check_properties(bool condition) { CHECK(condition); }
 struct properties_fixture_t {
     document_history_t history;
     workspace_controller_t workspace;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     properties_fixture_t() {
         song_document_t song{.id = song_id_t{1}, .charts = {{.id = chart_id_t{2},
             .measures = {{.id = measure_id_t{1}}},

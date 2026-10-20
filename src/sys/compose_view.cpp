@@ -1,4 +1,4 @@
-#include "sys/timing_lane_ui.h"
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/timing_event_access.h>
 #include "sys/compose_view.h"
 #include "sys/compose_area_actions.h"
@@ -378,23 +378,8 @@ auto apply_compose_paste(application_command_state_t& application_state,
     return true;
 }
 
-auto compose_surface_height(int window_height, const WormUiWorkspaceView& view) -> double {
-    float recovery_height = 0.0f;
-    if (view.recovery_panel_visible) {
-        recovery_height = 40.0f + (view.recovery_notice && view.recovery_notice[0] ? 22.0f : 0.0f) +
-                          static_cast<float>(view.recovery_candidate_count) * 48.0f +
-                          static_cast<float>(view.recovery_diagnostic_count) * 18.0f;
-        for (std::size_t row = 0; row < view.recovery_candidate_count; ++row) {
-            const auto& candidate = view.recovery_candidates[row];
-            if ((candidate.action_mask & WORM_UI_RECOVERY_ACTION_SAVE_AS) != 0) {
-                recovery_height += 25.0f;
-                if (candidate.path_label == nullptr || candidate.path_label[0] == '\0')
-                    recovery_height += 18.0f;
-            }
-            if (candidate.disabled_reason && candidate.disabled_reason[0])
-                recovery_height += 20.0f;
-        }
-    }
+auto compose_surface_height(int window_height, const wormedit::ui::workspace_view_t& view) -> double {
+    const auto recovery_height = view.recovery_panel_visible ? view.recovery_panel_height() : 0.0f;
     const auto content_height =
         window_height > 300 ? static_cast<float>(window_height) - 132.0f -
                                   (view.compose.bgm_bar_reserved ? WORM_UI_BGM_BAR_CHROME_HEIGHT : 0.0f) -
@@ -2135,7 +2120,7 @@ void append_area_timing_geometry(wormedit::editor_area_geometry_snapshot_t& snap
                                 const WormUiComposeView& view, bool downscroll) {
     for (std::size_t i = 0; i < view.timing_marker_count; ++i) {
         const auto& marker = view.timing_markers[i];
-        const auto* lane = ui_codec<WormUiTimingLaneKind>::descriptor(marker.lane);
+        const auto* lane = wormedit::find_catalog_entry(wormedit::timing_lanes, marker.lane);
         if (!lane || marker.object_id == 0) continue;
         const auto bounds = wormedit::ui::compose_timing_marker_bounds(view, marker);
         if (bounds.right <= bounds.left) continue;
@@ -2207,11 +2192,11 @@ void cache_area_object_geometry(const compose_projection_context_t<wormedit::edi
 
 // Pasted timing objects have no scene geometry; they are projected straight onto their lane.
 auto paste_timing_ghost_lane(const wormedit::chart_clipboard_payload_t& object)
-    -> std::optional<WormUiTimingLaneKind> {
-    return std::visit([](const auto& event) -> std::optional<WormUiTimingLaneKind> {
+    -> std::optional<wormedit::timing_lane_kind_t> {
+    return std::visit([](const auto& event) -> std::optional<wormedit::timing_lane_kind_t> {
         using access = wormedit::timing_event_access_t<std::remove_cvref_t<decltype(event)>>;
         if constexpr (requires { access::kind(event); })
-            return ui_codec<WormUiTimingLaneKind>::from(access::kind(event));
+            return access::kind(event);
         else return std::nullopt;
     }, object);
 }
@@ -2668,7 +2653,7 @@ void populate_compose_view(frontend_workspace_view_t& flattened,
     build_loop_selection_controls_view(view, application_state);
 }
 
-auto toggle_compose_audio_offset_lock(const WormUiWorkspaceAction& action,
+auto toggle_compose_audio_offset_lock(const wormedit::ui::workspace_action_t& action,
     const wormedit::document_history_t& history, const wormedit::workspace_controller_t& workspace,
     application_command_state_t& application, compose_scene_cache_t& cache,
     std::optional<wormedit::proposal_t<wormedit::audio_offset_drag_t>>& drag,

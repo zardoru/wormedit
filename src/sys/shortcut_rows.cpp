@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <set>
+#include <functional>
 #include <string_view>
 #include <utility>
 
@@ -73,12 +74,16 @@ auto key_name(std::uint16_t usage) -> std::string {
     }
 }
 
+constexpr std::string_view chord_text_separator = ", ";
+
 auto joined_chord_text(const std::vector<shortcut_chord_t>& chords,
-                       shortcut_primary_modifier_t primary) -> std::string {
+                       shortcut_primary_modifier_t primary, std::string* first_text = nullptr) -> std::string {
     std::string text;
+    if (first_text) first_text->clear();
     for (std::size_t index = 0; index < chords.size() && index < max_chords_shown; ++index) {
-        if (index != 0) text += ", ";
+        if (index != 0) text += chord_text_separator;
         text += shortcut_chord_text(chords[index], primary);
+        if (index == 0 && first_text) *first_text = text;
     }
     return text;
 }
@@ -100,11 +105,42 @@ auto conflicting_ids(const command_registry_t& registry, shortcut_primary_modifi
 
 } // namespace
 
-void build_shortcut_rows_view(const command_registry_t& registry,
-                           shortcut_primary_modifier_t primary, shortcut_rows_projection_t& out) {
+auto shortcut_rows_key_t::operator==(const shortcut_rows_lookup_t& source) const -> bool {
+    if (primary != source.primary || entries.size() != source.registry.commands.size()) return false;
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const auto& command = source.registry.commands[index];
+        const auto& stored = entries[index];
+        if (stored.id != command.definition.id || stored.label != command.definition.display_name ||
+            stored.bindings != command.current_shortcuts ||
+            stored.focus_scope != command.definition.focus_scope ||
+            stored.tab != command.definition.tab || stored.lane != command.definition.lane ||
+            stored.focus_context != command.definition.focus_context) return false;
+    }
+    return true;
+}
+
+auto shortcut_rows_key_t::from(const shortcut_rows_lookup_t& source) -> shortcut_rows_key_t {
+    shortcut_rows_key_t result;
+    result.assign(source);
+    return result;
+}
+void shortcut_rows_key_t::assign(const shortcut_rows_lookup_t& source) {
+    primary = source.primary;
+    entries.resize(source.registry.commands.size());
+    for (std::size_t index = 0; index < entries.size(); ++index) {
+        const auto& command = source.registry.commands[index];
+        entries[index] = {.id = command.definition.id, .label = command.definition.display_name,
+                          .bindings = command.current_shortcuts,
+                          .focus_scope = command.definition.focus_scope, .tab = command.definition.tab,
+                          .lane = command.definition.lane, .focus_context = command.definition.focus_context};
+    }
+}
+
+namespace {
+void refill_shortcut_rows(const command_registry_t& registry,
+                           shortcut_primary_modifier_t primary, shortcut_rows_data_t& out) {
     const auto conflicts = conflicting_ids(registry, primary);
-    const auto count = std::min(registry.commands.size(),
-                                static_cast<std::size_t>(WORM_UI_SHORTCUT_ROW_CAPACITY));
+    const auto count = registry.commands.size();
     out.commands.clear();
     out.labels.clear();
     out.chords.clear();
@@ -118,9 +154,16 @@ void build_shortcut_rows_view(const command_registry_t& registry,
         out.chords.push_back(chord_list_text(command.current_shortcuts, primary));
     }
     for (std::size_t index = 0; index < count; ++index) {
-        out.rows.push_back({.label = out.labels[index].c_str(), .chord = out.chords[index].c_str(),
+        out.rows.push_back({.command_id = out.commands[index].value, .label = out.labels[index].c_str(), .chord = out.chords[index].c_str(),
                             .conflict = conflicts.contains(out.commands[index].value)});
     }
+}
+} // namespace
+
+void shortcut_rows_projection_t::refill(const command_registry_t& registry,
+                                       shortcut_primary_modifier_t primary) {
+    static_cast<void>(cache_.get_or_build(shortcut_rows_lookup_t{registry, primary},
+        std::bind_front(refill_shortcut_rows, std::cref(registry), primary)));
 }
 
 auto shortcut_chord_text(const shortcut_chord_t& chord) -> std::string {
@@ -161,14 +204,21 @@ void command_shortcut_text_t::refresh(const command_registry_t& registry,
     primary_ = primary;
     bindings_.clear();
     texts_.clear();
+    first_texts_.clear();
     for (const auto& command : registry.commands) {
         bindings_.push_back(command.current_shortcuts);
-        texts_.push_back(joined_chord_text(command.current_shortcuts, primary));
+        first_texts_.emplace_back();
+        texts_.push_back(joined_chord_text(command.current_shortcuts, primary, &first_texts_.back()));
     }
 }
 
 auto command_shortcut_text_t::text(std::size_t command_index) const noexcept -> const char* {
     return command_index < texts_.size() ? texts_[command_index].c_str() : "";
+}
+
+auto command_shortcut_text_t::first_text(std::size_t command_index) const noexcept -> std::string_view {
+    return command_index < first_texts_.size()
+        ? std::string_view{first_texts_[command_index]} : std::string_view{""};
 }
 
 auto capture_shortcut_batch(std::span<const WormUiShortcutEvent> events) -> shortcut_capture_t {

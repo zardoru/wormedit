@@ -48,6 +48,31 @@
 #include <tuple>
 
 
+TEST_CASE("Drawn text bounds preserve labels beyond the retired runtime text buffer",
+          "[frontend-state][event-harness][runtime]") {
+    nuklear_event_harness_t harness{1280, 900};
+    auto& view = harness.view();
+    view.setup.visible = false;
+    view.metadata.visible = false;
+    view.compose.visible = false;
+    view.audio_slices.visible = false;
+    view.compare.visible = false;
+    const std::string label(180, 'i');
+    view.summary_lines = {label.c_str()};
+    (void)harness.frame();
+    // Nuklear clips labels to the available width before emitting text commands.
+    // Compare the bounds snapshot with the actual command, not the model label.
+    const std::string_view drawn = harness.drawn_text();
+    const auto begin = drawn.find(std::string_view{label}.substr(0, 128));
+    REQUIRE(begin != std::string_view::npos);
+    const auto end = drawn.find('\n', begin);
+    REQUIRE(end != std::string_view::npos);
+    const auto drawn_label = drawn.substr(begin, end - begin);
+    REQUIRE(drawn_label.size() > 127);
+    const auto labels = harness.drawn_text_bounds();
+    CHECK(std::ranges::any_of(labels, [&](const auto& item) { return item.text == drawn_label; }));
+}
+
 TEST_CASE("Sound layer confirmation waits for a choice and rejects stale documents",
           "[unit][frontend-state][event-harness][sound-note-layers]") {
     nuklear_event_harness_t harness{1280, 900};
@@ -197,7 +222,7 @@ auto check_no_toolbar_document_actions(const std::vector<workspace_action_snapsh
         CHECK(snapshot.get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
 }
 
-auto delete_shortcut_has_compose_context(const WormUiWorkspaceAction& action) -> bool {
+auto delete_shortcut_has_compose_context(const wormedit::ui::workspace_action_t& action) -> bool {
     return action.shortcut_event_count == 1 &&
            action.shortcut_events[0].hid_usage ==
                static_cast<std::uint16_t>(SDL_SCANCODE_DELETE) &&
@@ -284,7 +309,7 @@ TEST_CASE("Queued Save reuses File Save and fires only once",
     auto& view = harness.view();
     view.project_has_native_path = true;
     (void)harness.frame();
-    CHECK(worm_ui_frontend_request_save_project(view.project_id));
+    CHECK(worm_ui_frontend_request_save_project(view.project_id.value));
     CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
     CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
 }
@@ -295,8 +320,8 @@ TEST_CASE("Queued Save is discarded when its project changes",
     auto& view = harness.view();
     view.project_has_native_path = true;
     (void)harness.frame();
-    CHECK(worm_ui_frontend_request_save_project(view.project_id));
-    ++view.project_id;
+    CHECK(worm_ui_frontend_request_save_project(view.project_id.value));
+    ++view.project_id.value;
     CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
     CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
 }
@@ -307,7 +332,7 @@ TEST_CASE("Queued Save is discarded when a modal intervenes",
     auto& view = harness.view();
     view.project_has_native_path = true;
     (void)harness.frame();
-    CHECK(worm_ui_frontend_request_save_project(view.project_id));
+    CHECK(worm_ui_frontend_request_save_project(view.project_id.value));
     view.close_confirmation.visible = true;
     CHECK(harness.frame().get().kind != WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
     view.close_confirmation.visible = false;
@@ -447,7 +472,7 @@ void check_modifier_fixture_isolation() {
     CHECK(SDL_GetModState() == SDL_KMOD_ALT);
 }
 
-void check_snapshot_tags(const WormUiWorkspaceAction& action) {
+void check_snapshot_tags(const wormedit::ui::workspace_action_t& action) {
     REQUIRE(action.metadata_search_tag_count == 3);
     CHECK(std::string{action.metadata_search_tags[0]} == "original tag");
     CHECK(std::string{action.metadata_search_tags[1]}.empty());
@@ -567,22 +592,22 @@ TEST_CASE("Headless frontend isolates scripted Ctrl wheel zoom and release",
 
 TEST_CASE("Action snapshots own metadata payloads across copies moves and destruction",
           "[unit][frontend-state][frontend][event-harness]") {
-    using text_member_t = const char* WormUiWorkspaceAction::*;
+    using text_member_t = const char* wormedit::ui::workspace_action_t::*;
     constexpr std::array<text_member_t, 11> fields{
-        &WormUiWorkspaceAction::metadata_chart_rating_numerator_text,
-        &WormUiWorkspaceAction::metadata_chart_rating_denominator_text,
-        &WormUiWorkspaceAction::metadata_audio_offset_numerator_text,
-        &WormUiWorkspaceAction::metadata_audio_offset_denominator_text,
-        &WormUiWorkspaceAction::metadata_title,
-        &WormUiWorkspaceAction::metadata_artist,
-        &WormUiWorkspaceAction::metadata_chart_name,
-        &WormUiWorkspaceAction::metadata_chart_author,
-        &WormUiWorkspaceAction::metadata_format_name,
-        &WormUiWorkspaceAction::metadata_format_value,
-        &WormUiWorkspaceAction::metadata_output_path,
+        &wormedit::ui::workspace_action_t::metadata_chart_rating_numerator_text,
+        &wormedit::ui::workspace_action_t::metadata_chart_rating_denominator_text,
+        &wormedit::ui::workspace_action_t::metadata_audio_offset_numerator_text,
+        &wormedit::ui::workspace_action_t::metadata_audio_offset_denominator_text,
+        &wormedit::ui::workspace_action_t::metadata_title,
+        &wormedit::ui::workspace_action_t::metadata_artist,
+        &wormedit::ui::workspace_action_t::metadata_chart_name,
+        &wormedit::ui::workspace_action_t::metadata_chart_author,
+        &wormedit::ui::workspace_action_t::metadata_format_name,
+        &wormedit::ui::workspace_action_t::metadata_format_value,
+        &wormedit::ui::workspace_action_t::metadata_output_path,
     };
     const auto make_snapshot = [&] {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         std::array<std::string, 11> strings;
         for (std::size_t i = 0; i < fields.size(); ++i) {
             strings[i] = std::to_string(i) + std::string(100, 'x');
@@ -655,13 +680,13 @@ TEST_CASE("Headless metadata text history survives later compose and frontend sh
         view.metadata.search_tags_editable = true;
         view.metadata.title = "";
         view.metadata.artist = "Artist";
-        view.metadata.artist_bytes = 6;
+
         static_cast<void>(harness.frame());
         history = edit_metadata_title(harness, "First");
         REQUIRE(std::string{history[0].get().metadata_title} == "First");
         // Simulate the next projected view, then edit the same frontend buffer.
         view.metadata.title = "First";
-        view.metadata.title_bytes = 5;
+
         ++view.metadata.document_revision;
         static_cast<void>(harness.frame());
         const auto later = edit_metadata_title(harness, "Second");
@@ -678,13 +703,13 @@ TEST_CASE("Headless metadata text history survives later compose and frontend sh
 namespace {
 
 constexpr std::array project_chart_text_fields{
-    &WormUiProjectChartAction::author,
-    &WormUiProjectChartAction::rating_numerator,
-    &WormUiProjectChartAction::rating_denominator,
+    &wormedit::ui::project_chart_action_t::author,
+    &wormedit::ui::project_chart_action_t::rating_numerator,
+    &wormedit::ui::project_chart_action_t::rating_denominator,
 };
 
 auto project_chart_snapshot_from_local_buffers() -> workspace_action_snapshot_t {
-    WormUiWorkspaceAction source{};
+    wormedit::ui::workspace_action_t source{};
     std::array<std::string, 3> strings{"Chart author", std::string(100, '9'), "7"};
     for (std::size_t i = 0; i < strings.size(); ++i)
         source.project_chart.*project_chart_text_fields[i] = strings[i].c_str();
@@ -706,14 +731,14 @@ void check_project_chart_snapshot(const workspace_action_snapshot_t& snapshot) {
 
 void check_project_chart_null_and_empty() {
     for (const auto member : project_chart_text_fields) {
-        WormUiWorkspaceAction source{};
+        wormedit::ui::workspace_action_t source{};
         const workspace_action_snapshot_t absent{source};
-        CHECK(absent.get().project_chart.*member == nullptr);
+        CHECK((absent.get().project_chart.*member).empty());
         char empty[]{'\0', '\0'};
         source.project_chart.*member = empty;
         const workspace_action_snapshot_t present{source};
         empty[0] = 'x';
-        REQUIRE(present.get().project_chart.*member != nullptr);
+        REQUIRE((present.get().project_chart.*member).empty());
         CHECK(std::string{present.get().project_chart.*member}.empty());
     }
 }
@@ -980,8 +1005,8 @@ TEST_CASE("Layer row menu owns Escape and outside clicks ahead of notification t
           "[unit][frontend-state][frontend][event-harness]") {
     layer_menu_fixture_t fixture;
     auto& notifications = fixture.harness.view().notifications;
-    notifications.toast_count = 1;
-    notifications.toasts[0] = {.id = 42, .severity = WORM_UI_NOTIFICATION_ERROR,
+    notifications.toasts.resize(1);
+    notifications.toasts[0] = {.id = 42, .severity = wormedit::notification_severity_t::error,
                                .message = "Keep this notification", .repeat_count = 1};
     (void)fixture.harness.frame();
     fixture.open();
@@ -1089,7 +1114,7 @@ struct note_menu_fixture_t {
 } // namespace
 
 auto t422_note_hint_bounds(const nuklear_event_harness_t& harness)
-    -> std::optional<WormUiTestingDrawnText> {
+    -> std::optional<wormedit::ui::testing_drawn_text_view_t> {
     constexpr std::string_view hint{"Shift + lane key moves one, then deselects"};
     const auto bounds = harness.drawn_text_bounds();
     const auto found = std::ranges::find_if(bounds, [hint](const auto& item) {
@@ -1101,7 +1126,7 @@ auto t422_note_hint_bounds(const nuklear_event_harness_t& harness)
 }
 
 void t422_check_note_hint_fits_view(const nuklear_event_harness_t& harness,
-                                    const WormUiTestingRect& viewport) {
+                                    const wormedit::ui::testing_rect_view_t& viewport) {
     const auto bounds = t422_note_hint_bounds(harness);
     REQUIRE(bounds.has_value());
     CHECK(bounds->x >= viewport.x);
@@ -1267,8 +1292,8 @@ TEST_CASE("Note menu owns Escape and outside presses ahead of notification toast
           "[unit][frontend-state][frontend][event-harness]") {
     note_menu_fixture_t fixture;
     auto& notifications = fixture.harness.view().notifications;
-    notifications.toast_count = 1;
-    notifications.toasts[0] = {.id = 42, .severity = WORM_UI_NOTIFICATION_ERROR,
+    notifications.toasts.resize(1);
+    notifications.toasts[0] = {.id = 42, .severity = wormedit::notification_severity_t::error,
                                .message = "Keep this notification", .repeat_count = 1};
     (void)fixture.harness.frame();
     fixture.open();
@@ -1757,7 +1782,7 @@ TEST_CASE("BGA renumber popup blocks Compose note input outside its bounds",
 
 namespace {
 auto find_compose_input(const std::vector<workspace_action_snapshot_t>& frames,
-                        WormUiComposeInputKind kind) -> const WormUiComposeInputAction* {
+                        WormUiComposeInputKind kind) -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames)
         for (size_t index = 0; index < frame.get().compose_input_count; ++index)
             if (frame.get().compose_inputs[index].kind == kind)
@@ -1855,11 +1880,10 @@ TEST_CASE("Compare fields route wheel input as one shared read-only scroll actio
     compare.second_pane = &second;
     const std::array<std::uint64_t, 2> ids{10, 20};
     const std::array<const char*, 2> names{"Easy", "Hard"};
-    compare.chart_ids = ids.data();
-    compare.chart_names = names.data();
-    compare.chart_count = ids.size();
-    compare.first_chart_id = ids[0];
-    compare.second_chart_id = ids[1];
+    compare.charts = {{.id = wormedit::chart_id_t{ids[0]}, .label = names[0]},
+                      {.id = wormedit::chart_id_t{ids[1]}, .label = names[1]}};
+    compare.first_chart_id = wormedit::chart_id_t{ids[0]};
+    compare.second_chart_id = wormedit::chart_id_t{ids[1]};
     compare.first_difficulty = names[0];
     compare.second_difficulty = names[1];
     (void)harness.frame();
@@ -1895,12 +1919,12 @@ void configure_compare_diagnostic_view(nuklear_event_harness_t& harness,
     workspace.audio_slices.visible = false;
     auto& compare = workspace.compare;
     compare.visible = true;
-    compare.diagnostic_count = fixture.labels.size();
-    compare.diagnostic_labels = fixture.labels.data();
-    compare.diagnostic_rows = fixture.rows.data();
-    compare.diagnostic_measures = fixture.measures.data();
-    compare.diagnostic_has_rows = fixture.has_rows.data();
-    compare.diagnostic_chart_id = 42;
+    compare.diagnostics.clear();
+    for (std::size_t index = 0; index < fixture.labels.size(); ++index)
+        compare.diagnostics.push_back({.label = fixture.labels[index], .row = fixture.rows[index],
+            .measure = wormedit::measure_id_t{fixture.measures[index]},
+            .has_row = fixture.has_rows[index] != 0});
+    compare.diagnostic_chart_id = wormedit::chart_id_t{42};
 }
 
 auto click_compare_diagnostic(nuklear_event_harness_t& harness)
@@ -1985,7 +2009,7 @@ void stage_sound_slot(nuklear_event_harness_t& harness, std::uint16_t slot = 2) 
         view.project_id, view.chart_id, view.document_revision, "/tmp/slot-picked.wav", 1));
 }
 auto find_sound_slot_action(const std::vector<workspace_action_snapshot_t>& frames)
-    -> const WormUiWorkspaceAction* {
+    -> const wormedit::ui::workspace_action_t* {
     const auto found = std::ranges::find_if(frames, [](const auto& frame) {
         return frame.get().compose_action == WORM_UI_COMPOSE_ACTION_ASSIGN_SOUND_SLOT;
     });
@@ -2159,9 +2183,9 @@ void select_and_filter_sound(nuklear_event_harness_t& harness) {
     CHECK(action->get().audio_asset_id == 22);
     CHECK(action->get().audio_resource_id == 102);
     auto& audio_view = harness.view().audio_slices;
-    audio_view.selected_resource_id = action->get().audio_resource_id;
+    audio_view.selected_resource_id = wormedit::resource_id_t{action->get().audio_resource_id};
     audio_view.has_selected_asset = true;
-    audio_view.selected_asset_id = action->get().audio_asset_id;
+    audio_view.selected_asset_id = wormedit::asset_id_t{action->get().audio_asset_id};
     std::snprintf(worm_ui_nuklear_audio_state().search_text, 128, "kick");
     CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     expect_filtered_sound_rows(harness);
@@ -2175,11 +2199,10 @@ void check_separated_sound_columns(int width) {
     workspace.compose.visible = false;
     auto& view = workspace.audio_slices;
     view.visible = true;
-    const std::array<WormUiSoundRowView, 2> rows{{
-        {.resource_id = 101, .asset_id = 11, .name = "Kick", .kind = 2},
-        {.resource_id = 102, .asset_id = 22, .name = "Snare", .kind = 2}}};
-    view.sound_rows = rows.data();
-    view.sound_row_count = rows.size();
+    const std::array<wormedit::ui::sound_row_view_t, 2> rows{{
+        {.resource_id = wormedit::resource_id_t{101}, .asset_id = wormedit::asset_id_t{11}, .name = "Kick", .kind = static_cast<wormedit::sound_kind_t>(2)},
+        {.resource_id = wormedit::resource_id_t{102}, .asset_id = wormedit::asset_id_t{22}, .name = "Snare", .kind = static_cast<wormedit::sound_kind_t>(2)}}};
+    view.sound_rows.assign(rows.data(), rows.data() + rows.size());
     CHECK(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_NONE);
     expect_sound_sections(harness);
     select_and_filter_sound(harness);
@@ -2198,12 +2221,12 @@ TEST_CASE("Sounds section separators preserve row selection and search at narrow
 
 namespace {
 void stage_grouped_import(nuklear_event_harness_t& harness) {
-    const std::array<WormUiSoundImportItem, 3> items{{
+    const std::array<wormedit::ui::sound_import_item_t, 3> items{{
         {"/tmp/kick01.wav", "kick01.wav", WORM_UI_SOUND_IMPORT_KEYSOUND},
         {"/tmp/kick02.wav", "kick02.wav", WORM_UI_SOUND_IMPORT_KEYSOUND},
         {"/tmp/loose.wav", "loose.wav", WORM_UI_SOUND_IMPORT_SAMPLE}}};
     const auto& view = harness.view();
-    REQUIRE(worm_ui_frontend_stage_sound_import(view.project_id, view.selected_chart_id,
+    REQUIRE(worm_ui_frontend_stage_sound_import(view.project_id.value, view.selected_chart_id.value,
         view.document_revision, items.data(), items.size(), nullptr, 0, true, ""));
     (void)harness.frame();  // A dialog fits its content on its second frame.
 }
@@ -2269,7 +2292,7 @@ TEST_CASE("Sound import failure retains group edits and changing projects discar
     stage_grouped_import(harness);
     worm_ui_frontend_sound_import_result(false, "No contiguous WAV run is available.");
     check_retained_import_after_failure();
-    ++harness.view().project_id;
+    ++harness.view().project_id.value;
     CHECK(harness.frame().get().compose_action == WORM_UI_COMPOSE_ACTION_NONE);
     CHECK_FALSE(worm_ui_nuklear_sound_import_active());
 }
@@ -2277,10 +2300,10 @@ TEST_CASE("Sound import failure retains group edits and changing projects discar
 TEST_CASE("Import action snapshots own item strings and group member indexes",
           "[frontend-state][event-harness][sound-import]") {
     std::string path = "/tmp/kick01.wav", name = "Kick", group_name = "Drums";
-    WormUiSoundImportItem item{path.c_str(), name.c_str(), WORM_UI_SOUND_IMPORT_KEYSOUND};
+    wormedit::ui::sound_import_item_t item{path.c_str(), name.c_str(), WORM_UI_SOUND_IMPORT_KEYSOUND};
     std::array<std::size_t, 1> members{0};
-    WormUiSoundImportGroup group{group_name.c_str(), 22, members.data(), members.size()};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::sound_import_group_t group{group_name.c_str(), 22, members.data(), members.size()};
+    wormedit::ui::workspace_action_t action{};
     action.sound_import_items = &item; action.sound_import_item_count = 1;
     action.sound_import_groups = &group; action.sound_import_group_count = 1;
     workspace_action_snapshot_t snapshot{action};
@@ -2321,7 +2344,7 @@ TEST_CASE("Headless Compose keeps backward wheel navigation available during tra
 }
 
 namespace {
-void check_tooltip_rectangle(const WormUiTestingDrawnText& text, int width, int height) {
+void check_tooltip_rectangle(const wormedit::ui::testing_drawn_text_view_t& text, int width, int height) {
     CHECK(text.x >= 0);
     CHECK(text.y >= 0);
     CHECK(text.x + text.width <= width);
@@ -2572,8 +2595,8 @@ struct t422_fixture_t {
         expect_t422(flattened.view.compose.scene_available);
         harness.view().active_tab = WORM_UI_WORKSPACE_TAB_COMPOSE;
         harness.view().project_loaded = true;
-        harness.view().project_id = history.document.id.value;
-        harness.view().selected_chart_id = chart_id_t{1}.value;
+        harness.view().project_id.value = history.document.id.value;
+        harness.view().selected_chart_id.value = chart_id_t{1}.value;
         harness.view().document_revision = history.document.revision;
         harness.view().compose = flattened.view.compose;
         harness.view().compose.visible = true;
@@ -2584,7 +2607,7 @@ struct t422_fixture_t {
         return dispatch_action(action);
     }
 
-    auto dispatch_action(WormUiWorkspaceAction& action) -> std::string {
+    auto dispatch_action(wormedit::ui::workspace_action_t& action) -> std::string {
         const compose_input_inputs_t environment{
             .document = {.history = history, .workspace = *binding.value, .notifications = sink,
                          .auditions = &application.project.auditions},
@@ -2796,7 +2819,7 @@ void t422_apply_shift_sequence(t422_fixture_t& fixture, song_document_t& expecte
 
 void t422_undo_last_shift(t422_fixture_t& fixture, song_document_t& expected_document,
                           const std::array<note_t, 3>& originals) {
-    WormUiWorkspaceAction undo{};
+    wormedit::ui::workspace_action_t undo{};
     undo.compose_input_project_id = fixture.history.document.id.value;
     undo.compose_input_chart_id = fixture.history.document.charts.front().id.value;
     undo.compose_input_document_revision = fixture.history.document.revision;
@@ -3064,7 +3087,7 @@ TEST_CASE("BMS branch panel shows control nodes as a tree and unparsed statement
 namespace {
 
 auto block_action_from(const std::vector<workspace_action_snapshot_t>& frames,
-                       WormUiComposeActionKind kind) -> const WormUiWorkspaceAction* {
+                       WormUiComposeActionKind kind) -> const wormedit::ui::workspace_action_t* {
     for (const auto& frame : frames)
         if (frame.get().compose_action == kind) return &frame.get();
     return nullptr;
@@ -3161,7 +3184,7 @@ TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
         view.branch_outline_available = with_branches;
         worm_ui_nuklear_compose_state().dock_layout.branch_panel_visible = true;
         (void)harness.frame();
-        WormUiTestingRect rect{};
+        wormedit::ui::testing_rect_view_t rect{};
         REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&rect));
         return std::pair{rect.x, worm_ui_frontend_compose_left_dock_pixels()};
     };
@@ -3175,7 +3198,7 @@ TEST_CASE("BMS branch dock pushes the field over and hides on a narrow window",
 }
 
 namespace {
-void check_keysound_edit_action(const WormUiOptionsAction& edited) {
+void check_keysound_edit_action(const wormedit::ui::options_action_t& edited) {
     CHECK(edited.kind == WORM_UI_OPTIONS_EDIT_FIELD);
     CHECK(edited.field == WORM_UI_OPTIONS_FIELD_KEYSOUND_MEMORY);
     CHECK(edited.integer == 513);
@@ -3200,10 +3223,10 @@ TEST_CASE("Options Audio exposes and edits the keysound memory field", "[options
 
 TEST_CASE("Input shortcuts page lists rows and Change requests a capture", "[options][shortcuts][event-harness]") {
     nuklear_event_harness_t harness{1280, 900};
-    static const WormUiShortcutRowView rows[]{{"Play", "Space", false}, {"Undo", "Ctrl+Z", true}};
+    static const wormedit::ui::shortcut_row_view_t rows[]{{"play", "Play", "Space", false}, {"undo", "Undo", "Ctrl+Z", true}};
     harness.view().options = {.visible = true, .revision = 33, .category = WORM_UI_OPTIONS_INPUT,
         .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
-        .shortcut_rows = rows, .shortcut_row_count = 2};
+        .shortcut_rows = {std::begin(rows), std::end(rows)}};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Undo"));
     REQUIRE(harness.drawn_text_center("Ctrl+Z  (conflict)"));
@@ -3215,15 +3238,15 @@ TEST_CASE("Input shortcuts page lists rows and Change requests a capture", "[opt
         return frame.get().options.kind == WORM_UI_OPTIONS_SHORTCUT_CAPTURE;
     });
     REQUIRE(requested != clicks.end());
-    CHECK(requested->get().options.shortcut_row == 1);
+    CHECK(requested->get().options.shortcut_command_id == "undo");
 }
 
 TEST_CASE("Key presses during a shortcut capture reach the frame's shortcut events", "[options][shortcuts][event-harness]") {
     nuklear_event_harness_t harness{1280, 900};
-    static const WormUiShortcutRowView rows[]{{"Play", "Space", false}};
+    static const wormedit::ui::shortcut_row_view_t rows[]{{"play", "Play", "Space", false}};
     harness.view().options = {.visible = true, .revision = 34, .category = WORM_UI_OPTIONS_INPUT,
         .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = "",
-        .shortcut_rows = rows, .shortcut_row_count = 1, .shortcut_capturing = true, .shortcut_capture_row = 0};
+        .shortcut_rows = {std::begin(rows), std::end(rows)}, .shortcut_capturing = true, .shortcut_capture_command_id = "play"};
     (void)harness.frame();
     REQUIRE(harness.drawn_text_center("Press a chord..."));
     const auto press = key_event(SDL_EVENT_KEY_DOWN, SDLK_K, SDL_SCANCODE_K);
@@ -3255,9 +3278,9 @@ void section_review_submits_fixed_kind(std::uint8_t kind, bool stale = false) {
     nuklear_event_harness_t harness{1280, 900};
     auto& view = harness.view();
     const auto bound_revision = view.document_revision;
-    const WormUiSoundImportItem item{"/music/new.ogg", "New sound", kind, true};
-    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id,
-        view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
+    const wormedit::ui::sound_import_item_t item{"/music/new.ogg", "New sound", kind, true};
+    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id.value,
+        view.selected_chart_id.value, view.document_revision, &item, 1, nullptr, 0, false, ""));
     if (stale) ++view.document_revision;
     (void)harness.frame();
     (void)harness.frame();  // A dialog fits its content on its second frame.
@@ -3296,10 +3319,10 @@ TEST_CASE("sound_import section controls stay BMSON only and fixed review cancel
     (void)harness.frame();
     section_import_check(!harness.drawn_text_center("Add stem…").has_value());
     section_import_check(!harness.drawn_text_center("Add keysound…").has_value());
-    const WormUiSoundImportItem item{"/music/new.ogg", "New sound", WORM_UI_SOUND_IMPORT_STEM, true};
-    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id,
-        view.selected_chart_id, view.document_revision, &item, 1, nullptr, 0, false, ""));
-    ++view.selected_chart_id;
+    const wormedit::ui::sound_import_item_t item{"/music/new.ogg", "New sound", WORM_UI_SOUND_IMPORT_STEM, true};
+    section_import_require(worm_ui_frontend_stage_sound_import(view.project_id.value,
+        view.selected_chart_id.value, view.document_revision, &item, 1, nullptr, 0, false, ""));
+    ++view.selected_chart_id.value;
     const auto action = harness.frame();
     section_import_check(action.get().compose_action != WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_IMPORT);
     section_import_check(!worm_ui_nuklear_sound_import_active());
@@ -3409,7 +3432,7 @@ TEST_CASE("Selecting the silent source emits a source payload and keeps Draw act
     auto& state = worm_ui_nuklear_compose_state();
     state.pointer_capture.draw_source_kind = 1;
     state.pointer_capture.draw_source_id = 40;
-    WormUiWorkspaceAction picked{};
+    wormedit::ui::workspace_action_t picked{};
     worm_ui_nuklear_pick_draw_source(state, picked, 0, 0);
     expect_draw(picked.compose_input_count == 1);
     expect_draw(picked.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
@@ -3541,7 +3564,7 @@ TEST_CASE("Batched right press motion and release erases from the original press
     REQUIRE(begin);
     const auto begin_y = begin->y_pixels;
     const auto release = std::ranges::find(std::span(action.compose_inputs, action.compose_input_count),
-        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, &WormUiComposeInputAction::kind);
+        WORM_UI_COMPOSE_INPUT_NOTE_PAINT_RELEASE, &wormedit::ui::compose_input_action_t::kind);
     REQUIRE(release != std::span(action.compose_inputs, action.compose_input_count).end());
     expect_draw(begin_y < release->y_pixels);
     expect_draw(!compose_note_menu_open());
@@ -3549,7 +3572,7 @@ TEST_CASE("Batched right press motion and release erases from the original press
 
 namespace {
 
-auto route_harness_shortcut(const WormUiWorkspaceAction& action,
+auto route_harness_shortcut(const wormedit::ui::workspace_action_t& action,
                             const wormedit::command_registry_t& registry)
     -> wormedit::command_dispatch_outcome_t {
     if (action.shortcut_event_count != 1) {
@@ -3571,7 +3594,7 @@ auto route_harness_shortcut(const WormUiWorkspaceAction& action,
         focus, wormedit::shortcut_primary_modifier_t::control);
 }
 
-auto harness_tool_chord(const WormUiWorkspaceAction& action, SDL_Scancode scancode) -> bool {
+auto harness_tool_chord(const wormedit::ui::workspace_action_t& action, SDL_Scancode scancode) -> bool {
     return action.shortcut_event_count == 1 &&
            action.shortcut_events[0].hid_usage == static_cast<std::uint16_t>(scancode) &&
            action.shortcut_events[0].modifiers == WORM_UI_SHORTCUT_MODIFIER_ALT &&
@@ -3579,7 +3602,7 @@ auto harness_tool_chord(const WormUiWorkspaceAction& action, SDL_Scancode scanco
            !action.shortcut_text_entry_active && !action.shortcut_ime_composition_active;
 }
 
-auto tool_route_matches(const WormUiWorkspaceAction& action, SDL_Scancode scancode,
+auto tool_route_matches(const wormedit::ui::workspace_action_t& action, SDL_Scancode scancode,
                         std::string_view expected,
                         const wormedit::command_registry_t& registry) -> bool {
     const auto dispatched = route_harness_shortcut(action, registry);
@@ -3661,7 +3684,7 @@ void seed_quantize_controls(nuklear_event_harness_t& harness) {
     state.dock_layout.sounds_panel_visible = state.dock_layout.layers_panel_visible = false;
 }
 
-void check_quantize_settings(const WormUiWorkspaceAction& action, std::uint64_t grid,
+void check_quantize_settings(const wormedit::ui::workspace_action_t& action, std::uint64_t grid,
                              std::uint8_t space, std::uint8_t tie) {
     CHECK(action.compose_action == WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS);
     CHECK(action.compose_quantize_divisions == grid);
@@ -3731,7 +3754,7 @@ void seed_quantize_presets(nuklear_event_harness_t& harness) {
     view.quantize_preset_count = presets.size();
 }
 
-void check_quantize_preset_action(const WormUiWorkspaceAction& action, WormUiComposeActionKind kind,
+void check_quantize_preset_action(const wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind,
                                   const char* name = nullptr) {
     CHECK(action.compose_action == kind);
     CHECK(action.compose_quantize_preset_index == 0);
@@ -3921,10 +3944,10 @@ TEST_CASE("Quantize ghost overlay follows visible section, scroll clipping and c
     view.quantize_preview_enabled = true;
     auto& timing = harness.view().timing;
     timing.stage_active = true;
-    timing.stage_lane = WORM_UI_TIMING_LANE_BPM;
+    timing.stage_lane = wormedit::timing_lane_kind_t::bpm;
     timing.stage_marker_y_pixels = 1.0;
     timing.stage_value = 120.0;
-    timing.stage_pause_unit = WORM_UI_TIMING_PAUSE_SECONDS;
+    timing.stage_pause_unit = wormedit::pause_unit_t::seconds;
     (void)harness.frame();
     check_quantize_ghost_overlay(harness, view, ghost);
 }
@@ -4124,7 +4147,7 @@ TEST_CASE("Quantize popup owns right clicks over underlying preset chips through
 
 namespace {
 auto move_event_input(const workspace_action_snapshot_t& frame, WormUiComposeInputKind kind)
-    -> const WormUiComposeInputAction& {
+    -> const wormedit::ui::compose_input_action_t& {
     const auto& action = frame.get();
     for (std::size_t index = 0; index < action.compose_input_count; ++index)
         if (action.compose_inputs[index].kind == kind)
@@ -4425,7 +4448,7 @@ struct stem_edge_fixture_t {
         state.dock_layout.bga_panel_visible = false;
         state.pointer_capture.draw_source_kind = 0;
         state.pointer_capture.draw_source_id = 0;
-        harness.view().project_id = 123;
+        harness.view().project_id.value = 123;
         auto& view = harness.view().compose;
         view.visible = true;
         view.scene_available = true;
@@ -4940,7 +4963,7 @@ void hover_overview_label(nuklear_event_harness_t& harness, std::pair<float, flo
 
 void cover_with_tap_tool(nuklear_event_harness_t& harness, std::pair<float, float> point,
                          float width, float height) {
-    WormUiTestingRect tap{};
+    wormedit::ui::testing_rect_view_t tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     const auto title_x = tap.x + 60;
     const auto title_y = tap.y + 30;
@@ -4977,7 +5000,7 @@ TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[
     const auto label = harness.drawn_text_center("Overview unavailable");
     REQUIRE(label);
     cover_with_tap_tool(harness, *label, 1280, 720);
-    WormUiTestingRect tap{};
+    wormedit::ui::testing_rect_view_t tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     // The label must lie inside the covering window for this case to test coverage.
     const bool inside_x = label->first >= tap.x && label->first <= tap.x + tap.width;
@@ -4991,16 +5014,15 @@ TEST_CASE("Overview tooltip stays hidden under a covering Tap timing window", "[
 namespace {
 // One chart row on the Project tab. Its "Open" strip button carries the tooltip "Open in
 // Compose" and sits under the Tap timing window's rectangle at this window size.
-void configure_project_row(nuklear_event_harness_t& harness, WormUiProjectChartRow* row) {
+void configure_project_row(nuklear_event_harness_t& harness, wormedit::ui::project_chart_row_view_t* row) {
     harness.view().setup.visible = true;
-    harness.view().setup.charts = row;
-    harness.view().setup.chart_row_count = 1;
+    harness.view().setup.charts = {*row};
     harness.view().setup.chart_count = 1;
 }
 }
 
 TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][event-harness][components]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{1280, 720};
     configure_project_row(harness, &row);
@@ -5012,7 +5034,7 @@ TEST_CASE("Chart row button tooltip shows when no window covers it", "[tooltip][
 }
 
 TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing window", "[tooltip][event-harness][components]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{800, 720};
     configure_project_row(harness, &row);
@@ -5027,7 +5049,7 @@ TEST_CASE("Chart row button tooltip stays hidden under a covering Tap timing win
     (void)harness.frame();
     const auto open = harness.drawn_text_center("Open");
     REQUIRE(open);
-    WormUiTestingRect tap{};
+    wormedit::ui::testing_rect_view_t tap{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Tap timing", &tap));
     // Move the compact shared dialog by its header over the current action.
     cover_with_tap_tool(harness, *open, 800, 720);
@@ -5179,16 +5201,16 @@ struct close_dialog_fixture_t {
         REQUIRE(harness.ready());
         auto& view = harness.view();
         view.close_confirmation = {.visible = true, .application = application, .has_native_path = true,
-                                   .project_id = 5, .revision = 9, .status_text = status};
+                                   .project_id = wormedit::song_id_t{5}, .revision = 9, .status_text = status};
         (void)harness.frame();
         (void)harness.frame();
     }
     // The first non-empty close decision across the frames of one gesture.
     static auto decision_of(const std::vector<workspace_action_snapshot_t>& frames)
-        -> const WormUiWorkspaceAction* {
+        -> std::optional<wormedit::ui::workspace_action_t> {
         for (const auto& frame : frames)
-            if (frame.get().close_decision != WORM_UI_CLOSE_NONE) return &frame.get();
-        return nullptr;
+            if (frame.get().close_decision != WORM_UI_CLOSE_NONE) return frame.get();
+        return std::nullopt;
     }
     auto click_button(const char* label) {
         const auto center = harness.drawn_text_center(label);
@@ -5226,7 +5248,7 @@ TEST_CASE("Unsaved changes buttons emit their decisions with the stamps",
           "[frontend-state][event-harness][dialog][close-confirmation]") {
     {
         close_dialog_fixture_t f;
-        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Cancel"));
+        const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Cancel"));
         REQUIRE(decided);
         CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
         CHECK(decided->close_project_id == 5);
@@ -5234,13 +5256,13 @@ TEST_CASE("Unsaved changes buttons emit their decisions with the stamps",
     }
     {
         close_dialog_fixture_t f;
-        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Discard changes"));
+        const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Discard changes"));
         REQUIRE(decided);
         CHECK(decided->close_decision == WORM_UI_CLOSE_DISCARD);
     }
     {
         close_dialog_fixture_t f;
-        const auto* decided = close_dialog_fixture_t::decision_of(f.click_button("Save"));
+        const auto decided = close_dialog_fixture_t::decision_of(f.click_button("Save"));
         REQUIRE(decided);
         CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
         CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
@@ -5253,13 +5275,13 @@ TEST_CASE("Unsaved changes maps Escape to cancel and Enter to save",
           "[frontend-state][event-harness][dialog][close-confirmation]") {
     {
         close_dialog_fixture_t f;
-        const auto* decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE));
+        const auto decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_ESCAPE, SDL_SCANCODE_ESCAPE));
         REQUIRE(decided);
         CHECK(decided->close_decision == WORM_UI_CLOSE_CANCEL);
     }
     {
         close_dialog_fixture_t f;
-        const auto* decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_RETURN, SDL_SCANCODE_RETURN));
+        const auto decided = close_dialog_fixture_t::decision_of(f.press_key(SDLK_RETURN, SDL_SCANCODE_RETURN));
         REQUIRE(decided);
         CHECK(decided->close_decision == WORM_UI_CLOSE_SAVE);
         CHECK(decided->kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
@@ -5276,23 +5298,23 @@ namespace {
 
 struct external_player_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiExternalPlayerDefinitionView, 2> players{{
+    std::array<wormedit::ui::external_player_definition_view_t, 2> players{{
         {"Alpha", "/usr/bin/alpha", "--start", "--here <measure>", "--stop"},
         {"Beta", "/usr/bin/beta", "", "", ""}}};
     external_player_fixture_t() {
         REQUIRE(harness.ready());
-        harness.view().external_player = {.visible = 1, .revision = 3, .players = players.data(),
-                                          .player_count = players.size(), .selected = 0};
+        harness.view().external_player = {.visible = true, .revision = 3,
+            .players = {players.begin(), players.end()}, .selected = 0};
         (void)harness.frame();
         (void)harness.frame();
     }
     // The first non-empty external-player action across the frames of a gesture.
     static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
-        -> const WormUiExternalPlayerAction* {
+        -> std::optional<wormedit::ui::external_player_action_t> {
         for (const auto& frame : frames)
-            if (frame.get().external_player.kind != WORM_UI_EXTERNAL_PLAYER_NONE)
-                return &frame.get().external_player;
-        return nullptr;
+            if (frame.get().external_player.kind != wormedit::ui::external_player_action_kind_t::none)
+                return frame.get().external_player;
+        return std::nullopt;
     }
     auto click_label(const char* label) {
         const auto center = harness.drawn_text_center(label);
@@ -5310,9 +5332,9 @@ TEST_CASE("External player preferences dialog keeps every action",
         const auto& text = f.harness.drawn_text();
         CHECK(text.find("External player preferences") != std::string::npos);
         CHECK(text.find("Templates:") == std::string::npos);
-        const auto* saved = external_player_fixture_t::action_of(f.click_label("Save"));
+        const auto saved = external_player_fixture_t::action_of(f.click_label("Save"));
         REQUIRE(saved);
-        CHECK(saved->kind == WORM_UI_EXTERNAL_PLAYER_SAVE);
+        CHECK(saved->kind == wormedit::ui::external_player_action_kind_t::save);
         CHECK(saved->selected == 0);
         CHECK(std::string(saved->name) == "Alpha");
         CHECK(std::string(saved->path) == "/usr/bin/alpha");
@@ -5320,27 +5342,27 @@ TEST_CASE("External player preferences dialog keeps every action",
     }
     {
         external_player_fixture_t f;
-        const auto* added = external_player_fixture_t::action_of(f.click_label("Add"));
+        const auto added = external_player_fixture_t::action_of(f.click_label("Add"));
         REQUIRE(added);
-        CHECK(added->kind == WORM_UI_EXTERNAL_PLAYER_ADD);
+        CHECK(added->kind == wormedit::ui::external_player_action_kind_t::add);
     }
     {
         external_player_fixture_t f;
-        const auto* removed = external_player_fixture_t::action_of(f.click_label("Remove"));
+        const auto removed = external_player_fixture_t::action_of(f.click_label("Remove"));
         REQUIRE(removed);
-        CHECK(removed->kind == WORM_UI_EXTERNAL_PLAYER_REMOVE);
+        CHECK(removed->kind == wormedit::ui::external_player_action_kind_t::remove);
     }
     {
         external_player_fixture_t f;
-        const auto* closed = external_player_fixture_t::action_of(f.click_label("Close"));
+        const auto closed = external_player_fixture_t::action_of(f.click_label("Close"));
         REQUIRE(closed);
-        CHECK(closed->kind == WORM_UI_EXTERNAL_PLAYER_CLOSE);
+        CHECK(closed->kind == wormedit::ui::external_player_action_kind_t::close);
     }
     {
         external_player_fixture_t f;
-        const auto* selected = external_player_fixture_t::action_of(f.click_label("Beta"));
+        const auto selected = external_player_fixture_t::action_of(f.click_label("Beta"));
         REQUIRE(selected);
-        CHECK(selected->kind == WORM_UI_EXTERNAL_PLAYER_SELECT);
+        CHECK(selected->kind == wormedit::ui::external_player_action_kind_t::select);
         CHECK(selected->selected == 1);
     }
 }
@@ -5483,21 +5505,19 @@ namespace {
 
 struct chart_import_fixture_t {
     nuklear_event_harness_t harness{1280, 900};
-    std::array<WormUiChartImportRowView, 2> rows{{
-        {.chart_id = 31, .label = "Hard · StepMania · 412 notes", .selected = false},
-        {.chart_id = 32, .label = "Easy · StepMania · 120 notes", .selected = true}}};
+    std::array<wormedit::ui::chart_import_row_view_t, 2> rows{{
+        {.chart_id = wormedit::chart_id_t{31}, .label = "Hard · StepMania · 412 notes", .selected = false},
+        {.chart_id = wormedit::chart_id_t{32}, .label = "Easy · StepMania · 120 notes", .selected = true}}};
     explicit chart_import_fixture_t(bool can_import = true, const char* error = "") {
         REQUIRE(harness.ready());
         auto& view = harness.view().chart_import;
         view.visible = true;
         view.path = "/charts/song.sm";
         view.error = error;
-        view.rows = rows.data();
-        view.row_count = rows.size();
+        view.rows.assign(rows.begin(), rows.end());
         view.summary = "1 sounds reused · 2 added · 1 missing";
-        view.notes[0] = "Missing file: hat.wav";
-        view.notes[1] = "Easy: starts at 120 BPM, the song's chart starts at 150";
-        view.note_count = 2;
+        view.notes = {"Missing file: hat.wav",
+            "Easy: starts at 120 BPM, the song's chart starts at 150"};
         view.can_import = can_import;
         view.document_revision = 7;
         (void)harness.frame();
@@ -5505,10 +5525,10 @@ struct chart_import_fixture_t {
         (void)harness.frame();
     }
     static auto action_of(const std::vector<workspace_action_snapshot_t>& frames)
-        -> const WormUiChartImportAction* {
+        -> std::optional<wormedit::ui::chart_import_action_t> {
         for (const auto& frame : frames)
-            if (frame.get().chart_import.kind != WORM_UI_CHART_IMPORT_NONE) return &frame.get().chart_import;
-        return nullptr;
+            if (frame.get().chart_import.kind != WORM_UI_CHART_IMPORT_NONE) return frame.get().chart_import;
+        return std::nullopt;
     }
     auto click_label(const char* label) {
         const auto center = harness.drawn_text_center(label);
@@ -5535,15 +5555,15 @@ TEST_CASE("Import chart dialog emits toggle, read, import and cancel actions",
           "[frontend-state][event-harness][dialog][chart-import]") {
     {
         chart_import_fixture_t f;
-        const auto* toggled = chart_import_fixture_t::action_of(f.click_label("Hard · StepMania · 412 notes"));
+        const auto toggled = chart_import_fixture_t::action_of(f.click_label("Hard · StepMania · 412 notes"));
         REQUIRE(toggled);
         CHECK(toggled->kind == WORM_UI_CHART_IMPORT_TOGGLE);
-        CHECK(toggled->chart_id == 31);
+        CHECK(toggled->chart_id == wormedit::chart_id_t{31});
     }
     {
         chart_import_fixture_t f;
         const auto frames = f.click_label("Read");
-        const auto* read = chart_import_fixture_t::action_of(frames);
+        const auto read = chart_import_fixture_t::action_of(frames);
         REQUIRE(read);
         CHECK(read->kind == WORM_UI_CHART_IMPORT_LOAD);
         for (const auto& frame : frames)
@@ -5552,21 +5572,21 @@ TEST_CASE("Import chart dialog emits toggle, read, import and cancel actions",
     }
     {
         chart_import_fixture_t f;
-        const auto* imported = chart_import_fixture_t::action_of(f.click_label("Import"));
+        const auto imported = chart_import_fixture_t::action_of(f.click_label("Import"));
         REQUIRE(imported);
         CHECK(imported->kind == WORM_UI_CHART_IMPORT_CONFIRM);
         CHECK(imported->document_revision == 7);
     }
     {
         chart_import_fixture_t f;
-        const auto* canceled = chart_import_fixture_t::action_of(f.click_label("Cancel"));
+        const auto canceled = chart_import_fixture_t::action_of(f.click_label("Cancel"));
         REQUIRE(canceled);
         CHECK(canceled->kind == WORM_UI_CHART_IMPORT_CANCEL);
     }
     {
         chart_import_fixture_t f;
         const auto escape = key_event(SDL_EVENT_KEY_DOWN, SDLK_ESCAPE, SDL_SCANCODE_ESCAPE);
-        const auto* canceled = chart_import_fixture_t::action_of({f.harness.frame(std::span{&escape, 1})});
+        const auto canceled = chart_import_fixture_t::action_of({f.harness.frame(std::span{&escape, 1})});
         REQUIRE(canceled);
         CHECK(canceled->kind == WORM_UI_CHART_IMPORT_CANCEL);
     }
@@ -5576,18 +5596,17 @@ TEST_CASE("Import chart dialog cannot import until a difficulty is ticked and sh
           "[frontend-state][event-harness][dialog][chart-import]") {
     chart_import_fixture_t f{false, "The file contains no charts."};
     CHECK(f.harness.drawn_text().find("The file contains no charts.") != std::string::npos);
-    CHECK(chart_import_fixture_t::action_of(f.click_label("Import")) == nullptr);
+    CHECK_FALSE(chart_import_fixture_t::action_of(f.click_label("Import")));
 }
 
 TEST_CASE("Project tab Import chart button starts the import dialog",
           "[frontend-state][event-harness][chart-import]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{1280, 720};
     REQUIRE(harness.ready());
     harness.view().setup.visible = true;
-    harness.view().setup.charts = &row;
-    harness.view().setup.chart_row_count = 1;
+    harness.view().setup.charts = {row};
     harness.view().setup.chart_count = 1;
     (void)harness.frame();
     const auto button = harness.drawn_text_center("Import chart…");
@@ -5600,7 +5619,7 @@ TEST_CASE("Project tab Import chart button starts the import dialog",
 
 TEST_CASE("Project charts use compact row menus and a cancellable delete dialog",
           "[frontend-state][event-harness][project-charts]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{1280, 720};
     REQUIRE(harness.ready());
@@ -5620,7 +5639,7 @@ TEST_CASE("Project charts use compact row menus and a cancellable delete dialog"
     (void)harness.frame();
     CHECK(harness.drawn_text_center("Delete chart?"));
     CHECK_FALSE(worm_ui_frontend_request_new_project());
-    CHECK_FALSE(worm_ui_frontend_request_save_project(harness.view().project_id));
+    CHECK_FALSE(worm_ui_frontend_request_save_project(harness.view().project_id.value));
     const auto save = key_event(SDL_EVENT_KEY_DOWN, SDLK_S, SDL_SCANCODE_S);
     CHECK(harness.frame(std::span{&save, 1}, SDL_KMOD_CTRL).get().shortcut_event_count == 0);
     const auto release = key_event(SDL_EVENT_KEY_UP, SDLK_S, SDL_SCANCODE_S);
@@ -5635,7 +5654,7 @@ TEST_CASE("Project charts use compact row menus and a cancellable delete dialog"
 
 TEST_CASE("Project selection exposes metadata controls below compact chart rows",
           "[frontend-state][event-harness][project-charts]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{1280, 720};
     REQUIRE(harness.ready());
@@ -5658,15 +5677,15 @@ TEST_CASE("Project selection exposes metadata controls below compact chart rows"
         applied = true;
         CHECK(frame.get().project_chart.edit_author);
         CHECK_FALSE(frame.get().project_chart.edit_rating);
-        CHECK(frame.get().project_chart.selected_count == 1);
-        CHECK(frame.get().project_chart.selected_chart_ids[0] == 10);
+        CHECK(frame.get().project_chart.selected_chart_ids.size() == 1);
+        CHECK(frame.get().project_chart.selected_chart_ids[0] == wormedit::chart_id_t{10});
     }
     CHECK(applied);
 }
 
 TEST_CASE("Project chart popups expire when the tab or project session changes",
           "[frontend-state][event-harness][project-charts]") {
-    WormUiProjectChartRow row{.chart_id = 10, .name = "Chart", .author = "Author", .rating = "Unset",
+    wormedit::ui::project_chart_row_view_t row{.chart_id = wormedit::chart_id_t{10}, .name = "Chart", .author = "Author", .rating = "Unset",
         .mode = "7K", .output_groups = "Unassigned", .length = "2.00 s", .diagnostic = ""};
     nuklear_event_harness_t harness{1280, 720};
     REQUIRE(harness.ready());
@@ -5722,7 +5741,7 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
         .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
-    WormUiTestingRect before{};
+    wormedit::ui::testing_rect_view_t before{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
     const auto close = harness.drawn_text_center("Close");
     REQUIRE(close);
@@ -5750,7 +5769,7 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
     button.button.y = motion.motion.y;
     (void)harness.frame(std::array{button});
     (void)harness.frame();
-    WormUiTestingRect after{};
+    wormedit::ui::testing_rect_view_t after{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
     const auto moved_close = harness.drawn_text_center("Close");
     REQUIRE(moved_close);
@@ -5763,25 +5782,26 @@ TEST_CASE("Options expands its settings and anchors actions when resized",
 
 namespace {
 struct chart_reorder_fixture_t {
-    WormUiProjectChartRow rows[3]{
-        {.chart_id = 10, .name = "First chart", .author = "Author", .rating = "Unset", .mode = "7K",
+    wormedit::ui::project_chart_row_view_t rows[3]{
+        {.chart_id = wormedit::chart_id_t{10}, .name = "First chart", .author = "Author", .rating = "Unset", .mode = "7K",
          .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""},
-        {.chart_id = 20, .name = "Second chart", .author = "Author", .rating = "Unset", .mode = "7K",
+        {.chart_id = wormedit::chart_id_t{20}, .name = "Second chart", .author = "Author", .rating = "Unset", .mode = "7K",
          .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""},
-        {.chart_id = 30, .name = "Third chart", .author = "Author", .rating = "Unset", .mode = "7K",
+        {.chart_id = wormedit::chart_id_t{30}, .name = "Third chart", .author = "Author", .rating = "Unset", .mode = "7K",
          .output_groups = "Unassigned", .length = "2 s", .diagnostic = ""}};
     nuklear_event_harness_t harness{1280, 900};
     chart_reorder_fixture_t() {
         configure_project_row(harness, rows);
         auto& view = harness.view().setup;
-        view.song_id = 42;
+        view.song_id = wormedit::song_id_t{42};
         view.session_generation = 17;
         view.document_revision = 53;
-        view.chart_row_count = 3;
+
         view.chart_count = 3;
+        view.charts.assign(std::begin(rows), std::end(rows));
         (void)harness.frame();
     }
-    auto name_bounds(const char* name) -> WormUiTestingDrawnText {
+    auto name_bounds(const char* name) -> wormedit::ui::testing_drawn_text_view_t {
         const auto texts = harness.drawn_text_bounds();
         const auto found = std::ranges::find_if(texts, [name](const auto& text) {
             return std::string_view{text.text} == name;
@@ -5810,7 +5830,7 @@ struct chart_reorder_fixture_t {
 TEST_CASE("Project charts with empty imported names remain selectable",
           "[event-harness][project-charts][chart-reorder]") {
     chart_reorder_fixture_t fixture;
-    fixture.rows[1].name = "";
+    fixture.harness.view().setup.charts[1].name = "";
     (void)fixture.harness.frame();
     const auto center = fixture.harness.drawn_text_center("Untitled chart");
     REQUIRE(center);
@@ -5826,7 +5846,7 @@ TEST_CASE("Project visible grip drops relative to a stable chart row", "[event-h
     const auto released = f.release_at(start.first, third.y + third.height * 0.5f + 7.0f);
     const auto& action = released.get().project_chart;
     CHECK(action.kind == WORM_UI_PROJECT_CHART_REORDER);
-    CHECK((action.chart_id == 10 && action.target_chart_id == 30 && action.insert_after));
+    CHECK((action.chart_id == wormedit::chart_id_t{10} && action.target_chart_id == wormedit::chart_id_t{30} && action.insert_after));
     CHECK((action.document_revision == 53 && action.session_generation == 17));
     CHECK(f.harness.frame().get().project_chart.kind == WORM_UI_PROJECT_CHART_NONE);
 }
@@ -5865,14 +5885,14 @@ TEST_CASE("Options custom grippy header moves the tool and preserves its close a
         .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
-    WormUiTestingRect before{};
+    wormedit::ui::testing_rect_view_t before{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
-    WormUiTestingRect backdrop{};
+    wormedit::ui::testing_rect_view_t backdrop{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options##dialog-backdrop", &backdrop));
     expect_lane_key(backdrop.x == 0 && backdrop.y == 0);
     expect_lane_key(backdrop.width == 1600 && backdrop.height == 1000);
     drag_options_header(harness, 80, 45);
-    WormUiTestingRect after{};
+    wormedit::ui::testing_rect_view_t after{};
     REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
     expect_lane_key(std::abs(after.x - before.x - 80) < 1);
     expect_lane_key(std::abs(after.y - before.y - 45) < 1);
@@ -5897,7 +5917,7 @@ TEST_CASE("Options header movement cancels on focus loss and while hidden",
         REQUIRE(title);
         const auto [x, y] = *title;
         (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
-        WormUiTestingRect before{};
+        wormedit::ui::testing_rect_view_t before{};
         REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &before));
         if (lose_focus) {
             SDL_Event lost{};
@@ -5912,7 +5932,7 @@ TEST_CASE("Options header movement cancels on focus loss and while hidden",
             harness.view().options.visible = true;
         }
         (void)harness.frame(std::array{mouse_motion(x + 80, y + 45)});
-        WormUiTestingRect after{};
+        wormedit::ui::testing_rect_view_t after{};
         REQUIRE(worm_ui_frontend_window_bounds_for_testing("Options", &after));
         expect_lane_key(after.x == before.x && after.y == before.y);
         (void)harness.frame(std::array{mouse_button(false, x + 80, y + 45)});
@@ -5958,7 +5978,7 @@ TEST_CASE("Appearance chooses a layout skin and can restore default inheritance"
     harness.view().options = {.visible = true, .revision = 97, .category = WORM_UI_OPTIONS_DISPLAY,
         .field_scheme = "wormedit", .current_field_layout_key = "bms-dp5",
         .current_field_layout_name = "BMS DP5 / 10K", .current_layout_field_scheme = "",
-        .current_field_layout_lanes = lanes.data(), .current_field_layout_lane_count = lanes.size(),
+        .current_field_layout_lanes = {lanes.begin(), lanes.end()},
         .theme = "", .dock_layout = "", .shortcut_profile_path = "", .status = ""};
     (void)harness.frame();
     (void)harness.frame();
@@ -6229,7 +6249,7 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
     view.playable_field_right_pixels = 850;
     view.bga_lane_visible = with_bga;
     view.bga_lane_bounds = {right, 0, right + 48, 600};
-    const auto lane = static_cast<WormUiTimingLaneKind>(ordinal);
+    const auto lane = static_cast<wormedit::timing_lane_kind_t>(ordinal);
     WormUiTimingMarkerView marker{.object_id = 991, .marker_y_pixels = 200,
         .marker_left_fraction = 0, .marker_right_fraction = 1, .lane = lane, .short_label = "123.45"};
     view.timing_markers = &marker;
@@ -6247,10 +6267,10 @@ TEST_CASE("Timing marker double clicks use the drawn per-kind partition with or 
     auto down = mouse_button(true, x, y), up = mouse_button(false, x, y);
     down.button.clicks = up.button.clicks = 2;
     const auto action = harness.frame(std::array{mouse_motion(x, y), down, up});
-    expect_draw(action.get().timing_stage_action == WORM_UI_TIMING_STAGE_BEGIN);
+    expect_draw(action.get().timing_stage_action == wormedit::ui::timing_stage_action_t::begin);
     expect_draw(action.get().timing_lane == lane);
     expect_draw(action.get().timing_object_id == 991);
-    expect_draw(action.get().timing_chart_id == harness.view().timing.chart_id);
+    expect_draw(action.get().timing_chart_id == harness.view().timing.chart_id.value);
     expect_draw(action.get().timing_document_revision == harness.view().timing.document_revision);
     view.timing_lane_visibility_mask = 0;
     expect_draw(!(compose_timing_marker_at(view, 0, 0)));
@@ -6270,12 +6290,12 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
     view.playable_field_left_pixels = 218;
     view.playable_field_right_pixels = 800;
     view.timing_stage_active = true;
-    view.timing_stage_lane = WORM_UI_TIMING_LANE_SCROLL;
+    view.timing_stage_lane = wormedit::timing_lane_kind_t::scroll;
     view.timing_stage_y_pixels = 200;
     auto& timing = harness.view().timing;
     timing.stage_active = true;
-    timing.stage_lane = WORM_UI_TIMING_LANE_SCROLL;
-    timing.stage_existing_object_id = 991;
+    timing.stage_lane = wormedit::timing_lane_kind_t::scroll;
+    timing.stage_existing_object_id = wormedit::object_id_t{991};
     auto& state = worm_ui_nuklear_compose_state();
     state.dock_layout.inspector_visible = state.dock_layout.layers_panel_visible = state.dock_layout.sounds_panel_visible = false;
     (void)harness.frame();
@@ -6286,8 +6306,8 @@ TEST_CASE("Staged timing drags begin inside the timing lane and reject neighbori
     (void)harness.frame(std::array{mouse_motion(x, y), mouse_button(true, x, y)});
     expect_draw(state.timing_drag.timing_stage_drag_active == !bga_press);
     const auto action = harness.frame(std::array{mouse_motion(x, y + 20)});
-    expect_draw(action.get().timing_stage_action == (bga_press ? WORM_UI_TIMING_STAGE_NONE
-                                                        : WORM_UI_TIMING_STAGE_MOVE));
+    expect_draw(action.get().timing_stage_action == (bga_press ? wormedit::ui::timing_stage_action_t::none
+                                                        : wormedit::ui::timing_stage_action_t::move));
     if (!bga_press) expect_draw(action.get().timing_object_id == 991);
 }
 
@@ -6323,10 +6343,10 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     } else if (tab == WORM_UI_WORKSPACE_TAB_COMPOSE) {
         require_project_access(harness.drawn_text().find("Export…") == std::string::npos);
     }
-    require_project_access(!worm_ui_frontend_open_project_export(view.project_id + 1,
-        view.selected_chart_id, view.document_revision));
-    require_project_access(worm_ui_frontend_open_project_export(view.project_id,
-        view.selected_chart_id, view.document_revision));
+    require_project_access(!worm_ui_frontend_open_project_export(view.project_id.value + 1,
+        view.selected_chart_id.value, view.document_revision));
+    require_project_access(worm_ui_frontend_open_project_export(view.project_id.value,
+        view.selected_chart_id.value, view.document_revision));
     (void)harness.frame();
     (void)harness.frame();
     INFO(harness.drawn_text());
@@ -6340,8 +6360,8 @@ TEST_CASE("Shared export dialog opens from non-Compose tabs and stamps the chose
     require_project_access(found != frames.end());
     const auto& action = found->get();
     check_layer_menu(action.compose_output_group_index == 7);
-    check_layer_menu(action.compose_input_project_id == view.project_id);
-    check_layer_menu(action.compose_input_chart_id == view.selected_chart_id);
+    check_layer_menu(action.compose_input_project_id == view.project_id.value);
+    check_layer_menu(action.compose_input_chart_id == view.selected_chart_id.value);
     check_layer_menu(action.compose_input_document_revision == view.document_revision);
 }
 
@@ -6372,14 +6392,15 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
     view.compose.visible = false;
     auto& metadata = view.metadata;
     metadata.visible = metadata.has_chart = metadata.audio_waveform_has_selected_asset = true;
-    metadata.chart_id = metadata.document_revision = metadata.audio_waveform_selected_asset_id = 1;
+    metadata.chart_id = wormedit::chart_id_t{1};
+    metadata.document_revision = 1;
+    metadata.audio_waveform_selected_asset_id = wormedit::asset_id_t{1};
     metadata.audio_offset_denominator = 1;
     metadata.audio_waveform_available = true;
     metadata.audio_waveform_total_frames = 441000;
     metadata.audio_waveform_sample_rate = 44100;
-    const std::array<WormUiAudioWaveformColumnView, 2> columns{};
-    metadata.audio_waveform_columns = columns.data();
-    metadata.audio_waveform_column_count = columns.size();
+    const std::array<wormedit::ui::audio_waveform_column_view_t, 2> columns{};
+    metadata.audio_waveform_columns.assign(columns.data(), columns.data() + columns.size());
     (void)harness.frame();
     for (const auto heading : {"Song"}) {
         if (const auto center = harness.drawn_text_center(heading))
@@ -6414,34 +6435,32 @@ TEST_CASE("Metadata wheel scroll leaves its embedded waveform zoom and audio off
 namespace {
 struct output_group_fixture_t {
     nuklear_event_harness_t harness{1280, 1000};
-    std::array<WormUiProjectChartRow, 2> charts{{
-        {.chart_id = 10, .name = "First difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "SSC", .length = "1 s", .diagnostic = ""},
-        {.chart_id = 11, .name = "Second difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "1 s", .diagnostic = ""}}};
-    const uint64_t included{10};
-    std::array<WormUiOutputPlanRow, 2> plan{{
+    std::array<wormedit::ui::project_chart_row_view_t, 2> charts{{
+        {.chart_id = wormedit::chart_id_t{10}, .name = "First difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "SSC", .length = "1 s", .diagnostic = ""},
+        {.chart_id = wormedit::chart_id_t{11}, .name = "Second difficulty", .author = "Author", .rating = "Unset", .mode = "7K", .output_groups = "Unassigned", .length = "1 s", .diagnostic = ""}}};
+    const wormedit::chart_id_t included{10};
+    std::array<wormedit::ui::output_plan_row_view_t, 2> plan{{
         {.path = "exports/song.ssc", .action = WORM_UI_OUTPUT_PLAN_NEW, .bytes = 123},
         {.path = "exports/assets/music.ogg", .action = WORM_UI_OUTPUT_PLAN_COPY, .bytes = 456},
     }};
-    std::array<WormUiOutputDiagnosticRow, 1> diagnostics{{
-        {.message = "A complete conversion warning", .severity = 1},
+    std::array<wormedit::ui::output_diagnostic_row_view_t, 1> diagnostics{{
+        {.message = "A complete conversion warning", .severity = wormedit::diagnostic_severity_t::warning},
     }};
-    WormUiProjectOutputGroupView group{
+    wormedit::ui::project_output_group_view_t group{
         .document_index = 3,
         .name = "SSC release",
-        .family = 2,
+        .family = wormedit::format_family_t::stepmania,
         .path = "exports/song.ssc",
-        .destination_kind = WORM_UI_OUTPUT_DESTINATION_FILE,
-        .chart_ids = &included,
-        .chart_count = 1,
+        .destination_kind = wormedit::output_destination_kind_t::file,
+        .chart_ids = {included},
         .preview_status = "Preview not run",
-        .has_stepmania_policy = true,
-        .stepmania_file_profile = WORM_UI_STEPMANIA_FILE_SSC,
-        .stepmania_timing_syntax = WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS,
-        .stepmania_implementation = WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY,
-        .plan_rows = plan,
-        .diagnostics = diagnostics};
-    WormUiProjectOutputSuggestion suggestion{
-        .name = "osu!mania folder", .family = 3, .path = "exports/osu"};
+        .stepmania = wormedit::stepmania_export_policy_t{wormedit::stepmania_profile_t::ssc,
+            wormedit::stepmania_timing_syntax_t::native_warps,
+            wormedit::stepmania_implementation_profile_t::unspecified},
+        .plan_rows = {plan.begin(), plan.end()},
+        .diagnostics = {diagnostics.begin(), diagnostics.end()}};
+    wormedit::ui::project_output_suggestion_view_t suggestion{
+        .name = "osu!mania folder", .family = wormedit::format_family_t::osu_mania, .path = "exports/osu"};
     explicit output_group_fixture_t(bool existing) {
         for (auto& chart : charts) chart.compatible_output_families = 0x1f;
         auto& view = harness.view();
@@ -6451,13 +6470,12 @@ struct output_group_fixture_t {
         view.setup.song_id = view.project_id;
         view.setup.document_revision = view.document_revision;
         view.setup.session_generation = 8;
-        view.setup.selected_chart_id = 10;
-        view.setup.charts = charts.data();
+        view.setup.selected_chart_id = wormedit::chart_id_t{10};
+        view.setup.charts.assign(charts.begin(), charts.end());
         view.setup.chart_count = charts.size();
-        view.setup.chart_row_count = charts.size();
-        view.setup.output_groups = existing ? &group : nullptr;
-        view.setup.output_group_count = existing ? 1 : 0;
-        view.setup.output_suggestions = std::span{&suggestion, std::size_t{1}};
+
+        if (existing) view.setup.output_groups = {group};
+        view.setup.output_suggestions = {suggestion};
         (void)harness.frame();
     }
     auto click(const char* label) {
@@ -6490,10 +6508,10 @@ TEST_CASE("Project output groups remain visible when empty and create a stamped 
     require_project_access(action.session_generation == 8);
     require_project_access(std::string_view{action.name} == "New export target");
     require_project_access(std::string_view{action.path} == "exports/bmson");
-    require_project_access(action.family == 4 &&
-                           action.destination_kind == WORM_UI_OUTPUT_DESTINATION_DIRECTORY &&
-                           action.chart_count == 1 && action.chart_ids[0] == 10);
-    require_project_access(action.existing_files == WORM_UI_EXISTING_FILES_ASK);
+    require_project_access(action.family == wormedit::format_family_t::bmson &&
+                           action.destination_kind == wormedit::output_destination_kind_t::directory &&
+                           action.chart_ids.size() == 1 && action.chart_ids[0] == wormedit::chart_id_t{10});
+    require_project_access(action.existing_files == wormedit::existing_files_policy_t::ask);
 }
 
 TEST_CASE("Project empty-state suggestion opens a normal draft and waits for Save",
@@ -6511,7 +6529,7 @@ TEST_CASE("Project empty-state suggestion opens a normal draft and waits for Sav
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_CREATE;
     });
     require_project_access(found != saved.end());
-    require_project_access(found->get().project_output_group.family == 3);
+    require_project_access(found->get().project_output_group.family == wormedit::format_family_t::osu_mania);
     require_project_access(std::string_view{found->get().project_output_group.path} == "exports/osu");
 }
 
@@ -6524,7 +6542,7 @@ TEST_CASE("Project target chips remove membership with one complete update",
     });
     require_project_access(found != removed.end());
     require_project_access(found->get().project_output_group.group_index == 3);
-    require_project_access(found->get().project_output_group.chart_count == 0);
+    require_project_access(found->get().project_output_group.chart_ids.size() == 0);
     require_project_access(std::string_view{found->get().project_output_group.name} == "SSC release");
     require_project_access(std::string_view{found->get().project_output_group.path} ==
                            "exports/song.ssc");
@@ -6541,16 +6559,16 @@ TEST_CASE("Project chart Exports cell adds compatible membership through the sam
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
     });
     require_project_access(found != added.end());
-    require_project_access(found->get().project_output_group.chart_count == 2);
-    require_project_access(found->get().project_output_group.chart_ids[0] == 10);
-    require_project_access(found->get().project_output_group.chart_ids[1] == 11);
+    require_project_access(found->get().project_output_group.chart_ids.size() == 2);
+    require_project_access(found->get().project_output_group.chart_ids[0] == wormedit::chart_id_t{10});
+    require_project_access(found->get().project_output_group.chart_ids[1] == wormedit::chart_id_t{11});
 }
 
 TEST_CASE("Project target editor disables incompatible charts and keeps their reason visible",
           "[frontend-state][event-harness][output-groups][output-compatibility]") {
     output_group_fixture_t f{true};
-    f.charts[1].compatible_output_families &= ~(std::uint32_t{1} << 2);
-    f.charts[1].output_incompatibility_reasons[2] =
+    f.harness.view().setup.charts[1].compatible_output_families &= ~(std::uint32_t{1} << 2);
+    f.harness.view().setup.charts[1].output_incompatibility_reasons[2] =
         "No truthful StepMania step type exists for this lane count.";
     (void)f.harness.frame();
     (void)f.click("⋯");
@@ -6565,8 +6583,8 @@ TEST_CASE("Project target editor disables incompatible charts and keeps their re
         return frame.get().project_output_group.kind == WORM_UI_PROJECT_OUTPUT_GROUP_UPDATE;
     });
     require_project_access(found != saved.end());
-    require_project_access(found->get().project_output_group.chart_count == 1);
-    require_project_access(found->get().project_output_group.chart_ids[0] == 10);
+    require_project_access(found->get().project_output_group.chart_ids.size() == 1);
+    require_project_access(found->get().project_output_group.chart_ids[0] == wormedit::chart_id_t{10});
 }
 
 TEST_CASE("Project output group editor updates checkbox membership and confirms deletion",
@@ -6592,10 +6610,10 @@ TEST_CASE("Project output group editor updates checkbox membership and confirms 
     });
     require_project_access(found != saved.end());
     const auto& action = found->get().project_output_group;
-    require_project_access(action.group_index == 3 && action.family == 2);
-    require_project_access(action.has_stepmania_policy &&
-                           action.stepmania_file_profile == WORM_UI_STEPMANIA_FILE_SSC);
-    require_project_access(action.chart_count == 2 && action.chart_ids[0] == 10 && action.chart_ids[1] == 11);
+    require_project_access(action.group_index == 3 && action.family == wormedit::format_family_t::stepmania);
+    require_project_access(action.stepmania.has_value() &&
+                           action.stepmania->file_profile == wormedit::stepmania_profile_t::ssc);
+    require_project_access(action.chart_ids.size() == 2 && action.chart_ids[0] == wormedit::chart_id_t{10} && action.chart_ids[1] == wormedit::chart_id_t{11});
     (void)f.harness.frame();
     (void)f.click("⋯");
     (void)f.harness.frame();
@@ -6632,7 +6650,7 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(found != exported.end());
     const auto& action = found->get();
     require_project_access(action.compose_output_group_index == 3);
-    require_project_access(action.compose_input_project_id == f.harness.view().project_id);
+    require_project_access(action.compose_input_project_id == f.harness.view().project_id.value);
     require_project_access(action.compose_input_document_revision == f.harness.view().document_revision);
     require_project_access(action.compose_input_chart_id == 10);
     require_project_access(action.compose_existing_files == WORM_UI_EXISTING_FILES_SAVED);
@@ -6659,10 +6677,10 @@ TEST_CASE("Project output group rows expose worker previews and the shared expor
     require_project_access(copy != duplicated.end());
     require_project_access(std::string_view{copy->get().project_output_group.name} == "SSC release copy");
     require_project_access(std::string_view{copy->get().project_output_group.path} == "exports/song.ssc");
-    require_project_access(copy->get().project_output_group.family == 2);
-    require_project_access(copy->get().project_output_group.has_stepmania_policy);
-    require_project_access(copy->get().project_output_group.chart_count == 1 &&
-                           copy->get().project_output_group.chart_ids[0] == 10);
+    require_project_access(copy->get().project_output_group.family == wormedit::format_family_t::stepmania);
+    require_project_access(copy->get().project_output_group.stepmania.has_value());
+    require_project_access(copy->get().project_output_group.chart_ids.size() == 1 &&
+                           copy->get().project_output_group.chart_ids[0] == wormedit::chart_id_t{10});
 }
 
 TEST_CASE("Project export target dialogs cancel and retire on stale context",
@@ -6884,7 +6902,7 @@ TEST_CASE("File Save project can queue through its own menu release capture",
     nuklear_event_harness_t harness{1280, 900};
     auto& view = harness.view();
     view.project_has_native_path = true;
-    view.menu_command_count = 1;
+    view.menu_commands.resize(1);
     view.menu_commands[0] = {.id = "document.save_project", .enabled = true};
     (void)harness.frame();
     const auto file = harness.drawn_text_center("File");
@@ -6896,7 +6914,7 @@ TEST_CASE("File Save project can queue through its own menu release capture",
     section_import_require(std::ranges::any_of(frames, [](const auto& frame) {
         return std::string_view{frame.get().menu_command_id} == "document.save_project";
     }));
-    expect_draw(worm_ui_frontend_request_save_project(view.project_id));
+    expect_draw(worm_ui_frontend_request_save_project(view.project_id.value));
     expect_draw(harness.frame().get().kind == WORM_UI_WORKSPACE_ACTION_SAVE_PROJECT);
 }
 
@@ -6997,7 +7015,7 @@ TEST_CASE("Production area Delete enablement agrees with its scoped dispatch",
     expect_draw(view.area_delete_supported == !timing);
     expect_draw(view.area_delete_supported == compose_area_delete_supported(history, state));
     (void)fixture.harness.frame();
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     section_import_require(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     const auto y = viewport.y + static_cast<float>(compose_area_y(view, 540) *
         viewport.height / view.viewport_height_pixels);
@@ -7387,7 +7405,7 @@ TEST_CASE("Production pointer paste and note drag use the valid Stop event row",
 }
 
 namespace {
-auto timing_pointer(t422_fixture_t& f, WormUiTimingLaneKind lane, std::uint64_t row,
+auto timing_pointer(t422_fixture_t& f, wormedit::timing_lane_kind_t lane, std::uint64_t row,
                     double lane_fraction = .5) -> std::pair<float, float> {
     (void)f.harness.frame();
     const auto viewport = compose_canvas_viewport_for_testing();
@@ -7417,12 +7435,12 @@ TEST_CASE("Production timing span release edits once and rejected release retire
     f.application.preferences.editor_preferences.scroll_directions.fill(downscroll ? 2 : 1);
     f.project();
     const auto before = t422_native_bytes(f.history.document);
-    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
+    const auto p = timing_pointer(f, wormedit::timing_lane_kind_t::speed, 480);
     placement_press(f, p);
     expect_t422(worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active);
     if (locked_at_release) f.application.project.timing_recipe.timing_locked = true;
     // Do not reproject here: exercise the application's rejection after a real UI release.
-    const auto end = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 720);
+    const auto end = timing_pointer(f, wormedit::timing_lane_kind_t::speed, 720);
     placement_release(f, end);
     expect_t422(!worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active);
     expect_t422(!worm_ui_nuklear_compose_state().timing_drag.span_capture.active);
@@ -7446,12 +7464,12 @@ TEST_CASE("Speed marker heads translate while tail handles resize through produc
     f.interaction->selected_objects.clear(); f.interaction->selected_notes.clear();
     f.interaction->pixels_per_standard_measure = 768;
     f.project();
-    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 240);
+    const auto p = timing_pointer(f, wormedit::timing_lane_kind_t::speed, 240);
     placement_press(f, p);
     const auto& s = worm_ui_nuklear_compose_state();
     expect_t422(s.timing_marker.timing_marker_candidate_active && !s.timing_drag.kiai_drag_active);
     f.project();
-    const auto end_point = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 480);
+    const auto end_point = timing_pointer(f, wormedit::timing_lane_kind_t::speed, 480);
     const auto released = f.harness.frame(std::array{mouse_motion(end_point.first, end_point.second),
         mouse_button(false, end_point.first, end_point.second)});
     const auto status = f.dispatch(released);
@@ -7483,7 +7501,7 @@ TEST_CASE("Project switches clear dock ownership before selection re-arms a reso
     expect_t422(center.has_value());
     (void)click_at(h, center->first, center->second, true);
     expect_t422(s.resource_picker.armed_resource_id == 40 && s.keysound_catalog.armed_from_sounds_dock);
-    ++h.view().project_id; ++v.project_id;
+    ++h.view().project_id.value; ++v.project_id;
     v.selected_note_label_note_id = 7; v.selected_assigned_resource_id = 41;
     v.resources = &resource; v.resource_count = v.resource_total_count = 1;
     (void)h.frame();
@@ -7544,11 +7562,12 @@ TEST_CASE("BGA chart switches disarm the complete source even with its dock hidd
     (void)click_at(h, center->first, center->second, true);
     expect_t422(s.resource_picker.armed_resource_id == 1400 && s.bga_catalog.armed_from_bga_dock && s.pointer_capture.draw_source_kind == 2);
     s.dock_layout.bga_panel_visible = false;
-    ++v.chart_id; ++h.view().selected_chart_id;
+    ++v.chart_id; ++h.view().selected_chart_id.value;
     const auto changed = h.frame();
     expect_t422(s.resource_picker.armed_resource_id == 0 && !s.bga_catalog.armed_from_bga_dock && !s.keysound_catalog.armed_from_sounds_dock);
     expect_t422(s.pointer_capture.draw_source_kind == 0 && s.pointer_capture.draw_source_id == 0);
-    const auto* cleared = find_compose_input(std::vector{changed}, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
+    const std::vector changed_frames{changed};
+    const auto* cleared = find_compose_input(changed_frames, WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
     expect_t422(cleared && cleared->resource_id == 0 && cleared->resource_role == 0);
 }
 
@@ -7613,7 +7632,7 @@ TEST_CASE("Production Shift Speed marker has one chord owner", "[frontend-state]
     t422_fixture_t f{std::move(song)};
     f.interaction->pixels_per_standard_measure = 768;
     f.project();
-    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_SPEED, 240);
+    const auto p = timing_pointer(f, wormedit::timing_lane_kind_t::speed, 240);
     const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_SHIFT);
     expect_t422(worm_ui_nuklear_compose_state().timing_drag.kiai_drag_active);
@@ -7645,14 +7664,14 @@ TEST_CASE("Production Alt Anchor press inserts only in timing focus", "[frontend
     t422_fixture_t f{t422_song()};
     f.harness.view().compose.timing_focus = true;
     auto& t = f.harness.view().timing;
-    t.chart_id = 1; t.initial_bpm_editable = true;
-    const auto p = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
+    t.chart_id = wormedit::chart_id_t{1}; t.initial_bpm_editable = true;
+    const auto p = timing_pointer(f, wormedit::timing_lane_kind_t::anchor, 480);
     const auto alt = key_event(SDL_EVENT_KEY_DOWN, SDLK_LALT, SDL_SCANCODE_LALT);
     (void)f.harness.frame(std::span{&alt, 1}, SDL_KMOD_ALT);
     const std::array press{mouse_motion(p.first, p.second), mouse_button(true, p.first, p.second)};
     const auto frame = f.harness.frame(press, SDL_KMOD_ALT);
-    expect_t422(frame.get().timing_stage_action == WORM_UI_TIMING_STAGE_QUICK_INSERT);
-    expect_t422(frame.get().timing_lane == WORM_UI_TIMING_LANE_ANCHOR);
+    expect_t422(frame.get().timing_stage_action == wormedit::ui::timing_stage_action_t::quick_insert);
+    expect_t422(frame.get().timing_lane == wormedit::timing_lane_kind_t::anchor);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_active);
 }
 
@@ -7741,20 +7760,20 @@ TEST_CASE("Production Alt drag from playable field cannot turn into Anchor inser
     t422_fixture_t f{t422_song()};
     f.harness.view().compose.timing_focus = true;
     f.harness.view().timing.initial_bpm_editable = true;
-    const auto anchor = timing_pointer(f, WORM_UI_TIMING_LANE_ANCHOR, 480);
+    const auto anchor = timing_pointer(f, wormedit::timing_lane_kind_t::anchor, 480);
     const auto note = t422_note_screen_center(f, 101);
     expect_t422(note.has_value());
     const std::array press{mouse_motion(note->first, note->second),
         mouse_button(true, note->first, note->second)};
     const auto begin = f.harness.frame(press, SDL_KMOD_ALT);
-    expect_t422(begin.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    expect_t422(begin.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
     const auto move = mouse_motion(anchor.first, anchor.second);
     const auto dragged = f.harness.frame(std::span{&move, 1}, SDL_KMOD_ALT);
-    expect_t422(dragged.get().timing_stage_action == WORM_UI_TIMING_STAGE_NONE);
+    expect_t422(dragged.get().timing_stage_action == wormedit::ui::timing_stage_action_t::none);
     expect_t422(!worm_ui_nuklear_compose_state().pointer_capture.pointer_hold_begin_pending);
     const auto up = mouse_button(false, anchor.first, anchor.second);
     expect_t422(f.harness.frame(std::span{&up, 1}, SDL_KMOD_ALT).get().timing_stage_action ==
-                 WORM_UI_TIMING_STAGE_NONE);
+                 wormedit::ui::timing_stage_action_t::none);
     expect_t422(f.history.undo.empty());
 }
 
@@ -7965,7 +7984,8 @@ TEST_CASE("Production overview clicks preserve playing paused and stopped prefer
     (void)f.dispatch(f.harness.frame(press, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE));
     const auto up = mouse_button(false, 351, 120);
     const auto frame = f.harness.frame(std::span{&up, 1}, primary ? SDL_KMOD_CTRL : SDL_KMOD_NONE);
-    const auto* click = find_compose_input(std::vector{frame}, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK);
+    const std::vector frames{frame};
+    const auto* click = find_compose_input(frames, WORM_UI_COMPOSE_INPUT_WAVEFORM_OVERVIEW_CLICK);
     expect_t422(click != nullptr);
     (void)f.dispatch(frame);
     const auto seeks_expected = mode == 3 || ((mode == 1 || mode == 2) && (primary != (mode == 2)));
@@ -8207,7 +8227,7 @@ TEST_CASE("WAV single and reviewed batch replacements share naming and case-inse
         expect_t422(prepared.reason.empty() && prepared.items.size() == 1);
         expect_t422(prepared.items.front().occupied_resource_id == 1);
         const auto& item = prepared.items.front();
-        const std::array items{WormUiSoundSlotImportItem{path.c_str(), item.name.c_str(),
+        const std::array items{wormedit::ui::sound_slot_import_item_t{path.c_str(), item.name.c_str(),
             item.occupied_resource_id, item.occupied_name.c_str(), item.ambiguous}};
         expect_t422(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
             view.document_revision, 1, items.data(), items.size(), ""));
@@ -8291,13 +8311,12 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
     view.compose.visible = false;
     auto& metadata = view.metadata;
     metadata.visible = metadata.has_chart = metadata.chart_fields_editable = true;
-    metadata.chart_id = 1;
+    metadata.chart_id = wormedit::chart_id_t{1};
     metadata.document_revision = history.document.revision;
     metadata.chart_name = metadata.chart_author = "";
     metadata.chart_divisions_per_standard_measure = 960;
-    const std::array choices{WormUiMetadataLaneProfileChoice{"1 key", true, ""}};
-    metadata.lane_profile_choices = choices.data();
-    metadata.lane_profile_choice_count = choices.size();
+    const std::array choices{wormedit::ui::metadata_lane_profile_choice_view_t{"1 key", true, ""}};
+    metadata.lane_profile_choices.assign(choices.data(), choices.data() + choices.size());
     (void)harness.frame();
     const auto button = harness.drawn_text_center("Preview key count");
     expect_t422(button.has_value());
@@ -8321,7 +8340,7 @@ TEST_CASE("Metadata key-count preview retires when project identity changes with
         drop, assets, {}, scheduler, false, false).has_value());
     expect_t422(drop.lane_profile_preview.has_value());
     history.document.id = song_id_t{2};
-    view.project_id = history.document.id.value;
+    view.project_id.value = history.document.id.value;
     metadata.lane_profile_apply_enabled = true;
     (void)harness.frame();
     const auto apply_button = harness.drawn_text_center("Apply key count");
@@ -8504,8 +8523,8 @@ TEST_CASE("Project session transitions discard sound import requests without rep
     nuklear_event_harness_t harness;
     auto& view = harness.view();
     view.project_loaded = true;
-    view.project_id = 51;
-    view.selected_chart_id = 7;
+    view.project_id.value = 51;
+    view.selected_chart_id.value = 7;
     view.document_revision = 1;
     stage_grouped_import(harness);
     REQUIRE(worm_ui_nuklear_sound_import_active());
@@ -8651,9 +8670,11 @@ TEST_CASE("Transport rate label comes from the view and is selected by stable id
           "[frontend-state][event-harness][catalog-wiring]") {
     nuklear_event_harness_t harness;
     REQUIRE(harness.ready());
-    static constexpr WormUiKindDescriptorView entries[]{{8, "R@"}, {7, "S@"}};
-    harness.view().playback_rates = {.entries = entries, .count = std::size(entries)};
-    harness.view().transport_rate_id = 8;
+    static constexpr wormedit::ui::kind_descriptor_view_t<wormedit::audio::playback_rate_id_t> entries[]{
+        {.id = wormedit::audio::playback_rate_id_t::normal, .label = "R@"},
+        {.id = wormedit::audio::playback_rate_id_t::nine_tenths, .label = "S@"}};
+    harness.view().playback_rates = {.entries = {std::begin(entries), std::end(entries)}};
+    harness.view().transport_rate_id = wormedit::audio::playback_rate_id_t::normal;
     harness.view().transport_rate_index = 255;
     harness.view().transport_available = true;
     static_cast<void>(harness.frame());
@@ -8664,10 +8685,10 @@ TEST_CASE("BMS encoding dialog sends the offered identity independently of posit
           "[frontend-state][event-harness][catalog-wiring]") {
     nuklear_event_harness_t harness{1280, 900};
     REQUIRE(harness.ready());
-    static constexpr WormUiKindDescriptorView entries[]{
-        {static_cast<std::uint32_t>(wormedit::text_encoding_t::windows_1252), "Western choice"},
-        {static_cast<std::uint32_t>(wormedit::text_encoding_t::utf8), "Unicode choice"}};
-    harness.view().bms_encodings = {.entries = entries, .count = std::size(entries)};
+    static constexpr wormedit::ui::kind_descriptor_view_t<wormedit::text_encoding_t> entries[]{
+        {.id = wormedit::text_encoding_t::windows_1252, .label = "Western choice"},
+        {.id = wormedit::text_encoding_t::utf8, .label = "Unicode choice"}};
+    harness.view().bms_encodings = {.entries = {std::begin(entries), std::end(entries)}};
     harness.view().pending_bms_encoding_path = "/charts/catalog.bms";
     (void)harness.frame();
     (void)harness.frame();
@@ -8679,7 +8700,7 @@ TEST_CASE("BMS encoding dialog sends the offered identity independently of posit
     for (const auto& frame : click_at(harness, open->first, open->second)) {
         if (frame.get().kind != WORM_UI_WORKSPACE_ACTION_OPEN_FILE) continue;
         opened = true;
-        CHECK(frame.get().bms_encoding_id == entries[0].id);
+        CHECK(frame.get().bms_encoding_id == static_cast<std::uint32_t>(entries[0].id));
     }
     CHECK(opened);
 }
@@ -8697,7 +8718,7 @@ struct measure_lane_fixture_t {
         {.y_pixels = 100, .kind = 3, .measure_number = 1, .chart_row = 0, .measure_id = {10}},
         {.y_pixels = 300, .kind = 3, .measure_number = 2, .chart_row = 960, .measure_id = {11}},
         {.y_pixels = 500, .kind = 3, .measure_number = 3, .chart_row = 1920, .measure_id = {12}}}};
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
 
     measure_lane_fixture_t() {
         REQUIRE(harness.ready());
@@ -8757,8 +8778,9 @@ TEST_CASE("Dragging a measure-lane handle starts and releases a bar-line move",
 
     const std::array press{mouse_motion(x, start_y), mouse_button(true, x, start_y)};
     const auto pressed = fixture.harness.frame(press);
+    const std::vector pressed_frames{pressed};
     const auto* selected = find_compose_input(
-        std::vector{pressed}, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT);
+        pressed_frames, WORM_UI_COMPOSE_INPUT_BAR_LINE_SELECT);
     REQUIRE(selected != nullptr);
     check_measure_lane(selected->object_id == 11);
 
@@ -8776,8 +8798,9 @@ TEST_CASE("Dragging a measure-lane handle starts and releases a bar-line move",
 
     const std::array release{mouse_motion(x, target_y), mouse_button(false, x, target_y)};
     const auto released = fixture.harness.frame(release);
+    const std::vector released_frames{released};
     const auto* committed = find_compose_input(
-        std::vector{released}, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE);
+        released_frames, WORM_UI_COMPOSE_INPUT_BAR_LINE_MOVE_RELEASE);
     REQUIRE(committed != nullptr);
     check_measure_lane(committed->object_id == 11);
 }
@@ -8840,4 +8863,36 @@ TEST_CASE("Export and preview progress emit their respective cancellation action
     require_project_access(static_cast<bool>(std::ranges::none_of(disabled, [](const auto& action) {
         return action.get().file_jobs.cancel_export || action.get().file_jobs.cancel_preview;
     })));
+}
+
+TEST_CASE("Recovery scrolls owned candidates beyond the four visible row budget",
+          "[frontend-state][event-harness][recovery]") {
+    nuklear_event_harness_t harness{1280, 900};
+    REQUIRE(harness.ready());
+    auto& view = harness.view();
+    view.setup.visible = false;
+    view.recovery_panel_visible = true;
+    view.recovery_has_actionable_candidate = true;
+    view.recovery_heading = "Project recovery";
+    std::array<std::string, 8> paths;
+    for (std::size_t index = 0; index < paths.size(); ++index) {
+        paths[index] = "recovery-row-" + std::to_string(index);
+        view.recovery_candidates.push_back({.path_label = paths[index].c_str(),
+            .summary = "Retained candidate",
+            .actions = {wormedit::native_project_recovery_action_t::inspect_read_only},
+            .row_index = index, .candidate_index = index});
+    }
+    (void)harness.frame();
+    CHECK(view.has_scrollable_recovery());
+    CHECK(harness.drawn_text().find("recovery-row-7") == std::string::npos);
+    SDL_Event wheel{};
+    wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.type = SDL_EVENT_MOUSE_WHEEL;
+    wheel.wheel.y = -20.0f;
+    wheel.wheel.mouse_x = 200.0f;
+    wheel.wheel.mouse_y = 180.0f;
+    const std::array<SDL_Event, 2> scroll{mouse_motion(200.0f, 180.0f), wheel};
+    (void)harness.frame(scroll);
+    (void)harness.frame();
+    CHECK(harness.drawn_text().find("recovery-row-7") != std::string::npos);
 }

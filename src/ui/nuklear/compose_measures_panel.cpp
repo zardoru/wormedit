@@ -14,7 +14,7 @@
 namespace {
 constexpr float row_height = 26.0f;
 
-auto raise(WormUiWorkspaceAction& action, const WormUiComposeView& view,
+auto raise(wormedit::ui::workspace_action_t& action, const WormUiComposeView& view,
            WormUiComposeActionKind kind) -> bool {
     return wormedit::ui::raise_compose_action(action, view, kind,
                                               wormedit::ui::compose_project_stamp_t::preserve);
@@ -36,7 +36,7 @@ void format_row(const WormUiComposeMeasureRowView& value, char* label, std::size
                       static_cast<unsigned long long>(value.length_denominator));
 }
 
-void row(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void row(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
          worm_ui_nuklear_compose_state_t& state, std::size_t index) {
     nk_layout_row_dynamic(context, row_height, 1);
     const auto hovered = nk_widget_is_hovered(context);
@@ -61,7 +61,7 @@ void row(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceActi
         action.compose_measure_number = value.number;
 }
 
-void meter_controls(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action,
+void meter_controls(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action,
                     worm_ui_nuklear_compose_state_t& state) {
     nk_layout_row_template_begin(context, 27);
     nk_layout_row_template_push_static(context, 38.0f);
@@ -94,7 +94,7 @@ void meter_controls(nk_context* context, const WormUiComposeView& view, WormUiWo
 } // namespace
 
 void worm_ui_nuklear_render_compose_measures(nk_context* context, const WormUiComposeView* view,
-    WormUiWorkspaceAction* action, worm_ui_nuklear_compose_state_t* state) {
+    wormedit::ui::workspace_action_t* action, worm_ui_nuklear_compose_state_t* state) {
     nk_layout_row_dynamic(context, 20, 1);
     char title[64];
     std::snprintf(title, sizeof(title), "Measures  ·  %zu selected", state->measures_dock.measure_selection.selected.size());

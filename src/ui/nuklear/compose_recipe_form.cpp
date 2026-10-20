@@ -157,7 +157,7 @@ void synchronize_buffers(const WormUiComposeView& view) {
     state.recipe_editor.recipe_edit_revision = view.document_revision;
 }
 
-void queue(const WormUiComposeView& view, WormUiWorkspaceAction& action, WormUiComposeActionKind kind) {
+void queue(const WormUiComposeView& view, wormedit::ui::workspace_action_t& action, WormUiComposeActionKind kind) {
     if (action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) return;
     action.compose_action = kind;
     action.compose_input_chart_id = view.chart_id;

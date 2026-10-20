@@ -2,7 +2,7 @@
 #include "sys/compose_actions_internal.h"
 #include "sys/resource_action_context.h"
 namespace wormedit::sys::compose_action_detail {
-auto import_resource_role(const WormUiWorkspaceAction& action)
+auto import_resource_role(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_role_t> {
     using namespace wormedit;
     switch (action.compose_resource_role) {
@@ -385,7 +385,7 @@ compose_action_outcome_t start_output_export(compose_action_context_t& context,
     return outcome;
 }
 
-auto compose_placement_kind(const WormUiWorkspaceAction& action)
+auto compose_placement_kind(const wormedit::ui::workspace_action_t& action)
     -> std::optional<wormedit::resource_placement_kind_t> {
     using namespace wormedit;
     switch (action.compose_resource_role) {

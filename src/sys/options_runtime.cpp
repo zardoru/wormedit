@@ -3,6 +3,7 @@
 #include <wormedit/audio/playback_rate.h>
 #include <algorithm>
 #include <iterator>
+#include <functional>
 #include <limits>
 
 namespace wormedit::sys {
@@ -75,7 +76,7 @@ void validate_display(options_runtime_t& r) {
     diagnose(r, WORM_UI_OPTIONS_FIELD_SCALE, scale == 0 || (scale >= 100 && scale <= 200), "Scale must be automatic or between 100 and 200 percent.");
     diagnose(r, WORM_UI_OPTIONS_FIELD_LAYOUT, text_util::is_valid_bounded_text(r.draft.layout.dock_layout, maximum_preference_string_bytes), "Layout is too long or contains a null character.");
 }
-void validate_draft(options_runtime_t& r) {
+void refill_options_validation(options_runtime_t& r, bool& changed) {
     r.diagnostics.clear();
     switch (r.category) {
     case WORM_UI_OPTIONS_GENERAL: validate_general(r); break;
@@ -99,7 +100,13 @@ void validate_draft(options_runtime_t& r) {
     copy_category(candidate, r.draft, r.category);
     if (r.diagnostics.empty() && !serialize_program_preferences(candidate))
         r.diagnostics.push_back({WORM_UI_OPTIONS_FIELD_PAGE, "This page contains invalid text or oversized values."});
+    changed = !category_equal(r.draft, r.baseline, r.category);
 }
+void validate_draft(options_runtime_t& r) {
+    static_cast<void>(r.validation.get_or_build(std::tie(r.draft, r.baseline, r.category),
+        std::bind_front(refill_options_validation, std::ref(r))));
+}
+
 auto apply_category(options_runtime_t& r, program_preferences_runtime_t& program) -> bool {
     validate_draft(r);
     if (!r.diagnostics.empty()) { set_options_status(r, notification_severity_t::warning, "Correct this page's invalid fields before applying."); return false; }
@@ -117,7 +124,7 @@ auto apply_category(options_runtime_t& r, program_preferences_runtime_t& program
                        error.empty() ? "Options saved." : error);
     return true;
 }
-auto edit_general(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_general(program_preferences_t& p, const wormedit::ui::options_action_t& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_AUTOSAVE: p.general.autosave_minutes = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_RECENT_FILES: p.general.recent_files_count = static_cast<std::uint32_t>(a.integer); return true;
@@ -125,7 +132,7 @@ auto edit_general(program_preferences_t& p, const WormUiOptionsAction& a) -> boo
     default: return false;
     }
 }
-auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_editor(program_preferences_t& p, const wormedit::ui::options_action_t& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_SNAP: p.editor.default_snap = static_cast<std::uint32_t>(a.integer); return true;
     case WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION:
@@ -142,7 +149,7 @@ auto edit_editor(program_preferences_t& p, const WormUiOptionsAction& a) -> bool
     default: return false;
     }
 }
-auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_audio(program_preferences_t& p, const wormedit::ui::options_action_t& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_RATE: p.audio.playback_rate = {a.integer, a.denominator}; return true;
     case WORM_UI_OPTIONS_FIELD_KEEP_PITCH: p.audio.keep_pitch = a.boolean; return true;
@@ -153,7 +160,7 @@ auto edit_audio(program_preferences_t& p, const WormUiOptionsAction& a) -> bool 
     default: return false;
     }
 }
-auto edit_layout_field_scheme(program_preferences_t& p, const WormUiOptionsAction& action,
+auto edit_layout_field_scheme(program_preferences_t& p, const wormedit::ui::options_action_t& action,
                               std::string_view layout_key) -> bool {
     if (layout_key.empty() || !text_util::is_valid_bounded_text(layout_key, maximum_preference_string_bytes)) return false;
     auto& overrides = p.display.field_scheme_overrides;
@@ -162,7 +169,7 @@ auto edit_layout_field_scheme(program_preferences_t& p, const WormUiOptionsActio
     return is_valid_field_scheme_overrides(p.display);
 }
 
-auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a,
+auto edit_display(program_preferences_t& p, const wormedit::ui::options_action_t& a,
                   std::string_view layout_key) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_P1_SCRATCH_POSITION: p.display.scratch_positions[0] = static_cast<std::uint32_t>(std::min<std::uint64_t>(4, a.integer)); return true;
@@ -181,7 +188,7 @@ auto edit_display(program_preferences_t& p, const WormUiOptionsAction& a,
     default: return false;
     }
 }
-auto edit_player_text(external_player_definition_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_player_text(external_player_definition_t& p, const wormedit::ui::options_action_t& a) -> bool {
     switch (a.field) {
     case WORM_UI_OPTIONS_FIELD_PLAYER_NAME: p.name = a.text; return true;
     case WORM_UI_OPTIONS_FIELD_PLAYER_PATH: p.path = a.text; return true;
@@ -191,7 +198,7 @@ auto edit_player_text(external_player_definition_t& p, const WormUiOptionsAction
     default: return false;
     }
 }
-auto edit_players(program_preferences_t& p, const WormUiOptionsAction& a) -> bool {
+auto edit_players(program_preferences_t& p, const wormedit::ui::options_action_t& a) -> bool {
     auto& players = p.players;
     if (a.field == WORM_UI_OPTIONS_FIELD_PLAYER_ADD) {
         if (players.players.size() >= maximum_external_players) return false;
@@ -209,15 +216,15 @@ auto edit_players(program_preferences_t& p, const WormUiOptionsAction& a) -> boo
     }
     return edit_player_text(players.players[a.player_index], a);
 }
-auto bounded_edit(const WormUiOptionsAction& action) -> bool {
-    if (std::ranges::find(action.text, '\0') == std::end(action.text)) return false;
+auto bounded_edit(const wormedit::ui::options_action_t& action) -> bool {
+    if (!text_util::is_valid_bounded_text(action.text, maximum_preference_string_bytes)) return false;
     const bool small_integer = action.field == WORM_UI_OPTIONS_FIELD_AUTOSAVE ||
         action.field == WORM_UI_OPTIONS_FIELD_RECENT_FILES || action.field == WORM_UI_OPTIONS_FIELD_SNAP ||
         action.field == WORM_UI_OPTIONS_FIELD_SCALE || action.field == WORM_UI_OPTIONS_FIELD_SCROLL_DIRECTION ||
         action.field == WORM_UI_OPTIONS_FIELD_ANCHOR || action.field == WORM_UI_OPTIONS_FIELD_AREA_ALPHA;
     return !small_integer || action.integer <= std::numeric_limits<std::uint32_t>::max();
 }
-auto edit_field(options_runtime_t& r, const WormUiOptionsAction& action) -> bool {
+auto edit_field(options_runtime_t& r, const wormedit::ui::options_action_t& action) -> bool {
     if (action.category != r.category || !bounded_edit(action)) return false;
     auto candidate = r.draft;
     bool edited{};
@@ -290,25 +297,24 @@ auto edit_options_draft(options_runtime_t& r, std::uint64_t revision,
     validate_draft(r);
     return true;
 }
-auto options_view(options_runtime_t& r) -> WormUiOptionsView {
-    // Validation serializes the draft; a hidden window shows no diagnostics.
-    if (r.visible) validate_draft(r);
-    r.diagnostic_views.clear();
-    for (const auto& item : r.diagnostics) r.diagnostic_views.push_back({item.field, item.message.c_str()});
-    r.player_views.clear();
-    for (const auto& player : r.draft.players.players)
-        r.player_views.push_back({player.name.c_str(), player.path.c_str(), player.start_arguments.c_str(),
-            player.here_arguments.c_str(), player.stop_arguments.c_str()});
+} // namespace wormedit::sys
+
+void wormedit::ui::options_view_t::refill(sys::options_runtime_t& r) {
+    sys::validate_draft(r);
+    auto retained_players = std::move(players);
+    auto retained_diagnostics = std::move(diagnostics);
+    auto lanes = std::move(current_field_layout_lanes);
+    auto shortcuts = std::move(shortcut_rows);
     const auto& p = r.draft;
-    return {.visible = r.visible, .revision = r.revision, .category = r.category,
-        .changed = !category_equal(p, r.baseline, r.category), .can_apply = r.diagnostics.empty(),
+    *this = {.visible = r.visible, .revision = r.revision, .category = r.category,
+        .changed = r.validation.value(), .can_apply = r.diagnostics.empty(),
         .autosave_minutes = p.general.autosave_minutes, .recent_files_count = p.general.recent_files_count,
         .default_snap = p.editor.default_snap, .ui_scale_percent = p.display.ui_scale_percent,
         .scroll_directions = {p.editor.scroll_directions[0], p.editor.scroll_directions[1],
             p.editor.scroll_directions[2], p.editor.scroll_directions[3], p.editor.scroll_directions[4],
             p.editor.scroll_directions[5]},
         .playhead_anchor_percent = p.editor.playhead_anchor_percent, .area_band_alpha = p.editor.area_band_alpha,
-        .move_collision_policy = static_cast<std::uint32_t>(p.editor.move_collision_policy),
+        .move_collision_policy = p.editor.move_collision_policy,
         .note_kind_palette_visible = p.editor.note_kind_palette_visible, .lane_key_legend_visible = p.editor.lane_key_legend_visible,
         .audition_on_click = p.editor.audition_on_click,
         .invert_scroll_wheel = p.editor.invert_scroll_wheel,
@@ -328,12 +334,33 @@ auto options_view(options_runtime_t& r) -> WormUiOptionsView {
         .current_layout_field_scheme = p.display.field_scheme_overrides.contains(r.current_field_layout_key)
             ? p.display.field_scheme_overrides.at(r.current_field_layout_key).c_str() : "",
         .theme = p.display.theme.c_str(), .dock_layout = p.layout.dock_layout.c_str(),
-        .shortcut_profile_path = p.general.shortcut_profile_path.c_str(), .players = r.player_views.data(),
-        .player_count = r.player_views.size(), .selected_player = p.players.selected,
-        .diagnostics = r.diagnostic_views.data(), .diagnostic_count = r.diagnostic_views.size(), .status = r.status.c_str()};
+        .shortcut_profile_path = p.general.shortcut_profile_path.c_str(),
+        .selected_player = p.players.selected,
+        .status = r.status};
+    players = std::move(retained_players);
+    diagnostics = std::move(retained_diagnostics);
+    current_field_layout_lanes = std::move(lanes);
+    shortcut_rows = std::move(shortcuts);
+    diagnostics.clear();
+    for (const auto& item : r.diagnostics)
+        diagnostics.push_back({.field = item.field, .message = item.message});
+    players.clear();
+    for (const auto& player : p.players.players)
+        players.push_back({.name = player.name, .path = player.path,
+            .start_arguments = player.start_arguments, .here_arguments = player.here_arguments,
+            .stop_arguments = player.stop_arguments});
 }
+
+auto wormedit::ui::options_view_t::from(sys::options_runtime_t& runtime) -> options_view_t {
+    options_view_t result;
+    result.refill(runtime);
+    return result;
+}
+
+namespace wormedit::sys {
+
 auto apply_options_action(options_runtime_t& r, program_preferences_runtime_t& program,
-    const WormUiOptionsAction& action) -> bool {
+    const wormedit::ui::options_action_t& action) -> bool {
     r.notification.reset();
     if (action.kind == WORM_UI_OPTIONS_NONE) return false;
     if (action.kind == WORM_UI_OPTIONS_OPEN) { open_options(r, program.preferences); return false; }

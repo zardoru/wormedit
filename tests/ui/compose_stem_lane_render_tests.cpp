@@ -294,10 +294,10 @@ TEST_CASE("Fit overlays display zero for invalid rational denominators",
 TEST_CASE("Audio overview rendering guards a zero sample rate", "[ui][shared-text][isolated-software-render]") {
     field_submission_fixture_t fixture;
     REQUIRE(fixture.context != nullptr);
-    WormUiAudioSlicesView view{};
+    wormedit::ui::audio_slices_view_t view{};
     view.visible = view.has_selected_asset = view.waveform_available = true;
     view.total_frames = 480000;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     nk_input_begin(fixture.context);
     nk_input_end(fixture.context);
     REQUIRE(nk_begin(fixture.context, "audio overview", nk_rect(0, 0, 1280, 900), NK_WINDOW_NO_SCROLLBAR));

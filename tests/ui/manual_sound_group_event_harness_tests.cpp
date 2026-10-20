@@ -103,7 +103,7 @@ TEST_CASE("Manual sound group review confirms once on release with stable resour
     const auto confirm = harness.drawn_text_center("Confirm");
     require_event(confirm.has_value());
     const auto frames = click_at(harness, confirm->first, confirm->second);
-    std::vector<const WormUiWorkspaceAction*> actions;
+    std::vector<const wormedit::ui::workspace_action_t*> actions;
     for (const auto& frame : frames)
         if (frame.get().compose_action == WORM_UI_COMPOSE_ACTION_GROUP_SOUNDS)
             actions.push_back(&frame.get());

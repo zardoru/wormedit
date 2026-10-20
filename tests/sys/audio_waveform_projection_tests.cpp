@@ -1,4 +1,5 @@
 #include "sys/waveform_view.h"
+#include "sys/frame_timing.h"
 #include <catch2/catch_test_macros.hpp>
 #include <limits>
 
@@ -24,7 +25,7 @@ auto frame_fixture() -> wormedit::sys::frontend_workspace_view_t {
     wormedit::sys::frontend_workspace_view_t frame;
     frame.view.audio_slices.visible = true;
     frame.view.audio_slices.has_selected_asset = true;
-    frame.view.audio_slices.selected_asset_id = 7;
+    frame.view.audio_slices.selected_asset_id = wormedit::asset_id_t{7};
     return frame;
 }
 }
@@ -33,21 +34,21 @@ TEST_CASE("Sounds waveform projection uses the visible source-frame viewport",
           "[sys][audio-waveform-projection]") {
     auto frame = frame_fixture();
     const auto analysis = analysis_fixture();
-    const WormUiAudioWaveformViewportRequest request{7, 10'000, 6'000, 10.0, 100, true};
+    const wormedit::ui::audio_waveform_viewport_request_t request{wormedit::asset_id_t{7}, 10'000, 6'000, 10.0, 100, true};
     wormedit::sys::populate_audio_waveform_views(frame, &analysis, false, 1280, &request);
     REQUIRE(frame.view.audio_slices.waveform_available);
     CHECK(frame.view.audio_slices.waveform_begin_frame == 6'000);
     CHECK(frame.view.audio_slices.waveform_end_frame == 7'000);
-    REQUIRE(frame.audio.waveform.size() == 100);
-    CHECK(frame.audio.waveform.front().maximum[0] == 0.75F);
+    REQUIRE(frame.view.audio_slices.waveform_columns.size() == 100);
+    CHECK(frame.view.audio_slices.waveform_columns.front().maximum[0] == 0.75F);
 }
 
 TEST_CASE("Sounds waveform projection rejects stale malformed requests and keeps Metadata fitted",
           "[sys][audio-waveform-projection]") {
     auto frame = frame_fixture();
     const auto analysis = analysis_fixture();
-    WormUiAudioWaveformViewportRequest request{7, 10'000, 6'000, 10.0, 100, true};
-    SECTION("asset changed") { request.asset_id = 8; }
+    wormedit::ui::audio_waveform_viewport_request_t request{wormedit::asset_id_t{7}, 10'000, 6'000, 10.0, 100, true};
+    SECTION("asset changed") { request.asset_id = wormedit::asset_id_t{8}; }
     SECTION("source changed") { request.total_frames = 9'000; }
     SECTION("invalid zoom") { request.frames_per_pixel = std::numeric_limits<double>::quiet_NaN(); }
     SECTION("invalid width") { request.pixel_width = 0; }
@@ -57,4 +58,22 @@ TEST_CASE("Sounds waveform projection rejects stale malformed requests and keeps
     REQUIRE(frame.view.audio_slices.waveform_available);
     CHECK(frame.view.audio_slices.waveform_begin_frame == 0);
     CHECK(frame.view.audio_slices.waveform_end_frame == 10'000);
+}
+
+TEST_CASE("Repeated Sounds waveform refill retains one projection without accumulation",
+          "[sys][audio-waveform-projection][steady-state]") {
+    auto frame = frame_fixture();
+    const auto analysis = analysis_fixture();
+    const wormedit::ui::audio_waveform_viewport_request_t request{
+        wormedit::asset_id_t{7}, 10'000, 6'000, 10.0, 100, true};
+    wormedit::sys::populate_audio_waveform_views(frame, &analysis, false, 1280, &request);
+    const auto before = wormedit::sys::frame_heap_allocation_snapshot();
+    wormedit::sys::populate_audio_waveform_views(frame, &analysis, false, 1280, &request);
+    const auto after = wormedit::sys::frame_heap_allocation_snapshot();
+    CHECK(after.count == before.count);
+    REQUIRE(frame.view.audio_slices.waveform_columns.size() == 100);
+    CHECK(frame.view.audio_slices.waveform_columns.front().maximum[0] == 0.75F);
+    CHECK(frame.view.audio_slices.waveform_begin_frame == 6'000);
+    CHECK(frame.view.audio_slices.waveform_end_frame == 7'000);
+    CHECK(frame.view.metadata.audio_waveform_columns.size() == 100);
 }

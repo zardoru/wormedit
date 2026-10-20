@@ -13,7 +13,7 @@ void enable_slots(nuklear_event_harness_t& harness) {
 }
 void stage_batch(nuklear_event_harness_t& harness, const char* reason = "") {
     const auto& view = harness.view().compose;
-    const std::array<WormUiSoundSlotImportItem, 2> items{{
+    const std::array<wormedit::ui::sound_slot_import_item_t, 2> items{{
         {"/tmp/sound2.wav", "sound2.wav", 0, "", false},
         {"/tmp/sound10.wav", "sound10.wav", 0, "", false}}};
     REQUIRE(worm_ui_frontend_stage_sound_slot_batch(view.project_id, view.chart_id,
@@ -41,7 +41,7 @@ auto click(nuklear_event_harness_t& harness, const char* text) -> workspace_acti
     const auto released = harness.frame(std::array{motion, press});
     return pressed.get().compose_action != WORM_UI_COMPOSE_ACTION_NONE ? pressed : released;
 }
-void check_confirmed_batch(const WormUiWorkspaceAction& action) {
+void check_confirmed_batch(const wormedit::ui::workspace_action_t& action) {
     REQUIRE(action.compose_action == WORM_UI_COMPOSE_ACTION_CONFIRM_SOUND_SLOT_BATCH);
     CHECK(action.compose_sound_slot == 35);
     REQUIRE(action.sound_import_item_count == 2);

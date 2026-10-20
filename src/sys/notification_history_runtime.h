@@ -32,15 +32,12 @@ auto notification_copy_payload(const notification_center_t& center, notification
 // action dispatch. Apply center mutations before the next inbox drain.
 struct notification_history_runtime_t {
     bool visible{};
-    std::array<WormUiNotificationHistoryRow, WORM_UI_NOTIFICATION_HISTORY_CAPACITY> rows{};
     using target_entries_t = std::array<
         keyed_cache_t<notification_id_t, WormUiNotificationTargetAvailability>,
-        WORM_UI_NOTIFICATION_HISTORY_CAPACITY>;
+        notification_capacity>;
     keyed_cache_t<std::tuple<const song_document_t*, document_stamp_t, std::uint64_t>,
                   target_entries_t> target_cache;
-    auto project(const notification_center_t& center, const song_document_t& document,
-                 notification_time_t now, std::uint64_t document_generation = 0) -> WormUiNotificationHistoryView;
-    auto apply(const WormUiNotificationAction& action, notification_center_t& center) -> bool;
+    auto apply(const wormedit::ui::notification_action_t& action, notification_center_t& center) -> bool;
 };
 
 auto go_to_notification(const notification_center_t& center, notification_id_t id,

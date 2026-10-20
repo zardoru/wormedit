@@ -1,62 +1,38 @@
 #include "ui/nuklear/setup_state.h"
-
-bool worm_ui_nuklear_setup_policy_values_valid(
-    WormUiStepmaniaFileProfile file_profile, WormUiStepmaniaTimingSyntax timing_syntax,
-    WormUiStepmaniaImplementation implementation) {
-    return file_profile >= WORM_UI_STEPMANIA_FILE_SM &&
-           file_profile <= WORM_UI_STEPMANIA_FILE_SSC &&
-           timing_syntax >= WORM_UI_STEPMANIA_TIMING_NATIVE_WARPS &&
-           timing_syntax <= WORM_UI_STEPMANIA_TIMING_LEGACY_NEGATIVE_STOP &&
-           implementation >= WORM_UI_STEPMANIA_IMPLEMENTATION_SYNTAX_ONLY &&
-           implementation <= WORM_UI_STEPMANIA_IMPLEMENTATION_ETTERNA_0_75_1;
-}
+#include <algorithm>
 
 namespace {
-bool project_rows_valid(const WormUiSetupView& view) {
-    if (view.chart_row_count > WORM_UI_PROJECT_CHART_CAPACITY ||
-        (view.chart_row_count != 0 && !view.charts)) return false;
-    for (size_t index = 0; index < view.chart_row_count; ++index) {
-        const auto& row = view.charts[index];
-        if (!row.chart_id || !row.name || !row.author || !row.rating || !row.mode ||
-            !row.output_groups || !row.length || !row.diagnostic) return false;
-    }
-    return true;
+bool project_rows_valid(const wormedit::ui::setup_view_t& view) {
+    return std::ranges::all_of(view.charts, [](const auto& row) { return row.chart_id.value != 0; });
 }
 
-bool output_group_rows_valid(const WormUiSetupView& view) {
-    if (view.output_group_count != 0 && !view.output_groups) return false;
-    for (size_t index = 0; index < view.output_group_count; ++index) {
-        const auto& group = view.output_groups[index];
-        if (!group.name || !group.path || !group.preview_status ||
-            (group.chart_count != 0 && !group.chart_ids)) return false;
-        if (group.family == 2 &&
-            (!group.has_stepmania_policy ||
-             !worm_ui_nuklear_setup_policy_values_valid(
-                 group.stepmania_file_profile, group.stepmania_timing_syntax,
-                 group.stepmania_implementation))) return false;
+bool output_group_rows_valid(const wormedit::ui::setup_view_t& view) {
+    for (const auto& group : view.output_groups) {
+        if (group.family == wormedit::format_family_t::stepmania && !group.stepmania) return false;
+        if (group.stepmania &&
+            (group.stepmania->file_profile > wormedit::stepmania_profile_t::ssc ||
+             group.stepmania->timing_syntax < wormedit::stepmania_timing_syntax_t::native_warps ||
+             group.stepmania->timing_syntax > wormedit::stepmania_timing_syntax_t::legacy_negative_stop ||
+             group.stepmania->implementation_profile > wormedit::stepmania_implementation_profile_t::etterna_0_75_1))
+            return false;
     }
     return true;
 }
 }
 
-bool worm_ui_nuklear_setup_view_valid(const WormUiSetupView* view) {
+bool worm_ui_nuklear_setup_view_valid(const wormedit::ui::setup_view_t* view) {
     return view &&
            (!view->visible || (project_rows_valid(*view) && output_group_rows_valid(*view)));
 }
 
-#include <algorithm>
-
 bool worm_ui_nuklear_project_chart_selected(const project_chart_selection_t& state, std::uint64_t id) {
-    return std::find(state.ids.begin(), state.ids.begin() + state.count, id) != state.ids.begin() + state.count;
+    return std::ranges::find(state.ids, id) != state.ids.end();
 }
 
 void worm_ui_nuklear_toggle_project_chart_selection(project_chart_selection_t& state, std::uint64_t id) {
-    const auto end = state.ids.begin() + state.count;
-    const auto found = std::find(state.ids.begin(), end, id);
-    if (found != end) {
-        std::move(found + 1, end, found);
-        --state.count;
-    } else if (id && state.count < state.ids.size()) state.ids[state.count++] = id;
+    const auto found = std::ranges::find(state.ids, id);
+    if (found != state.ids.end()) state.ids.erase(found);
+    else if (id) state.ids.push_back(id);
 }
 
 namespace {
@@ -66,15 +42,15 @@ auto shown_index(std::span<const std::uint64_t> shown, std::uint64_t id) -> std:
 }
 
 void select_only(project_chart_selection_t& state, std::uint64_t id) {
-    state.ids[0] = id;
-    state.count = id ? 1 : 0;
+    state.ids.clear();
+    if (id) state.ids.push_back(id);
 }
 
 void select_range(project_chart_selection_t& state, std::span<const std::uint64_t> shown,
                   std::size_t first, std::size_t last) {
-    state.count = 0;
+    state.ids.clear();
     for (auto index = std::min(first, last); index <= std::max(first, last); ++index)
-        if (shown[index] && state.count < state.ids.size()) state.ids[state.count++] = shown[index];
+        if (shown[index]) state.ids.push_back(shown[index]);
 }
 
 } // namespace
@@ -99,10 +75,10 @@ void worm_ui_nuklear_click_project_chart(project_chart_selection_t& state,
 void worm_ui_nuklear_toggle_all_project_charts(project_chart_selection_t& state,
     std::span<const std::uint64_t> shown) {
     const auto summary = worm_ui_nuklear_project_selection_summary(state, shown);
-    state.count = 0;
+    state.ids.clear();
     if (summary == project_selection_summary_t::all) return;
     for (const auto id : shown) {
-        if (id && state.count < state.ids.size()) state.ids[state.count++] = id;
+        if (id) state.ids.push_back(id);
     }
 }
 
@@ -115,61 +91,61 @@ project_selection_summary_t worm_ui_nuklear_project_selection_summary(
     return selected == shown.size() ? project_selection_summary_t::all : project_selection_summary_t::partial;
 }
 
-void worm_ui_nuklear_reconcile_project_selection(project_chart_selection_t& state, const WormUiSetupView& view) {
-    if (state.song != view.song_id || state.session_generation != view.session_generation) {
-        state = {.song = view.song_id, .session_generation = view.session_generation};
+void worm_ui_nuklear_reconcile_project_selection(project_chart_selection_t& state, const wormedit::ui::setup_view_t& view) {
+    if (state.song != view.song_id.value || state.session_generation != view.session_generation) {
+        state = {.song = view.song_id.value, .session_generation = view.session_generation};
     }
     const auto exists = [&](std::uint64_t id) {
-        for (std::size_t index = 0; index < view.chart_row_count; ++index)
-            if (view.charts[index].chart_id == id) return true;
+        for (std::size_t index = 0; index < view.charts.size(); ++index)
+            if (view.charts[index].chart_id.value == id) return true;
         return false;
     };
     std::size_t kept{};
-    for (std::size_t index = 0; index < state.count; ++index)
+    for (std::size_t index = 0; index < state.ids.size(); ++index)
         if (exists(state.ids[index])) state.ids[kept++] = state.ids[index];
-    state.count = kept;
+    state.ids.resize(kept);
     if (!exists(state.anchor)) state.anchor = 0;
     if (!exists(state.pending_delete) || state.pending_delete_revision != view.document_revision)
         state.pending_delete = 0;
 }
 
 namespace {
-bool chart_row_exists(const WormUiSetupView& view, std::uint64_t id) {
-    if (!id || !view.charts || view.chart_row_count > WORM_UI_PROJECT_CHART_CAPACITY) return false;
-    return std::any_of(view.charts, view.charts + view.chart_row_count,
-        [id](const auto& row) { return row.chart_id == id; });
+bool chart_row_exists(const wormedit::ui::setup_view_t& view, std::uint64_t id) {
+    if (!id) return false;
+    return std::ranges::any_of(view.charts,
+        [id](const auto& row) { return row.chart_id.value == id; });
 }
 }
 
-bool worm_ui_nuklear_begin_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+bool worm_ui_nuklear_begin_chart_drag(project_chart_drag_t& state, const wormedit::ui::setup_view_t& view,
     std::uint64_t source) {
     state = {};
     if (!view.visible || !chart_row_exists(view, source)) return false;
-    state = {view.song_id, view.session_generation, view.document_revision, source};
+    state = {view.song_id.value, view.session_generation, view.document_revision, source};
     return true;
 }
 
-void worm_ui_nuklear_reconcile_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view) {
-    if (!view.visible || state.song != view.song_id || state.session_generation != view.session_generation ||
+void worm_ui_nuklear_reconcile_chart_drag(project_chart_drag_t& state, const wormedit::ui::setup_view_t& view) {
+    if (!view.visible || state.song != view.song_id.value || state.session_generation != view.session_generation ||
         state.revision != view.document_revision || !chart_row_exists(view, state.source) ||
         (state.target && !chart_row_exists(view, state.target))) state = {};
 }
 
-void worm_ui_nuklear_target_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view,
+void worm_ui_nuklear_target_chart_drag(project_chart_drag_t& state, const wormedit::ui::setup_view_t& view,
     std::uint64_t target, bool after) {
     worm_ui_nuklear_reconcile_chart_drag(state, view);
     state.target = state.source && chart_row_exists(view, target) ? target : 0;
     state.after = after;
 }
 
-auto worm_ui_nuklear_finish_chart_drag(project_chart_drag_t& state, const WormUiSetupView& view)
-    -> WormUiProjectChartAction {
+auto worm_ui_nuklear_finish_chart_drag(project_chart_drag_t& state, const wormedit::ui::setup_view_t& view)
+    -> wormedit::ui::project_chart_action_t {
     worm_ui_nuklear_reconcile_chart_drag(state, view);
-    WormUiProjectChartAction result{};
+    wormedit::ui::project_chart_action_t result{};
     if (state.source && state.target && state.source != state.target)
         result = {.kind = WORM_UI_PROJECT_CHART_REORDER, .document_revision = state.revision,
-            .session_generation = state.session_generation, .chart_id = state.source,
-            .target_chart_id = state.target, .insert_after = state.after};
+            .session_generation = state.session_generation, .chart_id = wormedit::chart_id_t{state.source},
+            .target_chart_id = wormedit::chart_id_t{state.target}, .insert_after = state.after};
     state = {};
     return result;
 }

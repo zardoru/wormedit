@@ -40,7 +40,7 @@ auto text_occurrences(std::string_view text, std::string_view needle) -> std::si
 }
 
 auto note_paint_begin(const std::vector<workspace_action_snapshot_t>& frames)
-    -> const WormUiComposeInputAction* {
+    -> const wormedit::ui::compose_input_action_t* {
     for (const auto& frame : frames) {
         const auto& action = frame.get();
         for (std::size_t index = 0; index < action.compose_input_count; ++index) {

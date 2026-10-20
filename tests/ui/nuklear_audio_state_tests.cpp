@@ -14,7 +14,7 @@ void expect_state(bool condition, std::source_location at = std::source_location
 TEST_CASE("Sounds tag filters match individual tags without case sensitivity",
           "[unit][frontend][audio][sound-tags]") {
     worm_ui_nuklear_audio_state_t state;
-    const std::array<std::string_view, 2> tags{"Vocal", "Big Drum"};
+    const std::array<std::string, 2> tags{"Vocal", "Big Drum"};
     CHECK(state.matches_tags(tags));
     std::strcpy(state.tag_filter, "DRUM");
     CHECK(state.matches_tags(tags));

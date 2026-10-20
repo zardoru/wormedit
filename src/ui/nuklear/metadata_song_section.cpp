@@ -14,32 +14,32 @@
 
 namespace {
 
-static int metadata_song_changed(const WormUiMetadataView* metadata) {
-    if (!metadata || !state.song_buffers_valid || !state.tag_buffers_valid || !metadata->title ||
-        !metadata->artist) {
+static int metadata_song_changed(const wormedit::ui::metadata_view_t* metadata) {
+    if (!metadata || !state.song_buffers_valid || !state.tag_buffers_valid || !metadata->title.c_str() ||
+        !metadata->artist.c_str()) {
         return 0;
     }
-    if (metadata->search_tag_count != state.search_tags.size()) {
+    if (metadata->search_tags.size() != state.search_tags.size()) {
         return 1;
     }
-    if (strcmp(state.title.data(), metadata->title) != 0 ||
-        strcmp(state.artist.data(), metadata->artist) != 0) {
+    if (strcmp(state.title.data(), metadata->title.c_str()) != 0 ||
+        strcmp(state.artist.data(), metadata->artist.c_str()) != 0) {
         return 1;
     }
     for (size_t index = 0; index < state.search_tags.size(); ++index) {
-        if (!metadata->search_tags ||
-            strcmp(state.search_tags[index].data(), metadata->search_tags[index]) != 0) {
+        if (metadata->search_tags.empty() ||
+            strcmp(state.search_tags[index].data(), metadata->search_tags[index].c_str()) != 0) {
             return 1;
         }
     }
     return 0;
 }
 
-static void set_metadata_song_action(WormUiWorkspaceAction* action,
-                                     const WormUiMetadataView* metadata) {
+static void set_metadata_song_action(wormedit::ui::workspace_action_t* action,
+                                     const wormedit::ui::metadata_view_t* metadata) {
     if (!action || !metadata || action->metadata_edit != WORM_UI_METADATA_EDIT_NONE ||
         !state.tag_buffers_valid ||
-        state.search_tags.size() > WORM_UI_METADATA_SEARCH_TAG_CAPACITY) {
+        state.search_tags.size() > wormedit::default_metadata_edit_limits.maximum_search_tags) {
         return;
     }
     state.search_tag_pointers.clear();
@@ -55,17 +55,17 @@ static void set_metadata_song_action(WormUiWorkspaceAction* action,
     action->metadata_search_tag_count = state.search_tag_pointers.size();
 }
 
-void reset_song_draft(const WormUiMetadataView& metadata) {
+void reset_song_draft(const wormedit::ui::metadata_view_t& metadata) {
     worm_ui_nuklear_cancel_metadata_tag_drag();
-    (void)copy_metadata_text(state.title.data(), state.title.size(), metadata.title,
-                             metadata.title_bytes);
-    (void)copy_metadata_text(state.artist.data(), state.artist.size(), metadata.artist,
-                             metadata.artist_bytes);
+    (void)copy_metadata_text(state.title.data(), state.title.size(), metadata.title.c_str(),
+                             metadata.title.size());
+    (void)copy_metadata_text(state.artist.data(), state.artist.size(), metadata.artist.c_str(),
+                             metadata.artist.size());
     state.search_tags.clear();
-    for (size_t i = 0; i < metadata.search_tag_count; ++i) {
-        std::array<char, WORM_UI_METADATA_SEARCH_TAG_BYTES + 1> tag{};
-        if (!copy_metadata_text(tag.data(), tag.size(), metadata.search_tags[i],
-                                metadata.search_tag_bytes[i])) break;
+    for (size_t i = 0; i < metadata.search_tags.size(); ++i) {
+        std::array<char, wormedit::default_metadata_edit_limits.maximum_search_tag_bytes + 1> tag{};
+        if (!copy_metadata_text(tag.data(), tag.size(), metadata.search_tags[i].c_str(),
+                                metadata.search_tags[i].size())) break;
         state.search_tags.push_back(tag);
     }
     state.new_search_tag.fill('\0');
@@ -174,7 +174,7 @@ void render_metadata_tag_editor(const MetadataPanel& panel) {
                                          state.new_search_tag.size(), nk_filter_default);
     if (!editable) nk_widget_disable_end(context);
     nk_layout_row_push(context, 0.20f);
-    const auto can_add = editable && state.search_tags.size() < WORM_UI_METADATA_SEARCH_TAG_CAPACITY &&
+    const auto can_add = editable && state.search_tags.size() < wormedit::default_metadata_edit_limits.maximum_search_tags &&
                          state.new_search_tag[0] != '\0';
     if (!can_add) nk_widget_disable_begin(context);
     const auto add = nk_button_label(context, "Add tag");

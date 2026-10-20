@@ -14,6 +14,6 @@ struct preview_audio_dialog_t {
     nk_bool replace_existing{};
     chrome::Dialog dialog;
     void begin(const WormUiComposeView& view);
-    void render(nk_context* context, const WormUiComposeView& view, WormUiWorkspaceAction& action);
+    void render(nk_context* context, const WormUiComposeView& view, wormedit::ui::workspace_action_t& action);
 };
 }

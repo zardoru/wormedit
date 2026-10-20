@@ -107,7 +107,7 @@ auto has_resource_place(const std::array<workspace_action_snapshot_t, 2>& action
 
 auto canvas_point(nuklear_event_harness_t& harness, double x, double y)
     -> std::pair<float, float> {
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     const auto& compose = harness.view().compose;
     return {viewport.x + static_cast<float>(x / compose.viewport_width_pixels) * viewport.width,
@@ -509,7 +509,7 @@ TEST_CASE("BGA event hit testing maps through the visible inspector and Sounds d
     view.bga_events = &event;
     view.bga_event_count = 1;
     (void)harness.frame();
-    WormUiTestingRect viewport{};
+    wormedit::ui::testing_rect_view_t viewport{};
     REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
     view.viewport_width_pixels = viewport.width;
     (void)harness.frame();
@@ -815,7 +815,7 @@ struct resizable_stem_lane_fixture_t {
     resizable_stem_lane_fixture_t() {
         REQUIRE(harness.ready());
         hide_compose_docks();
-        harness.view().project_id = 123;
+        harness.view().project_id.value = 123;
         auto& view = harness.view().compose;
         view.visible = true;
         view.scene_available = true;
@@ -839,7 +839,7 @@ struct resizable_stem_lane_fixture_t {
     auto expected_drag_width(double delta) {
         const auto from = edge();
         const auto to = at(lane.resize_edge_pixels + delta, 6);
-        WormUiTestingRect viewport{};
+        wormedit::ui::testing_rect_view_t viewport{};
         REQUIRE(worm_ui_frontend_compose_viewport_for_testing(&viewport));
         return std::clamp(width() + (to.first - std::trunc(from.first)) *
             harness.view().compose.viewport_width_pixels / viewport.width, 36.0, 480.0);
@@ -1186,7 +1186,7 @@ struct dock_stem_fixture_t {
     auto source_point() const { return drawn_text_center_with_prefix(harness, "Dock stem"); }
 };
 
-auto stem_input(const workspace_action_snapshot_t& action) -> const WormUiComposeInputAction* {
+auto stem_input(const workspace_action_snapshot_t& action) -> const wormedit::ui::compose_input_action_t* {
     const auto& value = action.get();
     const auto inputs = std::span(value.compose_inputs, value.compose_input_count);
     const auto found = std::ranges::find_if(inputs, [](const auto& input) {
@@ -1335,7 +1335,7 @@ auto make_packed_bmson_song(std::uint64_t lane_id, std::uint64_t resource_id)
     return song;
 }
 
-auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64_t row,
+auto core_payload_undoes_once(const wormedit::ui::compose_input_action_t& input, std::uint64_t row,
                               bool empty_stem = false) -> bool {
     auto song = input.kind == WORM_UI_COMPOSE_INPUT_BMSON_PACKED_DRAW
         ? make_packed_bmson_song(input.lane_id, input.resource_id)
@@ -1373,7 +1373,7 @@ auto core_payload_undoes_once(const WormUiComposeInputAction& input, std::uint64
            restored.measures.size() == original_chart.measures.size();
 }
 
-auto packed_stroke_undoes_once(const WormUiComposeInputAction& input, std::uint64_t row) -> bool {
+auto packed_stroke_undoes_once(const wormedit::ui::compose_input_action_t& input, std::uint64_t row) -> bool {
     auto history = wormedit::document_history_t::from(
         make_packed_bmson_song(input.lane_id, input.resource_id));
     const std::array cells{wormedit::local_position_t{
@@ -1458,7 +1458,7 @@ TEST_CASE("Emitted stem and packed draw payloads each commit one undoable BMSON 
         packed.harness.view().compose.draw_source_id = 800'001;
         const auto packed_point = packed.at(662, 300);
         const auto packed_click = click(packed.harness, packed_point.first, packed_point.second);
-        const WormUiComposeInputAction* packed_input{};
+        const wormedit::ui::compose_input_action_t* packed_input{};
         for (const auto& snapshot : packed_click)
             for (const auto& input : std::span(snapshot.get().compose_inputs,
                                                snapshot.get().compose_input_count))

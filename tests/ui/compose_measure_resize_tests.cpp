@@ -52,7 +52,7 @@ struct resize_fixture_t {
         v.pixels_per_standard_measure = 400.0;
         v.area_snap_denominator = 8; v.edit_snap_enabled = true;
         (void)harness.frame();
-        WormUiTestingRect rect{};
+        wormedit::ui::testing_rect_view_t rect{};
         require_resize(worm_ui_frontend_compose_viewport_for_testing(&rect));
         x = rect.x + static_cast<float>(200 * rect.width / v.viewport_width_pixels);
         pixels_per_view_pixel = static_cast<float>(rect.height / v.viewport_height_pixels);

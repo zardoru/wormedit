@@ -12,5 +12,5 @@ struct nk_context;
 // Call inside the panel's group; it fills the group's remaining height.
 void worm_ui_nuklear_render_compose_sounds(struct nk_context* context,
                                            const WormUiComposeView* view,
-                                           WormUiWorkspaceAction* action,
+                                           wormedit::ui::workspace_action_t* action,
                                            worm_ui_nuklear_compose_state_t* state);

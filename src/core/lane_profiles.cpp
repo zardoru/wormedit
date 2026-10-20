@@ -1388,7 +1388,7 @@ auto output_family_compatibility(const chart_document_t& chart, format_family_t 
 auto suggested_output_groups(const chart_document_t& chart)
     -> std::span<const new_project_output_group_descriptor_t> {
     if (chart.lane_layouts.empty()) return {};
-    const auto profile = chart.lane_layouts.front().layout.profile_id;
+    const auto& profile = chart.lane_layouts.front().layout.profile_id;
     const auto found = std::ranges::find(project_layouts, profile,
                                          &new_project_layout_descriptor_t::id);
     return found == project_layouts.end() ? std::span<const new_project_output_group_descriptor_t>{}

@@ -1,4 +1,4 @@
-#include "sys/timing_lane_ui.h"
+#include <wormedit/core/timing_lane_catalog.h>
 #include <wormedit/core/rational.h>
 #include "sys/compose_view_internal.h"
 namespace wormedit::sys::compose_projection_detail {
@@ -320,10 +320,10 @@ void assign_compose_timing_marker_fractions(frontend_workspace_view_t& flattened
 }
 
 auto compose_timing_marker_selected(const wormedit::editor_interaction_view_model_t& interaction,
-                                    WormUiTimingLaneKind lane, std::uint64_t id) -> bool {
+                                    wormedit::timing_lane_kind_t lane, std::uint64_t id) -> bool {
     if (id == 0)
         return false;
-    const auto* descriptor = ui_codec<WormUiTimingLaneKind>::descriptor(lane);
+    const auto* descriptor = wormedit::find_catalog_entry(wormedit::timing_lanes, lane);
     const auto kind = descriptor ? descriptor->selection_kind
                                  : wormedit::editor_selection_object_kind_t::bpm_event;
     return std::ranges::any_of(interaction.selected_objects, [kind, id](const auto& object) {
@@ -413,7 +413,7 @@ void build_compose_timing_payloads(const wormedit::chart_document_t& chart,
     markers.clear();
     append_compose_chart_timing_markers(chart, measures,
         [&measures, &markers](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
-            std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
+            std::size_t storage_order, wormedit::timing_lane_kind_t lane, std::string short_label,
             std::string detail, bool fixed_initial) {
             markers.push_back({measures.row_of(position), id, source_order, storage_order, lane,
                                std::move(short_label), std::move(detail), fixed_initial});
@@ -453,7 +453,7 @@ void populate_compose_timing_markers(
     }
     const auto append_timing_marker = [&](std::optional<std::uint64_t> row, std::uint64_t id,
                                           std::size_t source_order, std::size_t storage_order,
-                                          WormUiTimingLaneKind lane, std::string_view short_label,
+                                          wormedit::timing_lane_kind_t lane, std::string_view short_label,
                                           std::string_view detail, bool fixed_initial) {
         if (flattened.compose.timing_marker.size() >= WORM_UI_TIMING_MARKER_CAPACITY) {
             view.truncated = true;
@@ -493,7 +493,7 @@ void populate_compose_timing_markers(
         append_compose_chart_timing_markers(
             chart, cache.scene.index.value()->measures,
             [&](wormedit::local_position_t position, std::uint64_t id, std::size_t source_order,
-                std::size_t storage_order, WormUiTimingLaneKind lane, std::string short_label,
+                std::size_t storage_order, wormedit::timing_lane_kind_t lane, std::string short_label,
                 std::string detail, bool fixed_initial) {
                 append_timing_marker((cache.scene.index.value()->measures).row_of(position), id,
                                      source_order, storage_order, lane, std::move(short_label),
@@ -516,7 +516,7 @@ void populate_compose_timing_markers(
             if (std::isfinite(y) && y >= 0.0 && y <= view.viewport_height_pixels) {
                 view.timing_stage_active = true;
                 view.timing_stage_valid = timing_stage->value.has_value();
-                view.timing_stage_lane = ui_codec<WormUiTimingLaneKind>::from(stage_report->kind);
+                view.timing_stage_lane = stage_report->kind;
                 view.timing_stage_y_pixels = y;
             }
         }
@@ -701,8 +701,8 @@ void populate_compose_recipe_areas(
              .recipe_id = area.recipe.value,
              .label = label.c_str(),
              .lane = static_cast<std::uint8_t>(area.output == wormedit::sv_recipe_output_t::speeds
-                                                   ? WORM_UI_TIMING_LANE_SPEED
-                                                   : WORM_UI_TIMING_LANE_SCROLL),
+                                                   ? wormedit::timing_lane_kind_t::speed
+                                                   : wormedit::timing_lane_kind_t::scroll),
              .curve = static_cast<std::uint8_t>(area.curve),
              .enabled = area.enabled,
              .selected = area.recipe.value == selected_recipe,

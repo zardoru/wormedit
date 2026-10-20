@@ -24,7 +24,7 @@ auto current_row(const bookmark_chooser_state_t& state,
 }
 
 auto activate_row(const WormUiBookmarkChooserView& view, const WormUiBookmarkChooserRowView& row,
-                  WormUiWorkspaceAction& action, nk_context* context,
+                  wormedit::ui::workspace_action_t& action, nk_context* context,
                   bookmark_chooser_state_t& state) -> bool {
     if (!row.navigation_available || action.compose_action != WORM_UI_COMPOSE_ACTION_NONE) {
         set_status(state, "Bookmark is unavailable at this position.");
@@ -49,7 +49,7 @@ void move_selection(bookmark_chooser_state_t& state, const WormUiBookmarkChooser
 }
 
 void handle_keyboard(nk_context* context, const WormUiBookmarkChooserView& view,
-                     WormUiWorkspaceAction& action,
+                     wormedit::ui::workspace_action_t& action,
                      bookmark_chooser_state_t& state) {
     if (nk_input_is_key_pressed(&context->input, NK_KEY_UP)) {
         move_selection(state, view, -1);
@@ -80,7 +80,7 @@ void render_page_controls(nk_context* context, const WormUiBookmarkChooserView& 
 }
 
 void render_rows(nk_context* context, const WormUiBookmarkChooserView& view,
-                 WormUiWorkspaceAction& action, bookmark_chooser_state_t& state) {
+                 wormedit::ui::workspace_action_t& action, bookmark_chooser_state_t& state) {
     if (view.total_count == 0) {
         nk_layout_row_dynamic(context, 30, 1);
         nk_label(context, state.query[0] ? "No matching bookmarks." : "No bookmarks in this chart.", NK_TEXT_ALIGN_LEFT | NK_TEXT_ALIGN_MIDDLE);
@@ -170,7 +170,7 @@ void worm_ui_nuklear_bookmark_chooser_release_delivered(nk_context* context,
 
 auto worm_ui_nuklear_render_compose_bookmark_chooser(
     nk_context* context, const WormUiBookmarkChooserView& view,
-    WormUiWorkspaceAction* action, bool window_focused,
+    wormedit::ui::workspace_action_t* action, bool window_focused,
     bookmark_chooser_state_t* state) -> bool {
     if (!context || !action || !state) return false;
     if (!state->open && !state->close_pending) {

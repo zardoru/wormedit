@@ -6,7 +6,7 @@
 #include "ui/nuklear/compose_timing_input.h"
 #include "ui/nuklear/compose_object_input.h"
 
-bool compose_action_has_cancel(const WormUiWorkspaceAction* action);
+bool compose_action_has_cancel(const wormedit::ui::workspace_action_t* action);
 
 void queue_compose_pinch_input(worm_ui_nuklear_pinch_phase_t phase,
     double factor, double mouse_x, double mouse_y);

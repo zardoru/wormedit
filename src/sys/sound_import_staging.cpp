@@ -16,7 +16,7 @@ auto stage_automatic_sound_import(const song_document_t& document, chart_id_t ch
     if (prepared.entries.empty()) return compose_action_outcome_t::from(prepared.message,
         prepared.skipped_unreadable ? notification_severity_t::warning : notification_severity_t::info,
         notification_source_t::import_);
-    std::vector<WormUiSoundImportItem> items;
+    std::vector<wormedit::ui::sound_import_item_t> items;
     std::vector<std::string> source_paths;
     source_paths.reserve(prepared.entries.size());
     for (const auto& entry : prepared.entries)
@@ -26,7 +26,7 @@ auto stage_automatic_sound_import(const song_document_t& document, chart_id_t ch
         items.push_back({source_paths[index].c_str(), entry.asset.name.c_str(),
                          static_cast<std::uint8_t>(entry.kind), fixed_kind != 0});
     }
-    std::vector<WormUiSoundImportGroup> groups;
+    std::vector<wormedit::ui::sound_import_group_t> groups;
     for (const auto& group : document.sound_groups)
         groups.push_back({group.name.c_str(), group.id.value, nullptr, 0});
     const bool has_bgm = !target->sound_channels.empty() ||
@@ -66,7 +66,7 @@ auto stage_sound_slot_batch(const song_document_t& document, chart_id_t chart,
     const auto prepared = prepare_sound_slot_batch(document, chart, first_slot, paths);
     if (prepared.items.empty() && !prepared.reason.empty())
         return compose_action_outcome_t::blocked(prepared.reason, notification_source_t::import_);
-    std::vector<WormUiSoundSlotImportItem> items;
+    std::vector<wormedit::ui::sound_slot_import_item_t> items;
     items.reserve(prepared.items.size());
     for (const auto& item : prepared.items)
         items.push_back({item.path.c_str(), item.name.c_str(), item.occupied_resource_id,

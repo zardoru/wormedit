@@ -50,7 +50,7 @@ struct defaults_t {
 } // namespace test_dispatch
 
 inline auto dispatch_compose_view_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     double viewport_height, application_command_state_t& application_state,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,
@@ -72,7 +72,7 @@ inline auto dispatch_compose_view_action(
 }
 
 inline auto dispatch_compose_workspace_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace,
     std::optional<wormedit::editor_interaction_state_t>& interaction_state, double viewport_height,
     application_command_state_t& application_state, const std::filesystem::path& asset_base,
@@ -94,7 +94,7 @@ inline auto dispatch_compose_workspace_action(
 }
 
 inline auto dispatch_compose_input_action(
-    WormUiWorkspaceAction& ui_action, wormedit::document_history_t& history,
+    wormedit::ui::workspace_action_t& ui_action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, wormedit::editor_interaction_state_t& state,
     wormedit::viewport_input_controller_t& viewport_input,
     wormedit::editor_navigation_input_controller_t& navigation_input,
@@ -124,7 +124,7 @@ invoke_application_command(application_command_t command, wormedit::document_his
 }
 
 inline auto dispatch_metadata_action(
-    const WormUiWorkspaceAction& action, wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, wormedit::document_history_t& history,
     wormedit::workspace_controller_t& workspace, bool timing_locked,
     metadata_drop_state_t& metadata_drop, runtime::metadata_asset_t& metadata_asset_runtime,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& resource_copy_scheduler,

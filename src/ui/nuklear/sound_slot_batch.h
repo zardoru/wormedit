@@ -29,13 +29,13 @@ struct worm_ui_sound_slot_batch_t {
     std::uint16_t first_slot{};
     std::vector<worm_ui_sound_slot_batch_item_t> items;
     std::string reason;
-    std::vector<WormUiSoundImportItem> action_items;
+    std::vector<wormedit::ui::sound_import_item_t> action_items;
 };
 
 void worm_ui_sound_slot_batch_stage(worm_ui_sound_slot_batch_t& state,
                                     std::uint64_t project_id, std::uint64_t chart_id,
                                     std::uint64_t revision, std::uint16_t first_slot,
-                                    const WormUiSoundSlotImportItem* items,
+                                    const wormedit::ui::sound_slot_import_item_t* items,
                                     std::size_t item_count, const char* reason);
 void worm_ui_sound_slot_batch_cancel(worm_ui_sound_slot_batch_t& state);
 void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool applied,
@@ -43,5 +43,5 @@ void worm_ui_sound_slot_batch_result(worm_ui_sound_slot_batch_t& state, bool app
 void worm_ui_nuklear_render_sound_slot_batch(nk_context* context,
                                             worm_ui_sound_slot_batch_t& state,
                                             const WormUiComposeView& view,
-                                            WormUiWorkspaceAction& action,
+                                            wormedit::ui::workspace_action_t& action,
                                             int window_width, int window_height);

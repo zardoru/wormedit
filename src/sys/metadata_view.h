@@ -8,8 +8,8 @@
 
 namespace wormedit::sys {
 
-// Populate pointer-backed metadata UI fields. All strings referenced by the view
-// are stored in `flattened` and remain valid for its lifetime.
+// Refill owned metadata presentation data in place. The unconverted Compose output-row
+// labels still borrow frame-arena text until T-698.
 void populate_metadata_view_projection(
     frontend_workspace_view_t& flattened, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,

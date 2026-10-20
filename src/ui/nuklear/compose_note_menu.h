@@ -8,9 +8,9 @@ bool compose_note_menu_consumed();
 void begin_compose_note_menu_frame();
 void reset_compose_note_menu();
 void prepare_compose_note_menu(const WormUiComposeView*, bool active, bool focused,
-                               WormUiWorkspaceAction*);
+                               wormedit::ui::workspace_action_t*);
 void dismiss_compose_note_popup(nk_context*);
-void process_compose_note_menu(nk_context*, const WormUiComposeView&, WormUiWorkspaceAction&,
+void process_compose_note_menu(nk_context*, const WormUiComposeView&, wormedit::ui::workspace_action_t&,
                                struct nk_rect viewport, double input_right, bool focused);
 
 // The submenu contract is independently bounded and safe for frontend-only callers.

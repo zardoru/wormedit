@@ -6,12 +6,12 @@ TEST_CASE("Nuklear timing state resets stage editor buffers",
           "[unit][frontend][timing]") {
     auto& state = worm_ui_nuklear_timing_state();
     state.stage_buffers_active = true;
-    state.stage_buffers_lane = WORM_UI_TIMING_LANE_WARP;
+    state.stage_buffers_lane = wormedit::timing_lane_kind_t::warp;
     state.bpm_decimal[0] = '9';
 
     worm_ui_nuklear_reset_timing_state();
 
     CHECK_FALSE(state.stage_buffers_active);
-    CHECK(state.stage_buffers_lane == WORM_UI_TIMING_LANE_BPM);
+    CHECK(state.stage_buffers_lane == wormedit::timing_lane_kind_t::bpm);
     CHECK(state.bpm_decimal[0] == '\0');
 }

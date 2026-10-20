@@ -263,7 +263,7 @@ void dispatch_t437_quantize_settings(compose_test_fixture_t& fixture,
     task_scheduler_t scheduler{1, 1};
     runtime::resource_copy_t resource_copy{scheduler, sink};
     runtime::output_group_export_t export_runtime{sink};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = apply ? WORM_UI_COMPOSE_ACTION_AREA_QUANTIZE
                                   : WORM_UI_COMPOSE_ACTION_SET_QUANTIZE_SETTINGS;
     action.compose_input_project_id = fixture.history.document.id.value;
@@ -815,18 +815,18 @@ TEST_CASE("Frame timing child phases accumulate into comparable parent totals", 
 }
 
 namespace {
-void check_inline_timing_fields(const WormUiTimingView& view, std::uint64_t revision) {
-    CHECK(view.chart_id == 1);
+void check_inline_timing_fields(const wormedit::ui::timing_view_t& view, std::uint64_t revision) {
+    CHECK(view.chart_id == chart_id_t{1});
     CHECK(view.document_revision == revision);
     CHECK(view.initial_bpm_present);
     CHECK(view.initial_bpm_value == 120.0);
     CHECK(view.stage_active);
     CHECK(view.stage_valid);
 }
-void check_slim_timing_geometry(const WormUiTimingView& view) {
-    CHECK(view.grid_line_count == 0);
-    CHECK(view.marker_count == 0);
-    CHECK(view.speed_count == 0);
+void check_slim_timing_geometry(const wormedit::ui::timing_view_t& view) {
+    CHECK(view.grid_lines.empty());
+    CHECK(view.markers.empty());
+    CHECK(view.speeds.empty());
 }
 } // namespace
 
@@ -874,6 +874,7 @@ TEST_CASE("Idle Compose timing projection caches lightweight measure capacities"
                                     1280, 980, {}, nullptr);
     CHECK(cache.build_count() == 1);
 }
+
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 TEST_CASE("Waveform runtime reports decoder failures instead of silently losing the waveform",
@@ -1682,7 +1683,8 @@ TEST_CASE("Frame timing view exposes application and diagnostic GPU work separat
     worm_ui_frame_timing_record_gpu_work({1000, 3000, 50, 20, 10});
     worm_ui_frame_timing_record_diagnostic_gpu_work({400, 700, 3, 2, 1});
     timer.end_frame();
-    auto view = worm_ui_frame_timing_view();
+    wormedit::ui::frame_timing_view_t view;
+    worm_ui_frame_timing_view(view);
     expect_gpu_work(view.gpu_work_available && view.diagnostic_gpu_work_available);
     expect_gpu_work(view.gpu_work_latest.vertices == 1000 && view.gpu_work_latest.draw_calls == 50);
     expect_gpu_work(view.diagnostic_gpu_work_latest.vertices == 400);
@@ -1691,8 +1693,38 @@ TEST_CASE("Frame timing view exposes application and diagnostic GPU work separat
     timer.begin_frame();
     worm_ui_frame_timing_record_gpu_work({1000, 3000, 50, 20, 10});
     timer.end_frame();
-    view = worm_ui_frame_timing_view();
+    worm_ui_frame_timing_view(view);
     expect_gpu_work(view.gpu_work_available && !view.diagnostic_gpu_work_available);
+}
+
+namespace {
+template<class Actual, class Expected>
+void check_heap_counter(const Actual& actual, const Expected& expected,
+                        std::source_location location = std::source_location::current()) {
+    INFO("heap assertion at " << location.file_name() << ':' << location.line()
+         << ", actual=" << actual << ", expected=" << expected);
+    CHECK(actual == expected);
+}
+}
+
+TEST_CASE("Retained runtime timing view refills without heap allocations", "[sys][frame-timing][allocation]") {
+    auto& timer = frame_timing();
+    timer.record({.frame_ms = 12.5});
+    wormedit::ui::frame_timing_view_t view;
+    worm_ui_frame_timing_view(view);
+    const auto* samples = view.frame_ms.data();
+    const auto* phases = view.phases.data();
+    const auto before = frame_heap_allocation_snapshot();
+    worm_ui_frame_timing_view(view);
+    const auto after = frame_heap_allocation_snapshot();
+    check_heap_counter(after.count, before.count);
+    check_heap_counter(after.bytes, before.bytes);
+    CHECK(view.frame_ms.data() == samples);
+    CHECK(view.phases.data() == phases);
+    CHECK(view.frame_ms.size() == timer.size());
+    CHECK(view.frame_ms.back() == 12.5);
+    CHECK(view.phases.size() == frame_phase_count);
+    CHECK(view.gpu_work.size() == frame_gpu_work_count);
 }
 
 TEST_CASE("Render convert submit and present child phases retain inclusive parent timing", "[sys][frame-timing][gpu-work]") {
@@ -2151,15 +2183,6 @@ TEST_CASE(
     }
 }
 
-namespace {
-template<class Actual, class Expected>
-void check_heap_counter(const Actual& actual, const Expected& expected,
-                        std::source_location location = std::source_location::current()) {
-    INFO("heap assertion at " << location.file_name() << ':' << location.line()
-         << ", actual=" << actual << ", expected=" << expected);
-    CHECK(actual == expected);
-}
-}
 
 TEST_CASE("Debug heap counters attribute nested projection allocations exactly once",
           "[sys][frame-timing][allocation]") {
@@ -2272,7 +2295,7 @@ TEST_CASE("Paste collision remains visible and stale previews cannot publish",
 
 #if defined(WORMEDIT_HAS_AUDIO_DECODER)
 namespace {
-auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uint64_t row = 240) -> WormUiWorkspaceAction {
+auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uint64_t row = 240) -> wormedit::ui::workspace_action_t {
     const auto& chart = fixture.history.document.charts.front();
     const auto inspected = inspect_editor_interaction(fixture.history, *fixture.interaction);
     const auto* view = std::get_if<editor_interaction_view_model_t>(&inspected);
@@ -2290,7 +2313,7 @@ auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uin
         fixture.interaction->active_snap_denominator) : std::nullopt;
     expect_compose_test(snapped.has_value());
     expect_compose_test(snapped->row == row);
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = chart.id.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -2304,7 +2327,7 @@ auto paste_pointer_action(compose_test_fixture_t& fixture, bool commit, std::uin
     }
     return action;
 }
-auto dispatch_paste_action(compose_test_fixture_t& fixture, WormUiWorkspaceAction& action) -> std::string {
+auto dispatch_paste_action(compose_test_fixture_t& fixture, wormedit::ui::workspace_action_t& action) -> std::string {
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     return dispatch_compose_input_action(action, fixture.history, *fixture.binding.value,
@@ -2353,9 +2376,9 @@ auto invoke_compose_registered_command(compose_test_fixture_t& fixture,
 
 auto kiai_input(compose_test_fixture_t& fixture, WormUiComposeInputKind kind, std::uint64_t head,
                 std::uint8_t edge = WORM_UI_SPAN_HANDLE_BEGIN, double y = 0.0,
-                double anchor_y = 0.0) -> WormUiWorkspaceAction {
+                double anchor_y = 0.0) -> wormedit::ui::workspace_action_t {
     const auto& chart = fixture.history.document.charts.front();
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = chart.id.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -2577,7 +2600,7 @@ TEST_CASE("Delete removes the selected SV recipe and the area menu adds one over
     const auto measure = fixture.history.document.charts.front().measures.front().id;
     fixture.interaction->retained_selection_range =
         position_span_t{{measure, 0}, {measure, 240}};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_ADD_SV_RECIPE;
     action.compose_input_chart_id = fixture.history.document.charts.front().id.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -2627,7 +2650,7 @@ TEST_CASE("Compose projects SPEEDS transitions as spans and names the transition
     CHECK(view.speed_spans[1].transition_is_seconds);
     bool named = false;
     for (size_t index = 0; index < view.timing_marker_count; ++index)
-        if (view.timing_markers[index].lane == WORM_UI_TIMING_LANE_SPEED &&
+        if (view.timing_markers[index].lane == wormedit::timing_lane_kind_t::speed &&
             std::string(view.timing_markers[index].detail).find("transition 2 beats") != std::string::npos)
             named = true;
     CHECK(named);
@@ -2753,7 +2776,7 @@ TEST_CASE("Offset lock action rejects stale binding without clearing captured ed
           "[sys][offset-stamp]") {
     compose_test_fixture_t fixture;
     fixture.project();
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision + 1;
     std::optional<proposal_t<audio_offset_drag_t>> drag{proposal_t<audio_offset_drag_t>{}};
@@ -2813,7 +2836,7 @@ TEST_CASE("Locked offset fit rejects captured input without clearing a BPM previ
     fixture.project();
     fixture.application.project.timing_recipe.audio_offset_locked = true;
     fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_viewport_width_pixels = fixture.flattened.view.compose.viewport_width_pixels;
@@ -2846,7 +2869,7 @@ TEST_CASE("Offset locking takes precedence over a captured release and never rep
     fixture.cache.timing.beat_fit_drag = proposal_t<beat_interval_drag_t>{};
     static_cast<void>(fixture.cache.timing.proposed_offset_timing_index.get_or_build(signed_rational_t{1, 10},
         [] { return std::optional<timing_index_t>{}; }));
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_TOGGLE_AUDIO_OFFSET_LOCK;
     action.compose_input_chart_id = 1;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -3787,8 +3810,8 @@ TEST_CASE("Compose semantic arena text remains stable across 1000 warmed frames"
 
 namespace {
 auto pinch_dispatch_action(compose_test_fixture_t& fixture, double factor,
-                           double anchor) -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+                           double anchor) -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.shortcut_window_focused = true;
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -4352,7 +4375,7 @@ TEST_CASE("Imported five-key BMS materializes a Compose field that responds to t
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
     const auto before = fixture.interaction->viewport_scroll_pixels;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.shortcut_window_focused = true;
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -4379,8 +4402,8 @@ auto cursor_placement_song() -> song_document_t {
     return std::move(*parsed.value.song);
 }
 
-auto cursor_placement_action(compose_test_fixture_t& fixture) -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+auto cursor_placement_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.shortcut_window_focused = true;
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -4638,7 +4661,7 @@ TEST_CASE("Pointer note placement preserves the yellow cursor and normal scrolli
 }
 
 namespace {
-auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -> WormUiWorkspaceAction {
+auto paint_stroke_inputs(compose_test_fixture_t& fixture, std::uint64_t sound) -> wormedit::ui::workspace_action_t {
     auto& state = *fixture.interaction;
     const local_position_t position{fixture.history.document.charts.front().measures.front().id, 240};
     const auto& chart = fixture.history.document.charts.front();
@@ -4801,7 +4824,7 @@ void check_click_audition_preference(bool enabled) {
     fixture.project();
     expect_compose_test(fixture.flattened.view.compose.note_endpoint_count > 0);
     const auto& bounds = fixture.flattened.view.compose.note_endpoints[0].bounds;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.shortcut_window_focused = true;
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -5216,7 +5239,7 @@ namespace {
 struct workspace_timing_snapshot_t {
     std::uint64_t id{}, source{}, storage{}, row{};
     double y{}, left{}, right{};
-    WormUiTimingLaneKind lane{};
+    wormedit::timing_lane_kind_t lane{};
     std::string label, detail;
     bool fixed{}, selected{};
     auto operator==(const workspace_timing_snapshot_t&) const -> bool = default;
@@ -5910,8 +5933,8 @@ void project_chip_request(compose_test_fixture_t& fixture, WormUiKeysoundDockReq
         fixture.cache, 1280, 980, fixture.interaction, fixture.application, nullptr);
     t475_require(fixture.flattened.view.compose.scene_available);
 }
-auto dispatch_chip_input(compose_test_fixture_t& fixture, WormUiComposeInputAction input) -> std::string {
-    WormUiWorkspaceAction action{};
+auto dispatch_chip_input(compose_test_fixture_t& fixture, wormedit::ui::compose_input_action_t input) -> std::string {
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = 1;
     action.compose_input_project_id = fixture.history.document.id.value;
     action.compose_input_document_revision = fixture.history.document.revision;
@@ -6066,7 +6089,7 @@ struct move_feedback_dispatch_fixture_t {
         expect_compose_test(compose.interaction->gesture<wormedit::pending_note_move_gesture_t>() != nullptr);
     }
     auto dispatch(WormUiComposeInputKind kind, double row, bool to_bgm = false) -> std::string {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_input_project_id = compose.history.document.id.value;
         action.compose_input_chart_id = 1;
         action.compose_input_document_revision = compose.history.document.revision;
@@ -6408,13 +6431,13 @@ TEST_CASE("BMSON lane_mode projects current channel ownership in Compose and Sou
     t475_require(model.value.has_value());
     fixture.flattened = frontend_workspace_view_t::from(*model.value, fixture.history.document, "", {}, false);
     const auto& audio = fixture.flattened.view.audio_slices;
-    const auto rows = std::span(audio.sound_rows, audio.sound_row_count);
-    const auto offline = std::ranges::find(rows, uint64_t{101}, &WormUiSoundRowView::resource_id);
+    const auto rows = std::span(audio.sound_rows);
+    const auto offline = std::ranges::find(rows, wormedit::resource_id_t{101}, &wormedit::ui::sound_row_view_t::resource_id);
     t475_require(offline != rows.end());
-    t475_check(offline->bmson_channel_id == 301 && offline->bmson_channel_continues);
-    const auto changed = std::ranges::find(rows, uint64_t{102}, &WormUiSoundRowView::resource_id);
+    t475_check(offline->bmson_channel_id == wormedit::object_id_t{301} && offline->bmson_channel_continues);
+    const auto changed = std::ranges::find(rows, wormedit::resource_id_t{102}, &wormedit::ui::sound_row_view_t::resource_id);
     t475_require(changed != rows.end());
-    t475_check(changed->bmson_channel_id == 302 && changed->kind == 1);
+    t475_check(changed->bmson_channel_id == wormedit::object_id_t{302} && changed->kind == wormedit::sound_kind_t::stem);
 }
 
 TEST_CASE("Select lane keys cannot start notes at authored or virtual cursor rows",
@@ -6563,15 +6586,15 @@ TEST_CASE("Workspace frame cache clears when the same document is reopened", "[s
 
 
 namespace {
-auto range_pause_action(compose_test_fixture_t& fixture) -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+auto range_pause_action(compose_test_fixture_t& fixture) -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.compose_action = WORM_UI_COMPOSE_ACTION_AREA_CONVERT_TO_STOP_RESIZE;
     action.compose_input_project_id = fixture.history.document.id.value;
     action.compose_input_chart_id = fixture.interaction->chart.value;
     action.compose_input_document_revision = fixture.history.document.revision;
     return action;
 }
-auto dispatch_range_pause(compose_test_fixture_t& fixture, const WormUiWorkspaceAction& action) -> std::string {
+auto dispatch_range_pause(compose_test_fixture_t& fixture, const wormedit::ui::workspace_action_t& action) -> std::string {
     notification_center_t center;
     notification_sink_t sink{center};
     task_scheduler_t scheduler{1, 1};
@@ -6621,11 +6644,11 @@ TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
     view.viewport_height_pixels = 600;
     view.timing_lane_visibility_mask = 0xff;
     view.playable_field_left_pixels = 426;
-    const auto bpm = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_BPM);
-    const auto sv = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_SCROLL);
-    const auto stop = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_STOP);
-    const auto kiai = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_KIAI);
-    const auto anchor = compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_ANCHOR);
+    const auto bpm = compose_timing_lane_extent(view, wormedit::timing_lane_kind_t::bpm);
+    const auto sv = compose_timing_lane_extent(view, wormedit::timing_lane_kind_t::scroll);
+    const auto stop = compose_timing_lane_extent(view, wormedit::timing_lane_kind_t::stop);
+    const auto kiai = compose_timing_lane_extent(view, wormedit::timing_lane_kind_t::kiai);
+    const auto anchor = compose_timing_lane_extent(view, wormedit::timing_lane_kind_t::anchor);
     REQUIRE(bpm); REQUIRE(sv); REQUIRE(stop); REQUIRE(kiai); REQUIRE(anchor);
     expect_compose_test(bpm->first == 42); expect_compose_test(bpm->second - bpm->first == 64);
     expect_compose_test(sv->first == 106); expect_compose_test(sv->second - sv->first == 64);
@@ -6635,8 +6658,9 @@ TEST_CASE("Timing geometry keeps numeric widths and compact boolean lanes",
     expect_compose_test(anchor->second == 426);
     expect_compose_test(!(compose_timing_lane_at(view, 426)));
     expect_compose_test(!(compose_timing_lane_at(view, 41)));
-    expect_compose_test(!(compose_timing_lane_extent(view, WORM_UI_TIMING_LANE_COUNT)));
-    expect_compose_test(!(compose_timing_lane_extent(view, static_cast<WormUiTimingLaneKind>(-1))));
+    expect_compose_test(!(compose_timing_lane_extent(view,
+        static_cast<wormedit::timing_lane_kind_t>(wormedit::timing_lane_kind_count))));
+    expect_compose_test(!(compose_timing_lane_extent(view, static_cast<wormedit::timing_lane_kind_t>(-1))));
 }
 
 namespace {
@@ -6649,8 +6673,8 @@ void verify_timing_partition(std::uint8_t mask, double right) {
     view.bga_lane_bounds.left = right;
     view.viewport_height_pixels = 600;
     double previous = 42;
-    for (unsigned ordinal = 0; ordinal < WORM_UI_TIMING_LANE_COUNT; ++ordinal) {
-        const auto lane = static_cast<WormUiTimingLaneKind>(ordinal);
+    for (unsigned ordinal = 0; ordinal < wormedit::timing_lane_kind_count; ++ordinal) {
+        const auto lane = static_cast<wormedit::timing_lane_kind_t>(ordinal);
         const auto extent = compose_timing_lane_extent(view, lane);
         if (!(mask & (1U << ordinal))) { expect_compose_test(!(extent)); continue; }
         REQUIRE(extent);
@@ -6690,9 +6714,9 @@ TEST_CASE("Timing payloads retain five significant digits in compact numeric lab
     fixture.project();
     const auto& view = fixture.flattened.view.compose;
     for (const auto& marker : std::span(view.timing_markers, view.timing_marker_count)) {
-        if (marker.lane == WORM_UI_TIMING_LANE_BPM) expect_compose_test(std::string(marker.short_label) == "123.45");
-        if (marker.lane == WORM_UI_TIMING_LANE_SCROLL) expect_compose_test(std::string(marker.short_label) == "1.2345");
-        if (marker.lane == WORM_UI_TIMING_LANE_SPEED) expect_compose_test(std::string(marker.short_label) == "2.3456");
+        if (marker.lane == wormedit::timing_lane_kind_t::bpm) expect_compose_test(std::string(marker.short_label) == "123.45");
+        if (marker.lane == wormedit::timing_lane_kind_t::scroll) expect_compose_test(std::string(marker.short_label) == "1.2345");
+        if (marker.lane == wormedit::timing_lane_kind_t::speed) expect_compose_test(std::string(marker.short_label) == "2.3456");
     }
     expect_compose_test(view.timing_marker_count == 3);
 }
@@ -6877,8 +6901,8 @@ TEST_CASE("Compose reflows wide layouts from stamped canvas width without changi
 
 namespace {
 auto bgm_mix_test_action(const compose_test_fixture_t& fixture, WormUiComposeInputKind kind,
-    std::uint64_t lane) -> WormUiWorkspaceAction {
-    WormUiWorkspaceAction action{};
+    std::uint64_t lane) -> wormedit::ui::workspace_action_t {
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_chart_id = 1;
     action.compose_input_document_revision = fixture.history.document.revision;
     action.compose_input_count = 1;
@@ -7165,7 +7189,7 @@ TEST_CASE("Options identifies malformed UTF8 in each display text field", "[sys]
     runtime.draft.display.field_scheme = "\x80";
     runtime.draft.display.theme = "\x80";
     runtime.draft.layout.dock_layout = "\x80";
-    (void)options_view(runtime);
+    (void)wormedit::ui::options_view_t::from(runtime);
     CHECK(runtime.diagnostics.size() == 3);
     check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_FIELD_SCHEME);
     check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_THEME);
@@ -7176,7 +7200,7 @@ TEST_CASE("Options identifies malformed UTF8 in the shortcut profile path", "[sy
     open_options(runtime, program_preferences_t::with_defaults());
     runtime.category = WORM_UI_OPTIONS_INPUT;
     runtime.draft.general.shortcut_profile_path = "\x80";
-    (void)options_view(runtime);
+    (void)wormedit::ui::options_view_t::from(runtime);
     check_options_text_diagnostic(runtime, WORM_UI_OPTIONS_FIELD_SHORTCUT_PATH);
 }
 TEST_CASE("Options discards malformed UTF8 layout identities and display names", "[sys][shared-text]") {
@@ -7399,8 +7423,8 @@ TEST_CASE("Razor revision adopts an acknowledged staged cell without allocating"
 }
 
 namespace {
-auto make_draw_point_input(bool bgm = false) -> WormUiComposeInputAction {
-    WormUiComposeInputAction input{};
+auto make_draw_point_input(bool bgm = false) -> wormedit::ui::compose_input_action_t {
+    wormedit::ui::compose_input_action_t input{};
     input.resource_role = bgm ? WORM_UI_COMPOSE_RESOURCE_ROLE_BGM : WORM_UI_COMPOSE_RESOURCE_ROLE_BGA;
     input.paint_intent = 2;
     input.lane_id = 42;
@@ -7410,7 +7434,7 @@ auto make_draw_point_input(bool bgm = false) -> WormUiComposeInputAction {
 }
 
 auto make_prepared_draw_stroke(const document_history_t& history,
-    const editor_interaction_state_t& state, const WormUiComposeInputAction& input)
+    const editor_interaction_state_t& state, const wormedit::ui::compose_input_action_t& input)
     -> application_command_state_t::bga_draw_stroke_proposal_t {
     const auto& chart = history.document.charts.front();
     auto built = measure_index_t::from(chart);
@@ -7583,7 +7607,7 @@ TEST_CASE("Measure-lane drag inputs dispatch through the bar-line move gesture",
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     const auto dispatch = [&](WormUiComposeInputKind kind, std::uint64_t row) {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_input_project_id = fixture.history.document.id.value;
         action.compose_input_chart_id = 1;
         action.compose_input_document_revision = fixture.history.document.revision;
@@ -7618,17 +7642,17 @@ TEST_CASE("Measure-lane drag inputs dispatch through the bar-line move gesture",
 
 TEST_CASE("Pasted timing ghosts retain all eight lane identities",
           "[sys][clipboard][paste-preview]") {
-    using lane_case = std::pair<chart_clipboard_payload_t, WormUiTimingLaneKind>;
+    using lane_case = std::pair<chart_clipboard_payload_t, wormedit::timing_lane_kind_t>;
     const local_position_t position{measure_id_t{1}, 0};
     const std::array cases{
-        lane_case{bpm_event_t{.position = position, .beats_per_minute = {150, 1}}, WORM_UI_TIMING_LANE_BPM},
-        lane_case{scroll_event_t{.position = position, .multiplier = {2, 1}}, WORM_UI_TIMING_LANE_SCROLL},
-        lane_case{speed_event_t{.position = position, .multiplier = {2, 1}}, WORM_UI_TIMING_LANE_SPEED},
-        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::stop, .duration = {1, 4}}, WORM_UI_TIMING_LANE_STOP},
-        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}, WORM_UI_TIMING_LANE_DELAY},
-        lane_case{warp_event_t{.span = {position, {measure_id_t{1}, 60}}}, WORM_UI_TIMING_LANE_WARP},
-        lane_case{kiai_event_t{.position = position, .enabled = true}, WORM_UI_TIMING_LANE_KIAI},
-        lane_case{timing_anchor_t{.position = position}, WORM_UI_TIMING_LANE_ANCHOR}};
+        lane_case{bpm_event_t{.position = position, .beats_per_minute = {150, 1}}, wormedit::timing_lane_kind_t::bpm},
+        lane_case{scroll_event_t{.position = position, .multiplier = {2, 1}}, wormedit::timing_lane_kind_t::scroll},
+        lane_case{speed_event_t{.position = position, .multiplier = {2, 1}}, wormedit::timing_lane_kind_t::speed},
+        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::stop, .duration = {1, 4}}, wormedit::timing_lane_kind_t::stop},
+        lane_case{pause_event_t{.position = position, .kind = pause_kind_t::delay, .duration = {1, 4}}, wormedit::timing_lane_kind_t::delay},
+        lane_case{warp_event_t{.span = {position, {measure_id_t{1}, 60}}}, wormedit::timing_lane_kind_t::warp},
+        lane_case{kiai_event_t{.position = position, .enabled = true}, wormedit::timing_lane_kind_t::kiai},
+        lane_case{timing_anchor_t{.position = position}, wormedit::timing_lane_kind_t::anchor}};
     for (const auto& [payload, lane] : cases) {
         CAPTURE(lane);
         compose_test_fixture_t fixture{paste_preview_song()};
@@ -7644,6 +7668,6 @@ TEST_CASE("Pasted timing ghosts retain all eight lane identities",
         const auto& view = fixture.flattened.view.compose;
         REQUIRE(view.paste_ghost_count == 1);
         CHECK(view.paste_ghosts[0].kind == 3);
-        CHECK(view.paste_ghosts[0].glyph == lane);
+        CHECK(view.paste_ghosts[0].glyph == static_cast<std::uint8_t>(lane));
     }
 }

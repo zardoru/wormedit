@@ -77,7 +77,7 @@ manual_gesture_restamp | 0 | src/core | refresh_gesture_stamp<
 sys_workspace_rebind | 1 | src/sys | = (wormedit::)?rebind_workspace\(
 
 # Frontend boundary (code-style.md): C view surfaces convert to C++ types gradually; these counts only fall.
-frontend_c_struct | 133 | src/ui/frontend | ^typedef struct WormUi
-frontend_fixed_capacity | 77 | src | #define WORM_UI_[A-Z0-9_]+_CAPACITY
-frontend_pointer_count_field | 183 | src/ui/frontend | ^ +[a-z_0-9]+ +[a-z_0-9]+_count;
-frontend_ui_codec | 1 | src | struct ui_codec<WormUi
+frontend_c_struct | 64 | src/ui/frontend | ^typedef struct WormUi
+frontend_fixed_capacity | 50 | src | #define WORM_UI_[A-Z0-9_]+_CAPACITY
+frontend_pointer_count_field | 121 | src/ui/frontend | ^ +[a-z_0-9]+ +[a-z_0-9]+_count;
+frontend_ui_codec | 0 | src | struct ui_codec<WormUi

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/command.h>
 #include <wormedit/core/catalogs.h>
 #include <wormedit/core/keyed_cache.h>
@@ -19,15 +21,6 @@ namespace wormedit {
 
 // UI-independent tabs for the song workspace. Storyboard is intentionally
 // present in the navigation model while its editor is not implemented yet.
-enum class workspace_tab_t : std::uint8_t {
-    setup,
-    metadata,
-    timing,
-    compose,
-    storyboard,
-    audio_slices,
-    compare_validate,
-};
 
 inline constexpr std::size_t workspace_tab_count = 7;
 

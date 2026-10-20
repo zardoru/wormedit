@@ -53,8 +53,8 @@ auto click_at(nuklear_event_harness_t& harness, float x, float y)
     return harness.run_script(script);
 }
 
-void prepare_audio_view(nuklear_event_harness_t& harness, const WormUiSoundRowView* sounds,
-                        std::size_t sound_count, const WormUiSoundUsageRowView* uses,
+void prepare_audio_view(nuklear_event_harness_t& harness, const wormedit::ui::sound_row_view_t* sounds,
+                        std::size_t sound_count, const wormedit::ui::sound_usage_row_view_t* uses,
                         std::size_t use_count, std::uint64_t selected_resource) {
     auto& workspace = harness.view();
     workspace.active_tab = WORM_UI_WORKSPACE_TAB_AUDIO_SLICES;
@@ -64,20 +64,18 @@ void prepare_audio_view(nuklear_event_harness_t& harness, const WormUiSoundRowVi
     workspace.compose.visible = false;
     workspace.compare.visible = false;
     workspace.audio_slices.visible = true;
-    workspace.audio_slices.sound_rows = sounds;
-    workspace.audio_slices.sound_row_count = sound_count;
-    workspace.audio_slices.selected_resource_id = selected_resource;
+    workspace.audio_slices.sound_rows.assign(sounds, sounds + sound_count);
+    workspace.audio_slices.selected_resource_id = wormedit::resource_id_t{selected_resource};
     workspace.audio_slices.has_selected_asset = true;
-    workspace.audio_slices.selected_asset_id = 10;
-    workspace.audio_slices.usage_rows = uses;
-    workspace.audio_slices.usage_row_count = use_count;
+    workspace.audio_slices.selected_asset_id = wormedit::asset_id_t{10};
+    workspace.audio_slices.usage_rows.assign(uses, uses + use_count);
     workspace.audio_slices.usage_total_count = use_count;
     workspace.audio_slices.usage_valid = true;
-    workspace.audio_slices.usage_song_id = workspace.project_id;
+    workspace.audio_slices.usage_song_id = wormedit::song_id_t{workspace.project_id.value};
     workspace.audio_slices.usage_document_revision = workspace.document_revision;
-    workspace.audio_slices.usage_resource_id = selected_resource;
-    workspace.audio_slices.usage_asset_id = 10;
-    worm_ui_nuklear_audio_state().selected_project_id = workspace.project_id;
+    workspace.audio_slices.usage_resource_id = wormedit::resource_id_t{selected_resource};
+    workspace.audio_slices.usage_asset_id = wormedit::asset_id_t{10};
+    worm_ui_nuklear_audio_state().selected_project_id = workspace.project_id.value;
     worm_ui_nuklear_audio_state().selected_resource_id = selected_resource;
 }
 
@@ -96,8 +94,8 @@ auto click_text(nuklear_event_harness_t& harness, std::string_view text,
 auto click_action(const std::vector<workspace_action_snapshot_t>& snapshots,
                   WormUiWorkspaceActionKind expected,
                   std::source_location source = std::source_location::current())
-    -> WormUiWorkspaceAction {
-    std::optional<WormUiWorkspaceAction> matched;
+    -> wormedit::ui::workspace_action_t {
+    std::optional<wormedit::ui::workspace_action_t> matched;
     std::size_t emitted = 0;
     for (const auto& snapshot : snapshots) {
         const auto& action = snapshot.get();
@@ -119,8 +117,8 @@ TEST_CASE("Sounds rows preserve distinct resource selection for shared assets",
           "[event-harness][sounds][usage]") {
     nuklear_event_harness_t harness{1280, 900};
     const std::array sounds{
-        WormUiSoundRowView{.resource_id = 101, .asset_id = 10, .name = "Primary", .kind = 2},
-        WormUiSoundRowView{.resource_id = 102, .asset_id = 10, .name = "Alias", .kind = 2}};
+        wormedit::ui::sound_row_view_t{.resource_id = wormedit::resource_id_t{101}, .asset_id = wormedit::asset_id_t{10}, .name = "Primary", .kind = static_cast<wormedit::sound_kind_t>(2)},
+        wormedit::ui::sound_row_view_t{.resource_id = wormedit::resource_id_t{102}, .asset_id = wormedit::asset_id_t{10}, .name = "Alias", .kind = static_cast<wormedit::sound_kind_t>(2)}};
     prepare_audio_view(harness, sounds.data(), sounds.size(), nullptr, 0, 101);
     check_sound_usage_ui(harness.ready());
     (void)harness.frame();
@@ -134,24 +132,24 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
           "[event-harness][sounds][usage]") {
     nuklear_event_harness_t harness{1280, 900};
     const std::array sounds{
-        WormUiSoundRowView{.resource_id = 101, .asset_id = 10, .name = "Loop", .kind = 1}};
-    const std::array uses{WormUiSoundUsageRowView{.chart_id = 7,
-                                                  .measure_id = 8,
+        wormedit::ui::sound_row_view_t{.resource_id = wormedit::resource_id_t{101}, .asset_id = wormedit::asset_id_t{10}, .name = "Loop", .kind = static_cast<wormedit::sound_kind_t>(1)}};
+    const std::array uses{wormedit::ui::sound_usage_row_view_t{.chart_id = wormedit::chart_id_t{7},
+                                                  .measure_id = wormedit::measure_id_t{8},
                                                   .row = 12,
-                                                  .object_id = 99,
-                                                  .referenced_resource_id = 101,
-                                                  .referenced_asset_id = 10,
-                                                  .kind = 0,
-                                                  .scope = 0,
+                                                  .object_id = wormedit::object_id_t{99},
+                                                  .referenced_resource_id = wormedit::resource_id_t{101},
+                                                  .referenced_asset_id = wormedit::asset_id_t{10},
+                                                  .kind = static_cast<wormedit::sound_usage_kind_t>(0),
+                                                  .scope = static_cast<wormedit::sound_usage_scope_t>(0),
                                                   .position_valid = true,
                                                   .chart_label = "Chart A",
                                                   .position_label = "Measure 3 · row 12"},
-                          WormUiSoundUsageRowView{.chart_id = 9,
-                                                  .channel_id = 50,
-                                                  .clip_id = 51,
-                                                  .referenced_asset_id = 10,
-                                                  .kind = 3,
-                                                  .scope = 1,
+                          wormedit::ui::sound_usage_row_view_t{.chart_id = wormedit::chart_id_t{9},
+                                                  .channel_id = wormedit::object_id_t{50},
+                                                  .clip_id = wormedit::clip_id_t{51},
+                                                  .referenced_asset_id = wormedit::asset_id_t{10},
+                                                  .kind = static_cast<wormedit::sound_usage_kind_t>(3),
+                                                  .scope = static_cast<wormedit::sound_usage_scope_t>(1),
                                                   .position_valid = false,
                                                   .chart_label = "Chart B",
                                                   .position_label = "Source clip"}};
@@ -166,7 +164,7 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
     const auto note_action = click_action(click_text(harness, "Measure 3 · row 12"),
                                           WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
     check_sound_usage_ui(note_action.kind == WORM_UI_WORKSPACE_ACTION_SOUND_USAGE_ACTIVATE);
-    check_sound_usage_ui(note_action.sound_usage_song_id == harness.view().project_id);
+    check_sound_usage_ui(note_action.sound_usage_song_id == harness.view().project_id.value);
     check_sound_usage_ui(note_action.sound_usage_document_revision ==
                          harness.view().document_revision);
     check_sound_usage_ui(note_action.sound_usage_resource_id == 101);
@@ -194,20 +192,20 @@ TEST_CASE("Find uses activates positioned references and source rows without inv
 TEST_CASE("Find uses activation keeps the resource asset when transport shows another asset",
           "[event-harness][sounds][usage]") {
     nuklear_event_harness_t harness{1280, 900};
-    const std::array sounds{WormUiSoundRowView{
-        .resource_id = 201, .asset_id = 0, .name = "Detached", .kind = 2, .missing = true}};
-    const std::array uses{WormUiSoundUsageRowView{.chart_id = 7,
-                                                  .measure_id = 8,
+    const std::array sounds{wormedit::ui::sound_row_view_t{
+        .resource_id = wormedit::resource_id_t{201}, .asset_id = wormedit::asset_id_t{0}, .name = "Detached", .kind = static_cast<wormedit::sound_kind_t>(2), .missing = true}};
+    const std::array uses{wormedit::ui::sound_usage_row_view_t{.chart_id = wormedit::chart_id_t{7},
+                                                  .measure_id = wormedit::measure_id_t{8},
                                                   .row = 3,
-                                                  .object_id = 200,
-                                                  .referenced_resource_id = 201,
-                                                  .kind = 0,
-                                                  .scope = 0,
+                                                  .object_id = wormedit::object_id_t{200},
+                                                  .referenced_resource_id = wormedit::resource_id_t{201},
+                                                  .kind = static_cast<wormedit::sound_usage_kind_t>(0),
+                                                  .scope = static_cast<wormedit::sound_usage_scope_t>(0),
                                                   .position_valid = true,
                                                   .chart_label = "Chart C",
                                                   .position_label = "Measure 2 · row 3"}};
     prepare_audio_view(harness, sounds.data(), sounds.size(), uses.data(), uses.size(), 201);
-    harness.view().audio_slices.usage_asset_id = 0;
+    harness.view().audio_slices.usage_asset_id = wormedit::asset_id_t{};
     check_sound_usage_ui(harness.ready());
     (void)harness.frame();
     (void)click_text(harness, "Find uses");
@@ -227,12 +225,12 @@ TEST_CASE("verified source selection setter retains exact channel and clip ident
           "[frontend-state][sounds][usage]") {
     worm_ui_nuklear_reset_audio_state();
     worm_ui_frontend_select_sound_usage_source(1, 101, 50, 51);
-    WormUiSoundUsageRequest request{};
+    wormedit::ui::sound_usage_request_t request{};
     worm_ui_frontend_sound_usage_request(&request);
-    check_sound_usage_ui(request.selected_project_id == 1);
-    check_sound_usage_ui(request.selected_resource_id == 101);
-    check_sound_usage_ui(request.selected_channel_id == 50);
-    check_sound_usage_ui(request.selected_clip_id == 51);
+    check_sound_usage_ui(request.selected_project_id == wormedit::song_id_t{1});
+    check_sound_usage_ui(request.selected_resource_id == wormedit::resource_id_t{101});
+    check_sound_usage_ui(request.selected_channel_id == wormedit::object_id_t{50});
+    check_sound_usage_ui(request.selected_clip_id == wormedit::clip_id_t{51});
     check_sound_usage_ui(!request.find_uses_open);
     worm_ui_nuklear_reset_audio_state();
 }

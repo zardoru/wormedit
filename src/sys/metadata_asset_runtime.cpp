@@ -303,7 +303,7 @@ void process_metadata_copy_preview(metadata_copy_preview_t& runtime,
     post_runtime_message(notifications, severity, source, runtime.message);
 }
 
-auto resolve_export_copy_path(const WormUiWorkspaceAction& action,
+auto resolve_export_copy_path(const wormedit::ui::workspace_action_t& action,
                               const wormedit::document_history_t& history,
                               const wormedit::workspace_controller_t& workspace,
                               std::filesystem::path& output_path) -> std::optional<std::string> {
@@ -318,7 +318,7 @@ auto resolve_export_copy_path(const WormUiWorkspaceAction& action,
     return std::nullopt;
 }
 
-auto resolve_copy_preview_source(const WormUiWorkspaceAction& action,
+auto resolve_copy_preview_source(const wormedit::ui::workspace_action_t& action,
                                  const wormedit::document_history_t& history,
                                  wormedit::asset_id_t asset, bool import_copy,
                                  std::filesystem::path& source_path) -> std::optional<std::string> {
@@ -416,7 +416,7 @@ metadata_asset_t::metadata_asset_t(notification_sink_t notifications)
 metadata_asset_t::~metadata_asset_t() = default;
 
 auto metadata_asset_t::start_copy_preview(
-    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& asset_base) -> std::string {
     using namespace wormedit;
@@ -480,7 +480,7 @@ auto metadata_asset_t::start_copy_preview(
 }
 
 auto metadata_asset_t::start_import_copy(
-    const WormUiWorkspaceAction& action, const wormedit::document_history_t& history,
+    const wormedit::ui::workspace_action_t& action, const wormedit::document_history_t& history,
     const wormedit::workspace_controller_t& workspace,
     const std::filesystem::path& asset_base, wormedit::task_scheduler_t& scheduler,
     bool resource_copy_busy, bool export_busy) -> std::string {

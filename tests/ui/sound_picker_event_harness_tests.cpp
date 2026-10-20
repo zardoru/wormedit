@@ -32,7 +32,7 @@ auto press(nuklear_event_harness_t& harness, SDL_Keycode code, SDL_Scancode scan
     auto event = key(code, scan);
     return harness.frame(std::span{&event, 1});
 }
-void check_source(const WormUiWorkspaceAction& action, std::uint64_t id) {
+void check_source(const wormedit::ui::workspace_action_t& action, std::uint64_t id) {
     require_picker(action.compose_input_count == 1);
     check_picker(action.compose_inputs[0].kind == WORM_UI_COMPOSE_INPUT_DRAW_SOURCE);
     check_picker(action.compose_inputs[0].resource_id == id);
@@ -227,7 +227,7 @@ struct sound_picker_host_fixture_t {
     nk_context context{};
     worm_ui_nuklear_compose_state_t compose{};
     WormUiComposeView view{.project_id = 1, .chart_id = 1, .document_revision = 1};
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
 
     sound_picker_host_fixture_t() {
         font.height = 15.0f;

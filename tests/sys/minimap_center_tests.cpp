@@ -137,7 +137,7 @@ TEST_CASE("minimap playback and zoom transitions preserve the field position",
     require_minimap(fixture.project());
     const auto field_scroll = fixture.interaction.viewport_scroll_pixels;
     const auto center = midpoint(fixture.flattened.view.compose);
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     auto& input = action.compose_inputs[action.compose_input_count++];
     input.kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_ZOOM;
     input.x_pixels = 2.0;
@@ -164,7 +164,7 @@ TEST_CASE("explicit minimap pan persists only while its stamped visible span is 
           "[frame-timing][minimap-center]") {
     auto range = bgm_bar_range_t{0.3, 0.7};
     std::optional<bgm_bar_pan_override_t> pan;
-    WormUiWorkspaceAction action{};
+    wormedit::ui::workspace_action_t action{};
     action.compose_input_count = 1;
     action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_PAN;
     action.compose_inputs[0].x_pixels = 0.1;
@@ -180,7 +180,7 @@ TEST_CASE("explicit minimap pan persists only while its stamped visible span is 
     auto changed = same;
     changed.visible_begin_fraction = 0.45;
     changed.visible_end_fraction = 0.65;
-    WormUiWorkspaceAction idle{};
+    wormedit::ui::workspace_action_t idle{};
     check_minimap(!consume_bgm_bar_inputs(idle, range, pan, changed));
     check_minimap(!pan.has_value());
     check_minimap(bgm_bar_center_on_visible_span(range, changed.visible_begin_fraction,
@@ -250,7 +250,7 @@ TEST_CASE("song bar uses a BMS default and preserves explicit session choices ac
     viewport_input_controller_t viewport;
     editor_navigation_input_controller_t navigation;
     const auto toggle = [&](bool currently_visible) {
-        WormUiWorkspaceAction action{};
+        wormedit::ui::workspace_action_t action{};
         action.compose_input_count = 1;
         action.compose_inputs[0].kind = WORM_UI_COMPOSE_INPUT_BGM_BAR_TOGGLE;
         action.compose_inputs[0].overview_primary = currently_visible;

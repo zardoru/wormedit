@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/document.h>
 
 #include <chrono>
@@ -18,13 +20,6 @@ namespace wormedit {
 
 // Ordered by importance: eviction removes the least important class first and
 // the status line prefers anything above `hint`.
-enum class notification_severity_t : std::uint8_t {
-    hint,
-    info,
-    success,
-    warning,
-    error,
-};
 
 [[nodiscard]] auto to_notification_severity(
     diagnostic_severity_t severity,
@@ -35,17 +30,6 @@ enum class notification_severity_t : std::uint8_t {
     notification_severity_t empty_severity = notification_severity_t::error) noexcept
     -> notification_severity_t;
 
-enum class notification_source_t : std::uint8_t {
-    document,
-    edit,
-    audio,
-    export_,
-    import_,
-    recovery,
-    format,
-    input,
-    system,
-};
 
 using notification_id_t = std::uint64_t;
 using notification_time_t = std::chrono::nanoseconds;

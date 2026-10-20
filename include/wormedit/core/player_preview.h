@@ -1,4 +1,6 @@
 #pragma once
+
+#include <wormedit/core/vocabulary.h>
 #include <wormedit/core/geometry.h>
 
 #include <wormedit/core/bga_preview.h>
@@ -16,11 +18,6 @@
 namespace wormedit {
 
 
-enum class player_preview_skin_t : std::uint8_t {
-    neutral,
-    mania,
-    arrows,
-};
 
 enum class player_preview_scroll_direction_t : std::uint8_t {
     toward_top,

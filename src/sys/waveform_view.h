@@ -12,7 +12,7 @@ namespace wormedit::sys {
 void populate_audio_waveform_views(
     frontend_workspace_view_t& flattened,
     const wormedit::audio::waveform_analysis_result_t* analysis, bool analysis_pending,
-    int window_width, const WormUiAudioWaveformViewportRequest* viewport_request = nullptr);
+    int window_width, const wormedit::ui::audio_waveform_viewport_request_t* viewport_request = nullptr);
 
 // Populate the compose waveform and overview rows. The caller handles waveform offset and
 // beat-fit interaction overlays separately.

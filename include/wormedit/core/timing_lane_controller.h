@@ -1,5 +1,7 @@
 #pragma once
 
+#include <wormedit/core/vocabulary.h>
+
 #include <wormedit/core/bpm_editor.h>
 #include <wormedit/core/proposal.h>
 #include <wormedit/core/marker_editor.h>
@@ -18,16 +20,6 @@ namespace wormedit {
 // recognizer confirms either an empty timing-lane row or one stable existing
 // marker. Insert positions are retained verbatim from the active snap;
 // existing positions and values are loaded exactly from the document.
-enum class timing_lane_kind_t {
-    bpm,
-    scroll,
-    speed,
-    stop,
-    delay,
-    warp,
-    kiai,
-    anchor,
-};
 
 struct timing_lane_event_ref_t {
     timing_lane_kind_t kind{timing_lane_kind_t::bpm};

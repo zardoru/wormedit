@@ -4,7 +4,7 @@
 #include <wormedit/core/quantize.h>
 
 namespace wormedit::sys {
-inline auto quantize_request_from_action(const WormUiWorkspaceAction& action,
+inline auto quantize_request_from_action(const wormedit::ui::workspace_action_t& action,
                                  const std::vector<wormedit::object_id_t>& objects)
     -> std::optional<wormedit::quantize_request_t> {
     using namespace wormedit;

@@ -7,7 +7,7 @@ struct nk_context;
 
 void worm_ui_nuklear_render_compose_resources(struct nk_context* context,
                                               const WormUiComposeView* view,
-                                              WormUiWorkspaceAction* action,
+                                              wormedit::ui::workspace_action_t* action,
                                               worm_ui_nuklear_compose_state_t* state);
 
 // Modal surfaces render after the workspace, never inside the inspector window.
@@ -16,7 +16,7 @@ void worm_ui_nuklear_open_export_dialog(const WormUiComposeView& view,
 void worm_ui_nuklear_open_layer_creation(const WormUiComposeView& view,
     worm_ui_nuklear_compose_state_t& state);
 void worm_ui_nuklear_render_compose_dialogs(nk_context* context, const WormUiComposeView& view,
-    WormUiWorkspaceAction& action, worm_ui_nuklear_compose_state_t& state);
+    wormedit::ui::workspace_action_t& action, worm_ui_nuklear_compose_state_t& state);
 
 enum class compose_resource_origin_t { selection, sounds, bga };
 enum class compose_resource_reset_reason_t { project_changed, chart_changed, source_cleared };

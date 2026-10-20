@@ -24,21 +24,21 @@ class modifier_scope_t {
     SDL_Keymod previous_;
 };
 
-void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int height) {
-    workspace.sound_kinds = wormedit::sys::sound_kind_view;
+void initialize_compose_view(wormedit::ui::workspace_view_t& workspace, int width, int height) {
+    workspace.sound_kinds.refill(wormedit::sys::sound_kind_view);
     workspace.new_project_layouts = wormedit::sys::new_project_layout_view;
-    workspace.playback_rates = wormedit::sys::playback_rate_view;
-    workspace.bms_encodings = wormedit::sys::bms_encoding_view;
-    workspace.compose.timing_lanes = wormedit::sys::timing_lane_view;
-    workspace.compose.timing_lane_captions = wormedit::sys::timing_caption_view;
-    workspace.compose.note_palette = wormedit::sys::note_palette_view;
-    workspace.setup.output_families = wormedit::sys::output_family_view;
-    workspace.metadata.format_families = wormedit::sys::metadata_family_view;
-    workspace.transport_rate_id = static_cast<std::uint32_t>(wormedit::audio::playback_rate_id_t::normal);
-    workspace.audio_slices.sound_kinds = wormedit::sys::sound_kind_view;
+    workspace.playback_rates.refill(wormedit::sys::playback_rate_view);
+    workspace.bms_encodings.refill(wormedit::sys::bms_encoding_view);
+    workspace.compose.timing_lanes.refill(wormedit::sys::timing_lane_view);
+    workspace.compose.timing_lane_captions.refill(wormedit::sys::timing_caption_view);
+    workspace.compose.note_palette.refill(wormedit::sys::note_palette_view);
+    workspace.setup.output_families.refill(wormedit::sys::output_family_view);
+    workspace.metadata.format_families.refill(wormedit::sys::metadata_family_view);
+    workspace.transport_rate_id = wormedit::audio::playback_rate_id_t::normal;
+    workspace.audio_slices.sound_kinds.refill(wormedit::sys::sound_kind_view);
     workspace.project_loaded = true;
-    workspace.project_id = 1;
-    workspace.selected_chart_id = 1;
+    workspace.project_id.value = 1;
+    workspace.selected_chart_id.value = 1;
     workspace.document_revision = 1;
     workspace.project_title = "Event harness chart";
     workspace.artist = "Test artist";
@@ -50,14 +50,14 @@ void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int heig
     for (const auto& tab : wormedit::workspace_tabs) {
         const auto index = static_cast<std::size_t>(tab.kind);
         workspace.tabs[index] = {
-            .label = tab.kind == wormedit::workspace_tab_t::timing ? nullptr : tab.label.data(),
+            .label = tab.kind == wormedit::workspace_tab_t::timing ? std::string_view{} : tab.label,
             .enabled = wormedit::is_workspace_tab_enabled(tab.kind),
-            .id = static_cast<WormUiWorkspaceTab>(tab.kind)};
+            .id = tab.kind};
     }
 
     auto& timing = workspace.timing;
     timing.scene_available = true;
-    timing.chart_id = 1;
+    timing.chart_id = wormedit::chart_id_t{1};
     timing.document_revision = 1;
     timing.total_rows = 16;
     timing.viewport_width_pixels = static_cast<double>(width);
@@ -78,9 +78,8 @@ void initialize_compose_view(WormUiWorkspaceView& workspace, int width, int heig
     compose.timing_document_end_fraction = 1.0;
 }
 
-auto workspace_view_valid(const WormUiWorkspaceView& view) -> bool {
-    return view.project_title && view.artist && view.selected_difficulty && view.status_text &&
-        view.git_hash && view.tab_heading && view.active_tab <= WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE &&
+auto workspace_view_valid(const wormedit::ui::workspace_view_t& view) -> bool {
+    return view.active_tab <= WORM_UI_WORKSPACE_TAB_COMPARE_VALIDATE &&
         worm_ui_nuklear_setup_view_valid(&view.setup) &&
         worm_ui_nuklear_timing_view_valid(&view.timing) &&
         worm_ui_nuklear_compose_view_valid(&view.compose) &&
@@ -146,15 +145,15 @@ auto nuklear_event_harness_t::drawn_text_center(std::string_view sought) const
 }
 
 struct workspace_action_snapshot_t::storage_t {
-    WormUiWorkspaceAction action;
+    wormedit::ui::workspace_action_t action;
     std::deque<std::string> strings;
     std::vector<const char*> tags;
     std::vector<std::uint64_t> sound_resources;
     std::vector<const char*> import_paths;
-    std::vector<WormUiSoundImportItem> import_items;
-    std::vector<WormUiSoundImportGroup> import_groups;
+    std::vector<wormedit::ui::sound_import_item_t> import_items;
+    std::vector<wormedit::ui::sound_import_group_t> import_groups;
     std::deque<std::vector<std::size_t>> import_members;
-    std::vector<WormUiSoundGroupAssignment> group_assignments;
+    std::vector<wormedit::ui::sound_group_assignment_t> group_assignments;
     std::deque<std::vector<std::uint64_t>> group_members;
 
     auto own(const char* text) -> const char* {
@@ -163,7 +162,7 @@ struct workspace_action_snapshot_t::storage_t {
         return strings.back().c_str();
     }
 
-    void own_sound_import(const WormUiWorkspaceAction& source) {
+    void own_sound_import(const wormedit::ui::workspace_action_t& source) {
         for (std::size_t index = 0; source.compose_import_paths &&
                                    index < source.compose_import_path_count; ++index)
             import_paths.push_back(own(source.compose_import_paths[index]));
@@ -190,7 +189,7 @@ struct workspace_action_snapshot_t::storage_t {
         action.sound_import_groups = source.sound_import_groups ? import_groups.data() : nullptr;
     }
 
-    void own_sound_groups(const WormUiWorkspaceAction& source) {
+    void own_sound_groups(const wormedit::ui::workspace_action_t& source) {
         for (std::size_t index = 0; source.compose_sound_group_assignments &&
                 index < source.compose_sound_group_assignment_count; ++index) {
             auto assignment = source.compose_sound_group_assignments[index];
@@ -206,7 +205,7 @@ struct workspace_action_snapshot_t::storage_t {
             ? group_assignments.data() : nullptr;
     }
 
-    explicit storage_t(const WormUiWorkspaceAction& source) : action{source} {
+    explicit storage_t(const wormedit::ui::workspace_action_t& source) : action{source} {
         own_sound_import(source);
         own_sound_groups(source);
         if (source.compose_sound_resource_ids) {
@@ -214,9 +213,6 @@ struct workspace_action_snapshot_t::storage_t {
                 source.compose_sound_resource_ids + source.compose_sound_resource_count);
             action.compose_sound_resource_ids = sound_resources.data();
         }
-        action.project_chart.author = own(source.project_chart.author);
-        action.project_chart.rating_numerator = own(source.project_chart.rating_numerator);
-        action.project_chart.rating_denominator = own(source.project_chart.rating_denominator);
         action.metadata_chart_rating_numerator_text = own(source.metadata_chart_rating_numerator_text);
         action.metadata_chart_rating_denominator_text = own(source.metadata_chart_rating_denominator_text);
         action.metadata_audio_offset_numerator_text = own(source.metadata_audio_offset_numerator_text);
@@ -236,10 +232,10 @@ struct workspace_action_snapshot_t::storage_t {
     }
 };
 
-workspace_action_snapshot_t::workspace_action_snapshot_t(const WormUiWorkspaceAction& action)
+workspace_action_snapshot_t::workspace_action_snapshot_t(const wormedit::ui::workspace_action_t& action)
     : storage_{std::make_shared<storage_t>(action)} {}
 
-auto workspace_action_snapshot_t::get() const -> const WormUiWorkspaceAction& {
+auto workspace_action_snapshot_t::get() const -> const wormedit::ui::workspace_action_t& {
     return storage_->action;
 }
 
